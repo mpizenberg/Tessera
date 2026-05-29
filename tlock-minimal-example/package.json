@@ -1,0 +1,23 @@
+{
+  "name": "tlock-minimal-example",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Minimal Drand timelock (tlock) encrypt-now / decrypt-after-round demo, built on the de-risked @mpizenberg/tlock-js fork. No Cardano.",
+  "scripts": {
+    "encrypt": "tsx src/encrypt.ts",
+    "decrypt": "tsx src/decrypt.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mpizenberg/tlock-js": "github:mpizenberg/tlock-js#dffa9a3"
+  },
+  "devDependencies": {
+    "@types/node": "20.14.10",
+    "tsx": "4.16.2",
+    "typescript": "5.5.3"
+  },
+  "engines": {
+    "node": ">= 18.0.0"
+  }
+}
