@@ -11,15 +11,15 @@ URL — once round `R` is published, and not before.
 
 ## Parameters
 
-| | |
-| --- | --- |
-| Drand network | **quicknet** |
-| Chain hash | `52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971` |
-| Chain URL | `https://api.drand.sh/52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971` |
-| Curve / scheme | BLS12-381, signatures on G1 — `bls-unchained-g1-rfc9380` |
-| Hash-to-curve DST | `BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_NUL_` (applied inside the fork) |
-| Round period | 3 s |
-| Fork commit | [`dffa9a3`](https://github.com/mpizenberg/tlock-js/commit/dffa9a3) (`@mpizenberg/tlock-js@0.9.0-fork.1`) |
+|                   |                                                                                                          |
+| ----------------- | -------------------------------------------------------------------------------------------------------- |
+| Drand network     | **quicknet**                                                                                             |
+| Chain hash        | `52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971`                                       |
+| Chain URL         | `https://api.drand.sh/52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971`                  |
+| Curve / scheme    | BLS12-381, signatures on G1 — `bls-unchained-g1-rfc9380`                                                 |
+| Hash-to-curve DST | `BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_NUL_` (applied inside the fork)                                  |
+| Round period      | 3 s                                                                                                      |
+| Fork commit       | [`dffa9a3`](https://github.com/mpizenberg/tlock-js/commit/dffa9a3) (`@mpizenberg/tlock-js@0.9.0-fork.1`) |
 
 The chain hash and public key are verified by the client on every `/info` fetch,
 so a tampered endpoint is rejected. The target round `R` and chain hash are
@@ -52,12 +52,12 @@ npm run decrypt -- ballot.age
 # bound the wait: MAX_WAIT=120 npm run decrypt -- ballot.age
 ```
 
-| Variable | Script | Default | Meaning |
-| --- | --- | --- | --- |
-| `MESSAGE` / argv[2] | encrypt | `ballot` | plaintext to encrypt |
-| `DELAY_MS` | encrypt | `30000` | how far ahead of now to target round `R` |
-| `OUT` / argv[2] | both | `ballot.age` | ciphertext file path |
-| `MAX_WAIT` | decrypt | `120` | seconds to wait for round `R` before erroring |
+| Variable            | Script  | Default      | Meaning                                       |
+| ------------------- | ------- | ------------ | --------------------------------------------- |
+| `MESSAGE` / argv[2] | encrypt | `ballot`     | plaintext to encrypt                          |
+| `DELAY_MS`          | encrypt | `30000`      | how far ahead of now to target round `R`      |
+| `OUT` / argv[2]     | both    | `ballot.age` | ciphertext file path                          |
+| `MAX_WAIT`          | decrypt | `120`        | seconds to wait for round `R` before erroring |
 
 ## Audit-reproducibility check
 
@@ -82,15 +82,15 @@ Notes from working through the trust model, for non-experts.
 
 Drand is a network of independent servers that jointly emit a new random value
 (a **beacon**) on a fixed schedule, forever. Each beacon belongs to a sequential
-**round**, and the beacon *is* a BLS signature over its round number. Drand runs
+**round**, and the beacon _is_ a BLS signature over its round number. Drand runs
 several chains with different parameters at once; **quicknet** is the one we
 target: BLS12-381 with signatures on **G1**, scheme `bls-unchained-g1-rfc9380`,
 a **3 s** period, and "unchained" (each beacon signs only its round number, not
-the previous beacon — which is what makes encrypting to a *future* round possible
+the previous beacon — which is what makes encrypting to a _future_ round possible
 without the intervening beacons).
 
 The **chain hash** (`52db9ba7…`) is a fingerprint of that chain's genesis config.
-It serves two roles: it identifies *which* chain in the URL (`/{hash}/info`,
+It serves two roles: it identifies _which_ chain in the URL (`/{hash}/info`,
 `/{hash}/public/{round}`), and it is a **trust anchor** — the client checks that
 the config returned by `/info` hashes to exactly this value and that the public
 key matches, so you trust the hash, not the server.
@@ -117,7 +117,7 @@ you encrypt to is the round number `R`:
 - The chain's public key is the IBE **master public key** — you can encrypt to any
   round `R` using only it, even before `R`'s key exists. No per-recipient setup.
 - The IBE **private key** for identity `R` is the master secret applied to `R` —
-  and BLS-signing `R` produces the *same value*. So the beacon `σ_R` is **exactly**
+  and BLS-signing `R` produces the _same value_. So the beacon `σ_R` is **exactly**
   the decryption key for round `R`.
 - A **pairing** `e(·,·)` on BLS12-381 is the glue: encryption hides the message
   behind `e(H(R), masterPub)^r`; the holder of `σ_R` recomputes that mask via
@@ -132,7 +132,7 @@ audit-reproducibility check above demonstrates.
 ### Can the operators decrypt early?
 
 The beacon is **deterministic** (`σ_R = s · H(R)`, no per-round randomness), so
-every future beacon is *predetermined* today. What prevents early decryption is
+every future beacon is _predetermined_ today. What prevents early decryption is
 not unknowability but that computing `σ_R` requires cooperation:
 
 - The master secret `s` is never held in one place. It is split across nodes by a
@@ -142,22 +142,22 @@ not unknowability but that computing `σ_R` requires cooperation:
   sub-threshold group, learns nothing about `σ_R`.
 
 So `tlock`'s timelock is a **threshold-honesty assumption**, not an unconditional
-cryptographic lock: a colluding **majority** of operators *could* compute any
+cryptographic lock: a colluding **majority** of operators _could_ compute any
 future beacon early (nothing in the math forces them to wait for the scheduled
 time). The guarantee is that fewer than a majority cannot.
 
 ### Who the operators are
 
 Drand mainnet (including quicknet) is run by the **League of Entropy**, a public,
-*named* consortium — roughly 17 organizations spread across jurisdictions and
+_named_ consortium — roughly 17 organizations spread across jurisdictions and
 sectors: Cloudflare, Ethereum Foundation, Protocol Labs, Kudelski Security, EPFL,
 University of Chile, ChainSafe, UCL, Emerald Onion, and others (membership grows
 over time — see <https://drand.love>). This is the substance behind the trust
-assumption: breaking the timelock early means secretly coordinating a *majority*
+assumption: breaking the timelock early means secretly coordinating a _majority_
 of these named institutions, not compromising one anonymous key.
 
 > **Exact `n` and `t`:** the precise node count and threshold live in quicknet's
-> *group file* (read via the `drand` CLI), **not** in the HTTP `/info` endpoint
+> _group file_ (read via the `drand` CLI), **not** in the HTTP `/info` endpoint
 > this demo uses (which exposes only public key, period, genesis, hashes, scheme).
 > The rule — a strict majority of the group's nodes — holds regardless; note that
 > the node count `n` is not necessarily the same as the count of member orgs.
