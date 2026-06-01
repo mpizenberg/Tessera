@@ -1,4 +1,4 @@
-port module Main exposing (main)
+port module Main exposing (Flags, Model, Msg, OnchainResponse, OnchainSurvey, SubmissionStatus, Tab, main)
 
 {-| Minimal Cardano governance app: initializes Cardano-related code
 and displays current proposals with their metadata.
@@ -10,7 +10,6 @@ import Browser
 import Bytes.Comparable as Bytes
 import Cardano.Address exposing (Credential(..), NetworkId(..))
 import Cardano.Cip30 as Cip30 exposing (WalletDescriptor)
-import Cardano.Gov as Gov
 import Cardano.Metadatum as Metadatum
 import Cardano.Transaction as Transaction exposing (Transaction)
 import Cardano.TxIntent as TxIntent exposing (SpendSource(..), TxIntent(..), TxOtherInfo(..))
@@ -25,9 +24,7 @@ import Http
 import Integer
 import Json.Decode as JD exposing (Decoder, Value)
 import Natural as N
-import ProposalMetadata exposing (ProposalMetadata)
 import RemoteData exposing (RemoteData(..), WebData)
-import Storage
 import Survey
 
 
@@ -52,8 +49,7 @@ port receiveTask : (Value -> msg) -> Sub msg
 
 
 type Tab
-    = ProposalsTab
-    | SurveysTab
+    = SurveysTab
     | CreateSurveyTab
     | FillSurveyTab
     | ResponsesTab
@@ -163,15 +159,12 @@ init flags =
 
 
 type Msg
-    = NoMsg
-    | WalletMsg Value
+    = WalletMsg Value
     | GotProtocolParams (Result Http.Error Api.ProtocolParams)
     | GotEpoch (Result Http.Error Int)
-    | GotProposals (Result Http.Error (List ActiveProposal))
     | ConnectWalletClicked { id : String, supportedExtensions : List Int }
     | DisconnectWalletClicked
     | OnTaskProgress ( ConcurrentTask.Pool Msg, Cmd Msg )
-    | OnTaskComplete (ConcurrentTask.Response String TaskCompleted)
     | TabClicked Tab
     | SurveyFormMsg Survey.FormMsg
     | RespondToSurvey OnchainSurvey
@@ -182,11 +175,6 @@ type Msg
     | GotSurveyMetadata (Result Http.Error (List Api.SurveyTxMetadata))
 
 
-type TaskCompleted
-    = Ignore
-    | GotProposalMetadata String (Result String ProposalMetadata)
-
-
 
 -- UPDATE
 
@@ -194,9 +182,6 @@ type TaskCompleted
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        NoMsg ->
-            ( model, Cmd.none )
-
         GotProtocolParams result ->
             case result of
                 Ok params ->
@@ -212,58 +197,7 @@ update msg model =
 
                 Ok epoch ->
                     ( { model | epoch = Success epoch, proposals = Loading, onchainSurveys = Loading }
-                    , Cmd.batch
-                        -- Deactivate temporarily proposals
-                        -- [ Api.loadGovProposals model.networkId epoch GotProposals
-                        [ Api.loadSurveyTxHashes model.networkId GotSurveyTxHashes
-                        ]
-                    )
-
-        GotProposals result ->
-            case result of
-                Err err ->
-                    ( { model | proposals = Failure err }, Cmd.none )
-
-                Ok activeProposals ->
-                    let
-                        currentEpoch =
-                            RemoteData.withDefault 0 model.epoch
-
-                        isDropped p =
-                            (p.epoch_validity.end <= currentEpoch)
-                                || (Maybe.withDefault False <| Maybe.map (\r -> currentEpoch > r) p.ratified)
-
-                        proposalsList =
-                            List.map (\p -> ( actionIdToBech32 p.id, p )) activeProposals
-                                |> Dict.fromList
-                                |> Dict.toList
-                                |> List.filter (\( _, p ) -> not (isDropped p))
-
-                        -- Load metadata for each proposal (with caching)
-                        metadataTasks =
-                            List.map
-                                (\p ->
-                                    Api.taskLoadProposalMetadata p.metadataUrl
-                                        |> Storage.cacheWrap
-                                            { db = model.db, storeName = "proposalMetadata" }
-                                            ProposalMetadata.decoder
-                                            ProposalMetadata.encode
-                                            { key = p.metadataHash }
-                                        |> ConcurrentTask.toResult
-                                        |> ConcurrentTask.map (GotProposalMetadata (actionIdToBech32 p.id))
-                                )
-                                activeProposals
-
-                        ( newPool, cmds ) =
-                            ConcurrentTask.attemptEach
-                                { pool = model.taskPool, send = sendTask, onComplete = OnTaskComplete }
-                                metadataTasks
-                    in
-                    ( { model
-                        | proposals = Success (Dict.fromList proposalsList)
-                        , taskPool = newPool
-                      }
-                    , cmds
+                    , Api.loadSurveyTxHashes model.networkId GotSurveyTxHashes
                     )
 
         WalletMsg value ->
@@ -292,34 +226,6 @@ update msg model =
 
         OnTaskProgress ( taskPool, cmd ) ->
             ( { model | taskPool = taskPool }, cmd )
-
-        OnTaskComplete response ->
-            case response of
-                ConcurrentTask.Success (GotProposalMetadata id result) ->
-                    let
-                        updateMetadata maybeProposal =
-                            case ( maybeProposal, result ) of
-                                ( Just p, Ok metadata ) ->
-                                    Just { p | metadata = Success metadata }
-
-                                ( Just p, Err error ) ->
-                                    Just { p | metadata = Failure error }
-
-                                ( Nothing, _ ) ->
-                                    Nothing
-                    in
-                    ( { model | proposals = RemoteData.map (Dict.update id updateMetadata) model.proposals }
-                    , Cmd.none
-                    )
-
-                ConcurrentTask.Success Ignore ->
-                    ( model, Cmd.none )
-
-                ConcurrentTask.Error err ->
-                    ( { model | errors = err :: model.errors }, Cmd.none )
-
-                ConcurrentTask.UnexpectedError _ ->
-                    ( model, Cmd.none )
 
         TabClicked tab ->
             ( { model | activeTab = tab }, Cmd.none )
@@ -582,12 +488,12 @@ handleApiResponse apiResponse model =
         Cip30.SignedTx vkeyWitnesses ->
             case model.submissionStatus of
                 WaitingForSignature { tx, createdSurvey } ->
-                    let
-                        signedTx =
-                            Transaction.updateSignatures (\_ -> Just vkeyWitnesses) tx
-                    in
                     case model.wallet of
                         Just wallet ->
+                            let
+                                signedTx =
+                                    Transaction.updateSignatures (\_ -> Just vkeyWitnesses) tx
+                            in
                             ( { model | submissionStatus = WaitingForSubmission { tx = signedTx, createdSurvey = createdSurvey } }
                             , toWallet (Cip30.encodeRequest (Cip30.submitTx wallet signedTx))
                             )
@@ -672,9 +578,6 @@ view model =
         , viewStatus model
         , viewTabs model.activeTab
         , case model.activeTab of
-            ProposalsTab ->
-                viewProposals model
-
             SurveysTab ->
                 viewSurveysTab model
 
@@ -785,85 +688,6 @@ viewStatus model =
 
 
 -- PROPOSALS TAB
-
-
-viewProposals : Model -> Html Msg
-viewProposals model =
-    case model.proposals of
-        NotAsked ->
-            text ""
-
-        Loading ->
-            p [ HA.class "loading" ] [ text "Loading proposals..." ]
-
-        Failure _ ->
-            p [ HA.class "error" ] [ text "Failed to load proposals" ]
-
-        Success proposals ->
-            let
-                sortedProposals =
-                    Dict.toList proposals
-                        |> List.sortBy (\( _, p ) -> negate p.epoch_validity.end)
-            in
-            div []
-                [ p [ HA.class "meta" ]
-                    [ text (String.fromInt (Dict.size proposals) ++ " active proposals") ]
-                , div [ HA.class "proposals" ]
-                    (List.map viewProposal sortedProposals)
-                ]
-
-
-viewProposal : ( String, ActiveProposal ) -> Html Msg
-viewProposal ( bech32Id, proposal ) =
-    div [ HA.class "proposal" ]
-        [ div []
-            [ span [ HA.class "badge" ] [ text proposal.actionType ]
-            , span [ HA.class "meta", HA.style "margin-left" "0.5rem" ]
-                [ text ("expires epoch " ++ String.fromInt proposal.epoch_validity.end) ]
-            ]
-        , case proposal.metadata of
-            Success metadata ->
-                div []
-                    [ h3 []
-                        [ text (Maybe.withDefault "(no title)" metadata.body.title) ]
-                    , case metadata.body.abstract of
-                        Just abstract ->
-                            p [] [ text abstract ]
-
-                        Nothing ->
-                            text ""
-                    , viewHashValidity proposal.metadataHash metadata.computedHash
-                    , if not (List.isEmpty metadata.authors) then
-                        p [ HA.class "meta" ]
-                            [ text ("Authors: " ++ String.join ", " (List.map .name metadata.authors)) ]
-
-                      else
-                        text ""
-                    ]
-
-            Loading ->
-                p [ HA.class "loading" ] [ text "Loading metadata..." ]
-
-            Failure err ->
-                p [ HA.class "error" ] [ text ("Metadata error: " ++ err) ]
-
-            NotAsked ->
-                text ""
-        , p [ HA.class "meta" ]
-            [ text bech32Id ]
-        ]
-
-
-viewHashValidity : String -> String -> Html Msg
-viewHashValidity onchainHash computedHash =
-    if onchainHash == computedHash then
-        p [ HA.class "meta hash-match" ] [ text "Hash verified" ]
-
-    else
-        p [ HA.class "meta hash-mismatch" ] [ text "Hash mismatch!" ]
-
-
-
 -- SURVEYS TAB
 
 
@@ -1077,7 +901,6 @@ submitResponse model =
                                 Survey.buildResponseMetadatum
                                     { txHash = target.txHash, index = target.index }
                                     cred
-                                    target.definition
                                     model.responseForm
                             of
                                 Err err ->
@@ -1362,11 +1185,6 @@ viewErrors errors =
 
 
 -- HELPERS
-
-
-actionIdToBech32 : Gov.ActionId -> String
-actionIdToBech32 actionId =
-    Gov.idToBech32 (Gov.GovActionId actionId)
 
 
 metadatumToString : Metadatum.Metadatum -> String

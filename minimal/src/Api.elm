@@ -1,20 +1,16 @@
-module Api exposing (ActiveProposal, ProtocolParams, SurveyTxMetadata, loadGovProposals, loadProtocolParams, loadSurveyMetadata, loadSurveyTxHashes, queryEpoch, taskLoadProposalMetadata)
+module Api exposing (ActiveProposal, ProtocolParams, SurveyTxMetadata, loadProtocolParams, loadSurveyMetadata, loadSurveyTxHashes, queryEpoch)
 
 {-| Minimal API module for fetching Cardano governance data from Koios.
 -}
 
 import Bytes.Comparable as Bytes
 import Cardano.Address exposing (NetworkId(..))
-import Cardano.Gov as Gov exposing (ActionId, CostModels)
+import Cardano.Gov exposing (ActionId, CostModels)
 import Cardano.Metadatum as Metadatum exposing (Metadatum)
-import ConcurrentTask exposing (ConcurrentTask)
-import ConcurrentTask.Http
-import ConcurrentTask.Process
 import Http
 import Integer
 import Json.Decode as JD exposing (Decoder)
 import Json.Encode as JE
-import Natural
 import ProposalMetadata exposing (ProposalMetadata)
 import RemoteData exposing (RemoteData)
 import Survey
@@ -110,109 +106,8 @@ type alias ActiveProposal =
     }
 
 
-loadGovProposals : NetworkId -> Int -> (Result Http.Error (List ActiveProposal) -> msg) -> Cmd msg
-loadGovProposals networkId currentEpoch toMsg =
-    let
-        selectedRows =
-            [ "proposal_tx_hash"
-            , "proposal_index"
-            , "proposal_type"
-            , "meta_url"
-            , "meta_hash"
-            , "proposed_epoch"
-            , "expiration"
-            , "ratified_epoch"
-            ]
-                |> String.join ","
-    in
-    Http.request
-        { method = "GET"
-        , url = koiosUrl networkId ++ "/proposal_list?select=" ++ selectedRows ++ "&expiration=gt." ++ String.fromInt currentEpoch
-        , headers = [ Http.header "Authorization" <| "Bearer " ++ koiosApiToken ]
-        , body = Http.emptyBody
-        , expect =
-            Http.expectJson toMsg
-                (JD.list <|
-                    JD.map7 ActiveProposal
-                        (JD.map2
-                            (\txHash index -> { transactionId = Bytes.fromHexUnchecked txHash, govActionIndex = index })
-                            (JD.field "proposal_tx_hash" JD.string)
-                            (JD.field "proposal_index" JD.int)
-                        )
-                        (JD.field "proposal_type" JD.string)
-                        (JD.field "meta_url" JD.string)
-                        (JD.field "meta_hash" JD.string)
-                        (JD.map2
-                            (\start end -> { start = start, end = end })
-                            (JD.field "proposed_epoch" JD.int)
-                            (JD.field "expiration" JD.int)
-                        )
-                        (JD.field "ratified_epoch" <| JD.maybe JD.int)
-                        (JD.succeed RemoteData.Loading)
-                )
-        , timeout = Nothing
-        , tracker = Nothing
-        }
-
-
 
 -- Proposal Metadata (via ConcurrentTask for caching)
-
-
-ipfsGateways : List String
-ipfsGateways =
-    [ "https://ipfs.io/ipfs/"
-    , "https://ipfs.blockfrost.dev/ipfs/"
-    , "https://dweb.link/ipfs/"
-    , "https://c-ipfs-gw.nmkr.io/ipfs/"
-    , "https://cloudflare-ipfs.com/ipfs/"
-    , "https://gateway.pinata.cloud/ipfs/"
-    ]
-
-
-taskLoadProposalMetadata : String -> ConcurrentTask String ProposalMetadata
-taskLoadProposalMetadata url =
-    taskFetchFromUrl url
-        |> ConcurrentTask.map ProposalMetadata.fromRaw
-
-
-taskFetchFromUrl : String -> ConcurrentTask String String
-taskFetchFromUrl url =
-    if String.startsWith "ipfs://" url then
-        let
-            cid =
-                String.dropLeft 7 url
-
-            staggeredTask index gateway =
-                ConcurrentTask.Process.sleep (index * 2000)
-                    |> ConcurrentTask.andThenDo (fetchFromUrl (gateway ++ cid))
-        in
-        case ipfsGateways of
-            [] ->
-                ConcurrentTask.fail "No IPFS gateways configured"
-
-            first :: rest ->
-                ConcurrentTask.race
-                    (fetchFromUrl (first ++ cid))
-                    (List.indexedMap (\i gw -> staggeredTask (i + 1) gw) rest)
-                    |> ConcurrentTask.onError (\_ -> ConcurrentTask.fail "All IPFS gateways failed")
-
-    else
-        fetchFromUrl url
-            |> ConcurrentTask.onError (\_ -> ConcurrentTask.fail "HTTP request failed")
-
-
-fetchFromUrl : String -> ConcurrentTask ConcurrentTask.Http.Error String
-fetchFromUrl url =
-    ConcurrentTask.Http.get
-        { url = url
-        , headers = []
-        , expect = ConcurrentTask.Http.expectString
-        , timeout = Nothing
-        }
-
-
-
 -- CIP-179 Surveys
 
 

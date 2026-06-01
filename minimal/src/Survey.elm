@@ -1,31 +1,29 @@
 module Survey exposing
-    ( AnswerForm(..)
-    , AnswerItem(..)
+    ( AnswerForm
+    , AnswerItem
     , FormMsg(..)
     , NumericConstraints
     , ParsedPayload(..)
     , QuestionForm
-    , QuestionType(..)
+    , QuestionType
     , ResponseForm
     , ResponseFormMsg(..)
-    , Role(..)
+    , Role
+    , RoleWeightingEntry
     , SurveyDefinition
     , SurveyForm
-    , SurveyQuestion(..)
+    , SurveyQuestion
     , SurveyRef
     , SurveyResponse
-    , WeightingMode(..)
+    , WeightingMode
     , buildCancellationMetadatum
     , buildResponseMetadatum
     , credentialToHex
     , emptyForm
-    , emptyQuestion
     , formToDefinition
     , fromMetadatum
     , initResponseForm
     , metadataLabel
-    , questionTypeToString
-    , roleToString
     , toMetadatum
     , updateForm
     , updateResponseForm
@@ -33,16 +31,15 @@ module Survey exposing
     , viewResponseForm
     , viewSurvey
     , viewSurveyForm
-    , weightingModeToString
     )
 
 import Bytes.Comparable as Bytes exposing (Any, Bytes)
-import Cardano.Address exposing (Credential(..), CredentialHash)
+import Cardano.Address exposing (Credential(..))
 import Cardano.Metadatum exposing (Metadatum(..))
-import Html exposing (Html, button, div, h3, h4, input, label, option, p, select, span, text, textarea)
+import Html exposing (Html, button, div, h3, input, label, option, p, select, span, text, textarea)
 import Html.Attributes as HA
 import Html.Events as HE
-import Integer exposing (Integer)
+import Integer
 import List.Extra
 
 
@@ -1322,18 +1319,20 @@ validateQuestion q =
                 let
                     uri =
                         String.trim q.schemaUri
-
-                    hash =
-                        String.trim q.schemaHash
                 in
                 if String.isEmpty uri then
                     Err "Schema URI is required for custom questions"
 
-                else if String.length hash /= 64 then
-                    Err "Schema hash must be 64 hex characters (32 bytes)"
-
                 else
-                    Ok (Custom { prompt = prompt, schemaUri = uri, schemaHash = Bytes.fromHexUnchecked hash })
+                    let
+                        hash =
+                            String.trim q.schemaHash
+                    in
+                    if String.length hash /= 64 then
+                        Err "Schema hash must be 64 hex characters (32 bytes)"
+
+                    else
+                        Ok (Custom { prompt = prompt, schemaUri = uri, schemaHash = Bytes.fromHexUnchecked hash })
 
 
 validateOptions : List String -> Result String (List String)
@@ -1930,10 +1929,9 @@ stringToRole s =
 buildResponseMetadatum :
     { txHash : String, index : Int }
     -> Credential
-    -> SurveyDefinition
     -> ResponseForm
     -> Result String Metadatum
-buildResponseMetadatum surveyRef responder def form =
+buildResponseMetadatum surveyRef responder form =
     case form.role of
         Nothing ->
             Err "Please select a role"
