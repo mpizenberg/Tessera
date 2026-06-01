@@ -154,14 +154,14 @@ ConcurrentTask.register({
 
 ```
    CREATE (owner)                 RESPOND (voter)                 VIEW (anyone)
- ┌────────────────────┐        ┌──────────────────────┐        ┌───────────────────────────┐
- │ pick deadline       │        │ fill answers          │        │ group responses by survey  │
- │ R = round(deadline) │        │ p = cbor(ans)+pad     │        │ if now < revealTime(R):    │
- │ store mode+chainHash │        │ ct = tlock:encrypt(R,p)│        │    show "locked until …"   │
- │ +R+padding in def   │        │ store U‖V‖W chunks    │        │ else:                      │
- └────────────────────┘        └──────────────────────┘        │  pt = tlock:decrypt(R,ct)  │
-                                                                 │  answers = cborDecode(pt)  │
-                                                                 └───────────────────────────┘
+ ┌──────────────────────┐    ┌────────────────────────┐    ┌───────────────────────────┐
+ │ pick deadline        │    │ fill answers           │    │ group responses by survey │
+ │ R = round(deadline)  │    │ p = cbor(ans)+pad      │    │ if now < revealTime(R):   │
+ │ store mode+chainHash │    │ ct = tlock:encrypt(R,p)│    │    show "locked until …"  │
+ │ +R+padding in def    │    │ store U‖V‖W chunks     │    │ else:                     │
+ └──────────────────────┘    └────────────────────────┘    │  pt = tlock:decrypt(R,ct) │
+                                                           │  answers = cborDecode(pt) │
+                                                           └───────────────────────────┘
 ```
 
 ---
