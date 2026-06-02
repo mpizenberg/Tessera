@@ -877,6 +877,33 @@ viewKioskSurvey model survey =
                     ResponseFormMsg
                 , viewSubmissionStatus model.submissionStatus
                 ]
+        , if isCancelled then
+            text ""
+
+          else
+            viewKioskResponses model survey
+        ]
+
+
+viewKioskResponses : Model -> OnchainSurvey -> Html Msg
+viewKioskResponses model survey =
+    let
+        responses =
+            List.filter
+                (\r -> r.response.surveyRef.txHash == survey.txHash && r.response.surveyRef.index == survey.index)
+                model.onchainResponses
+    in
+    div [ HA.style "margin-top" "2rem" ]
+        [ h3 [] [ text "Responses" ]
+        , if List.isEmpty responses then
+            p [ HA.class "meta" ] [ text "No responses on-chain yet." ]
+
+          else
+            div []
+                [ p [ HA.class "meta" ]
+                    [ text (String.fromInt (List.length responses) ++ " response(s)") ]
+                , div [] (List.map (viewResponse model (Just survey.definition)) responses)
+                ]
         ]
 
 
