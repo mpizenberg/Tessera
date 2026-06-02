@@ -108,10 +108,10 @@ type alias SurveyDefinition =
     , owner : Credential
     , title : String
     , description : String
-    , questions : List SurveyQuestion
     , roleWeighting : List ( Role, WeightingMode )
     , endEpoch : Int
     , ballotMode : BallotMode
+    , questions : List SurveyQuestion
     }
 
 
@@ -153,7 +153,8 @@ type alias SurveyRef =
 
 
 type alias SurveyResponse =
-    { surveyRef : SurveyRef
+    { specVersion : Int
+    , surveyRef : SurveyRef
     , role : Role
     , responder : Credential
     , answers : ResponseAnswers
@@ -476,24 +477,22 @@ roleWeightingToMeta rws =
         )
 
 
-{-| Encode the ballot mode as an optional trailing element of the definition
-array. `Public` adds nothing (kept wire-identical to plain CIP-179); a
-timelocked survey appends `[1, chain_hash, round, padding_size]`.
+{-| Encode the ballot mode as a tagged sum: `[0]` for public, or
+`[1, chain_hash, round, padding_size]` for timelocked.
 -}
-ballotModeToMeta : BallotMode -> List Metadatum
+ballotModeToMeta : BallotMode -> Metadatum
 ballotModeToMeta mode =
     case mode of
         Public ->
-            []
+            List [ metaInt 0 ]
 
         Timelocked cfg ->
-            [ List
+            List
                 [ metaInt 1
                 , metaBytes cfg.chainHash
                 , metaInt cfg.round
                 , metaInt cfg.paddingSize
                 ]
-            ]
 
 
 toMetadatum : SurveyDefinition -> Metadatum
@@ -502,16 +501,15 @@ toMetadatum def =
         [ metaInt 0
         , List
             [ List
-                ([ metaInt def.specVersion
-                 , credentialToMeta def.owner
-                 , chunkedTextToMeta def.title
-                 , chunkedTextToMeta def.description
-                 , List (List.map questionToMeta def.questions)
-                 , roleWeightingToMeta def.roleWeighting
-                 , metaInt def.endEpoch
-                 ]
-                    ++ ballotModeToMeta def.ballotMode
-                )
+                [ metaInt def.specVersion
+                , credentialToMeta def.owner
+                , chunkedTextToMeta def.title
+                , chunkedTextToMeta def.description
+                , roleWeightingToMeta def.roleWeighting
+                , metaInt def.endEpoch
+                , ballotModeToMeta def.ballotMode
+                , List (List.map questionToMeta def.questions)
+                ]
             ]
         ]
 
@@ -795,76 +793,67 @@ decodeDefinition m =
     expectList m
         |> Result.andThen
             (\items ->
-                let
-                    -- A definition is the 7 core fields, optionally followed by
-                    -- a ballot-mode element (absent => Public).
-                    build core modeM =
-                        case core of
-                            [ versionM, ownerM, titleM, descM, questionsM, rwM, epochM ] ->
-                                Ok SurveyDefinition
-                                    |> resultApply (expectInt versionM)
-                                    |> resultApply (decodeCredential ownerM)
-                                    |> resultApply (decodeChunkedText titleM)
-                                    |> resultApply (decodeChunkedText descM)
-                                    |> resultApply (expectList questionsM |> Result.andThen (traverseResults decodeQuestion))
-                                    |> resultApply (decodeRoleWeighting rwM)
-                                    |> resultApply (expectInt epochM)
-                                    |> resultApply (decodeBallotMode modeM)
+                case items of
+                    [ versionM, ownerM, titleM, descM, rwM, epochM, modeM, questionsM ] ->
+                        Ok SurveyDefinition
+                            |> resultApply (expectInt versionM)
+                            |> resultApply (decodeCredential ownerM)
+                            |> resultApply (decodeChunkedText titleM)
+                            |> resultApply (decodeChunkedText descM)
+                            |> resultApply (decodeRoleWeighting rwM)
+                            |> resultApply (expectInt epochM)
+                            |> resultApply (decodeBallotMode modeM)
+                            |> resultApply (expectList questionsM |> Result.andThen (traverseResults decodeQuestion))
 
-                            _ ->
-                                Err ("Survey definition: expected 7 core fields, got " ++ String.fromInt (List.length core))
-                in
-                case List.reverse items of
-                    modeM :: revCore ->
-                        if List.length items == 8 then
-                            build (List.reverse revCore) (Just modeM)
-
-                        else
-                            build items Nothing
-
-                    [] ->
-                        Err "Survey definition: empty array"
+                    _ ->
+                        Err ("Survey definition (v3): expected 8 fields, got " ++ String.fromInt (List.length items))
             )
 
 
-{-| Decode the optional trailing ballot-mode element. Absent => `Public`.
-A present element is `[1, chain_hash, round, padding_size]` (timelocked).
+{-| Decode the ballot-mode tagged sum: `[0]` => `Public`,
+`[1, chain_hash, round, padding_size]` => `Timelocked`.
 -}
-decodeBallotMode : Maybe Metadatum -> Result String BallotMode
-decodeBallotMode maybeM =
-    case maybeM of
-        Nothing ->
-            Ok Public
+decodeBallotMode : Metadatum -> Result String BallotMode
+decodeBallotMode modeM =
+    expectList modeM
+        |> Result.andThen
+            (\items ->
+                case items of
+                    [ tagM ] ->
+                        expectInt tagM
+                            |> Result.andThen
+                                (\tag ->
+                                    if tag == 0 then
+                                        Ok Public
 
-        Just modeM ->
-            expectList modeM
-                |> Result.andThen
-                    (\items ->
-                        case items of
-                            [ tagM, chainHashM, roundM, paddingM ] ->
-                                expectInt tagM
-                                    |> Result.andThen
-                                        (\tag ->
-                                            if tag == 1 then
-                                                Result.map3
-                                                    (\chainHash round padding ->
-                                                        Timelocked
-                                                            { chainHash = chainHash
-                                                            , round = round
-                                                            , paddingSize = padding
-                                                            }
-                                                    )
-                                                    (expectBytes chainHashM)
-                                                    (expectInt roundM)
-                                                    (expectInt paddingM)
+                                    else
+                                        Err ("Ballot mode [" ++ String.fromInt tag ++ "]: only tag 0 takes no parameters")
+                                )
 
-                                            else
-                                                Err ("Unknown ballot mode tag: " ++ String.fromInt tag)
-                                        )
+                    [ tagM, chainHashM, roundM, paddingM ] ->
+                        expectInt tagM
+                            |> Result.andThen
+                                (\tag ->
+                                    if tag == 1 then
+                                        Result.map3
+                                            (\chainHash round padding ->
+                                                Timelocked
+                                                    { chainHash = chainHash
+                                                    , round = round
+                                                    , paddingSize = padding
+                                                    }
+                                            )
+                                            (expectBytes chainHashM)
+                                            (expectInt roundM)
+                                            (expectInt paddingM)
 
-                            _ ->
-                                Err "Timelocked ballot mode: expected [1, chain_hash, round, padding_size]"
-                    )
+                                    else
+                                        Err ("Unknown ballot mode tag: " ++ String.fromInt tag)
+                                )
+
+                    _ ->
+                        Err "Ballot mode: expected [0] or [1, chain_hash, round, padding_size]"
+            )
 
 
 resultApply : Result e a -> Result e (a -> b) -> Result e b
@@ -921,8 +910,9 @@ decodeResponse m =
         |> Result.andThen
             (\items ->
                 case items of
-                    [ refM, roleM, credM, answersM ] ->
+                    [ versionM, refM, roleM, credM, answersM ] ->
                         Ok SurveyResponse
+                            |> resultApply (expectInt versionM)
                             |> resultApply (decodeSurveyRef refM)
                             |> resultApply
                                 (expectInt roleM
@@ -936,7 +926,7 @@ decodeResponse m =
                             |> resultApply (decodeResponseAnswers answersM)
 
                     _ ->
-                        Err ("Survey response: expected 4-element array, got " ++ String.fromInt (List.length items))
+                        Err ("Survey response (v3): expected 5-element array, got " ++ String.fromInt (List.length items))
             )
 
 
@@ -1494,21 +1484,17 @@ formToDefinition nowUnix form =
                 Ok Public
 
         specVersion =
-            if form.timelocked then
-                2
-
-            else
-                1
+            3
     in
     Ok SurveyDefinition
         |> resultApply (Ok specVersion)
         |> resultApply validateOwner
         |> resultApply validateTitle
         |> resultApply validateDescription
-        |> resultApply validateQuestions
         |> resultApply validateRoles
         |> resultApply validateEndEpoch
         |> resultApply validateBallotMode
+        |> resultApply validateQuestions
 
 
 validateQuestion : QuestionForm -> Result String SurveyQuestion
@@ -2283,7 +2269,9 @@ encodeResponseAnswers form =
 
 
 {-| Wrap encoded answers (plaintext list or ciphertext byte chunks) into the
-CIP-179 response envelope `[1, [[ [tx,idx], role, cred, answers ]]]`.
+CIP-179 response envelope `[1, [[ specVersion, [tx,idx], role, cred, answers ]]]`.
+The per-response specVersion lets a response be decoded without first resolving
+its survey definition.
 -}
 responseEnvelope : SurveyRef -> Role -> Credential -> Metadatum -> Metadatum
 responseEnvelope surveyRef role responder answersMeta =
@@ -2291,7 +2279,8 @@ responseEnvelope surveyRef role responder answersMeta =
         [ metaInt 1
         , List
             [ List
-                [ List [ metaBytes (Bytes.fromHexUnchecked surveyRef.txHash), metaInt surveyRef.index ]
+                [ metaInt 3
+                , List [ metaBytes (Bytes.fromHexUnchecked surveyRef.txHash), metaInt surveyRef.index ]
                 , metaInt (roleToInt role)
                 , credentialToMeta responder
                 , answersMeta
