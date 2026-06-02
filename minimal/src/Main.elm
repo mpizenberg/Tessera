@@ -1,4 +1,4 @@
-port module Main exposing (BallotState, Flags, Model, Msg, OnchainResponse, OnchainSurvey, SubmissionStatus, Tab, main)
+port module Main exposing (BallotState, Flags, Model, Msg, OnchainResponse, OnchainSurvey, SubmissionStatus, SurveyFocus, Tab, main)
 
 {-| Minimal Cardano governance app: initializes Cardano-related code
 and displays current proposals with their metadata.
@@ -6,6 +6,7 @@ Includes CIP-179 survey display and creation.
 -}
 
 import Api exposing (ActiveProposal)
+import AppUrl
 import Browser
 import Bytes.Comparable as Bytes
 import Cardano.Address exposing (Credential(..), NetworkId(..))
@@ -29,6 +30,7 @@ import Survey
 import Task
 import Time
 import Tlock
+import Url
 
 
 
@@ -97,8 +99,17 @@ type alias Flags =
     }
 
 
+{-| URL-driven single-survey ("kiosk") focus, parsed once from `flags.url`.
+-}
+type SurveyFocus
+    = NoFocus
+    | InvalidFocus String
+    | Focus Survey.SurveyRef
+
+
 type alias Model =
     { networkId : NetworkId
+    , focus : SurveyFocus
     , db : Value
     , protocolParams : Maybe Api.ProtocolParams
     , epoch : WebData Int
@@ -137,6 +148,7 @@ init flags =
 
         model =
             { networkId = networkId
+            , focus = parseFocus flags.url
             , db = flags.db
             , protocolParams = Nothing
             , epoch = NotAsked
@@ -170,6 +182,59 @@ init flags =
         , Task.perform Tick Time.now
         ]
     )
+
+
+
+-- ROUTING
+
+
+{-| Parse the initial page URL into a survey focus. A `?survey=<txHash>[:<index>]`
+query parameter switches the app into single-survey kiosk mode. No parameter keeps
+the normal tabbed app; a present-but-malformed value yields an error page.
+-}
+parseFocus : String -> SurveyFocus
+parseFocus rawUrl =
+    case Url.fromString rawUrl of
+        Nothing ->
+            NoFocus
+
+        Just url ->
+            case Dict.get "survey" (AppUrl.fromUrl url).queryParameters |> Maybe.andThen List.head of
+                Nothing ->
+                    NoFocus
+
+                Just raw ->
+                    parseSurveyRef raw
+
+
+parseSurveyRef : String -> SurveyFocus
+parseSurveyRef raw =
+    case String.split ":" raw of
+        [ hash ] ->
+            focusFromParts hash 0
+
+        [ hash, idxStr ] ->
+            case String.toInt idxStr of
+                Just idx ->
+                    focusFromParts hash idx
+
+                Nothing ->
+                    InvalidFocus ("Invalid survey index: \"" ++ idxStr ++ "\" is not a number.")
+
+        _ ->
+            InvalidFocus "Malformed survey link. Expected ?survey=<txHash>:<index>."
+
+
+focusFromParts : String -> Int -> SurveyFocus
+focusFromParts hash index =
+    if index < 0 then
+        InvalidFocus "Invalid survey index: must be zero or positive."
+
+    else if String.length hash == 64 && String.all Char.isHexDigit hash then
+        Focus { txHash = String.toLower hash, index = index }
+
+    else
+        InvalidFocus "Invalid survey transaction hash: expected 64 hex characters."
 
 
 
@@ -692,7 +757,23 @@ view model =
         , viewNetworkInfo model.networkId
         , viewWalletBar model
         , viewStatus model
-        , viewTabs model.activeTab
+        , case model.focus of
+            NoFocus ->
+                viewTabbedApp model
+
+            InvalidFocus msg ->
+                viewInvalidLink msg
+
+            Focus ref ->
+                viewKioskStub ref
+        , viewErrors model.errors
+        ]
+
+
+viewTabbedApp : Model -> Html Msg
+viewTabbedApp model =
+    div []
+        [ viewTabs model.activeTab
         , case model.activeTab of
             SurveysTab ->
                 viewSurveysTab model
@@ -708,7 +789,26 @@ view model =
 
             CancelSurveyTab ->
                 viewCancelSurveyTab model
-        , viewErrors model.errors
+        ]
+
+
+viewInvalidLink : String -> Html Msg
+viewInvalidLink msg =
+    div [ HA.class "error" ]
+        [ h3 [] [ text "Invalid survey link" ]
+        , p [] [ text msg ]
+        ]
+
+
+{-| Step 1 stub: confirms routing resolved a survey ref. Replaced in step 2 by
+the real single-survey detail/fill/stats page.
+-}
+viewKioskStub : Survey.SurveyRef -> Html Msg
+viewKioskStub ref =
+    div []
+        [ h3 [] [ text "Survey (kiosk mode)" ]
+        , p [ HA.class "meta" ]
+            [ text ("Focused survey: " ++ ref.txHash ++ " [" ++ String.fromInt ref.index ++ "]") ]
         ]
 
 
