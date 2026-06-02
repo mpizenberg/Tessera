@@ -1,13 +1,17 @@
 module Survey.View exposing
-    ( viewAnswerItems
+    ( metadatumToString
+    , viewAnswerItems
     , viewResponseForm
     , viewSurvey
     , viewSurveyForm
     )
 
+import Bytes.Comparable as Bytes
+import Cardano.Metadatum as Metadatum
 import Html exposing (Html, button, div, h3, input, label, option, p, select, span, text, textarea)
 import Html.Attributes as HA
 import Html.Events as HE
+import Integer
 import List.Extra
 import Survey.Form exposing (AnswerForm(..), FormMsg(..), QuestionForm, QuestionType(..), ResponseForm, ResponseFormMsg(..), RoleWeightingEntry, SurveyForm, allQuestionTypes, formMaxPlaintextSize, questionTypeToString, questionTypeToValue)
 import Survey.Types exposing (AnswerItem(..), NumericConstraints, SurveyDefinition, SurveyQuestion(..), allowedWeightings, credentialToHex, questionOptions, questionPrompt, roleToString, weightingModeToString, weightingModeToValue)
@@ -743,3 +747,65 @@ viewAnswerItemDisplay maybeDef item =
                 [ p [] [ text (getPrompt qIdx) ]
                 , p [ HA.class "meta" ] [ text "(Custom answer)" ]
                 ]
+
+
+
+-- METADATUM PRETTY-PRINTER
+
+
+metadatumToString : Metadatum.Metadatum -> String
+metadatumToString m =
+    metadatumToStringHelper 0 m
+
+
+metadatumToStringHelper : Int -> Metadatum.Metadatum -> String
+metadatumToStringHelper indent m =
+    let
+        pad =
+            String.repeat (indent * 2) " "
+    in
+    case m of
+        Metadatum.Int i ->
+            String.fromInt (Integer.toInt i)
+
+        Metadatum.String s ->
+            "\"" ++ s ++ "\""
+
+        Metadatum.Bytes b ->
+            "h'" ++ Bytes.toHex (Bytes.toAny b) ++ "'"
+
+        Metadatum.List items ->
+            if List.isEmpty items then
+                "[]"
+
+            else
+                "[\n"
+                    ++ String.join ",\n"
+                        (List.map
+                            (\item -> pad ++ "  " ++ metadatumToStringHelper (indent + 1) item)
+                            items
+                        )
+                    ++ "\n"
+                    ++ pad
+                    ++ "]"
+
+        Metadatum.Map pairs ->
+            if List.isEmpty pairs then
+                "{}"
+
+            else
+                "{\n"
+                    ++ String.join ",\n"
+                        (List.map
+                            (\( k, v ) ->
+                                pad
+                                    ++ "  "
+                                    ++ metadatumToStringHelper (indent + 1) k
+                                    ++ ": "
+                                    ++ metadatumToStringHelper (indent + 1) v
+                            )
+                            pairs
+                        )
+                    ++ "\n"
+                    ++ pad
+                    ++ "}"

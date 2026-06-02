@@ -1,4 +1,4 @@
-port module Main exposing (BallotState, Flags, Model, Msg, OnchainResponse, OnchainSurvey, SubmissionStatus, SurveyFocus, Tab, main)
+port module Main exposing (BallotState, Flags, Model, Msg, OnchainResponse, OnchainSurvey, SubmissionStatus, Tab, main)
 
 {-| Minimal Cardano governance app: initializes Cardano-related code
 and displays current proposals with their metadata.
@@ -6,7 +6,6 @@ Includes CIP-179 survey display and creation.
 -}
 
 import Api exposing (ActiveProposal)
-import AppUrl
 import Browser
 import Bytes.Comparable as Bytes
 import Cardano.Address exposing (Credential(..), NetworkId(..))
@@ -27,6 +26,7 @@ import Integer
 import Json.Decode as JD exposing (Decoder, Value)
 import Natural as N
 import RemoteData exposing (RemoteData(..), WebData)
+import Route
 import Survey.Codec as Codec
 import Survey.Form as Form
 import Survey.Types as ST
@@ -34,7 +34,6 @@ import Survey.View as View
 import Task
 import Time
 import Tlock
-import Url
 
 
 
@@ -103,17 +102,9 @@ type alias Flags =
     }
 
 
-{-| URL-driven single-survey ("kiosk") focus, parsed once from `flags.url`.
--}
-type SurveyFocus
-    = NoFocus
-    | InvalidFocus String
-    | Focus ST.SurveyRef
-
-
 type alias Model =
     { networkId : NetworkId
-    , focus : SurveyFocus
+    , focus : Route.SurveyFocus
     , db : Value
     , protocolParams : Maybe Api.ProtocolParams
     , epoch : WebData Int
@@ -153,7 +144,7 @@ init flags =
 
         model =
             { networkId = networkId
-            , focus = parseFocus flags.url
+            , focus = Route.parseFocus flags.url
             , db = flags.db
             , protocolParams = Nothing
             , epoch = NotAsked
@@ -188,59 +179,6 @@ init flags =
         , Task.perform Tick Time.now
         ]
     )
-
-
-
--- ROUTING
-
-
-{-| Parse the initial page URL into a survey focus. A `?survey=<txHash>[:<index>]`
-query parameter switches the app into single-survey kiosk mode. No parameter keeps
-the normal tabbed app; a present-but-malformed value yields an error page.
--}
-parseFocus : String -> SurveyFocus
-parseFocus rawUrl =
-    case Url.fromString rawUrl of
-        Nothing ->
-            NoFocus
-
-        Just url ->
-            case Dict.get "survey" (AppUrl.fromUrl url).queryParameters |> Maybe.andThen List.head of
-                Nothing ->
-                    NoFocus
-
-                Just raw ->
-                    parseSurveyRef raw
-
-
-parseSurveyRef : String -> SurveyFocus
-parseSurveyRef raw =
-    case String.split ":" raw of
-        [ hash ] ->
-            focusFromParts hash 0
-
-        [ hash, idxStr ] ->
-            case String.toInt idxStr of
-                Just idx ->
-                    focusFromParts hash idx
-
-                Nothing ->
-                    InvalidFocus ("Invalid survey index: \"" ++ idxStr ++ "\" is not a number.")
-
-        _ ->
-            InvalidFocus "Malformed survey link. Expected ?survey=<txHash>:<index>."
-
-
-focusFromParts : String -> Int -> SurveyFocus
-focusFromParts hash index =
-    if index < 0 then
-        InvalidFocus "Invalid survey index: must be zero or positive."
-
-    else if String.length hash == 64 && String.all Char.isHexDigit hash then
-        Focus { txHash = String.toLower hash, index = index }
-
-    else
-        InvalidFocus "Invalid survey transaction hash: expected 64 hex characters."
 
 
 
@@ -573,7 +511,7 @@ update msg model =
                         -- so it can be filled inline without a "Respond" click.
                         ( focusTarget, focusForm ) =
                             case ( model.focus, model.responseTarget ) of
-                                ( Focus ref, Nothing ) ->
+                                ( Route.Focus ref, Nothing ) ->
                                     case List.head (List.filter (\s -> s.txHash == ref.txHash && s.index == ref.index) surveys) of
                                         Just survey ->
                                             ( Just survey, Form.initResponseForm survey.definition )
@@ -795,13 +733,13 @@ view model =
         , viewWalletBar model
         , viewStatus model
         , case model.focus of
-            NoFocus ->
+            Route.NoFocus ->
                 viewTabbedApp model
 
-            InvalidFocus msg ->
+            Route.InvalidFocus msg ->
                 viewInvalidLink msg
 
-            Focus ref ->
+            Route.Focus ref ->
                 viewKiosk model ref
         , viewErrors model.errors
         ]
@@ -1646,7 +1584,7 @@ viewCreateSurveyTab model =
             Ok def ->
                 div [ HA.class "metadatum-preview" ]
                     [ h3 [] [ text ("Preview: Metadatum (label " ++ String.fromInt ST.metadataLabel ++ ")") ]
-                    , pre [] [ text (metadatumToString (Codec.toMetadatum def)) ]
+                    , pre [] [ text (View.metadatumToString (Codec.toMetadatum def)) ]
                     ]
 
             Err _ ->
@@ -2152,68 +2090,6 @@ viewErrors errors =
     else
         div []
             (List.map (\err -> p [ HA.class "error" ] [ text err ]) errors)
-
-
-
--- HELPERS
-
-
-metadatumToString : Metadatum.Metadatum -> String
-metadatumToString m =
-    metadatumToStringHelper 0 m
-
-
-metadatumToStringHelper : Int -> Metadatum.Metadatum -> String
-metadatumToStringHelper indent m =
-    let
-        pad =
-            String.repeat (indent * 2) " "
-    in
-    case m of
-        Metadatum.Int i ->
-            String.fromInt (Integer.toInt i)
-
-        Metadatum.String s ->
-            "\"" ++ s ++ "\""
-
-        Metadatum.Bytes b ->
-            "h'" ++ Bytes.toHex (Bytes.toAny b) ++ "'"
-
-        Metadatum.List items ->
-            if List.isEmpty items then
-                "[]"
-
-            else
-                "[\n"
-                    ++ String.join ",\n"
-                        (List.map
-                            (\item -> pad ++ "  " ++ metadatumToStringHelper (indent + 1) item)
-                            items
-                        )
-                    ++ "\n"
-                    ++ pad
-                    ++ "]"
-
-        Metadatum.Map pairs ->
-            if List.isEmpty pairs then
-                "{}"
-
-            else
-                "{\n"
-                    ++ String.join ",\n"
-                        (List.map
-                            (\( k, v ) ->
-                                pad
-                                    ++ "  "
-                                    ++ metadatumToStringHelper (indent + 1) k
-                                    ++ ": "
-                                    ++ metadatumToStringHelper (indent + 1) v
-                            )
-                            pairs
-                        )
-                    ++ "\n"
-                    ++ pad
-                    ++ "}"
 
 
 
