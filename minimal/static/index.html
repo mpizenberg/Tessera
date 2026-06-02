@@ -271,6 +271,7 @@
             import * as ElmCardano from "/elm-cardano.js";
             import * as ConcurrentTask from "/elm-concurrent-task.js";
             import * as Storage from "/storage.js";
+            import * as Tlock from "/tlock.js";
 
             // Load the compiled Elm app
             await ElmCardano.loadMain("/main.js");
@@ -301,6 +302,8 @@
                 tasks: {
                     "storage:read": async (args) => await Storage.read(args),
                     "storage:write": async (args) => await Storage.write(args),
+                    "tlock:encrypt": async (args) => await Tlock.encrypt(args),
+                    "tlock:decrypt": async (args) => await Tlock.decrypt(args),
                 },
                 ports: {
                     send: app.ports.sendTask,

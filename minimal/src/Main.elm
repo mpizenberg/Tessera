@@ -1,4 +1,4 @@
-port module Main exposing (Flags, Model, Msg, OnchainResponse, OnchainSurvey, SubmissionStatus, Tab, main)
+port module Main exposing (BallotState, Flags, Model, Msg, OnchainResponse, OnchainSurvey, SubmissionStatus, Tab, main)
 
 {-| Minimal Cardano governance app: initializes Cardano-related code
 and displays current proposals with their metadata.
@@ -26,6 +26,9 @@ import Json.Decode as JD exposing (Decoder, Value)
 import Natural as N
 import RemoteData exposing (RemoteData(..), WebData)
 import Survey
+import Task
+import Time
+import Tlock
 
 
 
@@ -58,6 +61,7 @@ type Tab
 
 type SubmissionStatus
     = NotSubmitting
+    | EncryptingBallot
     | WaitingForSignature { tx : Transaction, createdSurvey : Maybe Survey.SurveyDefinition }
     | WaitingForSubmission { tx : Transaction, createdSurvey : Maybe Survey.SurveyDefinition }
     | Submitted { txId : String, createdSurvey : Maybe Survey.SurveyDefinition }
@@ -75,6 +79,14 @@ type alias OnchainResponse =
     { txHash : String
     , response : Survey.SurveyResponse
     }
+
+
+{-| Per-ballot decryption state for timelocked responses, keyed by ballot key.
+-}
+type BallotState
+    = Decrypting
+    | Decrypted (List Survey.AnswerItem)
+    | DecryptError String
 
 
 type alias Flags =
@@ -107,6 +119,8 @@ type alias Model =
     , responseForm : Survey.ResponseForm
     , responseFormError : Maybe String
     , cancelTarget : Maybe OnchainSurvey
+    , currentTime : Int
+    , decryptedBallots : Dict String BallotState
     }
 
 
@@ -143,6 +157,8 @@ init flags =
             , responseForm = { role = Nothing, answers = [] }
             , responseFormError = Nothing
             , cancelTarget = Nothing
+            , currentTime = 0
+            , decryptedBallots = Dict.empty
             }
     in
     ( { model | epoch = Loading }
@@ -150,6 +166,7 @@ init flags =
         [ Api.loadProtocolParams networkId GotProtocolParams
         , Api.queryEpoch networkId GotEpoch
         , toWallet (Cip30.encodeRequest Cip30.discoverWallets)
+        , Task.perform Tick Time.now
         ]
     )
 
@@ -173,6 +190,10 @@ type Msg
     | ConfirmCancelSurvey
     | GotSurveyTxHashes (Result Http.Error (List String))
     | GotSurveyMetadata (Result Http.Error (List Api.SurveyTxMetadata))
+    | Tick Time.Posix
+    | TimelockEncrypted (ConcurrentTask.Response String { ciphertextHex : String })
+    | RevealBallot String String
+    | BallotDecrypted String (ConcurrentTask.Response String { plaintextHex : String })
 
 
 
@@ -226,6 +247,88 @@ update msg model =
 
         OnTaskProgress ( taskPool, cmd ) ->
             ( { model | taskPool = taskPool }, cmd )
+
+        Tick posix ->
+            ( { model | currentTime = Time.posixToMillis posix // 1000 }, Cmd.none )
+
+        TimelockEncrypted response ->
+            case response of
+                ConcurrentTask.Success { ciphertextHex } ->
+                    case ( model.responseTarget, model.responseForm.role, model.wallet ) of
+                        ( Just target, Just role, Just wallet ) ->
+                            case Cardano.Address.extractPaymentCred (Cip30.walletChangeAddress wallet) of
+                                Just cred ->
+                                    buildSignResponseTx model
+                                        (Survey.buildTimelockedResponseMetadatum
+                                            { txHash = target.txHash, index = target.index }
+                                            role
+                                            cred
+                                            (Bytes.fromHexUnchecked ciphertextHex)
+                                        )
+
+                                Nothing ->
+                                    ( { model
+                                        | submissionStatus = SubmissionError "Could not extract wallet credential"
+                                        , responseFormError = Just "Could not extract wallet credential"
+                                      }
+                                    , Cmd.none
+                                    )
+
+                        _ ->
+                            ( { model | submissionStatus = NotSubmitting }, Cmd.none )
+
+                ConcurrentTask.Error err ->
+                    ( { model
+                        | submissionStatus = SubmissionError ("Ballot encryption failed: " ++ err)
+                        , responseFormError = Just ("Ballot encryption failed: " ++ err)
+                      }
+                    , Cmd.none
+                    )
+
+                ConcurrentTask.UnexpectedError _ ->
+                    ( { model
+                        | submissionStatus = SubmissionError "Unexpected error during ballot encryption"
+                        , responseFormError = Just "Unexpected error during ballot encryption"
+                      }
+                    , Cmd.none
+                    )
+
+        RevealBallot key ciphertextHex ->
+            let
+                ( newPool, cmd ) =
+                    ConcurrentTask.attempt
+                        { pool = model.taskPool
+                        , send = sendTask
+                        , onComplete = BallotDecrypted key
+                        }
+                        (Tlock.decrypt { ciphertextHex = ciphertextHex })
+            in
+            ( { model
+                | taskPool = newPool
+                , decryptedBallots = Dict.insert key Decrypting model.decryptedBallots
+              }
+            , cmd
+            )
+
+        BallotDecrypted key response ->
+            let
+                state =
+                    case response of
+                        ConcurrentTask.Success { plaintextHex } ->
+                            case Survey.decodeAnswersFromPlaintextHex plaintextHex of
+                                Ok items ->
+                                    Decrypted items
+
+                                Err err ->
+                                    DecryptError err
+
+                        ConcurrentTask.Error err ->
+                            DecryptError ("Decryption failed: " ++ err)
+
+                        ConcurrentTask.UnexpectedError _ ->
+                            DecryptError "Unexpected error during decryption"
+            in
+            ( { model | decryptedBallots = Dict.insert key state model.decryptedBallots }, Cmd.none )
 
         TabClicked tab ->
             ( { model | activeTab = tab }, Cmd.none )
@@ -380,7 +483,7 @@ update msg model =
 
 submitSurvey : Model -> ( Model, Cmd Msg )
 submitSurvey model =
-    case Survey.formToDefinition model.surveyForm of
+    case Survey.formToDefinition model.currentTime model.surveyForm of
         Err err ->
             ( { model | surveyFormError = Just err }, Cmd.none )
 
@@ -556,6 +659,7 @@ subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
         [ fromWallet WalletMsg
+        , Time.every 1000 Tick
         , ConcurrentTask.onProgress
             { send = sendTask
             , receive = receiveTask
@@ -795,9 +899,9 @@ viewCancelledSurvey survey =
 viewCreateSurveyTab : Model -> Html Msg
 viewCreateSurveyTab model =
     div []
-        [ Survey.viewSurveyForm model.surveyForm model.surveyFormError (submitButtonLabel "Connect wallet to submit" "Submit Survey On-Chain" model) SurveyFormMsg
+        [ Survey.viewSurveyForm model.currentTime model.surveyForm model.surveyFormError (submitButtonLabel "Connect wallet to submit" "Submit Survey On-Chain" model) SurveyFormMsg
         , viewSubmissionStatus model.submissionStatus
-        , case Survey.formToDefinition model.surveyForm of
+        , case Survey.formToDefinition model.currentTime model.surveyForm of
             Ok def ->
                 div [ HA.class "metadatum-preview" ]
                     [ h3 [] [ text ("Preview: Metadatum (label " ++ String.fromInt Survey.metadataLabel ++ ")") ]
@@ -832,6 +936,9 @@ viewSubmissionStatus status =
     case status of
         NotSubmitting ->
             text ""
+
+        EncryptingBallot ->
+            p [ HA.class "loading" ] [ text "Encrypting ballot with Drand tlock..." ]
 
         WaitingForSignature _ ->
             p [ HA.class "loading" ] [ text "Waiting for wallet signature..." ]
@@ -887,53 +994,99 @@ submitResponse model =
                 ( _, Nothing ) ->
                     ( { model | responseFormError = Just "Wallet UTxOs not loaded yet" }, Cmd.none )
 
-                ( Just wallet, Just utxos ) ->
-                    let
-                        changeAddr =
-                            Cip30.walletChangeAddress wallet
-                    in
-                    case Cardano.Address.extractPaymentCred changeAddr of
+                ( Just wallet, _ ) ->
+                    case Cardano.Address.extractPaymentCred (Cip30.walletChangeAddress wallet) of
                         Nothing ->
                             ( { model | responseFormError = Just "Could not extract credential from wallet address" }, Cmd.none )
 
                         Just cred ->
-                            case
-                                Survey.buildResponseMetadatum
-                                    { txHash = target.txHash, index = target.index }
-                                    cred
-                                    model.responseForm
-                            of
-                                Err err ->
-                                    ( { model | responseFormError = Just err }, Cmd.none )
-
-                                Ok responseMeta ->
-                                    let
-                                        requiredSignerInfo =
-                                            case cred of
-                                                VKeyHash hash ->
-                                                    [ TxRequiredSigner hash ]
-
-                                                ScriptHash _ ->
-                                                    []
-
-                                        txResult =
-                                            TxIntent.finalize utxos
-                                                (TxMetadata { tag = N.fromSafeInt Survey.metadataLabel, metadata = responseMeta }
-                                                    :: requiredSignerInfo
-                                                )
-                                                [ Spend (FromWallet { address = changeAddr, value = Value.onlyLovelace N.zero, guaranteedUtxos = [] }) ]
-                                    in
-                                    case txResult of
+                            case target.definition.ballotMode of
+                                Survey.Public ->
+                                    case Survey.buildResponseMetadatum { txHash = target.txHash, index = target.index } cred model.responseForm of
                                         Err err ->
-                                            ( { model | responseFormError = Just (TxIntent.errorToString err) }, Cmd.none )
+                                            ( { model | responseFormError = Just err }, Cmd.none )
 
-                                        Ok { tx } ->
-                                            ( { model
-                                                | submissionStatus = WaitingForSignature { tx = tx, createdSurvey = Nothing }
-                                                , responseFormError = Nothing
-                                              }
-                                            , toWallet (Cip30.encodeRequest (Cip30.signTx wallet { partialSign = False } tx))
-                                            )
+                                        Ok responseMeta ->
+                                            buildSignResponseTx model responseMeta
+
+                                Survey.Timelocked cfg ->
+                                    case model.responseForm.role of
+                                        Nothing ->
+                                            ( { model | responseFormError = Just "Please select a role" }, Cmd.none )
+
+                                        Just _ ->
+                                            case Survey.encodeResponseAnswers model.responseForm of
+                                                Err err ->
+                                                    ( { model | responseFormError = Just err }, Cmd.none )
+
+                                                Ok encodedAnswers ->
+                                                    let
+                                                        plaintextHex =
+                                                            Survey.plaintextHexForAnswers cfg.paddingSize encodedAnswers
+
+                                                        ( newPool, cmd ) =
+                                                            ConcurrentTask.attempt
+                                                                { pool = model.taskPool
+                                                                , send = sendTask
+                                                                , onComplete = TimelockEncrypted
+                                                                }
+                                                                (Tlock.encrypt { round = cfg.round, plaintextHex = plaintextHex })
+                                                    in
+                                                    ( { model
+                                                        | taskPool = newPool
+                                                        , submissionStatus = EncryptingBallot
+                                                        , responseFormError = Nothing
+                                                      }
+                                                    , cmd
+                                                    )
+
+
+{-| Finalize and request a signature for a response transaction carrying the
+given (public or timelocked) response metadatum. Re-derives wallet context.
+-}
+buildSignResponseTx : Model -> Metadatum.Metadatum -> ( Model, Cmd Msg )
+buildSignResponseTx model responseMeta =
+    case ( model.wallet, model.walletUtxos ) of
+        ( Just wallet, Just utxos ) ->
+            let
+                changeAddr =
+                    Cip30.walletChangeAddress wallet
+            in
+            case Cardano.Address.extractPaymentCred changeAddr of
+                Nothing ->
+                    ( { model | responseFormError = Just "Could not extract credential from wallet address" }, Cmd.none )
+
+                Just cred ->
+                    let
+                        requiredSignerInfo =
+                            case cred of
+                                VKeyHash hash ->
+                                    [ TxRequiredSigner hash ]
+
+                                ScriptHash _ ->
+                                    []
+
+                        txResult =
+                            TxIntent.finalize utxos
+                                (TxMetadata { tag = N.fromSafeInt Survey.metadataLabel, metadata = responseMeta }
+                                    :: requiredSignerInfo
+                                )
+                                [ Spend (FromWallet { address = changeAddr, value = Value.onlyLovelace N.zero, guaranteedUtxos = [] }) ]
+                    in
+                    case txResult of
+                        Err err ->
+                            ( { model | responseFormError = Just (TxIntent.errorToString err), submissionStatus = NotSubmitting }, Cmd.none )
+
+                        Ok { tx } ->
+                            ( { model
+                                | submissionStatus = WaitingForSignature { tx = tx, createdSurvey = Nothing }
+                                , responseFormError = Nothing
+                              }
+                            , toWallet (Cip30.encodeRequest (Cip30.signTx wallet { partialSign = False } tx))
+                            )
+
+        _ ->
+            ( { model | responseFormError = Just "Wallet not ready", submissionStatus = NotSubmitting }, Cmd.none )
 
 
 
@@ -1091,7 +1244,7 @@ viewResponsesTab model =
                             )
                         ]
                     , div [ HA.class "proposals" ]
-                        (List.map viewResponseGroup groups)
+                        (List.map (viewResponseGroup model) groups)
                     ]
 
 
@@ -1138,8 +1291,12 @@ groupResponsesBySurvey surveys responses =
         |> Dict.values
 
 
-viewResponseGroup : ResponseGroup -> Html Msg
-viewResponseGroup group =
+viewResponseGroup : Model -> ResponseGroup -> Html Msg
+viewResponseGroup model group =
+    let
+        maybeDef =
+            Maybe.map .definition group.survey
+    in
     div [ HA.class "survey-card" ]
         [ case group.survey of
             Just survey ->
@@ -1158,15 +1315,86 @@ viewResponseGroup group =
         , p [ HA.class "meta" ]
             [ text (String.fromInt (List.length group.responses) ++ " response(s)") ]
         , div []
-            (List.map
-                (\resp ->
-                    Survey.viewResponseCard
-                        (Maybe.map .definition group.survey)
-                        resp.response
-                )
-                group.responses
-            )
+            (List.map (viewResponse model maybeDef) group.responses)
         ]
+
+
+viewResponse : Model -> Maybe Survey.SurveyDefinition -> OnchainResponse -> Html Msg
+viewResponse model maybeDef resp =
+    let
+        r =
+            resp.response
+    in
+    div [ HA.class "survey-card" ]
+        [ p [ HA.class "meta" ] [ text ("Responder: " ++ Survey.credentialToHex r.responder) ]
+        , p [ HA.class "meta" ] [ text ("Role: " ++ Survey.roleToString r.role) ]
+        , case r.answers of
+            Survey.PublicAnswers items ->
+                Survey.viewAnswerItems maybeDef items
+
+            Survey.TimelockedAnswers blob ->
+                viewTimelockedAnswers model maybeDef resp blob
+        ]
+
+
+{-| Unique key for a timelocked ballot's decryption state.
+-}
+ballotKey : OnchainResponse -> String
+ballotKey resp =
+    resp.txHash ++ "@" ++ Survey.credentialToHex resp.response.responder
+
+
+viewTimelockedAnswers : Model -> Maybe Survey.SurveyDefinition -> OnchainResponse -> Bytes.Bytes Bytes.Any -> Html Msg
+viewTimelockedAnswers model maybeDef resp blob =
+    case Maybe.map .ballotMode maybeDef of
+        Just (Survey.Timelocked cfg) ->
+            let
+                revealTime =
+                    Tlock.revealTimeOf cfg.round
+            in
+            if model.currentTime < revealTime then
+                p [ HA.class "meta" ]
+                    [ text
+                        ("Locked timelocked ballot — revealable after Drand round "
+                            ++ String.fromInt cfg.round
+                            ++ " (~"
+                            ++ String.fromInt (Basics.max 0 (revealTime - model.currentTime))
+                            ++ "s remaining)"
+                        )
+                    ]
+
+            else
+                let
+                    key =
+                        ballotKey resp
+                in
+                case Dict.get key model.decryptedBallots of
+                    Just Decrypting ->
+                        p [ HA.class "loading" ] [ text "Decrypting ballot..." ]
+
+                    Just (Decrypted items) ->
+                        Survey.viewAnswerItems maybeDef items
+
+                    Just (DecryptError err) ->
+                        div []
+                            [ p [ HA.class "error" ] [ text err ]
+                            , button
+                                [ HA.class "btn btn-sm"
+                                , onClick (RevealBallot key (Bytes.toHex blob))
+                                ]
+                                [ text "Retry reveal" ]
+                            ]
+
+                    Nothing ->
+                        button
+                            [ HA.class "btn btn-primary"
+                            , onClick (RevealBallot key (Bytes.toHex blob))
+                            ]
+                            [ text "Reveal answers" ]
+
+        _ ->
+            p [ HA.class "meta" ]
+                [ text "Timelocked ballot (survey definition unknown — cannot determine reveal round)" ]
 
 
 

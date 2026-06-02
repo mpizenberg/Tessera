@@ -1,11 +1,13 @@
 module Survey exposing
     ( AnswerForm
     , AnswerItem
+    , BallotMode(..)
     , FormMsg(..)
     , NumericConstraints
     , ParsedPayload(..)
     , QuestionForm
     , QuestionType
+    , ResponseAnswers(..)
     , ResponseForm
     , ResponseFormMsg(..)
     , Role
@@ -15,19 +17,25 @@ module Survey exposing
     , SurveyQuestion
     , SurveyRef
     , SurveyResponse
+    , TimelockConfig
     , WeightingMode
     , buildCancellationMetadatum
     , buildResponseMetadatum
+    , buildTimelockedResponseMetadatum
     , credentialToHex
+    , decodeAnswersFromPlaintextHex
     , emptyForm
+    , encodeResponseAnswers
     , formToDefinition
     , fromMetadatum
     , initResponseForm
     , metadataLabel
+    , plaintextHexForAnswers
+    , roleToString
     , toMetadatum
     , updateForm
     , updateResponseForm
-    , viewResponseCard
+    , viewAnswerItems
     , viewResponseForm
     , viewSurvey
     , viewSurveyForm
@@ -35,12 +43,15 @@ module Survey exposing
 
 import Bytes.Comparable as Bytes exposing (Any, Bytes)
 import Cardano.Address exposing (Credential(..))
-import Cardano.Metadatum exposing (Metadatum(..))
+import Cardano.Metadatum as Metadatum exposing (Metadatum(..))
+import Cbor.Decode
+import Cbor.Encode
 import Html exposing (Html, button, div, h3, input, label, option, p, select, span, text, textarea)
 import Html.Attributes as HA
 import Html.Events as HE
 import Integer
 import List.Extra
+import Tlock
 
 
 
@@ -99,7 +110,39 @@ type alias SurveyDefinition =
     , questions : List SurveyQuestion
     , roleWeighting : List ( Role, WeightingMode )
     , endEpoch : Int
+    , ballotMode : BallotMode
     }
+
+
+{-| How ballots (responses) are submitted for a survey.
+
+  - `Public`: plaintext answers, as in plain CIP-179.
+  - `Timelocked`: answers are Drand `tlock` ciphertext, decryptable by anyone
+    once the pinned round publishes. Delayed reveal, not permanent secrecy.
+
+-}
+type BallotMode
+    = Public
+    | Timelocked TimelockConfig
+
+
+{-| Decryption parameters pinned once in the survey definition so individual
+responses don't repeat them. `round` is the Drand quicknet round whose signature
+reveals the ballots; `paddingSize` is the minimum plaintext size (bytes) each
+ballot is padded to before encryption, to hide answer-content size.
+-}
+type alias TimelockConfig =
+    { chainHash : Bytes Any
+    , round : Int
+    , paddingSize : Int
+    }
+
+
+{-| Drand quicknet chain hash (pinned). Matches `static/tlock.js`.
+-}
+quicknetChainHashHex : String
+quicknetChainHashHex =
+    "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971"
 
 
 type alias SurveyRef =
@@ -112,8 +155,17 @@ type alias SurveyResponse =
     { surveyRef : SurveyRef
     , role : Role
     , responder : Credential
-    , answers : List AnswerItem
+    , answers : ResponseAnswers
     }
+
+
+{-| A response's answers are either plaintext (public surveys) or a Drand
+`tlock` ciphertext blob — the armor-stripped age payload (timelocked surveys),
+opaque until the survey's round publishes.
+-}
+type ResponseAnswers
+    = PublicAnswers (List AnswerItem)
+    | TimelockedAnswers (Bytes Any)
 
 
 type AnswerItem
@@ -423,20 +475,42 @@ roleWeightingToMeta rws =
         )
 
 
+{-| Encode the ballot mode as an optional trailing element of the definition
+array. `Public` adds nothing (kept wire-identical to plain CIP-179); a
+timelocked survey appends `[1, chain_hash, round, padding_size]`.
+-}
+ballotModeToMeta : BallotMode -> List Metadatum
+ballotModeToMeta mode =
+    case mode of
+        Public ->
+            []
+
+        Timelocked cfg ->
+            [ List
+                [ metaInt 1
+                , metaBytes cfg.chainHash
+                , metaInt cfg.round
+                , metaInt cfg.paddingSize
+                ]
+            ]
+
+
 toMetadatum : SurveyDefinition -> Metadatum
 toMetadatum def =
     List
         [ metaInt 0
         , List
             [ List
-                [ metaInt def.specVersion
-                , credentialToMeta def.owner
-                , chunkedTextToMeta def.title
-                , chunkedTextToMeta def.description
-                , List (List.map questionToMeta def.questions)
-                , roleWeightingToMeta def.roleWeighting
-                , metaInt def.endEpoch
-                ]
+                ([ metaInt def.specVersion
+                 , credentialToMeta def.owner
+                 , chunkedTextToMeta def.title
+                 , chunkedTextToMeta def.description
+                 , List (List.map questionToMeta def.questions)
+                 , roleWeightingToMeta def.roleWeighting
+                 , metaInt def.endEpoch
+                 ]
+                    ++ ballotModeToMeta def.ballotMode
+                )
             ]
         ]
 
@@ -720,20 +794,76 @@ decodeDefinition m =
     expectList m
         |> Result.andThen
             (\items ->
-                case items of
-                    [ versionM, ownerM, titleM, descM, questionsM, rwM, epochM ] ->
-                        Ok SurveyDefinition
-                            |> resultApply (expectInt versionM)
-                            |> resultApply (decodeCredential ownerM)
-                            |> resultApply (decodeChunkedText titleM)
-                            |> resultApply (decodeChunkedText descM)
-                            |> resultApply (expectList questionsM |> Result.andThen (traverseResults decodeQuestion))
-                            |> resultApply (decodeRoleWeighting rwM)
-                            |> resultApply (expectInt epochM)
+                let
+                    -- A definition is the 7 core fields, optionally followed by
+                    -- a ballot-mode element (absent => Public).
+                    build core modeM =
+                        case core of
+                            [ versionM, ownerM, titleM, descM, questionsM, rwM, epochM ] ->
+                                Ok SurveyDefinition
+                                    |> resultApply (expectInt versionM)
+                                    |> resultApply (decodeCredential ownerM)
+                                    |> resultApply (decodeChunkedText titleM)
+                                    |> resultApply (decodeChunkedText descM)
+                                    |> resultApply (expectList questionsM |> Result.andThen (traverseResults decodeQuestion))
+                                    |> resultApply (decodeRoleWeighting rwM)
+                                    |> resultApply (expectInt epochM)
+                                    |> resultApply (decodeBallotMode modeM)
 
-                    _ ->
-                        Err ("Survey definition: expected 7-element array, got " ++ String.fromInt (List.length items))
+                            _ ->
+                                Err ("Survey definition: expected 7 core fields, got " ++ String.fromInt (List.length core))
+                in
+                case List.reverse items of
+                    modeM :: revCore ->
+                        if List.length items == 8 then
+                            build (List.reverse revCore) (Just modeM)
+
+                        else
+                            build items Nothing
+
+                    [] ->
+                        Err "Survey definition: empty array"
             )
+
+
+{-| Decode the optional trailing ballot-mode element. Absent => `Public`.
+A present element is `[1, chain_hash, round, padding_size]` (timelocked).
+-}
+decodeBallotMode : Maybe Metadatum -> Result String BallotMode
+decodeBallotMode maybeM =
+    case maybeM of
+        Nothing ->
+            Ok Public
+
+        Just modeM ->
+            expectList modeM
+                |> Result.andThen
+                    (\items ->
+                        case items of
+                            [ tagM, chainHashM, roundM, paddingM ] ->
+                                expectInt tagM
+                                    |> Result.andThen
+                                        (\tag ->
+                                            if tag == 1 then
+                                                Result.map3
+                                                    (\chainHash round padding ->
+                                                        Timelocked
+                                                            { chainHash = chainHash
+                                                            , round = round
+                                                            , paddingSize = padding
+                                                            }
+                                                    )
+                                                    (expectBytes chainHashM)
+                                                    (expectInt roundM)
+                                                    (expectInt paddingM)
+
+                                            else
+                                                Err ("Unknown ballot mode tag: " ++ String.fromInt tag)
+                                        )
+
+                            _ ->
+                                Err "Timelocked ballot mode: expected [1, chain_hash, round, padding_size]"
+                    )
 
 
 resultApply : Result e a -> Result e (a -> b) -> Result e b
@@ -802,7 +932,7 @@ decodeResponse m =
                                         )
                                 )
                             |> resultApply (decodeCredential credM)
-                            |> resultApply (expectList answersM |> Result.andThen (traverseResults decodeAnswerItem))
+                            |> resultApply (decodeResponseAnswers answersM)
 
                     _ ->
                         Err ("Survey response: expected 4-element array, got " ++ String.fromInt (List.length items))
@@ -869,6 +999,50 @@ decodeAnswerItem m =
             )
 
 
+{-| The response answers field is either a list of answer-item arrays (public)
+or a list of byte chunks / a single byte string (timelocked ciphertext). We pick
+the shape from the metadatum structure, without needing the survey definition.
+-}
+decodeResponseAnswers : Metadatum -> Result String ResponseAnswers
+decodeResponseAnswers m =
+    case m of
+        Bytes b ->
+            Ok (TimelockedAnswers b)
+
+        List items ->
+            if not (List.isEmpty items) && List.all isBytesItem items then
+                items
+                    |> List.filterMap
+                        (\item ->
+                            case item of
+                                Bytes b ->
+                                    Just b
+
+                                _ ->
+                                    Nothing
+                        )
+                    |> List.foldr Bytes.concat Bytes.empty
+                    |> TimelockedAnswers
+                    |> Ok
+
+            else
+                traverseResults decodeAnswerItem items
+                    |> Result.map PublicAnswers
+
+        _ ->
+            Err "Response answers: expected a list or byte blob"
+
+
+isBytesItem : Metadatum -> Bool
+isBytesItem m =
+    case m of
+        Bytes _ ->
+            True
+
+        _ ->
+            False
+
+
 
 -- ============================================================
 -- FORM TYPES
@@ -916,6 +1090,9 @@ type alias SurveyForm =
     , roleWeightings : List RoleWeightingEntry
     , endEpoch : String
     , ownerKeyHash : String
+    , timelocked : Bool
+    , revealMinutes : String
+    , paddingSize : String
     }
 
 
@@ -940,6 +1117,9 @@ type FormMsg
     | SetSchemaHash Int String
     | ToggleRole Role
     | SetWeighting Role String
+    | SetTimelocked Bool
+    | SetRevealMinutes String
+    | SetPaddingSize String
     | SubmitSurvey
 
 
@@ -980,6 +1160,9 @@ emptyForm =
             allRoles
     , endEpoch = ""
     , ownerKeyHash = ""
+    , timelocked = False
+    , revealMinutes = "5"
+    , paddingSize = "64"
     }
 
 
@@ -1077,6 +1260,15 @@ updateForm msg form =
                         )
                         form.roleWeightings
             }
+
+        SetTimelocked v ->
+            { form | timelocked = v }
+
+        SetRevealMinutes v ->
+            { form | revealMinutes = v }
+
+        SetPaddingSize v ->
+            { form | paddingSize = v }
 
         SubmitSurvey ->
             form
@@ -1201,8 +1393,8 @@ weightingModeToValue wm =
 -- ============================================================
 
 
-formToDefinition : SurveyForm -> Result String SurveyDefinition
-formToDefinition form =
+formToDefinition : Int -> SurveyForm -> Result String SurveyDefinition
+formToDefinition nowUnix form =
     let
         validateTitle =
             if String.isEmpty (String.trim form.title) then
@@ -1246,15 +1438,55 @@ formToDefinition form =
 
             else
                 Ok (List.map (\rw -> ( rw.role, rw.weightingMode )) enabled)
+
+        validatePositiveInt errMsg s =
+            String.toInt s
+                |> Result.fromMaybe errMsg
+                |> Result.andThen
+                    (\n ->
+                        if n >= 1 then
+                            Ok n
+
+                        else
+                            Err errMsg
+                    )
+
+        validateBallotMode =
+            if form.timelocked then
+                Result.map2
+                    (\minutes padding ->
+                        let
+                            deadline =
+                                nowUnix + (minutes * 60)
+                        in
+                        Timelocked
+                            { chainHash = Bytes.fromHexUnchecked quicknetChainHashHex
+                            , round = Tlock.roundForDeadline deadline
+                            , paddingSize = padding
+                            }
+                    )
+                    (validatePositiveInt "Reveal delay must be a positive number of minutes" form.revealMinutes)
+                    (validatePositiveInt "Padding size must be a positive number of bytes" form.paddingSize)
+
+            else
+                Ok Public
+
+        specVersion =
+            if form.timelocked then
+                2
+
+            else
+                1
     in
     Ok SurveyDefinition
-        |> resultApply (Ok 1)
+        |> resultApply (Ok specVersion)
         |> resultApply validateOwner
         |> resultApply validateTitle
         |> resultApply validateDescription
         |> resultApply validateQuestions
         |> resultApply validateRoles
         |> resultApply validateEndEpoch
+        |> resultApply validateBallotMode
 
 
 validateQuestion : QuestionForm -> Result String SurveyQuestion
@@ -1473,8 +1705,8 @@ viewOptionsDisplay options =
 -- ============================================================
 
 
-viewSurveyForm : SurveyForm -> Maybe String -> String -> (FormMsg -> msg) -> Html msg
-viewSurveyForm form validationError submitLabel toMsg =
+viewSurveyForm : Int -> SurveyForm -> Maybe String -> String -> (FormMsg -> msg) -> Html msg
+viewSurveyForm nowUnix form validationError submitLabel toMsg =
     div [ HA.class "survey-form" ]
         [ h3 [] [ text "Create Survey" ]
         , div [ HA.class "form-group" ]
@@ -1537,6 +1769,7 @@ viewSurveyForm form validationError submitLabel toMsg =
                     []
                 ]
             ]
+        , viewBallotModeForm nowUnix form toMsg
         , case validationError of
             Just err ->
                 p [ HA.class "error" ] [ text err ]
@@ -1548,6 +1781,62 @@ viewSurveyForm form validationError submitLabel toMsg =
             , HE.onClick (toMsg SubmitSurvey)
             ]
             [ text submitLabel ]
+        ]
+
+
+viewBallotModeForm : Int -> SurveyForm -> (FormMsg -> msg) -> Html msg
+viewBallotModeForm nowUnix form toMsg =
+    div [ HA.class "form-group" ]
+        [ label [ HA.class "role-toggle" ]
+            [ input
+                [ HA.type_ "checkbox"
+                , HA.checked form.timelocked
+                , HE.onCheck (toMsg << SetTimelocked)
+                ]
+                []
+            , text " Timelocked ballots (delayed reveal via Drand)"
+            ]
+        , if form.timelocked then
+            div []
+                [ p [ HA.class "meta" ]
+                    [ text "Answers are encrypted on submission and become decryptable by anyone once the chosen Drand round publishes. This is a delayed reveal, not permanent secrecy." ]
+                , div [ HA.class "form-row" ]
+                    [ div [ HA.class "form-group" ]
+                        [ label [] [ text "Reveal after (minutes from creation)" ]
+                        , input
+                            [ HA.type_ "number"
+                            , HA.value form.revealMinutes
+                            , HA.placeholder "e.g. 5"
+                            , HE.onInput (toMsg << SetRevealMinutes)
+                            ]
+                            []
+                        ]
+                    , div [ HA.class "form-group" ]
+                        [ label [] [ text "Padding size (bytes)" ]
+                        , input
+                            [ HA.type_ "number"
+                            , HA.value form.paddingSize
+                            , HA.placeholder "e.g. 64"
+                            , HE.onInput (toMsg << SetPaddingSize)
+                            ]
+                            []
+                        ]
+                    ]
+                , case String.toInt form.revealMinutes of
+                    Just minutes ->
+                        let
+                            round =
+                                Tlock.roundForDeadline (nowUnix + (minutes * 60))
+                        in
+                        p [ HA.class "meta" ]
+                            [ text ("Drand quicknet round: " ++ String.fromInt round) ]
+
+                    Nothing ->
+                        text ""
+                ]
+
+          else
+            text ""
         ]
 
 
@@ -1926,8 +2215,10 @@ stringToRole s =
 -- ============================================================
 
 
+{-| Build a public (plaintext) response metadatum from a filled form.
+-}
 buildResponseMetadatum :
-    { txHash : String, index : Int }
+    SurveyRef
     -> Credential
     -> ResponseForm
     -> Result String Metadatum
@@ -1937,30 +2228,96 @@ buildResponseMetadatum surveyRef responder form =
             Err "Please select a role"
 
         Just role ->
-            let
-                indexedAnswers =
-                    List.indexedMap Tuple.pair form.answers
-
-                encodedAnswers =
-                    List.filterMap encodeAnswerForm indexedAnswers
-            in
-            if List.isEmpty encodedAnswers then
-                Err "Please answer at least one question"
-
-            else
-                Ok
-                    (List
-                        [ metaInt 1
-                        , List
-                            [ List
-                                [ List [ metaBytes (Bytes.fromHexUnchecked surveyRef.txHash), metaInt surveyRef.index ]
-                                , metaInt (roleToInt role)
-                                , credentialToMeta responder
-                                , List encodedAnswers
-                                ]
-                            ]
-                        ]
+            encodeResponseAnswers form
+                |> Result.map
+                    (\encodedAnswers ->
+                        responseEnvelope surveyRef role responder (List encodedAnswers)
                     )
+
+
+{-| Encode the non-empty answer items from a form (role-independent).
+-}
+encodeResponseAnswers : ResponseForm -> Result String (List Metadatum)
+encodeResponseAnswers form =
+    let
+        encoded =
+            List.indexedMap Tuple.pair form.answers
+                |> List.filterMap encodeAnswerForm
+    in
+    if List.isEmpty encoded then
+        Err "Please answer at least one question"
+
+    else
+        Ok encoded
+
+
+{-| Wrap encoded answers (plaintext list or ciphertext byte chunks) into the
+CIP-179 response envelope `[1, [[ [tx,idx], role, cred, answers ]]]`.
+-}
+responseEnvelope : SurveyRef -> Role -> Credential -> Metadatum -> Metadatum
+responseEnvelope surveyRef role responder answersMeta =
+    List
+        [ metaInt 1
+        , List
+            [ List
+                [ List [ metaBytes (Bytes.fromHexUnchecked surveyRef.txHash), metaInt surveyRef.index ]
+                , metaInt (roleToInt role)
+                , credentialToMeta responder
+                , answersMeta
+                ]
+            ]
+        ]
+
+
+{-| CBOR-encode the answer list and zero-pad it up to `paddingSize` bytes, ready
+for `tlock` encryption. Returns lowercase hex. Larger-than-`paddingSize` answer
+sets are not truncated (they simply yield a longer ciphertext).
+-}
+plaintextHexForAnswers : Int -> List Metadatum -> String
+plaintextHexForAnswers paddingSize encodedAnswers =
+    let
+        cbor =
+            Bytes.fromBytes (Cbor.Encode.encode (Metadatum.toCbor (List encodedAnswers)))
+
+        padNeeded =
+            Basics.max 0 (paddingSize - Bytes.width cbor)
+
+        padding =
+            Bytes.fromU8 (List.repeat padNeeded 0)
+    in
+    Bytes.toHex (Bytes.concat cbor padding)
+
+
+{-| Build a timelocked response metadatum, embedding the ciphertext (the
+armor-stripped age payload) as a list of ≤64-byte byte chunks.
+-}
+buildTimelockedResponseMetadatum : SurveyRef -> Role -> Credential -> Bytes Any -> Metadatum
+buildTimelockedResponseMetadatum surveyRef role responder ciphertext =
+    responseEnvelope surveyRef
+        role
+        responder
+        (List (List.map metaBytes (Bytes.chunksOf 64 ciphertext)))
+
+
+{-| Decode the answer items from a decrypted, zero-padded CBOR plaintext (hex).
+Trailing padding is ignored: the CBOR array self-delimits.
+-}
+decodeAnswersFromPlaintextHex : String -> Result String (List AnswerItem)
+decodeAnswersFromPlaintextHex hex =
+    case Bytes.fromHex hex of
+        Nothing ->
+            Err "Invalid plaintext hex"
+
+        Just b ->
+            case Cbor.Decode.decode Metadatum.fromCbor (Bytes.toBytes b) of
+                Just (List items) ->
+                    traverseResults decodeAnswerItem items
+
+                Just _ ->
+                    Err "Decrypted CBOR is not an answer array"
+
+                Nothing ->
+                    Err "Failed to CBOR-decode the decrypted ballot"
 
 
 buildCancellationMetadatum : SurveyRef -> Metadatum
@@ -2221,16 +2578,13 @@ viewNumericInput toMsg qIdx value constraints =
 -- ============================================================
 
 
-viewResponseCard : Maybe SurveyDefinition -> SurveyResponse -> Html msg
-viewResponseCard maybeDef response =
-    div [ HA.class "survey-card" ]
-        [ p [ HA.class "meta" ]
-            [ text ("Responder: " ++ credentialToHex response.responder) ]
-        , p [ HA.class "meta" ]
-            [ text ("Role: " ++ roleToString response.role) ]
-        , div [ HA.class "survey-questions" ]
-            (List.map (viewAnswerItemDisplay maybeDef) response.answers)
-        ]
+{-| Render a list of decoded answer items (public answers, or a timelocked
+ballot after it has been revealed and decrypted).
+-}
+viewAnswerItems : Maybe SurveyDefinition -> List AnswerItem -> Html msg
+viewAnswerItems maybeDef items =
+    div [ HA.class "survey-questions" ]
+        (List.map (viewAnswerItemDisplay maybeDef) items)
 
 
 viewAnswerItemDisplay : Maybe SurveyDefinition -> AnswerItem -> Html msg

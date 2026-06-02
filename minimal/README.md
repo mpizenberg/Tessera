@@ -7,7 +7,7 @@ This is a stripped down example from the CF voting app to something dedicated to
 Compile the Elm source and serve the `static/` directory:
 
 ```sh
-elm-cardano make src/Main.elm --debug --output=static/main.js
+elm-cardano make src/Main.elm --debug --output static/main.js
 # Then serve static/ with any HTTP server, for example:
 python -m http.server 3000 --directory static
 ```
