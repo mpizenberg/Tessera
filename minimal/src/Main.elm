@@ -765,7 +765,7 @@ view model =
                 viewInvalidLink msg
 
             Focus ref ->
-                viewKioskStub ref
+                viewKiosk model ref
         , viewErrors model.errors
         ]
 
@@ -800,15 +800,53 @@ viewInvalidLink msg =
         ]
 
 
-{-| Step 1 stub: confirms routing resolved a survey ref. Replaced in step 2 by
-the real single-survey detail/fill/stats page.
+{-| Single-survey ("kiosk") page: resolves the focused ref against the loaded
+on-chain surveys and renders that one survey. Fill form, responses, and stats are
+layered on in later steps.
 -}
-viewKioskStub : Survey.SurveyRef -> Html Msg
-viewKioskStub ref =
+viewKiosk : Model -> Survey.SurveyRef -> Html Msg
+viewKiosk model ref =
+    case model.onchainSurveys of
+        NotAsked ->
+            p [ HA.class "loading" ] [ text "Loading survey..." ]
+
+        Loading ->
+            p [ HA.class "loading" ] [ text "Loading survey..." ]
+
+        Failure _ ->
+            p [ HA.class "error" ] [ text "Failed to load surveys from chain." ]
+
+        Success surveys ->
+            case List.head (List.filter (\s -> s.txHash == ref.txHash && s.index == ref.index) surveys) of
+                Nothing ->
+                    div [ HA.class "error" ]
+                        [ h3 [] [ text "Survey not found" ]
+                        , p [] [ text ("No on-chain survey matches " ++ ref.txHash ++ " [" ++ String.fromInt ref.index ++ "].") ]
+                        ]
+
+                Just survey ->
+                    viewKioskSurvey model survey
+
+
+viewKioskSurvey : Model -> OnchainSurvey -> Html Msg
+viewKioskSurvey model survey =
+    let
+        isCancelled =
+            List.any (\ref -> ref.txHash == survey.txHash && ref.index == survey.index)
+                model.onchainCancellations
+    in
     div []
-        [ h3 [] [ text "Survey (kiosk mode)" ]
+        [ if isCancelled then
+            div [ HA.class "error", HA.style "margin-bottom" "1rem" ]
+                [ span [ HA.class "badge", HA.style "background" "#fee2e2", HA.style "color" "#b91c1c" ] [ text "Cancelled" ]
+                , span [ HA.style "margin-left" "0.5rem" ] [ text "This survey has been cancelled by its owner." ]
+                ]
+
+          else
+            text ""
+        , Survey.viewSurvey survey.definition
         , p [ HA.class "meta" ]
-            [ text ("Focused survey: " ++ ref.txHash ++ " [" ++ String.fromInt ref.index ++ "]") ]
+            [ text ("Tx: " ++ survey.txHash ++ " [" ++ String.fromInt survey.index ++ "]") ]
         ]
 
 
