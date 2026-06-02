@@ -1,4 +1,4 @@
-module Api exposing (ActiveProposal, ProtocolParams, SurveyTxMetadata, loadProtocolParams, loadSurveyMetadata, loadSurveyTxHashes, queryEpoch)
+module Api exposing (ActiveProposal, ProtocolParams, SurveyTxMetadata, SurveyTxSlot, loadProtocolParams, loadSurveyMetadata, loadSurveyTxHashes, queryEpoch)
 
 {-| Minimal API module for fetching Cardano governance data from Koios.
 -}
@@ -111,7 +111,16 @@ type alias ActiveProposal =
 -- CIP-179 Surveys
 
 
-loadSurveyTxHashes : NetworkId -> (Result Http.Error (List String) -> msg) -> Cmd msg
+{-| A survey-bearing transaction with its absolute slot, used to resolve
+"latest response" deterministically (slot is the spec's primary chain-order key).
+-}
+type alias SurveyTxSlot =
+    { txHash : String
+    , absoluteSlot : Int
+    }
+
+
+loadSurveyTxHashes : NetworkId -> (Result Http.Error (List SurveyTxSlot) -> msg) -> Cmd msg
 loadSurveyTxHashes networkId toMsg =
     Http.request
         { method = "GET"
@@ -120,10 +129,17 @@ loadSurveyTxHashes networkId toMsg =
         , body = Http.emptyBody
         , expect =
             Http.expectJson toMsg
-                (JD.list (JD.field "tx_hash" JD.string))
+                (JD.list surveyTxSlotDecoder)
         , timeout = Nothing
         , tracker = Nothing
         }
+
+
+surveyTxSlotDecoder : Decoder SurveyTxSlot
+surveyTxSlotDecoder =
+    JD.map2 SurveyTxSlot
+        (JD.field "tx_hash" JD.string)
+        (JD.field "absolute_slot" JD.int)
 
 
 type alias SurveyTxMetadata =

@@ -125,6 +125,7 @@ type alias Model =
     , onchainSurveys : WebData (List OnchainSurvey)
     , onchainResponses : List OnchainResponse
     , onchainCancellations : List Survey.SurveyRef
+    , surveyTxSlot : Dict String Int
     , walletUtxos : Maybe (Utxo.RefDict Output)
     , submissionStatus : SubmissionStatus
     , responseTarget : Maybe OnchainSurvey
@@ -164,6 +165,7 @@ init flags =
             , onchainSurveys = NotAsked
             , onchainResponses = []
             , onchainCancellations = []
+            , surveyTxSlot = Dict.empty
             , walletUtxos = Nothing
             , submissionStatus = NotSubmitting
             , responseTarget = Nothing
@@ -254,7 +256,7 @@ type Msg
     | ResponseFormMsg Survey.ResponseFormMsg
     | CancelSurvey OnchainSurvey
     | ConfirmCancelSurvey
-    | GotSurveyTxHashes (Result Http.Error (List String))
+    | GotSurveyTxHashes (Result Http.Error (List Api.SurveyTxSlot))
     | GotSurveyMetadata (Result Http.Error (List Api.SurveyTxMetadata))
     | Tick Time.Posix
     | TimelockEncrypted (ConcurrentTask.Response String { ciphertextHex : String })
@@ -472,12 +474,21 @@ update msg model =
                 Err err ->
                     ( { model | onchainSurveys = Failure err }, Cmd.none )
 
-                Ok txHashes ->
+                Ok txSlots ->
+                    let
+                        -- Keep each tx's absolute slot to resolve "latest response"
+                        -- deterministically, independent of /tx_metadata's row order.
+                        txSlot =
+                            List.map (\r -> ( r.txHash, r.absoluteSlot )) txSlots |> Dict.fromList
+
+                        txHashes =
+                            List.map .txHash txSlots
+                    in
                     if List.isEmpty txHashes then
-                        ( { model | onchainSurveys = Success [] }, Cmd.none )
+                        ( { model | onchainSurveys = Success [], surveyTxSlot = txSlot }, Cmd.none )
 
                     else
-                        ( model, Api.loadSurveyMetadata model.networkId txHashes GotSurveyMetadata )
+                        ( { model | surveyTxSlot = txSlot }, Api.loadSurveyMetadata model.networkId txHashes GotSurveyMetadata )
 
         GotSurveyMetadata result ->
             case result of
@@ -486,9 +497,6 @@ update msg model =
 
                 Ok txMetaList ->
                     let
-                        currentEpoch =
-                            RemoteData.withDefault 0 model.epoch
-
                         parsed =
                             List.filterMap
                                 (\txMeta ->
@@ -519,9 +527,6 @@ update msg model =
                                             []
                                 )
                                 parsed
-
-                        validSurveys =
-                            List.filter (\s -> s.definition.endEpoch >= currentEpoch) surveys
 
                         responses =
                             List.concatMap
@@ -554,7 +559,7 @@ update msg model =
                         ( focusTarget, focusForm ) =
                             case ( model.focus, model.responseTarget ) of
                                 ( Focus ref, Nothing ) ->
-                                    case List.head (List.filter (\s -> s.txHash == ref.txHash && s.index == ref.index) validSurveys) of
+                                    case List.head (List.filter (\s -> s.txHash == ref.txHash && s.index == ref.index) surveys) of
                                         Just survey ->
                                             ( Just survey, Survey.initResponseForm survey.definition )
 
@@ -565,7 +570,7 @@ update msg model =
                                     ( model.responseTarget, model.responseForm )
                     in
                     ( { model
-                        | onchainSurveys = Success validSurveys
+                        | onchainSurveys = Success surveys
                         , onchainResponses = responses
                         , onchainCancellations = cancellations
                         , responseTarget = focusTarget
@@ -851,6 +856,16 @@ viewKioskSurvey model survey =
         isCancelled =
             List.any (\ref -> ref.txHash == survey.txHash && ref.index == survey.index)
                 model.onchainCancellations
+
+        -- Open while current epoch is at or before endEpoch (inclusive cutoff).
+        -- If the epoch hasn't loaded, don't block responding; on-chain rules apply.
+        isOpen =
+            case RemoteData.toMaybe model.epoch of
+                Just currentEpoch ->
+                    currentEpoch <= survey.definition.endEpoch
+
+                Nothing ->
+                    True
     in
     div []
         [ if isCancelled then
@@ -864,10 +879,15 @@ viewKioskSurvey model survey =
         , p [ HA.class "meta" ]
             [ text ("Tx: " ++ survey.txHash ++ " [" ++ String.fromInt survey.index ++ "]") ]
         , if isCancelled then
+            text ""
+
+          else
+            viewKioskStats model survey
+        , if isCancelled then
             -- No response form when cancelled, so show the definition on its own.
             Survey.viewSurvey survey.definition
 
-          else
+          else if isOpen then
             div []
                 [ Survey.viewResponseForm
                     survey.definition
@@ -877,6 +897,12 @@ viewKioskSurvey model survey =
                     ResponseFormMsg
                 , viewSubmissionStatus model.submissionStatus
                 ]
+
+          else
+            div []
+                [ Survey.viewSurvey survey.definition
+                , p [ HA.class "meta" ] [ text "This survey is closed; responses are no longer accepted." ]
+                ]
         , if isCancelled then
             text ""
 
@@ -885,13 +911,131 @@ viewKioskSurvey model survey =
         ]
 
 
+{-| Statistics panel for the focused survey. Raw, unweighted counts over the
+deduplicated valid responses (latest per (role, credential)).
+-}
+viewKioskStats : Model -> OnchainSurvey -> Html Msg
+viewKioskStats model survey =
+    let
+        deduped =
+            dedupLatestResponses model.surveyTxSlot (responsesForSurvey survey model.onchainResponses)
+    in
+    div [ HA.class "survey-card", HA.style "margin-top" "1rem" ]
+        [ h3 [] [ text "Statistics" ]
+        , viewStatusLine model survey
+        , p [ HA.class "meta" ]
+            [ text (String.fromInt (List.length deduped) ++ " unique participant(s)") ]
+        , viewParticipationByRole deduped
+        , p [ HA.class "meta", HA.style "font-style" "italic" ]
+            [ text "Raw counts — not the official weighted CIP-179 tally." ]
+        ]
+
+
+viewStatusLine : Model -> OnchainSurvey -> Html Msg
+viewStatusLine model survey =
+    let
+        endEpoch =
+            survey.definition.endEpoch
+    in
+    case RemoteData.toMaybe model.epoch of
+        Nothing ->
+            p [ HA.class "meta" ] [ text "Status: unknown (epoch not loaded)" ]
+
+        Just currentEpoch ->
+            if currentEpoch <= endEpoch then
+                p [ HA.class "meta" ]
+                    [ text
+                        ("Status: Open — ends at epoch "
+                            ++ String.fromInt endEpoch
+                            ++ " ("
+                            ++ String.fromInt (endEpoch - currentEpoch)
+                            ++ " epoch(s) remaining)"
+                        )
+                    ]
+
+            else
+                p [ HA.class "meta" ]
+                    [ text ("Status: Closed — ended at epoch " ++ String.fromInt endEpoch) ]
+
+
+viewParticipationByRole : List OnchainResponse -> Html Msg
+viewParticipationByRole responses =
+    let
+        counts =
+            List.foldl
+                (\r acc ->
+                    Dict.update (Survey.roleToString r.response.role)
+                        (\m -> Just (1 + Maybe.withDefault 0 m))
+                        acc
+                )
+                Dict.empty
+                responses
+                |> Dict.toList
+    in
+    if List.isEmpty counts then
+        text ""
+
+    else
+        div []
+            (List.map
+                (\( role, n ) -> p [ HA.class "meta" ] [ text ("  " ++ role ++ ": " ++ String.fromInt n) ])
+                counts
+            )
+
+
+responsesForSurvey : OnchainSurvey -> List OnchainResponse -> List OnchainResponse
+responsesForSurvey survey responses =
+    List.filter
+        (\r -> r.response.surveyRef.txHash == survey.txHash && r.response.surveyRef.index == survey.index)
+        responses
+
+
+{-| Keep the latest response per identity tuple `(role, credential)` for one
+survey. Order-independent: latest is resolved from each tx's `absolute_slot`,
+tie-broken by `ballotIndex` (responseIndex). This does not depend on the
+unspecified row order of the `/tx_metadata` response. The spec's full chain order
+is `(slot, txIndexInBlock, responseIndex)`; we don't fetch `txIndexInBlock`, so
+two responses in the same slot from different txs are only tie-broken weakly.
+-}
+dedupLatestResponses : Dict String Int -> List OnchainResponse -> List OnchainResponse
+dedupLatestResponses txSlot responses =
+    let
+        key r =
+            Survey.roleToString r.response.role ++ "|" ++ Survey.credentialToHex r.response.responder
+
+        -- Larger tuple = more recent: higher absolute slot, then higher ballotIndex.
+        recency r =
+            ( Dict.get r.txHash txSlot |> Maybe.withDefault 0, r.ballotIndex )
+    in
+    List.foldl
+        (\r acc ->
+            Dict.update (key r)
+                (\existing ->
+                    case existing of
+                        Just e ->
+                            if recency r > recency e then
+                                Just r
+
+                            else
+                                Just e
+
+                        Nothing ->
+                            Just r
+                )
+                acc
+        )
+        Dict.empty
+        responses
+        |> Dict.values
+
+
 viewKioskResponses : Model -> OnchainSurvey -> Html Msg
 viewKioskResponses model survey =
     let
+        -- Latest response per (role, credential); superseded re-votes are dropped,
+        -- so this matches the participant count in the stats panel.
         responses =
-            List.filter
-                (\r -> r.response.surveyRef.txHash == survey.txHash && r.response.surveyRef.index == survey.index)
-                model.onchainResponses
+            dedupLatestResponses model.surveyTxSlot (responsesForSurvey survey model.onchainResponses)
     in
     div [ HA.style "margin-top" "2rem" ]
         [ h3 [] [ text "Responses" ]
@@ -1008,6 +1152,9 @@ viewSurveysTab model =
         isCancelled survey =
             List.any (\ref -> ref.txHash == survey.txHash && ref.index == survey.index)
                 model.onchainCancellations
+
+        currentEpoch =
+            RemoteData.withDefault 0 model.epoch
     in
     div []
         [ case model.onchainSurveys of
@@ -1020,8 +1167,11 @@ viewSurveysTab model =
             Failure _ ->
                 p [ HA.class "error" ] [ text "Failed to load surveys from chain" ]
 
-            Success surveys ->
+            Success allSurveys ->
                 let
+                    surveys =
+                        List.filter (\s -> s.definition.endEpoch >= currentEpoch) allSurveys
+
                     ( cancelledSurveys, activeSurveys ) =
                         List.partition isCancelled surveys
                 in
