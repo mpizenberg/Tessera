@@ -29,6 +29,7 @@ import Natural as N
 import RemoteData exposing (RemoteData(..), WebData)
 import Survey
 import Survey.Codec as Codec
+import Survey.Form as Form
 import Survey.Types as ST
 import Task
 import Time
@@ -122,7 +123,7 @@ type alias Model =
     , taskPool : ConcurrentTask.Pool Msg
     , errors : List String
     , activeTab : Tab
-    , surveyForm : Survey.SurveyForm
+    , surveyForm : Form.SurveyForm
     , surveyFormError : Maybe String
     , createdSurveys : List ST.SurveyDefinition
     , onchainSurveys : WebData (List OnchainSurvey)
@@ -132,7 +133,7 @@ type alias Model =
     , walletUtxos : Maybe (Utxo.RefDict Output)
     , submissionStatus : SubmissionStatus
     , responseTarget : Maybe OnchainSurvey
-    , responseForm : Survey.ResponseForm
+    , responseForm : Form.ResponseForm
     , responseFormError : Maybe String
     , cancelTarget : Maybe OnchainSurvey
     , currentTime : Int
@@ -162,7 +163,7 @@ init flags =
             , taskPool = ConcurrentTask.pool
             , errors = []
             , activeTab = SurveysTab
-            , surveyForm = Survey.emptyForm
+            , surveyForm = Form.emptyForm
             , surveyFormError = Nothing
             , createdSurveys = []
             , onchainSurveys = NotAsked
@@ -254,9 +255,9 @@ type Msg
     | DisconnectWalletClicked
     | OnTaskProgress ( ConcurrentTask.Pool Msg, Cmd Msg )
     | TabClicked Tab
-    | SurveyFormMsg Survey.FormMsg
+    | SurveyFormMsg Form.FormMsg
     | RespondToSurvey OnchainSurvey
-    | ResponseFormMsg Survey.ResponseFormMsg
+    | ResponseFormMsg Form.ResponseFormMsg
     | CancelSurvey OnchainSurvey
     | ConfirmCancelSurvey
     | GotSurveyTxHashes (Result Http.Error (List Api.SurveyTxSlot))
@@ -428,12 +429,12 @@ update msg model =
 
         SurveyFormMsg formMsg ->
             case formMsg of
-                Survey.SubmitSurvey ->
+                Form.SubmitSurvey ->
                     submitSurvey model
 
                 _ ->
                     ( { model
-                        | surveyForm = Survey.updateForm formMsg model.surveyForm
+                        | surveyForm = Form.updateForm formMsg model.surveyForm
                         , submissionStatus =
                             case model.submissionStatus of
                                 SubmissionError _ ->
@@ -448,7 +449,7 @@ update msg model =
         RespondToSurvey survey ->
             ( { model
                 | responseTarget = Just survey
-                , responseForm = Survey.initResponseForm survey.definition
+                , responseForm = Form.initResponseForm survey.definition
                 , responseFormError = Nothing
                 , submissionStatus = NotSubmitting
                 , activeTab = FillSurveyTab
@@ -472,12 +473,12 @@ update msg model =
 
         ResponseFormMsg formMsg ->
             case formMsg of
-                Survey.SubmitResponse ->
+                Form.SubmitResponse ->
                     submitResponse model
 
                 _ ->
                     ( { model
-                        | responseForm = Survey.updateResponseForm formMsg model.responseForm
+                        | responseForm = Form.updateResponseForm formMsg model.responseForm
                         , responseFormError = Nothing
                       }
                     , Cmd.none
@@ -575,7 +576,7 @@ update msg model =
                                 ( Focus ref, Nothing ) ->
                                     case List.head (List.filter (\s -> s.txHash == ref.txHash && s.index == ref.index) surveys) of
                                         Just survey ->
-                                            ( Just survey, Survey.initResponseForm survey.definition )
+                                            ( Just survey, Form.initResponseForm survey.definition )
 
                                         Nothing ->
                                             ( model.responseTarget, model.responseForm )
@@ -596,7 +597,7 @@ update msg model =
 
 submitSurvey : Model -> ( Model, Cmd Msg )
 submitSurvey model =
-    case Survey.formToDefinition model.currentTime model.surveyForm of
+    case Form.formToDefinition model.currentTime model.surveyForm of
         Err err ->
             ( { model | surveyFormError = Just err }, Cmd.none )
 
@@ -744,7 +745,7 @@ handleApiResponse apiResponse model =
                         , surveyForm =
                             case createdSurvey of
                                 Just _ ->
-                                    Survey.emptyForm
+                                    Form.emptyForm
 
                                 Nothing ->
                                     model.surveyForm
@@ -1639,7 +1640,7 @@ viewCreateSurveyTab model =
     div []
         [ Survey.viewSurveyForm model.currentTime model.surveyForm model.surveyFormError (submitButtonLabel "Connect wallet to submit" "Submit Survey On-Chain" model) SurveyFormMsg
         , viewSubmissionStatus model.submissionStatus
-        , case Survey.formToDefinition model.currentTime model.surveyForm of
+        , case Form.formToDefinition model.currentTime model.surveyForm of
             Ok def ->
                 div [ HA.class "metadatum-preview" ]
                     [ h3 [] [ text ("Preview: Metadatum (label " ++ String.fromInt ST.metadataLabel ++ ")") ]
@@ -1740,7 +1741,7 @@ submitResponse model =
                         Just cred ->
                             case target.definition.ballotMode of
                                 ST.Public ->
-                                    case Survey.buildResponseMetadatum { txHash = target.txHash, index = target.index } cred model.responseForm of
+                                    case Form.buildResponseMetadatum { txHash = target.txHash, index = target.index } cred model.responseForm of
                                         Err err ->
                                             ( { model | responseFormError = Just err }, Cmd.none )
 
@@ -1753,7 +1754,7 @@ submitResponse model =
                                             ( { model | responseFormError = Just "Please select a role" }, Cmd.none )
 
                                         Just _ ->
-                                            case Survey.encodeResponseAnswers model.responseForm of
+                                            case Form.encodeResponseAnswers model.responseForm of
                                                 Err err ->
                                                     ( { model | responseFormError = Just err }, Cmd.none )
 
