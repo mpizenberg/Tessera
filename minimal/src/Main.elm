@@ -77,6 +77,7 @@ type alias OnchainSurvey =
 
 type alias OnchainResponse =
     { txHash : String
+    , ballotIndex : Int
     , response : Survey.SurveyResponse
     }
 
@@ -451,8 +452,8 @@ update msg model =
                                 (\( txMeta, payload ) ->
                                     case payload of
                                         Survey.ParsedResponses resps ->
-                                            List.map
-                                                (\r -> { txHash = txMeta.txHash, response = r })
+                                            List.indexedMap
+                                                (\i r -> { txHash = txMeta.txHash, ballotIndex = i, response = r })
                                                 resps
 
                                         _ ->
@@ -1337,11 +1338,13 @@ viewResponse model maybeDef resp =
         ]
 
 
-{-| Unique key for a timelocked ballot's decryption state.
+{-| Unique key for a timelocked ballot's decryption state: the submitting Tx
+hash plus the ballot's position within that Tx's ballot list. (Responder
+credential is not unique — one Tx may carry ballots for several surveys.)
 -}
 ballotKey : OnchainResponse -> String
 ballotKey resp =
-    resp.txHash ++ "@" ++ Survey.credentialToHex resp.response.responder
+    resp.txHash ++ ":" ++ String.fromInt resp.ballotIndex
 
 
 viewTimelockedAnswers : Model -> Maybe Survey.SurveyDefinition -> OnchainResponse -> Bytes.Bytes Bytes.Any -> Html Msg
