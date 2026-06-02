@@ -1,7 +1,10 @@
 module Survey.Types exposing
     ( AnswerItem(..)
     , BallotMode(..)
+    , BallotState(..)
     , NumericConstraints
+    , OnchainResponse
+    , OnchainSurvey
     , ParsedPayload(..)
     , ResponseAnswers(..)
     , Role(..)
@@ -165,6 +168,28 @@ type ParsedPayload
     = ParsedDefinitions (List SurveyDefinition)
     | ParsedResponses (List SurveyResponse)
     | ParsedCancellations (List SurveyRef)
+
+
+type alias OnchainSurvey =
+    { txHash : String
+    , index : Int
+    , definition : SurveyDefinition
+    }
+
+
+type alias OnchainResponse =
+    { txHash : String
+    , ballotIndex : Int
+    , response : SurveyResponse
+    }
+
+
+{-| Per-ballot decryption state for timelocked responses, keyed by ballot key.
+-}
+type BallotState
+    = Decrypting
+    | Decrypted (List AnswerItem)
+    | DecryptError String
 
 
 

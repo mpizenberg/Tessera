@@ -1,4 +1,4 @@
-port module Main exposing (BallotState, Flags, Model, Msg, OnchainResponse, OnchainSurvey, SubmissionStatus, Tab, main)
+port module Main exposing (Flags, Model, Msg, SubmissionStatus, Tab, main)
 
 {-| Minimal Cardano governance app: initializes Cardano-related code
 and displays current proposals with their metadata.
@@ -29,7 +29,7 @@ import RemoteData exposing (RemoteData(..), WebData)
 import Route
 import Survey.Codec as Codec
 import Survey.Form as Form
-import Survey.Types as ST
+import Survey.Types as ST exposing (BallotState(..), OnchainResponse, OnchainSurvey)
 import Survey.View as View
 import Task
 import Time
@@ -71,28 +71,6 @@ type SubmissionStatus
     | WaitingForSubmission { tx : Transaction, createdSurvey : Maybe ST.SurveyDefinition }
     | Submitted { txId : String, createdSurvey : Maybe ST.SurveyDefinition }
     | SubmissionError String
-
-
-type alias OnchainSurvey =
-    { txHash : String
-    , index : Int
-    , definition : ST.SurveyDefinition
-    }
-
-
-type alias OnchainResponse =
-    { txHash : String
-    , ballotIndex : Int
-    , response : ST.SurveyResponse
-    }
-
-
-{-| Per-ballot decryption state for timelocked responses, keyed by ballot key.
--}
-type BallotState
-    = Decrypting
-    | Decrypted (List ST.AnswerItem)
-    | DecryptError String
 
 
 type alias Flags =
