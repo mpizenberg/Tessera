@@ -1,6 +1,6 @@
 module Survey exposing
     ( AnswerForm
-    , AnswerItem
+    , AnswerItem(..)
     , BallotMode(..)
     , FormMsg(..)
     , NumericConstraints

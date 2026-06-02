@@ -866,6 +866,9 @@ viewKioskSurvey model survey =
 
                 Nothing ->
                     True
+
+        deduped =
+            dedupLatestResponses model.surveyTxSlot (responsesForSurvey survey model.onchainResponses)
     in
     div []
         [ if isCancelled then
@@ -882,7 +885,7 @@ viewKioskSurvey model survey =
             text ""
 
           else
-            viewKioskStats model survey
+            viewKioskStats model survey deduped
         , if isCancelled then
             -- No response form when cancelled, so show the definition on its own.
             Survey.viewSurvey survey.definition
@@ -907,19 +910,20 @@ viewKioskSurvey model survey =
             text ""
 
           else
-            viewKioskResponses model survey
+            viewKioskResults model survey deduped
+        , if isCancelled then
+            text ""
+
+          else
+            viewKioskResponses model survey deduped
         ]
 
 
 {-| Statistics panel for the focused survey. Raw, unweighted counts over the
 deduplicated valid responses (latest per (role, credential)).
 -}
-viewKioskStats : Model -> OnchainSurvey -> Html Msg
-viewKioskStats model survey =
-    let
-        deduped =
-            dedupLatestResponses model.surveyTxSlot (responsesForSurvey survey model.onchainResponses)
-    in
+viewKioskStats : Model -> OnchainSurvey -> List OnchainResponse -> Html Msg
+viewKioskStats model survey deduped =
     div [ HA.class "survey-card", HA.style "margin-top" "1rem" ]
         [ h3 [] [ text "Statistics" ]
         , viewStatusLine model survey
@@ -993,6 +997,143 @@ viewRevealProgress model survey deduped =
                         )
                     ]
                 ]
+
+
+{-| Per-question results over the deduplicated responses. Only choice questions
+(single + multi) are aggregated; ranking/numeric/custom show a note. Timelocked
+answers are included only once revealed (decrypted in this session).
+-}
+viewKioskResults : Model -> OnchainSurvey -> List OnchainResponse -> Html Msg
+viewKioskResults model survey deduped =
+    let
+        items =
+            List.concatMap (answerItemsOf model) deduped
+    in
+    div [ HA.class "survey-card", HA.style "margin-top" "1rem" ]
+        [ h3 [] [ text "Results" ]
+        , div [] (List.indexedMap (viewQuestionResult items) survey.definition.questions)
+        ]
+
+
+{-| The flat answer items for one response: public answers directly, or a
+revealed (decrypted) timelocked ballot. Unrevealed timelocked ballots yield none.
+-}
+answerItemsOf : Model -> OnchainResponse -> List Survey.AnswerItem
+answerItemsOf model resp =
+    case resp.response.answers of
+        Survey.PublicAnswers answerItems ->
+            answerItems
+
+        Survey.TimelockedAnswers _ ->
+            case Dict.get (ballotKey resp) model.decryptedBallots of
+                Just (Decrypted answerItems) ->
+                    answerItems
+
+                _ ->
+                    []
+
+
+viewQuestionResult : List Survey.AnswerItem -> Int -> Survey.SurveyQuestion -> Html Msg
+viewQuestionResult items qIdx question =
+    case question of
+        Survey.SingleChoice { prompt, options } ->
+            viewChoiceTally prompt options (singleChoiceCounts qIdx options items)
+
+        Survey.MultiSelect { prompt, options } ->
+            viewChoiceTally prompt options (multiSelectCounts qIdx options items)
+
+        Survey.Ranking { prompt } ->
+            viewNoAggregation prompt "Ranking"
+
+        Survey.NumericRange { prompt } ->
+            viewNoAggregation prompt "Numeric"
+
+        Survey.Custom { prompt } ->
+            viewNoAggregation prompt "Custom"
+
+
+singleChoiceCounts : Int -> List String -> List Survey.AnswerItem -> List Int
+singleChoiceCounts qIdx options items =
+    let
+        selected =
+            List.filterMap
+                (\it ->
+                    case it of
+                        Survey.AnswerSingleChoice q o ->
+                            if q == qIdx then
+                                Just o
+
+                            else
+                                Nothing
+
+                        _ ->
+                            Nothing
+                )
+                items
+    in
+    List.indexedMap (\optIdx _ -> List.length (List.filter ((==) optIdx) selected)) options
+
+
+multiSelectCounts : Int -> List String -> List Survey.AnswerItem -> List Int
+multiSelectCounts qIdx options items =
+    let
+        selected =
+            List.concatMap
+                (\it ->
+                    case it of
+                        Survey.AnswerMultiSelect q os ->
+                            if q == qIdx then
+                                os
+
+                            else
+                                []
+
+                        _ ->
+                            []
+                )
+                items
+    in
+    List.indexedMap (\optIdx _ -> List.length (List.filter ((==) optIdx) selected)) options
+
+
+viewChoiceTally : String -> List String -> List Int -> Html Msg
+viewChoiceTally prompt options counts =
+    let
+        total =
+            List.sum counts
+
+        pct c =
+            if total == 0 then
+                0
+
+            else
+                round (100 * toFloat c / toFloat total)
+    in
+    div [ HA.style "margin-bottom" "0.75rem" ]
+        [ p [] [ text prompt ]
+        , if total == 0 then
+            p [ HA.class "meta" ] [ text "No answers yet." ]
+
+          else
+            div []
+                (List.map2
+                    (\opt c ->
+                        p [ HA.class "meta" ]
+                            [ text ("  " ++ opt ++ ": " ++ String.fromInt c ++ " (" ++ String.fromInt (pct c) ++ "%)") ]
+                    )
+                    options
+                    counts
+                )
+        ]
+
+
+viewNoAggregation : String -> String -> Html Msg
+viewNoAggregation prompt label =
+    div [ HA.style "margin-bottom" "0.75rem" ]
+        [ p [] [ text prompt ]
+        , p [ HA.class "meta", HA.style "font-style" "italic" ]
+            [ text ("(" ++ label ++ " — no aggregation in this demo)") ]
+        ]
 
 
 viewStatusLine : Model -> OnchainSurvey -> Html Msg
@@ -1093,24 +1234,18 @@ dedupLatestResponses txSlot responses =
         |> Dict.values
 
 
-viewKioskResponses : Model -> OnchainSurvey -> Html Msg
-viewKioskResponses model survey =
-    let
-        -- Latest response per (role, credential); superseded re-votes are dropped,
-        -- so this matches the participant count in the stats panel.
-        responses =
-            dedupLatestResponses model.surveyTxSlot (responsesForSurvey survey model.onchainResponses)
-    in
+viewKioskResponses : Model -> OnchainSurvey -> List OnchainResponse -> Html Msg
+viewKioskResponses model survey deduped =
     div [ HA.style "margin-top" "2rem" ]
         [ h3 [] [ text "Responses" ]
-        , if List.isEmpty responses then
+        , if List.isEmpty deduped then
             p [ HA.class "meta" ] [ text "No responses on-chain yet." ]
 
           else
             div []
                 [ p [ HA.class "meta" ]
-                    [ text (String.fromInt (List.length responses) ++ " response(s)") ]
-                , div [] (List.map (viewResponse model (Just survey.definition)) responses)
+                    [ text (String.fromInt (List.length deduped) ++ " response(s)") ]
+                , div [] (List.map (viewResponse model (Just survey.definition)) deduped)
                 ]
         ]
 
