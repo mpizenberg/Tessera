@@ -926,9 +926,73 @@ viewKioskStats model survey =
         , p [ HA.class "meta" ]
             [ text (String.fromInt (List.length deduped) ++ " unique participant(s)") ]
         , viewParticipationByRole deduped
+        , viewRevealProgress model survey deduped
         , p [ HA.class "meta", HA.style "font-style" "italic" ]
             [ text "Raw counts — not the official weighted CIP-179 tally." ]
         ]
+
+
+{-| Timelocked-only reveal stats: the Drand round, whether it has unlocked, and
+how many of the (deduplicated) ballots are revealed vs awaiting reveal. Renders
+nothing for public surveys.
+-}
+viewRevealProgress : Model -> OnchainSurvey -> List OnchainResponse -> Html Msg
+viewRevealProgress model survey deduped =
+    case survey.definition.ballotMode of
+        Survey.Public ->
+            text ""
+
+        Survey.Timelocked cfg ->
+            let
+                revealTime =
+                    Tlock.revealTimeOf cfg.round
+
+                isUnlocked =
+                    model.currentTime >= revealTime
+
+                total =
+                    List.length deduped
+
+                revealedCount =
+                    List.length
+                        (List.filter
+                            (\r ->
+                                case Dict.get (ballotKey r) model.decryptedBallots of
+                                    Just (Decrypted _) ->
+                                        True
+
+                                    _ ->
+                                        False
+                            )
+                            deduped
+                        )
+
+                pending =
+                    total - revealedCount
+            in
+            div [ HA.style "margin-top" "0.5rem" ]
+                [ p [ HA.class "meta" ]
+                    [ text ("Ballot mode: timelocked (Drand round " ++ String.fromInt cfg.round ++ ")") ]
+                , if isUnlocked then
+                    p [ HA.class "meta" ] [ text "Reveal round reached — ballots can be decrypted now." ]
+
+                  else
+                    p [ HA.class "meta" ]
+                        [ text ("Locked — reveal in ~" ++ String.fromInt (Basics.max 0 (revealTime - model.currentTime)) ++ "s.") ]
+                , p [ HA.class "meta" ]
+                    [ text ("  Revealed: " ++ String.fromInt revealedCount ++ " / " ++ String.fromInt total) ]
+                , p [ HA.class "meta" ]
+                    [ text
+                        ((if isUnlocked then
+                            "  Decryptable now: "
+
+                          else
+                            "  Locked (awaiting reveal round): "
+                         )
+                            ++ String.fromInt pending
+                        )
+                    ]
+                ]
 
 
 viewStatusLine : Model -> OnchainSurvey -> Html Msg
