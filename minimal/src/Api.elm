@@ -124,7 +124,7 @@ loadTxHashesByLabel : NetworkId -> Int -> (Result Http.Error (List SurveyTxSlot)
 loadTxHashesByLabel networkId label toMsg =
     Http.request
         { method = "GET"
-        , url = koiosUrl networkId ++ "/tx_by_metalabel?_label=" ++ String.fromInt label ++ "&select=tx_hash,absolute_slot&order=absolute_slot.desc&limit=100"
+        , url = koiosUrl networkId ++ "/tx_by_metalabel?_label=" ++ String.fromInt label ++ "&select=tx_hash,absolute_slot&order=absolute_slot.desc&limit=1000"
         , headers = [ Http.header "Authorization" ("Bearer " ++ koiosApiToken) ]
         , body = Http.emptyBody
         , expect =
