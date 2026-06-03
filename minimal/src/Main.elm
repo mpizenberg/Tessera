@@ -54,6 +54,9 @@ port sendTask : Value -> Cmd msg
 port receiveTask : (Value -> msg) -> Sub msg
 
 
+port copyToClipboard : String -> Cmd msg
+
+
 
 -- MODEL
 
@@ -85,6 +88,8 @@ type alias Flags =
 type alias Model =
     { networkId : NetworkId
     , focus : Route.SurveyFocus
+    , baseUrl : String
+    , copiedKioskLink : Maybe String
     , db : Value
     , protocolParams : Maybe Api.ProtocolParams
     , epoch : WebData Int
@@ -126,6 +131,8 @@ init flags =
         model =
             { networkId = networkId
             , focus = Route.parseFocus flags.url
+            , baseUrl = baseUrlOf flags.url
+            , copiedKioskLink = Nothing
             , db = flags.db
             , protocolParams = Nothing
             , epoch = NotAsked
@@ -161,6 +168,25 @@ init flags =
         , Task.perform Tick Time.now
         ]
     )
+
+
+{-| Page URL stripped of any fragment and query string, used as the base for
+shareable kiosk links.
+-}
+baseUrlOf : String -> String
+baseUrlOf rawUrl =
+    let
+        before sep s =
+            String.split sep s |> List.head |> Maybe.withDefault s
+    in
+    rawUrl |> before "#" |> before "?"
+
+
+{-| Shareable single-survey ("kiosk") link for a survey, matching `Route.parseFocus`.
+-}
+kioskUrl : String -> { a | txHash : String, index : Int } -> String
+kioskUrl base ref =
+    base ++ "?survey=" ++ ref.txHash ++ ":" ++ String.fromInt ref.index
 
 
 {-| Cache/lookup key for a survey ref (also the responseLabel input shape).
@@ -285,6 +311,7 @@ type Msg
     | GotRoundBeacon Int (List ( String, String )) (ConcurrentTask.Response String { beaconJson : String })
     | BallotDecrypted String (ConcurrentTask.Response String { plaintextHex : String })
     | ExportCsv OnchainSurvey
+    | CopyKioskLink String
 
 
 
@@ -467,6 +494,9 @@ update msg model =
                     "survey-" ++ survey.txHash ++ "-" ++ String.fromInt survey.index ++ ".csv"
             in
             ( model, File.Download.string filename "text/csv" (Csv.buildCsv (revealedItems model) survey deduped) )
+
+        CopyKioskLink url ->
+            ( { model | copiedKioskLink = Just url }, copyToClipboard url )
 
         TabClicked tab ->
             ( { model | activeTab = tab }, Cmd.none )
@@ -1453,7 +1483,7 @@ viewSurveysTab model =
                                 [ p [ HA.class "meta" ]
                                     [ text (String.fromInt (List.length activeSurveys) ++ " active survey(s) on-chain") ]
                                 , div [ HA.class "proposals" ]
-                                    (List.map viewOnchainSurvey activeSurveys)
+                                    (List.map (viewOnchainSurvey model) activeSurveys)
                                 ]
 
                           else
@@ -1471,18 +1501,32 @@ viewSurveysTab model =
         ]
 
 
-viewOnchainSurvey : OnchainSurvey -> Html Msg
-viewOnchainSurvey survey =
+viewOnchainSurvey : Model -> OnchainSurvey -> Html Msg
+viewOnchainSurvey model survey =
+    let
+        shareLink =
+            kioskUrl model.baseUrl survey
+    in
     div []
         [ View.viewSurvey survey.definition
         , p [ HA.class "meta" ]
             [ text ("Tx: " ++ survey.txHash ++ " [" ++ String.fromInt survey.index ++ "]") ]
-        , div [ HA.style "display" "flex", HA.style "gap" "0.5rem" ]
+        , div [ HA.style "display" "flex", HA.style "gap" "0.5rem", HA.style "align-items" "center" ]
             [ button
                 [ HA.class "btn btn-primary"
                 , onClick (RespondToSurvey survey)
                 ]
                 [ text "Respond" ]
+            , button
+                [ HA.class "btn btn-secondary"
+                , onClick (CopyKioskLink shareLink)
+                ]
+                [ text "Share link" ]
+            , if model.copiedKioskLink == Just shareLink then
+                span [ HA.class "meta", HA.style "color" "#16a34a" ] [ text "Copied!" ]
+
+              else
+                text ""
             , button
                 [ HA.class "btn btn-danger"
                 , onClick (CancelSurvey survey)

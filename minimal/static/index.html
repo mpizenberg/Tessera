@@ -297,6 +297,13 @@
                 portFromWalletToElm: app.ports.fromWallet,
             });
 
+            // Copy a shareable kiosk link to the clipboard
+            if (app.ports.copyToClipboard) {
+                app.ports.copyToClipboard.subscribe((text) => {
+                    navigator.clipboard?.writeText(text);
+                });
+            }
+
             // Wire up concurrent task ports for storage
             ConcurrentTask.register({
                 tasks: {
