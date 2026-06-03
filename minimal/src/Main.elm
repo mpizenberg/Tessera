@@ -385,9 +385,10 @@ update msg model =
                 ConcurrentTask.Success { ciphertextHex } ->
                     case ( model.responseTarget, model.responseForm.role, model.wallet ) of
                         ( Just target, Just role, Just wallet ) ->
-                            case Cardano.Address.extractPaymentCred (Cip30.walletChangeAddress wallet) of
-                                Just cred ->
+                            case responderCredential (Just role) wallet of
+                                Ok cred ->
                                     buildSignResponseTx model
+                                        cred
                                         (Codec.buildTimelockedResponseMetadatum
                                             { txHash = target.txHash, index = target.index }
                                             role
@@ -395,10 +396,10 @@ update msg model =
                                             (Bytes.fromHexUnchecked ciphertextHex)
                                         )
 
-                                Nothing ->
+                                Err err ->
                                     ( { model
-                                        | submissionStatus = SubmissionError "Could not extract wallet credential"
-                                        , responseFormError = Just "Could not extract wallet credential"
+                                        | submissionStatus = SubmissionError err
+                                        , responseFormError = Just err
                                       }
                                     , Cmd.none
                                     )
@@ -1638,6 +1639,34 @@ viewFillSurveyTab model =
                 ]
 
 
+{-| Credential identifying a responder for the given role. Stakeholder votes are
+keyed by the wallet's stake key (so the same payment key voting from different
+stake accounts stays distinct); all other roles use the payment credential.
+-}
+responderCredential : Maybe ST.Role -> Cip30.Wallet -> Result String Credential
+responderCredential maybeRole wallet =
+    let
+        changeAddr =
+            Cip30.walletChangeAddress wallet
+    in
+    case maybeRole of
+        Just ST.Stakeholder ->
+            case Cardano.Address.extractStakeCredential changeAddr of
+                Just (Cardano.Address.InlineCredential cred) ->
+                    Ok cred
+
+                _ ->
+                    Err "Could not extract a stake key from the wallet address (stakeholder votes require an inline stake credential)"
+
+        _ ->
+            case Cardano.Address.extractPaymentCred changeAddr of
+                Just cred ->
+                    Ok cred
+
+                Nothing ->
+                    Err "Could not extract credential from wallet address"
+
+
 submitResponse : Model -> ( Model, Cmd Msg )
 submitResponse model =
     case model.responseTarget of
@@ -1653,11 +1682,11 @@ submitResponse model =
                     ( { model | responseFormError = Just "Wallet UTxOs not loaded yet" }, Cmd.none )
 
                 ( Just wallet, _ ) ->
-                    case Cardano.Address.extractPaymentCred (Cip30.walletChangeAddress wallet) of
-                        Nothing ->
-                            ( { model | responseFormError = Just "Could not extract credential from wallet address" }, Cmd.none )
+                    case responderCredential model.responseForm.role wallet of
+                        Err err ->
+                            ( { model | responseFormError = Just err }, Cmd.none )
 
-                        Just cred ->
+                        Ok cred ->
                             case target.definition.ballotMode of
                                 ST.Public ->
                                     case Form.buildResponseMetadatum { txHash = target.txHash, index = target.index } cred model.responseForm of
@@ -1665,7 +1694,7 @@ submitResponse model =
                                             ( { model | responseFormError = Just err }, Cmd.none )
 
                                         Ok responseMeta ->
-                                            buildSignResponseTx model responseMeta
+                                            buildSignResponseTx model cred responseMeta
 
                                 ST.Timelocked cfg ->
                                     case model.responseForm.role of
@@ -1702,58 +1731,52 @@ submitResponse model =
 {-| Finalize and request a signature for a response transaction carrying the
 given (public or timelocked) response metadatum. Re-derives wallet context.
 -}
-buildSignResponseTx : Model -> Metadatum.Metadatum -> ( Model, Cmd Msg )
-buildSignResponseTx model responseMeta =
+buildSignResponseTx : Model -> Credential -> Metadatum.Metadatum -> ( Model, Cmd Msg )
+buildSignResponseTx model responderCred responseMeta =
     case ( model.wallet, model.walletUtxos ) of
         ( Just wallet, Just utxos ) ->
             let
                 changeAddr =
                     Cip30.walletChangeAddress wallet
+
+                requiredSignerInfo =
+                    case responderCred of
+                        VKeyHash hash ->
+                            [ TxRequiredSigner hash ]
+
+                        ScriptHash _ ->
+                            []
+
+                responseLabelInfo =
+                    case model.responseTarget of
+                        Just survey ->
+                            [ TxMetadata
+                                { tag = N.fromSafeInt (Labels.responseLabel { txHash = survey.txHash, index = survey.index })
+                                , metadata = Metadatum.List []
+                                }
+                            ]
+
+                        Nothing ->
+                            []
+
+                txResult =
+                    TxIntent.finalize utxos
+                        (TxMetadata { tag = N.fromSafeInt Labels.metadataLabel, metadata = responseMeta }
+                            :: (responseLabelInfo ++ requiredSignerInfo)
+                        )
+                        [ Spend (FromWallet { address = changeAddr, value = Value.onlyLovelace N.zero, guaranteedUtxos = [] }) ]
             in
-            case Cardano.Address.extractPaymentCred changeAddr of
-                Nothing ->
-                    ( { model | responseFormError = Just "Could not extract credential from wallet address" }, Cmd.none )
+            case txResult of
+                Err err ->
+                    ( { model | responseFormError = Just (TxIntent.errorToString err), submissionStatus = NotSubmitting }, Cmd.none )
 
-                Just cred ->
-                    let
-                        requiredSignerInfo =
-                            case cred of
-                                VKeyHash hash ->
-                                    [ TxRequiredSigner hash ]
-
-                                ScriptHash _ ->
-                                    []
-
-                        responseLabelInfo =
-                            case model.responseTarget of
-                                Just survey ->
-                                    [ TxMetadata
-                                        { tag = N.fromSafeInt (Labels.responseLabel { txHash = survey.txHash, index = survey.index })
-                                        , metadata = Metadatum.List []
-                                        }
-                                    ]
-
-                                Nothing ->
-                                    []
-
-                        txResult =
-                            TxIntent.finalize utxos
-                                (TxMetadata { tag = N.fromSafeInt Labels.metadataLabel, metadata = responseMeta }
-                                    :: (responseLabelInfo ++ requiredSignerInfo)
-                                )
-                                [ Spend (FromWallet { address = changeAddr, value = Value.onlyLovelace N.zero, guaranteedUtxos = [] }) ]
-                    in
-                    case txResult of
-                        Err err ->
-                            ( { model | responseFormError = Just (TxIntent.errorToString err), submissionStatus = NotSubmitting }, Cmd.none )
-
-                        Ok { tx } ->
-                            ( { model
-                                | submissionStatus = WaitingForSignature { tx = tx, createdSurvey = Nothing }
-                                , responseFormError = Nothing
-                              }
-                            , toWallet (Cip30.encodeRequest (Cip30.signTx wallet { partialSign = False } tx))
-                            )
+                Ok { tx } ->
+                    ( { model
+                        | submissionStatus = WaitingForSignature { tx = tx, createdSurvey = Nothing }
+                        , responseFormError = Nothing
+                      }
+                    , toWallet (Cip30.encodeRequest (Cip30.signTx wallet { partialSign = True } tx))
+                    )
 
         _ ->
             ( { model | responseFormError = Just "Wallet not ready", submissionStatus = NotSubmitting }, Cmd.none )
