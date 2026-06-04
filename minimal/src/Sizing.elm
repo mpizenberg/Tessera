@@ -652,12 +652,12 @@ viewControls p =
         controlSliders =
             case p.target of
                 DefinitionTarget ->
-                    [ slider NumQuestions p True
-                    , slider OptionsPerQuestion p True
-                    , slider OptionChars p False
-                    , slider PromptChars p False
-                    , slider TitleChars p False
+                    [ slider TitleChars p False
                     , slider DescChars p True
+                    , slider PromptChars p False
+                    , slider OptionChars p False
+                    , slider OptionsPerQuestion p True
+                    , slider NumQuestions p True
                     ]
 
                 _ ->
