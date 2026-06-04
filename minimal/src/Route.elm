@@ -26,6 +26,7 @@ type SurveyFocus
     = NoFocus
     | InvalidFocus String
     | Focus ST.SurveyRef
+    | SizingPage
 
 
 {-| Parse the initial page URL once into network selection plus survey focus.
@@ -61,12 +62,17 @@ parseUrl rawUrl =
                     Nothing ->
                         Testnet
             , focus =
-                case param "survey" of
-                    Nothing ->
-                        NoFocus
+                case param "page" of
+                    Just "sizing" ->
+                        SizingPage
 
-                    Just raw ->
-                        parseSurveyRef raw
+                    _ ->
+                        case param "survey" of
+                            Nothing ->
+                                NoFocus
+
+                            Just raw ->
+                                parseSurveyRef raw
             }
 
 

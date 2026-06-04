@@ -26,6 +26,7 @@ import Json.Decode as JD exposing (Decoder, Value)
 import Natural as N
 import RemoteData exposing (RemoteData(..), WebData)
 import Route
+import Sizing
 import Survey.Codec as Codec
 import Survey.Csv as Csv
 import Survey.Form as Form
@@ -115,6 +116,7 @@ type alias Model =
     , currentTime : Int
     , decryptedResponses : Dict String ResponseState
     , roundBeacons : Dict Int (RemoteData String String)
+    , sizing : Sizing.State
     }
 
 
@@ -158,6 +160,7 @@ init flags =
             , currentTime = 0
             , decryptedResponses = Dict.empty
             , roundBeacons = Dict.empty
+            , sizing = Sizing.init
             }
     in
     ( { model | chainTip = Loading }
@@ -328,6 +331,8 @@ type Msg
     | CopyKioskLink String
     | DismissErrors
     | ToggleNetwork
+    | SizingMsg Sizing.Msg
+    | SizingEncrypted (ConcurrentTask.Response String { ciphertextHex : String })
 
 
 
@@ -549,6 +554,42 @@ update msg model =
                 , Api.queryTip newNetwork GotTip
                 ]
             )
+
+        SizingMsg subMsg ->
+            let
+                ( newSizing, effect ) =
+                    Sizing.update subMsg model.sizing
+            in
+            case effect of
+                Sizing.NoEffect ->
+                    ( { model | sizing = newSizing }, Cmd.none )
+
+                Sizing.Encrypt plaintextHex ->
+                    let
+                        ( newPool, cmd ) =
+                            ConcurrentTask.attempt
+                                { pool = model.taskPool
+                                , send = sendTask
+                                , onComplete = SizingEncrypted
+                                }
+                                (Tlock.encrypt { round = Sizing.encryptRound, plaintextHex = plaintextHex })
+                    in
+                    ( { model | sizing = newSizing, taskPool = newPool }, cmd )
+
+        SizingEncrypted response ->
+            let
+                result =
+                    case response of
+                        ConcurrentTask.Success { ciphertextHex } ->
+                            Ok ciphertextHex
+
+                        ConcurrentTask.Error err ->
+                            Err err
+
+                        ConcurrentTask.UnexpectedError _ ->
+                            Err "Unexpected error during timelock encryption"
+            in
+            ( { model | sizing = Sizing.setCiphertext result model.sizing }, Cmd.none )
 
         TabClicked tab ->
             ( { model | activeTab = tab }, Cmd.none )
@@ -1023,6 +1064,9 @@ view model =
 
             Route.Focus ref ->
                 viewKiosk model ref
+
+            Route.SizingPage ->
+                Html.map SizingMsg (Sizing.view model.networkId model.sizing)
         , viewErrors model.errors
         ]
 
