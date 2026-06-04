@@ -230,7 +230,7 @@ knobMax knob =
             4000
 
         SelectionsPerAnswer ->
-            256
+            6000
 
 
 type Template
