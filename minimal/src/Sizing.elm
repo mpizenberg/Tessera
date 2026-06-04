@@ -449,6 +449,7 @@ timelockedResponseMeta ciphertextHex =
 type alias Report =
     { totalSize : Int
     , payloadBytes : Int
+    , feeLovelace : Int
     }
 
 
@@ -534,6 +535,7 @@ measureMeta networkId { meta, markerTag, signer } =
             Ok
                 { totalSize = Bytes.width (Transaction.serialize signedTx)
                 , payloadBytes = Bytes.width (Bytes.fromBytes (Cbor.Encode.encode (Metadatum.toCbor meta)))
+                , feeLovelace = N.toInt signedTx.body.fee
                 }
 
 
@@ -805,6 +807,8 @@ viewReport networkId state =
                         [ text ("CIP-179 metadata payload: " ++ String.fromInt report.payloadBytes ++ " B") ]
                     , p [ HA.class "meta" ]
                         [ text ("Tx overhead (body + witnesses + envelope): " ++ String.fromInt (report.totalSize - report.payloadBytes) ++ " B") ]
+                    , p [ HA.class "meta" ]
+                        [ text ("Estimated Tx fee: " ++ formatAda report.feeLovelace ++ " ADA") ]
                     , if over then
                         p [ HA.class "error" ] [ text "Over budget — this transaction would be rejected." ]
 
@@ -812,6 +816,24 @@ viewReport networkId state =
                         text ""
                     ]
         ]
+
+
+{-| Lovelace as a fixed 6-decimal ADA string (1 ADA = 1,000,000 lovelace).
+-}
+formatAda : Int -> String
+formatAda lovelace =
+    let
+        ada =
+            lovelace // 1000000
+
+        frac =
+            modBy 1000000 lovelace
+
+        fracStr =
+            String.padLeft 6 '0' (String.fromInt frac)
+                |> String.left 3
+    in
+    String.fromInt ada ++ "." ++ fracStr
 
 
 formatPct : Float -> String
