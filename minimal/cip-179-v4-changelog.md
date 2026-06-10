@@ -6,6 +6,10 @@ the question/answer and vocabulary layers, without importing CIP-191's L2 /
 IPFS-as-primary-store / trust-an-operator architecture (which would undercut
 CIP-179's trustless, fully-on-chain model).
 
+A final section ([Earlier: changes introduced in v3](#earlier-changes-introduced-in-v3-v2--v3))
+recaps the `v2 → v3` changes for continuity, since the published spec jumped
+through v3 on the way to v4.
+
 ## 1. Question type tags renumbered; `custom` moved to tag 0
 
 - **Change.** Tag assignments are now: `0 = custom`, `1 = single-choice`,
@@ -233,3 +237,56 @@ CIP-179's trustless, fully-on-chain model).
   driven by its hash-and-audit commitment model, which CIP-179 does not have. A
   *recommended, non-normative* per-method tally interchange shape (for cross-tool
   result comparison on shared test vectors) is worth designing in its own pass.
+
+## Earlier: changes introduced in v3 (v2 → v3)
+
+For continuity, this section recaps the breaking changes the published spec made
+in `spec_version = 3` (between v2 and v4). Unlike the v4 items above, these were
+not about CIP-191 convergence; they were independent additions, all carried
+forward into v4.
+
+### v3.1 Timelocked submission mode (Drand `tlock`)
+
+- **Change.** A `submission_mode` field is added to `survey_definition` as a
+  tagged sum type: `[0]` **public** (plaintext answer items, as in v1/v2) or
+  `[1, drand_chain_hash, round, padding_size]` **timelocked**. In timelocked mode
+  a response carries a Drand `tlock` ciphertext (a new `chunked_bytes` primitive)
+  in place of plaintext answers; the `response_answers` field therefore accepts
+  *either* `[+ answer_item]` (public) *or* `chunked_bytes` (timelocked), the two
+  distinguished by shape (arrays vs. byte strings). Answers are encrypted at
+  submission and become decryptable by anyone once `round` publishes on the pinned
+  Drand chain. `padding_size` is the minimum plaintext length each response is
+  padded to before encryption, so ciphertext length does not leak answer content.
+- **Rationale.** Enables **delayed-reveal** polling — commit answers now, everyone
+  can decrypt after the round — with no trusted operator or reveal phase: the
+  trustless, fully-on-chain analogue of commit-reveal voting (the model this
+  repository is named for). It is delayed reveal, *not* permanent secrecy. New
+  primitive `drand_chain_hash = bytes .size 32` and the Abstract gain a line
+  noting "public or timelocked responses."
+
+### v3.2 `specVersion` restored to `survey_response`
+
+- **Change.** A `specVersion` `uint` is reinstated as the first element of
+  `survey_response` (it was present in v1, then dropped in v2 on the assumption the
+  referenced survey supplied it). A response's `specVersion` MUST match the
+  referenced definition's.
+- **Rationale.** It lets a response be decoded on its own — in particular its
+  answer encoding and whether answers are plaintext or timelocked ciphertext —
+  without first having to resolve the survey definition. (v4 keeps this as key `0`
+  of the `survey_response` map.)
+
+### v3.3 `survey_definition` field reorder
+
+- **Change.** The `survey_definition` positional array is reordered so the
+  fixed-size header fields precede the variable-length `questions` array, which now
+  comes last:
+  `[specVersion, owner, title, description, roleWeighting, endEpoch, submissionMode, questions]`
+  (v2 placed `questions` at position 4, ahead of `roleWeighting`/`endEpoch`).
+  Question indices are unchanged, so `survey_response` answer references are
+  unaffected.
+- **Rationale.** Keeping the single variable-length field last gives every
+  fixed-size header field a stable position — the conventional layout for
+  positional records. This concern is moot in v4, where both top-level records
+  became integer-keyed maps (see [item 9](#9-top-level-records--integer-keyed-maps-forward-compat)),
+  but it motivated the placement of `submission_mode` and `questions` that v4
+  inherited as keys 6 and 7.
