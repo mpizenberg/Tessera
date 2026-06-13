@@ -1,3 +1,12 @@
 [submodule "minimal/elm-cardano"]
 	path = minimal/elm-cardano
 	url = git@github.com:elm-cardano/elm-cardano.git
+[submodule "backend/deps/adder"]
+	path = backend/deps/adder
+	url = https://github.com/blinklabs-io/adder
+[submodule "backend/deps/yaci-store"]
+	path = backend/deps/yaci-store
+	url = git@github.com:bloxbean/yaci-store.git
+[submodule "backend/deps/oura"]
+	path = backend/deps/oura
+	url = git@github.com:txpipe/oura.git
