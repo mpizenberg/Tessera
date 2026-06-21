@@ -6,6 +6,7 @@ import { Header } from "~/ui/components/Header";
 import { Explore } from "~/ui/screens/Explore";
 import { Survey } from "~/ui/screens/Survey";
 import { Respond } from "~/ui/screens/Respond";
+import { Create } from "~/ui/screens/Create";
 import { Placeholder } from "~/ui/screens/Placeholder";
 
 const Layout: ParentComponent = (props) => (
@@ -13,13 +14,6 @@ const Layout: ParentComponent = (props) => (
     <Header />
     {props.children}
   </AppProvider>
-);
-
-const CreateScreen = () => (
-  <Placeholder
-    title="Create a survey"
-    note="The survey builder lands in a later milestone — define questions, roles, timelock, then sign & submit the definition on-chain."
-  />
 );
 
 const SettingsScreen = () => (
@@ -35,7 +29,7 @@ export default function App() {
       <Route path="/" component={Explore} />
       <Route path="/survey/:key" component={Survey} />
       <Route path="/survey/:key/respond" component={Respond} />
-      <Route path="/create" component={CreateScreen} />
+      <Route path="/create" component={Create} />
       <Route path="/settings" component={SettingsScreen} />
     </Router>
   );

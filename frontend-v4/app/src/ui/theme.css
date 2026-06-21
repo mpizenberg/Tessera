@@ -107,3 +107,23 @@ select {
         transform: rotate(360deg);
     }
 }
+
+/* Create page: builder + sticky summary aside, collapsing on narrow screens. */
+.create-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    gap: 26px;
+    align-items: start;
+}
+.create-aside {
+    position: sticky;
+    top: 84px;
+}
+@media (max-width: 900px) {
+    .create-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .create-aside {
+        position: static;
+    }
+}

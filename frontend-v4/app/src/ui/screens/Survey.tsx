@@ -7,7 +7,7 @@ import {
   type JSX,
 } from "solid-js";
 import { A, useParams } from "@solidjs/router";
-import type { AnswerItem, Question, SurveyResponse } from "cip-179";
+import { encodePayload, type AnswerItem, type Question, type SurveyResponse } from "cip-179";
 
 import { useApp } from "~/state";
 import {
@@ -16,6 +16,7 @@ import {
   refKey,
   type SurveyAggregate,
 } from "~/domain/survey";
+import { walletOwns } from "~/domain/roles";
 import { roleBreakdown, tallySurvey, type QuestionTally } from "~/domain/tally";
 import type { ResponseRecord } from "~/data/source";
 import { roleColors, roleLabel, shortRef, viewStatus } from "~/ui/format";
@@ -204,6 +205,19 @@ export const Survey: Component = () => {
             </Show>
 
             <Show
+              when={
+                app.wallet() &&
+                s().status === "active" &&
+                walletOwns(
+                  app.wallet()!.identity,
+                  s().record.definition.owner,
+                )
+              }
+            >
+              <OwnerControls s={s()} />
+            </Show>
+
+            <Show
               when={viewStatus(s()) !== "sealed"}
               fallback={<SealedNotice />}
             >
@@ -387,6 +401,157 @@ export const Survey: Component = () => {
         )}
       </Show>
     </main>
+  );
+};
+
+// ----------------------------------------------------------------------------
+// Owner controls (cancel)
+// ----------------------------------------------------------------------------
+
+/**
+ * Shown only to the connected wallet that owns an *active* survey. Cancelling
+ * publishes a tag-2 cancellation referencing this survey, proving the owner
+ * credential via required_signers (CIP-179 mechanism A). The definition stays
+ * on-chain; new responses are rejected from then on.
+ */
+const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
+  const app = useApp();
+  const [confirming, setConfirming] = createSignal(false);
+  const [cancelling, setCancelling] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const [hash, setHash] = createSignal<string | null>(null);
+
+  const onCancel = async () => {
+    const def = props.s.record.definition;
+    setCancelling(true);
+    setError(null);
+    try {
+      const payload = encodePayload({
+        type: "cancellations",
+        cancellations: [props.s.record.ref],
+      });
+      const h = await app.submitMetadata(payload, [def.owner]);
+      setHash(h);
+      app.reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  return (
+    <Show
+      when={hash() === null}
+      fallback={
+        <div
+          style={{
+            background: "var(--danger-bg)",
+            border: "1px solid var(--danger-line)",
+            "border-radius": "var(--r-md)",
+            padding: "14px 16px",
+            "margin-top": "16px",
+          }}
+        >
+          <div style={{ "font-size": "13.5px", "font-weight": "700", color: "var(--danger)" }}>
+            Cancellation submitted
+          </div>
+          <div style={{ "font-family": "var(--mono)", "font-size": "11.5px", color: "#8A3A2E", "margin-top": "5px", "word-break": "break-all" }}>
+            tx {hash()}
+          </div>
+          <div style={{ "font-size": "12.5px", color: "#8A3A2E", "line-height": "1.5", "margin-top": "6px" }}>
+            New responses are rejected once it's indexed. The definition stays
+            on-chain for reference.
+          </div>
+        </div>
+      }
+    >
+      <div
+        style={{
+          display: "flex",
+          "align-items": "center",
+          "justify-content": "space-between",
+          gap: "12px",
+          "flex-wrap": "wrap",
+          background: "#FBFAF6",
+          border: "1px solid #F0EBD8",
+          "border-radius": "var(--r-md)",
+          padding: "12px 15px",
+          "margin-top": "16px",
+        }}
+      >
+        <span style={{ "font-size": "12.5px", color: "#7A6A45", "line-height": "1.45" }}>
+          <b style={{ color: "#5B4A22" }}>You own this survey.</b> You can
+          withdraw it — existing responses stay on-chain but new ones are
+          rejected.
+        </span>
+        <Show
+          when={confirming()}
+          fallback={
+            <button
+              onClick={() => setConfirming(true)}
+              style={{
+                "font-family": "inherit",
+                "font-size": "13px",
+                "font-weight": "700",
+                cursor: "pointer",
+                color: "var(--danger)",
+                background: "#fff",
+                border: "1px solid var(--danger-line)",
+                "border-radius": "var(--r-input)",
+                padding: "9px 14px",
+                "white-space": "nowrap",
+              }}
+            >
+              Cancel survey
+            </button>
+          }
+        >
+          <div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
+            <button
+              onClick={() => void onCancel()}
+              disabled={cancelling()}
+              style={{
+                "font-family": "inherit",
+                "font-size": "13px",
+                "font-weight": "700",
+                cursor: cancelling() ? "not-allowed" : "pointer",
+                color: "#fff",
+                background: "var(--danger)",
+                border: "none",
+                "border-radius": "var(--r-input)",
+                padding: "9px 14px",
+                "white-space": "nowrap",
+              }}
+            >
+              {cancelling() ? "Cancelling…" : "Confirm cancel"}
+            </button>
+            <button
+              onClick={() => setConfirming(false)}
+              disabled={cancelling()}
+              style={{
+                "font-family": "inherit",
+                "font-size": "13px",
+                "font-weight": "700",
+                cursor: "pointer",
+                color: "var(--muted)",
+                background: "#fff",
+                border: "1px solid var(--line)",
+                "border-radius": "var(--r-input)",
+                padding: "9px 14px",
+              }}
+            >
+              Keep
+            </button>
+          </div>
+        </Show>
+        <Show when={error()}>
+          <div style={{ "flex-basis": "100%", "font-size": "12px", color: "var(--danger)", "word-break": "break-word" }}>
+            {error()}
+          </div>
+        </Show>
+      </div>
+    </Show>
   );
 };
 
