@@ -1,0 +1,109 @@
+/*
+ * Design tokens for Tessera — lifted verbatim from the Tessera.dc.html mockup
+ * (:root block). Warm paper surfaces, clay accent for the human/survey actions,
+ * slate-blue reserved strictly for on-chain governance linkage.
+ */
+:root {
+    /* ===== TYPE ===== */
+    --sans: "Hanken Grotesk", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", monospace;
+    --serif: "Newsreader", Georgia, serif;
+    /* ===== INK + TEXT (warm) ===== */
+    --ink: #23201a;
+    --body: #3a352b;
+    --muted: #6b6356;
+    --faint: #9a8f79;
+    --dim: #a79c88;
+    --pale: #b8ae99;
+    --arrow: #cfc6b4;
+    /* ===== LINES + SURFACES (warm paper) ===== */
+    --line: #e7e0d0;
+    --line2: #ede6d7;
+    --hair: #f2ecde;
+    --track: #efe9db;
+    --surface: #f4efe3;
+    --surface2: #fbf8f1;
+    --surface3: #f2ecde;
+    --border-strong: #d8cdb6;
+    /* ===== ACCENT (clay = people / the human survey — primary action) ===== */
+    --accent: #bc5b33;
+    --accent-hover: #a54e2b;
+    --accent-2: #cf6b40;
+    --accent-tint: #d89b7e;
+    --accent-bg: #f7ece3;
+    --accent-bg-soft: #fbf4ee;
+    --accent-line: #ead3c4;
+    --accent-shadow: rgba(188, 91, 51, 0.5);
+    --accent-shadow-soft: rgba(188, 91, 51, 0.4);
+    /* ===== SEMANTICS ===== */
+    --ok: #4f7a3a;
+    --ok-bg: #eaf1e3;
+    --ok-line: #d4e4c8;
+    --warn: #9a6b1e;
+    --warn-bg: #f6edd9;
+    --warn-line: #e8d5ae;
+    --danger: #a8412e;
+    --danger-bg: #f7e9e3;
+    --danger-line: #e6c3b6;
+    /* ===== ON-CHAIN (slate-blue — reserved strictly for chain linkage / governance) ===== */
+    --gov: #2b4c7e;
+    --gov-bg: #eaf0f7;
+    --gov-line: #cdd9e9;
+    /* ===== ELEVATION (warm) ===== */
+    --shadow-card: 0 1px 2px rgba(70, 55, 30, 0.05);
+    /* ===== RADII ===== */
+    --r-pill: 999px;
+    --r-card: 18px;
+    --r-panel: 16px;
+    --r-lg: 14px;
+    --r-md: 12px;
+    --r-control: 11px;
+    --r-input: 10px;
+    --r-sm: 9px;
+    --r-chip: 8px;
+    --r-xs: 7px;
+    --r-2xs: 6px;
+    --r-3xs: 5px;
+}
+
+* {
+    box-sizing: border-box;
+}
+body {
+    margin: 0;
+    background: var(--surface);
+    font-family: var(--sans);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+/* Serif reserved for hero/survey titles — section labels stay mono, UI stays Hanken */
+h1 {
+    font-family: var(--serif);
+    font-weight: 700;
+    letter-spacing: -0.012em;
+}
+input,
+textarea,
+select {
+    min-width: 0;
+}
+::selection {
+    background: var(--accent);
+    color: #fff;
+}
+
+@keyframes pulse {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.4;
+    }
+}
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
