@@ -602,12 +602,14 @@ const QuestionCard: Component<{
             </span>
           </Show>
         </div>
-        <button
-          onClick={() => props.onSkip(!skipped())}
-          style={skipBtnStyle(skipped())}
-        >
-          {skipped() ? "Skipped" : "Skip"}
-        </button>
+        <Show when={!props.q.required}>
+          <button
+            onClick={() => props.onSkip(!skipped())}
+            style={skipBtnStyle(skipped())}
+          >
+            {skipped() ? "Skipped" : "Skip"}
+          </button>
+        </Show>
       </div>
       <h3
         style={{

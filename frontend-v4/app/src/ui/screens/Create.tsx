@@ -494,13 +494,24 @@ const TypeFields: Component<{
   set: SetStoreFunction<QuestionDraft[]>;
 }> = (props) => {
   const i = () => props.index;
+  // Add an option row; for multi-select / ranking, grow the max ceiling to the
+  // new option count (it can never exceed the number of options anyway).
+  const addOption = () => {
+    const newCount = props.draft.labels.length + 1;
+    props.set(i(), "labels", (ls) => [...ls, ""]);
+    if (props.draft.type === "multiSelect") {
+      props.set(i(), "maxSelections", (m) => Math.max(m, newCount));
+    } else if (props.draft.type === "ranking") {
+      props.set(i(), "maxRanked", (m) => Math.max(m, newCount));
+    }
+  };
   return (
     <>
       <Show when={usesOptions(props.draft.type)}>
         <OptionsEditor
           labels={props.draft.labels}
           onLabel={(j, v) => props.set(i(), "labels", j, v)}
-          onAdd={() => props.set(i(), "labels", (ls) => [...ls, ""])}
+          onAdd={addOption}
           onRemove={(j) =>
             props.set(i(), "labels", (ls) => ls.filter((_, k) => k !== j))
           }

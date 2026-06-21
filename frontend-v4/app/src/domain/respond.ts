@@ -223,9 +223,11 @@ export function findExistingResponse(
 }
 
 /**
- * Reconstruct editable drafts from a prior response: questions it answered are
- * pre-filled with their values; the rest start at defaults. (Questions the prior
- * response omitted are left for the user to decide again, not auto-skipped.)
+ * Reconstruct editable drafts from a prior response, mirroring it exactly:
+ * questions it answered are pre-filled with their values; questions it omitted
+ * are marked **skipped** (an omission in the prior response was an abstention).
+ * The only exception is a required question — which can't be skipped — so it's
+ * left for the user to (re-)answer instead.
  */
 export function prefillDrafts(
   questions: readonly Question[],
@@ -237,8 +239,11 @@ export function prefillDrafts(
   }
   return questions.map((q, i) => {
     const prior = byIndex.get(i);
-    const value = prior ? valueFromAnswer(q, prior) : initValue(q);
-    return { skipped: false, value: value ?? initValue(q) };
+    if (prior) {
+      const value = valueFromAnswer(q, prior);
+      return { skipped: false, value: value ?? initValue(q) };
+    }
+    return { skipped: !q.required, value: initValue(q) };
   });
 }
 
