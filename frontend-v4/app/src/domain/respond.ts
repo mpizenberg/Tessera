@@ -257,13 +257,12 @@ function valueFromAnswer(q: Question, a: AnswerItem): DraftValue | null {
         ? { type: "ranking", ranked: [...a.ranking] }
         : null;
     case "numericRange":
-      return a.type === "numeric"
-        ? { type: "numeric", value: a.value }
-        : null;
+      return a.type === "numeric" ? { type: "numeric", value: a.value } : null;
     case "pointsAllocation": {
       if (a.type !== "pointsAllocation") return null;
       const points = Array.from({ length: optionCount(q.options) }, () => 0);
-      for (const alloc of a.allocations) points[alloc.optionIndex] = alloc.points;
+      for (const alloc of a.allocations)
+        points[alloc.optionIndex] = alloc.points;
       return { type: "pointsAllocation", points };
     }
     case "rating": {

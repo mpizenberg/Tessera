@@ -7,7 +7,12 @@ import {
   type JSX,
 } from "solid-js";
 import { A, useParams } from "@solidjs/router";
-import { encodePayload, type AnswerItem, type Question, type SurveyResponse } from "cip-179";
+import {
+  encodePayload,
+  type AnswerItem,
+  type Question,
+  type SurveyResponse,
+} from "cip-179";
 
 import { useApp } from "~/state";
 import {
@@ -200,7 +205,8 @@ export const Survey: Component = () => {
                   "box-shadow": "0 8px 20px -8px var(--accent-shadow)",
                 }}
               >
-                Respond to this survey <span style={{ "font-size": "15px" }}>→</span>
+                Respond to this survey{" "}
+                <span style={{ "font-size": "15px" }}>→</span>
               </A>
             </Show>
 
@@ -208,10 +214,7 @@ export const Survey: Component = () => {
               when={
                 app.wallet() &&
                 s().status === "active" &&
-                walletOwns(
-                  app.wallet()!.identity,
-                  s().record.definition.owner,
-                )
+                walletOwns(app.wallet()!.identity, s().record.definition.owner)
               }
             >
               <OwnerControls s={s()} />
@@ -453,13 +456,34 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
             "margin-top": "16px",
           }}
         >
-          <div style={{ "font-size": "13.5px", "font-weight": "700", color: "var(--danger)" }}>
+          <div
+            style={{
+              "font-size": "13.5px",
+              "font-weight": "700",
+              color: "var(--danger)",
+            }}
+          >
             Cancellation submitted
           </div>
-          <div style={{ "font-family": "var(--mono)", "font-size": "11.5px", color: "#8A3A2E", "margin-top": "5px", "word-break": "break-all" }}>
+          <div
+            style={{
+              "font-family": "var(--mono)",
+              "font-size": "11.5px",
+              color: "#8A3A2E",
+              "margin-top": "5px",
+              "word-break": "break-all",
+            }}
+          >
             tx {hash()}
           </div>
-          <div style={{ "font-size": "12.5px", color: "#8A3A2E", "line-height": "1.5", "margin-top": "6px" }}>
+          <div
+            style={{
+              "font-size": "12.5px",
+              color: "#8A3A2E",
+              "line-height": "1.5",
+              "margin-top": "6px",
+            }}
+          >
             New responses are rejected once it's indexed. The definition stays
             on-chain for reference.
           </div>
@@ -480,7 +504,13 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
           "margin-top": "16px",
         }}
       >
-        <span style={{ "font-size": "12.5px", color: "#7A6A45", "line-height": "1.45" }}>
+        <span
+          style={{
+            "font-size": "12.5px",
+            color: "#7A6A45",
+            "line-height": "1.45",
+          }}
+        >
           <b style={{ color: "#5B4A22" }}>You own this survey.</b> You can
           withdraw it — existing responses stay on-chain but new ones are
           rejected.
@@ -546,7 +576,14 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
           </div>
         </Show>
         <Show when={error()}>
-          <div style={{ "flex-basis": "100%", "font-size": "12px", color: "var(--danger)", "word-break": "break-word" }}>
+          <div
+            style={{
+              "flex-basis": "100%",
+              "font-size": "12px",
+              color: "var(--danger)",
+              "word-break": "break-word",
+            }}
+          >
             {error()}
           </div>
         </Show>

@@ -128,7 +128,10 @@ export function initQuestionDraft(type: QuestionType): QuestionDraft {
  * Switch a draft's type, preserving shared fields (prompt, required, labels) and
  * resetting only what the new type needs that the draft can't already provide.
  */
-export function withType(draft: QuestionDraft, type: QuestionType): QuestionDraft {
+export function withType(
+  draft: QuestionDraft,
+  type: QuestionType,
+): QuestionDraft {
   return { ...draft, type };
 }
 
@@ -194,7 +197,11 @@ function inlineLabels(labels: readonly string[]): string[] {
 // Projection: draft -> Question
 // ----------------------------------------------------------------------------
 
-function toQuestion(draft: QuestionDraft, where: string, out: string[]): Question {
+function toQuestion(
+  draft: QuestionDraft,
+  where: string,
+  out: string[],
+): Question {
   const base = { prompt: draft.prompt.trim(), required: draft.required };
   switch (draft.type) {
     case "custom": {
@@ -298,9 +305,7 @@ export function buildDefinition(
   const problems: string[] = [];
 
   const endEpoch = parseEndEpoch(meta.endEpoch, problems);
-  const questions = drafts.map((d, i) =>
-    toQuestion(d, `Q${i + 1}`, problems),
-  );
+  const questions = drafts.map((d, i) => toQuestion(d, `Q${i + 1}`, problems));
 
   const definition: SurveyDefinition = {
     specVersion: SPEC_VERSION,

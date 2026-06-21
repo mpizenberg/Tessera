@@ -29,10 +29,7 @@ import {
   refKey,
   type SurveyAggregate,
 } from "~/domain/survey";
-import {
-  respondableRoles,
-  roleCredential,
-} from "~/domain/roles";
+import { respondableRoles, roleCredential } from "~/domain/roles";
 import {
   buildResponse,
   decided,
@@ -99,16 +96,18 @@ export const Respond: Component = () => {
     const snap = app.snapshot();
     if (!def || !s || r === null || !cred || !snap) return undefined;
     const mine = dedupeResponses(
-      snap.records.responses.filter((rr) => refKey(rr.response.surveyRef) === s.key),
+      snap.records.responses.filter(
+        (rr) => refKey(rr.response.surveyRef) === s.key,
+      ),
     ).map((x) => x.response);
     return findExistingResponse(mine, s.record.ref, r, cred);
   });
 
   // Store mirror of Draft with mutable fields so path setters typecheck;
   // assignable to/from the readonly domain Draft.
-  const [drafts, setDrafts] = createStore<{ skipped: boolean; value: DraftValue }[]>(
-    [],
-  );
+  const [drafts, setDrafts] = createStore<
+    { skipped: boolean; value: DraftValue }[]
+  >([]);
 
   // Re-seed drafts whenever the survey or chosen role changes (a different role
   // means a different prior response to pre-fill from, or none).
@@ -153,7 +152,13 @@ export const Respond: Component = () => {
     const r = role();
     const cred = credential();
     if (!def || !s || r === null || !cred) return;
-    const response = buildResponse(s.record.ref, r, cred, def.questions, drafts);
+    const response = buildResponse(
+      s.record.ref,
+      r,
+      cred,
+      def.questions,
+      drafts,
+    );
     const found = validateResponse(def, response);
     setProblems(found);
     if (found.length > 0) return;
@@ -161,7 +166,10 @@ export const Respond: Component = () => {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const payload = encodePayload({ type: "responses", responses: [response] });
+      const payload = encodePayload({
+        type: "responses",
+        responses: [response],
+      });
       // Prove control of the responder credential via required_signers (CIP-179
       // credential proof) — e.g. forces the wallet to sign with the stake key
       // when responding as a Stakeholder, not just the payment key.
@@ -176,7 +184,13 @@ export const Respond: Component = () => {
   };
 
   return (
-    <main style={{ "max-width": "760px", margin: "0 auto", padding: "22px 24px 140px" }}>
+    <main
+      style={{
+        "max-width": "760px",
+        margin: "0 auto",
+        padding: "22px 24px 140px",
+      }}
+    >
       <A href={`/survey/${encodeURIComponent(key())}`} style={backLinkStyle()}>
         <span style={{ "font-size": "15px" }}>←</span> Back to results
       </A>
@@ -208,7 +222,14 @@ export const Respond: Component = () => {
                 <RespondedBanner role={role()} />
               </Show>
 
-              <div style={{ display: "flex", "flex-direction": "column", gap: "12px", "margin-top": "12px" }}>
+              <div
+                style={{
+                  display: "flex",
+                  "flex-direction": "column",
+                  gap: "12px",
+                  "margin-top": "12px",
+                }}
+              >
                 <For each={s().record.definition.questions}>
                   {(q, i) => (
                     <QuestionCard
@@ -312,14 +333,35 @@ const ConnectPrompt: Component = () => (
 
 const Ineligible: Component<{ def: SurveyDefinition }> = (props) => (
   <div style={cardStyle()}>
-    <h3 style={{ "font-size": "17px", "font-weight": "800", margin: "0", "letter-spacing": "-.01em" }}>
+    <h3
+      style={{
+        "font-size": "17px",
+        "font-weight": "800",
+        margin: "0",
+        "letter-spacing": "-.01em",
+      }}
+    >
       You can't respond to this survey
     </h3>
-    <p style={{ "font-size": "13.5px", color: "var(--muted)", "line-height": "1.55", margin: "7px 0 0" }}>
-      It's open only to the roles below, and your connected wallet can't claim any
-      of them here. (SPO and CC roles need keys browser wallets don't hold.)
+    <p
+      style={{
+        "font-size": "13.5px",
+        color: "var(--muted)",
+        "line-height": "1.55",
+        margin: "7px 0 0",
+      }}
+    >
+      It's open only to the roles below, and your connected wallet can't claim
+      any of them here. (SPO and CC roles need keys browser wallets don't hold.)
     </p>
-    <div style={{ display: "flex", gap: "7px", "margin-top": "13px", "flex-wrap": "wrap" }}>
+    <div
+      style={{
+        display: "flex",
+        gap: "7px",
+        "margin-top": "13px",
+        "flex-wrap": "wrap",
+      }}
+    >
       <For each={props.def.eligibleRoles}>
         {(r) => {
           const [color, bg] = roleColors(r);
@@ -341,30 +383,89 @@ const SurveyHeader: Component<{
   respondable: Role[];
   onPickRole: (r: Role) => void;
 }> = (props) => (
-  <div style={{ "border-bottom": "1px solid #E7DFCE", padding: "14px 2px 20px", "margin-top": "6px" }}>
-    <div style={{ display: "flex", "align-items": "center", gap: "10px", "flex-wrap": "wrap" }}>
-      <span style={{ "font-family": "var(--mono)", "font-size": "11px", color: "var(--dim)", "letter-spacing": ".04em", "text-transform": "uppercase" }}>
+  <div
+    style={{
+      "border-bottom": "1px solid #E7DFCE",
+      padding: "14px 2px 20px",
+      "margin-top": "6px",
+    }}
+  >
+    <div
+      style={{
+        display: "flex",
+        "align-items": "center",
+        gap: "10px",
+        "flex-wrap": "wrap",
+      }}
+    >
+      <span
+        style={{
+          "font-family": "var(--mono)",
+          "font-size": "11px",
+          color: "var(--dim)",
+          "letter-spacing": ".04em",
+          "text-transform": "uppercase",
+        }}
+      >
         Respond
       </span>
       <span style={{ "margin-left": "auto" }} />
       <Show when={props.pro}>
-        <span style={{ "font-family": "var(--mono)", "font-size": "11px", color: "var(--pale)" }}>
+        <span
+          style={{
+            "font-family": "var(--mono)",
+            "font-size": "11px",
+            color: "var(--pale)",
+          }}
+        >
           ref {shortRef(props.s.key)}
         </span>
       </Show>
     </div>
-    <h1 style={{ "font-size": "26px", "font-weight": "700", "letter-spacing": "-.018em", "line-height": "1.16", margin: "12px 0 0", color: "var(--ink)" }}>
+    <h1
+      style={{
+        "font-size": "26px",
+        "font-weight": "700",
+        "letter-spacing": "-.018em",
+        "line-height": "1.16",
+        margin: "12px 0 0",
+        color: "var(--ink)",
+      }}
+    >
       {props.s.record.definition.title || "Untitled survey"}
     </h1>
     <Show when={props.s.record.definition.description}>
-      <p style={{ "font-size": "14.5px", color: "var(--muted)", "line-height": "1.55", margin: "8px 0 0" }}>
+      <p
+        style={{
+          "font-size": "14.5px",
+          color: "var(--muted)",
+          "line-height": "1.55",
+          margin: "8px 0 0",
+        }}
+      >
         {props.s.record.definition.description}
       </p>
     </Show>
 
     <Show when={props.respondable.length > 0}>
-      <div style={{ display: "flex", "align-items": "center", gap: "10px", "margin-top": "16px", "flex-wrap": "wrap" }}>
-        <span style={{ "font-family": "var(--mono)", "font-size": "10px", "letter-spacing": ".08em", "text-transform": "uppercase", color: "var(--dim)" }}>
+      <div
+        style={{
+          display: "flex",
+          "align-items": "center",
+          gap: "10px",
+          "margin-top": "16px",
+          "flex-wrap": "wrap",
+        }}
+      >
+        <span
+          style={{
+            "font-family": "var(--mono)",
+            "font-size": "10px",
+            "letter-spacing": ".08em",
+            "text-transform": "uppercase",
+            color: "var(--dim)",
+          }}
+        >
           Responding as
         </span>
         <For each={props.respondable}>
@@ -383,18 +484,58 @@ const SurveyHeader: Component<{
 );
 
 const RespondedBanner: Component<{ role: Role | null }> = (props) => (
-  <div style={{ display: "flex", "align-items": "flex-start", gap: "11px", background: "#F0FAF3", border: "1px solid var(--ok-line)", "border-radius": "13px", padding: "13px 16px", "margin-top": "14px" }}>
-    <span style={{ width: "20px", height: "20px", "border-radius": "50%", background: "var(--ok)", color: "#fff", "font-size": "12px", "font-weight": "700", display: "flex", "align-items": "center", "justify-content": "center", flex: "none", "margin-top": "1px" }}>
+  <div
+    style={{
+      display: "flex",
+      "align-items": "flex-start",
+      gap: "11px",
+      background: "#F0FAF3",
+      border: "1px solid var(--ok-line)",
+      "border-radius": "13px",
+      padding: "13px 16px",
+      "margin-top": "14px",
+    }}
+  >
+    <span
+      style={{
+        width: "20px",
+        height: "20px",
+        "border-radius": "50%",
+        background: "var(--ok)",
+        color: "#fff",
+        "font-size": "12px",
+        "font-weight": "700",
+        display: "flex",
+        "align-items": "center",
+        "justify-content": "center",
+        flex: "none",
+        "margin-top": "1px",
+      }}
+    >
       ✓
     </span>
     <div style={{ flex: "1" }}>
-      <div style={{ "font-size": "13.5px", "font-weight": "700", color: "var(--ok)" }}>
-        You already responded as {props.role !== null ? roleLabel(props.role) : "this role"}
+      <div
+        style={{
+          "font-size": "13.5px",
+          "font-weight": "700",
+          color: "var(--ok)",
+        }}
+      >
+        You already responded as{" "}
+        {props.role !== null ? roleLabel(props.role) : "this role"}
       </div>
-      <div style={{ "font-size": "12.5px", color: "#3F7A55", "line-height": "1.45", "margin-top": "3px" }}>
+      <div
+        style={{
+          "font-size": "12.5px",
+          color: "#3F7A55",
+          "line-height": "1.45",
+          "margin-top": "3px",
+        }}
+      >
         Your previous answers are pre-filled. Submitting again publishes a new
-        response that fully replaces the earlier one under latest-valid-wins; the
-        old one stays on-chain but is no longer tallied.
+        response that fully replaces the earlier one under latest-valid-wins;
+        the old one stays on-chain but is no longer tallied.
       </div>
     </div>
   </div>
@@ -424,37 +565,85 @@ const QuestionCard: Component<{
   const skipped = () => props.draft?.skipped ?? false;
   return (
     <div style={cardStyle()}>
-      <div style={{ display: "flex", "align-items": "center", "justify-content": "space-between", gap: "10px", "flex-wrap": "wrap" }}>
+      <div
+        style={{
+          display: "flex",
+          "align-items": "center",
+          "justify-content": "space-between",
+          gap: "10px",
+          "flex-wrap": "wrap",
+        }}
+      >
         <div style={{ display: "flex", gap: "10px", "align-items": "center" }}>
           <span style={qChipStyle()}>Q{props.index + 1}</span>
-          <span style={{ "font-family": "var(--mono)", "font-size": "10px", "letter-spacing": ".06em", "text-transform": "uppercase", color: "var(--dim)" }}>
+          <span
+            style={{
+              "font-family": "var(--mono)",
+              "font-size": "10px",
+              "letter-spacing": ".06em",
+              "text-transform": "uppercase",
+              color: "var(--dim)",
+            }}
+          >
             {typeMeta(props.q)}
           </span>
           <Show when={props.q.required}>
-            <span style={{ "font-size": "10px", "font-weight": "700", color: "var(--danger)", background: "var(--danger-bg)", "border-radius": "var(--r-3xs)", padding: "2px 6px" }}>
+            <span
+              style={{
+                "font-size": "10px",
+                "font-weight": "700",
+                color: "var(--danger)",
+                background: "var(--danger-bg)",
+                "border-radius": "var(--r-3xs)",
+                padding: "2px 6px",
+              }}
+            >
               Required
             </span>
           </Show>
         </div>
-        <button onClick={() => props.onSkip(!skipped())} style={skipBtnStyle(skipped())}>
+        <button
+          onClick={() => props.onSkip(!skipped())}
+          style={skipBtnStyle(skipped())}
+        >
           {skipped() ? "Skipped" : "Skip"}
         </button>
       </div>
-      <h3 style={{ "font-family": "var(--serif)", "font-size": "18px", "font-weight": "600", "line-height": "1.28", margin: "11px 0 0", color: "var(--ink)" }}>
+      <h3
+        style={{
+          "font-family": "var(--serif)",
+          "font-size": "18px",
+          "font-weight": "600",
+          "line-height": "1.28",
+          margin: "11px 0 0",
+          color: "var(--ink)",
+        }}
+      >
         {props.q.prompt || "(no prompt)"}
       </h3>
 
       <Show
         when={!skipped()}
         fallback={
-          <p style={{ "font-size": "12.5px", color: "var(--dim)", margin: "12px 0 0", "font-style": "italic" }}>
+          <p
+            style={{
+              "font-size": "12.5px",
+              color: "var(--dim)",
+              margin: "12px 0 0",
+              "font-style": "italic",
+            }}
+          >
             Skipped — abstaining. Nothing is recorded for this question.
           </p>
         }
       >
         <div style={{ "margin-top": "14px" }}>
           <Show when={props.draft}>
-            <QuestionBody q={props.q} value={props.draft!.value} onChange={props.onChange} />
+            <QuestionBody
+              q={props.q}
+              value={props.draft!.value}
+              onChange={props.onChange}
+            />
           </Show>
         </div>
       </Show>
@@ -550,12 +739,21 @@ const SingleChoiceBody: Component<{
         const on = () => props.v.optionIndex === i;
         return (
           <div
-            onClick={() => props.onChange({ type: "singleChoice", optionIndex: i })}
+            onClick={() =>
+              props.onChange({ type: "singleChoice", optionIndex: i })
+            }
             style={optionRowStyle(on())}
           >
             <span style={radioStyle(on())}>
               <Show when={on()}>
-                <span style={{ width: "8px", height: "8px", "border-radius": "50%", background: "#fff" }} />
+                <span
+                  style={{
+                    width: "8px",
+                    height: "8px",
+                    "border-radius": "50%",
+                    background: "#fff",
+                  }}
+                />
               </Show>
             </span>
             <span>{labelFor(props.q.options, i)}</span>
@@ -575,11 +773,20 @@ const MultiSelectBody: Component<{
     const set = new Set(props.v.selected);
     if (set.has(i)) set.delete(i);
     else if (props.v.selected.length < props.q.maxSelections) set.add(i);
-    props.onChange({ type: "multiSelect", selected: [...set].sort((a, b) => a - b) });
+    props.onChange({
+      type: "multiSelect",
+      selected: [...set].sort((a, b) => a - b),
+    });
   };
   return (
     <>
-      <div style={{ display: "grid", "grid-template-columns": "1fr 1fr", gap: "8px" }}>
+      <div
+        style={{
+          display: "grid",
+          "grid-template-columns": "1fr 1fr",
+          gap: "8px",
+        }}
+      >
         <For each={range(optionCount(props.q.options))}>
           {(i) => {
             const on = () => props.v.selected.includes(i);
@@ -594,13 +801,40 @@ const MultiSelectBody: Component<{
           }}
         </For>
       </div>
-      <div style={{ "font-family": "var(--mono)", "font-size": "11px", color: "var(--dim)", "margin-top": "10px" }}>
-        select {props.q.minSelections}–{props.q.maxSelections} · {props.v.selected.length} chosen
+      <div
+        style={{
+          "font-family": "var(--mono)",
+          "font-size": "11px",
+          color: "var(--dim)",
+          "margin-top": "10px",
+        }}
+      >
+        select {props.q.minSelections}–{props.q.maxSelections} ·{" "}
+        {props.v.selected.length} chosen
       </div>
       <Show when={props.q.minSelections === 0}>
-        <div style={{ display: "flex", "align-items": "flex-start", gap: "9px", background: "#FBFAF6", border: "1px solid #F0EBD8", "border-radius": "var(--r-md)", padding: "10px 12px", "margin-top": "10px" }}>
-          <span style={{ "font-size": "12px", color: "#7A6A45", "line-height": "1.45" }}>
-            <b style={{ color: "#5B4A22" }}>"None of these" is a real answer.</b>{" "}
+        <div
+          style={{
+            display: "flex",
+            "align-items": "flex-start",
+            gap: "9px",
+            background: "#FBFAF6",
+            border: "1px solid #F0EBD8",
+            "border-radius": "var(--r-md)",
+            padding: "10px 12px",
+            "margin-top": "10px",
+          }}
+        >
+          <span
+            style={{
+              "font-size": "12px",
+              color: "#7A6A45",
+              "line-height": "1.45",
+            }}
+          >
+            <b style={{ color: "#5B4A22" }}>
+              "None of these" is a real answer.
+            </b>{" "}
             This question allows 0 selections — submitting with nothing checked
             records a deliberate empty answer, different from Skip (abstain).
           </span>
@@ -618,7 +852,8 @@ const RankingBody: Component<{
   const ranked = () => props.v.ranked;
   const pool = () =>
     range(optionCount(props.q.options)).filter((i) => !ranked().includes(i));
-  const set = (next: number[]) => props.onChange({ type: "ranking", ranked: next });
+  const set = (next: number[]) =>
+    props.onChange({ type: "ranking", ranked: next });
   const add = (i: number) => {
     if (ranked().length < props.q.maxRanked) set([...ranked(), i]);
   };
@@ -636,23 +871,70 @@ const RankingBody: Component<{
         <div style={{ "margin-bottom": "10px" }}>
           <For each={ranked()}>
             {(optIdx, pos) => (
-              <div style={{ display: "flex", "align-items": "center", gap: "11px", background: "var(--accent-bg)", border: "1px solid var(--accent-line)", "border-radius": "var(--r-control)", padding: "9px 11px", "margin-bottom": "7px" }}>
-                <span style={{ width: "24px", height: "24px", "border-radius": "50%", background: "var(--accent)", color: "#fff", "font-size": "12.5px", "font-weight": "700", display: "flex", "align-items": "center", "justify-content": "center", flex: "none" }}>
+              <div
+                style={{
+                  display: "flex",
+                  "align-items": "center",
+                  gap: "11px",
+                  background: "var(--accent-bg)",
+                  border: "1px solid var(--accent-line)",
+                  "border-radius": "var(--r-control)",
+                  padding: "9px 11px",
+                  "margin-bottom": "7px",
+                }}
+              >
+                <span
+                  style={{
+                    width: "24px",
+                    height: "24px",
+                    "border-radius": "50%",
+                    background: "var(--accent)",
+                    color: "#fff",
+                    "font-size": "12.5px",
+                    "font-weight": "700",
+                    display: "flex",
+                    "align-items": "center",
+                    "justify-content": "center",
+                    flex: "none",
+                  }}
+                >
                   {pos() + 1}
                 </span>
-                <span style={{ "font-size": "14.5px", "font-weight": "600", flex: "1" }}>
+                <span
+                  style={{
+                    "font-size": "14.5px",
+                    "font-weight": "600",
+                    flex: "1",
+                  }}
+                >
                   {labelFor(props.q.options, optIdx)}
                 </span>
-                <button style={rankBtnStyle()} onClick={() => move(pos(), -1)}>↑</button>
-                <button style={rankBtnStyle()} onClick={() => move(pos(), 1)}>↓</button>
-                <button style={rankBtnStyle("danger")} onClick={() => remove(optIdx)}>×</button>
+                <button style={rankBtnStyle()} onClick={() => move(pos(), -1)}>
+                  ↑
+                </button>
+                <button style={rankBtnStyle()} onClick={() => move(pos(), 1)}>
+                  ↓
+                </button>
+                <button
+                  style={rankBtnStyle("danger")}
+                  onClick={() => remove(optIdx)}
+                >
+                  ×
+                </button>
               </div>
             )}
           </For>
         </div>
       </Show>
       <Show when={pool().length > 0}>
-        <div style={{ "font-family": "var(--mono)", "font-size": "10.5px", color: "var(--dim)", "margin-bottom": "8px" }}>
+        <div
+          style={{
+            "font-family": "var(--mono)",
+            "font-size": "10.5px",
+            color: "var(--dim)",
+            "margin-bottom": "8px",
+          }}
+        >
           tap to add · rank {props.q.minRanked}–{props.q.maxRanked}
         </div>
         <div style={{ display: "flex", "flex-wrap": "wrap", gap: "8px" }}>
@@ -685,8 +967,24 @@ const NumericBody: Component<{
   const set = (value: bigint) => props.onChange({ type: "numeric", value });
   return (
     <>
-      <div style={{ display: "flex", "align-items": "baseline", gap: "10px", "justify-content": "center", margin: "4px 0 14px" }}>
-        <span style={{ "font-family": "var(--mono)", "font-size": "44px", "font-weight": "600", color: "var(--accent)", "letter-spacing": "-.02em" }}>
+      <div
+        style={{
+          display: "flex",
+          "align-items": "baseline",
+          gap: "10px",
+          "justify-content": "center",
+          margin: "4px 0 14px",
+        }}
+      >
+        <span
+          style={{
+            "font-family": "var(--mono)",
+            "font-size": "44px",
+            "font-weight": "600",
+            color: "var(--accent)",
+            "letter-spacing": "-.02em",
+          }}
+        >
           {props.v.value.toString()}
         </span>
       </div>
@@ -721,7 +1019,16 @@ const NumericBody: Component<{
           onInput={(e) => set(BigInt(e.currentTarget.value))}
           style={{ width: "100%", "accent-color": "var(--accent)" }}
         />
-        <div style={{ display: "flex", "justify-content": "space-between", "font-family": "var(--mono)", "font-size": "11px", color: "var(--dim)", "margin-top": "8px" }}>
+        <div
+          style={{
+            display: "flex",
+            "justify-content": "space-between",
+            "font-family": "var(--mono)",
+            "font-size": "11px",
+            color: "var(--dim)",
+            "margin-top": "8px",
+          }}
+        >
           <span>{min.toString()}</span>
           <span>{max.toString()}</span>
         </div>
@@ -746,36 +1053,101 @@ const PointsBody: Component<{
   };
   return (
     <>
-      <div style={{ display: "flex", "align-items": "baseline", "justify-content": "flex-end", gap: "8px", "margin-bottom": "14px" }}>
-        <span style={{ "font-size": "13px", "font-weight": "600", color: "var(--muted)" }}>
+      <div
+        style={{
+          display: "flex",
+          "align-items": "baseline",
+          "justify-content": "flex-end",
+          gap: "8px",
+          "margin-bottom": "14px",
+        }}
+      >
+        <span
+          style={{
+            "font-size": "13px",
+            "font-weight": "600",
+            color: "var(--muted)",
+          }}
+        >
           Remaining to allocate
         </span>
-        <span style={{ "font-family": "var(--mono)", "font-size": "15px", "font-weight": "700", color: remaining() === 0 ? "var(--ok)" : "var(--accent)" }}>
+        <span
+          style={{
+            "font-family": "var(--mono)",
+            "font-size": "15px",
+            "font-weight": "700",
+            color: remaining() === 0 ? "var(--ok)" : "var(--accent)",
+          }}
+        >
           {remaining()} pts
         </span>
       </div>
       <For each={range(optionCount(props.q.options))}>
         {(i) => (
           <div style={{ "margin-bottom": "13px" }}>
-            <div style={{ display: "flex", "align-items": "center", "justify-content": "space-between", "margin-bottom": "7px" }}>
+            <div
+              style={{
+                display: "flex",
+                "align-items": "center",
+                "justify-content": "space-between",
+                "margin-bottom": "7px",
+              }}
+            >
               <span style={{ "font-size": "14.5px", "font-weight": "600" }}>
                 {labelFor(props.q.options, i)}
               </span>
-              <div style={{ display: "flex", "align-items": "center", gap: "10px" }}>
-                <button style={stepBtnStyle()} onClick={() => bump(i, -1)}>−</button>
-                <span style={{ "font-family": "var(--mono)", "font-size": "15px", "font-weight": "600", width: "34px", "text-align": "center" }}>
+              <div
+                style={{
+                  display: "flex",
+                  "align-items": "center",
+                  gap: "10px",
+                }}
+              >
+                <button style={stepBtnStyle()} onClick={() => bump(i, -1)}>
+                  −
+                </button>
+                <span
+                  style={{
+                    "font-family": "var(--mono)",
+                    "font-size": "15px",
+                    "font-weight": "600",
+                    width: "34px",
+                    "text-align": "center",
+                  }}
+                >
                   {props.v.points[i] ?? 0}
                 </span>
-                <button style={stepBtnStyle()} onClick={() => bump(i, 1)}>+</button>
+                <button style={stepBtnStyle()} onClick={() => bump(i, 1)}>
+                  +
+                </button>
               </div>
             </div>
-            <div style={{ height: "8px", "border-radius": "var(--r-pill)", background: "var(--line2)", overflow: "hidden" }}>
-              <div style={{ width: `${pct(props.v.points[i] ?? 0, props.q.budget)}%`, height: "100%", background: "var(--accent)" }} />
+            <div
+              style={{
+                height: "8px",
+                "border-radius": "var(--r-pill)",
+                background: "var(--line2)",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  width: `${pct(props.v.points[i] ?? 0, props.q.budget)}%`,
+                  height: "100%",
+                  background: "var(--accent)",
+                }}
+              />
             </div>
           </div>
         )}
       </For>
-      <div style={{ "font-family": "var(--mono)", "font-size": "11px", color: "var(--faint)" }}>
+      <div
+        style={{
+          "font-family": "var(--mono)",
+          "font-size": "11px",
+          color: "var(--faint)",
+        }}
+      >
         distribute {props.q.budget} points · sum must equal budget
       </div>
     </>
@@ -797,7 +1169,17 @@ const RatingBody: Component<{
     <div style={{ display: "flex", "flex-direction": "column", gap: "4px" }}>
       <For each={range(optionCount(props.q.options))}>
         {(optIdx) => (
-          <div style={{ display: "flex", "align-items": "center", "justify-content": "space-between", gap: "12px", padding: "9px 0", "border-top": "1px solid var(--hair)", "flex-wrap": "wrap" }}>
+          <div
+            style={{
+              display: "flex",
+              "align-items": "center",
+              "justify-content": "space-between",
+              gap: "12px",
+              padding: "9px 0",
+              "border-top": "1px solid var(--hair)",
+              "flex-wrap": "wrap",
+            }}
+          >
             <span style={{ "font-size": "14.5px", "font-weight": "600" }}>
               {labelFor(props.q.options, optIdx)}
             </span>
@@ -825,7 +1207,10 @@ const RatingBody: Component<{
                   {(lvl) => {
                     const on = () => props.v.ratings[optIdx] === lvl.value;
                     return (
-                      <button onClick={() => setRating(optIdx, lvl.value)} style={ratingBtnStyle(on())}>
+                      <button
+                        onClick={() => setRating(optIdx, lvl.value)}
+                        style={ratingBtnStyle(on())}
+                      >
                         {lvl.label}
                       </button>
                     );
@@ -846,11 +1231,41 @@ const CustomBody: Component<{
   onChange: (v: DraftValue) => void;
 }> = (props) => (
   <>
-    <div style={{ display: "flex", "align-items": "center", gap: "10px", background: "var(--ink)", "border-radius": "var(--r-control)", padding: "11px 13px", "margin-bottom": "11px" }}>
-      <span style={{ "font-family": "var(--mono)", "font-size": "10px", "font-weight": "600", "letter-spacing": ".06em", color: "#7E89A8", background: "#1C2536", "border-radius": "var(--r-3xs)", padding: "3px 7px" }}>
+    <div
+      style={{
+        display: "flex",
+        "align-items": "center",
+        gap: "10px",
+        background: "var(--ink)",
+        "border-radius": "var(--r-control)",
+        padding: "11px 13px",
+        "margin-bottom": "11px",
+      }}
+    >
+      <span
+        style={{
+          "font-family": "var(--mono)",
+          "font-size": "10px",
+          "font-weight": "600",
+          "letter-spacing": ".06em",
+          color: "#7E89A8",
+          background: "#1C2536",
+          "border-radius": "var(--r-3xs)",
+          padding: "3px 7px",
+        }}
+      >
         schema
       </span>
-      <span style={{ "font-family": "var(--mono)", "font-size": "11.5px", color: "#C4CCDA", overflow: "hidden", "text-overflow": "ellipsis", "white-space": "nowrap" }}>
+      <span
+        style={{
+          "font-family": "var(--mono)",
+          "font-size": "11.5px",
+          color: "#C4CCDA",
+          overflow: "hidden",
+          "text-overflow": "ellipsis",
+          "white-space": "nowrap",
+        }}
+      >
         {props.q.methodSchema.uri}
       </span>
     </div>
@@ -858,11 +1273,31 @@ const CustomBody: Component<{
       type="text"
       value={props.v.text}
       placeholder="Your answer"
-      onInput={(e) => props.onChange({ type: "custom", text: e.currentTarget.value })}
-      style={{ width: "100%", border: "1px solid var(--line)", "border-radius": "var(--r-control)", padding: "13px 14px", "font-family": "inherit", "font-size": "14.5px", color: "var(--ink)", outline: "none", "box-sizing": "border-box" }}
+      onInput={(e) =>
+        props.onChange({ type: "custom", text: e.currentTarget.value })
+      }
+      style={{
+        width: "100%",
+        border: "1px solid var(--line)",
+        "border-radius": "var(--r-control)",
+        padding: "13px 14px",
+        "font-family": "inherit",
+        "font-size": "14.5px",
+        color: "var(--ink)",
+        outline: "none",
+        "box-sizing": "border-box",
+      }}
     />
-    <p style={{ "font-size": "11.5px", color: "var(--dim)", "line-height": "1.45", margin: "9px 0 0" }}>
-      Encoded as a raw text metadatum and interpreted by the method at the anchor.
+    <p
+      style={{
+        "font-size": "11.5px",
+        color: "var(--dim)",
+        "line-height": "1.45",
+        margin: "9px 0 0",
+      }}
+    >
+      Encoded as a raw text metadatum and interpreted by the method at the
+      anchor.
     </p>
   </>
 );
@@ -880,13 +1315,46 @@ const SubmitBar: Component<{
 }> = (props) => {
   const ready = () => props.decided >= props.total && props.total > 0;
   return (
-    <div style={{ position: "fixed", left: "0", right: "0", bottom: "0", "z-index": "30", background: "rgba(255,255,255,.92)", "backdrop-filter": "blur(10px)", "border-top": "1px solid #E7E0D0" }}>
-      <div style={{ "max-width": "760px", margin: "0 auto", padding: "13px 24px", display: "flex", "align-items": "center", gap: "16px", "flex-wrap": "wrap" }}>
-        <div style={{ display: "flex", "flex-direction": "column", gap: "5px" }}>
-          <span style={{ display: "flex", "align-items": "center", gap: "4px" }}>
+    <div
+      style={{
+        position: "fixed",
+        left: "0",
+        right: "0",
+        bottom: "0",
+        "z-index": "30",
+        background: "rgba(255,255,255,.92)",
+        "backdrop-filter": "blur(10px)",
+        "border-top": "1px solid #E7E0D0",
+      }}
+    >
+      <div
+        style={{
+          "max-width": "760px",
+          margin: "0 auto",
+          padding: "13px 24px",
+          display: "flex",
+          "align-items": "center",
+          gap: "16px",
+          "flex-wrap": "wrap",
+        }}
+      >
+        <div
+          style={{ display: "flex", "flex-direction": "column", gap: "5px" }}
+        >
+          <span
+            style={{ display: "flex", "align-items": "center", gap: "4px" }}
+          >
             <For each={range(props.total)}>
               {(i) => (
-                <span style={{ width: "16px", height: "5px", "border-radius": "3px", background: i < props.decided ? "var(--accent)" : "var(--line2)" }} />
+                <span
+                  style={{
+                    width: "16px",
+                    height: "5px",
+                    "border-radius": "3px",
+                    background:
+                      i < props.decided ? "var(--accent)" : "var(--line2)",
+                  }}
+                />
               )}
             </For>
           </span>
@@ -894,7 +1362,13 @@ const SubmitBar: Component<{
             {props.decided} of {props.total} decided
           </span>
           <Show when={props.replacing}>
-            <span style={{ "font-family": "var(--mono)", "font-size": "11px", color: "var(--ok)" }}>
+            <span
+              style={{
+                "font-family": "var(--mono)",
+                "font-size": "11px",
+                color: "var(--ok)",
+              }}
+            >
               ✓ replaces your previous response
             </span>
           </Show>
@@ -917,23 +1391,73 @@ const SubmittedPanel: Component<{ hash: string; surveyKey: string }> = (
 ) => {
   const navigate = useNavigate();
   return (
-    <div style={{ ...cardStyle(), "text-align": "center", "margin-top": "20px" }}>
-      <span style={{ display: "inline-flex", "align-items": "center", "justify-content": "center", width: "46px", height: "46px", "border-radius": "13px", background: "var(--ok-bg)", color: "var(--ok)", "font-size": "22px" }}>
+    <div
+      style={{ ...cardStyle(), "text-align": "center", "margin-top": "20px" }}
+    >
+      <span
+        style={{
+          display: "inline-flex",
+          "align-items": "center",
+          "justify-content": "center",
+          width: "46px",
+          height: "46px",
+          "border-radius": "13px",
+          background: "var(--ok-bg)",
+          color: "var(--ok)",
+          "font-size": "22px",
+        }}
+      >
         ✓
       </span>
-      <h3 style={{ "font-size": "19px", "font-weight": "800", "letter-spacing": "-.01em", margin: "14px 0 0" }}>
+      <h3
+        style={{
+          "font-size": "19px",
+          "font-weight": "800",
+          "letter-spacing": "-.01em",
+          margin: "14px 0 0",
+        }}
+      >
         Response submitted
       </h3>
-      <p style={{ "font-size": "14px", color: "var(--muted)", "line-height": "1.55", margin: "8px auto 0", "max-width": "440px" }}>
+      <p
+        style={{
+          "font-size": "14px",
+          color: "var(--muted)",
+          "line-height": "1.55",
+          margin: "8px auto 0",
+          "max-width": "440px",
+        }}
+      >
         Your response was published under metadata label 17. It may take a few
         moments to appear in the tally as the indexer catches up.
       </p>
-      <div style={{ "font-family": "var(--mono)", "font-size": "11.5px", color: "var(--faint)", "margin-top": "12px", "word-break": "break-all" }}>
+      <div
+        style={{
+          "font-family": "var(--mono)",
+          "font-size": "11.5px",
+          color: "var(--faint)",
+          "margin-top": "12px",
+          "word-break": "break-all",
+        }}
+      >
         tx {props.hash}
       </div>
       <button
-        onClick={() => navigate(`/survey/${encodeURIComponent(props.surveyKey)}`)}
-        style={{ "margin-top": "18px", background: "var(--accent)", color: "#fff", border: "none", "border-radius": "var(--r-control)", padding: "11px 18px", "font-family": "inherit", "font-size": "14px", "font-weight": "700", cursor: "pointer" }}
+        onClick={() =>
+          navigate(`/survey/${encodeURIComponent(props.surveyKey)}`)
+        }
+        style={{
+          "margin-top": "18px",
+          background: "var(--accent)",
+          color: "#fff",
+          border: "none",
+          "border-radius": "var(--r-control)",
+          padding: "11px 18px",
+          "font-family": "inherit",
+          "font-size": "14px",
+          "font-weight": "700",
+          cursor: "pointer",
+        }}
       >
         View results →
       </button>
@@ -942,22 +1466,66 @@ const SubmittedPanel: Component<{ hash: string; surveyKey: string }> = (
 };
 
 const ProblemList: Component<{ problems: string[] }> = (props) => (
-  <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-line)", "border-radius": "var(--r-md)", padding: "13px 15px", "margin-top": "14px" }}>
-    <div style={{ "font-size": "13px", "font-weight": "700", color: "var(--danger)" }}>
+  <div
+    style={{
+      background: "var(--danger-bg)",
+      border: "1px solid var(--danger-line)",
+      "border-radius": "var(--r-md)",
+      padding: "13px 15px",
+      "margin-top": "14px",
+    }}
+  >
+    <div
+      style={{
+        "font-size": "13px",
+        "font-weight": "700",
+        color: "var(--danger)",
+      }}
+    >
       Please fix before submitting
     </div>
-    <ul style={{ margin: "8px 0 0", padding: "0 0 0 18px", color: "#8A3A2E", "font-size": "12.5px", "line-height": "1.6" }}>
+    <ul
+      style={{
+        margin: "8px 0 0",
+        padding: "0 0 0 18px",
+        color: "#8A3A2E",
+        "font-size": "12.5px",
+        "line-height": "1.6",
+      }}
+    >
       <For each={props.problems}>{(p) => <li>{p}</li>}</For>
     </ul>
   </div>
 );
 
 const ErrorBox: Component<{ message: string }> = (props) => (
-  <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-line)", "border-radius": "var(--r-md)", padding: "13px 15px", "margin-top": "14px" }}>
-    <div style={{ "font-size": "13px", "font-weight": "700", color: "var(--danger)" }}>
+  <div
+    style={{
+      background: "var(--danger-bg)",
+      border: "1px solid var(--danger-line)",
+      "border-radius": "var(--r-md)",
+      padding: "13px 15px",
+      "margin-top": "14px",
+    }}
+  >
+    <div
+      style={{
+        "font-size": "13px",
+        "font-weight": "700",
+        color: "var(--danger)",
+      }}
+    >
       Submission failed
     </div>
-    <div style={{ "font-size": "12.5px", color: "#8A3A2E", "line-height": "1.5", "margin-top": "5px", "word-break": "break-word" }}>
+    <div
+      style={{
+        "font-size": "12.5px",
+        color: "#8A3A2E",
+        "line-height": "1.5",
+        "margin-top": "5px",
+        "word-break": "break-word",
+      }}
+    >
       {props.message}
     </div>
   </div>
@@ -978,17 +1546,38 @@ const Notice: Component<{
       "text-align": "center",
     }}
   >
-    <div style={{ "font-size": "16px", "font-weight": "800", color: props.tone === "warn" ? "var(--warn)" : "var(--ink)" }}>
+    <div
+      style={{
+        "font-size": "16px",
+        "font-weight": "800",
+        color: props.tone === "warn" ? "var(--warn)" : "var(--ink)",
+      }}
+    >
       {props.title}
     </div>
-    <p style={{ "font-size": "13.5px", color: "var(--muted)", "line-height": "1.55", margin: "8px auto 0", "max-width": "460px" }}>
+    <p
+      style={{
+        "font-size": "13.5px",
+        color: "var(--muted)",
+        "line-height": "1.55",
+        margin: "8px auto 0",
+        "max-width": "460px",
+      }}
+    >
       {props.body}
     </p>
   </div>
 );
 
 const Empty: Component<{ loading: boolean }> = (props) => (
-  <div style={{ ...cardStyle(), "text-align": "center", color: "var(--muted)", "margin-top": "14px" }}>
+  <div
+    style={{
+      ...cardStyle(),
+      "text-align": "center",
+      color: "var(--muted)",
+      "margin-top": "14px",
+    }}
+  >
     {props.loading ? "Loading…" : "Survey not found."}
   </div>
 );
@@ -1002,7 +1591,9 @@ function range(n: number): number[] {
 }
 
 function labelFor(opts: OptionsOrCount, i: number): string {
-  return opts.type === "options" ? (opts.labels[i] ?? `Option ${i + 1}`) : `Option ${i + 1}`;
+  return opts.type === "options"
+    ? (opts.labels[i] ?? `Option ${i + 1}`)
+    : `Option ${i + 1}`;
 }
 
 function typeMeta(q: Question): string {
@@ -1022,7 +1613,12 @@ function typeMeta(q: Question): string {
   }
 }
 
-function clampStep(value: bigint, min: bigint, max: bigint, step: bigint): bigint {
+function clampStep(
+  value: bigint,
+  min: bigint,
+  max: bigint,
+  step: bigint,
+): bigint {
   let v = value < min ? min : value > max ? max : value;
   if (step > 0n) v = min + ((v - min) / step) * step;
   return v;
@@ -1035,7 +1631,10 @@ function ratingLevels(
     case "labels":
       return scale.labels.map((l, i) => ({ value: BigInt(i), label: l }));
     case "count":
-      return range(scale.count).map((i) => ({ value: BigInt(i), label: String(i + 1) }));
+      return range(scale.count).map((i) => ({
+        value: BigInt(i),
+        label: String(i + 1),
+      }));
     case "numeric": {
       const { min, max } = scale.constraints;
       const step = scale.constraints.step ?? 1n;
@@ -1057,47 +1656,202 @@ function pct(n: number, of: number): number {
 // --- styles -----------------------------------------------------------------
 
 function backLinkStyle(): JSX.CSSProperties {
-  return { display: "inline-flex", "align-items": "center", gap: "7px", "font-size": "13.5px", "font-weight": "600", color: "var(--muted)", "text-decoration": "none", padding: "6px 0" };
+  return {
+    display: "inline-flex",
+    "align-items": "center",
+    gap: "7px",
+    "font-size": "13.5px",
+    "font-weight": "600",
+    color: "var(--muted)",
+    "text-decoration": "none",
+    padding: "6px 0",
+  };
 }
 function cardStyle(): JSX.CSSProperties {
-  return { background: "#fff", border: "1px solid var(--line)", "border-radius": "var(--r-sm)", padding: "20px 22px", "margin-top": "12px" };
+  return {
+    background: "#fff",
+    border: "1px solid var(--line)",
+    "border-radius": "var(--r-sm)",
+    padding: "20px 22px",
+    "margin-top": "12px",
+  };
 }
 function qChipStyle(): JSX.CSSProperties {
-  return { "font-family": "var(--mono)", "font-size": "12px", "font-weight": "600", color: "var(--accent)", background: "var(--accent-bg)", "border-radius": "var(--r-chip)", padding: "5px 8px" };
+  return {
+    "font-family": "var(--mono)",
+    "font-size": "12px",
+    "font-weight": "600",
+    color: "var(--accent)",
+    background: "var(--accent-bg)",
+    "border-radius": "var(--r-chip)",
+    padding: "5px 8px",
+  };
 }
 function skipBtnStyle(on: boolean): JSX.CSSProperties {
-  return { "font-family": "inherit", "font-size": "12px", "font-weight": "700", cursor: "pointer", "border-radius": "var(--r-chip)", padding: "6px 12px", border: on ? "1px solid var(--accent)" : "1px solid var(--line)", background: on ? "var(--accent-bg)" : "#fff", color: on ? "var(--accent)" : "var(--muted)" };
+  return {
+    "font-family": "inherit",
+    "font-size": "12px",
+    "font-weight": "700",
+    cursor: "pointer",
+    "border-radius": "var(--r-chip)",
+    padding: "6px 12px",
+    border: on ? "1px solid var(--accent)" : "1px solid var(--line)",
+    background: on ? "var(--accent-bg)" : "#fff",
+    color: on ? "var(--accent)" : "var(--muted)",
+  };
 }
 function rolePickStyle(on: boolean): JSX.CSSProperties {
-  return { "font-family": "inherit", "font-size": "12.5px", "font-weight": on ? "700" : "600", cursor: "pointer", "border-radius": "8px", padding: "6px 12px", border: on ? "1px solid var(--accent)" : "1px solid #E7E0D0", background: on ? "var(--accent)" : "#F2ECDE", color: on ? "#FBF8F1" : "#6B6356" };
+  return {
+    "font-family": "inherit",
+    "font-size": "12.5px",
+    "font-weight": on ? "700" : "600",
+    cursor: "pointer",
+    "border-radius": "8px",
+    padding: "6px 12px",
+    border: on ? "1px solid var(--accent)" : "1px solid #E7E0D0",
+    background: on ? "var(--accent)" : "#F2ECDE",
+    color: on ? "#FBF8F1" : "#6B6356",
+  };
 }
 function roleChipStyle(color: string, bg: string): JSX.CSSProperties {
-  return { "font-size": "12px", "font-weight": "700", color, background: bg, "border-radius": "6px", padding: "3px 9px" };
+  return {
+    "font-size": "12px",
+    "font-weight": "700",
+    color,
+    background: bg,
+    "border-radius": "6px",
+    padding: "3px 9px",
+  };
 }
 function optionRowStyle(on: boolean): JSX.CSSProperties {
-  return { display: "flex", "align-items": "center", gap: "11px", cursor: "pointer", "border-radius": "var(--r-control)", padding: "11px 13px", border: on ? "1px solid var(--accent)" : "1px solid var(--line)", background: on ? "var(--accent-bg)" : "#fff", "font-size": "14.5px", "font-weight": "600", color: "var(--ink)" };
+  return {
+    display: "flex",
+    "align-items": "center",
+    gap: "11px",
+    cursor: "pointer",
+    "border-radius": "var(--r-control)",
+    padding: "11px 13px",
+    border: on ? "1px solid var(--accent)" : "1px solid var(--line)",
+    background: on ? "var(--accent-bg)" : "#fff",
+    "font-size": "14.5px",
+    "font-weight": "600",
+    color: "var(--ink)",
+  };
 }
 function radioStyle(on: boolean): JSX.CSSProperties {
-  return { width: "18px", height: "18px", "border-radius": "50%", border: on ? "none" : "2px solid var(--line2)", background: on ? "var(--accent)" : "#fff", display: "flex", "align-items": "center", "justify-content": "center", flex: "none" };
+  return {
+    width: "18px",
+    height: "18px",
+    "border-radius": "50%",
+    border: on ? "none" : "2px solid var(--line2)",
+    background: on ? "var(--accent)" : "#fff",
+    display: "flex",
+    "align-items": "center",
+    "justify-content": "center",
+    flex: "none",
+  };
 }
 function checkboxStyle(on: boolean): JSX.CSSProperties {
-  return { width: "18px", height: "18px", "border-radius": "5px", border: on ? "none" : "2px solid var(--line2)", background: on ? "var(--accent)" : "#fff", color: "#fff", "font-size": "12px", "font-weight": "700", display: "flex", "align-items": "center", "justify-content": "center", flex: "none" };
+  return {
+    width: "18px",
+    height: "18px",
+    "border-radius": "5px",
+    border: on ? "none" : "2px solid var(--line2)",
+    background: on ? "var(--accent)" : "#fff",
+    color: "#fff",
+    "font-size": "12px",
+    "font-weight": "700",
+    display: "flex",
+    "align-items": "center",
+    "justify-content": "center",
+    flex: "none",
+  };
 }
 function rankBtnStyle(tone?: "danger"): JSX.CSSProperties {
-  return { width: "26px", height: "26px", "border-radius": "var(--r-xs)", border: `1px solid ${tone === "danger" ? "#F0D2D0" : "var(--accent-line)"}`, background: "#fff", color: tone === "danger" ? "var(--danger)" : "var(--accent)", "font-size": "13px", cursor: "pointer", "line-height": "1", flex: "none" };
+  return {
+    width: "26px",
+    height: "26px",
+    "border-radius": "var(--r-xs)",
+    border: `1px solid ${tone === "danger" ? "#F0D2D0" : "var(--accent-line)"}`,
+    background: "#fff",
+    color: tone === "danger" ? "var(--danger)" : "var(--accent)",
+    "font-size": "13px",
+    cursor: "pointer",
+    "line-height": "1",
+    flex: "none",
+  };
 }
 function poolBtnStyle(disabled: boolean): JSX.CSSProperties {
-  return { "font-family": "inherit", "font-size": "13px", "font-weight": "600", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? ".5" : "1", "border-radius": "var(--r-control)", padding: "8px 12px", border: "1px solid var(--line)", background: "#F2ECDE", color: "var(--body)" };
+  return {
+    "font-family": "inherit",
+    "font-size": "13px",
+    "font-weight": "600",
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? ".5" : "1",
+    "border-radius": "var(--r-control)",
+    padding: "8px 12px",
+    border: "1px solid var(--line)",
+    background: "#F2ECDE",
+    color: "var(--body)",
+  };
 }
 function stepBtnStyle(): JSX.CSSProperties {
-  return { width: "30px", height: "30px", "border-radius": "var(--r-xs)", border: "1px solid var(--line)", background: "#fff", color: "var(--accent)", "font-size": "17px", cursor: "pointer", "line-height": "1", flex: "none" };
+  return {
+    width: "30px",
+    height: "30px",
+    "border-radius": "var(--r-xs)",
+    border: "1px solid var(--line)",
+    background: "#fff",
+    color: "var(--accent)",
+    "font-size": "17px",
+    cursor: "pointer",
+    "line-height": "1",
+    flex: "none",
+  };
 }
 function ratingBtnStyle(on: boolean): JSX.CSSProperties {
-  return { "min-width": "34px", height: "34px", "border-radius": "var(--r-xs)", border: on ? "1px solid var(--accent)" : "1px solid var(--line)", background: on ? "var(--accent)" : "#fff", color: on ? "#fff" : "var(--body)", "font-family": "inherit", "font-size": "13px", "font-weight": "700", cursor: "pointer", padding: "0 8px" };
+  return {
+    "min-width": "34px",
+    height: "34px",
+    "border-radius": "var(--r-xs)",
+    border: on ? "1px solid var(--accent)" : "1px solid var(--line)",
+    background: on ? "var(--accent)" : "#fff",
+    color: on ? "#fff" : "var(--body)",
+    "font-family": "inherit",
+    "font-size": "13px",
+    "font-weight": "700",
+    cursor: "pointer",
+    padding: "0 8px",
+  };
 }
 function numberInputStyle(): JSX.CSSProperties {
-  return { width: "100%", border: "1px solid var(--line)", "border-radius": "var(--r-control)", padding: "12px 14px", "font-family": "var(--mono)", "font-size": "15px", color: "var(--ink)", outline: "none", "box-sizing": "border-box" };
+  return {
+    width: "100%",
+    border: "1px solid var(--line)",
+    "border-radius": "var(--r-control)",
+    padding: "12px 14px",
+    "font-family": "var(--mono)",
+    "font-size": "15px",
+    color: "var(--ink)",
+    outline: "none",
+    "box-sizing": "border-box",
+  };
 }
 function submitBtnStyle(enabled: boolean): JSX.CSSProperties {
-  return { "margin-left": "auto", display: "inline-flex", "align-items": "center", "justify-content": "center", gap: "9px", background: enabled ? "var(--accent)" : "var(--line2)", color: enabled ? "#fff" : "var(--dim)", border: "none", "border-radius": "var(--r-md)", padding: "14px 22px", "font-family": "inherit", "font-size": "14.5px", "font-weight": "700", cursor: enabled ? "pointer" : "not-allowed" };
+  return {
+    "margin-left": "auto",
+    display: "inline-flex",
+    "align-items": "center",
+    "justify-content": "center",
+    gap: "9px",
+    background: enabled ? "var(--accent)" : "var(--line2)",
+    color: enabled ? "#fff" : "var(--dim)",
+    border: "none",
+    "border-radius": "var(--r-md)",
+    padding: "14px 22px",
+    "font-family": "inherit",
+    "font-size": "14.5px",
+    "font-weight": "700",
+    cursor: enabled ? "pointer" : "not-allowed",
+  };
 }

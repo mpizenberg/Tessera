@@ -25,7 +25,11 @@ const FILTERS: ReadonlyArray<{ value: ExploreFilter; label: string }> = [
   { value: "mine", label: "Mine" },
 ];
 
-function matchesFilter(a: SurveyAggregate, f: ExploreFilter, flags: Flags): boolean {
+function matchesFilter(
+  a: SurveyAggregate,
+  f: ExploreFilter,
+  flags: Flags,
+): boolean {
   const v = viewStatus(a);
   switch (f) {
     case "all":
@@ -277,7 +281,14 @@ export const Explore: Component = () => {
                   label="Open · accepting responses"
                 />
                 <For each={openRows()}>
-                  {(a) => <Row a={a} tipEpoch={tipEpoch()} pro={app.ui.pro} flags={flagsOf(a)} />}
+                  {(a) => (
+                    <Row
+                      a={a}
+                      tipEpoch={tipEpoch()}
+                      pro={app.ui.pro}
+                      flags={flagsOf(a)}
+                    />
+                  )}
                 </For>
               </Show>
 
@@ -302,7 +313,12 @@ export const Explore: Component = () => {
                 <div style={{ opacity: "0.56" }}>
                   <For each={closedRows()}>
                     {(a) => (
-                      <Row a={a} tipEpoch={tipEpoch()} pro={app.ui.pro} flags={flagsOf(a)} />
+                      <Row
+                        a={a}
+                        tipEpoch={tipEpoch()}
+                        pro={app.ui.pro}
+                        flags={flagsOf(a)}
+                      />
                     )}
                   </For>
                 </div>
@@ -491,12 +507,36 @@ const Row: Component<{
             {def().title || "Untitled · external content"}
           </span>
           <Show when={props.flags.responded}>
-            <span style={{ flex: "none", "font-size": "10px", "font-weight": "700", color: "var(--ok)", background: "var(--ok-bg)", border: "1px solid var(--ok-line)", "border-radius": "5px", padding: "1.5px 6px", "white-space": "nowrap" }}>
+            <span
+              style={{
+                flex: "none",
+                "font-size": "10px",
+                "font-weight": "700",
+                color: "var(--ok)",
+                background: "var(--ok-bg)",
+                border: "1px solid var(--ok-line)",
+                "border-radius": "5px",
+                padding: "1.5px 6px",
+                "white-space": "nowrap",
+              }}
+            >
               ✓ You
             </span>
           </Show>
           <Show when={props.flags.mine}>
-            <span style={{ flex: "none", "font-size": "10px", "font-weight": "700", color: "var(--warn)", background: "var(--warn-bg)", border: "1px solid var(--warn-line)", "border-radius": "5px", padding: "1.5px 6px", "white-space": "nowrap" }}>
+            <span
+              style={{
+                flex: "none",
+                "font-size": "10px",
+                "font-weight": "700",
+                color: "var(--warn)",
+                background: "var(--warn-bg)",
+                border: "1px solid var(--warn-line)",
+                "border-radius": "5px",
+                padding: "1.5px 6px",
+                "white-space": "nowrap",
+              }}
+            >
               Yours
             </span>
           </Show>

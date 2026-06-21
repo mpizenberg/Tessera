@@ -41,7 +41,9 @@ import type { Cip30Api } from "./types";
  * only in `readonly` on the map/array members. The codec builds real `Map`
  * instances, so this is a type-level adapter, not a runtime conversion.
  */
-const toTxMetadatum = (m: Metadatum): TransactionMetadatum.TransactionMetadatum =>
+const toTxMetadatum = (
+  m: Metadatum,
+): TransactionMetadatum.TransactionMetadatum =>
   m as unknown as TransactionMetadatum.TransactionMetadatum;
 
 /**

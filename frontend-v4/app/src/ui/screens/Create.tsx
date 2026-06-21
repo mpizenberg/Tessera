@@ -43,7 +43,11 @@ const ADD_BUTTONS: ReadonlyArray<{
   { type: "multiSelect", short: "Multi", tag: QuestionTag.MultiSelect },
   { type: "ranking", short: "Ranking", tag: QuestionTag.Ranking },
   { type: "numericRange", short: "Numeric", tag: QuestionTag.NumericRange },
-  { type: "pointsAllocation", short: "Points", tag: QuestionTag.PointsAllocation },
+  {
+    type: "pointsAllocation",
+    short: "Points",
+    tag: QuestionTag.PointsAllocation,
+  },
   { type: "rating", short: "Rating", tag: QuestionTag.Rating },
   { type: "custom", short: "Custom", tag: QuestionTag.Custom },
 ];
@@ -76,7 +80,8 @@ export const Create: Component = () => {
   // Seed a sensible default end epoch once the tip is known (don't clobber input).
   createEffect(() => {
     const tip = app.snapshot()?.tip;
-    if (tip && meta.endEpoch === "") setMeta("endEpoch", String(tip.epoch + 30));
+    if (tip && meta.endEpoch === "")
+      setMeta("endEpoch", String(tip.epoch + 30));
   });
 
   const built = createMemo(() => {
@@ -147,7 +152,13 @@ export const Create: Component = () => {
           </main>
         }
       >
-        <main style={{ "max-width": "1160px", margin: "0 auto", padding: "22px 24px 90px" }}>
+        <main
+          style={{
+            "max-width": "1160px",
+            margin: "0 auto",
+            padding: "22px 24px 90px",
+          }}
+        >
           <BackLink />
           <h1 style={titleStyle()}>Create a survey</h1>
           <p style={subtitleStyle()}>
@@ -169,8 +180,18 @@ export const Create: Component = () => {
               <OwnerNote identity={identity()!} />
 
               <div style={{ "margin-top": "24px" }}>
-                <SectionHead n="04" label="Questions" trailing={questions.length} />
-                <div style={{ display: "flex", "flex-direction": "column", gap: "12px" }}>
+                <SectionHead
+                  n="04"
+                  label="Questions"
+                  trailing={questions.length}
+                />
+                <div
+                  style={{
+                    display: "flex",
+                    "flex-direction": "column",
+                    gap: "12px",
+                  }}
+                >
                   <For each={questions}>
                     {(q, i) => (
                       <QuestionEditor
@@ -185,7 +206,9 @@ export const Create: Component = () => {
                 </div>
                 <div style={addPanelStyle()}>
                   <div style={addPanelHeadStyle()}>Add a question</div>
-                  <div style={{ display: "flex", "flex-wrap": "wrap", gap: "8px" }}>
+                  <div
+                    style={{ display: "flex", "flex-wrap": "wrap", gap: "8px" }}
+                  >
                     <For
                       each={
                         app.ui.pro
@@ -198,7 +221,13 @@ export const Create: Component = () => {
                           onClick={() => addQuestion(b.type)}
                           style={addTypeBtnStyle()}
                         >
-                          <span style={{ "font-family": "var(--mono)", "font-size": "11px", color: "var(--dim)" }}>
+                          <span
+                            style={{
+                              "font-family": "var(--mono)",
+                              "font-size": "11px",
+                              color: "var(--dim)",
+                            }}
+                          >
                             {b.tag}
                           </span>
                           {b.short}
@@ -267,7 +296,11 @@ const DetailsSection: Component<{
         placeholder="Optional context for respondents."
         onInput={(e) => props.setMeta("description", e.currentTarget.value)}
         rows={3}
-        style={{ ...textInputStyle(), resize: "vertical", "font-family": "inherit" }}
+        style={{
+          ...textInputStyle(),
+          resize: "vertical",
+          "font-family": "inherit",
+        }}
       />
     </div>
   </div>
@@ -334,18 +367,25 @@ const TimingSection: Component<{
           type="number"
           value={props.value}
           onInput={(e) => props.onInput(e.currentTarget.value)}
-          style={{ ...textInputStyle(), "font-family": "var(--mono)", "max-width": "200px" }}
+          style={{
+            ...textInputStyle(),
+            "font-family": "var(--mono)",
+            "max-width": "200px",
+          }}
         />
         <p style={hintStyle()}>
           Responses are accepted through this epoch.{" "}
-          <Show when={props.tipEpoch !== undefined} fallback="Loading current epoch…">
+          <Show
+            when={props.tipEpoch !== undefined}
+            fallback="Loading current epoch…"
+          >
             Current epoch is <b>{props.tipEpoch}</b>.
           </Show>
         </p>
         <Show when={tooEarly()}>
           <div style={warnNoteStyle()}>
-            End epoch must be later than the current epoch ({props.tipEpoch}), or
-            the survey is closed as soon as it's published.
+            End epoch must be later than the current epoch ({props.tipEpoch}),
+            or the survey is closed as soon as it's published.
           </div>
         </Show>
       </div>
@@ -354,11 +394,27 @@ const TimingSection: Component<{
 };
 
 const OwnerNote: Component<{ identity: WalletIdentity }> = (props) => (
-  <div style={{ ...cardStyle(), "margin-top": "16px", background: "#FBFAF6", border: "1px solid #F0EBD8" }}>
-    <div style={{ "font-size": "12.5px", color: "#7A6A45", "line-height": "1.5" }}>
+  <div
+    style={{
+      ...cardStyle(),
+      "margin-top": "16px",
+      background: "#FBFAF6",
+      border: "1px solid #F0EBD8",
+    }}
+  >
+    <div
+      style={{ "font-size": "12.5px", color: "#7A6A45", "line-height": "1.5" }}
+    >
       <b style={{ color: "#5B4A22" }}>Owned by your payment credential.</b> You
       sign with it to publish, and only it can cancel this survey later.
-      <span style={{ "font-family": "var(--mono)", "font-size": "11.5px", color: "var(--dim)", "margin-left": "6px" }}>
+      <span
+        style={{
+          "font-family": "var(--mono)",
+          "font-size": "11.5px",
+          color: "var(--dim)",
+          "margin-left": "6px",
+        }}
+      >
         key:{shortHash(props.identity.payment.hashHex)}
       </span>
     </div>
@@ -379,7 +435,15 @@ const QuestionEditor: Component<{
   const i = () => props.index;
   return (
     <div style={cardStyle()}>
-      <div style={{ display: "flex", "align-items": "center", "justify-content": "space-between", gap: "10px", "flex-wrap": "wrap" }}>
+      <div
+        style={{
+          display: "flex",
+          "align-items": "center",
+          "justify-content": "space-between",
+          gap: "10px",
+          "flex-wrap": "wrap",
+        }}
+      >
         <div style={{ display: "flex", gap: "10px", "align-items": "center" }}>
           <span style={qChipStyle()}>Q{props.index + 1}</span>
           <select
@@ -482,8 +546,14 @@ const TypeFields: Component<{
           <input
             type="number"
             value={props.draft.budget}
-            onInput={(e) => props.set(i(), "budget", intOf(e.currentTarget.value))}
-            style={{ ...textInputStyle(), "font-family": "var(--mono)", "max-width": "140px" }}
+            onInput={(e) =>
+              props.set(i(), "budget", intOf(e.currentTarget.value))
+            }
+            style={{
+              ...textInputStyle(),
+              "font-family": "var(--mono)",
+              "max-width": "140px",
+            }}
           />
         </div>
       </Show>
@@ -514,7 +584,9 @@ const TypeFields: Component<{
                 endBadges
                 hint="ordered worst → best · answers store the 0-based index"
                 onLabel={(j, v) => props.set(i(), "ratingLabels", j, v)}
-                onAdd={() => props.set(i(), "ratingLabels", (ls) => [...ls, ""])}
+                onAdd={() =>
+                  props.set(i(), "ratingLabels", (ls) => [...ls, ""])
+                }
                 onRemove={(j) =>
                   props.set(i(), "ratingLabels", (ls) =>
                     ls.filter((_, k) => k !== j),
@@ -536,25 +608,46 @@ const TypeFields: Component<{
       </Show>
 
       <Show when={props.draft.type === "custom"}>
-        <div style={{ display: "flex", "flex-direction": "column", gap: "10px", "margin-top": "4px" }}>
+        <div
+          style={{
+            display: "flex",
+            "flex-direction": "column",
+            gap: "10px",
+            "margin-top": "4px",
+          }}
+        >
           <div>
             <label style={fieldLabelStyle()}>Method schema URI</label>
             <input
               type="text"
               value={props.draft.customUri}
               placeholder="ipfs://… or https://…"
-              onInput={(e) => props.set(i(), "customUri", e.currentTarget.value)}
-              style={{ ...textInputStyle(), "font-family": "var(--mono)", "font-size": "12.5px" }}
+              onInput={(e) =>
+                props.set(i(), "customUri", e.currentTarget.value)
+              }
+              style={{
+                ...textInputStyle(),
+                "font-family": "var(--mono)",
+                "font-size": "12.5px",
+              }}
             />
           </div>
           <div>
-            <label style={fieldLabelStyle()}>Schema hash (blake2b-256, hex)</label>
+            <label style={fieldLabelStyle()}>
+              Schema hash (blake2b-256, hex)
+            </label>
             <input
               type="text"
               value={props.draft.customHash}
               placeholder="64 hex characters"
-              onInput={(e) => props.set(i(), "customHash", e.currentTarget.value)}
-              style={{ ...textInputStyle(), "font-family": "var(--mono)", "font-size": "12.5px" }}
+              onInput={(e) =>
+                props.set(i(), "customHash", e.currentTarget.value)
+              }
+              style={{
+                ...textInputStyle(),
+                "font-family": "var(--mono)",
+                "font-size": "12.5px",
+              }}
             />
           </div>
         </div>
@@ -619,7 +712,14 @@ const MinMaxRow: Component<{
   onMax: (n: number) => void;
   minAllowed: number;
 }> = (props) => (
-  <div style={{ display: "flex", gap: "16px", "margin-top": "14px", "flex-wrap": "wrap" }}>
+  <div
+    style={{
+      display: "flex",
+      gap: "16px",
+      "margin-top": "14px",
+      "flex-wrap": "wrap",
+    }}
+  >
     <div style={inlineFieldStyle()}>
       <label style={fieldLabelStyle()}>min {props.label}</label>
       <input
@@ -650,18 +750,41 @@ const NumericRow: Component<{
   onMax: (v: string) => void;
   onStep: (v: string) => void;
 }> = (props) => (
-  <div style={{ display: "flex", gap: "16px", "margin-top": "14px", "flex-wrap": "wrap" }}>
+  <div
+    style={{
+      display: "flex",
+      gap: "16px",
+      "margin-top": "14px",
+      "flex-wrap": "wrap",
+    }}
+  >
     <div style={inlineFieldStyle()}>
       <label style={fieldLabelStyle()}>min</label>
-      <input type="text" value={props.min} onInput={(e) => props.onMin(e.currentTarget.value)} style={miniNumberStyle()} />
+      <input
+        type="text"
+        value={props.min}
+        onInput={(e) => props.onMin(e.currentTarget.value)}
+        style={miniNumberStyle()}
+      />
     </div>
     <div style={inlineFieldStyle()}>
       <label style={fieldLabelStyle()}>max</label>
-      <input type="text" value={props.max} onInput={(e) => props.onMax(e.currentTarget.value)} style={miniNumberStyle()} />
+      <input
+        type="text"
+        value={props.max}
+        onInput={(e) => props.onMax(e.currentTarget.value)}
+        style={miniNumberStyle()}
+      />
     </div>
     <div style={inlineFieldStyle()}>
       <label style={fieldLabelStyle()}>step (optional)</label>
-      <input type="text" value={props.step} placeholder="1" onInput={(e) => props.onStep(e.currentTarget.value)} style={miniNumberStyle()} />
+      <input
+        type="text"
+        value={props.step}
+        placeholder="1"
+        onInput={(e) => props.onStep(e.currentTarget.value)}
+        style={miniNumberStyle()}
+      />
     </div>
   </div>
 );
@@ -703,7 +826,13 @@ const SummaryCard: Component<{ meta: DefinitionMeta; qCount: number }> = (
       <h3 style={summaryTitleStyle()}>
         {props.meta.title.trim() || "Untitled survey"}
       </h3>
-      <div style={{ display: "flex", "flex-direction": "column", "margin-top": "14px" }}>
+      <div
+        style={{
+          display: "flex",
+          "flex-direction": "column",
+          "margin-top": "14px",
+        }}
+      >
         <SummaryRow label="Questions" value={String(props.qCount)} />
         <SummaryRow label="Who responds" value={roleList()} />
         <SummaryRow label="Ends" value={ends()} />
@@ -714,11 +843,29 @@ const SummaryCard: Component<{ meta: DefinitionMeta; qCount: number }> = (
 };
 
 const SummaryRow: Component<{ label: string; value: string }> = (props) => (
-  <div style={{ display: "flex", "align-items": "center", "justify-content": "space-between", gap: "12px", padding: "11px 0", "border-top": "1px solid var(--line2)" }}>
-    <span style={{ "font-size": "12.5px", color: "var(--muted)", flex: "none" }}>
+  <div
+    style={{
+      display: "flex",
+      "align-items": "center",
+      "justify-content": "space-between",
+      gap: "12px",
+      padding: "11px 0",
+      "border-top": "1px solid var(--line2)",
+    }}
+  >
+    <span
+      style={{ "font-size": "12.5px", color: "var(--muted)", flex: "none" }}
+    >
       {props.label}
     </span>
-    <span style={{ "font-size": "13px", "font-weight": "600", color: "var(--ink)", "text-align": "right" }}>
+    <span
+      style={{
+        "font-size": "13px",
+        "font-weight": "600",
+        color: "var(--ink)",
+        "text-align": "right",
+      }}
+    >
       {props.value}
     </span>
   </div>
@@ -761,30 +908,95 @@ const SubmittedPanel: Component<{ hash: string }> = (props) => {
   const navigate = useNavigate();
   const surveyKey = `${props.hash}:0`;
   return (
-    <div style={{ ...cardStyle(), "text-align": "center", "margin-top": "20px" }}>
-      <span style={{ display: "inline-flex", "align-items": "center", "justify-content": "center", width: "46px", height: "46px", "border-radius": "13px", background: "var(--ok-bg)", color: "var(--ok)", "font-size": "22px" }}>
+    <div
+      style={{ ...cardStyle(), "text-align": "center", "margin-top": "20px" }}
+    >
+      <span
+        style={{
+          display: "inline-flex",
+          "align-items": "center",
+          "justify-content": "center",
+          width: "46px",
+          height: "46px",
+          "border-radius": "13px",
+          background: "var(--ok-bg)",
+          color: "var(--ok)",
+          "font-size": "22px",
+        }}
+      >
         ✓
       </span>
-      <h3 style={{ "font-size": "19px", "font-weight": "800", "letter-spacing": "-.01em", margin: "14px 0 0" }}>
+      <h3
+        style={{
+          "font-size": "19px",
+          "font-weight": "800",
+          "letter-spacing": "-.01em",
+          margin: "14px 0 0",
+        }}
+      >
         Survey published
       </h3>
-      <p style={{ "font-size": "14px", color: "var(--muted)", "line-height": "1.55", margin: "8px auto 0", "max-width": "440px" }}>
+      <p
+        style={{
+          "font-size": "14px",
+          color: "var(--muted)",
+          "line-height": "1.55",
+          margin: "8px auto 0",
+          "max-width": "440px",
+        }}
+      >
         Your definition was submitted under metadata label 17. It may take a few
         moments to appear as the indexer catches up.
       </p>
-      <div style={{ "font-family": "var(--mono)", "font-size": "11.5px", color: "var(--faint)", "margin-top": "12px", "word-break": "break-all" }}>
+      <div
+        style={{
+          "font-family": "var(--mono)",
+          "font-size": "11.5px",
+          color: "var(--faint)",
+          "margin-top": "12px",
+          "word-break": "break-all",
+        }}
+      >
         tx {props.hash} · ref {shortRef(surveyKey)}
       </div>
-      <div style={{ display: "flex", gap: "10px", "justify-content": "center", "margin-top": "18px", "flex-wrap": "wrap" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: "10px",
+          "justify-content": "center",
+          "margin-top": "18px",
+          "flex-wrap": "wrap",
+        }}
+      >
         <button
           onClick={() => navigate(`/survey/${encodeURIComponent(surveyKey)}`)}
-          style={{ background: "var(--accent)", color: "#fff", border: "none", "border-radius": "var(--r-control)", padding: "11px 18px", "font-family": "inherit", "font-size": "14px", "font-weight": "700", cursor: "pointer" }}
+          style={{
+            background: "var(--accent)",
+            color: "#fff",
+            border: "none",
+            "border-radius": "var(--r-control)",
+            padding: "11px 18px",
+            "font-family": "inherit",
+            "font-size": "14px",
+            "font-weight": "700",
+            cursor: "pointer",
+          }}
         >
           View survey →
         </button>
         <button
           onClick={() => navigate("/")}
-          style={{ background: "#fff", color: "var(--muted)", border: "1px solid var(--line)", "border-radius": "var(--r-control)", padding: "11px 18px", "font-family": "inherit", "font-size": "14px", "font-weight": "700", cursor: "pointer" }}
+          style={{
+            background: "#fff",
+            color: "var(--muted)",
+            border: "1px solid var(--line)",
+            "border-radius": "var(--r-control)",
+            padding: "11px 18px",
+            "font-family": "inherit",
+            "font-size": "14px",
+            "font-weight": "700",
+            cursor: "pointer",
+          }}
         >
           All surveys
         </button>
@@ -795,10 +1007,20 @@ const SubmittedPanel: Component<{ hash: string }> = (props) => {
 
 const ConnectPrompt: Component = () => (
   <div style={{ ...cardStyle(), "margin-top": "16px", "text-align": "center" }}>
-    <div style={{ "font-size": "16px", "font-weight": "800", color: "var(--ink)" }}>
+    <div
+      style={{ "font-size": "16px", "font-weight": "800", color: "var(--ink)" }}
+    >
       Connect a wallet to create
     </div>
-    <p style={{ "font-size": "13.5px", color: "var(--muted)", "line-height": "1.55", margin: "8px auto 0", "max-width": "440px" }}>
+    <p
+      style={{
+        "font-size": "13.5px",
+        color: "var(--muted)",
+        "line-height": "1.55",
+        margin: "8px auto 0",
+        "max-width": "440px",
+      }}
+    >
       The survey is owned by your wallet's credential, which signs to publish it
       and is the only key that can cancel it. Use the Connect wallet button in
       the header.
@@ -807,22 +1029,66 @@ const ConnectPrompt: Component = () => (
 );
 
 const ProblemList: Component<{ problems: string[] }> = (props) => (
-  <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-line)", "border-radius": "var(--r-md)", padding: "13px 15px", "margin-top": "18px" }}>
-    <div style={{ "font-size": "13px", "font-weight": "700", color: "var(--danger)" }}>
+  <div
+    style={{
+      background: "var(--danger-bg)",
+      border: "1px solid var(--danger-line)",
+      "border-radius": "var(--r-md)",
+      padding: "13px 15px",
+      "margin-top": "18px",
+    }}
+  >
+    <div
+      style={{
+        "font-size": "13px",
+        "font-weight": "700",
+        color: "var(--danger)",
+      }}
+    >
       Fix before publishing
     </div>
-    <ul style={{ margin: "8px 0 0", padding: "0 0 0 18px", color: "#8A3A2E", "font-size": "12.5px", "line-height": "1.6" }}>
+    <ul
+      style={{
+        margin: "8px 0 0",
+        padding: "0 0 0 18px",
+        color: "#8A3A2E",
+        "font-size": "12.5px",
+        "line-height": "1.6",
+      }}
+    >
       <For each={props.problems}>{(p) => <li>{p}</li>}</For>
     </ul>
   </div>
 );
 
 const ErrorBox: Component<{ message: string }> = (props) => (
-  <div style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-line)", "border-radius": "var(--r-md)", padding: "13px 15px", "margin-top": "14px" }}>
-    <div style={{ "font-size": "13px", "font-weight": "700", color: "var(--danger)" }}>
+  <div
+    style={{
+      background: "var(--danger-bg)",
+      border: "1px solid var(--danger-line)",
+      "border-radius": "var(--r-md)",
+      padding: "13px 15px",
+      "margin-top": "14px",
+    }}
+  >
+    <div
+      style={{
+        "font-size": "13px",
+        "font-weight": "700",
+        color: "var(--danger)",
+      }}
+    >
       Submission failed
     </div>
-    <div style={{ "font-size": "12.5px", color: "#8A3A2E", "line-height": "1.5", "margin-top": "5px", "word-break": "break-word" }}>
+    <div
+      style={{
+        "font-size": "12.5px",
+        color: "#8A3A2E",
+        "line-height": "1.5",
+        "margin-top": "5px",
+        "word-break": "break-word",
+      }}
+    >
       {props.message}
     </div>
   </div>
@@ -842,94 +1108,351 @@ function shortHash(h: string): string {
 }
 
 function backLinkStyle(): JSX.CSSProperties {
-  return { display: "inline-flex", "align-items": "center", gap: "7px", "font-size": "13.5px", "font-weight": "600", color: "var(--muted)", "text-decoration": "none", padding: "6px 0" };
+  return {
+    display: "inline-flex",
+    "align-items": "center",
+    gap: "7px",
+    "font-size": "13.5px",
+    "font-weight": "600",
+    color: "var(--muted)",
+    "text-decoration": "none",
+    padding: "6px 0",
+  };
 }
 function titleStyle(): JSX.CSSProperties {
-  return { "font-size": "26px", "font-weight": "700", "letter-spacing": "-.018em", "line-height": "1.16", margin: "10px 0 0", color: "var(--ink)" };
+  return {
+    "font-size": "26px",
+    "font-weight": "700",
+    "letter-spacing": "-.018em",
+    "line-height": "1.16",
+    margin: "10px 0 0",
+    color: "var(--ink)",
+  };
 }
 function subtitleStyle(): JSX.CSSProperties {
-  return { "font-size": "14px", color: "var(--muted)", "line-height": "1.55", margin: "8px 0 0" };
+  return {
+    "font-size": "14px",
+    color: "var(--muted)",
+    "line-height": "1.55",
+    margin: "8px 0 0",
+  };
 }
 function singleColMain(): JSX.CSSProperties {
   return { "max-width": "760px", margin: "0 auto", padding: "22px 24px 90px" };
 }
 function numberedHeadStyle(): JSX.CSSProperties {
-  return { "font-family": "var(--mono)", "font-size": "10.5px", "letter-spacing": ".1em", "text-transform": "uppercase", color: "var(--accent)", "font-weight": "600", margin: "0 2px 11px" };
+  return {
+    "font-family": "var(--mono)",
+    "font-size": "10.5px",
+    "letter-spacing": ".1em",
+    "text-transform": "uppercase",
+    color: "var(--accent)",
+    "font-weight": "600",
+    margin: "0 2px 11px",
+  };
 }
 function summaryCardStyle(): JSX.CSSProperties {
-  return { background: "#fff", border: "1px solid var(--line)", "border-radius": "var(--r-sm)", padding: "20px", "box-shadow": "var(--shadow-card)" };
+  return {
+    background: "#fff",
+    border: "1px solid var(--line)",
+    "border-radius": "var(--r-sm)",
+    padding: "20px",
+    "box-shadow": "var(--shadow-card)",
+  };
 }
 function summaryTitleStyle(): JSX.CSSProperties {
-  return { "font-family": "var(--serif)", "font-size": "19px", "font-weight": "600", "line-height": "1.25", margin: "12px 0 0", color: "var(--ink)" };
+  return {
+    "font-family": "var(--serif)",
+    "font-size": "19px",
+    "font-weight": "600",
+    "line-height": "1.25",
+    margin: "12px 0 0",
+    color: "var(--ink)",
+  };
 }
 function warnNoteStyle(): JSX.CSSProperties {
-  return { "font-size": "12px", color: "var(--warn)", background: "var(--warn-bg)", border: "1px solid var(--warn-line)", "border-radius": "var(--r-control)", padding: "10px 12px", "line-height": "1.5", "margin-top": "10px" };
+  return {
+    "font-size": "12px",
+    color: "var(--warn)",
+    background: "var(--warn-bg)",
+    border: "1px solid var(--warn-line)",
+    "border-radius": "var(--r-control)",
+    padding: "10px 12px",
+    "line-height": "1.5",
+    "margin-top": "10px",
+  };
 }
 function scaleHintStyle(): JSX.CSSProperties {
-  return { "font-family": "var(--mono)", "font-size": "10.5px", color: "var(--dim)", "letter-spacing": ".03em" };
+  return {
+    "font-family": "var(--mono)",
+    "font-size": "10.5px",
+    color: "var(--dim)",
+    "letter-spacing": ".03em",
+  };
 }
 function endBadgeStyle(kind: "worst" | "best"): JSX.CSSProperties {
   return kind === "worst"
-    ? { "font-family": "var(--mono)", "font-size": "9.5px", color: "#CDA892", background: "#FBF0F0", "border-radius": "var(--r-3xs)", padding: "3px 6px", "white-space": "nowrap", flex: "none" }
-    : { "font-family": "var(--mono)", "font-size": "9.5px", color: "var(--accent)", background: "var(--accent-bg)", "border-radius": "var(--r-3xs)", padding: "3px 6px", "white-space": "nowrap", flex: "none" };
+    ? {
+        "font-family": "var(--mono)",
+        "font-size": "9.5px",
+        color: "#CDA892",
+        background: "#FBF0F0",
+        "border-radius": "var(--r-3xs)",
+        padding: "3px 6px",
+        "white-space": "nowrap",
+        flex: "none",
+      }
+    : {
+        "font-family": "var(--mono)",
+        "font-size": "9.5px",
+        color: "var(--accent)",
+        background: "var(--accent-bg)",
+        "border-radius": "var(--r-3xs)",
+        padding: "3px 6px",
+        "white-space": "nowrap",
+        flex: "none",
+      };
 }
 function cardStyle(): JSX.CSSProperties {
-  return { background: "#fff", border: "1px solid var(--line)", "border-radius": "var(--r-sm)", padding: "18px 20px", "margin-top": "10px" };
+  return {
+    background: "#fff",
+    border: "1px solid var(--line)",
+    "border-radius": "var(--r-sm)",
+    padding: "18px 20px",
+    "margin-top": "10px",
+  };
 }
 function fieldLabelStyle(): JSX.CSSProperties {
-  return { display: "block", "font-size": "12px", "font-weight": "700", color: "var(--muted)", "margin-bottom": "6px" };
+  return {
+    display: "block",
+    "font-size": "12px",
+    "font-weight": "700",
+    color: "var(--muted)",
+    "margin-bottom": "6px",
+  };
 }
 function textInputStyle(): JSX.CSSProperties {
-  return { width: "100%", border: "1px solid var(--line)", "border-radius": "var(--r-control)", padding: "11px 13px", "font-family": "inherit", "font-size": "14px", color: "var(--ink)", outline: "none", "box-sizing": "border-box", "margin-top": "0" };
+  return {
+    width: "100%",
+    border: "1px solid var(--line)",
+    "border-radius": "var(--r-control)",
+    padding: "11px 13px",
+    "font-family": "inherit",
+    "font-size": "14px",
+    color: "var(--ink)",
+    outline: "none",
+    "box-sizing": "border-box",
+    "margin-top": "0",
+  };
 }
 function miniNumberStyle(): JSX.CSSProperties {
-  return { width: "110px", border: "1px solid var(--line)", "border-radius": "var(--r-control)", padding: "9px 11px", "font-family": "var(--mono)", "font-size": "14px", color: "var(--ink)", outline: "none", "box-sizing": "border-box" };
+  return {
+    width: "110px",
+    border: "1px solid var(--line)",
+    "border-radius": "var(--r-control)",
+    padding: "9px 11px",
+    "font-family": "var(--mono)",
+    "font-size": "14px",
+    color: "var(--ink)",
+    outline: "none",
+    "box-sizing": "border-box",
+  };
 }
 function inlineFieldStyle(): JSX.CSSProperties {
   return { display: "flex", "flex-direction": "column" };
 }
 function hintStyle(): JSX.CSSProperties {
-  return { "font-size": "12px", color: "var(--dim)", "line-height": "1.5", margin: "10px 0 0" };
+  return {
+    "font-size": "12px",
+    color: "var(--dim)",
+    "line-height": "1.5",
+    margin: "10px 0 0",
+  };
 }
 function qChipStyle(): JSX.CSSProperties {
-  return { "font-family": "var(--mono)", "font-size": "12px", "font-weight": "600", color: "var(--accent)", background: "var(--accent-bg)", "border-radius": "var(--r-chip)", padding: "5px 8px" };
+  return {
+    "font-family": "var(--mono)",
+    "font-size": "12px",
+    "font-weight": "600",
+    color: "var(--accent)",
+    background: "var(--accent-bg)",
+    "border-radius": "var(--r-chip)",
+    padding: "5px 8px",
+  };
 }
 function selectStyle(): JSX.CSSProperties {
-  return { "font-family": "inherit", "font-size": "13px", "font-weight": "600", color: "var(--ink)", background: "#fff", border: "1px solid var(--line)", "border-radius": "var(--r-control)", padding: "7px 10px", cursor: "pointer" };
+  return {
+    "font-family": "inherit",
+    "font-size": "13px",
+    "font-weight": "600",
+    color: "var(--ink)",
+    background: "#fff",
+    border: "1px solid var(--line)",
+    "border-radius": "var(--r-control)",
+    padding: "7px 10px",
+    cursor: "pointer",
+  };
 }
 function requiredBtnStyle(on: boolean): JSX.CSSProperties {
-  return { "font-family": "inherit", "font-size": "12px", "font-weight": "700", cursor: "pointer", "border-radius": "var(--r-chip)", padding: "6px 12px", border: on ? "1px solid var(--accent)" : "1px solid var(--line)", background: on ? "var(--accent-bg)" : "#fff", color: on ? "var(--accent)" : "var(--muted)" };
+  return {
+    "font-family": "inherit",
+    "font-size": "12px",
+    "font-weight": "700",
+    cursor: "pointer",
+    "border-radius": "var(--r-chip)",
+    padding: "6px 12px",
+    border: on ? "1px solid var(--accent)" : "1px solid var(--line)",
+    background: on ? "var(--accent-bg)" : "#fff",
+    color: on ? "var(--accent)" : "var(--muted)",
+  };
 }
 function removeBtnStyle(): JSX.CSSProperties {
-  return { width: "30px", height: "30px", "border-radius": "var(--r-xs)", border: "1px solid #F0D2D0", background: "#fff", color: "var(--danger)", "font-size": "16px", cursor: "pointer", "line-height": "1", flex: "none" };
+  return {
+    width: "30px",
+    height: "30px",
+    "border-radius": "var(--r-xs)",
+    border: "1px solid #F0D2D0",
+    background: "#fff",
+    color: "var(--danger)",
+    "font-size": "16px",
+    cursor: "pointer",
+    "line-height": "1",
+    flex: "none",
+  };
 }
-function roleToggleStyle(on: boolean, color: string, bg: string): JSX.CSSProperties {
-  return { display: "inline-flex", "align-items": "center", gap: "8px", "font-family": "inherit", "font-size": "12.5px", "font-weight": "700", cursor: "pointer", "border-radius": "8px", padding: "7px 12px", border: on ? `1px solid ${color}` : "1px solid var(--line)", background: on ? bg : "#fff", color: on ? color : "var(--muted)" };
+function roleToggleStyle(
+  on: boolean,
+  color: string,
+  bg: string,
+): JSX.CSSProperties {
+  return {
+    display: "inline-flex",
+    "align-items": "center",
+    gap: "8px",
+    "font-family": "inherit",
+    "font-size": "12.5px",
+    "font-weight": "700",
+    cursor: "pointer",
+    "border-radius": "8px",
+    padding: "7px 12px",
+    border: on ? `1px solid ${color}` : "1px solid var(--line)",
+    background: on ? bg : "#fff",
+    color: on ? color : "var(--muted)",
+  };
 }
 function checkboxStyle(on: boolean): JSX.CSSProperties {
-  return { width: "16px", height: "16px", "border-radius": "5px", border: on ? "none" : "2px solid var(--line2)", background: on ? "var(--accent)" : "#fff", color: "#fff", "font-size": "11px", "font-weight": "700", display: "flex", "align-items": "center", "justify-content": "center", flex: "none" };
+  return {
+    width: "16px",
+    height: "16px",
+    "border-radius": "5px",
+    border: on ? "none" : "2px solid var(--line2)",
+    background: on ? "var(--accent)" : "#fff",
+    color: "#fff",
+    "font-size": "11px",
+    "font-weight": "700",
+    display: "flex",
+    "align-items": "center",
+    "justify-content": "center",
+    flex: "none",
+  };
 }
 function optIndexStyle(): JSX.CSSProperties {
-  return { "font-family": "var(--mono)", "font-size": "12px", "font-weight": "600", color: "var(--dim)", width: "18px", "text-align": "center", flex: "none" };
+  return {
+    "font-family": "var(--mono)",
+    "font-size": "12px",
+    "font-weight": "600",
+    color: "var(--dim)",
+    width: "18px",
+    "text-align": "center",
+    flex: "none",
+  };
 }
 function addOptionBtnStyle(): JSX.CSSProperties {
-  return { "align-self": "flex-start", "font-family": "inherit", "font-size": "12.5px", "font-weight": "600", cursor: "pointer", "border-radius": "var(--r-control)", padding: "7px 12px", border: "1px dashed var(--line2)", background: "#FBFAF6", color: "var(--muted)" };
+  return {
+    "align-self": "flex-start",
+    "font-family": "inherit",
+    "font-size": "12.5px",
+    "font-weight": "600",
+    cursor: "pointer",
+    "border-radius": "var(--r-control)",
+    padding: "7px 12px",
+    border: "1px dashed var(--line2)",
+    background: "#FBFAF6",
+    color: "var(--muted)",
+  };
 }
 function addPanelStyle(): JSX.CSSProperties {
-  return { background: "#fff", border: "1px dashed #D8CDB6", "border-radius": "var(--r-sm)", padding: "16px 18px", "margin-top": "12px" };
+  return {
+    background: "#fff",
+    border: "1px dashed #D8CDB6",
+    "border-radius": "var(--r-sm)",
+    padding: "16px 18px",
+    "margin-top": "12px",
+  };
 }
 function addPanelHeadStyle(): JSX.CSSProperties {
-  return { "font-size": "13px", "font-weight": "700", color: "var(--body)", "margin-bottom": "11px" };
+  return {
+    "font-size": "13px",
+    "font-weight": "700",
+    color: "var(--body)",
+    "margin-bottom": "11px",
+  };
 }
 function addTypeBtnStyle(): JSX.CSSProperties {
-  return { display: "inline-flex", "align-items": "center", gap: "7px", "font-family": "inherit", "font-size": "13px", "font-weight": "600", color: "var(--body)", background: "var(--surface)", border: "1px solid var(--line)", "border-radius": "var(--r-sm)", padding: "8px 12px", cursor: "pointer" };
+  return {
+    display: "inline-flex",
+    "align-items": "center",
+    gap: "7px",
+    "font-family": "inherit",
+    "font-size": "13px",
+    "font-weight": "600",
+    color: "var(--body)",
+    background: "var(--surface)",
+    border: "1px solid var(--line)",
+    "border-radius": "var(--r-sm)",
+    padding: "8px 12px",
+    cursor: "pointer",
+  };
 }
 function pillStyle(on: boolean): JSX.CSSProperties {
-  return { "font-family": "inherit", "font-size": "12.5px", "font-weight": on ? "700" : "600", cursor: "pointer", "border-radius": "8px", padding: "7px 13px", border: on ? "1px solid var(--accent)" : "1px solid var(--line)", background: on ? "var(--accent)" : "#fff", color: on ? "#fff" : "var(--muted)" };
+  return {
+    "font-family": "inherit",
+    "font-size": "12.5px",
+    "font-weight": on ? "700" : "600",
+    cursor: "pointer",
+    "border-radius": "8px",
+    padding: "7px 13px",
+    border: on ? "1px solid var(--accent)" : "1px solid var(--line)",
+    background: on ? "var(--accent)" : "#fff",
+    color: on ? "#fff" : "var(--muted)",
+  };
 }
 function asidePublishStyle(enabled: boolean): JSX.CSSProperties {
-  return { width: "100%", "margin-top": "14px", display: "inline-flex", "align-items": "center", "justify-content": "center", gap: "9px", background: enabled ? "var(--accent)" : "var(--line2)", color: enabled ? "#fff" : "var(--dim)", border: "none", "border-radius": "var(--r-md)", padding: "15px", "font-family": "inherit", "font-size": "15px", "font-weight": "700", cursor: enabled ? "pointer" : "not-allowed", "box-shadow": enabled ? "0 10px 24px -10px var(--accent-shadow)" : "none" };
+  return {
+    width: "100%",
+    "margin-top": "14px",
+    display: "inline-flex",
+    "align-items": "center",
+    "justify-content": "center",
+    gap: "9px",
+    background: enabled ? "var(--accent)" : "var(--line2)",
+    color: enabled ? "#fff" : "var(--dim)",
+    border: "none",
+    "border-radius": "var(--r-md)",
+    padding: "15px",
+    "font-family": "inherit",
+    "font-size": "15px",
+    "font-weight": "700",
+    cursor: enabled ? "pointer" : "not-allowed",
+    "box-shadow": enabled ? "0 10px 24px -10px var(--accent-shadow)" : "none",
+  };
 }
 function asideNoteStyle(ok: boolean): JSX.CSSProperties {
-  return { "text-align": "center", "font-size": "10.5px", color: ok ? "var(--dim)" : "var(--danger)", margin: "10px 0 0", "line-height": "1.5" };
+  return {
+    "text-align": "center",
+    "font-size": "10.5px",
+    color: ok ? "var(--dim)" : "var(--danger)",
+    margin: "10px 0 0",
+    "line-height": "1.5",
+  };
 }
