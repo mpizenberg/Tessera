@@ -5,7 +5,9 @@
  */
 
 import { Address, Credential } from "@evolution-sdk/evolution";
+import { blake2b } from "@noble/hashes/blake2.js";
 
+import { bytesToHex, hexToBytes } from "~/util/hex";
 import type {
   Cip30Api,
   ConnectedWallet,
@@ -36,6 +38,27 @@ function toWalletCredential(cred: {
     kind: cred._tag === "ScriptHash" ? "script" : "key",
     hashHex: Credential.toHex(cred as never),
   };
+}
+
+/**
+ * Derive a DRep key-hash credential from a CIP-95 public DRep key.
+ *
+ * `getPubDRepKey` returns the raw Ed25519 public key (32 bytes) as hex; the DRep
+ * credential is its blake2b-224 (28-byte) hash. Returns undefined if the key is
+ * absent or not a well-formed 32-byte hex string.
+ */
+function drepCredentialFromKey(
+  drepKeyHex: string | undefined,
+): WalletCredential | undefined {
+  if (!drepKeyHex) return undefined;
+  try {
+    const key = hexToBytes(drepKeyHex);
+    if (key.length !== 32) return undefined;
+    const hash = blake2b(key, { dkLen: 28 });
+    return { kind: "key", hashHex: bytesToHex(hash) };
+  } catch {
+    return undefined;
+  }
 }
 
 /** Enable a wallet and read its identity (no signing performed). */
@@ -77,6 +100,7 @@ export async function connectWallet(key: string): Promise<ConnectedWallet> {
       ? toWalletCredential(address.stakingCredential)
       : undefined,
     drepKeyHex,
+    drep: drepCredentialFromKey(drepKeyHex),
   };
 
   return { identity, api };

@@ -29,6 +29,11 @@ export interface WalletIdentity {
   readonly stake: WalletCredential | undefined;
   /** Raw CIP-95 public DRep key (hex), if the wallet supports CIP-95. */
   readonly drepKeyHex: string | undefined;
+  /**
+   * DRep credential (key hash = blake2b-224 of {@link drepKeyHex}), present iff
+   * the wallet exposed a CIP-95 DRep key. This is what a DRep response carries.
+   */
+  readonly drep: WalletCredential | undefined;
 }
 
 /** A connected wallet: its identity plus the raw CIP-30 handle for signing. */
@@ -45,6 +50,8 @@ export interface Cip30Api {
   getChangeAddress(): Promise<string>;
   getUsedAddresses(): Promise<string[]>;
   getRewardAddresses(): Promise<string[]>;
+  /** Wallet's own UTxOs as CBOR hex (each `[input, output]`); may be empty/absent. */
+  getUtxos(): Promise<string[] | undefined>;
   signTx(tx: string, partialSign?: boolean): Promise<string>;
   submitTx(tx: string): Promise<string>;
   cip95?: {

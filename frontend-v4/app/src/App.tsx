@@ -5,6 +5,7 @@ import { AppProvider } from "~/state";
 import { Header } from "~/ui/components/Header";
 import { Explore } from "~/ui/screens/Explore";
 import { Survey } from "~/ui/screens/Survey";
+import { Respond } from "~/ui/screens/Respond";
 import { Placeholder } from "~/ui/screens/Placeholder";
 
 const Layout: ParentComponent = (props) => (
@@ -33,6 +34,7 @@ export default function App() {
     <Router root={Layout}>
       <Route path="/" component={Explore} />
       <Route path="/survey/:key" component={Survey} />
+      <Route path="/survey/:key/respond" component={Respond} />
       <Route path="/create" component={CreateScreen} />
       <Route path="/settings" component={SettingsScreen} />
     </Router>

@@ -181,6 +181,28 @@ export const Survey: Component = () => {
               total={records().length}
             />
 
+            <Show when={viewStatus(s()) === "public"}>
+              <A
+                href={`/survey/${encodeURIComponent(key())}/respond`}
+                style={{
+                  display: "inline-flex",
+                  "align-items": "center",
+                  gap: "9px",
+                  "margin-top": "16px",
+                  background: "var(--accent)",
+                  color: "#fff",
+                  "text-decoration": "none",
+                  "border-radius": "var(--r-md)",
+                  padding: "12px 20px",
+                  "font-size": "14px",
+                  "font-weight": "700",
+                  "box-shadow": "0 8px 20px -8px var(--accent-shadow)",
+                }}
+              >
+                Respond to this survey <span style={{ "font-size": "15px" }}>→</span>
+              </A>
+            </Show>
+
             <Show
               when={viewStatus(s()) !== "sealed"}
               fallback={<SealedNotice />}

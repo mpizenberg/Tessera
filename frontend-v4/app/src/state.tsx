@@ -27,6 +27,7 @@ import { aggregateSurveys, type SurveyAggregate } from "~/domain/survey";
 import { claimableRoles } from "~/domain/roles";
 import { connectWallet, listInstalledWallets } from "~/wallet/cip30";
 import type { ConnectedWallet, InstalledWallet } from "~/wallet/types";
+import type { Credential, Metadatum } from "cip-179";
 
 export interface Snapshot {
   readonly records: Cip179Records;
@@ -71,6 +72,17 @@ interface AppState {
   readonly claimableRoles: Accessor<number[]>;
   readonly activeRole: Accessor<number | null>;
   setActiveRole(role: number | null): void;
+  /**
+   * Build, sign, and submit a transaction carrying a label-17 payload using the
+   * connected wallet; resolves to the transaction hash. Throws if no wallet.
+   *
+   * `proveCredentials` are added to `required_signers` for CIP-179 credential
+   * proof (e.g. the responder credential for a response).
+   */
+  submitMetadata(
+    payload: Metadatum,
+    proveCredentials?: readonly Credential[],
+  ): Promise<string>;
 }
 
 const Ctx = createContext<AppState>();
@@ -139,6 +151,14 @@ export const AppProvider: ParentComponent = (props) => {
     },
     activeRole,
     setActiveRole,
+    submitMetadata: async (payload, proveCredentials = []) => {
+      const w = wallet();
+      if (!w) throw new Error("No wallet connected");
+      // Lazy-load the evolution-sdk transaction builder so its weight is fetched
+      // only when a user actually submits, not on first paint.
+      const { submitMetadataTx } = await import("~/wallet/submit");
+      return submitMetadataTx(config, w.api, payload, proveCredentials);
+    },
   };
 
   return <Ctx.Provider value={value}>{props.children}</Ctx.Provider>;
