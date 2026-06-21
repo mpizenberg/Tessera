@@ -2,11 +2,19 @@ import { For, Show, createMemo, type Component, type JSX } from "solid-js";
 import { A, useNavigate } from "@solidjs/router";
 
 import { useApp, type ExploreFilter } from "~/state";
-import type { SurveyAggregate } from "~/domain/survey";
+import { refKey, type SurveyAggregate } from "~/domain/survey";
+import { walletControls, walletOwns } from "~/domain/roles";
 import { isClosed, viewStatus, type ViewStatus } from "~/ui/format";
 import { FormMosaic, RoleChips, VisGlyph } from "~/ui/components/glyphs";
+import type { WalletIdentity } from "~/wallet/types";
 
 const COLS = "54px 30px minmax(210px,1fr) 132px 150px 84px";
+
+/** Per-survey wallet flags. */
+interface Flags {
+  readonly mine: boolean;
+  readonly responded: boolean;
+}
 
 const FILTERS: ReadonlyArray<{ value: ExploreFilter; label: string }> = [
   { value: "all", label: "All" },
@@ -17,7 +25,7 @@ const FILTERS: ReadonlyArray<{ value: ExploreFilter; label: string }> = [
   { value: "mine", label: "Mine" },
 ];
 
-function matchesFilter(a: SurveyAggregate, f: ExploreFilter): boolean {
+function matchesFilter(a: SurveyAggregate, f: ExploreFilter, flags: Flags): boolean {
   const v = viewStatus(a);
   switch (f) {
     case "all":
@@ -31,7 +39,7 @@ function matchesFilter(a: SurveyAggregate, f: ExploreFilter): boolean {
     case "public":
       return v === "public";
     case "mine":
-      return false; // needs a connected wallet — wired later
+      return flags.mine;
   }
 }
 
@@ -40,11 +48,34 @@ export const Explore: Component = () => {
 
   const all = createMemo(() => app.snapshot()?.surveys ?? []);
   const tipEpoch = createMemo(() => app.snapshot()?.tip.epoch ?? 0);
+  const identity = (): WalletIdentity | null => app.wallet()?.identity ?? null;
+
+  // Survey ref keys the connected wallet has responded to.
+  const respondedKeys = createMemo<Set<string>>(() => {
+    const id = identity();
+    const snap = app.snapshot();
+    if (!id || !snap) return new Set();
+    const keys = new Set<string>();
+    for (const r of snap.records.responses) {
+      if (walletControls(id, r.response.credential)) {
+        keys.add(refKey(r.response.surveyRef));
+      }
+    }
+    return keys;
+  });
+
+  const flagsOf = (a: SurveyAggregate): Flags => {
+    const id = identity();
+    return {
+      mine: id ? walletOwns(id, a.record.definition.owner) : false,
+      responded: respondedKeys().has(a.key),
+    };
+  };
 
   const counts = createMemo(() => {
     const xs = all();
     const by = (f: ExploreFilter) =>
-      xs.filter((a) => matchesFilter(a, f)).length;
+      xs.filter((a) => matchesFilter(a, f, flagsOf(a))).length;
     return {
       all: xs.length,
       linked: by("linked"),
@@ -58,7 +89,7 @@ export const Explore: Component = () => {
   const visible = createMemo(() => {
     const q = app.ui.search.trim().toLowerCase();
     return all()
-      .filter((a) => matchesFilter(a, app.ui.filter))
+      .filter((a) => matchesFilter(a, app.ui.filter, flagsOf(a)))
       .filter(
         (a) =>
           q === "" ||
@@ -246,7 +277,7 @@ export const Explore: Component = () => {
                   label="Open · accepting responses"
                 />
                 <For each={openRows()}>
-                  {(a) => <Row a={a} tipEpoch={tipEpoch()} pro={app.ui.pro} />}
+                  {(a) => <Row a={a} tipEpoch={tipEpoch()} pro={app.ui.pro} flags={flagsOf(a)} />}
                 </For>
               </Show>
 
@@ -271,7 +302,7 @@ export const Explore: Component = () => {
                 <div style={{ opacity: "0.56" }}>
                   <For each={closedRows()}>
                     {(a) => (
-                      <Row a={a} tipEpoch={tipEpoch()} pro={app.ui.pro} />
+                      <Row a={a} tipEpoch={tipEpoch()} pro={app.ui.pro} flags={flagsOf(a)} />
                     )}
                   </For>
                 </div>
@@ -384,9 +415,12 @@ function endsLabel(v: ViewStatus, endEpoch: number, tipEpoch: number): string {
   }
 }
 
-const Row: Component<{ a: SurveyAggregate; tipEpoch: number; pro: boolean }> = (
-  props,
-) => {
+const Row: Component<{
+  a: SurveyAggregate;
+  tipEpoch: number;
+  pro: boolean;
+  flags: Flags;
+}> = (props) => {
   const navigate = useNavigate();
   const def = () => props.a.record.definition;
   const v = () => viewStatus(props.a);
@@ -456,6 +490,16 @@ const Row: Component<{ a: SurveyAggregate; tipEpoch: number; pro: boolean }> = (
           >
             {def().title || "Untitled · external content"}
           </span>
+          <Show when={props.flags.responded}>
+            <span style={{ flex: "none", "font-size": "10px", "font-weight": "700", color: "var(--ok)", background: "var(--ok-bg)", border: "1px solid var(--ok-line)", "border-radius": "5px", padding: "1.5px 6px", "white-space": "nowrap" }}>
+              ✓ You
+            </span>
+          </Show>
+          <Show when={props.flags.mine}>
+            <span style={{ flex: "none", "font-size": "10px", "font-weight": "700", color: "var(--warn)", background: "var(--warn-bg)", border: "1px solid var(--warn-line)", "border-radius": "5px", padding: "1.5px 6px", "white-space": "nowrap" }}>
+              Yours
+            </span>
+          </Show>
         </div>
         <div
           style={{

@@ -40,6 +40,7 @@ interface TxMetadata {
 interface TipRow {
   epoch_no: number;
   abs_slot: number;
+  block_time: number;
 }
 
 export class KoiosDataSource implements DataSource {
@@ -71,18 +72,32 @@ export class KoiosDataSource implements DataSource {
     return res.json() as Promise<T>;
   }
 
-  async chainTip(): Promise<ChainTip> {
+  private async tip(): Promise<TipRow> {
     const rows = await this.get<TipRow[]>("/tip");
     const tip = rows[0];
     if (!tip) throw new Error("Koios /tip returned no rows");
+    return tip;
+  }
+
+  async chainTip(): Promise<ChainTip> {
+    const tip = await this.tip();
     return { epoch: tip.epoch_no, slot: tip.abs_slot };
   }
 
   async fetchAll(): Promise<Cip179Records> {
+    // Filter by absolute_slot (which we already select) rather than
+    // tx_timestamp (which we don't): Koios only allows filtering on selected
+    // columns. Post-Shelley slots are 1s, so the cutoff slot for `sinceUnix`
+    // is derived linearly from the current tip — no per-network genesis math.
+    const tip = await this.tip();
+    const sinceSlot = Math.max(
+      0,
+      Math.floor(tip.abs_slot - (tip.block_time - this.config.sinceUnix)),
+    );
     const slots = await this.get<TxByLabel[]>(
       `/tx_by_metalabel?_label=${METADATA_LABEL}` +
         `&select=tx_hash,absolute_slot` +
-        `&tx_timestamp=gte.${this.config.sinceUnix}` +
+        `&absolute_slot=gte.${sinceSlot}` +
         `&order=absolute_slot.desc&limit=1000`,
     );
     const slotByHash = new Map(slots.map((s) => [s.tx_hash, s.absolute_slot]));
