@@ -23,6 +23,7 @@ import { walletCredToCip179 } from "~/domain/roles";
 import {
   QUESTION_TYPES,
   buildDefinition,
+  buildPresentationDoc,
   initQuestionDraft,
   questionTypeLabel,
   usesOptions,
@@ -30,6 +31,7 @@ import {
   type QuestionDraft,
   type QuestionType,
 } from "~/domain/create";
+import { IPFS_PROVIDERS } from "~/enrichment/providers";
 import {
   QUICKNET_CHAIN_HASH_HEX,
   autoRevealRound,
@@ -76,6 +78,7 @@ export const Create: Component = () => {
     title: "",
     description: "",
     eligibleRoles: [Role.Stakeholder],
+    contentMode: "embedded",
     endEpoch: "",
     mode: "public",
     sealedRound: 0,
@@ -135,9 +138,17 @@ export const Create: Component = () => {
   };
 
   const [submitting, setSubmitting] = createSignal(false);
+  const [busyText, setBusyText] = createSignal("Publishing…");
   const [submitError, setSubmitError] = createSignal<string | null>(null);
   const [txHash, setTxHash] = createSignal<string | null>(null);
   const [showProblems, setShowProblems] = createSignal(false);
+
+  // External-content authoring pins the presentation document, which needs at
+  // least one IPFS provider configured in Settings.
+  const hasPinning = (): boolean =>
+    IPFS_PROVIDERS.some((p) => app.ipfsTokens[p.id]?.trim());
+  const externalNoTokens = (): boolean =>
+    meta.contentMode === "external" && !hasPinning();
 
   const toggleRole = (r: Role) =>
     setMeta("eligibleRoles", (rs) =>
@@ -153,16 +164,34 @@ export const Create: Component = () => {
     const b = built();
     const o = owner();
     if (!b || !o) return;
-    if (b.problems.length > 0) {
+    if (b.problems.length > 0 || externalNoTokens()) {
       setShowProblems(true);
       return;
     }
     setSubmitting(true);
     setSubmitError(null);
     try {
+      let definition = b.definition;
+      if (meta.contentMode === "external") {
+        // Pin the presentation document, then rebuild the definition with the
+        // real anchor (the preview used a placeholder so the codec accepted the
+        // count forms). The on-chain payload carries only the anchor + counts.
+        setBusyText("Pinning presentation…");
+        const { pinJson } = await import("~/enrichment/pin");
+        const pinned = await pinJson(
+          buildPresentationDoc(meta, questions),
+          "survey.json",
+          app.ipfsTokens,
+        );
+        definition = buildDefinition(o, meta, questions, {
+          uri: pinned.uri,
+          hash: pinned.hash,
+        }).definition;
+      }
+      setBusyText("Submitting…");
       const payload = encodePayload({
         type: "definitions",
-        definitions: [b.definition],
+        definitions: [definition],
       });
       // Definitions must prove the owner credential (CIP-179 mechanism A) — the
       // owner is what authorizes a later cancellation.
@@ -173,6 +202,7 @@ export const Create: Component = () => {
       setSubmitError(e instanceof Error ? e.message : String(e));
     } finally {
       setSubmitting(false);
+      setBusyText("Publishing…");
     }
   };
 
@@ -235,10 +265,15 @@ export const Create: Component = () => {
                 resolvedPadding={resolvedPadding()}
                 pro={app.ui.pro}
               />
+              <ContentSection
+                mode={meta.contentMode}
+                onMode={(m) => setMeta("contentMode", m)}
+                hasPinning={hasPinning()}
+              />
 
               <div style={{ "margin-top": "24px" }}>
                 <SectionHead
-                  n="06"
+                  n="07"
                   label="Questions"
                   trailing={questions.length}
                 />
@@ -308,7 +343,13 @@ export const Create: Component = () => {
               <SummaryCard meta={meta} qCount={questions.length} />
               <PublishButton
                 problemCount={problems().length}
+                blockedReason={
+                  externalNoTokens()
+                    ? "Add an IPFS provider in Settings to publish external content"
+                    : null
+                }
                 submitting={submitting()}
+                busyText={busyText()}
                 paymentHashHex={identity()!.payment.hashHex}
                 onPublish={() => void onPublish()}
               />
@@ -449,6 +490,73 @@ const TimingSection: Component<{
     </div>
   );
 };
+
+const ContentSection: Component<{
+  mode: "embedded" | "external";
+  onMode: (m: "embedded" | "external") => void;
+  hasPinning: boolean;
+}> = (props) => (
+  <div style={{ "margin-top": "22px" }}>
+    <SectionHead n="06" label="Content" />
+    <div style={cardStyle()}>
+      <div
+        style={{
+          display: "grid",
+          "grid-template-columns": "1fr 1fr",
+          gap: "10px",
+        }}
+      >
+        <button
+          onClick={() => props.onMode("embedded")}
+          style={modeCardStyle(props.mode === "embedded")}
+        >
+          <div style={modeTitleStyle()}>Embedded</div>
+          <div style={modeDescStyle()}>
+            All text on-chain. No external dependency — recommended.
+          </div>
+        </button>
+        <button
+          onClick={() => props.onMode("external")}
+          style={modeCardStyle(props.mode === "external")}
+        >
+          <div style={modeTitleStyle()}>External</div>
+          <div style={modeDescStyle()}>
+            Prompts &amp; labels live in a pinned IPFS document; chain carries a
+            hash anchor.
+          </div>
+        </button>
+      </div>
+
+      <Show when={props.mode === "external"}>
+        <p
+          style={{
+            "font-size": "12.5px",
+            color: "var(--muted)",
+            "line-height": "1.5",
+            margin: "14px 0 0",
+          }}
+        >
+          On publish, the title, description, prompts and option labels are
+          written to a <b>presentation document</b>, pinned to your IPFS
+          providers, and anchored on-chain by its blake2b-256 hash. Only counts,
+          constraints, owner and timing stay on-chain — so the survey still
+          validates and tallies even if the document later becomes unreachable
+          (only labels go missing). Keeps the on-chain payload small for large
+          surveys.
+        </p>
+        <Show when={!props.hasPinning}>
+          <div style={warnNoteStyle()}>
+            No IPFS provider is configured.{" "}
+            <A href="/settings" style={{ color: "var(--accent)" }}>
+              Add one in Settings
+            </A>{" "}
+            to publish external content, or switch to Embedded.
+          </div>
+        </Show>
+      </Show>
+    </div>
+  </div>
+);
 
 const VisibilitySection: Component<{
   mode: "public" | "sealed";
@@ -1107,25 +1215,30 @@ const SummaryRow: Component<{ label: string; value: string }> = (props) => (
 
 const PublishButton: Component<{
   problemCount: number;
+  blockedReason: string | null;
   submitting: boolean;
+  busyText: string;
   paymentHashHex: string;
   onPublish: () => void;
 }> = (props) => {
-  const ok = () => props.problemCount === 0;
+  const ok = () => props.problemCount === 0 && !props.blockedReason;
   return (
     <>
       <button
         onClick={() => props.onPublish()}
-        disabled={props.submitting}
+        disabled={props.submitting || !!props.blockedReason}
         style={asidePublishStyle(ok() && !props.submitting)}
       >
-        {props.submitting ? "Publishing…" : "Sign & publish survey"}{" "}
+        {props.submitting ? props.busyText : "Sign & publish survey"}{" "}
         <span style={{ "font-size": "16px" }}>→</span>
       </button>
       <p style={asideNoteStyle(ok())}>
         <Show
           when={ok()}
-          fallback={`${props.problemCount} thing${props.problemCount === 1 ? "" : "s"} to fix before publishing`}
+          fallback={
+            props.blockedReason ??
+            `${props.problemCount} thing${props.problemCount === 1 ? "" : "s"} to fix before publishing`
+          }
         >
           signs with your owner credential ·{" "}
           <span style={{ "font-family": "var(--mono)" }}>

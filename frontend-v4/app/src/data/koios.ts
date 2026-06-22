@@ -58,13 +58,20 @@ interface ProposalRow {
 const GOV_LINK_KIND = "cardano-governance-survey-link";
 
 export class KoiosDataSource implements DataSource {
-  constructor(private readonly config: AppConfig) {}
+  /**
+   * `getToken` lets the active Koios token change at runtime (Settings override)
+   * without rebuilding the source; defaults to the startup-resolved config token.
+   */
+  constructor(
+    private readonly config: AppConfig,
+    private readonly getToken: () => string | undefined = () =>
+      config.koiosToken,
+  ) {}
 
   private headers(extra?: Record<string, string>): HeadersInit {
     const h: Record<string, string> = { ...extra };
-    if (this.config.koiosToken) {
-      h["Authorization"] = `Bearer ${this.config.koiosToken}`;
-    }
+    const token = this.getToken();
+    if (token) h["Authorization"] = `Bearer ${token}`;
     return h;
   }
 

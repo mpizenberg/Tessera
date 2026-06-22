@@ -21,12 +21,12 @@ import {
 } from "cip-179";
 
 import { useApp } from "~/state";
+import { findSurvey, refKey, type SurveyAggregate } from "~/domain/survey";
 import {
-  dedupeResponses,
-  findSurvey,
-  refKey,
-  type SurveyAggregate,
-} from "~/domain/survey";
+  auditResponses,
+  type ExclusionReason,
+  type ResponseAudit,
+} from "~/domain/audit";
 import { walletOwns } from "~/domain/roles";
 import { roleBreakdown, tallySurvey, type QuestionTally } from "~/domain/tally";
 import type { ResponseRecord } from "~/data/source";
@@ -96,22 +96,27 @@ export const Survey: Component = () => {
   // External-content surveys: fetch + hash-verify the off-chain presentation
   // doc and render its labels; `pres.def()` falls back to the on-chain
   // definition (count forms, blank titles) until/unless it resolves.
-  const pres = usePresentation(
-    () => survey()?.record.definition,
-    app.config.ipfsGateway,
-  );
+  const pres = usePresentation(() => survey()?.record.definition);
   const def = (): SurveyDefinition | undefined => pres.def();
 
-  // Deduped response records targeting this survey (latest-valid-wins).
-  const records = createMemo<ResponseRecord[]>(() => {
+  // Audit the raw responses for this survey: `counted` is the valid, deduped
+  // set to tally; `excluded` is the client-detectable breakdown (after-deadline
+  // + superseded). Ledger-state exclusions (role/credential) are indexer-side.
+  const audit = createMemo<ResponseAudit>(() => {
     const snap = app.snapshot();
-    if (!snap) return [];
-    return dedupeResponses(
-      snap.records.responses.filter(
-        (r) => refKey(r.response.surveyRef) === key(),
-      ),
+    const s = survey();
+    if (!snap || !s) return { counted: [], excluded: [], excludedTotal: 0 };
+    const raw = snap.records.responses.filter(
+      (r) => refKey(r.response.surveyRef) === key(),
+    );
+    return auditResponses(
+      raw,
+      s.record.definition.endEpoch,
+      snap.tip,
+      app.config.secondsPerEpoch,
     );
   });
+  const records = createMemo<ResponseRecord[]>(() => audit().counted);
 
   // Role participation. Works even while sealed — role and credential are
   // plaintext in the envelope; only the answers are encrypted.
@@ -230,6 +235,7 @@ export const Survey: Component = () => {
                   def={def() ?? s().record.definition}
                   keyStr={key()}
                   records={records()}
+                  excluded={audit().excluded}
                   nowUnix={nowUnix}
                 />
               }
@@ -238,6 +244,7 @@ export const Survey: Component = () => {
                 def={def() ?? s().record.definition}
                 keyStr={key()}
                 records={records()}
+                excluded={audit().excluded}
               />
             </Show>
           </>
@@ -1468,6 +1475,145 @@ const NoData: Component = () => (
 // ----------------------------------------------------------------------------
 
 /**
+ * Expandable audit of why responses weren't counted. Only the categories
+ * provable from on-chain data alone (after-deadline, superseded) appear here;
+ * ledger-state exclusions (role membership re-checked at the snapshot,
+ * credential-proof failures) need an indexer and are called out as absent.
+ */
+const ExclusionPanel: Component<{
+  excluded: readonly ExclusionReason[];
+  endEpoch: number;
+}> = (props) => {
+  const max = (): number => Math.max(1, ...props.excluded.map((e) => e.count));
+  return (
+    <div
+      style={{
+        "margin-top": "12px",
+        border: "1px solid var(--warn-line)",
+        "border-radius": "var(--r-md)",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          "align-items": "center",
+          gap: "10px",
+          background: "#FBFAF6",
+          "border-bottom": "1px solid #F0EBD8",
+          padding: "12px 16px",
+          "flex-wrap": "wrap",
+        }}
+      >
+        <span
+          style={{
+            "font-size": "12.5px",
+            "font-weight": "700",
+            color: "#7A6A45",
+          }}
+        >
+          Why responses weren't counted
+        </span>
+        <span
+          style={{
+            "font-family": "var(--mono)",
+            "font-size": "11px",
+            color: "#A89878",
+          }}
+        >
+          on-chain checks only
+        </span>
+      </div>
+      <div style={{ background: "#fff", padding: "4px 16px 14px" }}>
+        <For each={props.excluded}>
+          {(e) => (
+            <div
+              style={{
+                display: "flex",
+                "align-items": "center",
+                gap: "14px",
+                padding: "11px 0",
+                "border-top": "1px solid #F6F2E8",
+              }}
+            >
+              <div style={{ flex: "1", "min-width": "0" }}>
+                <div
+                  style={{
+                    "font-size": "13.5px",
+                    "font-weight": "600",
+                    color: "var(--body)",
+                  }}
+                >
+                  {e.label}
+                </div>
+                <div
+                  style={{
+                    "font-family": "var(--mono)",
+                    "font-size": "10.5px",
+                    color: "#A89878",
+                    "margin-top": "2px",
+                  }}
+                >
+                  {e.hint}
+                </div>
+              </div>
+              <div
+                style={{
+                  width: "120px",
+                  flex: "none",
+                  height: "8px",
+                  "border-radius": "var(--r-pill)",
+                  background: "#F4ECE0",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    width: `${(e.count / max()) * 100}%`,
+                    height: "100%",
+                    "border-radius": "var(--r-pill)",
+                    background: "#E0857B",
+                  }}
+                />
+              </div>
+              <span
+                style={{
+                  "font-family": "var(--mono)",
+                  "font-size": "13px",
+                  "font-weight": "600",
+                  color: "var(--warn)",
+                  width: "28px",
+                  "text-align": "right",
+                  flex: "none",
+                }}
+              >
+                {e.count}
+              </span>
+            </div>
+          )}
+        </For>
+        <p
+          style={{
+            "font-size": "11.5px",
+            color: "#A89878",
+            "line-height": "1.5",
+            margin: "11px 0 0",
+          }}
+        >
+          Excluded responses stay on-chain but aren't tallied. Eligibility
+          checks that need ledger state — role membership re-verified at the{" "}
+          <span style={{ "font-family": "var(--mono)", "font-size": "11px" }}>
+            end_epoch {props.endEpoch}
+          </span>{" "}
+          snapshot, credential proofs — are resolved by an indexer and aren't
+          reflected here.
+        </p>
+      </div>
+    </div>
+  );
+};
+
+/**
  * The tally view, shared by public surveys and revealed sealed surveys. Takes
  * already-plaintext response records (for sealed, these are the decrypted
  * ones), owns the role filter and CSV export, and renders the per-question
@@ -1477,10 +1623,15 @@ const ResultsBody: Component<{
   def: SurveyDefinition;
   keyStr: string;
   records: ResponseRecord[];
+  /** Client-detectable exclusions, for the audit breakdown. */
+  excluded: readonly ExclusionReason[];
   /** Optional line under the counter (e.g. reveal provenance). */
   note?: string;
 }> = (props) => {
   const [roleFilter, setRoleFilter] = createSignal<number | "all">("all");
+  const [exclOpen, setExclOpen] = createSignal(false);
+  const excludedTotal = (): number =>
+    props.excluded.reduce((a, e) => a + e.count, 0);
 
   const publicResponses = createMemo<SurveyResponse[]>(() =>
     props.records
@@ -1576,6 +1727,28 @@ const ResultsBody: Component<{
           />
           {publicResponses().length} counted
         </span>
+        <Show when={excludedTotal() > 0}>
+          <button
+            onClick={() => setExclOpen((o) => !o)}
+            style={{
+              display: "inline-flex",
+              "align-items": "center",
+              gap: "7px",
+              "font-family": "inherit",
+              "font-size": "12.5px",
+              "font-weight": "700",
+              color: "var(--warn)",
+              background: "#FFF8EC",
+              border: "1px solid var(--warn-line)",
+              "border-radius": "var(--r-sm)",
+              padding: "7px 12px",
+              cursor: "pointer",
+            }}
+          >
+            {excludedTotal()} excluded{" "}
+            <span style={{ "font-size": "9px" }}>{exclOpen() ? "▴" : "▾"}</span>
+          </button>
+        </Show>
         <button
           onClick={exportCsv}
           disabled={props.records.length === 0}
@@ -1599,6 +1772,13 @@ const ResultsBody: Component<{
           <span style={{ "font-size": "14px" }}>⤓</span> Export CSV
         </button>
       </div>
+
+      <Show when={exclOpen() && excludedTotal() > 0}>
+        <ExclusionPanel
+          excluded={props.excluded}
+          endEpoch={props.def.endEpoch}
+        />
+      </Show>
 
       <Show when={props.note}>
         <div
@@ -1743,6 +1923,7 @@ const SealedResults: Component<{
   def: SurveyDefinition;
   keyStr: string;
   records: ResponseRecord[];
+  excluded: readonly ExclusionReason[];
   nowUnix: number;
 }> = (props) => {
   const mode = () => {
@@ -1828,6 +2009,7 @@ const SealedResults: Component<{
           def={props.def}
           keyStr={props.keyStr}
           records={revealed()!.records}
+          excluded={props.excluded}
           note={revealNote(revealed()!.records.length, revealed()!.failed)}
         />
       </Match>

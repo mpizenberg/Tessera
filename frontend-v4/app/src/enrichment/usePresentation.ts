@@ -28,7 +28,6 @@ export interface PresentationState {
 
 export function usePresentation(
   source: Accessor<SurveyDefinition | undefined>,
-  gateway: string,
 ): PresentationState {
   const [enriched] = createResource(
     () => {
@@ -37,7 +36,7 @@ export function usePresentation(
     },
     async (d) => {
       const { enrichDefinition } = await import("./content");
-      return enrichDefinition(d, gateway);
+      return enrichDefinition(d);
     },
   );
 

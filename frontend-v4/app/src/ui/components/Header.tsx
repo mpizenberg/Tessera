@@ -110,8 +110,8 @@ export const Header: Component = () => {
         </A>
 
         <nav
+          class="header-nav"
           style={{
-            display: "flex",
             "align-items": "center",
             gap: "4px",
             "margin-left": "8px",

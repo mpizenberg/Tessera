@@ -17,8 +17,10 @@
 import {
   SPEC_VERSION,
   validateDefinition,
+  type ContentAnchor,
   type Credential,
   type NumericConstraints,
+  type OptionsOrCount,
   type Question,
   type RatingScale,
   type Role,
@@ -26,6 +28,7 @@ import {
 } from "cip-179";
 
 import { hexToBytes } from "~/util/hex";
+import { PRESENTATION_KIND } from "~/enrichment/presentation";
 import { QUICKNET_CHAIN_HASH } from "~/tlock/drand";
 import { maxPlaintextSize } from "~/tlock/padding";
 
@@ -71,6 +74,13 @@ export interface DefinitionMeta {
   title: string;
   description: string;
   eligibleRoles: Role[];
+  /**
+   * Where the human-readable text lives: `embedded` (title/description/prompts/
+   * labels on-chain) or `external` (off-chain in a pinned presentation document,
+   * on-chain carries only a content anchor + option/level counts). External keeps
+   * the chain payload small for large surveys; embedded has no off-chain deps.
+   */
+  contentMode: "embedded" | "external";
   /** End epoch as raw input text; parsed at build time. */
   endEpoch: string;
   /** Public (plaintext) or sealed (tlock commit-reveal) responses. */
@@ -217,9 +227,20 @@ function inlineLabels(labels: readonly string[]): string[] {
 function toQuestion(
   draft: QuestionDraft,
   where: string,
+  external: boolean,
   out: string[],
 ): Question {
-  const base = { prompt: draft.prompt.trim(), required: draft.required };
+  // External-content mode moves prompts/labels off-chain: the prompt is blank
+  // and option/level lists collapse to bare counts (the presentation document
+  // supplies the text). Embedded mode keeps everything inline.
+  const prompt = external ? "" : draft.prompt.trim();
+  const base = { prompt, required: draft.required };
+  const opts = (labels: readonly string[]): OptionsOrCount => {
+    const inline = inlineLabels(labels);
+    return external
+      ? { type: "count", count: inline.length }
+      : { type: "options", labels: inline };
+  };
   switch (draft.type) {
     case "custom": {
       if (draft.customUri.trim() === "") {
@@ -235,16 +256,12 @@ function toQuestion(
       };
     }
     case "singleChoice":
-      return {
-        ...base,
-        type: "singleChoice",
-        options: { type: "options", labels: inlineLabels(draft.labels) },
-      };
+      return { ...base, type: "singleChoice", options: opts(draft.labels) };
     case "multiSelect":
       return {
         ...base,
         type: "multiSelect",
-        options: { type: "options", labels: inlineLabels(draft.labels) },
+        options: opts(draft.labels),
         minSelections: draft.minSelections,
         maxSelections: draft.maxSelections,
       };
@@ -252,7 +269,7 @@ function toQuestion(
       return {
         ...base,
         type: "ranking",
-        options: { type: "options", labels: inlineLabels(draft.labels) },
+        options: opts(draft.labels),
         minRanked: draft.minRanked,
         maxRanked: draft.maxRanked,
       };
@@ -272,13 +289,15 @@ function toQuestion(
       return {
         ...base,
         type: "pointsAllocation",
-        options: { type: "options", labels: inlineLabels(draft.labels) },
+        options: opts(draft.labels),
         budget: draft.budget,
       };
     case "rating": {
       const scale: RatingScale =
         draft.ratingScale === "labels"
-          ? { type: "labels", labels: inlineLabels(draft.ratingLabels) }
+          ? external
+            ? { type: "count", count: inlineLabels(draft.ratingLabels).length }
+            : { type: "labels", labels: inlineLabels(draft.ratingLabels) }
           : {
               type: "numeric",
               constraints: parseConstraints(
@@ -292,7 +311,7 @@ function toQuestion(
       return {
         ...base,
         type: "rating",
-        options: { type: "options", labels: inlineLabels(draft.labels) },
+        options: opts(draft.labels),
         scale,
       };
     }
@@ -315,21 +334,38 @@ function toQuestion(
  * `meta`. `owner` must be a key credential the connected wallet controls so it
  * can later prove ownership for a cancellation.
  */
+/**
+ * Placeholder anchor used to *preview/validate* an external-content definition
+ * before its presentation document is pinned. Its only job is to make
+ * `contentAnchor` present so the codec accepts count forms; the real anchor
+ * (from {@link buildPresentationDoc} → pin) is injected at publish time. Never
+ * encode a definition built with this — rebuild with the real anchor first.
+ */
+const PLACEHOLDER_ANCHOR: ContentAnchor = {
+  uri: "ipfs://pending",
+  hash: new Uint8Array(32),
+};
+
 export function buildDefinition(
   owner: Credential,
   meta: DefinitionMeta,
   drafts: readonly QuestionDraft[],
+  contentAnchor?: ContentAnchor,
 ): { definition: SurveyDefinition; problems: string[] } {
   const problems: string[] = [];
+  const external = meta.contentMode === "external";
 
   const endEpoch = parseEndEpoch(meta.endEpoch, problems);
-  const questions = drafts.map((d, i) => toQuestion(d, `Q${i + 1}`, problems));
+  const questions = drafts.map((d, i) =>
+    toQuestion(d, `Q${i + 1}`, external, problems),
+  );
 
   const definition: SurveyDefinition = {
     specVersion: SPEC_VERSION,
     owner,
-    title: meta.title.trim(),
-    description: meta.description.trim(),
+    // External mode moves title/description into the presentation document.
+    title: external ? "" : meta.title.trim(),
+    description: external ? "" : meta.description.trim(),
     eligibleRoles: [...meta.eligibleRoles].sort((a, b) => a - b),
     endEpoch,
     submissionMode:
@@ -345,10 +381,49 @@ export function buildDefinition(
           }
         : { type: "public" },
     questions,
+    ...(external ? { contentAnchor: contentAnchor ?? PLACEHOLDER_ANCHOR } : {}),
   };
 
   problems.push(...validateDefinition(definition));
   return { definition, problems };
+}
+
+/** The off-chain presentation document (JSON) for an external-content survey. */
+export interface PresentationDoc {
+  readonly specVersion: number;
+  readonly kind: string;
+  readonly title: string;
+  readonly description: string;
+  readonly questions: ReadonlyArray<{
+    readonly prompt: string;
+    readonly options?: string[];
+    readonly ratingLabels?: string[];
+  }>;
+}
+
+/**
+ * Project builder state into the presentation document that external mode pins
+ * off-chain — the inverse of `applyPresentation`'s overlay. Option/rating-label
+ * arrays use the same trim+drop-blank rule as the on-chain counts, so lengths
+ * line up and the reader can re-attach labels to indices.
+ */
+export function buildPresentationDoc(
+  meta: DefinitionMeta,
+  drafts: readonly QuestionDraft[],
+): PresentationDoc {
+  return {
+    specVersion: SPEC_VERSION,
+    kind: PRESENTATION_KIND,
+    title: meta.title.trim(),
+    description: meta.description.trim(),
+    questions: drafts.map((d) => ({
+      prompt: d.prompt.trim(),
+      ...(usesOptions(d.type) ? { options: inlineLabels(d.labels) } : {}),
+      ...(d.type === "rating" && d.ratingScale === "labels"
+        ? { ratingLabels: inlineLabels(d.ratingLabels) }
+        : {}),
+    })),
+  };
 }
 
 function parseEndEpoch(text: string, out: string[]): number {

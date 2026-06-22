@@ -1,16 +1,23 @@
 /**
  * Dereferencing tamper-evident content anchors (URI + blake2b-256 hash).
  *
- * Used by external-content surveys (presentation document) and — at author
- * time — by voter rationales. The contract is the same: fetch the raw bytes,
- * check their `blake2b-256` against the on-chain hash, and only then trust the
- * payload. A mismatch or fetch failure is surfaced, never silently ignored.
+ * Used by external-content surveys (presentation document) and voter rationales.
+ * The contract is the same: fetch the raw bytes, check their `blake2b-256`
+ * against the on-chain hash, and only then trust the payload. A mismatch or
+ * fetch failure is surfaced, never silently ignored.
+ *
+ * `ipfs://` URIs are resolved by **racing several public gateways** with a
+ * staggered start (the first fires immediately, each next ~1s later): the first
+ * to return hash-verified bytes wins and the others are aborted. This is fast
+ * when the leading gateway is healthy and resilient when it isn't, without
+ * hammering all gateways at once. `https://` URIs are fetched directly.
  */
 
 import { blake2b } from "@noble/hashes/blake2.js";
 import type { ContentAnchor, SurveyDefinition } from "cip-179";
 
 import { bytesToHex } from "~/util/hex";
+import { GATEWAY_STAGGER_MS, IPFS_GATEWAYS } from "./providers";
 import {
   applyPresentation,
   parsePresentation,
@@ -22,39 +29,103 @@ export function blake2b256(bytes: Uint8Array): Uint8Array {
   return blake2b(bytes, { dkLen: 32 });
 }
 
-/** Resolve an anchor URI to an HTTP(S) URL, routing `ipfs://` through the gateway. */
-export function resolveAnchorUri(uri: string, gateway: string): string {
-  return uri.startsWith("ipfs://")
-    ? gateway + uri.slice("ipfs://".length)
-    : uri;
+function hashMatches(bytes: Uint8Array, expected: Uint8Array): boolean {
+  return bytesToHex(blake2b256(bytes)) === bytesToHex(expected);
+}
+
+function delay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted)
+      return reject(new DOMException("aborted", "AbortError"));
+    const id = setTimeout(resolve, ms);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(id);
+        reject(new DOMException("aborted", "AbortError"));
+      },
+      { once: true },
+    );
+  });
 }
 
 /**
- * Fetch the bytes behind an anchor and verify their hash. Throws on a network
- * failure or a hash mismatch (tamper / wrong document).
+ * Resolve with the first fulfilled promise; reject only when all reject (a
+ * `Promise.any` stand-in, since the tsconfig targets ES2020).
  */
-export async function fetchAnchorBytes(
-  anchor: ContentAnchor,
-  gateway: string,
+function firstSuccess<T>(promises: Promise<T>[]): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let remaining = promises.length;
+    if (remaining === 0) return reject(new Error("no attempts"));
+    for (const p of promises) {
+      p.then(resolve, () => {
+        if (--remaining === 0) reject(new Error("all attempts failed"));
+      });
+    }
+  });
+}
+
+/** Fetch + hash-verify a single URL, honouring an abort signal. */
+async function fetchVerified(
+  url: string,
+  expected: Uint8Array,
+  signal: AbortSignal,
 ): Promise<Uint8Array> {
-  const url = resolveAnchorUri(anchor.uri, gateway);
-  const res = await fetch(url);
+  const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`fetch ${url} → HTTP ${res.status}`);
   const bytes = new Uint8Array(await res.arrayBuffer());
-  if (bytesToHex(blake2b256(bytes)) !== bytesToHex(anchor.hash)) {
-    throw new Error(
-      "content hash mismatch — document doesn't match the anchor",
-    );
+  if (!hashMatches(bytes, expected)) {
+    throw new Error(`content hash mismatch from ${url}`);
   }
   return bytes;
 }
 
-/** Fetch + verify + JSON-parse an anchor's content. */
-export async function fetchAnchorJson(
+/**
+ * Race the gateways for an `ipfs://` path (`<cid>/<rest>`), staggering the
+ * start of each so a healthy leading gateway usually wins before the others
+ * even fire. Resolves with the first hash-verified payload; rejects only if
+ * every gateway fails. The winner aborts all the rest (and any pending delays).
+ */
+async function fetchFromGateways(
+  path: string,
+  expected: Uint8Array,
+): Promise<Uint8Array> {
+  const controller = new AbortController();
+  const attempts = IPFS_GATEWAYS.map(async (gateway, i) => {
+    if (i > 0) await delay(i * GATEWAY_STAGGER_MS, controller.signal);
+    return fetchVerified(gateway + path, expected, controller.signal);
+  });
+  try {
+    return await firstSuccess(attempts);
+  } catch {
+    throw new Error(
+      `no IPFS gateway returned a matching document (tried ${IPFS_GATEWAYS.length})`,
+    );
+  } finally {
+    controller.abort(); // cancel the losers + their pending delays
+    // Swallow the now-rejected losers so they don't surface as unhandled.
+    attempts.forEach((p) => void p.catch(() => {}));
+  }
+}
+
+/**
+ * Fetch the bytes behind an anchor and verify their hash. `ipfs://` anchors race
+ * the public gateways; everything else is fetched directly. Throws if no source
+ * yields bytes matching the anchor hash.
+ */
+export async function fetchAnchorBytes(
   anchor: ContentAnchor,
-  gateway: string,
-): Promise<unknown> {
-  const bytes = await fetchAnchorBytes(anchor, gateway);
+): Promise<Uint8Array> {
+  if (anchor.uri.startsWith("ipfs://")) {
+    return fetchFromGateways(anchor.uri.slice("ipfs://".length), anchor.hash);
+  }
+  const controller = new AbortController();
+  return fetchVerified(anchor.uri, anchor.hash, controller.signal);
+}
+
+/** Fetch + verify + JSON-parse an anchor's content. */
+export async function fetchAnchorJson(anchor: ContentAnchor): Promise<unknown> {
+  const bytes = await fetchAnchorBytes(anchor);
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 
@@ -64,10 +135,9 @@ export async function fetchAnchorJson(
  */
 export async function loadPresentation(
   def: SurveyDefinition,
-  gateway: string,
 ): Promise<Presentation | null> {
   if (!def.contentAnchor) return null;
-  return parsePresentation(await fetchAnchorJson(def.contentAnchor, gateway));
+  return parsePresentation(await fetchAnchorJson(def.contentAnchor));
 }
 
 /**
@@ -78,8 +148,7 @@ export async function loadPresentation(
  */
 export async function enrichDefinition(
   def: SurveyDefinition,
-  gateway: string,
 ): Promise<SurveyDefinition> {
-  const pres = await loadPresentation(def, gateway);
+  const pres = await loadPresentation(def);
   return pres ? applyPresentation(def, pres) : def;
 }

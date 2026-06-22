@@ -11,6 +11,7 @@ import {
 import { createStore } from "solid-js/store";
 import { A, useNavigate, useParams } from "@solidjs/router";
 import {
+  SPEC_VERSION,
   encodePayload,
   validateResponse,
   type ContentAnchor,
@@ -44,6 +45,7 @@ import {
   type DraftValue,
 } from "~/domain/respond";
 import { usePresentation } from "~/enrichment/usePresentation";
+import { IPFS_PROVIDERS } from "~/enrichment/providers";
 import { hexToBytes } from "~/util/hex";
 import { formatRevealDate } from "~/tlock/drand";
 import { roleColors, roleLabel, shortRef, viewStatus } from "~/ui/format";
@@ -68,7 +70,7 @@ export const Respond: Component = () => {
   // to use for validation/build too.
   const rawDefinition = (): SurveyDefinition | undefined =>
     survey()?.record.definition;
-  const pres = usePresentation(rawDefinition, app.config.ipfsGateway);
+  const pres = usePresentation(rawDefinition);
   const definition = (): SurveyDefinition | undefined => pres.def();
   const identity = (): WalletIdentity | null => app.wallet()?.identity ?? null;
 
@@ -161,8 +163,15 @@ export const Respond: Component = () => {
   const [txHash, setTxHash] = createSignal<string | null>(null);
 
   // Optional voter rationale (Pro): an off-chain doc, hash-anchored on the
-  // response (CIP-179 key 5). Author supplies the URI + its blake2b-256 hash.
+  // response (CIP-179 key 5). Either *write* it (the app pins it to your IPFS
+  // providers and fills the anchor) or *paste* an already-hosted URI + hash.
   const [rationaleOn, setRationaleOn] = createSignal(false);
+  const hasPinning = (): boolean =>
+    IPFS_PROVIDERS.some((p) => app.ipfsTokens[p.id]?.trim());
+  const [ratMode, setRatMode] = createSignal<"write" | "manual">(
+    hasPinning() ? "write" : "manual",
+  );
+  const [ratText, setRatText] = createSignal("");
   const [ratUri, setRatUri] = createSignal("");
   const [ratHash, setRatHash] = createSignal("");
 
@@ -171,10 +180,12 @@ export const Respond: Component = () => {
   const setSkipped = (i: number, skipped: boolean) =>
     setDrafts(i, "skipped", skipped);
 
-  // Parse the optional rationale anchor: the anchor, `undefined` (none), or
-  // "invalid" (problems set). URI required; hash must be 32 bytes of hex.
-  const collectRationale = (): ContentAnchor | undefined | "invalid" => {
-    if (!app.ui.pro || !rationaleOn()) return undefined;
+  // Parse the *manual* rationale anchor: the anchor, `undefined` (none), or
+  // "invalid" (problems set). URI required; hash must be 32 bytes of hex. The
+  // write/pin path resolves its anchor asynchronously at submit time instead.
+  const manualRationaleAnchor = (): ContentAnchor | undefined | "invalid" => {
+    if (!app.ui.pro || !rationaleOn() || ratMode() !== "manual")
+      return undefined;
     const uri = ratUri().trim();
     const probs: string[] = [];
     if (uri === "") probs.push("Rationale: document URI is required.");
@@ -194,6 +205,27 @@ export const Respond: Component = () => {
     return { uri, hash };
   };
 
+  // Resolve the rationale anchor at submit time: pin the written text (when in
+  // write mode with non-empty text), or use the already-parsed manual anchor.
+  // Throws (→ submit error) if pinning fails. Returns undefined for "no rationale".
+  const resolveRationale = async (
+    manual: ContentAnchor | undefined,
+  ): Promise<ContentAnchor | undefined> => {
+    if (!app.ui.pro || !rationaleOn()) return undefined;
+    if (ratMode() === "manual") return manual;
+    const text = ratText().trim();
+    if (text === "") return undefined;
+    setBusyText("Pinning rationale…");
+    const { pinJson } = await import("~/enrichment/pin");
+    const doc = {
+      specVersion: SPEC_VERSION,
+      kind: "cardano-survey-rationale",
+      body: { comment: text },
+    };
+    const pinned = await pinJson(doc, "rationale.json", app.ipfsTokens);
+    return { uri: pinned.uri, hash: pinned.hash };
+  };
+
   const onSubmit = async () => {
     const def = definition();
     const s = survey();
@@ -201,24 +233,18 @@ export const Respond: Component = () => {
     const cred = credential();
     if (!def || !s || r === null || !cred) return;
 
-    // Optional rationale anchor (Pro). Parse + validate up front so a bad hash
-    // surfaces alongside answer problems, before any signing.
-    const rationale = collectRationale();
-    if (rationale === "invalid") return;
+    // Manual rationale anchor (Pro) parsed up front so a bad hash surfaces
+    // alongside answer problems, before any signing. The write/pin path is
+    // resolved asynchronously below (it needs a network round-trip).
+    const manualRationale = manualRationaleAnchor();
+    if (manualRationale === "invalid") return;
 
     // Validate the answers as plaintext first — for a sealed survey nobody can
-    // check them again until the reveal, so they must be well-formed now.
-    const plain = buildResponse(
-      s.record.ref,
-      r,
-      cred,
-      def.questions,
-      drafts,
-      rationale,
-    );
+    // check them again until the reveal, so they must be well-formed now. The
+    // rationale never affects answer validation, so it's resolved after.
     const found = validateResponse(
       { ...def, submissionMode: { type: "public" } },
-      plain,
+      buildResponse(s.record.ref, r, cred, def.questions, drafts),
     );
     setProblems(found);
     if (found.length > 0) return;
@@ -226,8 +252,18 @@ export const Respond: Component = () => {
     setSubmitting(true);
     setSubmitError(null);
     try {
+      // Resolve (and, in write mode, pin) the rationale before building.
+      const rationale = await resolveRationale(manualRationale);
+
       const sealed = sealedMode();
-      let response = plain;
+      let response = buildResponse(
+        s.record.ref,
+        r,
+        cred,
+        def.questions,
+        drafts,
+        rationale,
+      );
       if (sealed) {
         // Timelock-encrypt the answers to the survey's drand round, then submit
         // the ciphertext instead of the plaintext answers.
@@ -335,9 +371,14 @@ export const Respond: Component = () => {
               <Show when={app.ui.pro}>
                 <RationaleSection
                   on={rationaleOn()}
+                  mode={ratMode()}
+                  hasPinning={hasPinning()}
+                  text={ratText()}
                   uri={ratUri()}
                   hash={ratHash()}
                   onToggle={setRationaleOn}
+                  onMode={setRatMode}
+                  onText={setRatText}
                   onUri={setRatUri}
                   onHash={setRatHash}
                 />
@@ -746,13 +787,20 @@ const LabelsAbsentBanner: Component<{ keyStr: string }> = (props) => (
  * Optional voter rationale (Pro). Attaches an off-chain document, tamper-evident
  * via its blake2b-256 hash, to the response (CIP-179 key 5). Purely
  * informational — no effect on validation or tallies — mirroring CIP-100/108
- * rationale conventions. Author supplies an already-hosted URI + its hash.
+ * rationale conventions. Two ways to supply it: **write** the text and let the
+ * app pin it to your IPFS providers (filling the anchor for you), or **paste**
+ * an already-hosted URI + its hash.
  */
 const RationaleSection: Component<{
   on: boolean;
+  mode: "write" | "manual";
+  hasPinning: boolean;
+  text: string;
   uri: string;
   hash: string;
   onToggle: (on: boolean) => void;
+  onMode: (m: "write" | "manual") => void;
+  onText: (v: string) => void;
   onUri: (v: string) => void;
   onHash: (v: string) => void;
 }> = (props) => (
@@ -791,49 +839,144 @@ const RationaleSection: Component<{
           "margin-top": "12px",
         }}
       >
-        <div>
-          <label style={ratLabelStyle()}>Document URI</label>
-          <input
-            type="text"
-            value={props.uri}
-            placeholder="ipfs://… or https://…"
-            onInput={(e) => props.onUri(e.currentTarget.value)}
-            style={{
-              ...numberInputStyle(),
-              "font-family": "var(--mono)",
-              "font-size": "12.5px",
-            }}
-          />
-        </div>
-        <div>
-          <label style={ratLabelStyle()}>Hash (blake2b-256, hex)</label>
-          <input
-            type="text"
-            value={props.hash}
-            placeholder="64 hex characters"
-            onInput={(e) => props.onHash(e.currentTarget.value)}
-            style={{
-              ...numberInputStyle(),
-              "font-family": "var(--mono)",
-              "font-size": "12.5px",
-            }}
-          />
-        </div>
-        <p
+        <div
           style={{
-            "font-size": "11.5px",
-            color: "var(--dim)",
-            "line-height": "1.45",
-            margin: "0",
+            display: "inline-flex",
+            "align-self": "flex-start",
+            background: "#F1EADC",
+            border: "1px solid #E3DBC9",
+            "border-radius": "9px",
+            padding: "3px",
           }}
         >
-          Host the document yourself; the hash makes it tamper-evident. It's
-          recorded with your response but never affects validation or tallies.
-        </p>
+          <button
+            type="button"
+            style={ratTabStyle(props.mode === "write")}
+            onClick={() => props.onMode("write")}
+          >
+            Write &amp; pin
+          </button>
+          <button
+            type="button"
+            style={ratTabStyle(props.mode === "manual")}
+            onClick={() => props.onMode("manual")}
+          >
+            Paste anchor
+          </button>
+        </div>
+
+        <Show
+          when={props.mode === "write"}
+          fallback={
+            <>
+              <div>
+                <label style={ratLabelStyle()}>Document URI</label>
+                <input
+                  type="text"
+                  value={props.uri}
+                  placeholder="ipfs://… or https://…"
+                  onInput={(e) => props.onUri(e.currentTarget.value)}
+                  style={{
+                    ...numberInputStyle(),
+                    "font-family": "var(--mono)",
+                    "font-size": "12.5px",
+                  }}
+                />
+              </div>
+              <div>
+                <label style={ratLabelStyle()}>Hash (blake2b-256, hex)</label>
+                <input
+                  type="text"
+                  value={props.hash}
+                  placeholder="64 hex characters"
+                  onInput={(e) => props.onHash(e.currentTarget.value)}
+                  style={{
+                    ...numberInputStyle(),
+                    "font-family": "var(--mono)",
+                    "font-size": "12.5px",
+                  }}
+                />
+              </div>
+              <p
+                style={{
+                  "font-size": "11.5px",
+                  color: "var(--dim)",
+                  "line-height": "1.45",
+                  margin: "0",
+                }}
+              >
+                Host the document yourself; the hash makes it tamper-evident.
+              </p>
+            </>
+          }
+        >
+          <div>
+            <label style={ratLabelStyle()}>Rationale</label>
+            <textarea
+              value={props.text}
+              rows={4}
+              placeholder="Why you answered this way…"
+              onInput={(e) => props.onText(e.currentTarget.value)}
+              style={{
+                ...numberInputStyle(),
+                "font-family": "inherit",
+                "font-size": "13px",
+                "line-height": "1.5",
+                resize: "vertical",
+              }}
+            />
+          </div>
+          <Show
+            when={props.hasPinning}
+            fallback={
+              <p
+                style={{
+                  "font-size": "11.5px",
+                  color: "var(--warn)",
+                  "line-height": "1.45",
+                  margin: "0",
+                }}
+              >
+                No IPFS provider is configured — add a token in{" "}
+                <A href="/settings" style={{ color: "var(--accent)" }}>
+                  Settings
+                </A>{" "}
+                to pin from here, or switch to “Paste anchor”.
+              </p>
+            }
+          >
+            <p
+              style={{
+                "font-size": "11.5px",
+                color: "var(--dim)",
+                "line-height": "1.45",
+                margin: "0",
+              }}
+            >
+              On submit, this is pinned to your IPFS providers and anchored (URI
+              + blake2b-256 hash) on your response. Informational only — never
+              affects validation or tallies.
+            </p>
+          </Show>
+        </Show>
       </div>
     </Show>
   </div>
 );
+
+function ratTabStyle(on: boolean): JSX.CSSProperties {
+  return {
+    "font-family": "inherit",
+    "font-size": "11.5px",
+    "font-weight": on ? "700" : "600",
+    cursor: "pointer",
+    border: "none",
+    "border-radius": "7px",
+    padding: "5px 12px",
+    background: on ? "var(--accent)" : "transparent",
+    color: on ? "#fff" : "#857B6B",
+  };
+}
 
 // ----------------------------------------------------------------------------
 // Question card (header + skip + body switch)

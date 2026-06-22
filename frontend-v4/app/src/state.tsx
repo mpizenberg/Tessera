@@ -20,7 +20,18 @@ import {
 } from "solid-js";
 import { createStore } from "solid-js/store";
 
-import { loadConfig, type AppConfig } from "~/config";
+import {
+  loadConfig,
+  storeKoiosToken,
+  envKoiosToken,
+  type AppConfig,
+} from "~/config";
+import {
+  loadProviderTokens,
+  storeProviderToken,
+  type ProviderId,
+  type ProviderTokens,
+} from "~/enrichment/providers";
 import { KoiosDataSource } from "~/data/koios";
 import type { ChainTip, Cip179Records, DataSource } from "~/data/source";
 import {
@@ -64,6 +75,18 @@ interface AppState {
   setSearch(s: string): void;
   setPro(pro: boolean): void;
 
+  /**
+   * Active Koios bearer token (Settings override → env). Reactive: the data
+   * source reads it live, so changing it + reloading applies immediately.
+   */
+  readonly koiosToken: Accessor<string | undefined>;
+  /** Persist a Koios token override (empty clears it) and reload the snapshot. */
+  setKoiosToken(token: string): void;
+  /** IPFS pinning-provider API tokens (reactive store), for in-app uploads. */
+  readonly ipfsTokens: ProviderTokens;
+  /** Persist (or clear, when empty) a provider's token. */
+  setIpfsToken(id: ProviderId, token: string): void;
+
   // --- wallet / identity ---
   /** Wallets advertised on window.cardano (read fresh each call). */
   installedWallets(): InstalledWallet[];
@@ -93,7 +116,11 @@ const Ctx = createContext<AppState>();
 
 export const AppProvider: ParentComponent = (props) => {
   const config = loadConfig();
-  const source: DataSource = new KoiosDataSource(config);
+
+  // Koios token: reactive so a Settings override applies on the next reload
+  // without rebuilding the source (which reads it through this getter).
+  const [koiosToken, setKoiosTokenSig] = createSignal(config.koiosToken);
+  const source: DataSource = new KoiosDataSource(config, () => koiosToken());
 
   const [snapshot, { refetch }] = createResource<Snapshot>(async () => {
     const [records, tip] = await Promise.all([
@@ -116,6 +143,14 @@ export const AppProvider: ParentComponent = (props) => {
     search: "",
     pro: false,
   });
+
+  const [ipfsTokens, setIpfsTokensStore] =
+    createStore<ProviderTokens>(loadProviderTokens());
+  const setIpfsToken = (id: ProviderId, token: string): void => {
+    storeProviderToken(id, token);
+    const trimmed = token.trim();
+    setIpfsTokensStore(id, trimmed || undefined);
+  };
 
   const [wallet, setWallet] = createSignal<ConnectedWallet | null>(null);
   const [connecting, setConnecting] = createSignal(false);
@@ -151,6 +186,14 @@ export const AppProvider: ParentComponent = (props) => {
     setFilter: (f) => setUi("filter", f),
     setSearch: (s) => setUi("search", s),
     setPro: (pro) => setUi("pro", pro),
+    koiosToken,
+    setKoiosToken: (token) => {
+      storeKoiosToken(token);
+      setKoiosTokenSig(token.trim() || envKoiosToken());
+      refetch();
+    },
+    ipfsTokens,
+    setIpfsToken,
     installedWallets: listInstalledWallets,
     wallet,
     connecting,

@@ -7,20 +7,15 @@ import { Explore } from "~/ui/screens/Explore";
 import { Survey } from "~/ui/screens/Survey";
 import { Respond } from "~/ui/screens/Respond";
 import { Create } from "~/ui/screens/Create";
-import { Placeholder } from "~/ui/screens/Placeholder";
+import { Settings } from "~/ui/screens/Settings";
+import { BottomNav } from "~/ui/components/BottomNav";
 
 const Layout: ParentComponent = (props) => (
   <AppProvider>
     <Header />
     {props.children}
+    <BottomNav />
   </AppProvider>
-);
-
-const SettingsScreen = () => (
-  <Placeholder
-    title="Settings"
-    note="Network, Koios endpoint, and wallet settings will live here."
-  />
 );
 
 export default function App() {
@@ -30,7 +25,7 @@ export default function App() {
       <Route path="/survey/:key" component={Survey} />
       <Route path="/survey/:key/respond" component={Respond} />
       <Route path="/create" component={Create} />
-      <Route path="/settings" component={SettingsScreen} />
+      <Route path="/settings" component={Settings} />
     </Router>
   );
 }

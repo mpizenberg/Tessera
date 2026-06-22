@@ -6,7 +6,11 @@ export interface AppConfig {
   readonly network: Network;
   /** Koios REST base URL for the active network. */
   readonly koiosUrl: string;
-  /** Optional Koios bearer token (free tier works without one). */
+  /**
+   * Koios bearer token resolved at startup: a user override from Settings
+   * (localStorage) takes precedence over the build-time `VITE_KOIOS_TOKEN`.
+   * Runtime changes flow through `state.tsx` (reactive), this is just the seed.
+   */
   readonly koiosToken: string | undefined;
   /**
    * Only index CIP-179 transactions at or after this unix time. Anchored on a
@@ -21,13 +25,6 @@ export interface AppConfig {
    * not consensus-critical.
    */
   readonly secondsPerEpoch: number;
-  /**
-   * HTTP gateway used to dereference `ipfs://` content anchors (external-content
-   * presentation documents, voter rationales). Must end with a trailing slash;
-   * `ipfs://<cid>/<path>` resolves to `<gateway><cid>/<path>`. `https://` and
-   * `http://` anchors are fetched directly, bypassing this.
-   */
-  readonly ipfsGateway: string;
 }
 
 const KOIOS_URL: Record<Network, string> = {
@@ -44,13 +41,38 @@ const SECONDS_PER_EPOCH: Record<Network, number> = {
 /** CIP-179 went live around here — ignore older label-17 history. */
 const SURVEYS_SINCE_ISO = "2026-06-01T00:00:00Z";
 
-/** Public IPFS gateway for dereferencing `ipfs://` anchors (overridable via env). */
-const DEFAULT_IPFS_GATEWAY = "https://ipfs.io/ipfs/";
+/** localStorage key for a user-supplied Koios token (overrides the build env). */
+export const KOIOS_TOKEN_STORAGE_KEY = "tessera.koiosToken";
+
+/** The build-time Koios token (from env), ignoring any user override. */
+export function envKoiosToken(): string | undefined {
+  return import.meta.env.VITE_KOIOS_TOKEN || undefined;
+}
+
+/** A persisted Koios token override, if the user set one in Settings. */
+export function storedKoiosToken(): string | undefined {
+  try {
+    return localStorage.getItem(KOIOS_TOKEN_STORAGE_KEY) || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Persist (or clear, when empty) the Koios token override. */
+export function storeKoiosToken(token: string): void {
+  const trimmed = token.trim();
+  try {
+    if (trimmed) localStorage.setItem(KOIOS_TOKEN_STORAGE_KEY, trimmed);
+    else localStorage.removeItem(KOIOS_TOKEN_STORAGE_KEY);
+  } catch {
+    // storage unavailable — keep the in-memory value only
+  }
+}
 
 /**
  * Default to Preview testnet; overridable via Vite env (VITE_NETWORK).
  *
- * The Koios token comes from VITE_KOIOS_TOKEN (see `.env`). The free
+ * The Koios token resolves localStorage override → `VITE_KOIOS_TOKEN`. The free
  * (anonymous) tier does not send CORS headers, so an authenticated token is
  * required for browser requests; without one, Koios calls will be CORS-blocked.
  */
@@ -60,9 +82,8 @@ export function loadConfig(): AppConfig {
   return {
     network,
     koiosUrl: KOIOS_URL[network],
-    koiosToken: import.meta.env.VITE_KOIOS_TOKEN || undefined,
+    koiosToken: storedKoiosToken() || envKoiosToken(),
     sinceUnix: Math.floor(Date.parse(SURVEYS_SINCE_ISO) / 1000),
     secondsPerEpoch: SECONDS_PER_EPOCH[network],
-    ipfsGateway: import.meta.env.VITE_IPFS_GATEWAY || DEFAULT_IPFS_GATEWAY,
   };
 }

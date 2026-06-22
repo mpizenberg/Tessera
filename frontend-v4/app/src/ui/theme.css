@@ -127,3 +127,26 @@ select {
     position: static;
   }
 }
+
+/* Mobile bottom nav: hidden on desktop, replaces the header nav on narrow
+   screens. The header's own nav links hide so the two never both show.
+   `display` lives here (not inline) so the media query can actually toggle it —
+   an inline display would win over these rules. */
+.header-nav {
+  display: flex;
+}
+.bottom-nav {
+  display: none;
+}
+@media (max-width: 800px) {
+  .header-nav {
+    display: none;
+  }
+  .bottom-nav {
+    display: flex;
+  }
+  /* keep page content clear of the fixed bar (plus the iOS safe area) */
+  body {
+    padding-bottom: calc(62px + env(safe-area-inset-bottom));
+  }
+}
