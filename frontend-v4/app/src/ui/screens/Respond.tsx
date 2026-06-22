@@ -1123,12 +1123,27 @@ const PointsBody: Component<{
 }> = (props) => {
   const sum = () => props.v.points.reduce((s, p) => s + p, 0);
   const remaining = () => props.q.budget - sum();
-  const bump = (i: number, delta: number) => {
+  // Clamp to [0, budget − others] so a single field can never push the total
+  // over budget — the same invariant the +/- buttons enforce.
+  const setPoints = (i: number, raw: number) => {
+    const others = sum() - (props.v.points[i] ?? 0);
+    const value = Math.max(0, Math.min(raw, props.q.budget - others));
     const next = [...props.v.points];
-    const value = (next[i] ?? 0) + delta;
-    if (value < 0 || (delta > 0 && remaining() <= 0)) return;
     next[i] = value;
     props.onChange({ type: "pointsAllocation", points: next });
+  };
+  const bump = (i: number, delta: number) =>
+    setPoints(i, (props.v.points[i] ?? 0) + delta);
+  // Capped slider: the track keeps its full 0..budget range, but the thumb is
+  // blocked past the remaining budget. We clamp the dragged value and, when it
+  // was over the cap, write it back onto the element so the thumb snaps to the
+  // cap — Solid won't re-render the input if the clamped value matches state.
+  const slideTo = (i: number, el: HTMLInputElement) => {
+    const raw = parseInt(el.value, 10) || 0;
+    const others = sum() - (props.v.points[i] ?? 0);
+    const capped = Math.max(0, Math.min(raw, props.q.budget - others));
+    if (capped !== raw) el.value = String(capped);
+    setPoints(i, capped);
   };
   return (
     <>
@@ -1185,38 +1200,36 @@ const PointsBody: Component<{
                 <button style={stepBtnStyle()} onClick={() => bump(i, -1)}>
                   −
                 </button>
-                <span
-                  style={{
-                    "font-family": "var(--mono)",
-                    "font-size": "15px",
-                    "font-weight": "600",
-                    width: "34px",
-                    "text-align": "center",
+                <input
+                  type="number"
+                  min={0}
+                  max={props.q.budget}
+                  value={props.v.points[i] ?? 0}
+                  onInput={(e) => {
+                    const n = parseInt(e.currentTarget.value, 10);
+                    setPoints(i, Number.isFinite(n) ? n : 0);
                   }}
-                >
-                  {props.v.points[i] ?? 0}
-                </span>
+                  style={pointsInputStyle()}
+                />
                 <button style={stepBtnStyle()} onClick={() => bump(i, 1)}>
                   +
                 </button>
               </div>
             </div>
-            <div
+            <input
+              type="range"
+              min={0}
+              max={props.q.budget}
+              step={1}
+              value={props.v.points[i] ?? 0}
+              onInput={(e) => slideTo(i, e.currentTarget)}
               style={{
-                height: "8px",
-                "border-radius": "var(--r-pill)",
-                background: "var(--line2)",
-                overflow: "hidden",
+                width: "100%",
+                display: "block",
+                "accent-color": "var(--accent)",
+                cursor: "pointer",
               }}
-            >
-              <div
-                style={{
-                  width: `${pct(props.v.points[i] ?? 0, props.q.budget)}%`,
-                  height: "100%",
-                  background: "var(--accent)",
-                }}
-              />
-            </div>
+            />
           </div>
         )}
       </For>
@@ -1730,10 +1743,6 @@ function ratingLevels(
   }
 }
 
-function pct(n: number, of: number): number {
-  return of <= 0 ? 0 : Math.min(100, Math.round((n / of) * 100));
-}
-
 // --- styles -----------------------------------------------------------------
 
 function backLinkStyle(): JSX.CSSProperties {
@@ -1888,6 +1897,21 @@ function stepBtnStyle(): JSX.CSSProperties {
     cursor: "pointer",
     "line-height": "1",
     flex: "none",
+  };
+}
+function pointsInputStyle(): JSX.CSSProperties {
+  return {
+    width: "52px",
+    border: "1px solid var(--line)",
+    "border-radius": "var(--r-xs)",
+    padding: "5px 4px",
+    "font-family": "var(--mono)",
+    "font-size": "15px",
+    "font-weight": "600",
+    color: "var(--ink)",
+    "text-align": "center",
+    outline: "none",
+    "box-sizing": "border-box",
   };
 }
 function ratingBtnStyle(on: boolean): JSX.CSSProperties {

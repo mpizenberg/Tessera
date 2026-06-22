@@ -215,6 +215,7 @@ export const Create: Component = () => {
             {/* left: builder */}
             <div>
               <DetailsSection meta={meta} setMeta={setMeta} />
+              <OwnerSection identity={identity()!} />
               <RolesSection roles={meta.eligibleRoles} onToggle={toggleRole} />
               <TimingSection
                 value={meta.endEpoch}
@@ -234,11 +235,10 @@ export const Create: Component = () => {
                 resolvedPadding={resolvedPadding()}
                 pro={app.ui.pro}
               />
-              <OwnerNote identity={identity()!} />
 
               <div style={{ "margin-top": "24px" }}>
                 <SectionHead
-                  n="05"
+                  n="06"
                   label="Questions"
                   trailing={questions.length}
                 />
@@ -368,7 +368,7 @@ const RolesSection: Component<{
   onToggle: (r: Role) => void;
 }> = (props) => (
   <div style={{ "margin-top": "22px" }}>
-    <SectionHead n="02" label="Who can respond" />
+    <SectionHead n="03" label="Who can respond" />
     <div style={cardStyle()}>
       <div style={{ display: "flex", gap: "8px", "flex-wrap": "wrap" }}>
         <For each={ROLE_VALUES}>
@@ -417,7 +417,7 @@ const TimingSection: Component<{
   };
   return (
     <div style={{ "margin-top": "22px" }}>
-      <SectionHead n="03" label="Timing" />
+      <SectionHead n="04" label="Timing" />
       <div style={cardStyle()}>
         <label style={fieldLabelStyle()}>End epoch (inclusive)</label>
         <input
@@ -464,7 +464,7 @@ const VisibilitySection: Component<{
   pro: boolean;
 }> = (props) => (
   <div style={{ "margin-top": "22px" }}>
-    <SectionHead n="04" label="Visibility" />
+    <SectionHead n="05" label="Visibility" />
     <div style={cardStyle()}>
       <div
         style={{
@@ -604,30 +604,36 @@ const VisibilitySection: Component<{
   </div>
 );
 
-const OwnerNote: Component<{ identity: WalletIdentity }> = (props) => (
-  <div
-    style={{
-      ...cardStyle(),
-      "margin-top": "16px",
-      background: "#FBFAF6",
-      border: "1px solid #F0EBD8",
-    }}
-  >
+const OwnerSection: Component<{ identity: WalletIdentity }> = (props) => (
+  <div style={{ "margin-top": "22px" }}>
+    <SectionHead n="02" label="Who can cancel" />
     <div
-      style={{ "font-size": "12.5px", color: "#7A6A45", "line-height": "1.5" }}
+      style={{
+        ...cardStyle(),
+        background: "#FBFAF6",
+        border: "1px solid #F0EBD8",
+      }}
     >
-      <b style={{ color: "#5B4A22" }}>Owned by your payment credential.</b> You
-      sign with it to publish, and only it can cancel this survey later.
-      <span
+      <div
         style={{
-          "font-family": "var(--mono)",
-          "font-size": "11.5px",
-          color: "var(--dim)",
-          "margin-left": "6px",
+          "font-size": "12.5px",
+          color: "#7A6A45",
+          "line-height": "1.5",
         }}
       >
-        key:{shortHash(props.identity.payment.hashHex)}
-      </span>
+        <b style={{ color: "#5B4A22" }}>Owned by your payment credential.</b>{" "}
+        You sign with it to publish, and only it can cancel this survey later.
+        <span
+          style={{
+            "font-family": "var(--mono)",
+            "font-size": "11.5px",
+            color: "var(--dim)",
+            "margin-left": "6px",
+          }}
+        >
+          key:{shortHash(props.identity.payment.hashHex)}
+        </span>
+      </div>
     </div>
   </div>
 );
