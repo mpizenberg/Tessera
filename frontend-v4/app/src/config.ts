@@ -14,11 +14,24 @@ export interface AppConfig {
    * the epoch active on a given date differs per network.
    */
   readonly sinceUnix: number;
+  /**
+   * Epoch length in seconds for the active network (mainnet 5 days, preview
+   * 1 day). Used only to estimate the wall-clock reveal time of a future end
+   * epoch when auto-deriving a sealed survey's drand round — a coarse estimate,
+   * not consensus-critical.
+   */
+  readonly secondsPerEpoch: number;
 }
 
 const KOIOS_URL: Record<Network, string> = {
   mainnet: "https://api.koios.rest/api/v1",
   preview: "https://preview.koios.rest/api/v1",
+};
+
+/** Epoch length per network, in seconds (mainnet 432000 = 5d, preview 86400 = 1d). */
+const SECONDS_PER_EPOCH: Record<Network, number> = {
+  mainnet: 432000,
+  preview: 86400,
 };
 
 /** CIP-179 went live around here — ignore older label-17 history. */
@@ -39,5 +52,6 @@ export function loadConfig(): AppConfig {
     koiosUrl: KOIOS_URL[network],
     koiosToken: import.meta.env.VITE_KOIOS_TOKEN || undefined,
     sinceUnix: Math.floor(Date.parse(SURVEYS_SINCE_ISO) / 1000),
+    secondsPerEpoch: SECONDS_PER_EPOCH[network],
   };
 }

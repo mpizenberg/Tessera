@@ -30,6 +30,11 @@ import {
   type QuestionDraft,
   type QuestionType,
 } from "~/domain/create";
+import {
+  QUICKNET_CHAIN_HASH_HEX,
+  autoRevealRound,
+  formatRevealDate,
+} from "~/tlock/drand";
 import { roleColors, roleLabel, shortRef } from "~/ui/format";
 import type { WalletIdentity } from "~/wallet/types";
 
@@ -72,10 +77,18 @@ export const Create: Component = () => {
     description: "",
     eligibleRoles: [Role.Stakeholder],
     endEpoch: "",
+    mode: "public",
+    sealedRound: 0,
+    sealedPadding: 0, // 0 = auto (worst-case size, computed in buildDefinition)
   });
   const [questions, setQuestions] = createStore<QuestionDraft[]>([
     initQuestionDraft("singleChoice"),
   ]);
+
+  // Sealed config: derive the reveal round from the end epoch ("auto"), or let
+  // the creator pin a round directly ("manual").
+  const [drandMode, setDrandMode] = createSignal<"auto" | "manual">("auto");
+  const [drandRoundText, setDrandRoundText] = createSignal("");
 
   // Seed a sensible default end epoch once the tip is known (don't clobber input).
   createEffect(() => {
@@ -84,11 +97,42 @@ export const Create: Component = () => {
       setMeta("endEpoch", String(tip.epoch + 30));
   });
 
+  // Auto reveal round: the first drand round a couple of minutes after the end
+  // epoch closes. 0 until the tip + a valid end epoch are known.
+  const autoRound = createMemo<number>(() => {
+    const tip = app.snapshot()?.tip;
+    const end = Number(meta.endEpoch.trim());
+    if (!tip || meta.endEpoch.trim() === "" || !Number.isInteger(end)) return 0;
+    return autoRevealRound(
+      end,
+      tip.epoch,
+      tip.time,
+      tip.epochSlot,
+      app.config.secondsPerEpoch,
+    );
+  });
+
+  // Keep the definition's resolved round in sync with the chosen drand mode.
+  // Manual entry is a Pro-only affordance; Plain mode is always Auto.
+  createEffect(() => {
+    const manual = app.ui.pro && drandMode() === "manual";
+    setMeta("sealedRound", manual ? intOf(drandRoundText()) : autoRound());
+  });
+
   const built = createMemo(() => {
     const o = owner();
     return o ? buildDefinition(o, meta, questions) : null;
   });
   const problems = (): string[] => built()?.problems ?? [];
+
+  // The padding size actually used for sealed responses — the auto worst-case
+  // size unless the creator overrode it. Shown in the sealed config.
+  const resolvedPadding = (): number => {
+    const b = built();
+    return b && b.definition.submissionMode.type === "sealed"
+      ? b.definition.submissionMode.paddingSize
+      : 0;
+  };
 
   const [submitting, setSubmitting] = createSignal(false);
   const [submitError, setSubmitError] = createSignal<string | null>(null);
@@ -162,9 +206,9 @@ export const Create: Component = () => {
           <BackLink />
           <h1 style={titleStyle()}>Create a survey</h1>
           <p style={subtitleStyle()}>
-            Define the questions, who may respond, and when it closes, then sign
-            to publish the definition on-chain under metadata label 17. Answers
-            are public (plaintext); sealed surveys arrive in a later milestone.
+            Define the questions, who may respond, when it closes, and whether
+            answers are public or sealed, then sign to publish the definition
+            on-chain under metadata label 17.
           </p>
 
           <div class="create-grid" style={{ "margin-top": "20px" }}>
@@ -177,11 +221,24 @@ export const Create: Component = () => {
                 onInput={(v) => setMeta("endEpoch", v)}
                 tipEpoch={app.snapshot()?.tip.epoch}
               />
+              <VisibilitySection
+                mode={meta.mode}
+                onMode={(m) => setMeta("mode", m)}
+                drandMode={drandMode()}
+                onDrandMode={setDrandMode}
+                drandRoundText={drandRoundText()}
+                onDrandRoundText={setDrandRoundText}
+                resolvedRound={meta.sealedRound}
+                paddingOverride={meta.sealedPadding}
+                onPaddingOverride={(n) => setMeta("sealedPadding", n)}
+                resolvedPadding={resolvedPadding()}
+                pro={app.ui.pro}
+              />
               <OwnerNote identity={identity()!} />
 
               <div style={{ "margin-top": "24px" }}>
                 <SectionHead
-                  n="04"
+                  n="05"
                   label="Questions"
                   trailing={questions.length}
                 />
@@ -392,6 +449,160 @@ const TimingSection: Component<{
     </div>
   );
 };
+
+const VisibilitySection: Component<{
+  mode: "public" | "sealed";
+  onMode: (m: "public" | "sealed") => void;
+  drandMode: "auto" | "manual";
+  onDrandMode: (m: "auto" | "manual") => void;
+  drandRoundText: string;
+  onDrandRoundText: (v: string) => void;
+  resolvedRound: number;
+  paddingOverride: number;
+  onPaddingOverride: (n: number) => void;
+  resolvedPadding: number;
+  pro: boolean;
+}> = (props) => (
+  <div style={{ "margin-top": "22px" }}>
+    <SectionHead n="04" label="Visibility" />
+    <div style={cardStyle()}>
+      <div
+        style={{
+          display: "grid",
+          "grid-template-columns": "1fr 1fr",
+          gap: "10px",
+        }}
+      >
+        <button
+          onClick={() => props.onMode("public")}
+          style={modeCardStyle(props.mode === "public")}
+        >
+          <div style={modeTitleStyle()}>Public</div>
+          <div style={modeDescStyle()}>
+            Answers are plaintext, tallied as they arrive.
+          </div>
+        </button>
+        <button
+          onClick={() => props.onMode("sealed")}
+          style={modeCardStyle(props.mode === "sealed")}
+        >
+          <div style={modeTitleStyle()}>◆ Sealed</div>
+          <div style={modeDescStyle()}>
+            Timelock-encrypted; opens at a drand round.
+          </div>
+        </button>
+      </div>
+
+      <Show when={props.mode === "sealed"}>
+        <div style={{ "margin-top": "16px" }}>
+          {/* Pro: pin chain + choose how the reveal round is set. Plain: Auto. */}
+          <Show when={props.pro}>
+            <label style={fieldLabelStyle()}>Drand chain</label>
+            <div style={chainHashStyle()}>
+              {QUICKNET_CHAIN_HASH_HEX.slice(0, 6)}…
+              {QUICKNET_CHAIN_HASH_HEX.slice(-3)} · quicknet
+            </div>
+
+            <label style={{ ...fieldLabelStyle(), "margin-top": "14px" }}>
+              Reveal round
+            </label>
+            <div
+              style={{ display: "flex", gap: "8px", "margin-bottom": "10px" }}
+            >
+              <button
+                onClick={() => props.onDrandMode("auto")}
+                style={pillStyle(props.drandMode === "auto")}
+              >
+                Auto
+              </button>
+              <button
+                onClick={() => props.onDrandMode("manual")}
+                style={pillStyle(props.drandMode === "manual")}
+              >
+                Manual
+              </button>
+            </div>
+            <Show
+              when={props.drandMode === "manual"}
+              fallback={
+                <p style={hintStyle()}>
+                  Derived from the end epoch — the first drand round after
+                  responses close.
+                </p>
+              }
+            >
+              <input
+                type="number"
+                value={props.drandRoundText}
+                placeholder="drand round number"
+                onInput={(e) => props.onDrandRoundText(e.currentTarget.value)}
+                style={{
+                  ...textInputStyle(),
+                  "font-family": "var(--mono)",
+                  "max-width": "240px",
+                }}
+              />
+            </Show>
+          </Show>
+
+          <Show when={props.resolvedRound > 0}>
+            <div style={revealLineStyle()}>
+              <Show
+                when={props.pro}
+                fallback={<>Reveals {formatRevealDate(props.resolvedRound)}</>}
+              >
+                round {props.resolvedRound.toLocaleString()} · reveals{" "}
+                {formatRevealDate(props.resolvedRound)}
+              </Show>
+            </div>
+          </Show>
+
+          <Show when={props.pro}>
+            <label style={{ ...fieldLabelStyle(), "margin-top": "14px" }}>
+              Padding size (bytes)
+            </label>
+            <input
+              type="number"
+              min={1}
+              step={1}
+              value={props.paddingOverride === 0 ? "" : props.paddingOverride}
+              placeholder={`auto · ${props.resolvedPadding}`}
+              onInput={(e) => {
+                const v = e.currentTarget.value.trim();
+                const n = intOf(v);
+                // Positive integers only; blank or anything < 1 means auto.
+                props.onPaddingOverride(v === "" || n < 1 ? 0 : n);
+              }}
+              style={{
+                ...textInputStyle(),
+                "font-family": "var(--mono)",
+                "max-width": "160px",
+              }}
+            />
+            <p style={hintStyle()}>
+              Each response is zero-padded to this length before encryption, so
+              ciphertext size doesn't leak how much was answered. Leave blank to
+              auto-size to the worst-case answer (<b>{props.resolvedPadding}</b>{" "}
+              bytes for these questions).
+            </p>
+          </Show>
+
+          <div
+            style={{
+              ...warnNoteStyle(),
+              color: "#7A6A45",
+              background: "#FBFAF6",
+              border: "1px solid #F0EBD8",
+            }}
+          >
+            Responses are encrypted as they come in and stay hidden until the
+            reveal time — not even you can read them early.
+          </div>
+        </div>
+      </Show>
+    </div>
+  </div>
+);
 
 const OwnerNote: Component<{ identity: WalletIdentity }> = (props) => (
   <div
@@ -831,6 +1042,12 @@ const SummaryCard: Component<{ meta: DefinitionMeta; qCount: number }> = (
     props.meta.endEpoch.trim() === ""
       ? "—"
       : `epoch ${props.meta.endEpoch.trim()}`;
+  const visibility = () =>
+    props.meta.mode === "sealed"
+      ? props.meta.sealedRound > 0
+        ? `Sealed · reveals ${formatRevealDate(props.meta.sealedRound)}`
+        : "Sealed"
+      : "Public";
   return (
     <div style={summaryCardStyle()}>
       <div style={numberedHeadStyle()}>Summary</div>
@@ -847,7 +1064,7 @@ const SummaryCard: Component<{ meta: DefinitionMeta; qCount: number }> = (
         <SummaryRow label="Questions" value={String(props.qCount)} />
         <SummaryRow label="Who responds" value={roleList()} />
         <SummaryRow label="Ends" value={ends()} />
-        <SummaryRow label="Visibility" value="Public" />
+        <SummaryRow label="Visibility" value={visibility()} />
       </div>
     </div>
   );
@@ -1423,6 +1640,51 @@ function addTypeBtnStyle(): JSX.CSSProperties {
     "border-radius": "var(--r-sm)",
     padding: "8px 12px",
     cursor: "pointer",
+  };
+}
+function modeCardStyle(on: boolean): JSX.CSSProperties {
+  return {
+    "text-align": "left",
+    "font-family": "inherit",
+    cursor: "pointer",
+    "border-radius": "var(--r-control)",
+    padding: "12px 13px",
+    border: on ? "1px solid var(--accent)" : "1px solid var(--line)",
+    background: on ? "var(--accent-bg)" : "#fff",
+  };
+}
+function modeTitleStyle(): JSX.CSSProperties {
+  return {
+    "font-size": "14px",
+    "font-weight": "700",
+    color: "var(--ink)",
+  };
+}
+function modeDescStyle(): JSX.CSSProperties {
+  return {
+    "font-size": "11.5px",
+    color: "var(--faint)",
+    "line-height": "1.4",
+    "margin-top": "5px",
+  };
+}
+function chainHashStyle(): JSX.CSSProperties {
+  return {
+    "font-family": "var(--mono)",
+    "font-size": "12px",
+    color: "var(--muted)",
+    background: "var(--surface)",
+    border: "1px solid var(--line2)",
+    "border-radius": "var(--r-control)",
+    padding: "9px 11px",
+  };
+}
+function revealLineStyle(): JSX.CSSProperties {
+  return {
+    "font-family": "var(--mono)",
+    "font-size": "11.5px",
+    color: "var(--accent)",
+    "margin-top": "9px",
   };
 }
 function pillStyle(on: boolean): JSX.CSSProperties {

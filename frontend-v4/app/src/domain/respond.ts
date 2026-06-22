@@ -202,6 +202,26 @@ export function buildResponse(
 }
 
 /**
+ * Assemble a sealed response from an already-encrypted ciphertext (the tlock
+ * seam turns the collected answers into the ciphertext). Same envelope as a
+ * public response; only the answers payload differs.
+ */
+export function buildSealedResponse(
+  ref: SurveyRef,
+  role: Role,
+  credential: Credential,
+  ciphertext: Uint8Array,
+): SurveyResponse {
+  return {
+    specVersion: SPEC_VERSION,
+    surveyRef: ref,
+    role,
+    credential,
+    answers: { type: "sealed", ciphertext },
+  };
+}
+
+/**
  * Find a wallet's prior public response to this survey for the given role +
  * credential, if any (caller passes the latest-valid-wins–deduped set).
  */

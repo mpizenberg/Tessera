@@ -32,6 +32,8 @@ import {
 import { respondableRoles, roleCredential } from "~/domain/roles";
 import {
   buildResponse,
+  buildSealedResponse,
+  collectAnswers,
   decided,
   findExistingResponse,
   initDraft,
@@ -40,6 +42,7 @@ import {
   type Draft,
   type DraftValue,
 } from "~/domain/respond";
+import { formatRevealDate } from "~/tlock/drand";
 import { roleColors, roleLabel, shortRef, viewStatus } from "~/ui/format";
 import type { WalletIdentity } from "~/wallet/types";
 
@@ -136,7 +139,13 @@ export const Respond: Component = () => {
       .length;
   });
 
+  const sealedMode = createMemo(() => {
+    const mode = definition()?.submissionMode;
+    return mode?.type === "sealed" ? mode : null;
+  });
+
   const [submitting, setSubmitting] = createSignal(false);
+  const [busyText, setBusyText] = createSignal("Submitting…");
   const [problems, setProblems] = createSignal<string[]>([]);
   const [submitError, setSubmitError] = createSignal<string | null>(null);
   const [txHash, setTxHash] = createSignal<string | null>(null);
@@ -152,20 +161,36 @@ export const Respond: Component = () => {
     const r = role();
     const cred = credential();
     if (!def || !s || r === null || !cred) return;
-    const response = buildResponse(
-      s.record.ref,
-      r,
-      cred,
-      def.questions,
-      drafts,
+
+    // Validate the answers as plaintext first — for a sealed survey nobody can
+    // check them again until the reveal, so they must be well-formed now.
+    const plain = buildResponse(s.record.ref, r, cred, def.questions, drafts);
+    const found = validateResponse(
+      { ...def, submissionMode: { type: "public" } },
+      plain,
     );
-    const found = validateResponse(def, response);
     setProblems(found);
     if (found.length > 0) return;
 
     setSubmitting(true);
     setSubmitError(null);
     try {
+      const sealed = sealedMode();
+      let response = plain;
+      if (sealed) {
+        // Timelock-encrypt the answers to the survey's drand round, then submit
+        // the ciphertext instead of the plaintext answers.
+        setBusyText("Encrypting…");
+        const { sealAnswers } = await import("~/tlock/seal");
+        const answers = collectAnswers(def.questions, drafts);
+        const ciphertext = await sealAnswers(
+          answers,
+          sealed.round,
+          sealed.paddingSize,
+        );
+        response = buildSealedResponse(s.record.ref, r, cred, ciphertext);
+      }
+      setBusyText("Submitting…");
       const payload = encodePayload({
         type: "responses",
         responses: [response],
@@ -180,6 +205,7 @@ export const Respond: Component = () => {
       setSubmitError(e instanceof Error ? e.message : String(e));
     } finally {
       setSubmitting(false);
+      setBusyText("Submitting…");
     }
   };
 
@@ -217,9 +243,12 @@ export const Respond: Component = () => {
               connected={identity() !== null}
               respondable={respondable()}
             >
-              {/* The actual form (open + public + eligible) */}
+              {/* The actual form (open + eligible) */}
               <Show when={existing()}>
                 <RespondedBanner role={role()} />
+              </Show>
+              <Show when={sealedMode()}>
+                {(m) => <SealedBanner round={m().round} />}
               </Show>
 
               <div
@@ -259,7 +288,8 @@ export const Respond: Component = () => {
         when={
           survey() &&
           txHash() === null &&
-          viewStatus(survey()!) === "public" &&
+          (viewStatus(survey()!) === "public" ||
+            viewStatus(survey()!) === "sealed") &&
           role() !== null
         }
       >
@@ -268,6 +298,8 @@ export const Respond: Component = () => {
           total={total()}
           replacing={existing() !== undefined}
           submitting={submitting()}
+          idleText={sealedMode() ? "Encrypt & submit" : "Sign & submit"}
+          busyText={busyText()}
           onSubmit={() => void onSubmit()}
         />
       </Show>
@@ -287,8 +319,12 @@ const Switch3: Component<{
   children: JSX.Element;
 }> = (props) => {
   const v = () => viewStatus(props.s);
+  // Both "public" and "sealed" are open/active — sealed just encrypts on submit.
   return (
-    <Show when={v() === "public"} fallback={<ClosedOrSealed v={v()} />}>
+    <Show
+      when={v() === "public" || v() === "sealed"}
+      fallback={<ClosedNotice v={v()} />}
+    >
       <Show when={props.connected} fallback={<ConnectPrompt />}>
         <Show
           when={props.respondable.length > 0}
@@ -301,24 +337,20 @@ const Switch3: Component<{
   );
 };
 
-const ClosedOrSealed: Component<{ v: ReturnType<typeof viewStatus> }> = (
+const ClosedNotice: Component<{ v: ReturnType<typeof viewStatus> }> = (
   props,
 ) => (
   <Notice
-    tone={props.v === "sealed" ? "warn" : "muted"}
+    tone="muted"
     title={
-      props.v === "sealed"
-        ? "This survey is sealed"
-        : props.v === "cancelled"
-          ? "This survey was cancelled"
-          : "This survey has closed"
+      props.v === "cancelled"
+        ? "This survey was cancelled"
+        : "This survey has closed"
     }
     body={
-      props.v === "sealed"
-        ? "Sealed responses carry a timelock ciphertext, not plaintext. Encrypting & submitting sealed answers lands in a later milestone."
-        : props.v === "cancelled"
-          ? "The owner withdrew it with a tag-2 cancellation. New responses are rejected. The definition stays on-chain for reference."
-          : "Its end epoch has passed, so new responses are no longer accepted. You can still read the results."
+      props.v === "cancelled"
+        ? "The owner withdrew it with a tag-2 cancellation. New responses are rejected. The definition stays on-chain for reference."
+        : "Its end epoch has passed, so new responses are no longer accepted. You can still read the results."
     }
   />
 );
@@ -536,6 +568,51 @@ const RespondedBanner: Component<{ role: Role | null }> = (props) => (
         Your previous answers are pre-filled. Submitting again publishes a new
         response that fully replaces the earlier one under latest-valid-wins;
         the old one stays on-chain but is no longer tallied.
+      </div>
+    </div>
+  </div>
+);
+
+const SealedBanner: Component<{ round: number }> = (props) => (
+  <div
+    style={{
+      display: "flex",
+      "align-items": "flex-start",
+      gap: "11px",
+      background: "#FBFAF6",
+      border: "1px solid #F0EBD8",
+      "border-radius": "13px",
+      padding: "13px 16px",
+      "margin-top": "14px",
+    }}
+  >
+    <span
+      style={{ "font-size": "15px", color: "var(--warn)", "margin-top": "1px" }}
+    >
+      ◆
+    </span>
+    <div style={{ flex: "1" }}>
+      <div
+        style={{
+          "font-size": "13.5px",
+          "font-weight": "700",
+          color: "#7A6A45",
+        }}
+      >
+        This is a sealed survey
+      </div>
+      <div
+        style={{
+          "font-size": "12.5px",
+          color: "#7A6A45",
+          "line-height": "1.5",
+          "margin-top": "3px",
+        }}
+      >
+        Your answers are timelock-encrypted on submit —{" "}
+        <b>no one, not even you, can read them</b> until the drand round
+        publishes ({formatRevealDate(props.round)}). Aggregate results appear
+        only after the reveal.
       </div>
     </div>
   </div>
@@ -1313,6 +1390,8 @@ const SubmitBar: Component<{
   total: number;
   replacing: boolean;
   submitting: boolean;
+  idleText: string;
+  busyText: string;
   onSubmit: () => void;
 }> = (props) => {
   const ready = () => props.decided >= props.total && props.total > 0;
@@ -1380,7 +1459,7 @@ const SubmitBar: Component<{
           disabled={!ready() || props.submitting}
           style={submitBtnStyle(ready() && !props.submitting)}
         >
-          {props.submitting ? "Submitting…" : "Sign & submit"}{" "}
+          {props.submitting ? props.busyText : props.idleText}{" "}
           <span style={{ "font-size": "15px" }}>→</span>
         </button>
       </div>

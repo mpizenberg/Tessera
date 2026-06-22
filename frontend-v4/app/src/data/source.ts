@@ -43,6 +43,14 @@ export interface CancellationRecord extends ChainPos {
 export interface ChainTip {
   readonly epoch: number;
   readonly slot: number;
+  /** Unix time (seconds) of the tip block — anchors slot/epoch → wall-clock. */
+  readonly time: number;
+  /**
+   * Slot offset within the current epoch (0-based). Post-Shelley slots are 1s,
+   * so `time - epochSlot` is the unix start of the current epoch — used to
+   * project a future epoch boundary exactly.
+   */
+  readonly epochSlot: number;
 }
 
 /** All label-17 records, partitioned by payload type. */

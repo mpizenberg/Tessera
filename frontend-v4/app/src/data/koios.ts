@@ -40,6 +40,7 @@ interface TxMetadata {
 interface TipRow {
   epoch_no: number;
   abs_slot: number;
+  epoch_slot: number;
   block_time: number;
 }
 
@@ -81,7 +82,12 @@ export class KoiosDataSource implements DataSource {
 
   async chainTip(): Promise<ChainTip> {
     const tip = await this.tip();
-    return { epoch: tip.epoch_no, slot: tip.abs_slot };
+    return {
+      epoch: tip.epoch_no,
+      slot: tip.abs_slot,
+      time: tip.block_time,
+      epochSlot: tip.epoch_slot,
+    };
   }
 
   async fetchAll(): Promise<Cip179Records> {

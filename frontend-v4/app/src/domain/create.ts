@@ -26,6 +26,8 @@ import {
 } from "cip-179";
 
 import { hexToBytes } from "~/util/hex";
+import { QUICKNET_CHAIN_HASH } from "~/tlock/drand";
+import { maxPlaintextSize } from "~/tlock/padding";
 
 /** The question types the builder can author (all of them). */
 export type QuestionType = Question["type"];
@@ -71,6 +73,21 @@ export interface DefinitionMeta {
   eligibleRoles: Role[];
   /** End epoch as raw input text; parsed at build time. */
   endEpoch: string;
+  /** Public (plaintext) or sealed (tlock commit-reveal) responses. */
+  mode: "public" | "sealed";
+  /**
+   * Resolved drand round at which sealed responses become decryptable. Computed
+   * by the screen (from the end epoch, or entered manually) and passed in;
+   * ignored for public surveys.
+   */
+  sealedRound: number;
+  /**
+   * Minimum plaintext byte length each sealed response is padded to. `0` (or
+   * any non-positive value) means **auto**: `buildDefinition` sizes it to the
+   * worst-case fully-answered response (see {@link maxPlaintextSize}). Ignored
+   * for public surveys.
+   */
+  sealedPadding: number;
 }
 
 const TYPE_LABELS: Record<QuestionType, string> = {
@@ -293,9 +310,10 @@ function toQuestion(
  * problems and the codec's semantic problems. The definition is publishable iff
  * `problems` is empty.
  *
- * Only public (plaintext) surveys are produced here; sealed mode is a later
- * milestone. `owner` must be a key credential the connected wallet controls so
- * it can later prove ownership for a cancellation.
+ * Produces public or sealed (tlock commit-reveal) surveys; sealed mode pins the
+ * drand quicknet chain and carries the resolved reveal round + padding from
+ * `meta`. `owner` must be a key credential the connected wallet controls so it
+ * can later prove ownership for a cancellation.
  */
 export function buildDefinition(
   owner: Credential,
@@ -314,7 +332,18 @@ export function buildDefinition(
     description: meta.description.trim(),
     eligibleRoles: [...meta.eligibleRoles].sort((a, b) => a - b),
     endEpoch,
-    submissionMode: { type: "public" },
+    submissionMode:
+      meta.mode === "sealed"
+        ? {
+            type: "sealed",
+            chainHash: QUICKNET_CHAIN_HASH,
+            round: meta.sealedRound,
+            paddingSize:
+              meta.sealedPadding > 0
+                ? meta.sealedPadding
+                : maxPlaintextSize(questions),
+          }
+        : { type: "public" },
     questions,
   };
 

@@ -1,7 +1,10 @@
 import {
   For,
+  Match,
   Show,
+  Switch,
   createMemo,
+  createResource,
   createSignal,
   type Component,
   type JSX,
@@ -11,6 +14,7 @@ import {
   encodePayload,
   type AnswerItem,
   type Question,
+  type SurveyDefinition,
   type SurveyResponse,
 } from "cip-179";
 
@@ -24,6 +28,7 @@ import {
 import { walletOwns } from "~/domain/roles";
 import { roleBreakdown, tallySurvey, type QuestionTally } from "~/domain/tally";
 import type { ResponseRecord } from "~/data/source";
+import { formatRevealDate, isQuicknet, roundIsAvailable } from "~/tlock/drand";
 import { roleColors, roleLabel, shortRef, viewStatus } from "~/ui/format";
 import { ResultBarCard } from "~/ui/components/ResultBarCard";
 import { toCsv, downloadCsv } from "~/util/csv";
@@ -38,8 +43,10 @@ const BASE_TYPE: Record<Question["type"], string> = {
   rating: "Rating",
 };
 
+type PillKey = ReturnType<typeof viewStatus> | "revealed";
+
 const STATUS_PILL: Record<
-  ReturnType<typeof viewStatus>,
+  PillKey,
   { label: string; color: string; bg: string; line: string }
 > = {
   public: {
@@ -53,6 +60,12 @@ const STATUS_PILL: Record<
     color: "var(--warn)",
     bg: "var(--warn-bg)",
     line: "var(--warn-line)",
+  },
+  revealed: {
+    label: "Revealed",
+    color: "var(--gov)",
+    bg: "var(--gov-bg)",
+    line: "var(--gov-line)",
   },
   ended: {
     label: "Closed",
@@ -72,8 +85,6 @@ export const Survey: Component = () => {
   const app = useApp();
   const params = useParams<{ key: string }>();
   const key = () => decodeURIComponent(params.key);
-  const [roleFilter, setRoleFilter] = createSignal<number | "all">("all");
-
   const survey = createMemo(() =>
     app.snapshot() ? findSurvey(app.snapshot()!.surveys, key()) : undefined,
   );
@@ -89,12 +100,8 @@ export const Survey: Component = () => {
     );
   });
 
-  const publicResponses = createMemo<SurveyResponse[]>(() =>
-    records()
-      .map((r) => r.response)
-      .filter((r) => r.answers.type === "public"),
-  );
-
+  // Role participation. Works even while sealed — role and credential are
+  // plaintext in the envelope; only the answers are encrypted.
   const roleStats = createMemo(() => {
     const rows = roleBreakdown(records().map((r) => r.response));
     const total = Math.max(1, records().length);
@@ -104,52 +111,20 @@ export const Survey: Component = () => {
     }));
   });
 
-  const filtered = createMemo<SurveyResponse[]>(() => {
-    const f = roleFilter();
-    return f === "all"
-      ? publicResponses()
-      : publicResponses().filter((r) => r.role === f);
-  });
+  const nowUnix = Math.floor(Date.now() / 1000);
 
-  const tallies = createMemo<QuestionTally[]>(() => {
+  // Header pill: a sealed survey flips to "Revealed" once its drand round has
+  // published (anyone can decrypt from then on).
+  const pillKey = (): PillKey => {
     const s = survey();
-    return s
-      ? tallySurvey(s.record.definition, filtered(), filtered().length)
-      : [];
-  });
-
-  const exportCsv = () => {
-    const s = survey();
-    if (!s) return;
-    const header = [
-      "response_tx",
-      "role",
-      "credential",
-      "question_index",
-      "question_type",
-      "answer",
-    ];
-    const body = records().flatMap((rec) => {
-      const r = rec.response;
-      const cred =
-        r.credential.type === "key"
-          ? `key:${hex(r.credential.keyHash)}`
-          : `script:${hex(r.credential.scriptHash)}`;
-      if (r.answers.type !== "public") {
-        return [
-          [rec.txHash, roleLabel(r.role), cred, "", "sealed", "(ciphertext)"],
-        ];
-      }
-      return r.answers.answers.map((a) => [
-        rec.txHash,
-        roleLabel(r.role),
-        cred,
-        String(a.questionIndex),
-        a.type,
-        serializeAnswer(a),
-      ]);
-    });
-    downloadCsv(`tessera-${shortRef(key())}.csv`, toCsv([header, ...body]));
+    if (!s) return "public";
+    if (s.sealed && !s.cancelled) {
+      const mode = s.record.definition.submissionMode;
+      return mode.type === "sealed" && roundIsAvailable(mode.round, nowUnix)
+        ? "revealed"
+        : "sealed";
+    }
+    return viewStatus(s);
   };
 
   return (
@@ -185,9 +160,14 @@ export const Survey: Component = () => {
               pro={app.ui.pro}
               roleStats={roleStats()}
               total={records().length}
+              pillKey={pillKey()}
             />
 
-            <Show when={viewStatus(s()) === "public"}>
+            <Show
+              when={
+                viewStatus(s()) === "public" || viewStatus(s()) === "sealed"
+              }
+            >
               <A
                 href={`/survey/${encodeURIComponent(key())}/respond`}
                 style={{
@@ -221,184 +201,21 @@ export const Survey: Component = () => {
             </Show>
 
             <Show
-              when={viewStatus(s()) !== "sealed"}
-              fallback={<SealedNotice />}
+              when={!s().sealed}
+              fallback={
+                <SealedResults
+                  s={s()}
+                  keyStr={key()}
+                  records={records()}
+                  nowUnix={nowUnix}
+                />
+              }
             >
-              {/* counted + export */}
-              <div
-                style={{
-                  display: "flex",
-                  "align-items": "center",
-                  gap: "10px",
-                  "margin-top": "14px",
-                  "flex-wrap": "wrap",
-                }}
-              >
-                <span
-                  style={{
-                    display: "inline-flex",
-                    "align-items": "center",
-                    gap: "7px",
-                    "font-size": "12.5px",
-                    "font-weight": "700",
-                    color: "var(--ok)",
-                    background: "var(--ok-bg)",
-                    border: "1px solid var(--ok-line)",
-                    "border-radius": "var(--r-sm)",
-                    padding: "7px 12px",
-                  }}
-                >
-                  <span
-                    style={{
-                      width: "7px",
-                      height: "7px",
-                      "border-radius": "50%",
-                      background: "var(--ok)",
-                    }}
-                  />
-                  {publicResponses().length} counted
-                </span>
-                <button
-                  onClick={exportCsv}
-                  disabled={records().length === 0}
-                  style={{
-                    "margin-left": "auto",
-                    display: "inline-flex",
-                    "align-items": "center",
-                    gap: "7px",
-                    "font-family": "inherit",
-                    "font-size": "13px",
-                    "font-weight": "700",
-                    color: "var(--accent)",
-                    background: "#fff",
-                    border: "1px solid var(--accent-line)",
-                    "border-radius": "var(--r-input)",
-                    padding: "9px 14px",
-                    cursor: records().length ? "pointer" : "not-allowed",
-                    opacity: records().length ? "1" : ".5",
-                  }}
-                >
-                  <span style={{ "font-size": "14px" }}>⤓</span> Export CSV
-                </button>
-              </div>
-
-              {/* weighting disclaimer */}
-              <div
-                style={{
-                  display: "flex",
-                  "align-items": "flex-start",
-                  gap: "10px",
-                  background: "#FBFAF6",
-                  border: "1px solid #F0EBD8",
-                  "border-radius": "var(--r-md)",
-                  padding: "12px 15px",
-                  "margin-top": "14px",
-                }}
-              >
-                <span
-                  style={{
-                    "font-family": "var(--mono)",
-                    "font-size": "9.5px",
-                    "font-weight": "600",
-                    "letter-spacing": ".06em",
-                    "text-transform": "uppercase",
-                    color: "var(--warn)",
-                    background: "var(--warn-bg)",
-                    border: "1px solid var(--warn-line)",
-                    "border-radius": "var(--r-2xs)",
-                    padding: "4px 7px",
-                    flex: "none",
-                    "margin-top": "1px",
-                  }}
-                >
-                  raw
-                </span>
-                <span
-                  style={{
-                    "font-size": "12.5px",
-                    color: "#7A6A45",
-                    "line-height": "1.5",
-                  }}
-                >
-                  These are raw recorded responses — one per credential.{" "}
-                  <b>No weighting is applied;</b> stake-, pledge-, or quadratic
-                  weighting is downstream and out of scope for CIP-179.
-                </span>
-              </div>
-
-              {/* role filter */}
-              <div
-                style={{
-                  display: "flex",
-                  "align-items": "center",
-                  gap: "10px",
-                  margin: "22px 0 6px",
-                  "flex-wrap": "wrap",
-                }}
-              >
-                <span
-                  style={{
-                    "font-family": "var(--mono)",
-                    "font-size": "10.5px",
-                    "letter-spacing": ".08em",
-                    "text-transform": "uppercase",
-                    color: "var(--dim)",
-                    "font-weight": "600",
-                  }}
-                >
-                  Tally by role
-                </span>
-                <div
-                  style={{ display: "flex", gap: "8px", "flex-wrap": "wrap" }}
-                >
-                  <RoleFilterBtn
-                    label="All"
-                    count={publicResponses().length}
-                    on={roleFilter() === "all"}
-                    onClick={() => setRoleFilter("all")}
-                  />
-                  <For each={roleStats()}>
-                    {(rs) => (
-                      <RoleFilterBtn
-                        label={roleLabel(rs.role)}
-                        count={rs.count}
-                        on={roleFilter() === rs.role}
-                        onClick={() => setRoleFilter(rs.role)}
-                      />
-                    )}
-                  </For>
-                </div>
-              </div>
-
-              {/* per-question results */}
-              <div
-                style={{
-                  display: "flex",
-                  "flex-direction": "column",
-                  gap: "14px",
-                  "margin-top": "8px",
-                }}
-              >
-                <For each={s().record.definition.questions}>
-                  {(q, i) => (
-                    <QuestionResult q={q} index={i()} tally={tallies()[i()]} />
-                  )}
-                </For>
-              </div>
-
-              <p
-                style={{
-                  "text-align": "center",
-                  "font-family": "var(--mono)",
-                  "font-size": "10.5px",
-                  color: "#B8AE99",
-                  margin: "22px 0 0",
-                  "line-height": "1.6",
-                }}
-              >
-                tally derived independently from on-chain data ·{" "}
-                {publicResponses().length} responses counted
-              </p>
+              <ResultsBody
+                def={s().record.definition}
+                keyStr={key()}
+                records={records()}
+              />
             </Show>
           </>
         )}
@@ -602,9 +419,9 @@ const Header: Component<{
   pro: boolean;
   roleStats: Array<{ role: number; count: number; pct: number }>;
   total: number;
+  pillKey: PillKey;
 }> = (props) => {
-  const v = () => viewStatus(props.s);
-  const pill = () => STATUS_PILL[v()];
+  const pill = () => STATUS_PILL[props.pillKey];
   return (
     <div
       style={{
@@ -1361,11 +1178,386 @@ const NoData: Component = () => (
   </p>
 );
 
-const SealedNotice: Component = () => (
+// ----------------------------------------------------------------------------
+// Results body (public, or revealed-sealed) + sealed reveal pipeline
+// ----------------------------------------------------------------------------
+
+/**
+ * The tally view, shared by public surveys and revealed sealed surveys. Takes
+ * already-plaintext response records (for sealed, these are the decrypted
+ * ones), owns the role filter and CSV export, and renders the per-question
+ * widgets.
+ */
+const ResultsBody: Component<{
+  def: SurveyDefinition;
+  keyStr: string;
+  records: ResponseRecord[];
+  /** Optional line under the counter (e.g. reveal provenance). */
+  note?: string;
+}> = (props) => {
+  const [roleFilter, setRoleFilter] = createSignal<number | "all">("all");
+
+  const publicResponses = createMemo<SurveyResponse[]>(() =>
+    props.records
+      .map((r) => r.response)
+      .filter((r) => r.answers.type === "public"),
+  );
+  const roleStats = createMemo(() => {
+    const rows = roleBreakdown(props.records.map((r) => r.response));
+    const total = Math.max(1, props.records.length);
+    return rows.map((r) => ({
+      ...r,
+      pct: Math.round((r.count / total) * 100),
+    }));
+  });
+  const filtered = createMemo<SurveyResponse[]>(() => {
+    const f = roleFilter();
+    return f === "all"
+      ? publicResponses()
+      : publicResponses().filter((r) => r.role === f);
+  });
+  const tallies = createMemo<QuestionTally[]>(() =>
+    tallySurvey(props.def, filtered(), filtered().length),
+  );
+
+  const exportCsv = () => {
+    const header = [
+      "response_tx",
+      "role",
+      "credential",
+      "question_index",
+      "question_type",
+      "answer",
+    ];
+    const body = props.records.flatMap((rec) => {
+      const r = rec.response;
+      const cred =
+        r.credential.type === "key"
+          ? `key:${hex(r.credential.keyHash)}`
+          : `script:${hex(r.credential.scriptHash)}`;
+      if (r.answers.type !== "public") {
+        return [
+          [rec.txHash, roleLabel(r.role), cred, "", "sealed", "(ciphertext)"],
+        ];
+      }
+      return r.answers.answers.map((a) => [
+        rec.txHash,
+        roleLabel(r.role),
+        cred,
+        String(a.questionIndex),
+        a.type,
+        serializeAnswer(a),
+      ]);
+    });
+    downloadCsv(
+      `tessera-${shortRef(props.keyStr)}.csv`,
+      toCsv([header, ...body]),
+    );
+  };
+
+  return (
+    <>
+      {/* counted + export */}
+      <div
+        style={{
+          display: "flex",
+          "align-items": "center",
+          gap: "10px",
+          "margin-top": "14px",
+          "flex-wrap": "wrap",
+        }}
+      >
+        <span
+          style={{
+            display: "inline-flex",
+            "align-items": "center",
+            gap: "7px",
+            "font-size": "12.5px",
+            "font-weight": "700",
+            color: "var(--ok)",
+            background: "var(--ok-bg)",
+            border: "1px solid var(--ok-line)",
+            "border-radius": "var(--r-sm)",
+            padding: "7px 12px",
+          }}
+        >
+          <span
+            style={{
+              width: "7px",
+              height: "7px",
+              "border-radius": "50%",
+              background: "var(--ok)",
+            }}
+          />
+          {publicResponses().length} counted
+        </span>
+        <button
+          onClick={exportCsv}
+          disabled={props.records.length === 0}
+          style={{
+            "margin-left": "auto",
+            display: "inline-flex",
+            "align-items": "center",
+            gap: "7px",
+            "font-family": "inherit",
+            "font-size": "13px",
+            "font-weight": "700",
+            color: "var(--accent)",
+            background: "#fff",
+            border: "1px solid var(--accent-line)",
+            "border-radius": "var(--r-input)",
+            padding: "9px 14px",
+            cursor: props.records.length ? "pointer" : "not-allowed",
+            opacity: props.records.length ? "1" : ".5",
+          }}
+        >
+          <span style={{ "font-size": "14px" }}>⤓</span> Export CSV
+        </button>
+      </div>
+
+      <Show when={props.note}>
+        <div
+          style={{
+            "font-family": "var(--mono)",
+            "font-size": "11px",
+            color: "var(--gov)",
+            "margin-top": "10px",
+          }}
+        >
+          {props.note}
+        </div>
+      </Show>
+
+      {/* weighting disclaimer */}
+      <div
+        style={{
+          display: "flex",
+          "align-items": "flex-start",
+          gap: "10px",
+          background: "#FBFAF6",
+          border: "1px solid #F0EBD8",
+          "border-radius": "var(--r-md)",
+          padding: "12px 15px",
+          "margin-top": "14px",
+        }}
+      >
+        <span
+          style={{
+            "font-family": "var(--mono)",
+            "font-size": "9.5px",
+            "font-weight": "600",
+            "letter-spacing": ".06em",
+            "text-transform": "uppercase",
+            color: "var(--warn)",
+            background: "var(--warn-bg)",
+            border: "1px solid var(--warn-line)",
+            "border-radius": "var(--r-2xs)",
+            padding: "4px 7px",
+            flex: "none",
+            "margin-top": "1px",
+          }}
+        >
+          raw
+        </span>
+        <span
+          style={{
+            "font-size": "12.5px",
+            color: "#7A6A45",
+            "line-height": "1.5",
+          }}
+        >
+          These are raw recorded responses — one per credential.{" "}
+          <b>No weighting is applied;</b> stake-, pledge-, or quadratic
+          weighting is downstream and out of scope for CIP-179.
+        </span>
+      </div>
+
+      {/* role filter */}
+      <div
+        style={{
+          display: "flex",
+          "align-items": "center",
+          gap: "10px",
+          margin: "22px 0 6px",
+          "flex-wrap": "wrap",
+        }}
+      >
+        <span
+          style={{
+            "font-family": "var(--mono)",
+            "font-size": "10.5px",
+            "letter-spacing": ".08em",
+            "text-transform": "uppercase",
+            color: "var(--dim)",
+            "font-weight": "600",
+          }}
+        >
+          Tally by role
+        </span>
+        <div style={{ display: "flex", gap: "8px", "flex-wrap": "wrap" }}>
+          <RoleFilterBtn
+            label="All"
+            count={publicResponses().length}
+            on={roleFilter() === "all"}
+            onClick={() => setRoleFilter("all")}
+          />
+          <For each={roleStats()}>
+            {(rs) => (
+              <RoleFilterBtn
+                label={roleLabel(rs.role)}
+                count={rs.count}
+                on={roleFilter() === rs.role}
+                onClick={() => setRoleFilter(rs.role)}
+              />
+            )}
+          </For>
+        </div>
+      </div>
+
+      {/* per-question results */}
+      <div
+        style={{
+          display: "flex",
+          "flex-direction": "column",
+          gap: "14px",
+          "margin-top": "8px",
+        }}
+      >
+        <For each={props.def.questions}>
+          {(q, i) => (
+            <QuestionResult q={q} index={i()} tally={tallies()[i()]} />
+          )}
+        </For>
+      </div>
+
+      <p
+        style={{
+          "text-align": "center",
+          "font-family": "var(--mono)",
+          "font-size": "10.5px",
+          color: "#B8AE99",
+          margin: "22px 0 0",
+          "line-height": "1.6",
+        }}
+      >
+        tally derived independently from on-chain data ·{" "}
+        {publicResponses().length} responses counted
+      </p>
+    </>
+  );
+};
+
+/**
+ * Sealed-survey results. While the drand round is in the future, responses are
+ * collected but unreadable. Once it publishes, fetch the beacon and decrypt
+ * every sealed response (each to a synthetic public one), then hand off to
+ * {@link ResultsBody}. Reveal runs automatically on view.
+ */
+const SealedResults: Component<{
+  s: SurveyAggregate;
+  keyStr: string;
+  records: ResponseRecord[];
+  nowUnix: number;
+}> = (props) => {
+  const mode = () => {
+    const m = props.s.record.definition.submissionMode;
+    return m.type === "sealed" ? m : null;
+  };
+  const supported = () => {
+    const m = mode();
+    return m ? isQuicknet(m.chainHash) : false;
+  };
+  const revealable = () => {
+    const m = mode();
+    return !!m && roundIsAvailable(m.round, props.nowUnix);
+  };
+
+  const [revealed] = createResource(
+    () =>
+      revealable() && supported() && !props.s.cancelled
+        ? { records: props.records, round: mode()!.round }
+        : null,
+    async (src) => {
+      const { revealResponses } = await import("~/tlock/seal");
+      const { results, failed } = await revealResponses(
+        src.records.map((r) => r.response),
+        src.round,
+      );
+      const recs = src.records.flatMap((r, i) => {
+        const pub = results[i];
+        return pub ? [{ ...r, response: pub }] : [];
+      });
+      return { records: recs, failed };
+    },
+  );
+
+  const revealNote = (count: number, failed: number) =>
+    failed > 0
+      ? `revealed from ${count} sealed response${count === 1 ? "" : "s"} · ${failed} failed to decrypt`
+      : `revealed from ${count} sealed response${count === 1 ? "" : "s"}`;
+
+  return (
+    <Switch>
+      <Match when={props.s.cancelled}>
+        <SealedStateNotice
+          tone="muted"
+          title="This survey was cancelled"
+          body="The owner withdrew it. Any sealed responses stay on-chain but aren't tallied."
+        />
+      </Match>
+      <Match when={!supported()}>
+        <SealedStateNotice
+          tone="warn"
+          title="Unsupported drand chain"
+          body="This sealed survey pins a drand chain Tessera can't decrypt — only quicknet is supported here."
+        />
+      </Match>
+      <Match when={!revealable()}>
+        <SealedStateNotice
+          tone="warn"
+          title="Answers are sealed"
+          body={`${props.records.length} encrypted response${props.records.length === 1 ? "" : "s"} collected. They open ${formatRevealDate(mode()!.round)} — no one, not even the owner, can read them until the drand round publishes.`}
+        />
+      </Match>
+      <Match when={revealed.loading}>
+        <SealedStateNotice
+          tone="muted"
+          title="Revealing…"
+          body="Fetching the drand beacon and decrypting responses."
+        />
+      </Match>
+      <Match when={revealed.error}>
+        <SealedStateNotice
+          tone="warn"
+          title="Couldn't reveal"
+          body={
+            revealed.error instanceof Error
+              ? revealed.error.message
+              : String(revealed.error)
+          }
+        />
+      </Match>
+      <Match when={revealed()}>
+        <ResultsBody
+          def={props.s.record.definition}
+          keyStr={props.keyStr}
+          records={revealed()!.records}
+          note={revealNote(revealed()!.records.length, revealed()!.failed)}
+        />
+      </Match>
+    </Switch>
+  );
+};
+
+const SealedStateNotice: Component<{
+  tone: "warn" | "muted";
+  title: string;
+  body: string;
+}> = (props) => (
   <div
     style={{
       background: "#fff",
-      border: "1px solid var(--warn-line)",
+      border: `1px solid ${props.tone === "warn" ? "var(--warn-line)" : "var(--line)"}`,
       "border-radius": "var(--r-card)",
       padding: "26px",
       "margin-top": "16px",
@@ -1376,10 +1568,10 @@ const SealedNotice: Component = () => (
       style={{
         "font-size": "16px",
         "font-weight": "800",
-        color: "var(--warn)",
+        color: props.tone === "warn" ? "var(--warn)" : "var(--ink)",
       }}
     >
-      Answers are sealed
+      {props.title}
     </div>
     <p
       style={{
@@ -1387,11 +1579,10 @@ const SealedNotice: Component = () => (
         color: "var(--muted)",
         "line-height": "1.55",
         margin: "8px auto 0",
-        "max-width": "440px",
+        "max-width": "460px",
       }}
     >
-      Responses stay encrypted until the survey's drand round publishes. Reveal
-      &amp; tally land in a later milestone.
+      {props.body}
     </p>
   </div>
 );
