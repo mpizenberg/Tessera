@@ -11,10 +11,12 @@ import {
 } from "solid-js";
 import { A, useParams } from "@solidjs/router";
 import {
+  SPEC_VERSION,
   encodePayload,
   type AnswerItem,
   type Question,
   type SurveyDefinition,
+  type SurveyRef,
   type SurveyResponse,
 } from "cip-179";
 
@@ -28,10 +30,12 @@ import {
 import { walletOwns } from "~/domain/roles";
 import { roleBreakdown, tallySurvey, type QuestionTally } from "~/domain/tally";
 import type { ResponseRecord } from "~/data/source";
+import { usePresentation } from "~/enrichment/usePresentation";
 import { formatRevealDate, isQuicknet, roundIsAvailable } from "~/tlock/drand";
 import { roleColors, roleLabel, shortRef, viewStatus } from "~/ui/format";
 import { ResultBarCard } from "~/ui/components/ResultBarCard";
 import { toCsv, downloadCsv } from "~/util/csv";
+import { bytesToHex } from "~/util/hex";
 
 const BASE_TYPE: Record<Question["type"], string> = {
   custom: "Custom",
@@ -88,6 +92,15 @@ export const Survey: Component = () => {
   const survey = createMemo(() =>
     app.snapshot() ? findSurvey(app.snapshot()!.surveys, key()) : undefined,
   );
+
+  // External-content surveys: fetch + hash-verify the off-chain presentation
+  // doc and render its labels; `pres.def()` falls back to the on-chain
+  // definition (count forms, blank titles) until/unless it resolves.
+  const pres = usePresentation(
+    () => survey()?.record.definition,
+    app.config.ipfsGateway,
+  );
+  const def = (): SurveyDefinition | undefined => pres.def();
 
   // Deduped response records targeting this survey (latest-valid-wins).
   const records = createMemo<ResponseRecord[]>(() => {
@@ -156,12 +169,17 @@ export const Survey: Component = () => {
           <>
             <Header
               s={s()}
+              def={def() ?? s().record.definition}
               keyStr={key()}
               pro={app.ui.pro}
               roleStats={roleStats()}
               total={records().length}
               pillKey={pillKey()}
             />
+
+            <Show when={pres.external() && pres.unavailable()}>
+              <LabelsUnavailable keyStr={key()} />
+            </Show>
 
             <Show
               when={
@@ -198,6 +216,10 @@ export const Survey: Component = () => {
               }
             >
               <OwnerControls s={s()} />
+              <LinkActionPanel
+                surveyRef={s().record.ref}
+                endEpoch={s().record.definition.endEpoch}
+              />
             </Show>
 
             <Show
@@ -205,6 +227,7 @@ export const Survey: Component = () => {
               fallback={
                 <SealedResults
                   s={s()}
+                  def={def() ?? s().record.definition}
                   keyStr={key()}
                   records={records()}
                   nowUnix={nowUnix}
@@ -212,7 +235,7 @@ export const Survey: Component = () => {
               }
             >
               <ResultsBody
-                def={s().record.definition}
+                def={def() ?? s().record.definition}
                 keyStr={key()}
                 records={records()}
               />
@@ -410,11 +433,170 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
 };
 
 // ----------------------------------------------------------------------------
+// Owner: link this survey to a governance Info Action
+// ----------------------------------------------------------------------------
+
+/**
+ * Linkage is canonicalized **Action → Survey**: the survey already exists, so an
+ * Info Action just advertises it by carrying this JSON in its anchor metadata.
+ * Shown to the owner of an active survey; purely a copy-paste helper (no tx).
+ * Tooling attaches the link only if the action's voting end epoch equals this
+ * survey's `end_epoch`.
+ */
+const LinkActionPanel: Component<{ surveyRef: SurveyRef; endEpoch: number }> = (
+  props,
+) => {
+  const json = () =>
+    JSON.stringify(
+      {
+        specVersion: SPEC_VERSION,
+        kind: "cardano-governance-survey-link",
+        surveyTxId: bytesToHex(props.surveyRef.txId),
+        surveyIndex: props.surveyRef.index,
+      },
+      null,
+      2,
+    );
+  const [copied, setCopied] = createSignal(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(json());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* clipboard unavailable — the JSON is on screen to copy manually */
+    }
+  };
+  return (
+    <div
+      style={{
+        background: "#F0F2F7",
+        border: "1px solid var(--gov-line)",
+        "border-radius": "var(--r-lg)",
+        padding: "16px 18px",
+        "margin-top": "10px",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          "align-items": "center",
+          gap: "9px",
+          "flex-wrap": "wrap",
+        }}
+      >
+        <span
+          style={{
+            display: "inline-flex",
+            "align-items": "center",
+            gap: "6px",
+            "font-size": "11px",
+            "font-weight": "700",
+            "letter-spacing": ".03em",
+            "text-transform": "uppercase",
+            color: "var(--faint)",
+            background: "var(--surface3)",
+            border: "1px solid var(--line)",
+            "border-radius": "var(--r-2xs)",
+            padding: "4px 8px",
+          }}
+        >
+          Optional
+        </span>
+        <h3
+          style={{
+            "font-size": "15px",
+            "font-weight": "800",
+            "letter-spacing": "-.01em",
+            margin: "0",
+          }}
+        >
+          Link this survey to a governance Info Action
+        </h3>
+      </div>
+      <p
+        style={{
+          "font-size": "13px",
+          color: "var(--muted)",
+          "line-height": "1.55",
+          margin: "10px 0 0",
+        }}
+      >
+        Linkage is <b>Action → Survey</b>: your survey already exists, so the
+        Info Action just points at it. Add this JSON to the Info Action's{" "}
+        <span style={{ "font-family": "var(--mono)", "font-size": "12px" }}>
+          anchor
+        </span>{" "}
+        metadata. The action's voting end epoch must equal this survey's{" "}
+        <span style={{ "font-family": "var(--mono)", "font-size": "12px" }}>
+          end_epoch {props.endEpoch}
+        </span>
+        , or tooling won't attach it.
+      </p>
+      <div
+        style={{
+          position: "relative",
+          background: "#0B0E14",
+          "border-radius": "var(--r-control)",
+          padding: "14px 15px",
+          "margin-top": "12px",
+        }}
+      >
+        <button
+          onClick={() => void copy()}
+          style={{
+            position: "absolute",
+            top: "10px",
+            right: "10px",
+            "font-family": "inherit",
+            "font-size": "11.5px",
+            "font-weight": "700",
+            color: "#C4CCDA",
+            background: "#1C2536",
+            border: "1px solid #2A3346",
+            "border-radius": "var(--r-xs)",
+            padding: "5px 10px",
+            cursor: "pointer",
+          }}
+        >
+          {copied() ? "Copied ✓" : "Copy JSON"}
+        </button>
+        <pre
+          style={{
+            margin: "0",
+            "font-family": "var(--mono)",
+            "font-size": "11.5px",
+            "line-height": "1.7",
+            color: "#9FE7C0",
+            "white-space": "pre-wrap",
+            "word-break": "break-word",
+          }}
+        >
+          {json()}
+        </pre>
+      </div>
+      <div
+        style={{
+          "font-family": "var(--mono)",
+          "font-size": "11px",
+          color: "var(--dim)",
+          "margin-top": "11px",
+        }}
+      >
+        only Info Actions may link · linkage is discovery + epoch-alignment,
+        never an eligibility gate
+      </div>
+    </div>
+  );
+};
+
+// ----------------------------------------------------------------------------
 // Header
 // ----------------------------------------------------------------------------
 
 const Header: Component<{
   s: SurveyAggregate;
+  def: SurveyDefinition;
   keyStr: string;
   pro: boolean;
   roleStats: Array<{ role: number; count: number; pct: number }>;
@@ -454,6 +636,32 @@ const Header: Component<{
         >
           {pill().label}
         </span>
+        <Show when={props.s.govLink}>
+          <span
+            style={{
+              display: "inline-flex",
+              "align-items": "center",
+              gap: "6px",
+              "font-size": "12px",
+              "font-weight": "700",
+              color: "var(--gov)",
+              background: "var(--gov-bg)",
+              border: "1px solid var(--gov-line)",
+              "border-radius": "var(--r-pill)",
+              padding: "5px 11px",
+            }}
+          >
+            <span
+              style={{
+                width: "6px",
+                height: "6px",
+                "border-radius": "50%",
+                background: "var(--gov)",
+              }}
+            />
+            Linked to governance
+          </span>
+        </Show>
         <span style={{ "margin-left": "auto" }} />
         <Show when={props.pro}>
           <span
@@ -477,9 +685,9 @@ const Header: Component<{
           color: "var(--ink)",
         }}
       >
-        {props.s.record.definition.title || "Untitled survey"}
+        {props.def.title || "Untitled survey"}
       </h1>
-      <Show when={props.s.record.definition.description}>
+      <Show when={props.def.description}>
         <p
           style={{
             "font-size": "14.5px",
@@ -488,8 +696,85 @@ const Header: Component<{
             margin: "8px 0 0",
           }}
         >
-          {props.s.record.definition.description}
+          {props.def.description}
         </p>
+      </Show>
+
+      <Show when={props.s.govLink}>
+        {(link) => (
+          <div
+            style={{
+              display: "flex",
+              "align-items": "flex-start",
+              gap: "12px",
+              background: "#F1F5FA",
+              border: "1px solid var(--gov-line)",
+              "border-radius": "var(--r-md)",
+              padding: "13px 15px",
+              "margin-top": "16px",
+            }}
+          >
+            <span
+              style={{
+                display: "inline-flex",
+                "align-items": "center",
+                gap: "5px",
+                "font-family": "var(--mono)",
+                "font-size": "10px",
+                "font-weight": "700",
+                "letter-spacing": ".04em",
+                "text-transform": "uppercase",
+                color: "var(--gov)",
+                background: "var(--gov-bg)",
+                border: "1px solid var(--gov-line)",
+                "border-radius": "var(--r-2xs)",
+                padding: "4px 7px",
+                flex: "none",
+                "margin-top": "1px",
+              }}
+            >
+              Info Action
+            </span>
+            <div style={{ flex: "1", "min-width": "0" }}>
+              <div
+                style={{
+                  "font-size": "13.5px",
+                  color: "#3A352B",
+                  "line-height": "1.45",
+                }}
+              >
+                <Show
+                  when={link().title}
+                  fallback={<>Advertised by a governance Info Action</>}
+                >
+                  Advertised by{" "}
+                  <b style={{ color: "var(--ink)" }}>{link().title}</b>
+                </Show>{" "}
+                <span
+                  style={{
+                    "font-family": "var(--mono)",
+                    "font-size": "11.5px",
+                    color: "var(--gov)",
+                    "word-break": "break-all",
+                  }}
+                >
+                  {link().actionId}
+                </span>
+              </div>
+              <div
+                style={{
+                  "font-family": "var(--mono)",
+                  "font-size": "11px",
+                  color: "var(--faint)",
+                  "margin-top": "5px",
+                }}
+              >
+                survey &amp; vote both close at epoch {link().endEpoch} · open
+                to all eligible roles — casting the linked vote is optional
+              </div>
+            </div>
+          </div>
+        )}
       </Show>
 
       <Show when={props.roleStats.length > 0}>
@@ -1455,6 +1740,7 @@ const ResultsBody: Component<{
  */
 const SealedResults: Component<{
   s: SurveyAggregate;
+  def: SurveyDefinition;
   keyStr: string;
   records: ResponseRecord[];
   nowUnix: number;
@@ -1539,7 +1825,7 @@ const SealedResults: Component<{
       </Match>
       <Match when={revealed()}>
         <ResultsBody
-          def={props.s.record.definition}
+          def={props.def}
           keyStr={props.keyStr}
           records={revealed()!.records}
           note={revealNote(revealed()!.records.length, revealed()!.failed)}
@@ -1584,6 +1870,69 @@ const SealedStateNotice: Component<{
     >
       {props.body}
     </p>
+  </div>
+);
+
+/**
+ * External-content survey whose off-chain presentation document couldn't be
+ * fetched or failed its hash check. Labels are missing, but the survey is fully
+ * answerable and tallyable from on-chain data (indices + constraints).
+ */
+const LabelsUnavailable: Component<{ keyStr: string }> = (props) => (
+  <div
+    style={{
+      display: "flex",
+      "align-items": "flex-start",
+      gap: "12px",
+      background: "#FBFAF6",
+      border: "1px solid #F0EBD8",
+      "border-radius": "var(--r-lg)",
+      padding: "15px 17px",
+      "margin-top": "14px",
+    }}
+  >
+    <span
+      style={{
+        width: "26px",
+        height: "26px",
+        "border-radius": "var(--r-chip)",
+        background: "var(--warn-bg)",
+        border: "1px solid var(--warn-line)",
+        color: "var(--warn)",
+        "font-size": "14px",
+        "font-weight": "700",
+        display: "flex",
+        "align-items": "center",
+        "justify-content": "center",
+        flex: "none",
+      }}
+    >
+      ⚠
+    </span>
+    <div style={{ flex: "1", "min-width": "0" }}>
+      <div
+        style={{ "font-size": "14px", "font-weight": "700", color: "#7A6A45" }}
+      >
+        Presentation labels unavailable
+      </div>
+      <p
+        style={{
+          "font-size": "12.5px",
+          color: "#7A6A45",
+          "line-height": "1.5",
+          margin: "5px 0 0",
+        }}
+      >
+        The off-chain document (
+        <span style={{ "font-family": "var(--mono)", "font-size": "11.5px" }}>
+          {shortRef(props.keyStr)}
+        </span>
+        ) couldn't be fetched or failed its hash check, so titles and option
+        labels can't be shown. <b>Results are still accurate</b> — every
+        question type, count and constraint is on-chain, and answers reference
+        option <i>indices</i>, which are tallied normally.
+      </p>
+    </div>
   </div>
 );
 

@@ -21,6 +21,13 @@ export interface AppConfig {
    * not consensus-critical.
    */
   readonly secondsPerEpoch: number;
+  /**
+   * HTTP gateway used to dereference `ipfs://` content anchors (external-content
+   * presentation documents, voter rationales). Must end with a trailing slash;
+   * `ipfs://<cid>/<path>` resolves to `<gateway><cid>/<path>`. `https://` and
+   * `http://` anchors are fetched directly, bypassing this.
+   */
+  readonly ipfsGateway: string;
 }
 
 const KOIOS_URL: Record<Network, string> = {
@@ -36,6 +43,9 @@ const SECONDS_PER_EPOCH: Record<Network, number> = {
 
 /** CIP-179 went live around here — ignore older label-17 history. */
 const SURVEYS_SINCE_ISO = "2026-06-01T00:00:00Z";
+
+/** Public IPFS gateway for dereferencing `ipfs://` anchors (overridable via env). */
+const DEFAULT_IPFS_GATEWAY = "https://ipfs.io/ipfs/";
 
 /**
  * Default to Preview testnet; overridable via Vite env (VITE_NETWORK).
@@ -53,5 +63,6 @@ export function loadConfig(): AppConfig {
     koiosToken: import.meta.env.VITE_KOIOS_TOKEN || undefined,
     sinceUnix: Math.floor(Date.parse(SURVEYS_SINCE_ISO) / 1000),
     secondsPerEpoch: SECONDS_PER_EPOCH[network],
+    ipfsGateway: import.meta.env.VITE_IPFS_GATEWAY || DEFAULT_IPFS_GATEWAY,
   };
 }

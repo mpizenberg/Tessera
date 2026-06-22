@@ -16,6 +16,7 @@ import type {
   CancellationRecord,
   ChainTip,
   Cip179Records,
+  GovLink,
   ResponseRecord,
   SurveyRecord,
 } from "~/data/source";
@@ -40,6 +41,10 @@ export interface SurveyAggregate {
   readonly status: SurveyStatus;
   /** Sealed (commit-reveal) survey — answers stay encrypted until reveal. */
   readonly sealed: boolean;
+  /** External-content survey — presentation text lives off-chain (key 8). */
+  readonly external: boolean;
+  /** Linking Info Action (epoch-aligned), or null if standalone. */
+  readonly govLink: GovLink | null;
   /** Distinct responders, after latest-valid-wins dedup. */
   readonly responseCount: number;
   readonly cancelled: boolean;
@@ -83,10 +88,16 @@ function statusOf(
 export function aggregateSurveys(
   records: Cip179Records,
   tip: ChainTip,
+  govLinks: readonly GovLink[] = [],
 ): SurveyAggregate[] {
   const cancelledKeys = new Set(
     records.cancellations.map((c: CancellationRecord) => refKey(c.target)),
   );
+
+  // Index links by survey key; a survey is "linked" only when the action's
+  // voting end epoch exactly equals the survey's end_epoch (the CIP invariant).
+  const linkByKey = new Map<string, GovLink>();
+  for (const link of govLinks) linkByKey.set(link.surveyKey, link);
 
   const deduped = dedupeResponses(records.responses);
   const countByKey = new Map<string, number>();
@@ -98,15 +109,51 @@ export function aggregateSurveys(
   return records.surveys.map((record) => {
     const key = refKey(record.ref);
     const cancelled = cancelledKeys.has(key);
+    const link = linkByKey.get(key);
+    const govLink =
+      link && link.endEpoch === record.definition.endEpoch ? link : null;
     return {
       key,
       record,
       cancelled,
       sealed: record.definition.submissionMode.type === "sealed",
+      external: record.definition.contentAnchor !== undefined,
+      govLink,
       responseCount: countByKey.get(key) ?? 0,
       status: statusOf(record.definition.endEpoch, cancelled, tip.epoch),
     };
   });
+}
+
+/**
+ * Unix-time floor for scanning governance actions: the on-chain creation time of
+ * the **oldest still-active survey**. Linkage is Action → Survey (the action
+ * points at an already-existing survey), so a linking Info Action can never
+ * predate the survey it links to — actions older than our oldest active survey
+ * can't link to any of them, and scanning them is just overload. Falls back to
+ * `fallbackUnix` when no survey is currently active.
+ *
+ * Post-Shelley slots are 1s, so a survey's slot projects to wall-clock from the
+ * tip (`tip.time − (tip.slot − slot)`), no per-network genesis math.
+ */
+export function governanceSinceUnix(
+  records: Cip179Records,
+  tip: ChainTip,
+  fallbackUnix: number,
+): number {
+  const cancelled = new Set(
+    records.cancellations.map((c: CancellationRecord) => refKey(c.target)),
+  );
+  let oldestSlot = Infinity;
+  for (const s of records.surveys) {
+    // Active = not cancelled and not past its end epoch (responses accepted
+    // through end_epoch inclusive, mirroring `statusOf`).
+    if (cancelled.has(refKey(s.ref))) continue;
+    if (s.definition.endEpoch < tip.epoch) continue;
+    if (s.slot < oldestSlot) oldestSlot = s.slot;
+  }
+  if (!Number.isFinite(oldestSlot)) return fallbackUnix;
+  return tip.time - (tip.slot - oldestSlot);
 }
 
 /** Find one aggregate by its ref key (for the survey detail screen). */

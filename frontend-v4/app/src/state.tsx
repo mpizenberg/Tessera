@@ -23,7 +23,11 @@ import { createStore } from "solid-js/store";
 import { loadConfig, type AppConfig } from "~/config";
 import { KoiosDataSource } from "~/data/koios";
 import type { ChainTip, Cip179Records, DataSource } from "~/data/source";
-import { aggregateSurveys, type SurveyAggregate } from "~/domain/survey";
+import {
+  aggregateSurveys,
+  governanceSinceUnix,
+  type SurveyAggregate,
+} from "~/domain/survey";
 import { claimableRoles } from "~/domain/roles";
 import { connectWallet, listInstalledWallets } from "~/wallet/cip30";
 import type { ConnectedWallet, InstalledWallet } from "~/wallet/types";
@@ -96,7 +100,15 @@ export const AppProvider: ParentComponent = (props) => {
       source.fetchAll(),
       source.chainTip(),
     ]);
-    return { records, tip, surveys: aggregateSurveys(records, tip) };
+    // Bound the governance scan to actions recent enough to link a live survey
+    // (oldest active survey's creation time). Best-effort enrichment: never let
+    // a governance-endpoint failure (or CORS) sink the main snapshot.
+    const since = governanceSinceUnix(records, tip, config.sinceUnix);
+    const govLinks = await source.fetchGovernanceLinks(since).catch((e) => {
+      console.warn(`governance linkage unavailable: ${String(e)}`);
+      return [];
+    });
+    return { records, tip, surveys: aggregateSurveys(records, tip, govLinks) };
   });
 
   const [ui, setUi] = createStore<UiState>({

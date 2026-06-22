@@ -20,6 +20,7 @@ import type {
   ChainTip,
   Cip179Records,
   DataSource,
+  GovLink,
   ResponseRecord,
   SurveyRecord,
 } from "./source";
@@ -43,6 +44,18 @@ interface TipRow {
   epoch_slot: number;
   block_time: number;
 }
+
+interface ProposalRow {
+  proposal_id: string;
+  proposal_type: string;
+  /** Epoch the action's voting period ends. */
+  expiration: number | null;
+  /** Anchor JSON, resolved by Koios when reachable (may be null). */
+  meta_json: unknown;
+}
+
+/** The CIP-179 link discriminator carried in an Info Action's anchor. */
+const GOV_LINK_KIND = "cardano-governance-survey-link";
 
 export class KoiosDataSource implements DataSource {
   constructor(private readonly config: AppConfig) {}
@@ -150,6 +163,26 @@ export class KoiosDataSource implements DataSource {
     return { surveys, responses, cancellations };
   }
 
+  async fetchGovernanceLinks(sinceUnix: number): Promise<GovLink[]> {
+    // Info Actions only (the sole linkable action type), and only those created
+    // at/after `sinceUnix` — older actions can't link to a still-active survey,
+    // so bounding here avoids scanning the full Info-Action history. Koios
+    // requires the filtered column be selected, hence `block_time` in select.
+    // Koios resolves the anchor JSON into `meta_json` when the document is
+    // reachable; we read the CIP-179 link fields straight from it.
+    const rows = await this.get<ProposalRow[]>(
+      `/proposal_list?proposal_type=eq.InfoAction` +
+        `&select=proposal_id,proposal_type,expiration,meta_json,block_time` +
+        `&block_time=gte.${Math.floor(sinceUnix)}`,
+    );
+    const links: GovLink[] = [];
+    for (const row of rows) {
+      const link = parseGovLink(row);
+      if (link) links.push(link);
+    }
+    return links;
+  }
+
   private classify(
     payload: Cip179Payload,
     txHash: string,
@@ -185,4 +218,40 @@ export class KoiosDataSource implements DataSource {
         break;
     }
   }
+}
+
+/**
+ * Extract a CIP-179 survey link from an Info Action's anchor metadata. The link
+ * object may be the whole anchor document or nested under a CIP-108 `body`;
+ * we accept either and pull a human title from `body.title` when present.
+ * Returns null for any action whose anchor doesn't carry a (well-formed) link.
+ */
+function parseGovLink(row: ProposalRow): GovLink | null {
+  if (row.expiration === null) return null;
+  const meta = row.meta_json;
+  if (typeof meta !== "object" || meta === null) return null;
+  const obj = meta as Record<string, unknown>;
+  const body =
+    typeof obj["body"] === "object" && obj["body"] !== null
+      ? (obj["body"] as Record<string, unknown>)
+      : undefined;
+
+  const link = [obj, body].find(
+    (c): c is Record<string, unknown> => !!c && c["kind"] === GOV_LINK_KIND,
+  );
+  if (!link) return null;
+
+  const txid = link["surveyTxId"];
+  if (typeof txid !== "string") return null;
+  const idx = link["surveyIndex"];
+  const index = typeof idx === "number" ? idx : 0;
+  const title =
+    body && typeof body["title"] === "string" ? body["title"] : null;
+
+  return {
+    surveyKey: `${txid.toLowerCase()}:${index}`,
+    actionId: row.proposal_id,
+    endEpoch: row.expiration,
+    title,
+  };
 }

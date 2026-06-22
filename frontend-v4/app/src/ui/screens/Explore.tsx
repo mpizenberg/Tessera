@@ -35,7 +35,7 @@ function matchesFilter(
     case "all":
       return true;
     case "linked":
-      return false; // governance linkage needs gov data — wired later
+      return a.govLink !== null;
     case "active":
       return !isClosed(v);
     case "sealed":
@@ -102,11 +102,14 @@ export const Explore: Component = () => {
       );
   });
 
+  // Linked (governance) surveys get their own section, shown first; the rest
+  // split into open / closed so a linked survey never appears twice.
+  const govRows = createMemo(() => visible().filter((a) => a.govLink !== null));
   const openRows = createMemo(() =>
-    visible().filter((a) => !isClosed(viewStatus(a))),
+    visible().filter((a) => a.govLink === null && !isClosed(viewStatus(a))),
   );
   const closedRows = createMemo(() =>
-    visible().filter((a) => isClosed(viewStatus(a))),
+    visible().filter((a) => a.govLink === null && isClosed(viewStatus(a))),
   );
 
   return (
@@ -265,6 +268,34 @@ export const Explore: Component = () => {
             </Show>
 
             <Show when={!app.snapshot.loading && !app.snapshot.error}>
+              <Show when={govRows().length > 0}>
+                <SectionLabel
+                  dot={
+                    <span
+                      style={{
+                        width: "6px",
+                        height: "6px",
+                        "border-radius": "1.5px",
+                        background: "var(--gov)",
+                      }}
+                    />
+                  }
+                  color="var(--gov)"
+                  label="On-chain governance"
+                  note="Tied to an Info Action — shown first."
+                />
+                <For each={govRows()}>
+                  {(a) => (
+                    <Row
+                      a={a}
+                      tipEpoch={tipEpoch()}
+                      pro={app.ui.pro}
+                      flags={flagsOf(a)}
+                    />
+                  )}
+                </For>
+              </Show>
+
               <Show when={openRows().length > 0}>
                 <SectionLabel
                   dot={
@@ -540,6 +571,23 @@ const Row: Component<{
               Yours
             </span>
           </Show>
+          <Show when={def().contentAnchor}>
+            <span
+              style={{
+                flex: "none",
+                "font-size": "10px",
+                "font-weight": "700",
+                color: "var(--warn)",
+                background: "var(--warn-bg)",
+                border: "1px solid var(--warn-line)",
+                "border-radius": "5px",
+                padding: "1.5px 6px",
+                "white-space": "nowrap",
+              }}
+            >
+              ⚠ labels off-chain
+            </span>
+          </Show>
         </div>
         <div
           style={{
@@ -554,6 +602,24 @@ const Row: Component<{
           {def().description ||
             "Presentation text unavailable — on-chain structure intact."}
         </div>
+        <Show when={props.a.govLink}>
+          {(link) => (
+            <div
+              style={{
+                "font-family": "var(--mono)",
+                "font-size": "10.5px",
+                color: "var(--gov)",
+                "margin-top": "4px",
+                "white-space": "nowrap",
+                overflow: "hidden",
+                "text-overflow": "ellipsis",
+              }}
+            >
+              ◇ Info Action {shortGovId(link().actionId)}
+              {link().title ? ` · ${link().title}` : ""}
+            </div>
+          )}
+        </Show>
       </div>
       <RoleChips roles={def().eligibleRoles} />
       <div>
@@ -650,6 +716,11 @@ const Notice: Component<{ text: string; tone?: "danger" }> = (props) => (
     {props.text}
   </div>
 );
+
+/** Shorten a bech32 governance action id for inline display. */
+function shortGovId(id: string): string {
+  return id.length > 18 ? `${id.slice(0, 12)}…${id.slice(-4)}` : id;
+}
 
 function filterStyle(on: boolean): JSX.CSSProperties {
   return {

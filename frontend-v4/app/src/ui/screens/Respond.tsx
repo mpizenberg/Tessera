@@ -13,6 +13,7 @@ import { A, useNavigate, useParams } from "@solidjs/router";
 import {
   encodePayload,
   validateResponse,
+  type ContentAnchor,
   type Credential,
   type OptionsOrCount,
   type Question,
@@ -42,6 +43,8 @@ import {
   type Draft,
   type DraftValue,
 } from "~/domain/respond";
+import { usePresentation } from "~/enrichment/usePresentation";
+import { hexToBytes } from "~/util/hex";
 import { formatRevealDate } from "~/tlock/drand";
 import { roleColors, roleLabel, shortRef, viewStatus } from "~/ui/format";
 import type { WalletIdentity } from "~/wallet/types";
@@ -58,8 +61,15 @@ export const Respond: Component = () => {
   const survey = createMemo(() =>
     app.snapshot() ? findSurvey(app.snapshot()!.surveys, key()) : undefined,
   );
-  const definition = (): SurveyDefinition | undefined =>
+  // External-content surveys: render labels from the off-chain presentation doc
+  // when available. `definition()` is the enriched (display) definition; it
+  // falls back to the on-chain one, which is always answerable since indices and
+  // constraints are on-chain. The enrichment only changes labels, so it's safe
+  // to use for validation/build too.
+  const rawDefinition = (): SurveyDefinition | undefined =>
     survey()?.record.definition;
+  const pres = usePresentation(rawDefinition, app.config.ipfsGateway);
+  const definition = (): SurveyDefinition | undefined => pres.def();
   const identity = (): WalletIdentity | null => app.wallet()?.identity ?? null;
 
   const respondable = createMemo<Role[]>(() => {
@@ -150,10 +160,39 @@ export const Respond: Component = () => {
   const [submitError, setSubmitError] = createSignal<string | null>(null);
   const [txHash, setTxHash] = createSignal<string | null>(null);
 
+  // Optional voter rationale (Pro): an off-chain doc, hash-anchored on the
+  // response (CIP-179 key 5). Author supplies the URI + its blake2b-256 hash.
+  const [rationaleOn, setRationaleOn] = createSignal(false);
+  const [ratUri, setRatUri] = createSignal("");
+  const [ratHash, setRatHash] = createSignal("");
+
   const setValue = (i: number, value: DraftValue) =>
     setDrafts(i, "value", value);
   const setSkipped = (i: number, skipped: boolean) =>
     setDrafts(i, "skipped", skipped);
+
+  // Parse the optional rationale anchor: the anchor, `undefined` (none), or
+  // "invalid" (problems set). URI required; hash must be 32 bytes of hex.
+  const collectRationale = (): ContentAnchor | undefined | "invalid" => {
+    if (!app.ui.pro || !rationaleOn()) return undefined;
+    const uri = ratUri().trim();
+    const probs: string[] = [];
+    if (uri === "") probs.push("Rationale: document URI is required.");
+    let hash: Uint8Array | null = null;
+    try {
+      const b = hexToBytes(ratHash().trim());
+      if (b.length !== 32)
+        probs.push("Rationale: hash must be 32 bytes (64 hex chars).");
+      else hash = b;
+    } catch {
+      probs.push("Rationale: hash is not valid hex.");
+    }
+    if (probs.length > 0 || !hash) {
+      setProblems(probs);
+      return "invalid";
+    }
+    return { uri, hash };
+  };
 
   const onSubmit = async () => {
     const def = definition();
@@ -162,9 +201,21 @@ export const Respond: Component = () => {
     const cred = credential();
     if (!def || !s || r === null || !cred) return;
 
+    // Optional rationale anchor (Pro). Parse + validate up front so a bad hash
+    // surfaces alongside answer problems, before any signing.
+    const rationale = collectRationale();
+    if (rationale === "invalid") return;
+
     // Validate the answers as plaintext first — for a sealed survey nobody can
     // check them again until the reveal, so they must be well-formed now.
-    const plain = buildResponse(s.record.ref, r, cred, def.questions, drafts);
+    const plain = buildResponse(
+      s.record.ref,
+      r,
+      cred,
+      def.questions,
+      drafts,
+      rationale,
+    );
     const found = validateResponse(
       { ...def, submissionMode: { type: "public" } },
       plain,
@@ -188,7 +239,13 @@ export const Respond: Component = () => {
           sealed.round,
           sealed.paddingSize,
         );
-        response = buildSealedResponse(s.record.ref, r, cred, ciphertext);
+        response = buildSealedResponse(
+          s.record.ref,
+          r,
+          cred,
+          ciphertext,
+          rationale,
+        );
       }
       setBusyText("Submitting…");
       const payload = encodePayload({
@@ -250,6 +307,9 @@ export const Respond: Component = () => {
               <Show when={sealedMode()}>
                 {(m) => <SealedBanner round={m().round} />}
               </Show>
+              <Show when={pres.external() && pres.unavailable()}>
+                <LabelsAbsentBanner keyStr={key()} />
+              </Show>
 
               <div
                 style={{
@@ -271,6 +331,17 @@ export const Respond: Component = () => {
                   )}
                 </For>
               </div>
+
+              <Show when={app.ui.pro}>
+                <RationaleSection
+                  on={rationaleOn()}
+                  uri={ratUri()}
+                  hash={ratHash()}
+                  onToggle={setRationaleOn}
+                  onUri={setRatUri}
+                  onHash={setRatHash}
+                />
+              </Show>
 
               <Show when={problems().length > 0}>
                 <ProblemList problems={problems()} />
@@ -615,6 +686,152 @@ const SealedBanner: Component<{ round: number }> = (props) => (
         only after the reveal.
       </div>
     </div>
+  </div>
+);
+
+/**
+ * External-content survey whose off-chain labels couldn't be fetched/verified.
+ * The form still works: every question's type, count and constraints are
+ * on-chain, and answers reference option indices (validated + tallied normally).
+ */
+const LabelsAbsentBanner: Component<{ keyStr: string }> = (props) => (
+  <div
+    style={{
+      display: "flex",
+      "align-items": "flex-start",
+      gap: "11px",
+      background: "#FBFAF6",
+      border: "1px solid #F0EBD8",
+      "border-radius": "13px",
+      padding: "13px 16px",
+      "margin-top": "14px",
+    }}
+  >
+    <span
+      style={{ "font-size": "15px", color: "var(--warn)", "margin-top": "1px" }}
+    >
+      ⚠
+    </span>
+    <div style={{ flex: "1" }}>
+      <div
+        style={{
+          "font-size": "13.5px",
+          "font-weight": "700",
+          color: "#7A6A45",
+        }}
+      >
+        Presentation labels unavailable
+      </div>
+      <div
+        style={{
+          "font-size": "12.5px",
+          color: "#7A6A45",
+          "line-height": "1.5",
+          "margin-top": "3px",
+        }}
+      >
+        The off-chain document (
+        <span style={{ "font-family": "var(--mono)", "font-size": "11.5px" }}>
+          {shortRef(props.keyStr)}
+        </span>
+        ) couldn't be fetched or failed its hash check, so option labels are
+        shown as indices. <b>You can still respond</b> — your answer references
+        option indices, validated and tallied normally.
+      </div>
+    </div>
+  </div>
+);
+
+/**
+ * Optional voter rationale (Pro). Attaches an off-chain document, tamper-evident
+ * via its blake2b-256 hash, to the response (CIP-179 key 5). Purely
+ * informational — no effect on validation or tallies — mirroring CIP-100/108
+ * rationale conventions. Author supplies an already-hosted URI + its hash.
+ */
+const RationaleSection: Component<{
+  on: boolean;
+  uri: string;
+  hash: string;
+  onToggle: (on: boolean) => void;
+  onUri: (v: string) => void;
+  onHash: (v: string) => void;
+}> = (props) => (
+  <div style={{ ...cardStyle(), "margin-top": "12px" }}>
+    <label
+      style={{
+        display: "flex",
+        "align-items": "center",
+        gap: "10px",
+        cursor: "pointer",
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={props.on}
+        onChange={(e) => props.onToggle(e.currentTarget.checked)}
+        style={{
+          width: "16px",
+          height: "16px",
+          "accent-color": "var(--accent)",
+        }}
+      />
+      <span style={{ "font-size": "13.5px", "font-weight": "600", flex: "1" }}>
+        Attach a rationale document{" "}
+        <span style={{ color: "var(--dim)", "font-weight": "400" }}>
+          (off-chain, hash-anchored)
+        </span>
+      </span>
+    </label>
+    <Show when={props.on}>
+      <div
+        style={{
+          display: "flex",
+          "flex-direction": "column",
+          gap: "10px",
+          "margin-top": "12px",
+        }}
+      >
+        <div>
+          <label style={ratLabelStyle()}>Document URI</label>
+          <input
+            type="text"
+            value={props.uri}
+            placeholder="ipfs://… or https://…"
+            onInput={(e) => props.onUri(e.currentTarget.value)}
+            style={{
+              ...numberInputStyle(),
+              "font-family": "var(--mono)",
+              "font-size": "12.5px",
+            }}
+          />
+        </div>
+        <div>
+          <label style={ratLabelStyle()}>Hash (blake2b-256, hex)</label>
+          <input
+            type="text"
+            value={props.hash}
+            placeholder="64 hex characters"
+            onInput={(e) => props.onHash(e.currentTarget.value)}
+            style={{
+              ...numberInputStyle(),
+              "font-family": "var(--mono)",
+              "font-size": "12.5px",
+            }}
+          />
+        </div>
+        <p
+          style={{
+            "font-size": "11.5px",
+            color: "var(--dim)",
+            "line-height": "1.45",
+            margin: "0",
+          }}
+        >
+          Host the document yourself; the hash makes it tamper-evident. It's
+          recorded with your response but never affects validation or tallies.
+        </p>
+      </div>
+    </Show>
   </div>
 );
 
@@ -1940,6 +2157,15 @@ function numberInputStyle(): JSX.CSSProperties {
     color: "var(--ink)",
     outline: "none",
     "box-sizing": "border-box",
+  };
+}
+function ratLabelStyle(): JSX.CSSProperties {
+  return {
+    display: "block",
+    "font-size": "12px",
+    "font-weight": "700",
+    color: "var(--muted)",
+    "margin-bottom": "6px",
   };
 }
 function submitBtnStyle(enabled: boolean): JSX.CSSProperties {

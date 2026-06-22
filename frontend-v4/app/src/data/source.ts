@@ -60,6 +60,22 @@ export interface Cip179Records {
   readonly cancellations: readonly CancellationRecord[];
 }
 
+/**
+ * A governance Info Action that advertises a survey (CIP-179 linkage,
+ * canonicalized Action → Survey). Discovered from the action's anchor metadata;
+ * epoch-alignment with the survey is checked in the domain layer.
+ */
+export interface GovLink {
+  /** Survey ref the action links to ("<txHex>:<index>"). */
+  readonly surveyKey: string;
+  /** Bech32 governance action id of the linking Info Action. */
+  readonly actionId: string;
+  /** The action's voting end epoch (must equal the survey's `end_epoch`). */
+  readonly endEpoch: number;
+  /** Action title from CIP-108 governance metadata, if present. */
+  readonly title: string | null;
+}
+
 export interface DataSource {
   /** Current chain tip (epoch + slot). */
   chainTip(): Promise<ChainTip>;
@@ -70,4 +86,12 @@ export interface DataSource {
    * paginate. Either way the result is the full snapshot the UI renders from.
    */
   fetchAll(): Promise<Cip179Records>;
+  /**
+   * Discover governance Info Actions whose anchor links to a survey, scanning
+   * only actions created at or after `sinceUnix` (typically the oldest active
+   * survey's creation time — older actions can't link to a live survey).
+   * Best-effort enrichment: a failure here must not sink the main snapshot
+   * (callers default to no links). An indexer would serve this far more cheaply.
+   */
+  fetchGovernanceLinks(sinceUnix: number): Promise<GovLink[]>;
 }

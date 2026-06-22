@@ -15,6 +15,7 @@
 import {
   SPEC_VERSION,
   type AnswerItem,
+  type ContentAnchor,
   type Credential,
   type OptionsOrCount,
   type Question,
@@ -191,6 +192,7 @@ export function buildResponse(
   credential: Credential,
   questions: readonly Question[],
   drafts: readonly Draft[],
+  rationale?: ContentAnchor,
 ): SurveyResponse {
   return {
     specVersion: SPEC_VERSION,
@@ -198,6 +200,7 @@ export function buildResponse(
     role,
     credential,
     answers: { type: "public", answers: collectAnswers(questions, drafts) },
+    ...(rationale ? { rationale } : {}),
   };
 }
 
@@ -211,6 +214,7 @@ export function buildSealedResponse(
   role: Role,
   credential: Credential,
   ciphertext: Uint8Array,
+  rationale?: ContentAnchor,
 ): SurveyResponse {
   return {
     specVersion: SPEC_VERSION,
@@ -218,6 +222,7 @@ export function buildSealedResponse(
     role,
     credential,
     answers: { type: "sealed", ciphertext },
+    ...(rationale ? { rationale } : {}),
   };
 }
 
