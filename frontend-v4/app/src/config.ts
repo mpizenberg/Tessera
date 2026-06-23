@@ -44,6 +44,33 @@ const SURVEYS_SINCE_ISO = "2026-06-01T00:00:00Z";
 /** localStorage key for a user-supplied Koios token (overrides the build env). */
 export const KOIOS_TOKEN_STORAGE_KEY = "tessera.koiosToken";
 
+/** localStorage key for a user-selected network (overrides the build env). */
+export const NETWORK_STORAGE_KEY = "tessera.network";
+
+/** The build-time default network (from env), ignoring any user override. */
+export function envNetwork(): Network {
+  return import.meta.env.VITE_NETWORK === "mainnet" ? "mainnet" : "preview";
+}
+
+/** A persisted network override, if the user picked one (validated). */
+export function storedNetwork(): Network | undefined {
+  try {
+    const v = localStorage.getItem(NETWORK_STORAGE_KEY);
+    return v === "mainnet" || v === "preview" ? v : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Persist the selected network. */
+export function storeNetwork(network: Network): void {
+  try {
+    localStorage.setItem(NETWORK_STORAGE_KEY, network);
+  } catch {
+    // storage unavailable — the in-memory value won't survive a reload
+  }
+}
+
 /** The build-time Koios token (from env), ignoring any user override. */
 export function envKoiosToken(): string | undefined {
   return import.meta.env.VITE_KOIOS_TOKEN || undefined;
@@ -70,15 +97,16 @@ export function storeKoiosToken(token: string): void {
 }
 
 /**
- * Default to Preview testnet; overridable via Vite env (VITE_NETWORK).
+ * Network resolves localStorage override → `VITE_NETWORK` (default Preview).
+ * The switch is applied by persisting the choice and reloading, so this runs
+ * fresh with the new value — nothing downstream needs to react to it live.
  *
  * The Koios token resolves localStorage override → `VITE_KOIOS_TOKEN`. The free
  * (anonymous) tier does not send CORS headers, so an authenticated token is
  * required for browser requests; without one, Koios calls will be CORS-blocked.
  */
 export function loadConfig(): AppConfig {
-  const network: Network =
-    import.meta.env.VITE_NETWORK === "mainnet" ? "mainnet" : "preview";
+  const network: Network = storedNetwork() ?? envNetwork();
   return {
     network,
     koiosUrl: KOIOS_URL[network],

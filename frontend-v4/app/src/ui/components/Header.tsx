@@ -2,7 +2,10 @@ import { For, Show, createSignal, type Component, type JSX } from "solid-js";
 import { A, useLocation } from "@solidjs/router";
 
 import { useApp } from "~/state";
+import type { Network } from "~/config";
 import { roleLabel } from "~/ui/format";
+
+const NETWORKS: readonly Network[] = ["preview", "mainnet"];
 
 const NAV: ReadonlyArray<{ href: string; label: string }> = [
   { href: "/", label: "Explore" },
@@ -40,14 +43,12 @@ export const Header: Component = () => {
       }}
     >
       <div
+        class="header-bar"
         style={{
           "max-width": "1160px",
           margin: "0 auto",
-          padding: "0 24px",
-          height: "62px",
           display: "flex",
           "align-items": "center",
-          gap: "24px",
         }}
       >
         <A
@@ -109,6 +110,22 @@ export const Header: Component = () => {
           </span>
         </A>
 
+        <span
+          style={networkTagStyle(app.config.network)}
+          title="Active network"
+        >
+          <span
+            style={{
+              width: "6px",
+              height: "6px",
+              "border-radius": "50%",
+              background:
+                app.config.network === "mainnet" ? "var(--gov)" : "var(--warn)",
+            }}
+          />
+          {app.config.network}
+        </span>
+
         <nav
           class="header-nav"
           style={{
@@ -127,8 +144,8 @@ export const Header: Component = () => {
         </nav>
 
         <div
+          class="header-actions"
           style={{
-            "margin-left": "auto",
             display: "flex",
             "align-items": "center",
             gap: "10px",
@@ -223,6 +240,8 @@ export const Header: Component = () => {
 
           <Show when={menuOpen()}>
             <div style={menuStyle()}>
+              <NetworkSwitch />
+              <div style={menuDividerStyle()} />
               <Show
                 when={app.wallet()}
                 fallback={
@@ -402,7 +421,86 @@ const RoleMenu: Component<{
   </>
 );
 
+/**
+ * Network picker shown at the top of the identity menu (connected or not, since
+ * you may want to choose a network before connecting). Switching persists the
+ * choice and reloads — see `setNetwork`.
+ */
+const NetworkSwitch: Component = () => {
+  const app = useApp();
+  return (
+    <>
+      <div style={menuHeadingStyle()}>Network</div>
+      <For each={NETWORKS}>
+        {(n) => {
+          const on = () => n === app.config.network;
+          return (
+            <button
+              style={menuRowStyle(on())}
+              onClick={() => app.setNetwork(n)}
+            >
+              <span
+                style={{
+                  width: "7px",
+                  height: "7px",
+                  "border-radius": "50%",
+                  background: n === "mainnet" ? "var(--gov)" : "var(--warn)",
+                }}
+              />
+              <span
+                style={{
+                  "font-size": "13px",
+                  "font-weight": "700",
+                  color: "var(--ink)",
+                  flex: "1",
+                  "text-align": "left",
+                  "text-transform": "capitalize",
+                }}
+              >
+                {n}
+              </span>
+              <Show when={on()}>
+                <span style={{ color: "var(--accent)", "font-size": "12px" }}>
+                  ✓
+                </span>
+              </Show>
+            </button>
+          );
+        }}
+      </For>
+      <div style={menuNoteStyle()}>Switching reloads on Explore.</div>
+    </>
+  );
+};
+
 // --- styles -----------------------------------------------------------------
+
+function networkTagStyle(network: Network): JSX.CSSProperties {
+  const mainnet = network === "mainnet";
+  return {
+    display: "flex",
+    "align-items": "center",
+    gap: "5px",
+    "font-family": "var(--mono)",
+    "font-size": "10px",
+    "font-weight": "600",
+    "letter-spacing": ".02em",
+    "text-transform": "capitalize",
+    "white-space": "nowrap",
+    color: mainnet ? "var(--gov)" : "var(--warn)",
+    background: mainnet ? "var(--gov-bg)" : "var(--warn-bg)",
+    border: `1px solid ${mainnet ? "var(--gov-line)" : "var(--warn-line)"}`,
+    "border-radius": "var(--r-3xs)",
+    padding: "2px 6px 2px 5px",
+  };
+}
+function menuDividerStyle(): JSX.CSSProperties {
+  return {
+    height: "1px",
+    background: "var(--line)",
+    margin: "5px 4px",
+  };
+}
 
 function navStyle(on: boolean): JSX.CSSProperties {
   return {

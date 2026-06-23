@@ -204,8 +204,8 @@ const KoiosSection: Component = () => {
       <p style={proseStyle()}>
         The app ships with a pre-configured Koios token that may get
         rate-limited under load. Paste your own to use it instead — it overrides
-        the default and applies on save (the snapshot reloads). Network and
-        endpoint are set at build time.
+        the default and applies on save (the snapshot reloads). Switching
+        network reloads the app on Explore to apply the new endpoint.
       </p>
 
       <dl
@@ -218,15 +218,29 @@ const KoiosSection: Component = () => {
         }}
       >
         <FactRow label="Network">
-          <span
+          <div
             style={{
-              "font-weight": "700",
-              color: "var(--ink)",
-              "text-transform": "capitalize",
+              display: "inline-flex",
+              "align-items": "center",
+              background: "#F1EADC",
+              border: "1px solid #E3DBC9",
+              "border-radius": "9px",
+              padding: "3px",
             }}
           >
-            {app.config.network}
-          </span>
+            <button
+              style={segStyle(app.config.network === "preview")}
+              onClick={() => app.setNetwork("preview")}
+            >
+              Preview
+            </button>
+            <button
+              style={segStyle(app.config.network === "mainnet")}
+              onClick={() => app.setNetwork("mainnet")}
+            >
+              Mainnet
+            </button>
+          </div>
         </FactRow>
         <FactRow label="Endpoint">
           <span
