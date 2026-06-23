@@ -51,9 +51,20 @@ import { IPFS_PROVIDERS } from "~/enrichment/providers";
 import { OnchainPreview } from "~/ui/components/OnchainPreview";
 import { ErrorBox, ProblemList } from "~/ui/components/Feedback";
 import { TxLink } from "~/ui/components/TxLink";
+import {
+  SubmitProgressModal,
+  type SubmitStep,
+} from "~/ui/components/SubmitProgress";
 import { hexToBytes } from "~/util/hex";
 import { formatRevealDate } from "~/tlock/drand";
-import { roleColors, roleLabel, shortRef, viewStatus } from "~/ui/format";
+import {
+  roleBrowserClaimable,
+  roleColors,
+  roleDescription,
+  roleLabel,
+  shortRef,
+  viewStatus,
+} from "~/ui/format";
 import type { WalletIdentity } from "~/wallet/types";
 
 // ----------------------------------------------------------------------------
@@ -163,6 +174,7 @@ export const Respond: Component = () => {
 
   const [submitting, setSubmitting] = createSignal(false);
   const [busyText, setBusyText] = createSignal("Submitting…");
+  const [stepKey, setStepKey] = createSignal<string | null>(null);
   const [problems, setProblems] = createSignal<string[]>([]);
   const [submitError, setSubmitError] = createSignal<string | null>(null);
   const [txHash, setTxHash] = createSignal<string | null>(null);
@@ -290,6 +302,28 @@ export const Respond: Component = () => {
   // Padding the sealed ciphertext is zero-padded to, for the preview note.
   const sealedPadding = (): number | undefined => sealedMode()?.paddingSize;
 
+  // A written (not pasted) rationale gets pinned at submit — an extra step.
+  const willPinRationale = () =>
+    app.ui.pro &&
+    rationaleOn() &&
+    ratMode() === "write" &&
+    ratText().trim() !== "";
+  // The ordered steps this submission will run through (drives the progress
+  // overlay). Only shown when there's more than one — a plain public submit
+  // keeps its inline button state.
+  const submitSteps = createMemo<SubmitStep[]>(() => {
+    const steps: SubmitStep[] = [];
+    if (willPinRationale())
+      steps.push({ key: "pin", label: "Pinning rationale to IPFS" });
+    if (sealedMode())
+      steps.push({ key: "encrypt", label: "Timelock-encrypting your answers" });
+    steps.push({
+      key: "submit",
+      label: "Signing & submitting the transaction",
+    });
+    return steps;
+  });
+
   const onSubmit = async () => {
     const def = definition();
     const s = survey();
@@ -315,6 +349,7 @@ export const Respond: Component = () => {
 
     setSubmitting(true);
     setSubmitError(null);
+    setStepKey(submitSteps()[0]?.key ?? "submit");
     try {
       // Resolve (and, in write mode, pin) the rationale before building.
       const rationale = await resolveRationale(manualRationale);
@@ -331,6 +366,7 @@ export const Respond: Component = () => {
       if (sealed) {
         // Timelock-encrypt the answers to the survey's drand round, then submit
         // the ciphertext instead of the plaintext answers.
+        setStepKey("encrypt");
         setBusyText("Encrypting…");
         const { sealAnswers } = await import("~/tlock/seal");
         const answers = collectAnswers(def.questions, drafts);
@@ -347,6 +383,7 @@ export const Respond: Component = () => {
           rationale,
         );
       }
+      setStepKey("submit");
       setBusyText("Submitting…");
       const payload = encodePayload({
         type: "responses",
@@ -363,6 +400,7 @@ export const Respond: Component = () => {
     } finally {
       setSubmitting(false);
       setBusyText("Submitting…");
+      setStepKey(null);
     }
   };
 
@@ -377,6 +415,16 @@ export const Respond: Component = () => {
       <A href={`/survey/${encodeURIComponent(key())}`} style={backLinkStyle()}>
         <span style={{ "font-size": "15px" }}>←</span> Back to results
       </A>
+
+      <Show when={submitting() && submitSteps().length > 1}>
+        <SubmitProgressModal
+          title={
+            sealedMode() ? "Sealing your response" : "Submitting your response"
+          }
+          steps={submitSteps()}
+          currentKey={stepKey()}
+        />
+      </Show>
 
       <Show when={survey()} fallback={<Empty loading={app.snapshot.loading} />}>
         {(s) => (
@@ -571,20 +619,47 @@ const Ineligible: Component<{ def: SurveyDefinition }> = (props) => (
       }}
     >
       It's open only to the roles below, and your connected wallet can't claim
-      any of them here. (SPO and CC roles need keys browser wallets don't hold.)
+      any of them here. Here's what each one means:
     </p>
     <div
       style={{
         display: "flex",
-        gap: "7px",
-        "margin-top": "13px",
-        "flex-wrap": "wrap",
+        "flex-direction": "column",
+        gap: "10px",
+        "margin-top": "14px",
       }}
     >
       <For each={props.def.eligibleRoles}>
         {(r) => {
           const [color, bg] = roleColors(r);
-          return <span style={roleChipStyle(color, bg)}>{roleLabel(r)}</span>;
+          return (
+            <div
+              style={{
+                display: "flex",
+                gap: "10px",
+                "align-items": "flex-start",
+              }}
+            >
+              <span style={{ ...roleChipStyle(color, bg), flex: "none" }}>
+                {roleLabel(r)}
+              </span>
+              <span
+                style={{
+                  "font-size": "12.5px",
+                  color: "var(--muted)",
+                  "line-height": "1.5",
+                }}
+              >
+                {roleDescription(r)}
+                <Show when={!roleBrowserClaimable(r)}>
+                  <span style={{ color: "var(--warn)", "font-weight": "600" }}>
+                    {" "}
+                    Not claimable in a browser wallet.
+                  </span>
+                </Show>
+              </span>
+            </div>
+          );
         }}
       </For>
     </div>

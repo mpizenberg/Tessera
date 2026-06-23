@@ -131,6 +131,14 @@ export const Explore: Component = () => {
 
   const narrow = useNarrow(CARD_BREAKPOINT);
 
+  // First-visit intro: shown until dismissed (remembered) or a wallet connects.
+  const [introDismissed, setIntroDismissed] = createSignal(introIsDismissed());
+  const showIntro = () => !app.wallet() && !introDismissed();
+  const dismissIntro = (): void => {
+    rememberIntroDismissed();
+    setIntroDismissed(true);
+  };
+
   // Tick once a minute so the "time left" readout stays roughly live without a
   // refetch. Pure display — it never feeds a resource, so it can't retrigger I/O.
   const [nowUnix, setNowUnix] = createSignal(Math.floor(Date.now() / 1000));
@@ -216,6 +224,10 @@ export const Explore: Component = () => {
         padding: "30px 24px 76px",
       }}
     >
+      <Show when={showIntro()}>
+        <IntroHero onDismiss={dismissIntro} />
+      </Show>
+
       {/* title row + summary */}
       <div
         style={{
@@ -354,7 +366,7 @@ export const Explore: Component = () => {
             </Show>
 
             <Show when={app.snapshot.loading}>
-              <Notice text="Loading surveys from Koios…" />
+              <SkeletonRows narrow={narrow()} />
             </Show>
             <Show when={app.snapshot.error as unknown}>
               {(err) => (
@@ -979,6 +991,169 @@ const Notice: Component<{ text: string; tone?: "danger" }> = (props) => (
   >
     {props.text}
   </div>
+);
+
+const INTRO_DISMISSED_KEY = "tessera.introDismissed";
+
+function introIsDismissed(): boolean {
+  try {
+    return localStorage.getItem(INTRO_DISMISSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+function rememberIntroDismissed(): void {
+  try {
+    localStorage.setItem(INTRO_DISMISSED_KEY, "1");
+  } catch {
+    // storage unavailable — the intro just shows again next load
+  }
+}
+
+/** Dismissible first-visit explainer, shown until a wallet connects. */
+const IntroHero: Component<{ onDismiss: () => void }> = (props) => (
+  <div
+    style={{
+      position: "relative",
+      background: "var(--surface2)",
+      border: "1px solid var(--line)",
+      "border-radius": "var(--r-card)",
+      padding: "20px 22px",
+      "margin-bottom": "22px",
+    }}
+  >
+    <button
+      onClick={() => props.onDismiss()}
+      title="Dismiss"
+      style={{
+        position: "absolute",
+        top: "12px",
+        right: "12px",
+        background: "none",
+        border: "none",
+        color: "var(--faint)",
+        "font-size": "18px",
+        "line-height": "1",
+        cursor: "pointer",
+        padding: "2px",
+      }}
+    >
+      ×
+    </button>
+    <h2
+      style={{
+        "font-family": "var(--serif)",
+        "font-size": "20px",
+        "font-weight": "700",
+        "letter-spacing": "-.01em",
+        margin: "0 0 6px",
+        color: "var(--ink)",
+      }}
+    >
+      On-chain surveys &amp; polls on Cardano
+    </h2>
+    <p
+      style={{
+        "font-size": "13.5px",
+        "line-height": "1.6",
+        color: "var(--muted)",
+        margin: "0",
+        "max-width": "680px",
+      }}
+    >
+      Tessera records surveys directly in Cardano transaction metadata — no
+      backend, no accounts. Browse everything below for free; connect a wallet
+      to respond as your on-chain role (DRep, SPO, CC, or stakeholder) or to
+      publish your own. Responses can be public or sealed — timelock-encrypted
+      for a delayed reveal.
+    </p>
+  </div>
+);
+
+const SKELETON_SHIMMER = "#E9E1D0";
+function skeletonBar(width: string, height = "12px"): JSX.Element {
+  return (
+    <span
+      style={{
+        display: "block",
+        width,
+        height,
+        "border-radius": "5px",
+        background: SKELETON_SHIMMER,
+        animation: "pulse 1.4s ease-in-out infinite",
+      }}
+    />
+  );
+}
+
+/** Placeholder rows shown while the snapshot loads (mirrors the register grid). */
+const SkeletonRows: Component<{ narrow: boolean }> = (props) => (
+  <For each={[0, 1, 2, 3, 4, 5]}>
+    {(i) => (
+      <Show
+        when={!props.narrow}
+        fallback={
+          <div
+            style={{
+              padding: "14px 4px",
+              "border-bottom": "1px solid #EFE8DA",
+              display: "flex",
+              "flex-direction": "column",
+              gap: "9px",
+            }}
+          >
+            {skeletonBar("58%", "14px")}
+            {skeletonBar("38%")}
+          </div>
+        }
+      >
+        <div
+          style={{
+            display: "grid",
+            "grid-template-columns": COLS,
+            gap: "14px",
+            "align-items": "center",
+            padding: "15px 6px",
+            "border-bottom": "1px solid #EFE8DA",
+          }}
+        >
+          <span
+            style={{
+              width: "26px",
+              height: "26px",
+              "border-radius": "6px",
+              background: SKELETON_SHIMMER,
+              animation: "pulse 1.4s ease-in-out infinite",
+              margin: "0 auto",
+            }}
+          />
+          <span
+            style={{
+              width: "12px",
+              height: "12px",
+              "border-radius": "50%",
+              background: SKELETON_SHIMMER,
+              animation: "pulse 1.4s ease-in-out infinite",
+            }}
+          />
+          <span />
+          {skeletonBar(`${74 - (i % 3) * 14}%`, "13px")}
+          {skeletonBar("72%")}
+          {skeletonBar("60%")}
+          <span
+            style={{
+              "justify-self": "end",
+              width: "24px",
+              height: "12px",
+              "border-radius": "5px",
+              background: SKELETON_SHIMMER,
+              animation: "pulse 1.4s ease-in-out infinite",
+            }}
+          />
+        </div>
+      </Show>
+    )}
+  </For>
 );
 
 /** Shorten a bech32 governance action id for inline display. */

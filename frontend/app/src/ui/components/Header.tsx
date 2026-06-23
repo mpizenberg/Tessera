@@ -3,7 +3,7 @@ import { A, useLocation } from "@solidjs/router";
 
 import { useApp, type PendingKind, type PendingTx } from "~/state";
 import type { Network } from "~/config";
-import { roleLabel } from "~/ui/format";
+import { roleDescription, roleLabel } from "~/ui/format";
 import { TxLink } from "~/ui/components/TxLink";
 
 const NETWORKS: readonly Network[] = ["preview", "mainnet"];
@@ -418,6 +418,7 @@ const RoleMenu: Component<{
           <button
             style={menuRowStyle(r === props.activeRole)}
             onClick={() => props.onPick(r)}
+            title={roleDescription(r)}
           >
             <span
               style={{

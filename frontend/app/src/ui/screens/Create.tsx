@@ -34,6 +34,10 @@ import {
 } from "~/domain/create";
 import { IPFS_PROVIDERS } from "~/enrichment/providers";
 import { hexToBytes } from "~/util/hex";
+import {
+  SubmitProgressModal,
+  type SubmitStep,
+} from "~/ui/components/SubmitProgress";
 import { VisGlyph } from "~/ui/components/glyphs";
 import { OnchainPreview } from "~/ui/components/OnchainPreview";
 import { ErrorBox, ProblemList } from "~/ui/components/Feedback";
@@ -162,9 +166,23 @@ export const Create: Component = () => {
 
   const [submitting, setSubmitting] = createSignal(false);
   const [busyText, setBusyText] = createSignal("Publishing…");
+  const [stepKey, setStepKey] = createSignal<string | null>(null);
   const [submitError, setSubmitError] = createSignal<string | null>(null);
   const [txHash, setTxHash] = createSignal<string | null>(null);
   const [showProblems, setShowProblems] = createSignal(false);
+
+  // External-content publishing pins the presentation doc first, so the submit
+  // becomes two visible steps (drives the progress overlay); embedded is one.
+  const submitSteps = createMemo<SubmitStep[]>(() => {
+    const steps: SubmitStep[] = [];
+    if (meta.contentMode === "external")
+      steps.push({ key: "pin", label: "Pinning the presentation to IPFS" });
+    steps.push({
+      key: "submit",
+      label: "Signing & submitting the transaction",
+    });
+    return steps;
+  });
 
   // External-content authoring pins the presentation document, which needs at
   // least one IPFS provider configured in Settings.
@@ -193,6 +211,7 @@ export const Create: Component = () => {
     }
     setSubmitting(true);
     setSubmitError(null);
+    setStepKey(submitSteps()[0]?.key ?? "submit");
     try {
       let definition = b.definition;
       if (meta.contentMode === "external") {
@@ -211,6 +230,7 @@ export const Create: Component = () => {
           hash: pinned.hash,
         }).definition;
       }
+      setStepKey("submit");
       setBusyText("Submitting…");
       const payload = encodePayload({
         type: "definitions",
@@ -239,6 +259,7 @@ export const Create: Component = () => {
     } finally {
       setSubmitting(false);
       setBusyText("Publishing…");
+      setStepKey(null);
     }
   };
 
@@ -269,6 +290,14 @@ export const Create: Component = () => {
             padding: "22px 24px 90px",
           }}
         >
+          <Show when={submitting() && submitSteps().length > 1}>
+            <SubmitProgressModal
+              title="Publishing your survey"
+              steps={submitSteps()}
+              currentKey={stepKey()}
+            />
+          </Show>
+
           <BackLink />
           <h1 style={titleStyle()}>Create a survey</h1>
           <p style={subtitleStyle()}>

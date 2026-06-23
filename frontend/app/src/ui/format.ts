@@ -38,8 +38,34 @@ const ROLE_COLORS: Record<number, readonly [string, string]> = {
   [Role.Owner]: ["#9A6B1E", "#F6EDD9"],
 };
 
+/** One-line explanation of what each role is and how it's claimed. */
+const ROLE_DESCRIPTION: Record<number, string> = {
+  [Role.DRep]:
+    "A registered delegate representative — claimed in-browser via your wallet's CIP-95 DRep key.",
+  [Role.SPO]:
+    "A stake pool operator — proven with cold/hot pool keys a browser wallet can't hold.",
+  [Role.CC]:
+    "A Constitutional Committee member — proven with committee keys a browser wallet can't hold.",
+  [Role.Stakeholder]:
+    "Any ada holder with a stake key — claimed in-browser by your connected wallet.",
+  [Role.Owner]:
+    "The survey's creator — claimable only by the wallet that published it.",
+};
+
 export function roleLabel(role: number): string {
   return ROLE_LABEL[role] ?? `Role ${role}`;
+}
+
+export function roleDescription(role: number): string {
+  return ROLE_DESCRIPTION[role] ?? "";
+}
+
+/**
+ * Whether a browser wallet can ever prove this role. SPO and CC need cold/hot
+ * keys that live outside browser wallets, so they're never claimable here.
+ */
+export function roleBrowserClaimable(role: number): boolean {
+  return role !== Role.SPO && role !== Role.CC;
 }
 
 export function roleAbbr(role: number): string {
