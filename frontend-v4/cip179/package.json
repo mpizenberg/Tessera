@@ -18,6 +18,11 @@
     "src"
   ],
   "sideEffects": false,
+  "packageManager": "pnpm@10.30.2",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=10"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "type-check": "tsc -p tsconfig.json --noEmit",
