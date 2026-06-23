@@ -17,8 +17,10 @@ import {
   type AnswerItem,
   type ContentAnchor,
   type Credential,
+  type NumericConstraints,
   type OptionsOrCount,
   type Question,
+  type RatingScale,
   type Role,
   type SurveyRef,
   type SurveyResponse,
@@ -102,16 +104,41 @@ export function decided(q: Question, draft: Draft): boolean {
         v.ranked.length <= q.maxRanked
       );
     case "numericRange":
-      return v.type === "numeric";
+      return v.type === "numeric" && numericValid(v.value, q.constraints);
     case "pointsAllocation":
       return (
         v.type === "pointsAllocation" &&
+        v.points.every((p) => p >= 0) &&
         v.points.reduce((s, p) => s + p, 0) === q.budget
       );
     case "rating":
-      return v.type === "rating" && v.ratings.every((r) => r !== null);
+      return (
+        v.type === "rating" &&
+        v.ratings.every((r) => r !== null && ratingInScale(r, q.scale))
+      );
     case "custom":
       return v.type === "custom" && v.text.trim() !== "";
+  }
+}
+
+/** In-range (and on-step, if stepped) — mirrors the codec's numeric checks. */
+function numericValid(value: bigint, c: NumericConstraints): boolean {
+  if (value < c.min || value > c.max) return false;
+  if (c.step !== undefined && c.step > 0n && (value - c.min) % c.step !== 0n) {
+    return false;
+  }
+  return true;
+}
+
+/** A rating is valid iff it falls within (and on-step of) its scale. */
+function ratingInScale(rating: bigint, scale: RatingScale): boolean {
+  switch (scale.type) {
+    case "numeric":
+      return numericValid(rating, scale.constraints);
+    case "labels":
+      return rating >= 0n && rating < BigInt(scale.labels.length);
+    case "count":
+      return rating >= 0n && rating < BigInt(scale.count);
   }
 }
 

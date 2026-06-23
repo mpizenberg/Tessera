@@ -28,23 +28,12 @@ import {
   Value,
   mainnet,
   preview,
-  type TransactionMetadatum,
 } from "@evolution-sdk/evolution";
 import { METADATA_LABEL, type Credential, type Metadatum } from "cip-179";
 
 import type { AppConfig } from "~/config";
+import { toTxMetadatum } from "./cbor";
 import type { Cip30Api } from "./types";
-
-/**
- * cip-179's {@link Metadatum} and evolution-sdk's `TransactionMetadatum` are the
- * same structural tree (bigint | string | Uint8Array | Map | array); they differ
- * only in `readonly` on the map/array members. The codec builds real `Map`
- * instances, so this is a type-level adapter, not a runtime conversion.
- */
-const toTxMetadatum = (
-  m: Metadatum,
-): TransactionMetadatum.TransactionMetadatum =>
-  m as unknown as TransactionMetadatum.TransactionMetadatum;
 
 /**
  * Convert one CIP-30 UTxO (CBOR hex of `[transaction_input, transaction_output]`)

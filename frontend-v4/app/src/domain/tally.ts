@@ -73,6 +73,8 @@ export type QuestionTally =
       readonly levelLabels: string[] | null;
       readonly numeric: boolean;
       readonly baseMin: number;
+      /** Value increment between adjacent levels (1 for label/count scales). */
+      readonly step: number;
       readonly answered: number;
       readonly abstained: number;
     }
@@ -128,16 +130,25 @@ function ratingScaleInfo(scale: RatingScale): {
   levelLabels: string[] | null;
   numeric: boolean;
   baseMin: number;
+  /** Value increment between adjacent levels (1 for label/count scales). */
+  step: number;
 } {
   switch (scale.type) {
     case "numeric": {
       const min = Number(scale.constraints.min);
       const max = Number(scale.constraints.max);
+      // A stepped scale (e.g. 0..10 by 2) has fewer distinct levels than its
+      // span; bucket on step units so the histogram has no empty gaps.
+      const step =
+        scale.constraints.step !== undefined && scale.constraints.step > 0n
+          ? Number(scale.constraints.step)
+          : 1;
       return {
-        levels: Math.max(1, max - min + 1),
+        levels: Math.max(1, Math.floor((max - min) / step) + 1),
         levelLabels: null,
         numeric: true,
         baseMin: min,
+        step,
       };
     }
     case "labels":
@@ -146,6 +157,7 @@ function ratingScaleInfo(scale: RatingScale): {
         levelLabels: [...scale.labels],
         numeric: false,
         baseMin: 0,
+        step: 1,
       };
     case "count":
       return {
@@ -153,6 +165,7 @@ function ratingScaleInfo(scale: RatingScale): {
         levelLabels: null,
         numeric: false,
         baseMin: 0,
+        step: 1,
       };
   }
 }
@@ -274,7 +287,7 @@ export function tallyQuestion(
             const val = Number(r.rating);
             sums[oi] += val;
             ns[oi]++;
-            const li = val - info.baseMin;
+            const li = Math.round((val - info.baseMin) / info.step);
             if (li >= 0 && li < info.levels) counts[oi]![li]++;
           }
         }
@@ -290,6 +303,7 @@ export function tallyQuestion(
         levelLabels: info.levelLabels,
         numeric: info.numeric,
         baseMin: info.baseMin,
+        step: info.step,
         answered,
         abstained,
       };

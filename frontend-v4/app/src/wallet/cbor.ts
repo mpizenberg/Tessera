@@ -16,10 +16,22 @@
 import { CBOR, TransactionMetadatum } from "@evolution-sdk/evolution";
 import type { Metadatum } from "cip-179";
 
+/**
+ * The single type-level adapter between cip-179's `Metadatum` and evolution-sdk's
+ * `TransactionMetadatum`. They are the same structural tree (bigint | string |
+ * Uint8Array | Map | array) and differ only in `readonly`, so this is a cast,
+ * not a runtime conversion — kept in one audited spot for the whole seam.
+ */
+export function toTxMetadatum(
+  m: Metadatum,
+): TransactionMetadatum.TransactionMetadatum {
+  return m as unknown as TransactionMetadatum.TransactionMetadatum;
+}
+
 /** Encode a metadatum tree to canonical CBOR bytes. */
 export function metadatumToCbor(m: Metadatum): Uint8Array {
   return TransactionMetadatum.toCBORBytes(
-    m as unknown as TransactionMetadatum.TransactionMetadatum,
+    toTxMetadatum(m),
     CBOR.CANONICAL_OPTIONS,
   );
 }

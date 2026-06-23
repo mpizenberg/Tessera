@@ -33,7 +33,9 @@ import {
   type QuestionType,
 } from "~/domain/create";
 import { IPFS_PROVIDERS } from "~/enrichment/providers";
+import { VisGlyph } from "~/ui/components/glyphs";
 import { OnchainPreview } from "~/ui/components/OnchainPreview";
+import { ErrorBox, ProblemList } from "~/ui/components/Feedback";
 import {
   QUICKNET_CHAIN_HASH_HEX,
   autoRevealRound,
@@ -350,7 +352,10 @@ export const Create: Component = () => {
               </div>
 
               <Show when={showProblems() && problems().length > 0}>
-                <ProblemList problems={problems()} />
+                <ProblemList
+                  title="Fix before publishing"
+                  problems={problems()}
+                />
               </Show>
               <Show when={submitError()}>
                 <ErrorBox message={submitError()!} />
@@ -400,28 +405,30 @@ const DetailsSection: Component<{
   <div>
     <SectionHead n="01" label="Basics" />
     <div style={cardStyle()}>
-      <label style={fieldLabelStyle()}>Title</label>
-      <input
-        type="text"
-        value={props.meta.title}
-        placeholder="e.g. Treasury priorities for next epoch"
-        onInput={(e) => props.setMeta("title", e.currentTarget.value)}
-        style={textInputStyle()}
-      />
-      <label style={{ ...fieldLabelStyle(), "margin-top": "14px" }}>
-        Description
+      <label style={{ display: "block" }}>
+        <span style={fieldLabelStyle()}>Title</span>
+        <input
+          type="text"
+          value={props.meta.title}
+          placeholder="e.g. Treasury priorities for next epoch"
+          onInput={(e) => props.setMeta("title", e.currentTarget.value)}
+          style={textInputStyle()}
+        />
       </label>
-      <textarea
-        value={props.meta.description}
-        placeholder="Optional context for respondents."
-        onInput={(e) => props.setMeta("description", e.currentTarget.value)}
-        rows={3}
-        style={{
-          ...textInputStyle(),
-          resize: "vertical",
-          "font-family": "inherit",
-        }}
-      />
+      <label style={{ display: "block", "margin-top": "14px" }}>
+        <span style={fieldLabelStyle()}>Description</span>
+        <textarea
+          value={props.meta.description}
+          placeholder="Optional context for respondents."
+          onInput={(e) => props.setMeta("description", e.currentTarget.value)}
+          rows={3}
+          style={{
+            ...textInputStyle(),
+            resize: "vertical",
+            "font-family": "inherit",
+          }}
+        />
+      </label>
     </div>
   </div>
 );
@@ -482,17 +489,19 @@ const TimingSection: Component<{
     <div style={{ "margin-top": "22px" }}>
       <SectionHead n="04" label="Timing" />
       <div style={cardStyle()}>
-        <label style={fieldLabelStyle()}>End epoch (inclusive)</label>
-        <input
-          type="number"
-          value={props.value}
-          onInput={(e) => props.onInput(e.currentTarget.value)}
-          style={{
-            ...textInputStyle(),
-            "font-family": "var(--mono)",
-            "max-width": "200px",
-          }}
-        />
+        <label style={{ display: "block" }}>
+          <span style={fieldLabelStyle()}>End epoch (inclusive)</span>
+          <input
+            type="number"
+            value={props.value}
+            onInput={(e) => props.onInput(e.currentTarget.value)}
+            style={{
+              ...textInputStyle(),
+              "font-family": "var(--mono)",
+              "max-width": "200px",
+            }}
+          />
+        </label>
         <p style={hintStyle()}>
           Responses are accepted through this epoch.{" "}
           <Show
@@ -616,7 +625,16 @@ const VisibilitySection: Component<{
           onClick={() => props.onMode("sealed")}
           style={modeCardStyle(props.mode === "sealed")}
         >
-          <div style={modeTitleStyle()}>◆ Sealed</div>
+          <div
+            style={{
+              ...modeTitleStyle(),
+              display: "inline-flex",
+              "align-items": "center",
+              gap: "7px",
+            }}
+          >
+            <VisGlyph status="sealed" /> Sealed
+          </div>
           <div style={modeDescStyle()}>
             Timelock-encrypted; opens at a drand round.
           </div>
@@ -627,15 +645,15 @@ const VisibilitySection: Component<{
         <div style={{ "margin-top": "16px" }}>
           {/* Pro: pin chain + choose how the reveal round is set. Plain: Auto. */}
           <Show when={props.pro}>
-            <label style={fieldLabelStyle()}>Drand chain</label>
+            <div style={fieldLabelStyle()}>Drand chain</div>
             <div style={chainHashStyle()}>
               {QUICKNET_CHAIN_HASH_HEX.slice(0, 6)}…
               {QUICKNET_CHAIN_HASH_HEX.slice(-3)} · quicknet
             </div>
 
-            <label style={{ ...fieldLabelStyle(), "margin-top": "14px" }}>
+            <div style={{ ...fieldLabelStyle(), "margin-top": "14px" }}>
               Reveal round
-            </label>
+            </div>
             <div
               style={{ display: "flex", gap: "8px", "margin-bottom": "10px" }}
             >
@@ -688,27 +706,27 @@ const VisibilitySection: Component<{
           </Show>
 
           <Show when={props.pro}>
-            <label style={{ ...fieldLabelStyle(), "margin-top": "14px" }}>
-              Padding size (bytes)
+            <label style={{ display: "block", "margin-top": "14px" }}>
+              <span style={fieldLabelStyle()}>Padding size (bytes)</span>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={props.paddingOverride === 0 ? "" : props.paddingOverride}
+                placeholder={`auto · ${props.resolvedPadding}`}
+                onInput={(e) => {
+                  const v = e.currentTarget.value.trim();
+                  const n = intOf(v);
+                  // Positive integers only; blank or anything < 1 means auto.
+                  props.onPaddingOverride(v === "" || n < 1 ? 0 : n);
+                }}
+                style={{
+                  ...textInputStyle(),
+                  "font-family": "var(--mono)",
+                  "max-width": "160px",
+                }}
+              />
             </label>
-            <input
-              type="number"
-              min={1}
-              step={1}
-              value={props.paddingOverride === 0 ? "" : props.paddingOverride}
-              placeholder={`auto · ${props.resolvedPadding}`}
-              onInput={(e) => {
-                const v = e.currentTarget.value.trim();
-                const n = intOf(v);
-                // Positive integers only; blank or anything < 1 means auto.
-                props.onPaddingOverride(v === "" || n < 1 ? 0 : n);
-              }}
-              style={{
-                ...textInputStyle(),
-                "font-family": "var(--mono)",
-                "max-width": "160px",
-              }}
-            />
             <p style={hintStyle()}>
               Each response is zero-padded to this length before encryption, so
               ciphertext size doesn't leak how much was answered. Leave blank to
@@ -813,7 +831,11 @@ const QuestionEditor: Component<{
             {props.draft.required ? "Required" : "Optional"}
           </button>
           <Show when={props.canRemove}>
-            <button onClick={() => props.onRemove()} style={removeBtnStyle()}>
+            <button
+              onClick={() => props.onRemove()}
+              style={removeBtnStyle()}
+              aria-label="Remove question"
+            >
               ×
             </button>
           </Show>
@@ -899,8 +921,8 @@ const TypeFields: Component<{
       </Show>
 
       <Show when={props.draft.type === "pointsAllocation"}>
-        <div style={inlineFieldStyle()}>
-          <label style={fieldLabelStyle()}>Budget</label>
+        <label style={inlineFieldStyle()}>
+          <span style={fieldLabelStyle()}>Budget</span>
           <input
             type="number"
             value={props.draft.budget}
@@ -913,7 +935,7 @@ const TypeFields: Component<{
               "max-width": "140px",
             }}
           />
-        </div>
+        </label>
       </Show>
 
       <Show when={props.draft.type === "rating"}>
@@ -974,8 +996,8 @@ const TypeFields: Component<{
             "margin-top": "4px",
           }}
         >
-          <div>
-            <label style={fieldLabelStyle()}>Method schema URI</label>
+          <label style={{ display: "block" }}>
+            <span style={fieldLabelStyle()}>Method schema URI</span>
             <input
               type="text"
               value={props.draft.customUri}
@@ -989,11 +1011,11 @@ const TypeFields: Component<{
                 "font-size": "12.5px",
               }}
             />
-          </div>
-          <div>
-            <label style={fieldLabelStyle()}>
+          </label>
+          <label style={{ display: "block" }}>
+            <span style={fieldLabelStyle()}>
               Schema hash (blake2b-256, hex)
-            </label>
+            </span>
             <input
               type="text"
               value={props.draft.customHash}
@@ -1007,7 +1029,7 @@ const TypeFields: Component<{
                 "font-size": "12.5px",
               }}
             />
-          </div>
+          </label>
         </div>
       </Show>
     </>
@@ -1049,7 +1071,11 @@ const OptionsEditor: Component<{
             <span style={endBadgeStyle("best")}>best</span>
           </Show>
           <Show when={props.labels.length > 2}>
-            <button onClick={() => props.onRemove(j)} style={removeBtnStyle()}>
+            <button
+              onClick={() => props.onRemove(j)}
+              style={removeBtnStyle()}
+              aria-label={`Remove option ${j + 1}`}
+            >
               ×
             </button>
           </Show>
@@ -1078,8 +1104,8 @@ const MinMaxRow: Component<{
       "flex-wrap": "wrap",
     }}
   >
-    <div style={inlineFieldStyle()}>
-      <label style={fieldLabelStyle()}>min {props.label}</label>
+    <label style={inlineFieldStyle()}>
+      <span style={fieldLabelStyle()}>min {props.label}</span>
       <input
         type="number"
         min={props.minAllowed}
@@ -1087,16 +1113,16 @@ const MinMaxRow: Component<{
         onInput={(e) => props.onMin(intOf(e.currentTarget.value))}
         style={miniNumberStyle()}
       />
-    </div>
-    <div style={inlineFieldStyle()}>
-      <label style={fieldLabelStyle()}>max {props.label}</label>
+    </label>
+    <label style={inlineFieldStyle()}>
+      <span style={fieldLabelStyle()}>max {props.label}</span>
       <input
         type="number"
         value={props.max}
         onInput={(e) => props.onMax(intOf(e.currentTarget.value))}
         style={miniNumberStyle()}
       />
-    </div>
+    </label>
   </div>
 );
 
@@ -1116,26 +1142,26 @@ const NumericRow: Component<{
       "flex-wrap": "wrap",
     }}
   >
-    <div style={inlineFieldStyle()}>
-      <label style={fieldLabelStyle()}>min</label>
+    <label style={inlineFieldStyle()}>
+      <span style={fieldLabelStyle()}>min</span>
       <input
         type="text"
         value={props.min}
         onInput={(e) => props.onMin(e.currentTarget.value)}
         style={miniNumberStyle()}
       />
-    </div>
-    <div style={inlineFieldStyle()}>
-      <label style={fieldLabelStyle()}>max</label>
+    </label>
+    <label style={inlineFieldStyle()}>
+      <span style={fieldLabelStyle()}>max</span>
       <input
         type="text"
         value={props.max}
         onInput={(e) => props.onMax(e.currentTarget.value)}
         style={miniNumberStyle()}
       />
-    </div>
-    <div style={inlineFieldStyle()}>
-      <label style={fieldLabelStyle()}>step (optional)</label>
+    </label>
+    <label style={inlineFieldStyle()}>
+      <span style={fieldLabelStyle()}>step (optional)</span>
       <input
         type="text"
         value={props.step}
@@ -1143,7 +1169,7 @@ const NumericRow: Component<{
         onInput={(e) => props.onStep(e.currentTarget.value)}
         style={miniNumberStyle()}
       />
-    </div>
+    </label>
   </div>
 );
 
@@ -1394,72 +1420,6 @@ const ConnectPrompt: Component = () => (
       and is the only key that can cancel it. Use the Connect wallet button in
       the header.
     </p>
-  </div>
-);
-
-const ProblemList: Component<{ problems: string[] }> = (props) => (
-  <div
-    style={{
-      background: "var(--danger-bg)",
-      border: "1px solid var(--danger-line)",
-      "border-radius": "var(--r-md)",
-      padding: "13px 15px",
-      "margin-top": "18px",
-    }}
-  >
-    <div
-      style={{
-        "font-size": "13px",
-        "font-weight": "700",
-        color: "var(--danger)",
-      }}
-    >
-      Fix before publishing
-    </div>
-    <ul
-      style={{
-        margin: "8px 0 0",
-        padding: "0 0 0 18px",
-        color: "#8A3A2E",
-        "font-size": "12.5px",
-        "line-height": "1.6",
-      }}
-    >
-      <For each={props.problems}>{(p) => <li>{p}</li>}</For>
-    </ul>
-  </div>
-);
-
-const ErrorBox: Component<{ message: string }> = (props) => (
-  <div
-    style={{
-      background: "var(--danger-bg)",
-      border: "1px solid var(--danger-line)",
-      "border-radius": "var(--r-md)",
-      padding: "13px 15px",
-      "margin-top": "14px",
-    }}
-  >
-    <div
-      style={{
-        "font-size": "13px",
-        "font-weight": "700",
-        color: "var(--danger)",
-      }}
-    >
-      Submission failed
-    </div>
-    <div
-      style={{
-        "font-size": "12.5px",
-        color: "#8A3A2E",
-        "line-height": "1.5",
-        "margin-top": "5px",
-        "word-break": "break-word",
-      }}
-    >
-      {props.message}
-    </div>
   </div>
 );
 

@@ -28,6 +28,9 @@ import type {
 /** Max tx hashes per /tx_metadata POST (larger bodies return HTTP 413). */
 const TX_METADATA_BATCH = 50;
 
+/** Per-request timeout: a stalled connection should fail, not hang forever. */
+const REQUEST_TIMEOUT_MS = 15_000;
+
 interface TxByLabel {
   tx_hash: string;
   absolute_slot: number;
@@ -78,6 +81,7 @@ export class KoiosDataSource implements DataSource {
   private async get<T>(path: string): Promise<T> {
     const res = await fetch(this.config.koiosUrl + path, {
       headers: this.headers(),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`Koios GET ${path} → ${res.status}`);
     return res.json() as Promise<T>;
@@ -88,6 +92,7 @@ export class KoiosDataSource implements DataSource {
       method: "POST",
       headers: this.headers({ "Content-Type": "application/json" }),
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`Koios POST ${path} → ${res.status}`);
     return res.json() as Promise<T>;
@@ -140,14 +145,20 @@ export class KoiosDataSource implements DataSource {
     for (let i = 0; i < hashes.length; i += TX_METADATA_BATCH) {
       batches.push(hashes.slice(i, i + TX_METADATA_BATCH));
     }
-    const metaPages = await Promise.all(
+    // Resolve batches independently: a transient failure on one batch should
+    // drop only that page, not blank the entire snapshot (see file header).
+    const metaPages = await Promise.allSettled(
       batches.map((batch) =>
         this.post<TxMetadata[]>("/tx_metadata?select=tx_hash,metadata", {
           _tx_hashes: batch,
         }),
       ),
     );
-    const metas = metaPages.flat();
+    const metas: TxMetadata[] = [];
+    for (const page of metaPages) {
+      if (page.status === "fulfilled") metas.push(...page.value);
+      else console.warn(`skipping tx_metadata batch: ${String(page.reason)}`);
+    }
 
     for (const row of metas) {
       const raw = row.metadata?.[String(METADATA_LABEL)];
@@ -251,6 +262,13 @@ function parseGovLink(row: ProposalRow): GovLink | null {
   const txid = link["surveyTxId"];
   if (typeof txid !== "string") return null;
   const idx = link["surveyIndex"];
+  // A malformed/missing index must not silently resolve to survey 0.
+  if (
+    idx !== undefined &&
+    !(typeof idx === "number" && Number.isInteger(idx) && idx >= 0)
+  ) {
+    return null;
+  }
   const index = typeof idx === "number" ? idx : 0;
   const title =
     body && typeof body["title"] === "string" ? body["title"] : null;

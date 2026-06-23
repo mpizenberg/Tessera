@@ -1,5 +1,5 @@
 import { For, Show, createMemo, type Component, type JSX } from "solid-js";
-import { A, useNavigate } from "@solidjs/router";
+import { A } from "@solidjs/router";
 
 import { useApp, type ExploreFilter } from "~/state";
 import { refKey, type SurveyAggregate } from "~/domain/survey";
@@ -468,13 +468,15 @@ const Row: Component<{
   pro: boolean;
   flags: Flags;
 }> = (props) => {
-  const navigate = useNavigate();
   const def = () => props.a.record.definition;
   const v = () => viewStatus(props.a);
   const closed = () => isClosed(v());
   return (
-    <div
-      onClick={() => navigate(`/survey/${encodeURIComponent(props.a.key)}`)}
+    // A router link, not a div+navigate: a plain click stays client-side (no
+    // reload — wallet connection and snapshot survive), while cmd/ctrl/middle
+    // click still opens the survey in a new tab natively.
+    <A
+      href={`/survey/${encodeURIComponent(props.a.key)}`}
       style={{
         display: "grid",
         "grid-template-columns": COLS,
@@ -483,6 +485,8 @@ const Row: Component<{
         padding: "12px 6px",
         "border-bottom": "1px solid #ECE2D0",
         cursor: "pointer",
+        "text-decoration": "none",
+        color: "inherit",
       }}
     >
       <div
@@ -657,7 +661,7 @@ const Row: Component<{
           {v() === "cancelled" ? "—" : props.a.responseCount}
         </span>
       </div>
-    </div>
+    </A>
   );
 };
 

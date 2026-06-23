@@ -53,13 +53,23 @@ function keyToMetadatum(k: string): Metadatum {
   return /^-?\d+$/.test(k) ? BigInt(k) : stringToMetadatum(k);
 }
 
+/**
+ * Cardano caps tx metadata nesting far below this; the bound just stops a
+ * hand-crafted, pathologically deep payload from overflowing the stack here
+ * (this input is fully attacker-controlled — anyone can post label-17 metadata).
+ */
+const MAX_DEPTH = 64;
+
 /** Convert one Koios JSON metadata value into a `Metadatum` tree. */
-export function koiosJsonToMetadatum(json: KoiosJson): Metadatum {
+export function koiosJsonToMetadatum(json: KoiosJson, depth = 0): Metadatum {
+  if (depth > MAX_DEPTH) throw new Error("metadata nesting too deep");
   if (typeof json === "number") return BigInt(Math.trunc(json));
   if (typeof json === "string") return stringToMetadatum(json);
-  if (Array.isArray(json)) return json.map(koiosJsonToMetadatum);
+  if (Array.isArray(json))
+    return json.map((v) => koiosJsonToMetadatum(v, depth + 1));
   const entries = Object.entries(json).map(
-    ([k, v]) => [keyToMetadatum(k), koiosJsonToMetadatum(v)] as const,
+    ([k, v]) =>
+      [keyToMetadatum(k), koiosJsonToMetadatum(v, depth + 1)] as const,
   );
   return new Map<Metadatum, Metadatum>(entries);
 }

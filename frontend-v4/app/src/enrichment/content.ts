@@ -110,14 +110,20 @@ async function fetchFromGateways(
 
 /**
  * Fetch the bytes behind an anchor and verify their hash. `ipfs://` anchors race
- * the public gateways; everything else is fetched directly. Throws if no source
- * yields bytes matching the anchor hash.
+ * the public gateways; `https://` anchors are fetched directly. Throws if the
+ * scheme is unsupported or no source yields bytes matching the anchor hash.
  */
 export async function fetchAnchorBytes(
   anchor: ContentAnchor,
 ): Promise<Uint8Array> {
   if (anchor.uri.startsWith("ipfs://")) {
     return fetchFromGateways(anchor.uri.slice("ipfs://".length), anchor.hash);
+  }
+  // The URI is attacker-controllable on-chain data; only ever fetch over
+  // `https:` (the hash check guarantees integrity, not that the URL is safe).
+  // `data:`/`file:`/`javascript:` and plain `http:` are rejected outright.
+  if (!anchor.uri.startsWith("https://")) {
+    throw new Error(`unsupported anchor URI scheme: ${anchor.uri}`);
   }
   const controller = new AbortController();
   return fetchVerified(anchor.uri, anchor.hash, controller.signal);

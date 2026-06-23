@@ -146,6 +146,7 @@ const ProvidersSection: Component = () => {
                   value={token()}
                   onInput={(e) => app.setIpfsToken(p.id, e.currentTarget.value)}
                   placeholder={p.tokenPlaceholder}
+                  aria-label={`${p.label} API token`}
                   style={tokenInputStyle()}
                 />
                 <p
@@ -293,6 +294,7 @@ const KoiosSection: Component = () => {
             setSaved(false);
           }}
           placeholder="paste a Koios bearer token"
+          aria-label="Koios bearer token"
           style={{
             ...tokenInputStyle(),
             "margin-top": "0",

@@ -49,6 +49,7 @@ import {
 import { usePresentation } from "~/enrichment/usePresentation";
 import { IPFS_PROVIDERS } from "~/enrichment/providers";
 import { OnchainPreview } from "~/ui/components/OnchainPreview";
+import { ErrorBox, ProblemList } from "~/ui/components/Feedback";
 import { hexToBytes } from "~/util/hex";
 import { formatRevealDate } from "~/tlock/drand";
 import { roleColors, roleLabel, shortRef, viewStatus } from "~/ui/format";
@@ -447,7 +448,10 @@ export const Respond: Component = () => {
               </Show>
 
               <Show when={problems().length > 0}>
-                <ProblemList problems={problems()} />
+                <ProblemList
+                  title="Please fix before submitting"
+                  problems={problems()}
+                />
               </Show>
               <Show when={submitError()}>
                 <ErrorBox message={submitError()!} />
@@ -939,8 +943,8 @@ const RationaleSection: Component<{
           when={props.mode === "write"}
           fallback={
             <>
-              <div>
-                <label style={ratLabelStyle()}>Document URI</label>
+              <label style={{ display: "block" }}>
+                <span style={ratLabelStyle()}>Document URI</span>
                 <input
                   type="text"
                   value={props.uri}
@@ -952,9 +956,9 @@ const RationaleSection: Component<{
                     "font-size": "12.5px",
                   }}
                 />
-              </div>
-              <div>
-                <label style={ratLabelStyle()}>Hash (blake2b-256, hex)</label>
+              </label>
+              <label style={{ display: "block" }}>
+                <span style={ratLabelStyle()}>Hash (blake2b-256, hex)</span>
                 <input
                   type="text"
                   value={props.hash}
@@ -966,7 +970,7 @@ const RationaleSection: Component<{
                     "font-size": "12.5px",
                   }}
                 />
-              </div>
+              </label>
               <p
                 style={{
                   "font-size": "11.5px",
@@ -980,8 +984,8 @@ const RationaleSection: Component<{
             </>
           }
         >
-          <div>
-            <label style={ratLabelStyle()}>Rationale</label>
+          <label style={{ display: "block" }}>
+            <span style={ratLabelStyle()}>Rationale</span>
             <textarea
               value={props.text}
               rows={4}
@@ -995,7 +999,7 @@ const RationaleSection: Component<{
                 resize: "vertical",
               }}
             />
-          </div>
+          </label>
           <Show
             when={props.hasPinning}
             fallback={
@@ -1242,15 +1246,22 @@ const SingleChoiceBody: Component<{
   v: Extract<DraftValue, { type: "singleChoice" }>;
   onChange: (v: DraftValue) => void;
 }> = (props) => (
-  <div style={{ display: "flex", "flex-direction": "column", gap: "8px" }}>
+  <div
+    role="radiogroup"
+    style={{ display: "flex", "flex-direction": "column", gap: "8px" }}
+  >
     <For each={range(optionCount(props.q.options))}>
       {(i) => {
         const on = () => props.v.optionIndex === i;
+        const pick = () =>
+          props.onChange({ type: "singleChoice", optionIndex: i });
         return (
           <div
-            onClick={() =>
-              props.onChange({ type: "singleChoice", optionIndex: i })
-            }
+            role="radio"
+            tabindex={0}
+            aria-checked={on()}
+            onClick={pick}
+            onKeyDown={activateOnKey(pick)}
             style={optionRowStyle(on())}
           >
             <span style={radioStyle(on())}>
@@ -1300,7 +1311,14 @@ const MultiSelectBody: Component<{
           {(i) => {
             const on = () => props.v.selected.includes(i);
             return (
-              <div onClick={() => toggle(i)} style={optionRowStyle(on())}>
+              <div
+                role="checkbox"
+                tabindex={0}
+                aria-checked={on()}
+                onClick={() => toggle(i)}
+                onKeyDown={activateOnKey(() => toggle(i))}
+                style={optionRowStyle(on())}
+              >
                 <span style={checkboxStyle(on())}>
                   <Show when={on()}>✓</Show>
                 </span>
@@ -1418,15 +1436,24 @@ const RankingBody: Component<{
                 >
                   {labelFor(props.q.options, optIdx)}
                 </span>
-                <button style={rankBtnStyle()} onClick={() => move(pos(), -1)}>
+                <button
+                  style={rankBtnStyle()}
+                  onClick={() => move(pos(), -1)}
+                  aria-label="Move up"
+                >
                   ↑
                 </button>
-                <button style={rankBtnStyle()} onClick={() => move(pos(), 1)}>
+                <button
+                  style={rankBtnStyle()}
+                  onClick={() => move(pos(), 1)}
+                  aria-label="Move down"
+                >
                   ↓
                 </button>
                 <button
                   style={rankBtnStyle("danger")}
                   onClick={() => remove(optIdx)}
+                  aria-label="Remove from ranking"
                 >
                   ×
                 </button>
@@ -1989,72 +2016,6 @@ const SubmittedPanel: Component<{ hash: string; surveyKey: string }> = (
   );
 };
 
-const ProblemList: Component<{ problems: string[] }> = (props) => (
-  <div
-    style={{
-      background: "var(--danger-bg)",
-      border: "1px solid var(--danger-line)",
-      "border-radius": "var(--r-md)",
-      padding: "13px 15px",
-      "margin-top": "14px",
-    }}
-  >
-    <div
-      style={{
-        "font-size": "13px",
-        "font-weight": "700",
-        color: "var(--danger)",
-      }}
-    >
-      Please fix before submitting
-    </div>
-    <ul
-      style={{
-        margin: "8px 0 0",
-        padding: "0 0 0 18px",
-        color: "#8A3A2E",
-        "font-size": "12.5px",
-        "line-height": "1.6",
-      }}
-    >
-      <For each={props.problems}>{(p) => <li>{p}</li>}</For>
-    </ul>
-  </div>
-);
-
-const ErrorBox: Component<{ message: string }> = (props) => (
-  <div
-    style={{
-      background: "var(--danger-bg)",
-      border: "1px solid var(--danger-line)",
-      "border-radius": "var(--r-md)",
-      padding: "13px 15px",
-      "margin-top": "14px",
-    }}
-  >
-    <div
-      style={{
-        "font-size": "13px",
-        "font-weight": "700",
-        color: "var(--danger)",
-      }}
-    >
-      Submission failed
-    </div>
-    <div
-      style={{
-        "font-size": "12.5px",
-        color: "#8A3A2E",
-        "line-height": "1.5",
-        "margin-top": "5px",
-        "word-break": "break-word",
-      }}
-    >
-      {props.message}
-    </div>
-  </div>
-);
-
 const Notice: Component<{
   tone: "warn" | "muted";
   title: string;
@@ -2112,6 +2073,19 @@ const Empty: Component<{ loading: boolean }> = (props) => (
 
 function range(n: number): number[] {
   return Array.from({ length: Math.max(0, n) }, (_, i) => i);
+}
+
+/**
+ * Keyboard handler for div-based radio/checkbox rows: Enter or Space activates
+ * the row (Space's default page-scroll is suppressed), matching native controls.
+ */
+function activateOnKey(fn: () => void) {
+  return (e: KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      fn();
+    }
+  };
 }
 
 function labelFor(opts: OptionsOrCount, i: number): string {

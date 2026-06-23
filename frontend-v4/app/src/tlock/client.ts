@@ -38,13 +38,32 @@ export async function encryptToRound(
 }
 
 /**
- * Fetch (and verify) the drand beacon for a round. Throws if the round has not
- * published yet. The returned JSON is reused to decrypt every response, so this
- * networked call runs once per reveal.
+ * Fetch the drand beacon for a round. Throws if the round has not published yet.
+ * The returned JSON is reused to decrypt every response, so this networked call
+ * runs once per reveal.
+ *
+ * We assert the beacon's `round` matches what we asked for, so a wrong-round
+ * response (a caching proxy, an off-by-one, or a hostile endpoint) is rejected
+ * rather than silently producing garbage plaintext. Confidentiality does not
+ * rest on this: timelock decryption uses the beacon's BLS signature as the
+ * round's IBE key, so a *forged* signature can only yield undecodable garbage
+ * (counted as a decrypt failure), never a chosen plaintext — forging a valid
+ * one would require drand's private key.
  */
 export async function fetchBeacon(round: number): Promise<string> {
   const tlock = await load();
   const { beaconJson } = await tlock.fetchRound({ round });
+  let parsed: { round?: unknown };
+  try {
+    parsed = JSON.parse(beaconJson);
+  } catch {
+    throw new Error("drand beacon is not valid JSON");
+  }
+  if (parsed.round !== round) {
+    throw new Error(
+      `drand beacon round mismatch: asked ${round}, got ${String(parsed.round)}`,
+    );
+  }
   return beaconJson;
 }
 

@@ -217,9 +217,10 @@ export const Header: Component = () => {
                       color: "var(--ink)",
                     }}
                   >
-                    {app.activeRole() != null
-                      ? roleLabel(app.activeRole()!)
-                      : "No role"}
+                    {(() => {
+                      const r = app.activeRole();
+                      return r != null ? roleLabel(r) : "No role";
+                    })()}
                   </span>
                   <span
                     style={{

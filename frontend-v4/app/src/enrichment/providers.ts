@@ -18,7 +18,6 @@ export const IPFS_GATEWAYS: readonly string[] = [
   "https://ipfs.blockfrost.dev/ipfs/",
   "https://dweb.link/ipfs/",
   "https://c-ipfs-gw.nmkr.io/ipfs/",
-  "https://cloudflare-ipfs.com/ipfs/",
   "https://gateway.pinata.cloud/ipfs/",
 ];
 

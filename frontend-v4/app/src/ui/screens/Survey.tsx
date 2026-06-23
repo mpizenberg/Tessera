@@ -6,6 +6,7 @@ import {
   createMemo,
   createResource,
   createSignal,
+  onCleanup,
   type Component,
   type JSX,
 } from "solid-js";
@@ -129,7 +130,15 @@ export const Survey: Component = () => {
     }));
   });
 
-  const nowUnix = Math.floor(Date.now() / 1000);
+  // A coarse clock that ticks while the page is open, so a sealed survey's
+  // reveal affordance lights up the moment its drand round publishes — without
+  // a reload. 30s granularity is plenty against drand's 3s period.
+  const [now, setNow] = createSignal(Math.floor(Date.now() / 1000));
+  const clock = setInterval(
+    () => setNow(Math.floor(Date.now() / 1000)),
+    30_000,
+  );
+  onCleanup(() => clearInterval(clock));
 
   // Header pill: a sealed survey flips to "Revealed" once its drand round has
   // published (anyone can decrypt from then on).
@@ -138,7 +147,7 @@ export const Survey: Component = () => {
     if (!s) return "public";
     if (s.sealed && !s.cancelled) {
       const mode = s.record.definition.submissionMode;
-      return mode.type === "sealed" && roundIsAvailable(mode.round, nowUnix)
+      return mode.type === "sealed" && roundIsAvailable(mode.round, now())
         ? "revealed"
         : "sealed";
     }
@@ -236,7 +245,7 @@ export const Survey: Component = () => {
                   keyStr={key()}
                   records={records()}
                   excluded={audit().excluded}
-                  nowUnix={nowUnix}
+                  nowUnix={now()}
                 />
               }
             >
@@ -1243,7 +1252,7 @@ const RatingCard: Component<{
   prompt: string;
   t: Extract<QuestionTally, { kind: "rating" }>;
 }> = (props) => {
-  const top = () => props.t.baseMin + props.t.levels - 1;
+  const top = () => props.t.baseMin + (props.t.levels - 1) * props.t.step;
   const avgLabel = (avg: number): string => {
     if (props.t.numeric) return avg.toFixed(2);
     const labels = props.t.levelLabels;
@@ -1914,9 +1923,10 @@ const ResultsBody: Component<{
 
 /**
  * Sealed-survey results. While the drand round is in the future, responses are
- * collected but unreadable. Once it publishes, fetch the beacon and decrypt
- * every sealed response (each to a synthetic public one), then hand off to
- * {@link ResultsBody}. Reveal runs automatically on view.
+ * collected but unreadable. Once it publishes, a viewer can trigger the reveal —
+ * fetch the beacon, decrypt every sealed response (each to a synthetic public
+ * one), then hand off to {@link ResultsBody}. Reveal is explicit (a button), not
+ * automatic, so opening the page never silently kicks off network + crypto work.
  */
 const SealedResults: Component<{
   s: SurveyAggregate;
@@ -1939,24 +1949,31 @@ const SealedResults: Component<{
     return !!m && roundIsAvailable(m.round, props.nowUnix);
   };
 
-  const [revealed] = createResource(
-    () =>
-      revealable() && supported() && !props.s.cancelled
-        ? { records: props.records, round: mode()!.round }
-        : null,
-    async (src) => {
-      const { revealResponses } = await import("~/tlock/seal");
-      const { results, failed } = await revealResponses(
-        src.records.map((r) => r.response),
-        src.round,
-      );
-      const recs = src.records.flatMap((r, i) => {
-        const pub = results[i];
-        return pub ? [{ ...r, response: pub }] : [];
-      });
-      return { records: recs, failed };
-    },
-  );
+  // Reveal is opt-in: nothing decrypts until the viewer asks for it.
+  const [revealRequested, setRevealRequested] = createSignal(false);
+
+  // The resource source is just the round number (a stable primitive), not a
+  // fresh `{ records, round }` object — otherwise the ticking clock behind
+  // `revealable()` would hand createResource a new object every 30s and
+  // re-decrypt every response on each tick. Records are read in the fetcher.
+  const revealRound = (): number | null =>
+    revealRequested() && revealable() && supported() && !props.s.cancelled
+      ? mode()!.round
+      : null;
+
+  const [revealed] = createResource(revealRound, async (round) => {
+    const { revealResponses } = await import("~/tlock/seal");
+    const records = props.records;
+    const { results, failed } = await revealResponses(
+      records.map((r) => r.response),
+      round,
+    );
+    const recs = records.flatMap((r, i) => {
+      const pub = results[i];
+      return pub ? [{ ...r, response: pub }] : [];
+    });
+    return { records: recs, failed };
+  });
 
   const revealNote = (count: number, failed: number) =>
     failed > 0
@@ -2013,6 +2030,19 @@ const SealedResults: Component<{
           note={revealNote(revealed()!.records.length, revealed()!.failed)}
         />
       </Match>
+      {/* Reached only when revealable, supported, not cancelled, and the viewer
+          hasn't triggered the reveal yet — offer the button. */}
+      <Match when={true}>
+        <SealedStateNotice
+          tone="muted"
+          title="Answers can now be revealed"
+          body={`The drand round published on ${formatRevealDate(mode()!.round)}. Revealing decrypts all ${props.records.length} sealed response${props.records.length === 1 ? "" : "s"} in your browser and tallies them.`}
+          action={{
+            label: "Reveal all responses",
+            onClick: () => setRevealRequested(true),
+          }}
+        />
+      </Match>
     </Switch>
   );
 };
@@ -2021,6 +2051,8 @@ const SealedStateNotice: Component<{
   tone: "warn" | "muted";
   title: string;
   body: string;
+  /** Optional call-to-action rendered as a button under the body. */
+  action?: { label: string; onClick: () => void };
 }> = (props) => (
   <div
     style={{
@@ -2052,6 +2084,27 @@ const SealedStateNotice: Component<{
     >
       {props.body}
     </p>
+    <Show when={props.action}>
+      {(action) => (
+        <button
+          onClick={() => action().onClick()}
+          style={{
+            "margin-top": "16px",
+            "font-family": "inherit",
+            "font-size": "13.5px",
+            "font-weight": "700",
+            cursor: "pointer",
+            border: "none",
+            "border-radius": "var(--r-control)",
+            padding: "10px 18px",
+            background: "var(--accent)",
+            color: "#fff",
+          }}
+        >
+          {action().label}
+        </button>
+      )}
+    </Show>
   </div>
 );
 

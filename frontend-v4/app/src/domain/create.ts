@@ -152,8 +152,10 @@ export function initQuestionDraft(type: QuestionType): QuestionDraft {
 }
 
 /**
- * Switch a draft's type, preserving shared fields (prompt, required, labels) and
- * resetting only what the new type needs that the draft can't already provide.
+ * Switch a draft's type, keeping every field. Each type only reads the fields it
+ * needs at projection time (see {@link toQuestion}), so the now-irrelevant
+ * ones are simply ignored rather than cleared — and the user's input is kept if
+ * they switch back.
  */
 export function withType(
   draft: QuestionDraft,
@@ -428,8 +430,10 @@ export function buildPresentationDoc(
 
 function parseEndEpoch(text: string, out: string[]): number {
   const t = text.trim();
+  // Digits only — same discipline as `parseBig`, so "1e3", "+5", whitespace,
+  // and other `Number()`-permissive forms are rejected rather than coerced.
   const n = Number(t);
-  if (t === "" || !Number.isInteger(n) || n < 0) {
+  if (!/^\d+$/.test(t) || !Number.isSafeInteger(n)) {
     out.push("end epoch must be a non-negative whole number");
     return 0;
   }
