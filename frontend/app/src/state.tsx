@@ -21,7 +21,7 @@ import {
   type ParentComponent,
   type Resource,
 } from "solid-js";
-import { createStore } from "solid-js/store";
+import { createStore, produce } from "solid-js/store";
 
 import {
   loadConfig,
@@ -59,7 +59,13 @@ import {
   listInstalledWallets,
 } from "~/wallet/cip30";
 import type { ConnectedWallet, InstalledWallet } from "~/wallet/types";
-import type { Credential, Metadatum } from "cip-179";
+import { bytesToHex } from "~/util/hex";
+import {
+  applyPresentation,
+  parsePresentation,
+} from "~/enrichment/presentation";
+import { loadAllDocs, putDoc } from "~/enrichment/docStore";
+import type { Credential, Metadatum, SurveyDefinition } from "cip-179";
 
 export interface Snapshot {
   readonly records: Cip179Records;
@@ -181,6 +187,29 @@ interface AppState {
   readonly optimisticSurveys: Accessor<readonly SurveyAggregate[]>;
   /** Add a just-published survey to the optimistic set (built from its record). */
   addOptimisticSurvey(record: SurveyRecord): void;
+  /**
+   * Remember a presentation document we just authored, keyed by its content
+   * hash, so the survey it describes renders with full labels immediately —
+   * without re-fetching our own content from IPFS (which may not have
+   * propagated yet). The hash is content-addressed, so this stays correct even
+   * once the real indexed record loads.
+   */
+  cachePresentationDoc(hash: Uint8Array, doc: unknown): void;
+  /** A previously cached presentation doc for this content hash, if any. */
+  cachedPresentationDoc(hash: Uint8Array): unknown | undefined;
+  /**
+   * Resolves once the persistent (IndexedDB) document cache has been loaded
+   * into memory. Await before deciding to fetch an anchored doc, so a copy
+   * persisted in an earlier session is used instead of re-downloading it.
+   */
+  readonly cacheReady: Promise<void>;
+  /**
+   * Display definition using only the in-session presentation cache: enriched
+   * with off-chain labels when we already hold the doc (authored this session),
+   * otherwise the on-chain definition unchanged. Synchronous and network-free —
+   * for list views (Explore) that can't afford a fetch per row.
+   */
+  displayDefinition(def: SurveyDefinition): SurveyDefinition;
 }
 
 const Ctx = createContext<AppState>();
@@ -281,6 +310,40 @@ export const AppProvider: ParentComponent = (props) => {
       agg,
       ...prev.filter((p) => p.key !== agg.key),
     ]);
+  };
+
+  // Content-addressed document cache (survey presentation docs), in two tiers:
+  // a reactive in-memory map for synchronous reads (list views can't await),
+  // backed by IndexedDB so each doc is fetched from IPFS at most once across
+  // sessions. Keyed by content-hash hex; immutable, so no invalidation. Reads
+  // through the store stay reactive — rows upgrade in place as docs land.
+  const [docCache, setDocCache] = createStore<Record<string, unknown>>({});
+  const cacheReady: Promise<void> = loadAllDocs()
+    .then((entries) =>
+      setDocCache(
+        produce((c) => {
+          for (const [hex, doc] of entries) c[hex] = doc;
+        }),
+      ),
+    )
+    .catch(() => {});
+  const cachePresentationDoc = (hash: Uint8Array, doc: unknown): void => {
+    const hex = bytesToHex(hash);
+    if (docCache[hex] !== undefined) return; // already known (memory or IDB)
+    setDocCache(hex, doc);
+    void putDoc(hex, doc); // write-through; persists for future sessions
+  };
+  const cachedPresentationDoc = (hash: Uint8Array): unknown | undefined =>
+    docCache[bytesToHex(hash)];
+  const displayDefinition = (def: SurveyDefinition): SurveyDefinition => {
+    if (!def.contentAnchor) return def;
+    const doc = docCache[bytesToHex(def.contentAnchor.hash)];
+    if (doc === undefined) return def;
+    try {
+      return applyPresentation(def, parsePresentation(doc));
+    } catch {
+      return def; // a malformed cached doc never breaks the list
+    }
   };
 
   // Once the real indexed survey appears in a snapshot, drop its optimistic twin.
@@ -392,6 +455,10 @@ export const AppProvider: ParentComponent = (props) => {
     dismissTx,
     optimisticSurveys,
     addOptimisticSurvey,
+    cachePresentationDoc,
+    cachedPresentationDoc,
+    displayDefinition,
+    cacheReady,
   };
 
   return <Ctx.Provider value={value}>{props.children}</Ctx.Provider>;

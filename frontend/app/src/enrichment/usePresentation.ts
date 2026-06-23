@@ -15,6 +15,9 @@
 import { createResource, type Accessor } from "solid-js";
 import type { SurveyDefinition } from "cip-179";
 
+import { useApp } from "~/state";
+import { applyPresentation, parsePresentation } from "./presentation";
+
 export interface PresentationState {
   /** Display definition: enriched when available, else the on-chain one. */
   readonly def: Accessor<SurveyDefinition | undefined>;
@@ -29,14 +32,25 @@ export interface PresentationState {
 export function usePresentation(
   source: Accessor<SurveyDefinition | undefined>,
 ): PresentationState {
+  const app = useApp();
   const [enriched] = createResource(
     () => {
       const d = source();
       return d && d.contentAnchor ? d : null;
     },
     async (d) => {
-      const { enrichDefinition } = await import("./content");
-      return enrichDefinition(d);
+      const anchor = d.contentAnchor!;
+      // Prefer the persistent, content-addressed cache: a doc we authored or
+      // fetched in any session is reused with no network round-trip (and no
+      // spurious "unavailable" while IPFS propagates). Only a true miss fetches.
+      await app.cacheReady;
+      let doc = app.cachedPresentationDoc(anchor.hash);
+      if (doc === undefined) {
+        const { fetchAnchorJson } = await import("./content");
+        doc = await fetchAnchorJson(anchor); // fetch + hash-verify; throws → unavailable
+        app.cachePresentationDoc(anchor.hash, doc); // persist the verified doc
+      }
+      return applyPresentation(d, parsePresentation(doc));
     },
   );
 

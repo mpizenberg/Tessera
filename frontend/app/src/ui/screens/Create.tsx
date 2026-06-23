@@ -220,11 +220,11 @@ export const Create: Component = () => {
         // count forms). The on-chain payload carries only the anchor + counts.
         setBusyText("Pinning presentation…");
         const { pinJson } = await import("~/enrichment/pin");
-        const pinned = await pinJson(
-          buildPresentationDoc(meta, questions),
-          "survey.json",
-          app.ipfsTokens,
-        );
+        const doc = buildPresentationDoc(meta, questions);
+        const pinned = await pinJson(doc, "survey.json", app.ipfsTokens);
+        // Cache the doc we just authored so its survey renders with full labels
+        // immediately, without re-fetching it from IPFS.
+        app.cachePresentationDoc(pinned.hash, doc);
         definition = buildDefinition(o, meta, questions, {
           uri: pinned.uri,
           hash: pinned.hash,

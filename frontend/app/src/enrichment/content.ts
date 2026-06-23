@@ -14,15 +14,10 @@
  */
 
 import { blake2b } from "@noble/hashes/blake2.js";
-import type { ContentAnchor, SurveyDefinition } from "cip-179";
+import type { ContentAnchor } from "cip-179";
 
 import { bytesToHex } from "~/util/hex";
 import { GATEWAY_STAGGER_MS, IPFS_GATEWAYS } from "./providers";
-import {
-  applyPresentation,
-  parsePresentation,
-  type Presentation,
-} from "./presentation";
 
 /** blake2b-256 (32-byte) digest of raw bytes. */
 export function blake2b256(bytes: Uint8Array): Uint8Array {
@@ -129,32 +124,12 @@ export async function fetchAnchorBytes(
   return fetchVerified(anchor.uri, anchor.hash, controller.signal);
 }
 
-/** Fetch + verify + JSON-parse an anchor's content. */
+/**
+ * Fetch + hash-verify + JSON-parse an anchor's content. Throws if the anchor
+ * can't be fetched or its bytes don't match the committed hash. Verification
+ * happens here, so a returned value is safe to persist under the anchor hash.
+ */
 export async function fetchAnchorJson(anchor: ContentAnchor): Promise<unknown> {
   const bytes = await fetchAnchorBytes(anchor);
   return JSON.parse(new TextDecoder().decode(bytes));
-}
-
-/**
- * Load the presentation document for an external-content survey, or `null` if
- * the definition carries no content anchor (inline-content survey).
- */
-export async function loadPresentation(
-  def: SurveyDefinition,
-): Promise<Presentation | null> {
-  if (!def.contentAnchor) return null;
-  return parsePresentation(await fetchAnchorJson(def.contentAnchor));
-}
-
-/**
- * Resolve a definition to its display form: enriched with off-chain labels when
- * an anchor is present and verifiable, otherwise the on-chain definition as-is.
- * Throws only when an anchor is present but can't be fetched/verified — callers
- * fall back to the on-chain definition and show an "unavailable" notice.
- */
-export async function enrichDefinition(
-  def: SurveyDefinition,
-): Promise<SurveyDefinition> {
-  const pres = await loadPresentation(def);
-  return pres ? applyPresentation(def, pres) : def;
 }

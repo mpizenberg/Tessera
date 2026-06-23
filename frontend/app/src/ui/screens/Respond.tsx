@@ -76,9 +76,13 @@ export const Respond: Component = () => {
   const params = useParams<{ key: string }>();
   const key = () => decodeURIComponent(params.key);
 
-  const survey = createMemo(() =>
-    app.snapshot() ? findSurvey(app.snapshot()!.surveys, key()) : undefined,
-  );
+  // Fall back to the optimistic set so a just-created survey is answerable
+  // immediately, before Koios indexes it (mirrors the results page).
+  const survey = createMemo(() => {
+    const snap = app.snapshot();
+    const found = snap ? findSurvey(snap.surveys, key()) : undefined;
+    return found ?? app.optimisticSurveys().find((a) => a.key === key());
+  });
   // External-content surveys: render labels from the off-chain presentation doc
   // when available. `definition()` is the enriched (display) definition; it
   // falls back to the on-chain one, which is always answerable since indices and
@@ -434,6 +438,7 @@ export const Respond: Component = () => {
           >
             <SurveyHeader
               s={s()}
+              def={definition() ?? s().record.definition}
               pro={app.ui.pro}
               role={role()}
               respondable={respondable()}
@@ -467,7 +472,7 @@ export const Respond: Component = () => {
                   "margin-top": "12px",
                 }}
               >
-                <For each={s().record.definition.questions}>
+                <For each={(definition() ?? s().record.definition).questions}>
                   {(q, i) => (
                     <QuestionCard
                       q={q}
@@ -672,6 +677,8 @@ const Ineligible: Component<{ def: SurveyDefinition }> = (props) => (
 
 const SurveyHeader: Component<{
   s: SurveyAggregate;
+  /** Display definition (enriched with off-chain labels for external content). */
+  def: SurveyDefinition;
   pro: boolean;
   role: Role | null;
   respondable: Role[];
@@ -726,9 +733,9 @@ const SurveyHeader: Component<{
         color: "var(--ink)",
       }}
     >
-      {props.s.record.definition.title || "Untitled survey"}
+      {props.def.title || "Untitled survey"}
     </h1>
-    <Show when={props.s.record.definition.description}>
+    <Show when={props.def.description}>
       <p
         style={{
           "font-size": "14.5px",
@@ -737,7 +744,7 @@ const SurveyHeader: Component<{
           margin: "8px 0 0",
         }}
       >
-        {props.s.record.definition.description}
+        {props.def.description}
       </p>
     </Show>
 

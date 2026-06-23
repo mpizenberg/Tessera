@@ -188,12 +188,16 @@ export const Explore: Component = () => {
     const q = app.ui.search.trim().toLowerCase();
     return all()
       .filter((a) => matchesFilter(a, app.ui.filter, flagsOf(a)))
-      .filter(
-        (a) =>
-          q === "" ||
-          a.record.definition.title.toLowerCase().includes(q) ||
-          a.record.definition.description.toLowerCase().includes(q),
-      );
+      .filter((a) => {
+        if (q === "") return true;
+        // Match against cache-enriched labels so a survey we authored this
+        // session is searchable by its real (off-chain) title/description.
+        const d = app.displayDefinition(a.record.definition);
+        return (
+          d.title.toLowerCase().includes(q) ||
+          d.description.toLowerCase().includes(q)
+        );
+      });
   });
 
   // Linked (governance) surveys get their own section, shown first; the rest
@@ -625,7 +629,12 @@ const GovLine: Component<{ actionId: string; title: string | null }> = (
 );
 
 const GridRow: Component<EntryProps> = (props) => {
-  const def = () => props.a.record.definition;
+  const app = useApp();
+  // Enriched from the session cache when we hold the doc (e.g. just authored);
+  // otherwise the on-chain definition, where external labels are absent.
+  const def = () => app.displayDefinition(props.a.record.definition);
+  const labelsMissing = () =>
+    !!def().contentAnchor && def().title.trim() === "";
   const v = () => viewStatus(props.a);
   const closed = () => isClosed(v());
   const ends = (): string =>
@@ -716,7 +725,7 @@ const GridRow: Component<EntryProps> = (props) => {
           <Show when={props.flags.mine}>
             <YoursBadge />
           </Show>
-          <Show when={def().contentAnchor}>
+          <Show when={labelsMissing()}>
             <OffChainBadge />
           </Show>
         </div>
@@ -805,7 +814,10 @@ const MetaChip: Component<{ label: string; children: JSX.Element }> = (
 );
 
 const CardRow: Component<EntryProps> = (props) => {
-  const def = () => props.a.record.definition;
+  const app = useApp();
+  const def = () => app.displayDefinition(props.a.record.definition);
+  const labelsMissing = () =>
+    !!def().contentAnchor && def().title.trim() === "";
   const v = () => viewStatus(props.a);
   const closed = () => isClosed(v());
   const ends = (): string =>
@@ -873,7 +885,7 @@ const CardRow: Component<EntryProps> = (props) => {
           "Presentation text unavailable — on-chain structure intact."}
       </div>
 
-      <Show when={def().contentAnchor}>
+      <Show when={labelsMissing()}>
         <div style={{ "margin-top": "6px" }}>
           <OffChainBadge />
         </div>
