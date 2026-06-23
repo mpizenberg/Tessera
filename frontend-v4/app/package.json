@@ -4,6 +4,11 @@
   "description": "Tessera — CIP-179 on-chain surveys & polls frontend (SolidJS)",
   "type": "module",
   "private": true,
+  "packageManager": "pnpm@10.30.2",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=10"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
