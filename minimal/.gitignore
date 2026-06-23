@@ -1,8 +1,0 @@
-# Environment config
-.env
-
-# Project stuff
-elm-stuff/
-.ropeproject
-static/
-temp/
