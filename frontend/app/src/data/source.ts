@@ -94,4 +94,11 @@ export interface DataSource {
    * (callers default to no links). An indexer would serve this far more cheaply.
    */
   fetchGovernanceLinks(sinceUnix: number): Promise<GovLink[]>;
+  /**
+   * Block-inclusion status for a set of just-submitted transactions, keyed by
+   * tx hash. The value is the number of confirmations, or `null` when the tx is
+   * not yet in a block (the chain indexer can't see the mempool). Used only to
+   * flip a "pending" indicator to "confirmed" — never to drive the snapshot.
+   */
+  txStatus(txHashes: readonly string[]): Promise<Map<string, number | null>>;
 }

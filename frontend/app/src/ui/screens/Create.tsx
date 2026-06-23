@@ -33,9 +33,11 @@ import {
   type QuestionType,
 } from "~/domain/create";
 import { IPFS_PROVIDERS } from "~/enrichment/providers";
+import { hexToBytes } from "~/util/hex";
 import { VisGlyph } from "~/ui/components/glyphs";
 import { OnchainPreview } from "~/ui/components/OnchainPreview";
 import { ErrorBox, ProblemList } from "~/ui/components/Feedback";
+import { TxLink } from "~/ui/components/TxLink";
 import {
   QUICKNET_CHAIN_HASH_HEX,
   autoRevealRound,
@@ -218,7 +220,20 @@ export const Create: Component = () => {
       // owner is what authorizes a later cancellation.
       const hash = await app.submitMetadata(payload, [o]);
       setTxHash(hash);
-      app.reload();
+      // Show the survey right away (the wallet accepted it, so it will land) and
+      // track inclusion to confirm. No reload — the optimistic copy is on-chain.
+      app.trackTx({
+        txHash: hash,
+        kind: "survey",
+        surveyKey: `${hash}:0`,
+        title: meta.title.trim() || undefined,
+      });
+      app.addOptimisticSurvey({
+        txHash: hash,
+        slot: 0, // unknown until indexed; not surfaced for a fresh survey
+        ref: { txId: hexToBytes(hash), index: 0 },
+        definition,
+      });
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1352,7 +1367,7 @@ const SubmittedPanel: Component<{ hash: string }> = (props) => {
           "word-break": "break-all",
         }}
       >
-        tx {props.hash} · ref {shortRef(surveyKey)}
+        <TxLink hash={props.hash} /> · ref {shortRef(surveyKey)}
       </div>
       <div
         style={{

@@ -118,7 +118,13 @@ function endsText(
 export const Explore: Component = () => {
   const app = useApp();
 
-  const all = createMemo(() => app.snapshot()?.surveys ?? []);
+  const all = createMemo(() => {
+    const real = app.snapshot()?.surveys ?? [];
+    const realKeys = new Set(real.map((s) => s.key));
+    // Surveys just created this session, shown until the indexer catches up.
+    const opt = app.optimisticSurveys().filter((a) => !realKeys.has(a.key));
+    return opt.length ? [...opt, ...real] : real;
+  });
   const tip = createMemo<ChainTip | undefined>(() => app.snapshot()?.tip);
   const tipEpoch = createMemo(() => tip()?.epoch ?? 0);
   const identity = (): WalletIdentity | null => app.wallet()?.identity ?? null;

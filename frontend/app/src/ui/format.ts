@@ -1,7 +1,17 @@
 /** Small presentation helpers shared across screens. */
 
 import { Role } from "cip-179";
+import type { Network } from "~/config";
 import type { SurveyAggregate } from "~/domain/survey";
+
+/**
+ * Link to a transaction on the Cardano Explorer aggregator. Mainnet lives at
+ * the root (`/tx/<id>`); other networks are namespaced (`/preview/tx/<id>`).
+ */
+export function explorerTxUrl(network: Network, txHash: string): string {
+  const prefix = network === "mainnet" ? "" : `${network}/`;
+  return `https://explorer.cardano.org/${prefix}tx/${txHash}`;
+}
 
 const ROLE_LABEL: Record<number, string> = {
   [Role.DRep]: "DRep",

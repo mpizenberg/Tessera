@@ -35,6 +35,7 @@ import { usePresentation } from "~/enrichment/usePresentation";
 import { formatRevealDate, isQuicknet, roundIsAvailable } from "~/tlock/drand";
 import { roleColors, roleLabel, shortRef, viewStatus } from "~/ui/format";
 import { ResultBarCard } from "~/ui/components/ResultBarCard";
+import { TxLink } from "~/ui/components/TxLink";
 import { toCsv, downloadCsv } from "~/util/csv";
 import { bytesToHex } from "~/util/hex";
 
@@ -90,9 +91,12 @@ export const Survey: Component = () => {
   const app = useApp();
   const params = useParams<{ key: string }>();
   const key = () => decodeURIComponent(params.key);
-  const survey = createMemo(() =>
-    app.snapshot() ? findSurvey(app.snapshot()!.surveys, key()) : undefined,
-  );
+  const survey = createMemo(() => {
+    const snap = app.snapshot();
+    const found = snap ? findSurvey(snap.surveys, key()) : undefined;
+    // A just-created survey isn't indexed yet — fall back to its optimistic twin.
+    return found ?? app.optimisticSurveys().find((a) => a.key === key());
+  });
 
   // External-content surveys: fetch + hash-verify the off-chain presentation
   // doc and render its labels; `pres.def()` falls back to the on-chain
@@ -291,7 +295,7 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
       });
       const h = await app.submitMetadata(payload, [def.owner]);
       setHash(h);
-      app.reload();
+      app.trackTx({ txHash: h, kind: "cancel", surveyKey: props.s.key });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -330,7 +334,7 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
               "word-break": "break-all",
             }}
           >
-            tx {hash()}
+            <TxLink hash={hash()!} color="#8A3A2E" />
           </div>
           <div
             style={{

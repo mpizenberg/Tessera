@@ -11,8 +11,10 @@
 
 import {
   createContext,
+  createEffect,
   createResource,
   createSignal,
+  onCleanup,
   onMount,
   useContext,
   type Accessor,
@@ -39,7 +41,12 @@ import {
   type ProviderTokens,
 } from "~/enrichment/providers";
 import { KoiosDataSource } from "~/data/koios";
-import type { ChainTip, Cip179Records, DataSource } from "~/data/source";
+import type {
+  ChainTip,
+  Cip179Records,
+  DataSource,
+  SurveyRecord,
+} from "~/data/source";
 import {
   aggregateSurveys,
   governanceSinceUnix,
@@ -74,6 +81,36 @@ export interface UiState {
   /** Pro mode surfaces technical detail (refs, epochs, drand rounds). */
   pro: boolean;
 }
+
+/** What kind of submission a pending transaction carries. */
+export type PendingKind = "survey" | "response" | "cancel";
+
+/** A submitted transaction we're watching for block inclusion. */
+export interface PendingTx {
+  txHash: string;
+  kind: PendingKind;
+  /** Survey ref this tx concerns, for a contextual "View" link. */
+  surveyKey?: string | undefined;
+  /** Optional human label (e.g. the survey title) shown in the indicator. */
+  title?: string | undefined;
+  submittedAt: number;
+  status: "pending" | "confirmed";
+  /** Set once a tx has stayed unconfirmed long enough to look stuck. */
+  slow: boolean;
+}
+
+/** The caller-supplied fields when starting to track a tx. */
+export type NewPendingTx = Pick<
+  PendingTx,
+  "txHash" | "kind" | "surveyKey" | "title"
+>;
+
+/** Poll Koios for inclusion at this cadence while anything is pending. */
+const POLL_INTERVAL_MS = 20_000;
+/** Keep a confirmed tx visible briefly before clearing it. */
+const CONFIRMED_LINGER_MS = 6_000;
+/** After this long unconfirmed, flag a tx as slow (still polling). */
+const SLOW_AFTER_MS = 150_000;
 
 interface AppState {
   readonly config: AppConfig;
@@ -128,6 +165,22 @@ interface AppState {
     payload: Metadatum,
     proveCredentials?: readonly Credential[],
   ): Promise<string>;
+
+  // --- pending transactions (optimistic confirmation) ---
+  /** Transactions submitted this session, awaiting (or just past) inclusion. */
+  readonly pendingTxs: readonly PendingTx[];
+  /** Start watching a just-submitted tx for block inclusion. */
+  trackTx(tx: NewPendingTx): void;
+  /** Stop showing a tracked tx (e.g. user dismisses it). */
+  dismissTx(txHash: string): void;
+  /**
+   * Surveys shown immediately on creation, before the indexer catches up. The
+   * wallet already accepted the tx, so the freshly-built definition is what
+   * will be on-chain; entries are pruned once the real record indexes.
+   */
+  readonly optimisticSurveys: Accessor<readonly SurveyAggregate[]>;
+  /** Add a just-published survey to the optimistic set (built from its record). */
+  addOptimisticSurvey(record: SurveyRecord): void;
 }
 
 const Ctx = createContext<AppState>();
@@ -169,6 +222,74 @@ export const AppProvider: ParentComponent = (props) => {
     const trimmed = token.trim();
     setIpfsTokensStore(id, trimmed || undefined);
   };
+
+  // Pending-tx tracking. A CIP-30-accepted tx will land (no input conflict), so
+  // we poll Koios only to flip the indicator pending → confirmed — never to
+  // refetch the snapshot (the optimistic copy we already show is on-chain).
+  const [pendingTxs, setPendingTxs] = createStore<PendingTx[]>([]);
+  const [optimisticSurveys, setOptimisticSurveys] = createSignal<
+    readonly SurveyAggregate[]
+  >([]);
+
+  const trackTx = (tx: NewPendingTx): void =>
+    setPendingTxs((prev) => [
+      { ...tx, submittedAt: Date.now(), status: "pending", slow: false },
+      ...prev.filter((p) => p.txHash !== tx.txHash),
+    ]);
+  const dismissTx = (txHash: string): void =>
+    setPendingTxs((prev) => prev.filter((p) => p.txHash !== txHash));
+
+  const pollPending = async (): Promise<void> => {
+    const open = pendingTxs.filter((p) => p.status === "pending");
+    if (open.length === 0) return;
+    let statuses: Map<string, number | null>;
+    try {
+      statuses = await source.txStatus(open.map((p) => p.txHash));
+    } catch {
+      return; // transient — try again on the next tick
+    }
+    const now = Date.now();
+    for (const p of open) {
+      const conf = statuses.get(p.txHash);
+      if (conf != null && conf > 0) {
+        setPendingTxs((x) => x.txHash === p.txHash, "status", "confirmed");
+        setTimeout(() => dismissTx(p.txHash), CONFIRMED_LINGER_MS);
+      } else if (!p.slow && now - p.submittedAt > SLOW_AFTER_MS) {
+        setPendingTxs((x) => x.txHash === p.txHash, "slow", true);
+      }
+    }
+  };
+
+  // A single poller, alive only while something is pending. The effect re-runs
+  // when the list changes (a confirm/dismiss), resetting the interval — fine.
+  createEffect(() => {
+    if (!pendingTxs.some((p) => p.status === "pending")) return;
+    void pollPending();
+    const id = setInterval(() => void pollPending(), POLL_INTERVAL_MS);
+    onCleanup(() => clearInterval(id));
+  });
+
+  const addOptimisticSurvey = (record: SurveyRecord): void => {
+    const snap = snapshot();
+    if (!snap) return;
+    const [agg] = aggregateSurveys(
+      { surveys: [record], responses: [], cancellations: [] },
+      snap.tip,
+    );
+    if (!agg) return;
+    setOptimisticSurveys((prev) => [
+      agg,
+      ...prev.filter((p) => p.key !== agg.key),
+    ]);
+  };
+
+  // Once the real indexed survey appears in a snapshot, drop its optimistic twin.
+  createEffect(() => {
+    const snap = snapshot();
+    if (!snap) return;
+    const realKeys = new Set(snap.surveys.map((s) => s.key));
+    setOptimisticSurveys((prev) => prev.filter((a) => !realKeys.has(a.key)));
+  });
 
   const [wallet, setWallet] = createSignal<ConnectedWallet | null>(null);
   const [connecting, setConnecting] = createSignal(false);
@@ -266,6 +387,11 @@ export const AppProvider: ParentComponent = (props) => {
       const { submitMetadataTx } = await import("~/wallet/submit");
       return submitMetadataTx(config, w.api, payload, proveCredentials);
     },
+    pendingTxs,
+    trackTx,
+    dismissTx,
+    optimisticSurveys,
+    addOptimisticSurvey,
   };
 
   return <Ctx.Provider value={value}>{props.children}</Ctx.Provider>;

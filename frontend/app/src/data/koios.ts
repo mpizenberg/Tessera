@@ -48,6 +48,12 @@ interface TipRow {
   block_time: number;
 }
 
+interface TxStatusRow {
+  tx_hash: string;
+  /** Number of blocks built on top, or null until the tx is in a block. */
+  num_confirmations: number | null;
+}
+
 interface ProposalRow {
   proposal_id: string;
   proposal_type: string;
@@ -179,6 +185,16 @@ export class KoiosDataSource implements DataSource {
     }
 
     return { surveys, responses, cancellations };
+  }
+
+  async txStatus(
+    txHashes: readonly string[],
+  ): Promise<Map<string, number | null>> {
+    if (txHashes.length === 0) return new Map();
+    const rows = await this.post<TxStatusRow[]>("/tx_status", {
+      _tx_hashes: [...txHashes],
+    });
+    return new Map(rows.map((r) => [r.tx_hash, r.num_confirmations ?? null]));
   }
 
   async fetchGovernanceLinks(sinceUnix: number): Promise<GovLink[]> {

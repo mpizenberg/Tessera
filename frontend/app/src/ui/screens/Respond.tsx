@@ -50,6 +50,7 @@ import { usePresentation } from "~/enrichment/usePresentation";
 import { IPFS_PROVIDERS } from "~/enrichment/providers";
 import { OnchainPreview } from "~/ui/components/OnchainPreview";
 import { ErrorBox, ProblemList } from "~/ui/components/Feedback";
+import { TxLink } from "~/ui/components/TxLink";
 import { hexToBytes } from "~/util/hex";
 import { formatRevealDate } from "~/tlock/drand";
 import { roleColors, roleLabel, shortRef, viewStatus } from "~/ui/format";
@@ -356,7 +357,7 @@ export const Respond: Component = () => {
       // when responding as a Stakeholder, not just the payment key.
       const hash = await app.submitMetadata(payload, [cred]);
       setTxHash(hash);
-      app.reload();
+      app.trackTx({ txHash: hash, kind: "response", surveyKey: key() });
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1991,7 +1992,7 @@ const SubmittedPanel: Component<{ hash: string; surveyKey: string }> = (
           "word-break": "break-all",
         }}
       >
-        tx {props.hash}
+        <TxLink hash={props.hash} />
       </div>
       <button
         onClick={() =>
