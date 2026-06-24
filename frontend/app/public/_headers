@@ -1,0 +1,22 @@
+# Cloudflare Pages security + caching headers.
+# https://developers.cloudflare.com/pages/configuration/headers/
+
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=()
+  # CSP notes:
+  #  - script-src has no 'unsafe-inline': Vite emits an external module script,
+  #    no inline JS. CIP-30 wallet extensions inject via the extension context,
+  #    which is not subject to the page CSP.
+  #  - style-src allows 'unsafe-inline' (component style attrs + Google Fonts
+  #    stylesheet) and the Google Fonts CSS origin.
+  #  - connect-src / img-src allow any https: because external-content survey
+  #    anchors and IPFS CIDs can resolve to arbitrary gateways/hosts (Koios,
+  #    drand, ipfs.io, dweb.link, blockfrost, pinata, nmkr, plus user anchors).
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+
+# Vite fingerprints asset filenames (content hash), so they are immutable.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

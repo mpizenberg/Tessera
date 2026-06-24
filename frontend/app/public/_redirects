@@ -1,0 +1,5 @@
+# SPA fallback: client-side routes (/survey/:key, /create, …) are served by the
+# app shell. Every path that isn't a built asset returns index.html with 200 so
+# deep links and refreshes work. Asset files (with extensions) are matched and
+# served by Cloudflare before this catch-all is reached.
+/*  /index.html  200
