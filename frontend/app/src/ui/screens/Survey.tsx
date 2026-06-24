@@ -15,6 +15,8 @@ import {
   SPEC_VERSION,
   encodePayload,
   type AnswerItem,
+  type ContentAnchor,
+  type Credential,
   type Question,
   type SurveyDefinition,
   type SurveyRef,
@@ -32,6 +34,7 @@ import { walletOwns } from "~/domain/roles";
 import { roleBreakdown, tallySurvey, type QuestionTally } from "~/domain/tally";
 import type { ResponseRecord } from "~/data/source";
 import { usePresentation } from "~/enrichment/usePresentation";
+import { IPFS_GATEWAYS } from "~/enrichment/providers";
 import { formatRevealDate, isQuicknet, roundIsAvailable } from "~/tlock/drand";
 import { roleColors, roleLabel, shortRef, viewStatus } from "~/ui/format";
 import { ResultBarCard } from "~/ui/components/ResultBarCard";
@@ -1626,6 +1629,260 @@ const ExclusionPanel: Component<{
   );
 };
 
+/** How many individual responses to render before the "show all" expansion. */
+const RESPONSE_PAGE = 50;
+
+/**
+ * Per-response breakdown: one card per counted response, showing the voter
+ * (role + credential), each answer rendered against the (enriched) definition's
+ * labels, a link to the response transaction, and — when present — a link that
+ * opens the voter's rationale document in a new tab.
+ *
+ * Everything here is already plaintext on-chain (for sealed surveys these are
+ * the post-reveal decrypted records), so this exposes nothing the explorer or
+ * CSV export doesn't. Starts collapsed and renders incrementally so a survey
+ * with many responses doesn't mount hundreds of cards eagerly.
+ */
+const IndividualResponses: Component<{
+  def: SurveyDefinition;
+  records: ResponseRecord[];
+}> = (props) => {
+  const [open, setOpen] = createSignal(false);
+  const [limit, setLimit] = createSignal(RESPONSE_PAGE);
+  const shown = createMemo(() =>
+    open() ? props.records.slice(0, limit()) : [],
+  );
+  const remaining = () => props.records.length - shown().length;
+
+  return (
+    <div style={{ "margin-top": "26px" }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        disabled={props.records.length === 0}
+        style={{
+          display: "inline-flex",
+          "align-items": "center",
+          gap: "8px",
+          "font-family": "inherit",
+          "font-size": "12.5px",
+          "font-weight": "700",
+          color: "var(--body)",
+          background: "#fff",
+          border: "1px solid var(--line)",
+          "border-radius": "var(--r-input)",
+          padding: "8px 13px",
+          cursor: props.records.length ? "pointer" : "not-allowed",
+          opacity: props.records.length ? "1" : ".5",
+        }}
+      >
+        Individual responses
+        <span
+          style={{
+            "font-family": "var(--mono)",
+            "font-size": "11px",
+            color: "var(--dim)",
+          }}
+        >
+          {props.records.length}
+        </span>
+        <span style={{ "font-size": "9px" }}>{open() ? "▴" : "▾"}</span>
+      </button>
+
+      <Show when={open()}>
+        <div
+          style={{
+            display: "flex",
+            "flex-direction": "column",
+            gap: "10px",
+            "margin-top": "12px",
+          }}
+        >
+          <For each={shown()}>
+            {(rec) => <ResponseCard rec={rec} def={props.def} />}
+          </For>
+        </div>
+        <Show when={remaining() > 0}>
+          <button
+            onClick={() => setLimit((n) => n + RESPONSE_PAGE)}
+            style={{
+              "margin-top": "12px",
+              "font-family": "inherit",
+              "font-size": "12.5px",
+              "font-weight": "700",
+              color: "var(--accent)",
+              background: "#fff",
+              border: "1px solid var(--accent-line)",
+              "border-radius": "var(--r-input)",
+              padding: "8px 14px",
+              cursor: "pointer",
+            }}
+          >
+            Show {Math.min(RESPONSE_PAGE, remaining())} more ({remaining()}{" "}
+            left)
+          </button>
+        </Show>
+      </Show>
+    </div>
+  );
+};
+
+const ResponseCard: Component<{
+  rec: ResponseRecord;
+  def: SurveyDefinition;
+}> = (props) => {
+  const r = () => props.rec.response;
+  const publicAnswers = (): readonly AnswerItem[] | null => {
+    const ans = r().answers;
+    return ans.type === "public" ? ans.answers : null;
+  };
+  const [color, bg] = roleColors(r().role);
+  return (
+    <div
+      style={{
+        border: "1px solid var(--line)",
+        "border-radius": "var(--r-md)",
+        padding: "13px 15px",
+        background: "#fff",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          "align-items": "center",
+          gap: "9px",
+          "flex-wrap": "wrap",
+        }}
+      >
+        <span
+          style={{
+            "font-size": "11.5px",
+            "font-weight": "700",
+            color,
+            background: bg,
+            "border-radius": "6px",
+            padding: "2.5px 8px",
+            flex: "none",
+          }}
+        >
+          {roleLabel(r().role)}
+        </span>
+        <span
+          title={fullCred(r().credential)}
+          style={{
+            "font-family": "var(--mono)",
+            "font-size": "11px",
+            color: "var(--faint)",
+          }}
+        >
+          {shortCred(r().credential)}
+        </span>
+        <span style={{ "margin-left": "auto" }} />
+        <Show when={r().rationale}>
+          {(anchor) => (
+            <a
+              href={anchorHttpUrl(anchor())}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open the voter's rationale document in a new tab (not hash-verified)"
+              style={{
+                "font-size": "11.5px",
+                "font-weight": "700",
+                color: "var(--accent)",
+                "text-decoration": "none",
+              }}
+            >
+              rationale ↗
+            </a>
+          )}
+        </Show>
+        <span
+          style={{
+            "font-family": "var(--mono)",
+            "font-size": "10.5px",
+            "max-width": "150px",
+            overflow: "hidden",
+            "text-overflow": "ellipsis",
+            "white-space": "nowrap",
+          }}
+        >
+          <TxLink hash={props.rec.txHash} color="var(--dim)" />
+        </span>
+      </div>
+
+      <Show
+        when={publicAnswers()}
+        fallback={
+          <div
+            style={{
+              "font-family": "var(--mono)",
+              "font-size": "11.5px",
+              color: "var(--dim)",
+              "margin-top": "10px",
+            }}
+          >
+            (sealed — not yet revealed)
+          </div>
+        }
+      >
+        {(answers) => (
+          <div
+            style={{
+              display: "flex",
+              "flex-direction": "column",
+              gap: "7px",
+              "margin-top": "11px",
+            }}
+          >
+            <For each={answers()}>
+              {(a) => {
+                const q = props.def.questions[a.questionIndex];
+                return (
+                  <div style={{ display: "flex", gap: "10px" }}>
+                    <span
+                      style={{
+                        "font-family": "var(--mono)",
+                        "font-size": "11px",
+                        "font-weight": "600",
+                        color: "var(--accent)",
+                        flex: "none",
+                        "padding-top": "1px",
+                      }}
+                    >
+                      Q{a.questionIndex + 1}
+                    </span>
+                    <div style={{ "min-width": "0" }}>
+                      <div
+                        style={{
+                          "font-size": "12px",
+                          color: "var(--muted)",
+                          "line-height": "1.4",
+                        }}
+                      >
+                        {q?.prompt || "(no prompt)"}
+                      </div>
+                      <div
+                        style={{
+                          "font-size": "13px",
+                          "font-weight": "600",
+                          color: "var(--body)",
+                          "line-height": "1.45",
+                          "margin-top": "1px",
+                        }}
+                      >
+                        {humanizeAnswer(a, q)}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }}
+            </For>
+          </div>
+        )}
+      </Show>
+    </div>
+  );
+};
+
 /**
  * The tally view, shared by public surveys and revealed sealed surveys. Takes
  * already-plaintext response records (for sealed, these are the decrypted
@@ -1664,6 +1921,14 @@ const ResultsBody: Component<{
     return f === "all"
       ? publicResponses()
       : publicResponses().filter((r) => r.role === f);
+  });
+  // Same role filter, but keeping the full record (tx hash) for the per-response
+  // breakdown. Mirrors `filtered`, which drops down to bare responses for tallying.
+  const filteredRecords = createMemo<ResponseRecord[]>(() => {
+    const f = roleFilter();
+    return f === "all"
+      ? props.records
+      : props.records.filter((r) => r.response.role === f);
   });
   const tallies = createMemo<QuestionTally[]>(() =>
     tallySurvey(props.def, filtered(), filtered().length),
@@ -1907,6 +2172,8 @@ const ResultsBody: Component<{
           )}
         </For>
       </div>
+
+      <IndividualResponses def={props.def} records={filteredRecords()} />
 
       <p
         style={{
@@ -2223,4 +2490,69 @@ function serializeAnswer(a: AnswerItem): string {
     case "custom":
       return typeof a.value === "string" ? a.value : "[custom]";
   }
+}
+
+/**
+ * Human-readable label for an option index, using the (possibly enriched)
+ * definition's labels. Falls back to a 1-based "Option N" when labels aren't
+ * present — count-mode questions, or external-content surveys whose
+ * presentation document hasn't resolved.
+ */
+function optionLabelOf(q: Question | undefined, index: number): string {
+  if (q && "options" in q && q.options.type === "options") {
+    return q.options.labels[index] ?? `Option ${index + 1}`;
+  }
+  return `Option ${index + 1}`;
+}
+
+/** Render a single answer item against its question, using option labels. */
+function humanizeAnswer(a: AnswerItem, q: Question | undefined): string {
+  switch (a.type) {
+    case "singleChoice":
+      return optionLabelOf(q, a.optionIndex);
+    case "multiSelect":
+      return a.optionIndices.length === 0
+        ? "(none selected)"
+        : a.optionIndices.map((i) => optionLabelOf(q, i)).join(", ");
+    case "ranking":
+      return a.ranking
+        .map((i, n) => `${n + 1}. ${optionLabelOf(q, i)}`)
+        .join("  ›  ");
+    case "numeric":
+      return a.value.toString();
+    case "pointsAllocation":
+      return a.allocations
+        .map((p) => `${optionLabelOf(q, p.optionIndex)}: ${p.points}`)
+        .join(",  ");
+    case "rating":
+      return a.ratings
+        .map((r) => `${optionLabelOf(q, r.optionIndex)}: ${r.rating}`)
+        .join(",  ");
+    case "custom":
+      return typeof a.value === "string" ? a.value : "[custom value]";
+  }
+}
+
+/** Compact one-line form of a responder credential, full value in `title`. */
+function shortCred(cred: Credential): string {
+  const h = cred.type === "key" ? hex(cred.keyHash) : hex(cred.scriptHash);
+  const prefix = cred.type === "key" ? "key" : "script";
+  return `${prefix}:${h.slice(0, 12)}…${h.slice(-6)}`;
+}
+
+function fullCred(cred: Credential): string {
+  return cred.type === "key"
+    ? `key:${hex(cred.keyHash)}`
+    : `script:${hex(cred.scriptHash)}`;
+}
+
+/**
+ * Browser-openable URL for a content anchor. `ipfs://` is rewritten to the
+ * first public gateway (we don't hash-verify here — this is a "go look at the
+ * raw document" link, not a trusted fetch); `https://` is used verbatim.
+ */
+function anchorHttpUrl(anchor: ContentAnchor): string {
+  return anchor.uri.startsWith("ipfs://")
+    ? IPFS_GATEWAYS[0] + anchor.uri.slice("ipfs://".length)
+    : anchor.uri;
 }
