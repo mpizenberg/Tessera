@@ -51,6 +51,14 @@ export interface ChainTip {
    * project a future epoch boundary exactly.
    */
   readonly epochSlot: number;
+  /**
+   * The live `gov_action_lifetime` protocol parameter (epochs a governance
+   * action stays open for voting). An Info Action submitted in epoch `e` closes
+   * at `e + govActionLifetime`; used to auto-fill a linked survey's `end_epoch`
+   * so it matches (CIP-179 epoch-alignment). Best-effort: 0 if the param lookup
+   * failed (it only feeds the optional governance-link helper).
+   */
+  readonly govActionLifetime: number;
 }
 
 /** All label-17 records, partitioned by payload type. */

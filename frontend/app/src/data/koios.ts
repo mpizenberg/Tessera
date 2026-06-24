@@ -48,6 +48,11 @@ interface TipRow {
   block_time: number;
 }
 
+interface EpochParamsRow {
+  /** Epochs a governance action stays open for voting (Conway parameter). */
+  gov_action_lifetime: number | null;
+}
+
 interface TxStatusRow {
   tx_hash: string;
   /** Number of blocks built on top, or null until the tx is in a block. */
@@ -118,7 +123,26 @@ export class KoiosDataSource implements DataSource {
       slot: tip.abs_slot,
       time: tip.block_time,
       epochSlot: tip.epoch_slot,
+      govActionLifetime: await this.govActionLifetime(tip.epoch_no),
     };
+  }
+
+  /**
+   * The `gov_action_lifetime` parameter for an epoch. Best-effort: returns 0 if
+   * the lookup fails, so a flaky params call can't sink the whole snapshot — it
+   * only feeds the optional governance-link end-epoch helper, which falls back
+   * to manual entry when the value is unknown.
+   */
+  private async govActionLifetime(epoch: number): Promise<number> {
+    try {
+      const rows = await this.get<EpochParamsRow[]>(
+        `/epoch_params?_epoch_no=${epoch}&select=gov_action_lifetime`,
+      );
+      return rows[0]?.gov_action_lifetime ?? 0;
+    } catch (err) {
+      console.warn(`gov_action_lifetime lookup failed: ${String(err)}`);
+      return 0;
+    }
   }
 
   async fetchAll(): Promise<Cip179Records> {

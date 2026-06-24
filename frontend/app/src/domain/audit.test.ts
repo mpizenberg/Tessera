@@ -6,7 +6,13 @@ import { auditResponses, epochOfSlot } from "./audit";
 
 // secondsPerEpoch = 100 → epochs are 100 slots; current epoch 10 starts at
 // slot 1000 (tip.slot − tip.epochSlot). Easy mental math for the cases below.
-const TIP: ChainTip = { epoch: 10, slot: 1050, epochSlot: 50, time: 1_000_000 };
+const TIP: ChainTip = {
+  epoch: 10,
+  slot: 1050,
+  epochSlot: 50,
+  time: 1_000_000,
+  govActionLifetime: 6,
+};
 const SPE = 100;
 
 const keyCred = (b: number) => ({

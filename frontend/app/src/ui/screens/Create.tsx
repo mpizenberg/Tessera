@@ -20,6 +20,7 @@ import {
 } from "cip-179";
 
 import { useApp } from "~/state";
+import type { Network } from "~/config";
 import { walletCredToCip179 } from "~/domain/roles";
 import {
   QUESTION_TYPES,
@@ -103,11 +104,11 @@ export const Create: Component = () => {
   const [drandMode, setDrandMode] = createSignal<"auto" | "manual">("auto");
   const [drandRoundText, setDrandRoundText] = createSignal("");
 
-  // Seed a sensible default end epoch once the tip is known (don't clobber input).
+  // Seed a sensible default end epoch once the tip is known (don't clobber
+  // input): the next epoch, the soonest a survey can still be open on arrival.
   createEffect(() => {
     const tip = app.snapshot()?.tip;
-    if (tip && meta.endEpoch === "")
-      setMeta("endEpoch", String(tip.epoch + 30));
+    if (tip && meta.endEpoch === "") setMeta("endEpoch", String(tip.epoch + 1));
   });
 
   // Auto reveal round: the first drand round a couple of minutes after the end
@@ -316,6 +317,8 @@ export const Create: Component = () => {
                 value={meta.endEpoch}
                 onInput={(v) => setMeta("endEpoch", v)}
                 tipEpoch={app.snapshot()?.tip.epoch}
+                network={app.config.network}
+                govActionLifetime={app.snapshot()?.tip.govActionLifetime ?? 0}
               />
               <VisibilitySection
                 mode={meta.mode}
@@ -516,10 +519,42 @@ const TimingSection: Component<{
   value: string;
   onInput: (v: string) => void;
   tipEpoch: number | undefined;
+  network: Network;
+  govActionLifetime: number;
 }> = (props) => {
+  // Whether the creator plans to tie this survey to a governance Info Action.
+  // The link itself is Action → Survey and lives off-chain in the action's
+  // anchor, so this toggle changes no on-chain field directly. Its effect here
+  // is that the end epoch is no longer free: it must equal the voting end epoch
+  // of the Info Action that will advertise this survey, so we compute and lock
+  // it instead of letting the creator type one that wouldn't match.
+  const [govLinked, setGovLinked] = createSignal(false);
+
+  // The voting deadline of an Info Action submitted in the current epoch:
+  // `current + gov_action_lifetime` (the live protocol parameter, read from the
+  // chain tip). The only end epoch a linked survey may carry. Undefined until
+  // the tip loads, or if the parameter couldn't be read (lifetime 0) — in which
+  // case we can't compute it and fall back to manual entry.
+  const autoEndEpoch = (): number | undefined =>
+    props.tipEpoch === undefined || props.govActionLifetime <= 0
+      ? undefined
+      : props.tipEpoch + props.govActionLifetime;
+
+  // Lock the field only when linked *and* we actually have a value to lock to.
+  const locked = (): boolean => govLinked() && autoEndEpoch() !== undefined;
+
+  // While locked, drive the end epoch from the chain parameter, and keep it in
+  // sync if the tip advances. Toggling off (or an unknown lifetime) leaves the
+  // value in place and editable again.
+  createEffect(() => {
+    const auto = autoEndEpoch();
+    if (govLinked() && auto !== undefined) props.onInput(String(auto));
+  });
+
   // Soft warning: end_epoch must be later than the current epoch or the survey
   // is closed on arrival. (validateDefinition can't check this — it's ledger
-  // state — so it's a client-side nudge, not a hard block.)
+  // state — so it's a client-side nudge, not a hard block.) Never fires while
+  // linked: the auto value is always in the future.
   const tooEarly = () => {
     const n = Number(props.value.trim());
     return (
@@ -532,30 +567,125 @@ const TimingSection: Component<{
   return (
     <div style={{ "margin-top": "22px" }}>
       <SectionHead n="04" label="Timing" />
-      <div style={cardStyle()}>
-        <label style={{ display: "block" }}>
-          <span style={fieldLabelStyle()}>End epoch (inclusive)</span>
+      <div style={govLinked() ? govCardStyle() : cardStyle()}>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={govLinked()}
+          onClick={() => setGovLinked((v) => !v)}
+          style={govToggleRowStyle()}
+        >
+          <span style={govSwitchTrackStyle(govLinked())}>
+            <span style={govSwitchKnobStyle(govLinked())} />
+          </span>
+          <span
+            style={{
+              display: "flex",
+              "flex-direction": "column",
+              gap: "2px",
+              "text-align": "left",
+            }}
+          >
+            <span
+              style={{
+                "font-size": "13px",
+                "font-weight": "700",
+                color: govLinked() ? "var(--gov)" : "var(--ink)",
+              }}
+            >
+              Tie this survey to a governance Info Action
+            </span>
+            <span
+              style={{
+                "font-size": "11.5px",
+                color: "var(--muted)",
+                "line-height": "1.45",
+              }}
+            >
+              An on-chain Info Action will advertise this survey and they close
+              together.
+            </span>
+          </span>
+        </button>
+
+        <label style={{ display: "block", "margin-top": "18px" }}>
+          <span
+            style={{
+              ...fieldLabelStyle(),
+              display: "flex",
+              "align-items": "center",
+              gap: "8px",
+            }}
+          >
+            End epoch (inclusive)
+            <Show when={locked()}>
+              <span style={govAutoBadgeStyle()}>auto · locked</span>
+            </Show>
+          </span>
           <input
             type="number"
             value={props.value}
+            readOnly={locked()}
+            aria-disabled={locked()}
             onInput={(e) => props.onInput(e.currentTarget.value)}
             style={{
               ...textInputStyle(),
               "font-family": "var(--mono)",
               "max-width": "200px",
+              ...(locked()
+                ? {
+                    background: "var(--surface3)",
+                    color: "var(--gov)",
+                    "border-color": "var(--gov-line)",
+                    cursor: "not-allowed",
+                  }
+                : {}),
             }}
           />
         </label>
-        <p style={hintStyle()}>
-          Responses are accepted through this epoch.{" "}
+        <Show
+          when={govLinked()}
+          fallback={
+            <p style={hintStyle()}>
+              Responses are accepted through this epoch.{" "}
+              <Show
+                when={props.tipEpoch !== undefined}
+                fallback="Loading current epoch…"
+              >
+                Current epoch is <b>{props.tipEpoch}</b>.
+              </Show>
+            </p>
+          }
+        >
           <Show
-            when={props.tipEpoch !== undefined}
-            fallback="Loading current epoch…"
+            when={locked()}
+            fallback={
+              <div style={warnNoteStyle()}>
+                Couldn't read{" "}
+                <span style={{ "font-family": "var(--mono)" }}>
+                  gov_action_lifetime
+                </span>{" "}
+                from the chain, so the deadline can't be computed. Enter the
+                Info Action's voting end epoch manually — they must match
+                exactly.
+              </div>
+            }
           >
-            Current epoch is <b>{props.tipEpoch}</b>.
+            <div style={govNoteStyle()}>
+              Locked to the Info Action's voting deadline. On{" "}
+              <b>{props.network}</b>, a governance action submitted this epoch
+              {props.tipEpoch !== undefined ? ` (${props.tipEpoch})` : ""}{" "}
+              closes at epoch <b>{autoEndEpoch()}</b> (
+              <span style={{ "font-family": "var(--mono)" }}>
+                gov_action_lifetime = {props.govActionLifetime}
+              </span>
+              ), so the survey's end epoch must equal that. If you'll submit the
+              action in a later epoch, untoggle and set a matching epoch by
+              hand.
+            </div>
           </Show>
-        </p>
-        <Show when={tooEarly()}>
+        </Show>
+        <Show when={!govLinked() && tooEarly()}>
           <div style={warnNoteStyle()}>
             End epoch must be later than the current epoch ({props.tipEpoch}),
             or the survey is closed as soon as it's published.
@@ -1593,6 +1723,81 @@ function cardStyle(): JSX.CSSProperties {
     "border-radius": "var(--r-sm)",
     padding: "18px 20px",
     "margin-top": "10px",
+  };
+}
+// Governance-tinted variant of `cardStyle`, used when the survey is being tied
+// to an Info Action (same blue family as the linkage UI elsewhere).
+function govCardStyle(): JSX.CSSProperties {
+  return {
+    background: "var(--gov-bg)",
+    border: "1px solid var(--gov-line)",
+    "border-radius": "var(--r-sm)",
+    padding: "18px 20px",
+    "margin-top": "10px",
+  };
+}
+function govAutoBadgeStyle(): JSX.CSSProperties {
+  return {
+    "font-family": "var(--mono)",
+    "font-size": "9.5px",
+    "font-weight": "700",
+    "letter-spacing": ".04em",
+    "text-transform": "uppercase",
+    color: "var(--gov)",
+    background: "#fff",
+    border: "1px solid var(--gov-line)",
+    "border-radius": "var(--r-3xs)",
+    padding: "3px 6px",
+  };
+}
+function govNoteStyle(): JSX.CSSProperties {
+  return {
+    "font-size": "12px",
+    color: "var(--gov)",
+    background: "#fff",
+    border: "1px solid var(--gov-line)",
+    "border-radius": "var(--r-control)",
+    padding: "10px 12px",
+    "line-height": "1.5",
+    "margin-top": "10px",
+  };
+}
+function govToggleRowStyle(): JSX.CSSProperties {
+  return {
+    display: "flex",
+    "align-items": "center",
+    gap: "12px",
+    width: "100%",
+    padding: "0",
+    background: "transparent",
+    border: "none",
+    cursor: "pointer",
+    "font-family": "inherit",
+  };
+}
+function govSwitchTrackStyle(on: boolean): JSX.CSSProperties {
+  return {
+    position: "relative",
+    flex: "none",
+    width: "38px",
+    height: "22px",
+    "border-radius": "var(--r-pill)",
+    background: on ? "var(--gov)" : "var(--track)",
+    border: `1px solid ${on ? "var(--gov)" : "var(--line)"}`,
+    transition: "background .15s ease",
+  };
+}
+function govSwitchKnobStyle(on: boolean): JSX.CSSProperties {
+  return {
+    position: "absolute",
+    top: "2px",
+    left: on ? "18px" : "2px",
+    width: "16px",
+    height: "16px",
+    "border-radius": "50%",
+    background: "#fff",
+    "box-shadow": "0 1px 2px rgba(0,0,0,.25)",
+    transition: "left .15s ease",
   };
 }
 function fieldLabelStyle(): JSX.CSSProperties {
