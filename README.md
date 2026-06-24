@@ -11,17 +11,30 @@ scoped by on-chain **role** (DRep, SPO, CC, Stakeholder, Owner), and tallies are
 computed client-side directly from chain data.
 
 > **Status:** active development. The frontend (explore, results, wallet,
-> respond, create, cancel, sealed mode, IPFS enrichment) is functional; a
-> semantic indexer backend is still in the research stage.
+> respond, create, cancel, sealed mode, IPFS enrichment, governance linkage) is
+> functional; a semantic indexer backend is still in the research stage.
+
+## Governance linkage
+
+A survey can be advertised by a Conway **governance Info Action** (CIP-179
+_Action → Survey_ linkage): the action's anchor metadata carries the survey's
+ref, and Tessera surfaces the link on the explore and survey pages once the
+action's voting deadline matches the survey's end epoch.
+
+The app ships a small helper page at **`/propose-info-action`** to build, sign,
+and submit that Info Action from a CIP-30 wallet: load a CIP-108 anchor
+document, and the page validates its shape, extracts the linked survey, and
+checks the epoch alignment before letting you submit. You can pin the exact
+anchor bytes to your configured IPFS providers (or host them yourself) so the
+served document matches the on-chain hash.
 
 ## Repository layout
 
-| Path              | What it is                                                                                     |
-| ----------------- | ---------------------------------------------------------------------------------------------- |
-| `frontend/app`    | The browser app — [SolidJS][solid] + [Vite][vite] + TypeScript.                                |
-| `frontend/cip179` | A pure, dependency-free TypeScript library to encode / decode / validate the label-17 format.  |
-| `frontend/cip-179.md` | The CIP-179 specification (licensed CC-BY-4.0, see below).                                  |
-| `backend`         | Research notes and submodules (Adder / Yaci Store / Oura) for a future indexer. Not yet wired. |
+| Path                  | What it is                                                                                     |
+| --------------------- | ---------------------------------------------------------------------------------------------- |
+| `frontend/app`        | The browser app — [SolidJS][solid] + [Vite][vite] + TypeScript.                                |
+| `frontend/cip179`     | A pure, dependency-free TypeScript library to encode / decode / validate the label-17 format.  |
+| `backend`             | Research notes and submodules (Adder / Yaci Store / Oura) for a future indexer. Not yet wired. |
 
 ## Quick start
 
@@ -46,7 +59,7 @@ VITE_NETWORK=preview      # "preview" (default) or "mainnet"
 ```
 
 The Koios token can also be overridden at runtime in the app's **Settings**.
-IPFS reads race a built-in list of public gateways (no config); IPFS *pinning*
+IPFS reads race a built-in list of public gateways (no config); IPFS _pinning_
 (for authoring external content / rationales) uses per-provider API tokens
 entered in Settings, stored only in the browser.
 
@@ -58,14 +71,14 @@ edits are live with no build step.
 
 In `frontend/app`:
 
-| Command              | What it does                          |
-| -------------------- | ------------------------------------- |
-| `pnpm dev`           | Start the Vite dev server.            |
-| `pnpm type-check`    | TypeScript type-check (`tsc --noEmit`).|
-| `pnpm test`          | Run unit tests (Vitest).              |
-| `pnpm build`         | Production build.                     |
-| `pnpm format`        | Format with Prettier.                 |
-| `pnpm format:check`  | Check formatting without writing.     |
+| Command             | What it does                            |
+| ------------------- | --------------------------------------- |
+| `pnpm dev`          | Start the Vite dev server.              |
+| `pnpm type-check`   | TypeScript type-check (`tsc --noEmit`). |
+| `pnpm test`         | Run unit tests (Vitest).                |
+| `pnpm build`        | Production build.                       |
+| `pnpm format`       | Format with Prettier.                   |
+| `pnpm format:check` | Check formatting without writing.       |
 
 In `frontend/cip179`: `pnpm test`, `pnpm type-check`, and `pnpm build`.
 
