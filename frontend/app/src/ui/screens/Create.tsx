@@ -21,6 +21,7 @@ import {
 
 import { useApp } from "~/state";
 import type { Network } from "~/config";
+import type { ChainTip } from "~/data/source";
 import { walletCredToCip179 } from "~/domain/roles";
 import {
   QUESTION_TYPES,
@@ -46,6 +47,7 @@ import { TxLink } from "~/ui/components/TxLink";
 import {
   QUICKNET_CHAIN_HASH_HEX,
   autoRevealRound,
+  formatEpochEndDate,
   formatRevealDate,
 } from "~/tlock/drand";
 import { roleColors, roleLabel, shortRef } from "~/ui/format";
@@ -316,9 +318,9 @@ export const Create: Component = () => {
               <TimingSection
                 value={meta.endEpoch}
                 onInput={(v) => setMeta("endEpoch", v)}
-                tipEpoch={app.snapshot()?.tip.epoch}
+                tip={app.snapshot()?.tip}
+                secondsPerEpoch={app.config.secondsPerEpoch}
                 network={app.config.network}
-                govActionLifetime={app.snapshot()?.tip.govActionLifetime ?? 0}
               />
               <VisibilitySection
                 mode={meta.mode}
@@ -518,10 +520,13 @@ const RolesSection: Component<{
 const TimingSection: Component<{
   value: string;
   onInput: (v: string) => void;
-  tipEpoch: number | undefined;
+  tip: ChainTip | undefined;
+  secondsPerEpoch: number;
   network: Network;
-  govActionLifetime: number;
 }> = (props) => {
+  const tipEpoch = (): number | undefined => props.tip?.epoch;
+  const govActionLifetime = (): number => props.tip?.govActionLifetime ?? 0;
+
   // Whether the creator plans to tie this survey to a governance Info Action.
   // The link itself is Action → Survey and lives off-chain in the action's
   // anchor, so this toggle changes no on-chain field directly. Its effect here
@@ -536,9 +541,25 @@ const TimingSection: Component<{
   // the tip loads, or if the parameter couldn't be read (lifetime 0) — in which
   // case we can't compute it and fall back to manual entry.
   const autoEndEpoch = (): number | undefined =>
-    props.tipEpoch === undefined || props.govActionLifetime <= 0
+    tipEpoch() === undefined || govActionLifetime() <= 0
       ? undefined
-      : props.tipEpoch + props.govActionLifetime;
+      : tipEpoch()! + govActionLifetime();
+
+  // The wall-clock moment the current end epoch closes (responses stop), shown
+  // like the sealed reveal time. Null until the tip loads or while the field is
+  // empty/non-integer. An estimate (epoch length can change at a future fork).
+  const endEpochDate = (): string | null => {
+    const tip = props.tip;
+    const n = Number(props.value.trim());
+    if (!tip || props.value.trim() === "" || !Number.isInteger(n)) return null;
+    return formatEpochEndDate(
+      n,
+      tip.epoch,
+      tip.time,
+      tip.epochSlot,
+      props.secondsPerEpoch,
+    );
+  };
 
   // Lock the field only when linked *and* we actually have a value to lock to.
   const locked = (): boolean => govLinked() && autoEndEpoch() !== undefined;
@@ -558,10 +579,10 @@ const TimingSection: Component<{
   const tooEarly = () => {
     const n = Number(props.value.trim());
     return (
-      props.tipEpoch !== undefined &&
+      tipEpoch() !== undefined &&
       props.value.trim() !== "" &&
       Number.isInteger(n) &&
-      n <= props.tipEpoch
+      n <= tipEpoch()!
     );
   };
   return (
@@ -643,16 +664,19 @@ const TimingSection: Component<{
             }}
           />
         </label>
+        <Show when={endEpochDate()}>
+          {(date) => <div style={revealLineStyle()}>Closes ~{date()}</div>}
+        </Show>
         <Show
           when={govLinked()}
           fallback={
             <p style={hintStyle()}>
               Responses are accepted through this epoch.{" "}
               <Show
-                when={props.tipEpoch !== undefined}
+                when={tipEpoch() !== undefined}
                 fallback="Loading current epoch…"
               >
-                Current epoch is <b>{props.tipEpoch}</b>.
+                Current epoch is <b>{tipEpoch()}</b>.
               </Show>
             </p>
           }
@@ -674,10 +698,10 @@ const TimingSection: Component<{
             <div style={govNoteStyle()}>
               Locked to the Info Action's voting deadline. On{" "}
               <b>{props.network}</b>, a governance action submitted this epoch
-              {props.tipEpoch !== undefined ? ` (${props.tipEpoch})` : ""}{" "}
-              closes at epoch <b>{autoEndEpoch()}</b> (
+              {tipEpoch() !== undefined ? ` (${tipEpoch()})` : ""} closes at
+              epoch <b>{autoEndEpoch()}</b> (
               <span style={{ "font-family": "var(--mono)" }}>
-                gov_action_lifetime = {props.govActionLifetime}
+                gov_action_lifetime = {govActionLifetime()}
               </span>
               ), so the survey's end epoch must equal that. If you'll submit the
               action in a later epoch, untoggle and set a matching epoch by
@@ -687,8 +711,8 @@ const TimingSection: Component<{
         </Show>
         <Show when={!govLinked() && tooEarly()}>
           <div style={warnNoteStyle()}>
-            End epoch must be later than the current epoch ({props.tipEpoch}),
-            or the survey is closed as soon as it's published.
+            End epoch must be later than the current epoch ({tipEpoch()}), or
+            the survey is closed as soon as it's published.
           </div>
         </Show>
       </div>
