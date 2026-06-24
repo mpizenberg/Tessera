@@ -15,8 +15,9 @@ import { refKey, type SurveyAggregate } from "~/domain/survey";
 import { walletControls, walletOwns } from "~/domain/roles";
 import { isClosed, viewStatus } from "~/ui/format";
 import { FormMosaic, RoleChips, VisGlyph } from "~/ui/components/glyphs";
-import type { ChainTip } from "~/data/source";
+import type { ChainTip, GovLink } from "~/data/source";
 import type { WalletIdentity } from "~/wallet/types";
+import type { Question, SurveyDefinition } from "cip-179";
 
 // Seven columns: Form · visibility · answered · survey · eligible · ends · replies.
 const COLS = "52px 24px 26px minmax(190px,1fr) 122px 100px 52px";
@@ -70,6 +71,32 @@ function matchesFilter(
     case "mine":
       return flags.mine;
   }
+}
+
+/** Text fragments from one question: its prompt plus any inline option or
+ *  rating-scale labels (external-content questions carry only a count). */
+function questionText(q: Question): string[] {
+  const out = [q.prompt];
+  if ("options" in q && q.options.type === "options")
+    out.push(...q.options.labels);
+  if (q.type === "rating" && q.scale.type === "labels")
+    out.push(...q.scale.labels);
+  return out;
+}
+
+/**
+ * The lowercased text a survey is searched against: title + description, every
+ * question prompt and inline label, and any linked governance action (id +
+ * title). Built from the cache-enriched definition, so off-chain labels we hold
+ * are matchable; off-chain labels we don't hold simply aren't here to match.
+ */
+function searchHaystack(d: SurveyDefinition, govLink: GovLink | null): string {
+  const parts = [d.title, d.description, ...d.questions.flatMap(questionText)];
+  if (govLink) {
+    parts.push(govLink.actionId);
+    if (govLink.title) parts.push(govLink.title);
+  }
+  return parts.join(" ").toLowerCase();
 }
 
 /**
@@ -131,6 +158,18 @@ export const Explore: Component = () => {
 
   const narrow = useNarrow(CARD_BREAKPOINT);
 
+  // The input shows keystrokes immediately but only commits to the applied
+  // query (`app.ui.search`, which drives filtering) after a 1s pause, so typing
+  // doesn't re-filter the whole list on every character.
+  const [searchInput, setSearchInput] = createSignal(app.ui.search);
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  const onSearchInput = (value: string): void => {
+    setSearchInput(value);
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => app.setSearch(value), 1000);
+  };
+  onCleanup(() => clearTimeout(searchTimer));
+
   // First-visit intro: shown until dismissed (remembered) or a wallet connects.
   const [introDismissed, setIntroDismissed] = createSignal(introIsDismissed());
   const showIntro = () => !app.wallet() && !introDismissed();
@@ -170,8 +209,32 @@ export const Explore: Component = () => {
     };
   };
 
+  // Search is a case-insensitive AND of whitespace-separated terms: every term
+  // must appear (as a substring) somewhere in a survey's haystack.
+  const searchTerms = createMemo(() =>
+    app.ui.search.trim().toLowerCase().split(/\s+/).filter(Boolean),
+  );
+  // One haystack per survey, rebuilt only when the survey set or cached labels
+  // change — reused by both the row filter and the chip counts.
+  const haystacks = createMemo(() => {
+    const m = new Map<string, string>();
+    for (const a of all())
+      m.set(
+        a.key,
+        searchHaystack(app.displayDefinition(a.record.definition), a.govLink),
+      );
+    return m;
+  });
+  const matchesSearch = (a: SurveyAggregate): boolean => {
+    const terms = searchTerms();
+    if (terms.length === 0) return true;
+    const hay = haystacks().get(a.key) ?? "";
+    return terms.every((t) => hay.includes(t));
+  };
+
+  // Counts reflect the active search, so each chip reads "N matching & <filter>".
   const counts = createMemo(() => {
-    const xs = all();
+    const xs = all().filter(matchesSearch);
     const by = (f: ExploreFilter) =>
       xs.filter((a) => matchesFilter(a, f, flagsOf(a))).length;
     return {
@@ -184,21 +247,11 @@ export const Explore: Component = () => {
     } satisfies Record<ExploreFilter, number>;
   });
 
-  const visible = createMemo(() => {
-    const q = app.ui.search.trim().toLowerCase();
-    return all()
+  const visible = createMemo(() =>
+    all()
       .filter((a) => matchesFilter(a, app.ui.filter, flagsOf(a)))
-      .filter((a) => {
-        if (q === "") return true;
-        // Match against cache-enriched labels so a survey we authored this
-        // session is searchable by its real (off-chain) title/description.
-        const d = app.displayDefinition(a.record.definition);
-        return (
-          d.title.toLowerCase().includes(q) ||
-          d.description.toLowerCase().includes(q)
-        );
-      });
-  });
+      .filter(matchesSearch),
+  );
 
   // Linked (governance) surveys get their own section, shown first; the rest
   // split into open / closed so a linked survey never appears twice.
@@ -335,18 +388,23 @@ export const Explore: Component = () => {
             "min-width": "190px",
           }}
         >
-          <span
-            style={{
-              width: "13px",
-              height: "13px",
-              border: "1.5px solid #BFB39A",
-              "border-radius": "50%",
-              flex: "none",
-            }}
-          />
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#BFB39A"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            aria-hidden="true"
+            style={{ flex: "none", display: "block" }}
+          >
+            <circle cx="10.5" cy="10.5" r="7" />
+            <line x1="15.5" y1="15.5" x2="21" y2="21" />
+          </svg>
           <input
-            value={app.ui.search}
-            onInput={(e) => app.setSearch(e.currentTarget.value)}
+            value={searchInput()}
+            onInput={(e) => onSearchInput(e.currentTarget.value)}
             placeholder="Search surveys…"
             style={{
               border: "none",
