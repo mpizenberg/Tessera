@@ -17,7 +17,7 @@
 import type { ChainTip, ResponseRecord } from "~/data/source";
 import { dedupeResponses } from "./survey";
 
-export type ExclusionKey = "after-deadline" | "superseded";
+export type ExclusionKey = "after-deadline" | "superseded" | "undecryptable";
 
 export interface ExclusionReason {
   readonly key: ExclusionKey;

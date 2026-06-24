@@ -1895,8 +1895,6 @@ const ResultsBody: Component<{
   records: ResponseRecord[];
   /** Client-detectable exclusions, for the audit breakdown. */
   excluded: readonly ExclusionReason[];
-  /** Optional line under the counter (e.g. reveal provenance). */
-  note?: string;
 }> = (props) => {
   const [roleFilter, setRoleFilter] = createSignal<number | "all">("all");
   const [exclOpen, setExclOpen] = createSignal(false);
@@ -2056,19 +2054,6 @@ const ResultsBody: Component<{
           excluded={props.excluded}
           endEpoch={props.def.endEpoch}
         />
-      </Show>
-
-      <Show when={props.note}>
-        <div
-          style={{
-            "font-family": "var(--mono)",
-            "font-size": "11px",
-            color: "var(--gov)",
-            "margin-top": "10px",
-          }}
-        >
-          {props.note}
-        </div>
       </Show>
 
       {/* weighting disclaimer */}
@@ -2246,10 +2231,24 @@ const SealedResults: Component<{
     return { records: recs, failed };
   });
 
-  const revealNote = (count: number, failed: number) =>
+  // Decrypt/decode failures are responses collected but not counted — surface
+  // them in the exclusion breakdown alongside the on-chain categories. The
+  // failure is only known after reveal, so it's appended here rather than in the
+  // pure on-chain audit. Tessera can't always tell a decryption failure from a
+  // decode failure (a malformed/non-conformant plaintext that decrypts but
+  // doesn't parse), so the label stays neutral about which it was.
+  const excludedWithFailures = (failed: number): ExclusionReason[] =>
     failed > 0
-      ? `revealed from ${count} sealed response${count === 1 ? "" : "s"} · ${failed} failed to decrypt`
-      : `revealed from ${count} sealed response${count === 1 ? "" : "s"}`;
+      ? [
+          ...props.excluded,
+          {
+            key: "undecryptable",
+            label: "Couldn't be decrypted or decoded",
+            hint: "malformed or non-conformant payload",
+            count: failed,
+          },
+        ]
+      : [...props.excluded];
 
   return (
     <Switch>
@@ -2297,8 +2296,7 @@ const SealedResults: Component<{
           def={props.def}
           keyStr={props.keyStr}
           records={revealed()!.records}
-          excluded={props.excluded}
-          note={revealNote(revealed()!.records.length, revealed()!.failed)}
+          excluded={excludedWithFailures(revealed()!.failed)}
         />
       </Match>
       {/* Reached only when revealable, supported, not cancelled, and the viewer
