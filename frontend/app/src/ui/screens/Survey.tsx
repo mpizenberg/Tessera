@@ -933,15 +933,25 @@ const QuestionResult: Component<{
                 t={tally}
               />
             );
-          case "points":
+          case "points": {
+            // One bar per option, like multi-select. Bars are normalized to the
+            // leading option's average so the longest fills the track; the meta
+            // shows the average points allocated (out of the question's budget).
+            const max = Math.max(0, ...tally.rows.map((r) => r.avg));
             return (
-              <PointsCard
+              <ResultBarCard
                 qLabel={qLabel()}
                 typeLabel={`${base} · average allocation`}
-                prompt={props.q.prompt}
-                t={tally}
+                title={props.q.prompt || "(no prompt)"}
+                abstainText={`${tally.abstained} abstained`}
+                bars={tally.rows.map((row) => ({
+                  label: row.label,
+                  meta: `${row.avg.toFixed(1)} pts`,
+                  pct: max > 0 ? row.avg / max : 0,
+                }))}
               />
             );
+          }
           case "rating":
             return (
               <RatingCard
@@ -1144,106 +1154,6 @@ const HistogramCard: Component<{
                   }}
                 >
                   {b.label}
-                </span>
-              </div>
-            )}
-          </For>
-        </div>
-      </Show>
-    </CardShell>
-  );
-};
-
-const PointsCard: Component<{
-  qLabel: string;
-  typeLabel: string;
-  prompt: string;
-  t: Extract<QuestionTally, { kind: "points" }>;
-}> = (props) => {
-  const palette = [
-    "var(--accent)",
-    "#2E6B5E",
-    "#6B4FA0",
-    "#9A6B1E",
-    "#4F7A3A",
-    "#2B4C7E",
-  ];
-  const color = (i: number) => palette[i % palette.length];
-  return (
-    <CardShell
-      qLabel={props.qLabel}
-      typeLabel={props.typeLabel}
-      prompt={props.prompt}
-      abstain={`${props.t.abstained} abstained`}
-    >
-      <Show when={props.t.answered > 0} fallback={<NoData />}>
-        <div
-          style={{
-            display: "flex",
-            height: "34px",
-            "border-radius": "var(--r-sm)",
-            overflow: "hidden",
-            "margin-top": "16px",
-          }}
-        >
-          <For each={props.t.rows}>
-            {(row, i) => (
-              <div
-                style={{
-                  width: `${(row.avg / props.t.budget) * 100}%`,
-                  background: color(i()),
-                  "min-width": row.avg > 0 ? "2px" : "0",
-                }}
-              />
-            )}
-          </For>
-        </div>
-        <div
-          style={{
-            display: "flex",
-            "flex-direction": "column",
-            gap: "11px",
-            "margin-top": "14px",
-          }}
-        >
-          <For each={props.t.rows}>
-            {(row, i) => (
-              <div
-                style={{
-                  display: "flex",
-                  "align-items": "center",
-                  gap: "10px",
-                }}
-              >
-                <span
-                  style={{
-                    width: "11px",
-                    height: "11px",
-                    "border-radius": "3px",
-                    background: color(i()),
-                    flex: "none",
-                  }}
-                />
-                <span
-                  style={{
-                    "font-size": "13.5px",
-                    "font-weight": "600",
-                    color: "var(--body)",
-                    flex: "1",
-                  }}
-                >
-                  {row.label}
-                </span>
-                <span
-                  style={{
-                    "font-family": "var(--mono)",
-                    "font-size": "13px",
-                    "font-weight": "600",
-                    color: "var(--accent)",
-                    "white-space": "nowrap",
-                  }}
-                >
-                  {row.avg.toFixed(1)} pts
                 </span>
               </div>
             )}
