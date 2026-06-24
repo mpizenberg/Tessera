@@ -13,7 +13,7 @@ import { A } from "@solidjs/router";
 import { useApp, type ExploreFilter } from "~/state";
 import { refKey, type SurveyAggregate } from "~/domain/survey";
 import { walletControls, walletOwns } from "~/domain/roles";
-import { isClosed, viewStatus } from "~/ui/format";
+import { fullRef, isClosed, viewStatus } from "~/ui/format";
 import { FormMosaic, RoleChips, VisGlyph } from "~/ui/components/glyphs";
 import type { ChainTip, GovLink } from "~/data/source";
 import type { WalletIdentity } from "~/wallet/types";
@@ -819,14 +819,19 @@ const GridRow: Component<EntryProps> = (props) => {
         </div>
         <Show when={props.pro}>
           <div
+            title="Full survey ref — defining transaction hash and output index"
             style={{
               "font-family": "var(--mono)",
               "font-size": "10.5px",
               color: closed() ? "#9C9486" : "var(--gov)",
               "margin-top": "2px",
+              "word-break": "break-all",
+              "line-height": "1.4",
             }}
           >
-            epoch {def().endEpoch} · {props.a.record.txHash.slice(0, 8)}…
+            epoch {def().endEpoch}
+            <br />
+            {fullRef(props.a.key)}
           </div>
         </Show>
       </div>
@@ -990,6 +995,20 @@ const CardRow: Component<EntryProps> = (props) => {
           <MetaChip label="Epoch">{String(def().endEpoch)}</MetaChip>
         </Show>
       </div>
+      <Show when={props.pro}>
+        <div
+          title="Full survey ref — defining transaction hash and output index"
+          style={{
+            "font-family": "var(--mono)",
+            "font-size": "10.5px",
+            color: "var(--gov)",
+            "word-break": "break-all",
+            "margin-top": "8px",
+          }}
+        >
+          ref {fullRef(props.a.key)}
+        </div>
+      </Show>
     </A>
   );
 };

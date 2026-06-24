@@ -58,6 +58,7 @@ import {
 import { hexToBytes } from "~/util/hex";
 import { formatRevealDate } from "~/tlock/drand";
 import {
+  fullRef,
   roleBrowserClaimable,
   roleColors,
   roleDescription,
@@ -713,13 +714,15 @@ const SurveyHeader: Component<{
       <span style={{ "margin-left": "auto" }} />
       <Show when={props.pro}>
         <span
+          title="Full survey ref — defining transaction hash and output index"
           style={{
             "font-family": "var(--mono)",
             "font-size": "11px",
             color: "var(--pale)",
+            "word-break": "break-all",
           }}
         >
-          ref {shortRef(props.s.key)}
+          ref {fullRef(props.s.key)}
         </span>
       </Show>
     </div>

@@ -1,44 +1,124 @@
 /**
  * Minimal one-off utility: build, sign and submit a Conway governance **Info
  * Action** proposal that advertises a CIP-179 survey, using the connected CIP-30
- * wallet. The proposal's anchor is a CIP-108 document (bundled at
- * {@link ANCHOR_JSON}) whose `body.cip179` carries the survey link.
+ * wallet. The proposal's anchor is a CIP-108 document the user loads from disk
+ * (see {@link LoadedAnchor}) whose `body.cip179` carries the survey link.
  *
  * The anchor's on-chain hash must be computed over the *exact bytes* that get
- * hosted, so the page hashes the bundled document and offers it for download —
- * host those bytes verbatim, then paste the URL here.
+ * hosted, so the page hashes the file bytes verbatim — the same bytes are
+ * pinned/offered for download, so the served document always matches the hash.
  */
 
-import { Show, createSignal, type Component, type JSX } from "solid-js";
+import {
+  For,
+  Show,
+  createMemo,
+  createSignal,
+  type Component,
+  type JSX,
+} from "solid-js";
 import { A } from "@solidjs/router";
 import { blake2b } from "@noble/hashes/blake2.js";
 
-import ANCHOR_JSON from "~/data/test-info-action-anchor.jsonld?raw";
 import { useApp } from "~/state";
+import { findSurvey } from "~/domain/survey";
 import { bytesToHex } from "~/util/hex";
 import { IPFS_PROVIDERS, type ProviderId } from "~/enrichment/providers";
 import { TxLink } from "~/ui/components/TxLink";
 
-// The anchor is static, so hash it once. The on-chain `anchor_data_hash` is the
-// blake2b-256 of the document bytes exactly as served.
-const ANCHOR_BYTES = new TextEncoder().encode(ANCHOR_JSON);
-const ANCHOR_HASH = blake2b(ANCHOR_BYTES, { dkLen: 32 });
-const ANCHOR_HASH_HEX = bytesToHex(ANCHOR_HASH);
+/** The survey a well-formed anchor links to (tx id lower-cased, output index). */
+interface SurveyRefLite {
+  readonly txId: string;
+  readonly index: number;
+}
 
-// The survey ref the bundled anchor links to (for display only).
-const SURVEY_REF = (() => {
+/**
+ * An anchor document loaded from disk: the *exact* bytes (what the on-chain hash
+ * commits to and what gets served), their blake2b-256 hash, the decoded text for
+ * display, the survey ref pulled from `body.cip179`, and any shape problems
+ * found while validating it.
+ */
+interface LoadedAnchor {
+  readonly fileName: string;
+  // Backed by a plain ArrayBuffer (from File.arrayBuffer), so it's a valid
+  // BlobPart for the download below — not a SharedArrayBuffer-backed view.
+  readonly bytes: Uint8Array<ArrayBuffer>;
+  readonly text: string;
+  readonly hash: Uint8Array;
+  readonly hashHex: string;
+  readonly surveyRef: SurveyRefLite | null;
+  /** Human-readable shape problems; empty means a well-formed survey link. */
+  readonly problems: readonly string[];
+}
+
+/**
+ * Validate a loaded document against the CIP-108 + CIP-179 shape the discovery
+ * layer (`parseGovLink` in {@link "~/data/koios"}) requires, and pull out the
+ * survey ref. The rules mirror `parseGovLink`, so what passes here is exactly
+ * what tooling will later treat as a link — but with per-issue messages for the
+ * UI. Returns the ref (only when the link is well-formed) plus any problems.
+ */
+function validateAnchorShape(text: string): {
+  surveyRef: SurveyRefLite | null;
+  problems: string[];
+} {
+  let parsed: unknown;
   try {
-    const link = (JSON.parse(ANCHOR_JSON) as Record<string, any>)?.body?.cip179;
-    return link
-      ? { txId: String(link.surveyTxId), index: Number(link.surveyIndex) }
-      : null;
-  } catch {
-    return null;
+    parsed = JSON.parse(text);
+  } catch (e) {
+    return {
+      surveyRef: null,
+      problems: [`Not valid JSON: ${(e as Error).message}`],
+    };
   }
-})();
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return { surveyRef: null, problems: ["Top level must be a JSON object."] };
+  }
+  const obj = parsed as Record<string, unknown>;
+  const problems: string[] = [];
+  if (typeof obj["@context"] !== "object" || obj["@context"] === null) {
+    problems.push('Missing JSON-LD "@context" (CIP-100/108 terms).');
+  }
+  const body = obj["body"];
+  if (typeof body !== "object" || body === null) {
+    problems.push('Missing CIP-108 "body" object.');
+    return { surveyRef: null, problems };
+  }
+  const cip = (body as Record<string, unknown>)["cip179"];
+  if (typeof cip !== "object" || cip === null) {
+    problems.push('Missing "body.cip179" survey link.');
+    return { surveyRef: null, problems };
+  }
+  const link = cip as Record<string, unknown>;
+  if (link["kind"] !== "survey-link") {
+    problems.push(
+      `"body.cip179.kind" must be "survey-link" (got ${JSON.stringify(link["kind"])}).`,
+    );
+  }
+  const txId = link["surveyTxId"];
+  const txOk = typeof txId === "string" && /^[0-9a-fA-F]{64}$/.test(txId);
+  if (!txOk) {
+    problems.push(
+      '"body.cip179.surveyTxId" must be a 64-char hex transaction id.',
+    );
+  }
+  const index = link["surveyIndex"];
+  const indexOk =
+    typeof index === "number" && Number.isInteger(index) && index >= 0;
+  if (!indexOk) {
+    problems.push('"body.cip179.surveyIndex" must be a non-negative integer.');
+  }
+  const surveyRef =
+    txOk && indexOk
+      ? { txId: (txId as string).toLowerCase(), index: index as number }
+      : null;
+  return { surveyRef, problems };
+}
 
 export const ProposeInfoAction: Component = () => {
   const app = useApp();
+  const [anchor, setAnchor] = createSignal<LoadedAnchor | null>(null);
+  const [loadError, setLoadError] = createSignal<string | null>(null);
   const [url, setUrl] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const [txHash, setTxHash] = createSignal<string | null>(null);
@@ -52,18 +132,115 @@ export const ProposeInfoAction: Component = () => {
   const hasPinning = () =>
     IPFS_PROVIDERS.some((p) => app.ipfsTokens[p.id]?.trim());
 
-  // Pin the *exact* anchor bytes to the configured providers and auto-fill the
-  // URL with the returned ipfs:// URI. We pin ANCHOR_BYTES verbatim, so the
-  // provider serves back the same bytes and pin.hash === ANCHOR_HASH — the
-  // on-chain hash stays correct whether pinned here or hosted by hand.
+  // The on-chain survey this anchor points at, once it's been indexed (or its
+  // optimistic twin, for a survey just published this session).
+  const linkedSurvey = createMemo(() => {
+    const ref = anchor()?.surveyRef;
+    const snap = app.snapshot();
+    if (!ref || !snap) return undefined;
+    const key = `${ref.txId}:${ref.index}`;
+    return (
+      findSurvey(snap.surveys, key) ??
+      app.optimisticSurveys().find((s) => s.key === key)
+    );
+  });
+
+  // Epoch-alignment check. An action submitted in the current epoch gets a
+  // voting deadline of `tip.epoch + gov_action_lifetime`, and the discovery
+  // layer links a survey only when its `end_epoch` equals that deadline. So the
+  // two align exactly when this action is submitted in epoch
+  // `survey.end_epoch − gov_action_lifetime`. Reactive on the tip and snapshot.
+  const alignment = createMemo<{ level: NoteKind; text: string } | null>(() => {
+    const a = anchor();
+    if (!a || !a.surveyRef) return null; // no link → nothing to align
+    const tip = app.snapshot()?.tip;
+    if (!tip)
+      return {
+        level: "warn",
+        text: "Chain tip not loaded yet — can't verify epoch alignment.",
+      };
+    const survey = linkedSurvey();
+    if (!survey)
+      return {
+        level: "warn",
+        text: "Linked survey isn't on-chain yet — can't verify its end_epoch. Make sure it's published and indexed.",
+      };
+    const lifetime = tip.govActionLifetime;
+    if (lifetime <= 0)
+      return {
+        level: "warn",
+        text: "gov_action_lifetime is unknown — can't compute the voting deadline.",
+      };
+    const surveyEnd = survey.record.definition.endEpoch;
+    const deadlineIfNow = tip.epoch + lifetime;
+    const submitEpoch = surveyEnd - lifetime;
+    if (deadlineIfNow === surveyEnd)
+      return {
+        level: "ok",
+        text: `Aligned — submitting now (epoch ${tip.epoch}) gives a voting deadline of epoch ${surveyEnd}, matching the survey's end_epoch.`,
+      };
+    if (tip.epoch < submitEpoch)
+      return {
+        level: "danger",
+        text: `Too early — submit in epoch ${submitEpoch} (in ${submitEpoch - tip.epoch} more) to match the survey's end_epoch ${surveyEnd}. Submitting now would set the deadline to ${deadlineIfNow}.`,
+      };
+    return {
+      level: "danger",
+      text: `Window passed — the survey ends at epoch ${surveyEnd}, so this action had to be submitted in epoch ${submitEpoch}. Submitted now (epoch ${tip.epoch}) it would expire at ${deadlineIfNow} and can no longer link to that survey.`,
+    };
+  });
+
+  // Submission is blocked while the document is malformed or won't align — both
+  // mean the resulting action wouldn't be a valid CIP-179 survey link.
+  const blocking = () =>
+    (anchor()?.problems.length ?? 0) > 0 || alignment()?.level === "danger";
+
+  // Read a chosen file as raw bytes (never re-encoded), hash it, and parse the
+  // survey ref. Reading the bytes verbatim is what keeps the on-chain hash valid
+  // against the document that later gets pinned/hosted.
+  const loadFile = async (file: File | undefined) => {
+    if (!file) return;
+    setLoadError(null);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const text = new TextDecoder().decode(bytes);
+      const hash = blake2b(bytes, { dkLen: 32 });
+      const { surveyRef, problems } = validateAnchorShape(text);
+      setAnchor({
+        fileName: file.name,
+        bytes,
+        text,
+        hash,
+        hashHex: bytesToHex(hash),
+        surveyRef,
+        problems,
+      });
+      // A fresh document invalidates anything tied to the previous one.
+      setUrl("");
+      setPinnedBy(null);
+      setPinError(null);
+      setTxHash(null);
+      setError(null);
+    } catch (e) {
+      setAnchor(null);
+      setLoadError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  // Pin the *exact* loaded bytes to the configured providers and auto-fill the
+  // URL with the returned ipfs:// URI. We pin the bytes verbatim, so the provider
+  // serves back the same document and pin.hash === the anchor hash — the on-chain
+  // hash stays correct whether pinned here or hosted by hand.
   const pinToIpfs = async () => {
+    const a = anchor();
+    if (!a) return;
     setPinning(true);
     setPinError(null);
     try {
       const { pinBytes } = await import("~/enrichment/pin");
       const res = await pinBytes(
-        ANCHOR_BYTES,
-        "info-action-survey-link.jsonld",
+        a.bytes,
+        a.fileName,
         "application/ld+json",
         app.ipfsTokens,
       );
@@ -82,11 +259,18 @@ export const ProposeInfoAction: Component = () => {
     return w ? w.identity.networkId !== expectedNetworkId() : false;
   };
   const canSubmit = () =>
-    !!app.wallet() && !mismatch() && url().trim() !== "" && !busy();
+    !!anchor() &&
+    !blocking() &&
+    !!app.wallet() &&
+    !mismatch() &&
+    url().trim() !== "" &&
+    !busy();
 
   const copyHash = async () => {
+    const a = anchor();
+    if (!a) return;
     try {
-      await navigator.clipboard.writeText(ANCHOR_HASH_HEX);
+      await navigator.clipboard.writeText(a.hashHex);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
@@ -95,21 +279,24 @@ export const ProposeInfoAction: Component = () => {
   };
 
   const download = () => {
-    const blob = new Blob([ANCHOR_BYTES], { type: "application/ld+json" });
+    const a = anchor();
+    if (!a) return;
+    const blob = new Blob([a.bytes], { type: "application/ld+json" });
     const href = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = href;
-    a.download = "info-action-survey-link.jsonld";
-    a.click();
+    const el = document.createElement("a");
+    el.href = href;
+    el.download = a.fileName;
+    el.click();
     URL.revokeObjectURL(href);
   };
 
   const submit = async () => {
-    if (!canSubmit()) return;
+    const a = anchor();
+    if (!a || !canSubmit()) return;
     setBusy(true);
     setError(null);
     try {
-      const hash = await app.submitInfoAction(url().trim(), ANCHOR_HASH);
+      const hash = await app.submitInfoAction(url().trim(), a.hash);
       setTxHash(hash);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -150,108 +337,178 @@ export const ProposeInfoAction: Component = () => {
         expires (your wallet shows the exact amount before you sign).
       </p>
 
-      <Show when={SURVEY_REF}>
-        {(ref) => (
+      {/* 1 · Load the anchor */}
+      <div style={stepHeadStyle()}>1 · Load the anchor document</div>
+      <div style={cardStyle()}>
+        <p style={{ ...hintStyle(), "margin-top": "0" }}>
+          Choose the CIP-108 anchor <span style={mono()}>.jsonld</span> file
+          (its <span style={mono()}>body.cip179</span> carries the survey link).
+          It's read locally — the on-chain hash is taken over the file's exact
+          bytes, so they're never re-formatted.
+        </p>
+        <input
+          type="file"
+          accept=".jsonld,.json,application/ld+json,application/json"
+          onChange={(e) => {
+            void loadFile(e.currentTarget.files?.[0]);
+            // Allow re-loading the same filename after an edit on disk.
+            e.currentTarget.value = "";
+          }}
+          style={{ "font-size": "13px", "margin-top": "4px" }}
+        />
+        <Show when={loadError()}>
+          <div style={{ ...noteStyle("danger"), "margin-top": "12px" }}>
+            {loadError()}
+          </div>
+        </Show>
+      </div>
+
+      {/* 1b · Loaded document — survey ref, hash, publish */}
+      <Show when={anchor()}>
+        {(a) => (
           <div style={cardStyle()}>
-            <div style={labelStyle()}>Links to survey</div>
+            <div style={labelStyle()}>Loaded</div>
             <div
               style={{
                 ...mono(),
                 "font-size": "12.5px",
-                "word-break": "break-all",
                 color: "var(--ink)",
+                "margin-bottom": "12px",
               }}
             >
-              {ref().txId}
-              <span style={{ color: "var(--dim)" }}>
-                {" "}
-                · index {ref().index}
-              </span>
+              {a().fileName}
             </div>
-            <p style={hintStyle()}>
-              Make sure this survey's <span style={mono()}>end_epoch</span>{" "}
-              equals this action's voting deadline (the CIP-179 epoch-alignment
-              rule), or tooling won't treat them as linked.
-            </p>
+
+            {/* Validation: shape problems block submission. */}
+            <Show when={a().problems.length > 0}>
+              <div style={noteStyle("danger")}>
+                <div style={{ "font-weight": "700", "margin-bottom": "6px" }}>
+                  Not a valid CIP-179 survey link:
+                </div>
+                <ul style={{ margin: "0", "padding-left": "18px" }}>
+                  <For each={a().problems}>{(p) => <li>{p}</li>}</For>
+                </ul>
+              </div>
+            </Show>
+
+            {/* Extracted survey ref + on-chain match + epoch alignment. */}
+            <Show when={a().surveyRef}>
+              {(ref) => (
+                <>
+                  <div style={labelStyle()}>Links to survey</div>
+                  <div
+                    style={{
+                      ...mono(),
+                      "font-size": "12.5px",
+                      "word-break": "break-all",
+                      color: "var(--ink)",
+                    }}
+                  >
+                    {ref().txId}
+                    <span style={{ color: "var(--dim)" }}>
+                      {" "}
+                      · index {ref().index}
+                    </span>
+                  </div>
+                  <Show when={linkedSurvey()}>
+                    {(s) => (
+                      <div style={{ ...hintStyle(), "margin-top": "6px" }}>
+                        On-chain:{" "}
+                        <b style={{ color: "var(--ink)" }}>
+                          {s().record.definition.title || "Untitled survey"}
+                        </b>{" "}
+                        · end_epoch {s().record.definition.endEpoch}
+                      </div>
+                    )}
+                  </Show>
+                  <Show when={alignment()}>
+                    {(c) => (
+                      <div
+                        style={{
+                          ...noteStyle(c().level),
+                          "margin-top": "12px",
+                        }}
+                      >
+                        {c().text}
+                      </div>
+                    )}
+                  </Show>
+                </>
+              )}
+            </Show>
+
+            <Show
+              when={hasPinning()}
+              fallback={
+                <p style={hintStyle()}>
+                  Host these exact bytes at a public URL (a GitHub raw link, or
+                  add an IPFS provider in{" "}
+                  <A href="/settings" style={{ color: "var(--gov)" }}>
+                    Settings
+                  </A>{" "}
+                  to pin from here), then paste the URL in step 2.
+                </p>
+              }
+            >
+              <p style={hintStyle()}>
+                Pin to the IPFS providers configured in your Settings, in one
+                click. The exact bytes below are pinned, so the served document
+                matches the on-chain hash.
+              </p>
+            </Show>
+
+            <div
+              style={{
+                display: "flex",
+                gap: "8px",
+                "flex-wrap": "wrap",
+                margin: "10px 0",
+              }}
+            >
+              <Show when={hasPinning()}>
+                <button
+                  onClick={() => void pinToIpfs()}
+                  disabled={pinning()}
+                  style={btnStyle(true)}
+                >
+                  {pinning() ? "Pinning…" : "Pin to IPFS"}
+                </button>
+              </Show>
+              <button onClick={download} style={btnStyle(!hasPinning())}>
+                Download .jsonld
+              </button>
+              <button onClick={() => void copyHash()} style={btnStyle(false)}>
+                {copied() ? "Copied hash ✓" : "Copy anchor hash"}
+              </button>
+            </div>
+
+            <Show when={pinnedBy()}>
+              {(by) => (
+                <div style={noteStyle("ok")}>
+                  Pinned to {by().join(", ")}. URL filled in below.
+                </div>
+              )}
+            </Show>
+            <Show when={pinError()}>
+              <div style={noteStyle("danger")}>{pinError()}</div>
+            </Show>
+
+            <div style={labelStyle()}>Anchor hash (blake2b-256)</div>
+            <div
+              style={{
+                ...mono(),
+                "font-size": "11.5px",
+                "word-break": "break-all",
+                color: "var(--gov)",
+                "margin-bottom": "12px",
+              }}
+            >
+              {a().hashHex}
+            </div>
+            <pre style={codeStyle()}>{a().text}</pre>
           </div>
         )}
       </Show>
-
-      {/* 1 · Publish the anchor */}
-      <div style={stepHeadStyle()}>1 · Publish the anchor document</div>
-      <div style={cardStyle()}>
-        <Show
-          when={hasPinning()}
-          fallback={
-            <p style={{ ...hintStyle(), "margin-top": "0" }}>
-              Host these exact bytes at a public URL (a GitHub raw link, or add
-              an IPFS provider in{" "}
-              <A href="/settings" style={{ color: "var(--gov)" }}>
-                Settings
-              </A>{" "}
-              to pin from here), then paste the URL in step 2. The on-chain hash
-              is computed from this content — re-formatting after hosting breaks
-              the match.
-            </p>
-          }
-        >
-          <p style={{ ...hintStyle(), "margin-top": "0" }}>
-            Pin to the IPFS providers configured in your Settings, in one click.
-            The exact bytes below are pinned, so the served document matches the
-            on-chain hash.
-          </p>
-        </Show>
-
-        <div
-          style={{
-            display: "flex",
-            gap: "8px",
-            "flex-wrap": "wrap",
-            "margin-bottom": "10px",
-          }}
-        >
-          <Show when={hasPinning()}>
-            <button
-              onClick={() => void pinToIpfs()}
-              disabled={pinning()}
-              style={btnStyle(true)}
-            >
-              {pinning() ? "Pinning…" : "Pin to IPFS"}
-            </button>
-          </Show>
-          <button onClick={download} style={btnStyle(!hasPinning())}>
-            Download .jsonld
-          </button>
-          <button onClick={() => void copyHash()} style={btnStyle(false)}>
-            {copied() ? "Copied hash ✓" : "Copy anchor hash"}
-          </button>
-        </div>
-
-        <Show when={pinnedBy()}>
-          {(by) => (
-            <div style={noteStyle("ok")}>
-              Pinned to {by().join(", ")}. URL filled in below.
-            </div>
-          )}
-        </Show>
-        <Show when={pinError()}>
-          <div style={noteStyle("danger")}>{pinError()}</div>
-        </Show>
-
-        <div style={labelStyle()}>Anchor hash (blake2b-256)</div>
-        <div
-          style={{
-            ...mono(),
-            "font-size": "11.5px",
-            "word-break": "break-all",
-            color: "var(--gov)",
-            "margin-bottom": "12px",
-          }}
-        >
-          {ANCHOR_HASH_HEX}
-        </div>
-        <pre style={codeStyle()}>{ANCHOR_JSON}</pre>
-      </div>
 
       {/* 2 · Anchor URL */}
       <div style={stepHeadStyle()}>2 · Anchor URL</div>
@@ -286,6 +543,13 @@ export const ProposeInfoAction: Component = () => {
               {app.config.network}). Switch it before submitting.
             </div>
           </Show>
+        </Show>
+
+        <Show when={anchor() && blocking() && !txHash()}>
+          <div style={noteStyle("danger")}>
+            Resolve the validation issues in step 1 before submitting — the
+            action wouldn't be a valid CIP-179 survey link.
+          </div>
         </Show>
 
         <Show
@@ -469,7 +733,8 @@ function submitBtnStyle(enabled: boolean): JSX.CSSProperties {
     opacity: enabled ? "1" : ".7",
   };
 }
-function noteStyle(kind: "ok" | "warn" | "danger"): JSX.CSSProperties {
+type NoteKind = "ok" | "warn" | "danger";
+function noteStyle(kind: NoteKind): JSX.CSSProperties {
   const c = `var(--${kind})`;
   return {
     "font-size": "12.5px",

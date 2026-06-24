@@ -37,7 +37,13 @@ import type { ResponseRecord } from "~/data/source";
 import { usePresentation } from "~/enrichment/usePresentation";
 import { IPFS_GATEWAYS } from "~/enrichment/providers";
 import { formatRevealDate, isQuicknet, roundIsAvailable } from "~/tlock/drand";
-import { roleColors, roleLabel, shortRef, viewStatus } from "~/ui/format";
+import {
+  fullRef,
+  roleColors,
+  roleLabel,
+  shortRef,
+  viewStatus,
+} from "~/ui/format";
 import { ResultBarCard } from "~/ui/components/ResultBarCard";
 import { TxLink } from "~/ui/components/TxLink";
 import { toCsv, downloadCsv } from "~/util/csv";
@@ -705,13 +711,15 @@ const Header: Component<{
         <span style={{ "margin-left": "auto" }} />
         <Show when={props.pro}>
           <span
+            title="Full survey ref — defining transaction hash and output index"
             style={{
               "font-family": "var(--mono)",
               "font-size": "11px",
               color: "var(--pale)",
+              "word-break": "break-all",
             }}
           >
-            ref {shortRef(props.keyStr)}
+            ref {fullRef(props.keyStr)}
           </span>
         </Show>
       </div>

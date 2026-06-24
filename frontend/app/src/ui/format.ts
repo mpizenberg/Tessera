@@ -100,3 +100,13 @@ export function shortRef(key: string): string {
   const short = h.length > 12 ? `${h.slice(0, 4)}…${h.slice(-4)}` : h;
   return `${short}#${index ?? "0"}`;
 }
+
+/**
+ * The complete survey ref id, "<txHash>#<index>" — the full transaction hash so
+ * savvy (pro-mode) users can look the survey's defining transaction up on a
+ * chain explorer. The ref key is internally "<txHash>:<index>".
+ */
+export function fullRef(key: string): string {
+  const [hash, index] = key.split(":");
+  return `${hash ?? ""}#${index ?? "0"}`;
+}
