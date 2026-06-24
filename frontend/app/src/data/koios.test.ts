@@ -39,7 +39,8 @@ describe("parseGovLink", () => {
     expect(link).toEqual({
       surveyKey: "9a1c:2", // tx id lower-cased, joined with the index
       actionId: "gov_action1abc",
-      endEpoch: 42,
+      // Koios expiration 42 → voting-end epoch 41 (one before the drop-out epoch).
+      endEpoch: 41,
       title: "Ratify the budget",
     });
   });

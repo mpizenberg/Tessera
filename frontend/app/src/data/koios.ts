@@ -62,7 +62,14 @@ interface TxStatusRow {
 export interface ProposalRow {
   proposal_id: string;
   proposal_type: string;
-  /** Epoch the action's voting period ends. */
+  /**
+   * Koios's `expiration` epoch: the epoch in which the action *drops out* of the
+   * proposal set. This is one PAST the action's last active epoch — the ledger's
+   * `gasExpiresAfter = proposed_epoch + gov_action_lifetime` is the last epoch the
+   * action is still votable, and Koios reports `gasExpiresAfter + 1` here. So the
+   * action's voting-end epoch (what CIP-179 aligns against a survey's `end_epoch`)
+   * is `expiration - 1`, applied in {@link parseGovLink}.
+   */
   expiration: number | null;
   /** Anchor JSON, resolved by Koios when reachable (may be null). */
   meta_json: unknown;
@@ -310,7 +317,10 @@ export function parseGovLink(row: ProposalRow): GovLink | null {
   return {
     surveyKey: `${txid.toLowerCase()}:${index}`,
     actionId: row.proposal_id,
-    endEpoch: row.expiration,
+    // Koios's `expiration` is the epoch the action drops out (one past its last
+    // active epoch); the action's voting-end epoch — what a linked survey's
+    // `end_epoch` must equal — is `expiration - 1`. See ProposalRow.expiration.
+    endEpoch: row.expiration - 1,
     title,
   };
 }

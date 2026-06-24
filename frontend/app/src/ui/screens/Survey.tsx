@@ -238,10 +238,14 @@ export const Survey: Component = () => {
               }
             >
               <OwnerControls s={s()} />
-              <LinkActionPanel
-                surveyRef={s().record.ref}
-                endEpoch={s().record.definition.endEpoch}
-              />
+              {/* Once an Info Action already advertises this survey, the
+                  copy-paste linking helper is redundant — hide it. */}
+              <Show when={!s().govLink}>
+                <LinkActionPanel
+                  surveyRef={s().record.ref}
+                  endEpoch={s().record.definition.endEpoch}
+                />
+              </Show>
             </Show>
 
             <Show
