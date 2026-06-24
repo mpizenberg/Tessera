@@ -17,13 +17,17 @@
 import {
   Address,
   AddressEras,
+  Anchor,
   Assets,
   CBOR,
   Client,
+  GovernanceAction,
   KeyHash,
+  RewardAccount,
   Transaction,
   TransactionInput,
   TransactionOutput,
+  Url,
   UTxO,
   Value,
   mainnet,
@@ -77,6 +81,40 @@ function cip30UtxoToCore(hex: string): UTxO.UTxO {
 }
 
 /**
+ * Shared build context: an evolution-sdk client wired to Koios (reads only) and
+ * the connected wallet (CIP-30), plus wallet-sourced UTxOs and change address so
+ * the build never round-trips Koios for `/address_info`. Sign + submit still go
+ * through the wallet at the call site.
+ */
+async function txContext(config: AppConfig, api: Cip30Api) {
+  const chain = config.network === "mainnet" ? mainnet : preview;
+  const reader = Client.make(chain).withKoios(
+    config.koiosToken
+      ? { baseUrl: config.koiosUrl, token: config.koiosToken }
+      : { baseUrl: config.koiosUrl },
+  );
+  // Our retained CIP-30 handle is the full wallet API at runtime; the seam
+  // narrows it to what we read, so widen it back to the SDK's WalletApi here.
+  const client = reader.withCip30(
+    api as unknown as Parameters<typeof reader.withCip30>[0],
+  );
+  const utxoHexes = (await api.getUtxos()) ?? [];
+  const availableUtxos = utxoHexes.map(cip30UtxoToCore);
+  const changeAddress = Address.fromHex(await api.getChangeAddress());
+  return { client, availableUtxos, changeAddress };
+}
+
+/** Sign an unsigned tx with the wallet and submit it; returns the tx hash. */
+async function signAndSubmit(
+  api: Cip30Api,
+  unsignedHex: string,
+): Promise<string> {
+  const witnessHex = await api.signTx(unsignedHex, true);
+  const signedHex = Transaction.addVKeyWitnessesHex(unsignedHex, witnessHex);
+  return api.submitTx(signedHex);
+}
+
+/**
  * Submit a label-17 CIP-179 payload as a wallet-signed transaction.
  *
  * `proveCredentials` are the credentials this payload must prove control of
@@ -92,23 +130,10 @@ export async function submitMetadataTx(
   payload: Metadatum,
   proveCredentials: readonly Credential[] = [],
 ): Promise<string> {
-  const chain = config.network === "mainnet" ? mainnet : preview;
-
-  const reader = Client.make(chain).withKoios(
-    config.koiosToken
-      ? { baseUrl: config.koiosUrl, token: config.koiosToken }
-      : { baseUrl: config.koiosUrl },
+  const { client, availableUtxos, changeAddress } = await txContext(
+    config,
+    api,
   );
-  // Our retained CIP-30 handle is the full wallet API at runtime; the seam
-  // narrows it to what we read, so widen it back to the SDK's WalletApi here.
-  const client = reader.withCip30(
-    api as unknown as Parameters<typeof reader.withCip30>[0],
-  );
-
-  // Wallet-sourced inputs + change, so the build never queries Koios for UTxOs.
-  const utxoHexes = (await api.getUtxos()) ?? [];
-  const availableUtxos = utxoHexes.map(cip30UtxoToCore);
-  const changeAddress = Address.fromHex(await api.getChangeAddress());
 
   let tx = client.newTx().attachMetadata({
     label: BigInt(METADATA_LABEL),
@@ -129,7 +154,49 @@ export async function submitMetadataTx(
 
   // Sign + submit via the wallet (CIP-30), bypassing the provider's submit.
   const unsignedHex = Transaction.toCBORHex(await built.toTransaction());
-  const witnessHex = await api.signTx(unsignedHex, true);
-  const signedHex = Transaction.addVKeyWitnessesHex(unsignedHex, witnessHex);
-  return api.submitTx(signedHex);
+  return signAndSubmit(api, unsignedHex);
+}
+
+/**
+ * Submit a Conway governance **Info Action** proposal whose anchor points at the
+ * given off-chain document (its URL + blake2b-256 hash). The refundable
+ * `gov_action_deposit` is auto-fetched from protocol parameters and balanced
+ * from the wallet's UTxOs; it is returned to the wallet's reward (stake) account
+ * when the action is ratified or expires.
+ *
+ * An Info Action carries no on-chain effect — for CIP-179 it exists only to
+ * advertise the survey referenced inside the anchor's `body.cip179`. The proposal
+ * needs no extra witness beyond the wallet's payment key (which funds it), so no
+ * `required_signers` are added.
+ */
+export async function submitInfoActionProposal(
+  config: AppConfig,
+  api: Cip30Api,
+  anchorUrl: string,
+  anchorDataHash: Uint8Array,
+): Promise<string> {
+  const { client, availableUtxos, changeAddress } = await txContext(
+    config,
+    api,
+  );
+
+  const rewardHex = (await api.getRewardAddresses())?.[0];
+  if (!rewardHex) {
+    throw new Error(
+      "Wallet exposes no reward (stake) address — a governance proposal needs one for the refundable deposit. Use a base-address (staking) wallet.",
+    );
+  }
+
+  const tx = client.newTx().propose({
+    governanceAction: new GovernanceAction.InfoAction({}),
+    rewardAccount: RewardAccount.fromHex(rewardHex),
+    anchor: new Anchor.Anchor({
+      anchorUrl: new Url.Url({ href: anchorUrl }),
+      anchorDataHash,
+    }),
+  });
+
+  const built = await tx.build({ availableUtxos, changeAddress });
+  const unsignedHex = Transaction.toCBORHex(await built.toTransaction());
+  return signAndSubmit(api, unsignedHex);
 }

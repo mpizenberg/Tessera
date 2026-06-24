@@ -8,6 +8,7 @@ import { Survey } from "~/ui/screens/Survey";
 import { Respond } from "~/ui/screens/Respond";
 import { Create } from "~/ui/screens/Create";
 import { Settings } from "~/ui/screens/Settings";
+import { ProposeInfoAction } from "~/ui/screens/ProposeInfoAction";
 import { BottomNav } from "~/ui/components/BottomNav";
 
 const Layout: ParentComponent = (props) => (
@@ -25,6 +26,7 @@ export default function App() {
       <Route path="/survey/:key" component={Survey} />
       <Route path="/survey/:key/respond" component={Respond} />
       <Route path="/create" component={Create} />
+      <Route path="/propose-info-action" component={ProposeInfoAction} />
       <Route path="/settings" component={Settings} />
     </Router>
   );

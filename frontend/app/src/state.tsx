@@ -171,6 +171,16 @@ interface AppState {
     payload: Metadatum,
     proveCredentials?: readonly Credential[],
   ): Promise<string>;
+  /**
+   * Build, sign, and submit a Conway governance **Info Action** proposal whose
+   * anchor is the off-chain document at `anchorUrl` with blake2b-256
+   * `anchorDataHash`. Resolves to the transaction hash. Throws if no wallet.
+   * Used to advertise a CIP-179 survey from on-chain governance.
+   */
+  submitInfoAction(
+    anchorUrl: string,
+    anchorDataHash: Uint8Array,
+  ): Promise<string>;
 
   // --- pending transactions (optimistic confirmation) ---
   /** Transactions submitted this session, awaiting (or just past) inclusion. */
@@ -449,6 +459,12 @@ export const AppProvider: ParentComponent = (props) => {
       // only when a user actually submits, not on first paint.
       const { submitMetadataTx } = await import("~/wallet/submit");
       return submitMetadataTx(config, w.api, payload, proveCredentials);
+    },
+    submitInfoAction: async (anchorUrl, anchorDataHash) => {
+      const w = wallet();
+      if (!w) throw new Error("No wallet connected");
+      const { submitInfoActionProposal } = await import("~/wallet/submit");
+      return submitInfoActionProposal(config, w.api, anchorUrl, anchorDataHash);
     },
     pendingTxs,
     trackTx,
