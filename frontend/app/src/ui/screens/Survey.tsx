@@ -470,11 +470,14 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
 const LinkActionPanel: Component<{ surveyRef: SurveyRef; endEpoch: number }> = (
   props,
 ) => {
+  // The `cip179` object to nest inside the action's CIP-108 `body` (so it is
+  // part of the canonicalized, author-witnessed body). See CIP-179 for the
+  // matching `@context` terms that keep the anchor a valid JSON-LD document.
   const json = () =>
     JSON.stringify(
       {
         specVersion: SPEC_VERSION,
-        kind: "cardano-governance-survey-link",
+        kind: "survey-link",
         surveyTxId: bytesToHex(props.surveyRef.txId),
         surveyIndex: props.surveyRef.index,
       },
@@ -547,11 +550,20 @@ const LinkActionPanel: Component<{ surveyRef: SurveyRef; endEpoch: number }> = (
         }}
       >
         Linkage is <b>Action → Survey</b>: your survey already exists, so the
-        Info Action just points at it. Add this JSON to the Info Action's{" "}
+        Info Action just points at it. Nest this object as{" "}
         <span style={{ "font-family": "var(--mono)", "font-size": "12px" }}>
-          anchor
+          cip179
         </span>{" "}
-        metadata. The action's voting end epoch must equal this survey's{" "}
+        inside the Info Action's CIP-108{" "}
+        <span style={{ "font-family": "var(--mono)", "font-size": "12px" }}>
+          body
+        </span>{" "}
+        (and add the CIP-179{" "}
+        <span style={{ "font-family": "var(--mono)", "font-size": "12px" }}>
+          @context
+        </span>{" "}
+        terms, per the spec, so the anchor stays valid JSON-LD). The action's
+        voting end epoch must equal this survey's{" "}
         <span style={{ "font-family": "var(--mono)", "font-size": "12px" }}>
           end_epoch {props.endEpoch}
         </span>

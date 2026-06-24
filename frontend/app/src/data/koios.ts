@@ -54,7 +54,7 @@ interface TxStatusRow {
   num_confirmations: number | null;
 }
 
-interface ProposalRow {
+export interface ProposalRow {
   proposal_id: string;
   proposal_type: string;
   /** Epoch the action's voting period ends. */
@@ -63,8 +63,8 @@ interface ProposalRow {
   meta_json: unknown;
 }
 
-/** The CIP-179 link discriminator carried in an Info Action's anchor. */
-const GOV_LINK_KIND = "cardano-governance-survey-link";
+/** The `kind` discriminator of a CIP-179 survey link inside `body.cip179`. */
+const GOV_LINK_KIND = "survey-link";
 
 export class KoiosDataSource implements DataSource {
   /**
@@ -256,38 +256,32 @@ export class KoiosDataSource implements DataSource {
 
 /**
  * Extract a CIP-179 survey link from an Info Action's anchor metadata. The link
- * object may be the whole anchor document or nested under a CIP-108 `body`;
- * we accept either and pull a human title from `body.title` when present.
- * Returns null for any action whose anchor doesn't carry a (well-formed) link.
+ * lives in `body.cip179` (so it is part of the CIP-108 canonicalized, author-
+ * witnessed body), is tagged `kind: "survey-link"`, and carries the survey's
+ * `surveyTxId` / `surveyIndex`. The human title shown is the action's own
+ * CIP-108 `body.title`. Returns null for any action whose anchor doesn't carry
+ * a (well-formed) link.
  */
-function parseGovLink(row: ProposalRow): GovLink | null {
+export function parseGovLink(row: ProposalRow): GovLink | null {
   if (row.expiration === null) return null;
   const meta = row.meta_json;
   if (typeof meta !== "object" || meta === null) return null;
   const obj = meta as Record<string, unknown>;
-  const body =
-    typeof obj["body"] === "object" && obj["body"] !== null
-      ? (obj["body"] as Record<string, unknown>)
-      : undefined;
-
-  const link = [obj, body].find(
-    (c): c is Record<string, unknown> => !!c && c["kind"] === GOV_LINK_KIND,
-  );
-  if (!link) return null;
+  if (typeof obj["body"] !== "object" || obj["body"] === null) return null;
+  const body = obj["body"] as Record<string, unknown>;
+  if (typeof body["cip179"] !== "object" || body["cip179"] === null)
+    return null;
+  const link = body["cip179"] as Record<string, unknown>;
+  if (link["kind"] !== GOV_LINK_KIND) return null;
 
   const txid = link["surveyTxId"];
   if (typeof txid !== "string") return null;
-  const idx = link["surveyIndex"];
-  // A malformed/missing index must not silently resolve to survey 0.
-  if (
-    idx !== undefined &&
-    !(typeof idx === "number" && Number.isInteger(idx) && idx >= 0)
-  ) {
+  // surveyIndex is mandatory: a missing or malformed index is a broken link,
+  // never silently survey 0.
+  const index = link["surveyIndex"];
+  if (!(typeof index === "number" && Number.isInteger(index) && index >= 0))
     return null;
-  }
-  const index = typeof idx === "number" ? idx : 0;
-  const title =
-    body && typeof body["title"] === "string" ? body["title"] : null;
+  const title = typeof body["title"] === "string" ? body["title"] : null;
 
   return {
     surveyKey: `${txid.toLowerCase()}:${index}`,
