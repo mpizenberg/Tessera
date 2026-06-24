@@ -27,7 +27,8 @@ import { useApp } from "~/state";
 import { findSurvey, refKey, type SurveyAggregate } from "~/domain/survey";
 import {
   auditResponses,
-  type ExclusionReason,
+  type ExcludedRecord,
+  type ExclusionKey,
   type ResponseAudit,
 } from "~/domain/audit";
 import { walletOwns } from "~/domain/roles";
@@ -113,7 +114,7 @@ export const Survey: Component = () => {
   const audit = createMemo<ResponseAudit>(() => {
     const snap = app.snapshot();
     const s = survey();
-    if (!snap || !s) return { counted: [], excluded: [], excludedTotal: 0 };
+    if (!snap || !s) return { counted: [], excludedRecords: [] };
     const raw = snap.records.responses.filter(
       (r) => refKey(r.response.surveyRef) === key(),
     );
@@ -251,7 +252,7 @@ export const Survey: Component = () => {
                   def={def() ?? s().record.definition}
                   keyStr={key()}
                   records={records()}
-                  excluded={audit().excluded}
+                  excludedRecords={audit().excludedRecords}
                   nowUnix={now()}
                 />
               }
@@ -260,7 +261,7 @@ export const Survey: Component = () => {
                 def={def() ?? s().record.definition}
                 keyStr={key()}
                 records={records()}
-                excluded={audit().excluded}
+                excludedRecords={audit().excludedRecords}
               />
             </Show>
           </>
@@ -1490,6 +1491,60 @@ const NoData: Component = () => (
 // Results body (public, or revealed-sealed) + sealed reveal pipeline
 // ----------------------------------------------------------------------------
 
+/** One row of the exclusion breakdown: a category with its rendered count. */
+interface ExclusionSummary {
+  readonly key: ExclusionKey;
+  readonly label: string;
+  readonly hint: string;
+  readonly count: number;
+}
+
+// Presentation for each exclusion category, kept in one place (`after-deadline`
+// folds in the survey's end_epoch; the rest are static). The domain layer only
+// emits the `ExclusionKey` — the English lives here.
+function exclusionMeta(
+  key: ExclusionKey,
+  endEpoch: number,
+): { label: string; hint: string } {
+  switch (key) {
+    case "after-deadline":
+      return {
+        label: "Submitted after the deadline",
+        hint: `recorded past end_epoch ${endEpoch}`,
+      };
+    case "superseded":
+      return {
+        label: "Superseded by a later response",
+        hint: "same role + credential · latest-wins",
+      };
+    case "undecryptable":
+      return {
+        label: "Couldn't be decrypted or decoded",
+        hint: "malformed or non-conformant payload",
+      };
+  }
+}
+
+const EXCLUSION_ORDER: readonly ExclusionKey[] = [
+  "after-deadline",
+  "superseded",
+  "undecryptable",
+];
+
+/**
+ * Derive the per-category count summary from the flat excluded records (the
+ * single source of truth), in a fixed display order — dropping empty categories.
+ */
+function summarizeExclusions(
+  records: readonly ExcludedRecord[],
+  endEpoch: number,
+): ExclusionSummary[] {
+  return EXCLUSION_ORDER.flatMap((key) => {
+    const count = records.filter((r) => r.key === key).length;
+    return count > 0 ? [{ key, ...exclusionMeta(key, endEpoch), count }] : [];
+  });
+}
+
 /**
  * Expandable audit of why responses weren't counted. Only the categories
  * provable from on-chain data alone (after-deadline, superseded) appear here;
@@ -1497,7 +1552,7 @@ const NoData: Component = () => (
  * credential-proof failures) need an indexer and are called out as absent.
  */
 const ExclusionPanel: Component<{
-  excluded: readonly ExclusionReason[];
+  excluded: readonly ExclusionSummary[];
   endEpoch: number;
 }> = (props) => {
   const max = (): number => Math.max(1, ...props.excluded.map((e) => e.count));
@@ -1893,13 +1948,17 @@ const ResultsBody: Component<{
   def: SurveyDefinition;
   keyStr: string;
   records: ResponseRecord[];
-  /** Client-detectable exclusions, for the audit breakdown. */
-  excluded: readonly ExclusionReason[];
+  /**
+   * Excluded records, tagged with reason — the single source for both the CSV
+   * export and the (derived) count breakdown shown in {@link ExclusionPanel}.
+   */
+  excludedRecords: readonly ExcludedRecord[];
 }> = (props) => {
   const [roleFilter, setRoleFilter] = createSignal<number | "all">("all");
   const [exclOpen, setExclOpen] = createSignal(false);
-  const excludedTotal = (): number =>
-    props.excluded.reduce((a, e) => a + e.count, 0);
+  const excludedTotal = (): number => props.excludedRecords.length;
+  const exclusionSummary = (): ExclusionSummary[] =>
+    summarizeExclusions(props.excludedRecords, props.def.endEpoch);
 
   const publicResponses = createMemo<SurveyResponse[]>(() =>
     props.records
@@ -1934,6 +1993,7 @@ const ResultsBody: Component<{
 
   const exportCsv = () => {
     const header = [
+      "disposition",
       "response_tx",
       "role",
       "credential",
@@ -1941,18 +2001,30 @@ const ResultsBody: Component<{
       "question_type",
       "answer",
     ];
-    const body = props.records.flatMap((rec) => {
+    const credOf = (r: SurveyResponse): string =>
+      r.credential.type === "key"
+        ? `key:${hex(r.credential.keyHash)}`
+        : `script:${hex(r.credential.scriptHash)}`;
+    // Counted responses: one row per answer (or one ciphertext row if a sealed
+    // payload reaches here unrevealed).
+    const counted = props.records.flatMap((rec) => {
       const r = rec.response;
-      const cred =
-        r.credential.type === "key"
-          ? `key:${hex(r.credential.keyHash)}`
-          : `script:${hex(r.credential.scriptHash)}`;
+      const cred = credOf(r);
       if (r.answers.type !== "public") {
         return [
-          [rec.txHash, roleLabel(r.role), cred, "", "sealed", "(ciphertext)"],
+          [
+            "counted",
+            rec.txHash,
+            roleLabel(r.role),
+            cred,
+            "",
+            "sealed",
+            "(ciphertext)",
+          ],
         ];
       }
       return r.answers.answers.map((a) => [
+        "counted",
         rec.txHash,
         roleLabel(r.role),
         cred,
@@ -1961,9 +2033,21 @@ const ResultsBody: Component<{
         serializeAnswer(a),
       ]);
     });
+    // Excluded responses: envelope only (tx + reason + identity) so an auditor
+    // can open each one on-chain; answers are left blank (sealed/malformed ones
+    // aren't readable, and we keep the row shape uniform across reasons).
+    const excluded = props.excludedRecords.map(({ key, record }) => [
+      key,
+      record.txHash,
+      roleLabel(record.response.role),
+      credOf(record.response),
+      "",
+      "",
+      "",
+    ]);
     downloadCsv(
       `tessera-${shortRef(props.keyStr)}.csv`,
-      toCsv([header, ...body]),
+      toCsv([header, ...counted, ...excluded]),
     );
   };
 
@@ -2051,7 +2135,7 @@ const ResultsBody: Component<{
 
       <Show when={exclOpen() && excludedTotal() > 0}>
         <ExclusionPanel
-          excluded={props.excluded}
+          excluded={exclusionSummary()}
           endEpoch={props.def.endEpoch}
         />
       </Show>
@@ -2189,7 +2273,7 @@ const SealedResults: Component<{
   def: SurveyDefinition;
   keyStr: string;
   records: ResponseRecord[];
-  excluded: readonly ExclusionReason[];
+  excludedRecords: readonly ExcludedRecord[];
   nowUnix: number;
 }> = (props) => {
   const mode = () => {
@@ -2220,7 +2304,7 @@ const SealedResults: Component<{
   const [revealed] = createResource(revealRound, async (round) => {
     const { revealResponses } = await import("~/tlock/seal");
     const records = props.records;
-    const { results, failed } = await revealResponses(
+    const results = await revealResponses(
       records.map((r) => r.response),
       round,
     );
@@ -2228,27 +2312,28 @@ const SealedResults: Component<{
       const pub = results[i];
       return pub ? [{ ...r, response: pub }] : [];
     });
-    return { records: recs, failed };
+    // The records that failed (null result) — kept for the audit/CSV so an
+    // auditor can chase each undecodable ballot on-chain.
+    const failedRecords = records.filter((_, i) => results[i] === null);
+    return { records: recs, failedRecords };
   });
 
-  // Decrypt/decode failures are responses collected but not counted — surface
-  // them in the exclusion breakdown alongside the on-chain categories. The
-  // failure is only known after reveal, so it's appended here rather than in the
-  // pure on-chain audit. Tessera can't always tell a decryption failure from a
-  // decode failure (a malformed/non-conformant plaintext that decrypts but
-  // doesn't parse), so the label stays neutral about which it was.
-  const excludedWithFailures = (failed: number): ExclusionReason[] =>
-    failed > 0
-      ? [
-          ...props.excluded,
-          {
-            key: "undecryptable",
-            label: "Couldn't be decrypted or decoded",
-            hint: "malformed or non-conformant payload",
-            count: failed,
-          },
-        ]
-      : [...props.excluded];
+  // Decrypt/decode failures are responses collected but not counted — fold them
+  // into the exclusion records (tagged `undecryptable`) alongside the on-chain
+  // categories, from which the count breakdown derives. The failure is only
+  // known after reveal, so it's appended here rather than in the pure on-chain
+  // audit. Tessera can't always tell a decryption failure from a decode failure
+  // (a malformed plaintext that decrypts but doesn't parse), so the label stays
+  // neutral about which it was.
+  const excludedRecordsWithFailures = (
+    failedRecords: readonly ResponseRecord[],
+  ): ExcludedRecord[] => [
+    ...props.excludedRecords,
+    ...failedRecords.map((record) => ({
+      key: "undecryptable" as const,
+      record,
+    })),
+  ];
 
   return (
     <Switch>
@@ -2296,7 +2381,9 @@ const SealedResults: Component<{
           def={props.def}
           keyStr={props.keyStr}
           records={revealed()!.records}
-          excluded={excludedWithFailures(revealed()!.failed)}
+          excludedRecords={excludedRecordsWithFailures(
+            revealed()!.failedRecords,
+          )}
         />
       </Match>
       {/* Reached only when revealable, supported, not cancelled, and the viewer

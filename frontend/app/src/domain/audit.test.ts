@@ -49,8 +49,7 @@ describe("auditResponses", () => {
     const raw = [rec("a", 950, 0, 1), rec("b", 960, 1, 2)];
     const audit = auditResponses(raw, 9, TIP, SPE);
     expect(audit.counted).toHaveLength(2);
-    expect(audit.excluded).toEqual([]);
-    expect(audit.excludedTotal).toBe(0);
+    expect(audit.excludedRecords).toEqual([]);
   });
 
   it("excludes earlier duplicates as superseded (latest-wins)", () => {
@@ -58,14 +57,10 @@ describe("auditResponses", () => {
     const audit = auditResponses(raw, 9, TIP, SPE);
     expect(audit.counted).toHaveLength(1);
     expect(audit.counted[0]!.slot).toBe(960); // the later one wins
-    expect(audit.excluded).toEqual([
-      {
-        key: "superseded",
-        label: "Superseded by a later response",
-        hint: "same role + credential · latest-wins",
-        count: 1,
-      },
-    ]);
+    // The superseded record itself is retained, tagged, for per-response audit.
+    expect(audit.excludedRecords).toHaveLength(1);
+    expect(audit.excludedRecords[0]!.key).toBe("superseded");
+    expect(audit.excludedRecords[0]!.record.txHash).toBe("a"); // the earlier one
   });
 
   it("excludes responses recorded after the end epoch", () => {
@@ -73,14 +68,9 @@ describe("auditResponses", () => {
     const audit = auditResponses(raw, 9, TIP, SPE);
     expect(audit.counted).toHaveLength(1);
     expect(audit.counted[0]!.txHash).toBe("a");
-    expect(audit.excluded).toEqual([
-      {
-        key: "after-deadline",
-        label: "Submitted after the deadline",
-        hint: "recorded past end_epoch 9",
-        count: 1,
-      },
-    ]);
+    expect(audit.excludedRecords).toHaveLength(1);
+    expect(audit.excludedRecords[0]!.key).toBe("after-deadline");
+    expect(audit.excludedRecords[0]!.record.txHash).toBe("late");
   });
 
   it("a late response never suppresses an on-time one for the same identity", () => {
@@ -90,11 +80,10 @@ describe("auditResponses", () => {
     const audit = auditResponses(raw, 9, TIP, SPE);
     expect(audit.counted).toHaveLength(1);
     expect(audit.counted[0]!.txHash).toBe("ontime");
-    expect(audit.excludedTotal).toBe(1);
-    expect(audit.excluded.map((e) => e.key)).toEqual(["after-deadline"]);
+    expect(audit.excludedRecords.map((e) => e.key)).toEqual(["after-deadline"]);
   });
 
-  it("reports both categories together, deadline first", () => {
+  it("retains both categories together, deadline first", () => {
     const raw = [
       rec("a", 940, 0, 1),
       rec("b", 950, 0, 1), // supersedes a
@@ -102,10 +91,10 @@ describe("auditResponses", () => {
     ];
     const audit = auditResponses(raw, 9, TIP, SPE);
     expect(audit.counted).toHaveLength(1);
-    expect(audit.excludedTotal).toBe(2);
-    expect(audit.excluded.map((e) => e.key)).toEqual([
-      "after-deadline",
-      "superseded",
+    // Both excluded records retained: the late "late" and the superseded "a".
+    expect(audit.excludedRecords.map((e) => [e.key, e.record.txHash])).toEqual([
+      ["after-deadline", "late"],
+      ["superseded", "a"],
     ]);
   });
 });

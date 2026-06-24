@@ -19,19 +19,22 @@ import { dedupeResponses } from "./survey";
 
 export type ExclusionKey = "after-deadline" | "superseded" | "undecryptable";
 
-export interface ExclusionReason {
+/** A single excluded response, tagged with why it wasn't counted. */
+export interface ExcludedRecord {
   readonly key: ExclusionKey;
-  readonly label: string;
-  readonly hint: string;
-  readonly count: number;
+  readonly record: ResponseRecord;
 }
 
 export interface ResponseAudit {
   /** Valid, deduped responses — the set to tally. */
   readonly counted: ResponseRecord[];
-  /** Non-empty exclusion categories, detectable from chain data alone. */
-  readonly excluded: readonly ExclusionReason[];
-  readonly excludedTotal: number;
+  /**
+   * The excluded records, each tagged with its reason — the single source of
+   * truth for the exclusion breakdown. A UI groups these by key for a count
+   * summary and per-response drill-down (CSV export). `undecryptable` is not
+   * produced here (it's only knowable after reveal — appended UI-side).
+   */
+  readonly excludedRecords: readonly ExcludedRecord[];
 }
 
 /**
@@ -64,30 +67,20 @@ export function auditResponses(
   secondsPerEpoch: number,
 ): ResponseAudit {
   const onTime: ResponseRecord[] = [];
-  let late = 0;
+  const excludedRecords: ExcludedRecord[] = [];
   for (const r of raw) {
-    if (epochOfSlot(r.slot, tip, secondsPerEpoch) > endEpoch) late++;
+    if (epochOfSlot(r.slot, tip, secondsPerEpoch) > endEpoch)
+      excludedRecords.push({ key: "after-deadline", record: r });
     else onTime.push(r);
   }
   const counted = dedupeResponses(onTime);
-  const superseded = onTime.length - counted.length;
+  // `counted` holds references drawn from `onTime`; the leftovers are exactly
+  // the superseded responses (an earlier entry beaten by a later latest-wins).
+  // Appended after the late ones, so the breakdown reads deadline-then-superseded.
+  const countedSet = new Set(counted);
+  for (const r of onTime)
+    if (!countedSet.has(r))
+      excludedRecords.push({ key: "superseded", record: r });
 
-  const excluded: ExclusionReason[] = [];
-  if (late > 0) {
-    excluded.push({
-      key: "after-deadline",
-      label: "Submitted after the deadline",
-      hint: `recorded past end_epoch ${endEpoch}`,
-      count: late,
-    });
-  }
-  if (superseded > 0) {
-    excluded.push({
-      key: "superseded",
-      label: "Superseded by a later response",
-      hint: "same role + credential · latest-wins",
-      count: superseded,
-    });
-  }
-  return { counted, excluded, excludedTotal: late + superseded };
+  return { counted, excludedRecords };
 }

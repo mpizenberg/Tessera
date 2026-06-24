@@ -45,32 +45,19 @@ export async function sealAnswers(
   return encryptToRound(plaintext, round);
 }
 
-/** Outcome of revealing a batch of sealed responses. */
-export interface RevealResult {
-  /**
-   * Per-input results, aligned to the input order: a synthetic public response
-   * for each that decrypted, or `null` for one that failed (so callers can keep
-   * pairing each result with its original record).
-   */
-  readonly results: (SurveyResponse | null)[];
-  /** Count of sealed responses that failed to decrypt/decode. */
-  readonly failed: number;
-}
-
 /**
  * Reveal a batch of sealed responses: fetch the round's beacon once, then
  * decrypt each ciphertext, decode its answers, and re-emit it as a public
  * response (preserving ref / role / credential). A response that fails to
- * decrypt or decode becomes `null` and is counted in `failed` — one bad payload
- * never sinks the tally.
+ * decrypt or decode becomes `null` (callers pair each result with its original
+ * record by index) — one bad payload never sinks the tally.
  */
 export async function revealResponses(
   sealed: readonly SurveyResponse[],
   round: number,
-): Promise<RevealResult> {
+): Promise<(SurveyResponse | null)[]> {
   const beacon = await fetchBeacon(round);
   const results: (SurveyResponse | null)[] = [];
-  let failed = 0;
 
   for (const r of sealed) {
     if (r.answers.type !== "sealed") {
@@ -87,9 +74,8 @@ export async function revealResponses(
       results.push({ ...r, answers: { type: "public", answers } });
     } catch {
       results.push(null);
-      failed++;
     }
   }
 
-  return { results, failed };
+  return results;
 }
