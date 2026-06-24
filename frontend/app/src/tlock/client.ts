@@ -1,81 +1,60 @@
 /**
  * The tlock seam: drand timelock encryption, isolated behind a lazy import.
  *
- * Wraps the vendored `vendor/tlock.js` bundle (a self-contained ESM build of a
- * tlock-js fork, ~240 KB, with its own buffer/noble polyfills) — the same code
- * the Elm reference app shipped, so ciphertexts interoperate. The dynamic
- * import code-splits it into its own chunk, fetched only when a sealed survey is
- * actually encrypted or revealed, never on first paint. The bundle works in hex
- * strings and targets drand **quicknet** (no chain parameter); we convert at the
- * byte boundary.
+ * Wraps `@mattpiz/tlock-js` (our fork's state-free `createTlock` API). The
+ * dynamic import code-splits the library — and its noble/buffer deps — into its
+ * own chunk, fetched only when a sealed survey is actually encrypted or
+ * revealed, never on first paint.
  *
- * `fetchBeacon` is the only networked call (drand HTTP API); `encrypt` and
- * `decrypt` are local crypto.
+ * We hold a single `createTlock()` instance, bound to drand **quicknet** by
+ * default. It keeps no global state and never fetches the chain `/info`
+ * endpoint (the parameters are baked in), so `encryptToRound` and
+ * `decryptWithBeacon` are pure local crypto over bytes; `fetchBeacon` is the
+ * only networked call.
+ *
+ * `fetchBeacon` cryptographically verifies the beacon's BLS signature against
+ * the requested round before returning, so a wrong-round/forged response (a
+ * caching proxy, an off-by-one, a hostile endpoint) is rejected. Confidentiality
+ * doesn't rest on that check: timelock decryption uses the signature as the
+ * round's IBE key, so a forged signature only yields undecodable garbage
+ * (counted as a decrypt failure), never a chosen plaintext.
  */
 
-import { bytesToHex, hexToBytes } from "~/util/hex";
+import type { RandomnessBeacon, Tlock } from "@mattpiz/tlock-js";
 
-type TlockBundle = typeof import("./vendor/tlock.js");
+export type { RandomnessBeacon };
 
-let bundle: Promise<TlockBundle> | null = null;
+let instance: Promise<Tlock> | null = null;
 
-function load(): Promise<TlockBundle> {
-  if (!bundle) bundle = import("./vendor/tlock.js");
-  return bundle;
+function tlock(): Promise<Tlock> {
+  if (!instance) {
+    instance = import("@mattpiz/tlock-js").then((m) => m.createTlock());
+  }
+  return instance;
 }
 
-/** Timelock-encrypt plaintext bytes to a drand round → ciphertext bytes. */
+/** Timelock-encrypt plaintext bytes to a drand round → ciphertext bytes. Offline. */
 export async function encryptToRound(
   plaintext: Uint8Array,
   round: number,
 ): Promise<Uint8Array> {
-  const tlock = await load();
-  const { ciphertextHex } = await tlock.encrypt({
-    plaintextHex: bytesToHex(plaintext),
-    round,
-  });
-  return hexToBytes(ciphertextHex);
+  return (await tlock()).encryptToRound(plaintext, round);
 }
 
 /**
- * Fetch the drand beacon for a round. Throws if the round has not published yet.
- * The returned JSON is reused to decrypt every response, so this networked call
- * runs once per reveal.
- *
- * We assert the beacon's `round` matches what we asked for, so a wrong-round
- * response (a caching proxy, an off-by-one, or a hostile endpoint) is rejected
- * rather than silently producing garbage plaintext. Confidentiality does not
- * rest on this: timelock decryption uses the beacon's BLS signature as the
- * round's IBE key, so a *forged* signature can only yield undecodable garbage
- * (counted as a decrypt failure), never a chosen plaintext — forging a valid
- * one would require drand's private key.
+ * Fetch + cryptographically verify the drand beacon for a round (the only
+ * networked call here). Throws if the round hasn't published yet or the beacon
+ * fails verification. The returned beacon is reused to decrypt every response,
+ * so this runs once per reveal.
  */
-export async function fetchBeacon(round: number): Promise<string> {
-  const tlock = await load();
-  const { beaconJson } = await tlock.fetchRound({ round });
-  let parsed: { round?: unknown };
-  try {
-    parsed = JSON.parse(beaconJson);
-  } catch {
-    throw new Error("drand beacon is not valid JSON");
-  }
-  if (parsed.round !== round) {
-    throw new Error(
-      `drand beacon round mismatch: asked ${round}, got ${String(parsed.round)}`,
-    );
-  }
-  return beaconJson;
+export async function fetchBeacon(round: number): Promise<RandomnessBeacon> {
+  return (await tlock()).fetchBeacon(round);
 }
 
-/** Decrypt ciphertext bytes with a previously fetched beacon → plaintext bytes. */
+/** Decrypt ciphertext bytes with a previously fetched beacon → plaintext bytes. Offline. */
 export async function decryptWithBeacon(
   ciphertext: Uint8Array,
-  beaconJson: string,
+  beacon: RandomnessBeacon,
 ): Promise<Uint8Array> {
-  const tlock = await load();
-  const { plaintextHex } = await tlock.decrypt({
-    ciphertextHex: bytesToHex(ciphertext),
-    beaconJson,
-  });
-  return hexToBytes(plaintextHex);
+  return (await tlock()).decryptWithBeacon(ciphertext, beacon);
 }

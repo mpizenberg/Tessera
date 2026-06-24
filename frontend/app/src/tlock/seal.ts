@@ -68,7 +68,7 @@ export async function revealResponses(
   sealed: readonly SurveyResponse[],
   round: number,
 ): Promise<RevealResult> {
-  const beaconJson = await fetchBeacon(round);
+  const beacon = await fetchBeacon(round);
   const results: (SurveyResponse | null)[] = [];
   let failed = 0;
 
@@ -78,10 +78,7 @@ export async function revealResponses(
       continue;
     }
     try {
-      const plaintext = await decryptWithBeacon(
-        r.answers.ciphertext,
-        beaconJson,
-      );
+      const plaintext = await decryptWithBeacon(r.answers.ciphertext, beacon);
       const m = cborToMetadatum(plaintext);
       if (!Array.isArray(m)) throw new Error("decrypted payload is not a list");
       const answers: AnswerItem[] = m.map((item, i) =>
