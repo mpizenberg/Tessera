@@ -439,6 +439,24 @@ export const Explore: Component = () => {
               )}
             </Show>
 
+            <Show when={app.snapshot()?.records.incomplete}>
+              <div
+                style={{
+                  margin: "10px 0",
+                  padding: "9px 13px",
+                  border: "1px solid var(--warn-line)",
+                  background: "var(--warn-bg)",
+                  "border-radius": "var(--r-md)",
+                  "font-size": "12.5px",
+                  color: "var(--warn)",
+                }}
+              >
+                Showing the most recent surveys and responses — more exist
+                on-chain than could be loaded, so some lists and tallies may be
+                incomplete.
+              </div>
+            </Show>
+
             <Show when={!app.snapshot.loading && !app.snapshot.error}>
               <Show when={govRows().length > 0}>
                 <SectionLabel

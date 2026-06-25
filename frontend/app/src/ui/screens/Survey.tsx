@@ -26,6 +26,7 @@ import { useApp } from "~/state";
 import { findSurvey, refKey, type SurveyAggregate } from "~/domain/survey";
 import {
   auditResponses,
+  responseIsCountable,
   type ExcludedRecord,
   type ExclusionKey,
   type ResponseAudit,
@@ -125,7 +126,7 @@ export const Survey: Component = () => {
     );
     return auditResponses(
       raw,
-      s.record.definition.endEpoch,
+      s.record.definition,
       snap.tip,
       app.config.secondsPerEpoch,
     );
@@ -1445,6 +1446,11 @@ function exclusionMeta(
         label: "Submitted after the deadline",
         hint: `recorded past end_epoch ${endEpoch}`,
       };
+    case "invalid":
+      return {
+        label: "Invalid for this survey",
+        hint: "out-of-constraint answer, ineligible role, or missing required answer",
+      };
     case "superseded":
       return {
         label: "Superseded by a later response",
@@ -1460,6 +1466,7 @@ function exclusionMeta(
 
 const EXCLUSION_ORDER: readonly ExclusionKey[] = [
   "after-deadline",
+  "invalid",
   "superseded",
   "undecryptable",
 ];
@@ -1894,6 +1901,7 @@ const ResultsBody: Component<{
    */
   excludedRecords: readonly ExcludedRecord[];
 }> = (props) => {
+  const app = useApp();
   const [roleFilter, setRoleFilter] = createSignal<number | "all">("all");
   const [exclOpen, setExclOpen] = createSignal(false);
   const excludedTotal = (): number => props.excludedRecords.length;
@@ -2073,6 +2081,23 @@ const ResultsBody: Component<{
         </button>
       </div>
 
+      <Show when={app.snapshot()?.records.incomplete}>
+        <div
+          style={{
+            "margin-top": "10px",
+            padding: "9px 13px",
+            border: "1px solid var(--warn-line)",
+            background: "var(--warn-bg)",
+            "border-radius": "var(--r-md)",
+            "font-size": "12.5px",
+            color: "var(--warn)",
+          }}
+        >
+          More label-17 transactions exist on-chain than could be loaded, so
+          this tally may be missing responses.
+        </div>
+      </Show>
+
       <Show when={exclOpen() && excludedTotal() > 0}>
         <ExclusionPanel
           excluded={exclusionSummary()}
@@ -2243,32 +2268,45 @@ const SealedResults: Component<{
 
   const [revealed] = createResource(revealRound, async (round) => {
     const { revealResponses } = await import("~/tlock/seal");
+    // Validate revealed answers against the *on-chain* definition (constraints
+    // and indices are on-chain; enrichment only relabels), not the display one.
+    const onChainDef = props.s.record.definition;
     const records = props.records;
     const results = await revealResponses(
       records.map((r) => r.response),
       round,
     );
-    const recs = records.flatMap((r, i) => {
+    const recs: ResponseRecord[] = [];
+    // Decrypt/decode failures (null result) vs. responses that decrypt+decode
+    // cleanly but break the survey's constraints — kept apart so the audit can
+    // name each correctly, and so a malformed sealed ballot can't inflate a tally.
+    const failedRecords: ResponseRecord[] = [];
+    const invalidRecords: ResponseRecord[] = [];
+    records.forEach((r, i) => {
       const pub = results[i];
-      return pub ? [{ ...r, response: pub }] : [];
+      if (pub === null) {
+        failedRecords.push(r);
+      } else if (!responseIsCountable(onChainDef, pub)) {
+        // Keep the *decoded* response so the CSV/audit shows what it claimed.
+        invalidRecords.push({ ...r, response: pub });
+      } else {
+        recs.push({ ...r, response: pub });
+      }
     });
-    // The records that failed (null result) — kept for the audit/CSV so an
-    // auditor can chase each undecodable ballot on-chain.
-    const failedRecords = records.filter((_, i) => results[i] === null);
-    return { records: recs, failedRecords };
+    return { records: recs, failedRecords, invalidRecords };
   });
 
-  // Decrypt/decode failures are responses collected but not counted — fold them
-  // into the exclusion records (tagged `undecryptable`) alongside the on-chain
-  // categories, from which the count breakdown derives. The failure is only
-  // known after reveal, so it's appended here rather than in the pure on-chain
-  // audit. Tessera can't always tell a decryption failure from a decode failure
-  // (a malformed plaintext that decrypts but doesn't parse), so the label stays
-  // neutral about which it was.
+  // Post-reveal exclusions, folded into the on-chain categories from which the
+  // count breakdown derives. `undecryptable` = a response that didn't decrypt or
+  // didn't decode (Tessera can't always tell which, so the label stays neutral);
+  // `invalid` = one that decoded but violated the survey's constraints. Both are
+  // only knowable after reveal, so they're appended here, not in the pure audit.
   const excludedRecordsWithFailures = (
     failedRecords: readonly ResponseRecord[],
+    invalidRecords: readonly ResponseRecord[],
   ): ExcludedRecord[] => [
     ...props.excludedRecords,
+    ...invalidRecords.map((record) => ({ key: "invalid" as const, record })),
     ...failedRecords.map((record) => ({
       key: "undecryptable" as const,
       record,
@@ -2323,6 +2361,7 @@ const SealedResults: Component<{
           records={revealed()!.records}
           excludedRecords={excludedRecordsWithFailures(
             revealed()!.failedRecords,
+            revealed()!.invalidRecords,
           )}
         />
       </Match>

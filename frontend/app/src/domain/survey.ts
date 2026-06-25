@@ -90,6 +90,15 @@ export function aggregateSurveys(
   tip: ChainTip,
   govLinks: readonly GovLink[] = [],
 ): SurveyAggregate[] {
+  // TODO(cancellation-verification): this honors *any* cancellation record that
+  // references the survey, with NO owner-proof check — so currently any actor
+  // can publish a label-17 cancellation for any survey and have this client
+  // render it as authoritatively `cancelled` (which also blocks responding: a
+  // suppression/griefing vector). We can't verify owner-proof from metadata
+  // alone; it needs the cancelling tx's required_signers/witnesses vs.
+  // `record.definition.owner`. Fix later by either (a) a semantic indexer that
+  // confirms the owner credential signed, or (b) an extra Koios /tx_info lookup
+  // per cancelling tx here. Until then this is knowingly unverified.
   const cancelledKeys = new Set(
     records.cancellations.map((c: CancellationRecord) => refKey(c.target)),
   );

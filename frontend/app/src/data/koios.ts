@@ -28,6 +28,20 @@ import type {
 /** Max tx hashes per /tx_metadata POST (larger bodies return HTTP 413). */
 const TX_METADATA_BATCH = 50;
 
+/**
+ * Rows per label-index page. Koios allows up to 1000 rows/response, but we page
+ * at 100 to keep each request small (gentler on rate-limited endpoints); the
+ * loop below fetches as many pages as needed, so coverage is unaffected.
+ */
+const PAGE_SIZE = 100;
+
+/**
+ * Hard cap on label-index pages (≈ {@link PAGE_SIZE} × this many = 5,000 rows). A
+ * backstop against an unbounded scan; if reached, the snapshot is flagged
+ * `incomplete` rather than silently truncated.
+ */
+const MAX_PAGES = 50;
+
 /** Per-request timeout: a stalled connection should fail, not hang forever. */
 const REQUEST_TIMEOUT_MS = 15_000;
 
@@ -162,19 +176,45 @@ export class KoiosDataSource implements DataSource {
       0,
       Math.floor(tip.abs_slot - (tip.block_time - this.config.sinceUnix)),
     );
-    const slots = await this.get<TxByLabel[]>(
-      `/tx_by_metalabel?_label=${METADATA_LABEL}` +
-        `&select=tx_hash,absolute_slot` +
-        `&absolute_slot=gte.${sinceSlot}` +
-        `&order=absolute_slot.desc&limit=1000`,
-    );
-    const slotByHash = new Map(slots.map((s) => [s.tx_hash, s.absolute_slot]));
-    const hashes = slots.map((s) => s.tx_hash);
+
+    // Page through every label-17 tx since the cutoff. Koios returns at most
+    // PAGE_SIZE rows per request, so a single fixed `limit` would silently drop
+    // older records on a busy network — and responses live in the same index as
+    // definitions, so the loss would undercount tallies, not just the survey
+    // list. Offset-paginate newest-first until a short page (exhausted) or the
+    // page cap, which flags the snapshot `incomplete` instead of lying. Keyed by
+    // tx_hash in a Map so a row re-seen across pages (a tx landing mid-scan) is
+    // deduped rather than fetched twice.
+    const slotByHash = new Map<string, number>();
+    let incomplete = false;
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const rows = await this.get<TxByLabel[]>(
+        `/tx_by_metalabel?_label=${METADATA_LABEL}` +
+          `&select=tx_hash,absolute_slot` +
+          `&absolute_slot=gte.${sinceSlot}` +
+          `&order=absolute_slot.desc` +
+          `&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`,
+      );
+      for (const s of rows) {
+        if (!slotByHash.has(s.tx_hash))
+          slotByHash.set(s.tx_hash, s.absolute_slot);
+      }
+      if (rows.length < PAGE_SIZE) break; // last page reached → exhausted
+      if (page === MAX_PAGES - 1) {
+        // A full final page means there may be more we won't fetch.
+        incomplete = true;
+        console.warn(
+          `tx_by_metalabel exceeded ${MAX_PAGES * PAGE_SIZE} rows; snapshot is incomplete`,
+        );
+      }
+    }
+    const hashes = [...slotByHash.keys()];
 
     const surveys: SurveyRecord[] = [];
     const responses: ResponseRecord[] = [];
     const cancellations: CancellationRecord[] = [];
-    if (hashes.length === 0) return { surveys, responses, cancellations };
+    if (hashes.length === 0)
+      return { surveys, responses, cancellations, incomplete };
 
     // Koios caps the bulk POST body size, so request metadata in batches
     // (1000 hashes in one shot returns 413 Payload Too Large) and merge.
@@ -215,7 +255,7 @@ export class KoiosDataSource implements DataSource {
       });
     }
 
-    return { surveys, responses, cancellations };
+    return { surveys, responses, cancellations, incomplete };
   }
 
   async txStatus(
@@ -312,6 +352,13 @@ export function parseGovLink(row: ProposalRow): GovLink | null {
   const index = link["surveyIndex"];
   if (!(typeof index === "number" && Number.isInteger(index) && index >= 0))
     return null;
+  // TODO(govlink-title-trust): `title` is attacker-controlled off-chain anchor
+  // JSON. It's escaped before render (no XSS), and epoch-alignment is enforced,
+  // but the title's *content* is not authenticated — a malicious Info Action can
+  // claim e.g. "Official Cardano Foundation Poll" to lend a survey false
+  // authority. The UI currently shows it as "Advertised by {title}". Later:
+  // present it as unverified (length-clamp + an explicit caveat) and soften the
+  // "Advertised by" wording so it doesn't overstate verification.
   const title = typeof body["title"] === "string" ? body["title"] : null;
 
   return {

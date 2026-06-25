@@ -66,6 +66,13 @@ export interface Cip179Records {
   readonly surveys: readonly SurveyRecord[];
   readonly responses: readonly ResponseRecord[];
   readonly cancellations: readonly CancellationRecord[];
+  /**
+   * True when the source could not fetch every matching record (e.g. a paging
+   * cap was hit), so the partition above is a *prefix* of on-chain state, not
+   * the whole. The UI surfaces this as "results may be incomplete" rather than
+   * presenting an undercounted snapshot as authoritative. Absent/false = full.
+   */
+  readonly incomplete?: boolean;
 }
 
 /**

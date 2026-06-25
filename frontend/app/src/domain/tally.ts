@@ -7,6 +7,14 @@
  * Each question type produces the shape its Results widget needs. Tallies are
  * computed over whatever response set is passed in, so role-filtered tallies
  * are just a pre-filter at the call site.
+ *
+ * **Input contract:** callers pass the *audited* response set
+ * ({@link auditResponses}'s `counted`), i.e. responses already validated against
+ * the definition. This module therefore assumes each answer is in-constraint and
+ * does not re-validate — out-of-range indices are still skipped defensively, but
+ * duplicate selections, over-budget allocations, and out-of-scale ratings are
+ * trusted. Tallying raw (unaudited) on-chain responses would mis-count, since an
+ * attacker can craft answers that decode cleanly yet violate the constraints.
  */
 
 import type {
