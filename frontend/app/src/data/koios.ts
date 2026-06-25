@@ -15,7 +15,9 @@ import { decodePayload, METADATA_LABEL, type Cip179Payload } from "cip-179";
 import type { AppConfig } from "~/config";
 import { hexToBytes } from "~/util/hex";
 import { koiosJsonToMetadatum, type KoiosJson } from "./metadatum";
+import { decodeCancellationProof } from "./txProof";
 import type {
+  CancellationProof,
   CancellationRecord,
   ChainTip,
   Cip179Records,
@@ -27,6 +29,9 @@ import type {
 
 /** Max tx hashes per /tx_metadata POST (larger bodies return HTTP 413). */
 const TX_METADATA_BATCH = 50;
+
+/** Max tx hashes per /tx_cbor POST — raw CBOR is bulky, so a smaller page (100 returns 413). */
+const TX_CBOR_BATCH = 25;
 
 /**
  * Rows per label-index page. Koios allows up to 1000 rows/response, but we page
@@ -71,6 +76,12 @@ interface TxStatusRow {
   tx_hash: string;
   /** Number of blocks built on top, or null until the tx is in a block. */
   num_confirmations: number | null;
+}
+
+interface TxCborRow {
+  tx_hash: string;
+  /** Full transaction CBOR (hex), or null if unavailable. */
+  cbor: string | null;
 }
 
 export interface ProposalRow {
@@ -255,7 +266,56 @@ export class KoiosDataSource implements DataSource {
       });
     }
 
-    return { surveys, responses, cancellations, incomplete };
+    return {
+      surveys,
+      responses,
+      cancellations: await this.withCancellationProofs(cancellations),
+      incomplete,
+    };
+  }
+
+  /**
+   * Fill each cancellation's owner-proof evidence by fetching the cancelling
+   * transaction's CBOR (`/tx_cbor`) and decoding its `required_signers` +
+   * witness-set native scripts. Cancellations are rare, so this is one extra
+   * (batched) request per refresh only when any exist. A failed fetch/decode
+   * leaves `proof: null` → the cancellation is treated as unverified, never an
+   * error that sinks the snapshot. Decoded once per unique tx (a batched
+   * cancellation tx can target several surveys).
+   */
+  private async withCancellationProofs(
+    cancellations: readonly CancellationRecord[],
+  ): Promise<CancellationRecord[]> {
+    if (cancellations.length === 0) return [...cancellations];
+
+    const txHashes = [...new Set(cancellations.map((c) => c.txHash))];
+    const cborByHash = new Map<string, string>();
+    for (let i = 0; i < txHashes.length; i += TX_CBOR_BATCH) {
+      const batch = txHashes.slice(i, i + TX_CBOR_BATCH);
+      try {
+        const rows = await this.post<TxCborRow[]>(
+          "/tx_cbor?select=tx_hash,cbor",
+          { _tx_hashes: batch },
+        );
+        for (const r of rows) if (r.cbor) cborByHash.set(r.tx_hash, r.cbor);
+      } catch (err) {
+        console.warn(
+          `tx_cbor batch failed; cancellations stay unverified: ${String(err)}`,
+        );
+      }
+    }
+
+    const proofByHash = new Map<string, CancellationProof | null>();
+    await Promise.all(
+      [...cborByHash.entries()].map(async ([hash, cbor]) => {
+        proofByHash.set(hash, await decodeCancellationProof(cbor));
+      }),
+    );
+
+    return cancellations.map((c) => ({
+      ...c,
+      proof: proofByHash.get(c.txHash) ?? null,
+    }));
   }
 
   async txStatus(
@@ -318,7 +378,9 @@ export class KoiosDataSource implements DataSource {
         break;
       case "cancellations":
         for (const target of payload.cancellations) {
-          out.cancellations.push({ txHash, slot, target });
+          // `proof` is filled in a second pass (withCancellationProofs), which
+          // fetches the cancelling tx's CBOR to read its owner-proof evidence.
+          out.cancellations.push({ txHash, slot, target, proof: null });
         }
         break;
     }

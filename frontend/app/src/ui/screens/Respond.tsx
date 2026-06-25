@@ -454,6 +454,25 @@ export const Respond: Component = () => {
               }}
             />
 
+            <Show when={s().cancellationClaimed}>
+              <div
+                style={{
+                  "margin-top": "12px",
+                  padding: "11px 14px",
+                  border: "1px solid var(--warn-line)",
+                  background: "var(--warn-bg)",
+                  "border-radius": "var(--r-md)",
+                  "font-size": "13px",
+                  color: "var(--warn)",
+                  "line-height": "1.45",
+                }}
+              >
+                <strong>Unverified cancellation claim.</strong> A cancellation
+                for this survey was published but couldn't be verified as the
+                owner's, so it's ignored — you can still respond.
+              </div>
+            </Show>
+
             <Switch3
               s={s()}
               connected={identity() !== null}

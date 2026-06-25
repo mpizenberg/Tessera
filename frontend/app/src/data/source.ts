@@ -34,9 +34,47 @@ export interface ResponseRecord extends ChainPos {
   readonly response: SurveyResponse;
 }
 
+/**
+ * A native script, in a framework-agnostic shape, for evaluating owner-proof of a
+ * native-script-credentialed cancellation (CIP-179 mechanism A). Mirrors the
+ * Cardano `native_script` CDDL; timelock clauses collapse to `timelock` since
+ * they constrain validity intervals (ledger-enforced), not signers.
+ */
+export type NativeScriptInfo =
+  | { readonly kind: "sig"; readonly keyHash: string }
+  | { readonly kind: "all"; readonly scripts: readonly NativeScriptInfo[] }
+  | { readonly kind: "any"; readonly scripts: readonly NativeScriptInfo[] }
+  | {
+      readonly kind: "atLeast";
+      readonly required: number;
+      readonly scripts: readonly NativeScriptInfo[];
+    }
+  | { readonly kind: "timelock" };
+
+/**
+ * Evidence proving (or not) that a cancelling transaction authorized the
+ * cancellation — decoded from the cancelling tx's CBOR. The owner-credential
+ * check is pure domain logic ({@link import("~/domain/cancellation")}); the
+ * source's job is only to surface what the tx contains.
+ */
+export interface CancellationProof {
+  /** Key hashes in the tx body's `required_signers` (field 14), hex. */
+  readonly requiredSigners: readonly string[];
+  /** Native scripts in the tx's witness set, keyed by script hash (hex). */
+  readonly nativeScripts: readonly {
+    readonly scriptHash: string;
+    readonly script: NativeScriptInfo;
+  }[];
+}
+
 /** A cancellation as published on-chain (references the cancelled survey). */
 export interface CancellationRecord extends ChainPos {
   readonly target: SurveyRef;
+  /**
+   * Owner-proof evidence from the cancelling transaction, or `null` if it
+   * couldn't be fetched/decoded (then the cancellation is treated as unverified).
+   */
+  readonly proof: CancellationProof | null;
 }
 
 /** Current chain position, for epoch-dependent lifecycle status. */

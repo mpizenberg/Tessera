@@ -22,14 +22,15 @@ Isolated, small diffs, no architectural change. One commit per item.
 
 Needs shared code + unit tests.
 
-| #   | Finding                                                                  | File(s)                                                        | Status |
-| --- | ------------------------------------------------------------------------ | -------------------------------------------------------------- | ------ |
-| 1   | Shared answer-validation → tally/audit; add `"invalid"` exclusion bucket | `domain/audit.ts`, `domain/tally.ts`, `ui/screens/Survey.tsx`  | ✅     |
-| 2   | Koios pagination past 1000 + "incomplete" signal                         | `data/koios.ts`, `data/source.ts`, `Explore.tsx`, `Survey.tsx` | ✅     |
-| 3   | Unverified-cancellation + unverified-gov-title affordances               | `domain/survey.ts`, `data/koios.ts`                            | ⏭️     |
+| #   | Finding                                                                  | File(s)                                                                                 | Status |
+| --- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- | ------ |
+| 1   | Shared answer-validation → tally/audit; add `"invalid"` exclusion bucket | `domain/audit.ts`, `domain/tally.ts`, `ui/screens/Survey.tsx`                           | ✅     |
+| 2   | Koios pagination past 1000 + "incomplete" signal                         | `data/koios.ts`, `data/source.ts`, `Explore.tsx`, `Survey.tsx`                          | ✅     |
+| 3a  | Cancellation owner-proof — full CIP-179 mechanism-A verification         | `domain/cancellation.ts`, `data/txProof.ts`, `data/koios.ts`, `domain/survey.ts`, `ui/` | ✅     |
+| 3b  | Unverified gov-link title affordance                                     | `data/koios.ts`                                                                         | ⏭️     |
 
-**Phase 2 verified:** `type-check`, `format:check`, all 30 unit tests pass (audit suite 6→10).
-Item 3 deferred per request — actionable `TODO(cancellation-verification)` and `TODO(govlink-title-trust)` markers added in code instead of changing behavior now.
+**Phase 2 verified:** `type-check`, `format:check`, all 47 unit tests pass (6 files).
+Item 3a (cancellation) fully solved — see changelog. Item 3b (gov-link title authenticity) still carries its `TODO(govlink-title-trust)` marker.
 
 ## Phase 3 — Reactivity & UX bugs
 
@@ -64,6 +65,27 @@ Small diffs, each needs manual verification in the running app.
 
 _(newest first)_
 
+- **Cancellation owner-proof verification (Phase 2, item 3a)** — replaced the
+  "honor any cancellation" stopgap with full CIP-179 mechanism-A verification.
+  - A cancellation is a bare `survey_ref`; authenticity is the _cancelling tx_
+    proving the survey's `owner` credential. Koios `/tx_info` exposes no
+    `required_signers`/witnesses, but `/tx_cbor` returns the raw tx — so
+    `data/txProof.ts` (lazy evolution-sdk) decodes `body.required_signers` and the
+    witness-set native scripts into a framework-agnostic `CancellationProof`.
+  - `domain/cancellation.ts` (pure, 11 tests): key owner ⟹ `keyHash ∈
+required_signers`; native-script owner ⟹ script (from the witness set, hashed
+    via `blake2b-224(0x00‖cbor)`) satisfied by the signers, incl. all/any/atLeast/
+    nested/timelock; Plutus owner / absent proof ⟹ unverified.
+  - `koios.ts` batches `/tx_cbor` (25/req) for cancellation txs only and attaches
+    the proof; failure → `proof:null` → unverified (never sinks the snapshot).
+  - `aggregateSurveys` is now tri-state (`domain/survey.test.ts`, 6 tests):
+    `cancelled` means **owner-verified + within `end_epoch`** (only this closes a
+    survey); `cancellationClaimed` flags an unverified claim, surfaced as a warning
+    in the Survey + Respond screens but never suppressing the survey. `epochOfSlot`
+    moved to `survey.ts` (shared, re-exported from `audit.ts`) for the deadline rule.
+  - Investigation note: evolution-sdk's full `Transaction.fromCBORHex` decodes all
+    recent CIP-179 txs fine (only 2021 pre-Alonzo 3-element txs fail) — confirmed by
+    a repro worker; we still wrap decode in try/catch → unverified for safety.
 - **Phase 2 (items 1–2) complete; item 3 deferred** —
   - **Tally/audit validation** — added `responseIsCountable(definition, response)`
     to `domain/audit.ts`, reusing the codec's `validateResponse` (single source of

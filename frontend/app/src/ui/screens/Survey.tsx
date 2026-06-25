@@ -205,6 +205,10 @@ export const Survey: Component = () => {
               pillKey={pillKey()}
             />
 
+            <Show when={s().cancellationClaimed}>
+              <ClaimedCancellationNotice />
+            </Show>
+
             <Show when={pres.external() && pres.unavailable()}>
               <LabelsUnavailable keyStr={key()} />
             </Show>
@@ -280,6 +284,32 @@ export const Survey: Component = () => {
     </main>
   );
 };
+
+/**
+ * Shown when a cancellation referencing this survey exists but couldn't be
+ * verified as the owner's (forgery, unsupported owner type, or unfetchable
+ * proof). The survey stays open — an unverified claim never closes it — so this
+ * is informational, making the attempted suppression visible without acting on it.
+ */
+const ClaimedCancellationNotice: Component = () => (
+  <div
+    style={{
+      "margin-top": "14px",
+      padding: "11px 14px",
+      border: "1px solid var(--warn-line)",
+      background: "var(--warn-bg)",
+      "border-radius": "var(--r-md)",
+      "font-size": "13px",
+      color: "var(--warn)",
+      "line-height": "1.45",
+    }}
+  >
+    <strong>Unverified cancellation claim.</strong> A cancellation referencing
+    this survey was published, but this client couldn't verify it came from the
+    survey owner — so it's ignored and the survey remains open. Only an
+    owner-signed cancellation closes a survey.
+  </div>
+);
 
 // ----------------------------------------------------------------------------
 // Owner controls (cancel)

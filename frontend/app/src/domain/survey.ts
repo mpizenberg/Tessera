@@ -9,17 +9,17 @@
  * the indexer will later confirm it proved the owner credential.
  */
 
-import type { Credential, SurveyRef } from "cip-179";
+import type { Credential, SurveyDefinition, SurveyRef } from "cip-179";
 
 import { bytesToHex } from "~/util/hex";
 import type {
-  CancellationRecord,
   ChainTip,
   Cip179Records,
   GovLink,
   ResponseRecord,
   SurveyRecord,
 } from "~/data/source";
+import { cancellationVerified } from "./cancellation";
 
 /** Stable string identity for a survey reference: "<txHex>:<index>". */
 export function refKey(ref: SurveyRef): string {
@@ -47,7 +47,19 @@ export interface SurveyAggregate {
   readonly govLink: GovLink | null;
   /** Distinct responders, after latest-valid-wins dedup. */
   readonly responseCount: number;
+  /**
+   * Owner-verified, in-window cancellation: the cancelling tx proved the survey's
+   * `owner` credential (CIP-179 mechanism A). Only this makes a survey
+   * effectively cancelled (`status: "cancelled"`, responding blocked).
+   */
   readonly cancelled: boolean;
+  /**
+   * A cancellation referencing this survey exists but could NOT be verified as
+   * the owner's (forgery/griefing, an unsupported owner type, or unfetchable
+   * proof) — and there is no verified one. Surfaced as a warning; it does not
+   * change status or block responding, so it can't be used to suppress a survey.
+   */
+  readonly cancellationClaimed: boolean;
 }
 
 /**
@@ -84,24 +96,68 @@ function statusOf(
   return tipEpoch > endEpoch ? "ended" : "active";
 }
 
+/**
+ * Estimate the epoch a past absolute slot fell in, from the tip. Post-Shelley
+ * slots are 1s and an epoch spans `secondsPerEpoch` slots; the current epoch
+ * started at `tip.slot − tip.epochSlot`. Constant epoch length is assumed going
+ * back — exact for the recent window we index, a coarse estimate further back.
+ */
+export function epochOfSlot(
+  slot: number,
+  tip: ChainTip,
+  secondsPerEpoch: number,
+): number {
+  const epochStartSlot = tip.slot - tip.epochSlot;
+  if (slot >= epochStartSlot) return tip.epoch;
+  const back = Math.ceil((epochStartSlot - slot) / secondsPerEpoch);
+  return tip.epoch - back;
+}
+
+/** Verified (owner-proven) vs. merely claimed (unverified) cancellation. */
+export type CancellationState = "verified" | "claimed";
+
+/**
+ * Per-survey cancellation state, keyed by survey ref. A cancellation counts only
+ * if it lands at/before the survey's `end_epoch` (later ones are invalid per
+ * CIP-179) and resolves to a known definition; among those, an owner-proven one
+ * wins (`verified`), otherwise the survey is `claimed` (unverified). Surveys
+ * with no in-window cancellation are absent from the map.
+ */
+export function cancellationStates(
+  records: Cip179Records,
+  tip: ChainTip,
+  secondsPerEpoch: number,
+): Map<string, CancellationState> {
+  const defByKey = new Map<string, SurveyDefinition>(
+    records.surveys.map((s) => [refKey(s.ref), s.definition]),
+  );
+  const states = new Map<string, CancellationState>();
+  for (const c of records.cancellations) {
+    const key = refKey(c.target);
+    const def = defByKey.get(key);
+    if (!def) continue; // references an unknown survey — ignore
+    if (epochOfSlot(c.slot, tip, secondsPerEpoch) > def.endEpoch) continue; // too late
+    if (cancellationVerified(def.owner, c.proof)) {
+      states.set(key, "verified");
+    } else if (states.get(key) !== "verified") {
+      states.set(key, "claimed");
+    }
+  }
+  return states;
+}
+
 /** Build per-survey aggregates from a full records snapshot. */
 export function aggregateSurveys(
   records: Cip179Records,
   tip: ChainTip,
+  secondsPerEpoch: number,
   govLinks: readonly GovLink[] = [],
 ): SurveyAggregate[] {
-  // TODO(cancellation-verification): this honors *any* cancellation record that
-  // references the survey, with NO owner-proof check — so currently any actor
-  // can publish a label-17 cancellation for any survey and have this client
-  // render it as authoritatively `cancelled` (which also blocks responding: a
-  // suppression/griefing vector). We can't verify owner-proof from metadata
-  // alone; it needs the cancelling tx's required_signers/witnesses vs.
-  // `record.definition.owner`. Fix later by either (a) a semantic indexer that
-  // confirms the owner credential signed, or (b) an extra Koios /tx_info lookup
-  // per cancelling tx here. Until then this is knowingly unverified.
-  const cancelledKeys = new Set(
-    records.cancellations.map((c: CancellationRecord) => refKey(c.target)),
-  );
+  // A cancellation only takes effect when the cancelling tx proves the survey's
+  // owner credential (CIP-179 mechanism A); unproven ones are surfaced as
+  // unverified claims, never acted on — so they can't be used to suppress a
+  // survey. See {@link cancellationStates} / {@link import("./cancellation")}.
+  const cancelStates = cancellationStates(records, tip, secondsPerEpoch);
 
   // Index links by survey key; a survey is "linked" only when the action's
   // voting end epoch exactly equals the survey's end_epoch (the CIP invariant).
@@ -117,7 +173,8 @@ export function aggregateSurveys(
 
   return records.surveys.map((record) => {
     const key = refKey(record.ref);
-    const cancelled = cancelledKeys.has(key);
+    const cancelState = cancelStates.get(key);
+    const cancelled = cancelState === "verified";
     const link = linkByKey.get(key);
     const govLink =
       link && link.endEpoch === record.definition.endEpoch ? link : null;
@@ -125,6 +182,7 @@ export function aggregateSurveys(
       key,
       record,
       cancelled,
+      cancellationClaimed: cancelState === "claimed",
       sealed: record.definition.submissionMode.type === "sealed",
       external: record.definition.contentAnchor !== undefined,
       govLink,
@@ -148,16 +206,17 @@ export function aggregateSurveys(
 export function governanceSinceUnix(
   records: Cip179Records,
   tip: ChainTip,
+  secondsPerEpoch: number,
   fallbackUnix: number,
 ): number {
-  const cancelled = new Set(
-    records.cancellations.map((c: CancellationRecord) => refKey(c.target)),
-  );
+  // Only an owner-verified cancellation makes a survey inactive; an unverified
+  // claim leaves it active (mirrors aggregateSurveys).
+  const cancelStates = cancellationStates(records, tip, secondsPerEpoch);
   let oldestSlot = Infinity;
   for (const s of records.surveys) {
     // Active = not cancelled and not past its end epoch (responses accepted
     // through end_epoch inclusive, mirroring `statusOf`).
-    if (cancelled.has(refKey(s.ref))) continue;
+    if (cancelStates.get(refKey(s.ref)) === "verified") continue;
     if (s.definition.endEpoch < tip.epoch) continue;
     if (s.slot < oldestSlot) oldestSlot = s.slot;
   }

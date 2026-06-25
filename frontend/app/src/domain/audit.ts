@@ -27,7 +27,11 @@ import {
 } from "cip-179";
 
 import type { ChainTip, ResponseRecord } from "~/data/source";
-import { dedupeResponses } from "./survey";
+import { dedupeResponses, epochOfSlot } from "./survey";
+
+// `epochOfSlot` now lives in ./survey (shared with cancellation-deadline logic);
+// re-exported here so existing importers (and tests) keep their path.
+export { epochOfSlot };
 
 export type ExclusionKey =
   | "after-deadline"
@@ -72,23 +76,6 @@ export interface ResponseAudit {
    * produced here (it's only knowable after reveal — appended UI-side).
    */
   readonly excludedRecords: readonly ExcludedRecord[];
-}
-
-/**
- * Estimate the epoch a past absolute slot fell in, from the tip. Post-Shelley
- * slots are 1s and an epoch spans `secondsPerEpoch` slots; the current epoch
- * started at `tip.slot − tip.epochSlot`. Constant epoch length is assumed going
- * back — exact for the recent window we index, a coarse estimate further back.
- */
-export function epochOfSlot(
-  slot: number,
-  tip: ChainTip,
-  secondsPerEpoch: number,
-): number {
-  const epochStartSlot = tip.slot - tip.epochSlot;
-  if (slot >= epochStartSlot) return tip.epoch;
-  const back = Math.ceil((epochStartSlot - slot) / secondsPerEpoch);
-  return tip.epoch - back;
 }
 
 /**
