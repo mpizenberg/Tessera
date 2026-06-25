@@ -240,12 +240,7 @@ export const AppProvider: ParentComponent = (props) => {
     // Bound the governance scan to actions recent enough to link a live survey
     // (oldest active survey's creation time). Best-effort enrichment: never let
     // a governance-endpoint failure (or CORS) sink the main snapshot.
-    const since = governanceSinceUnix(
-      records,
-      tip,
-      config.secondsPerEpoch,
-      config.sinceUnix,
-    );
+    const since = governanceSinceUnix(records, tip, config.sinceUnix);
     const govLinks = await source.fetchGovernanceLinks(since).catch((e) => {
       console.warn(`governance linkage unavailable: ${String(e)}`);
       return [];
@@ -253,7 +248,7 @@ export const AppProvider: ParentComponent = (props) => {
     return {
       records,
       tip,
-      surveys: aggregateSurveys(records, tip, config.secondsPerEpoch, govLinks),
+      surveys: aggregateSurveys(records, tip, govLinks),
     };
   });
 
@@ -323,7 +318,6 @@ export const AppProvider: ParentComponent = (props) => {
     const [agg] = aggregateSurveys(
       { surveys: [record], responses: [], cancellations: [] },
       snap.tip,
-      config.secondsPerEpoch,
     );
     if (!agg) return;
     setOptimisticSurveys((prev) => [

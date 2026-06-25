@@ -117,16 +117,19 @@ export function epochOfSlot(
 export type CancellationState = "verified" | "claimed";
 
 /**
- * Per-survey cancellation state, keyed by survey ref. A cancellation counts only
- * if it lands at/before the survey's `end_epoch` (later ones are invalid per
- * CIP-179) and resolves to a known definition; among those, an owner-proven one
- * wins (`verified`), otherwise the survey is `claimed` (unverified). Surveys
- * with no in-window cancellation are absent from the map.
+ * Per-survey cancellation state, keyed by survey ref. A cancellation is only
+ * considered while its target survey is **still open** (tip at/before the
+ * survey's `end_epoch`): once a survey has ended it's closed regardless, so there
+ * is nothing to suppress and no point distinguishing verified from claimed. (This
+ * also subsumes the CIP-179 rule that a cancellation after `end_epoch` is invalid
+ * — for a still-open survey, any cancellation already on chain is necessarily
+ * within the window.) Among the considered cancellations an owner-proven one wins
+ * (`verified`), otherwise the survey is `claimed` (unverified). Surveys with no
+ * such cancellation are absent from the map.
  */
 export function cancellationStates(
   records: Cip179Records,
   tip: ChainTip,
-  secondsPerEpoch: number,
 ): Map<string, CancellationState> {
   const defByKey = new Map<string, SurveyDefinition>(
     records.surveys.map((s) => [refKey(s.ref), s.definition]),
@@ -136,7 +139,7 @@ export function cancellationStates(
     const key = refKey(c.target);
     const def = defByKey.get(key);
     if (!def) continue; // references an unknown survey — ignore
-    if (epochOfSlot(c.slot, tip, secondsPerEpoch) > def.endEpoch) continue; // too late
+    if (tip.epoch > def.endEpoch) continue; // survey already closed — moot
     if (cancellationVerified(def.owner, c.proof)) {
       states.set(key, "verified");
     } else if (states.get(key) !== "verified") {
@@ -150,14 +153,13 @@ export function cancellationStates(
 export function aggregateSurveys(
   records: Cip179Records,
   tip: ChainTip,
-  secondsPerEpoch: number,
   govLinks: readonly GovLink[] = [],
 ): SurveyAggregate[] {
   // A cancellation only takes effect when the cancelling tx proves the survey's
   // owner credential (CIP-179 mechanism A); unproven ones are surfaced as
   // unverified claims, never acted on — so they can't be used to suppress a
   // survey. See {@link cancellationStates} / {@link import("./cancellation")}.
-  const cancelStates = cancellationStates(records, tip, secondsPerEpoch);
+  const cancelStates = cancellationStates(records, tip);
 
   // Index links by survey key; a survey is "linked" only when the action's
   // voting end epoch exactly equals the survey's end_epoch (the CIP invariant).
@@ -206,12 +208,11 @@ export function aggregateSurveys(
 export function governanceSinceUnix(
   records: Cip179Records,
   tip: ChainTip,
-  secondsPerEpoch: number,
   fallbackUnix: number,
 ): number {
   // Only an owner-verified cancellation makes a survey inactive; an unverified
   // claim leaves it active (mirrors aggregateSurveys).
-  const cancelStates = cancellationStates(records, tip, secondsPerEpoch);
+  const cancelStates = cancellationStates(records, tip);
   let oldestSlot = Infinity;
   for (const s of records.surveys) {
     // Active = not cancelled and not past its end epoch (responses accepted

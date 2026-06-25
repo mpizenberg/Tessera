@@ -10,10 +10,15 @@
  * logged and skipped, so a single bad transaction can't blank the explorer.
  */
 
-import { decodePayload, METADATA_LABEL, type Cip179Payload } from "cip-179";
+import {
+  decodePayload,
+  METADATA_LABEL,
+  type Cip179Payload,
+  type SurveyRef,
+} from "cip-179";
 
 import type { AppConfig } from "~/config";
-import { hexToBytes } from "~/util/hex";
+import { bytesToHex, hexToBytes } from "~/util/hex";
 import { koiosJsonToMetadatum, type KoiosJson } from "./metadatum";
 import { decodeCancellationProof } from "./txProof";
 import type {
@@ -266,10 +271,34 @@ export class KoiosDataSource implements DataSource {
       });
     }
 
+    // A cancellation only matters while its target survey is still open: once a
+    // survey has ended (tip past its end_epoch) it's closed regardless, so
+    // there's nothing to suppress — and fetching + decoding its cancelling tx's
+    // CBOR (the owner proof) would be wasted work. So verify proofs only for
+    // cancellations of still-open surveys; the rest (closed, or referencing an
+    // unknown survey) keep `proof: null`, which the domain treats as unverified —
+    // moot for a closed survey. Mirrors `cancellationStates` in domain/survey.ts.
+    const refKeyOf = (ref: SurveyRef): string =>
+      `${bytesToHex(ref.txId)}:${ref.index}`;
+    const openSurveyKeys = new Set(
+      surveys
+        .filter((s) => tip.epoch_no <= s.definition.endEpoch)
+        .map((s) => refKeyOf(s.ref)),
+    );
+    const openCancellations: CancellationRecord[] = [];
+    const closedCancellations: CancellationRecord[] = [];
+    for (const c of cancellations) {
+      if (openSurveyKeys.has(refKeyOf(c.target))) openCancellations.push(c);
+      else closedCancellations.push(c);
+    }
+
     return {
       surveys,
       responses,
-      cancellations: await this.withCancellationProofs(cancellations),
+      cancellations: [
+        ...(await this.withCancellationProofs(openCancellations)),
+        ...closedCancellations,
+      ],
       incomplete,
     };
   }
@@ -277,11 +306,13 @@ export class KoiosDataSource implements DataSource {
   /**
    * Fill each cancellation's owner-proof evidence by fetching the cancelling
    * transaction's CBOR (`/tx_cbor`) and decoding its `required_signers` +
-   * witness-set native scripts. Cancellations are rare, so this is one extra
-   * (batched) request per refresh only when any exist. A failed fetch/decode
-   * leaves `proof: null` → the cancellation is treated as unverified, never an
-   * error that sinks the snapshot. Decoded once per unique tx (a batched
-   * cancellation tx can target several surveys).
+   * witness-set native scripts. Callers pass only cancellations of still-open
+   * surveys (a closed survey can't be suppressed, so verifying its cancellation
+   * would be wasted work — see {@link fetchAll}). Cancellations are rare, so this
+   * is one extra (batched) request per refresh only when any exist. A failed
+   * fetch/decode leaves `proof: null` → the cancellation is treated as
+   * unverified, never an error that sinks the snapshot. Decoded once per unique
+   * tx (a batched cancellation tx can target several surveys).
    */
   private async withCancellationProofs(
     cancellations: readonly CancellationRecord[],

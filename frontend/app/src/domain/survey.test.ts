@@ -11,8 +11,11 @@ import type {
 } from "~/data/source";
 import { aggregateSurveys } from "./survey";
 
-// epoch start slot = tip.slot − tip.epochSlot = 1000; secondsPerEpoch 100, so
-// slot 950 → epoch 9, slot 1050 → epoch 10.
+// Cancellation tri-state keys off tip.epoch vs the survey's end_epoch: a survey
+// is "open" (its cancellations are considered) while tip.epoch ≤ end_epoch, and
+// "closed" otherwise. TIP sits at epoch 10, so end_epoch 10 is open and end_epoch
+// 8 is closed. The cancellation slots in the fixtures are inert — kept only as
+// plausible data, since open-vs-closed no longer depends on the cancellation slot.
 const TIP: ChainTip = {
   epoch: 10,
   slot: 1050,
@@ -20,7 +23,6 @@ const TIP: ChainTip = {
   time: 1_000_000,
   govActionLifetime: 6,
 };
-const SPE = 100;
 const TXID = Uint8Array.of(0xaa);
 
 const keyOwner = (b: number): Credential => ({
@@ -68,7 +70,7 @@ const recs = (
   cancellations: CancellationRecord[],
 ): Cip179Records => ({ surveys, responses: [], cancellations });
 
-const agg1 = (r: Cip179Records) => aggregateSurveys(r, TIP, SPE)[0]!;
+const agg1 = (r: Cip179Records) => aggregateSurveys(r, TIP)[0]!;
 
 describe("aggregateSurveys — cancellation tri-state", () => {
   it("owner-proven cancellation marks the survey cancelled", () => {
@@ -117,8 +119,9 @@ describe("aggregateSurveys — cancellation tri-state", () => {
     expect(a.cancellationClaimed).toBe(false);
   });
 
-  it("a cancellation after end_epoch is invalid and ignored", () => {
-    // endEpoch 8, cancellation at slot 950 → epoch 9 > 8, so it doesn't count.
+  it("a cancellation for an already-closed survey is ignored", () => {
+    // endEpoch 8 < tip epoch 10 → the survey is already closed, so its
+    // cancellation is moot (nothing to suppress) regardless of proof.
     const a = agg1(
       recs(
         [survey(0, def(keyOwner(1), 8))],

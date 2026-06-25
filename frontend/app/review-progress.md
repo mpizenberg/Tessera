@@ -65,6 +65,22 @@ Small diffs, each needs manual verification in the running app.
 
 _(newest first)_
 
+- **Scope cancellation verification to still-open surveys** — a cancellation can
+  only suppress a survey while it's still answerable; once a survey has ended
+  (tip past its `end_epoch`) it's closed regardless, so verifying its cancellation
+  is wasted work.
+  - `koios.ts#fetchAll` now partitions cancellations by whether their target
+    survey is still open and fetches `/tx_cbor` proofs only for the open ones;
+    closed (or unknown-target) cancellations keep `proof: null` without a fetch.
+  - `domain/survey.ts#cancellationStates` mirrors this: it skips any cancellation
+    whose survey has already ended (`tip.epoch > end_epoch`). This replaces the
+    per-slot "cancelled after end_epoch" timing check, which it subsumes (for an
+    open survey any on-chain cancellation is necessarily in-window), so the
+    now-vestigial `secondsPerEpoch` param was dropped from `cancellationStates`,
+    `aggregateSurveys`, and `governanceSinceUnix` (call sites in `state.tsx` +
+    `survey.test.ts` updated). Side benefit: an ended survey that had a real
+    cancellation no longer shows a misleading "unverified claim" warning — it's
+    just "ended".
 - **Cancellation owner-proof verification (Phase 2, item 3a)** — replaced the
   "honor any cancellation" stopgap with full CIP-179 mechanism-A verification.
   - A cancellation is a bare `survey_ref`; authenticity is the _cancelling tx_
