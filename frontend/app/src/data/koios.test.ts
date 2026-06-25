@@ -24,10 +24,12 @@ function row(meta_json: unknown, expiration: number | null = 42): ProposalRow {
   };
 }
 
+// 64-char hex tx id, upper-case on purpose: surveyKey must lower-case it.
+const TXID = "9A1C".repeat(16);
 const LINK = {
   specVersion: 4,
   kind: "survey-link",
-  surveyTxId: "9A1C", // upper-case on purpose: surveyKey must lower-case it
+  surveyTxId: TXID,
   surveyIndex: 2,
 };
 
@@ -37,7 +39,7 @@ describe("parseGovLink", () => {
       row(anchor({ title: "Ratify the budget", cip179: LINK })),
     );
     expect(link).toEqual({
-      surveyKey: "9a1c:2", // tx id lower-cased, joined with the index
+      surveyKey: `${TXID.toLowerCase()}:2`, // tx id lower-cased, joined with the index
       actionId: "gov_action1abc",
       // Koios expiration 42 → voting-end epoch 41 (one before the drop-out epoch).
       endEpoch: 41,
@@ -79,9 +81,13 @@ describe("parseGovLink", () => {
     expect(parseGovLink(row(anchor({ cip179: noKind })))).toBeNull();
   });
 
-  it("rejects a missing surveyTxId", () => {
+  it("rejects a missing or non-64-hex surveyTxId", () => {
     const { surveyTxId: _t, ...noTx } = LINK;
     expect(parseGovLink(row(anchor({ cip179: noTx })))).toBeNull();
+    // A short / malformed id can't address a real tx → not a link.
+    expect(
+      parseGovLink(row(anchor({ cip179: { ...LINK, surveyTxId: "9a1c" } }))),
+    ).toBeNull();
   });
 
   it("rejects an action with no cip179 object in its body", () => {

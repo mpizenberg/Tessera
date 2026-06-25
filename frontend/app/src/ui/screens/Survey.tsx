@@ -24,6 +24,7 @@ import {
 
 import { useApp } from "~/state";
 import { findSurvey, refKey, type SurveyAggregate } from "~/domain/survey";
+import { humanizeAnswer, serializeAnswer } from "~/domain/answer";
 import {
   auditResponses,
   responseIsCountable,
@@ -382,17 +383,17 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
             style={{
               "font-family": "var(--mono)",
               "font-size": "11.5px",
-              color: "#8A3A2E",
+              color: "var(--danger-ink)",
               "margin-top": "5px",
               "word-break": "break-all",
             }}
           >
-            <TxLink hash={hash()!} color="#8A3A2E" />
+            <TxLink hash={hash()!} color="var(--danger-ink)" />
           </div>
           <div
             style={{
               "font-size": "12.5px",
-              color: "#8A3A2E",
+              color: "var(--danger-ink)",
               "line-height": "1.5",
               "margin-top": "6px",
             }}
@@ -410,8 +411,8 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
           "justify-content": "space-between",
           gap: "12px",
           "flex-wrap": "wrap",
-          background: "#FBFAF6",
-          border: "1px solid #F0EBD8",
+          background: "var(--card-bg)",
+          border: "1px solid var(--card-line)",
           "border-radius": "var(--r-md)",
           padding: "12px 15px",
           "margin-top": "16px",
@@ -420,7 +421,7 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
         <span
           style={{
             "font-size": "12.5px",
-            color: "#7A6A45",
+            color: "var(--label)",
             "line-height": "1.45",
           }}
         >
@@ -1436,7 +1437,7 @@ const RoleFilterBtn: Component<{
       cursor: "pointer",
       "border-radius": "8px",
       padding: "6px 12px",
-      border: props.on ? "1px solid var(--accent)" : "1px solid #E7E0D0",
+      border: props.on ? "1px solid var(--accent)" : "1px solid var(--line)",
       background: props.on ? "var(--accent)" : "#F2ECDE",
       color: props.on ? "#FBF8F1" : "#6B6356",
     }}
@@ -1549,8 +1550,8 @@ const ExclusionPanel: Component<{
           display: "flex",
           "align-items": "center",
           gap: "10px",
-          background: "#FBFAF6",
-          "border-bottom": "1px solid #F0EBD8",
+          background: "var(--card-bg)",
+          "border-bottom": "1px solid var(--card-line)",
           padding: "12px 16px",
           "flex-wrap": "wrap",
         }}
@@ -1559,7 +1560,7 @@ const ExclusionPanel: Component<{
           style={{
             "font-size": "12.5px",
             "font-weight": "700",
-            color: "#7A6A45",
+            color: "var(--label)",
           }}
         >
           Why responses weren't counted
@@ -1990,8 +1991,8 @@ const ResultsBody: Component<{
     ];
     const credOf = (r: SurveyResponse): string =>
       r.credential.type === "key"
-        ? `key:${hex(r.credential.keyHash)}`
-        : `script:${hex(r.credential.scriptHash)}`;
+        ? `key:${bytesToHex(r.credential.keyHash)}`
+        : `script:${bytesToHex(r.credential.scriptHash)}`;
     // Counted responses: one row per answer (or one ciphertext row if a sealed
     // payload reaches here unrevealed).
     const counted = props.records.flatMap((rec) => {
@@ -2150,8 +2151,8 @@ const ResultsBody: Component<{
           display: "flex",
           "align-items": "flex-start",
           gap: "10px",
-          background: "#FBFAF6",
-          border: "1px solid #F0EBD8",
+          background: "var(--card-bg)",
+          border: "1px solid var(--card-line)",
           "border-radius": "var(--r-md)",
           padding: "12px 15px",
           "margin-top": "14px",
@@ -2178,7 +2179,7 @@ const ResultsBody: Component<{
         <span
           style={{
             "font-size": "12.5px",
-            color: "#7A6A45",
+            color: "var(--label)",
             "line-height": "1.5",
           }}
         >
@@ -2500,8 +2501,8 @@ const LabelsUnavailable: Component<{ keyStr: string }> = (props) => (
       display: "flex",
       "align-items": "flex-start",
       gap: "12px",
-      background: "#FBFAF6",
-      border: "1px solid #F0EBD8",
+      background: "var(--card-bg)",
+      border: "1px solid var(--card-line)",
       "border-radius": "var(--r-lg)",
       padding: "15px 17px",
       "margin-top": "14px",
@@ -2527,14 +2528,18 @@ const LabelsUnavailable: Component<{ keyStr: string }> = (props) => (
     </span>
     <div style={{ flex: "1", "min-width": "0" }}>
       <div
-        style={{ "font-size": "14px", "font-weight": "700", color: "#7A6A45" }}
+        style={{
+          "font-size": "14px",
+          "font-weight": "700",
+          color: "var(--label)",
+        }}
       >
         Presentation labels unavailable
       </div>
       <p
         style={{
           "font-size": "12.5px",
-          color: "#7A6A45",
+          color: "var(--label)",
           "line-height": "1.5",
           margin: "5px 0 0",
         }}
@@ -2605,81 +2610,18 @@ function pctOf(avg: number, min: number, max: number): number {
   return Math.max(0, Math.min(100, ((avg - min) / (max - min)) * 100));
 }
 
-function hex(b: Uint8Array): string {
-  let s = "";
-  for (const x of b) s += x.toString(16).padStart(2, "0");
-  return s;
-}
-
-function serializeAnswer(a: AnswerItem): string {
-  switch (a.type) {
-    case "singleChoice":
-      return String(a.optionIndex);
-    case "multiSelect":
-      return a.optionIndices.join("|");
-    case "ranking":
-      return a.ranking.join(">");
-    case "numeric":
-      return a.value.toString();
-    case "pointsAllocation":
-      return a.allocations.map((p) => `${p.optionIndex}:${p.points}`).join("|");
-    case "rating":
-      return a.ratings.map((r) => `${r.optionIndex}:${r.rating}`).join("|");
-    case "custom":
-      return typeof a.value === "string" ? a.value : "[custom]";
-  }
-}
-
-/**
- * Human-readable label for an option index, using the (possibly enriched)
- * definition's labels. Falls back to a 1-based "Option N" when labels aren't
- * present — count-mode questions, or external-content surveys whose
- * presentation document hasn't resolved.
- */
-function optionLabelOf(q: Question | undefined, index: number): string {
-  if (q && "options" in q && q.options.type === "options") {
-    return q.options.labels[index] ?? `Option ${index + 1}`;
-  }
-  return `Option ${index + 1}`;
-}
-
-/** Render a single answer item against its question, using option labels. */
-function humanizeAnswer(a: AnswerItem, q: Question | undefined): string {
-  switch (a.type) {
-    case "singleChoice":
-      return optionLabelOf(q, a.optionIndex);
-    case "multiSelect":
-      return a.optionIndices.length === 0
-        ? "(none selected)"
-        : a.optionIndices.map((i) => optionLabelOf(q, i)).join(", ");
-    case "ranking":
-      return a.ranking
-        .map((i, n) => `${n + 1}. ${optionLabelOf(q, i)}`)
-        .join("  ›  ");
-    case "numeric":
-      return a.value.toString();
-    case "pointsAllocation":
-      return a.allocations
-        .map((p) => `${optionLabelOf(q, p.optionIndex)}: ${p.points}`)
-        .join(",  ");
-    case "rating":
-      return a.ratings
-        .map((r) => `${optionLabelOf(q, r.optionIndex)}: ${r.rating}`)
-        .join(",  ");
-    case "custom":
-      return typeof a.value === "string" ? a.value : "[custom value]";
-  }
-}
-
 /** Compact one-line form of a responder credential, full value in `title`. */
 function shortCred(cred: Credential): string {
-  const h = cred.type === "key" ? hex(cred.keyHash) : hex(cred.scriptHash);
+  const h =
+    cred.type === "key"
+      ? bytesToHex(cred.keyHash)
+      : bytesToHex(cred.scriptHash);
   const prefix = cred.type === "key" ? "key" : "script";
   return `${prefix}:${h.slice(0, 12)}…${h.slice(-6)}`;
 }
 
 function fullCred(cred: Credential): string {
   return cred.type === "key"
-    ? `key:${hex(cred.keyHash)}`
-    : `script:${hex(cred.scriptHash)}`;
+    ? `key:${bytesToHex(cred.keyHash)}`
+    : `script:${bytesToHex(cred.scriptHash)}`;
 }

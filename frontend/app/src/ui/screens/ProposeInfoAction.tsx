@@ -22,16 +22,12 @@ import { blake2b } from "@noble/hashes/blake2.js";
 
 import { useApp } from "~/state";
 import { findSurvey } from "~/domain/survey";
+import { parseCip179Link, type SurveyRefLite } from "~/domain/govLink";
 import { bytesToHex } from "~/util/hex";
 import { IPFS_PROVIDERS, type ProviderId } from "~/enrichment/providers";
 import { TxLink } from "~/ui/components/TxLink";
+import { Note, type NoteKind } from "~/ui/components/Note";
 import { isSafeAnchorUri, networkMismatch } from "~/ui/format";
-
-/** The survey a well-formed anchor links to (tx id lower-cased, output index). */
-interface SurveyRefLite {
-  readonly txId: string;
-  readonly index: number;
-}
 
 /**
  * An anchor document loaded from disk: the *exact* bytes (what the on-chain hash
@@ -72,48 +68,21 @@ function validateAnchorShape(text: string): {
       problems: [`Not valid JSON: ${(e as Error).message}`],
     };
   }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    return { surveyRef: null, problems: ["Top level must be a JSON object."] };
+  // The survey-link shape itself is validated by the shared parser (single
+  // source of truth with the discovery layer).
+  const result = parseCip179Link(parsed);
+  // UI-only nicety the discovery layer doesn't require: flag a missing JSON-LD
+  // `@context`. It doesn't affect the extracted ref, so it's purely advisory.
+  if (
+    typeof parsed === "object" &&
+    parsed !== null &&
+    !Array.isArray(parsed) &&
+    (typeof (parsed as Record<string, unknown>)["@context"] !== "object" ||
+      (parsed as Record<string, unknown>)["@context"] === null)
+  ) {
+    result.problems.unshift('Missing JSON-LD "@context" (CIP-100/108 terms).');
   }
-  const obj = parsed as Record<string, unknown>;
-  const problems: string[] = [];
-  if (typeof obj["@context"] !== "object" || obj["@context"] === null) {
-    problems.push('Missing JSON-LD "@context" (CIP-100/108 terms).');
-  }
-  const body = obj["body"];
-  if (typeof body !== "object" || body === null) {
-    problems.push('Missing CIP-108 "body" object.');
-    return { surveyRef: null, problems };
-  }
-  const cip = (body as Record<string, unknown>)["cip179"];
-  if (typeof cip !== "object" || cip === null) {
-    problems.push('Missing "body.cip179" survey link.');
-    return { surveyRef: null, problems };
-  }
-  const link = cip as Record<string, unknown>;
-  if (link["kind"] !== "survey-link") {
-    problems.push(
-      `"body.cip179.kind" must be "survey-link" (got ${JSON.stringify(link["kind"])}).`,
-    );
-  }
-  const txId = link["surveyTxId"];
-  const txOk = typeof txId === "string" && /^[0-9a-fA-F]{64}$/.test(txId);
-  if (!txOk) {
-    problems.push(
-      '"body.cip179.surveyTxId" must be a 64-char hex transaction id.',
-    );
-  }
-  const index = link["surveyIndex"];
-  const indexOk =
-    typeof index === "number" && Number.isInteger(index) && index >= 0;
-  if (!indexOk) {
-    problems.push('"body.cip179.surveyIndex" must be a non-negative integer.');
-  }
-  const surveyRef =
-    txOk && indexOk
-      ? { txId: (txId as string).toLowerCase(), index: index as number }
-      : null;
-  return { surveyRef, problems };
+  return result;
 }
 
 export const ProposeInfoAction: Component = () => {
@@ -367,9 +336,9 @@ export const ProposeInfoAction: Component = () => {
           style={{ "font-size": "13px", "margin-top": "4px" }}
         />
         <Show when={loadError()}>
-          <div style={{ ...noteStyle("danger"), "margin-top": "12px" }}>
+          <Note kind="danger" style={{ "margin-top": "12px" }}>
             {loadError()}
-          </div>
+          </Note>
         </Show>
       </div>
 
@@ -391,14 +360,14 @@ export const ProposeInfoAction: Component = () => {
 
             {/* Validation: shape problems block submission. */}
             <Show when={a().problems.length > 0}>
-              <div style={noteStyle("danger")}>
+              <Note kind="danger">
                 <div style={{ "font-weight": "700", "margin-bottom": "6px" }}>
                   Not a valid CIP-179 survey link:
                 </div>
                 <ul style={{ margin: "0", "padding-left": "18px" }}>
                   <For each={a().problems}>{(p) => <li>{p}</li>}</For>
                 </ul>
-              </div>
+              </Note>
             </Show>
 
             {/* Extracted survey ref + on-chain match + epoch alignment. */}
@@ -433,14 +402,9 @@ export const ProposeInfoAction: Component = () => {
                   </Show>
                   <Show when={alignment()}>
                     {(c) => (
-                      <div
-                        style={{
-                          ...noteStyle(c().level),
-                          "margin-top": "12px",
-                        }}
-                      >
+                      <Note kind={c().level} style={{ "margin-top": "12px" }}>
                         {c().text}
-                      </div>
+                      </Note>
                     )}
                   </Show>
                 </>
@@ -494,13 +458,13 @@ export const ProposeInfoAction: Component = () => {
 
             <Show when={pinnedBy()}>
               {(by) => (
-                <div style={noteStyle("ok")}>
+                <Note kind="ok">
                   Pinned to {by().join(", ")}. URL filled in below.
-                </div>
+                </Note>
               )}
             </Show>
             <Show when={pinError()}>
-              <div style={noteStyle("danger")}>{pinError()}</div>
+              <Note kind="danger">{pinError()}</Note>
             </Show>
 
             <div style={labelStyle()}>Anchor hash (blake2b-256)</div>
@@ -535,11 +499,11 @@ export const ProposeInfoAction: Component = () => {
           hosted the document. Stored on-chain alongside its hash.
         </p>
         <Show when={url().trim() !== "" && !urlValid()}>
-          <div style={noteStyle("danger")}>
+          <Note kind="danger">
             The anchor URL must be an <span style={mono()}>ipfs://</span> or{" "}
             <span style={mono()}>https://</span> address — this one will be
             rejected before signing.
-          </div>
+          </Note>
         </Show>
       </div>
 
@@ -549,24 +513,24 @@ export const ProposeInfoAction: Component = () => {
         <Show
           when={app.wallet()}
           fallback={
-            <div style={noteStyle("warn")}>
+            <Note kind="warn">
               Connect a CIP-30 wallet (top-right) to sign the proposal.
-            </div>
+            </Note>
           }
         >
           <Show when={mismatch()}>
-            <div style={noteStyle("danger")}>
+            <Note kind="danger">
               Your wallet is on a different network than the app (
               {app.config.network}). Switch it before submitting.
-            </div>
+            </Note>
           </Show>
         </Show>
 
         <Show when={anchor() && blocking() && !txHash()}>
-          <div style={noteStyle("danger")}>
+          <Note kind="danger">
             Resolve the validation issues in step 1 before submitting — the
             action wouldn't be a valid CIP-179 survey link.
-          </div>
+          </Note>
         </Show>
 
         <Show
@@ -582,7 +546,7 @@ export const ProposeInfoAction: Component = () => {
           }
         >
           {(h) => (
-            <div style={noteStyle("ok")}>
+            <Note kind="ok">
               <div style={{ "font-weight": "700", "margin-bottom": "5px" }}>
                 Proposal submitted ✓
               </div>
@@ -599,12 +563,12 @@ export const ProposeInfoAction: Component = () => {
                 Once it's in a block, the survey page will show it as “Linked to
                 governance” after the indexer resolves the anchor.
               </p>
-            </div>
+            </Note>
           )}
         </Show>
 
         <Show when={error()}>
-          <div style={noteStyle("danger")}>{error()}</div>
+          <Note kind="danger">{error()}</Note>
         </Show>
       </div>
     </main>
@@ -748,20 +712,5 @@ function submitBtnStyle(enabled: boolean): JSX.CSSProperties {
     "border-radius": "var(--r-md)",
     padding: "12px 20px",
     opacity: enabled ? "1" : ".7",
-  };
-}
-type NoteKind = "ok" | "warn" | "danger";
-function noteStyle(kind: NoteKind): JSX.CSSProperties {
-  const c = `var(--${kind})`;
-  return {
-    "font-size": "12.5px",
-    color: c,
-    background: `var(--${kind}-bg)`,
-    border: `1px solid var(--${kind}-line)`,
-    "border-radius": "var(--r-control)",
-    padding: "11px 13px",
-    "line-height": "1.5",
-    "margin-bottom": "12px",
-    "word-break": "break-word",
   };
 }

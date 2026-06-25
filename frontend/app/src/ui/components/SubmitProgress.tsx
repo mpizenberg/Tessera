@@ -13,6 +13,8 @@ import {
   type JSX,
 } from "solid-js";
 
+import { Spinner } from "~/ui/components/Spinner";
+
 export interface SubmitStep {
   key: string;
   label: string;
@@ -147,17 +149,7 @@ const StepIcon: Component<{ state: StepState }> = (props) => (
         </span>
       }
     >
-      <span
-        style={{
-          width: "16px",
-          height: "16px",
-          "border-radius": "50%",
-          border: "2px solid var(--line)",
-          "border-top-color": "var(--accent)",
-          animation: "spin 0.8s linear infinite",
-          flex: "none",
-        }}
-      />
+      <Spinner />
     </Show>
   </Show>
 );

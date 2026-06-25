@@ -36,19 +36,19 @@ Item 3a (cancellation) fully solved — see changelog. Item 3b (gov-link title a
 
 Small diffs, each needs manual verification in the running app.
 
-| #   | Finding                                                               | File(s)                                    | Status |
-| --- | --------------------------------------------------------------------- | ------------------------------------------ | ------ |
-| 1   | Respond draft re-seed effect missing `definition()`/`existing()` deps | `ui/screens/Respond.tsx`                   | ✅     |
-| 2   | Respond role-pick mutates global `activeRole`                         | `ui/screens/Respond.tsx`                   | ✅     |
-| 3   | SealedResults reveal resource frozen to `props.records`               | `ui/screens/Survey.tsx`                    | ✅     |
-| 4   | Header `installedWallets` read non-reactively                         | `ui/components/Header.tsx`, `state.tsx`    | ✅     |
-| 5   | Settings `storedKoiosToken` read non-reactively                       | `ui/screens/Settings.tsx`                  | ✅     |
-| 6   | Numeric slider bypasses `clampStep`                                   | `ui/screens/Respond.tsx`                   | ✅     |
-| 7   | Header dropdowns: outside-click/Escape close + cleanup                | `ui/components/Header.tsx`                 | ✅     |
-| 8   | Gov submit never calls `trackTx`                                      | `ProposeInfoAction.tsx`, `state.tsx`, `Header.tsx` | ✅ |
-| 9   | Snapshot `error` rendered as "not found"/empty                        | `Respond.tsx`, `Explore.tsx`, `Survey.tsx` | ✅     |
-| 10  | SubmitProgress modal a11y (dialog role/focus/aria-live)               | `ui/components/SubmitProgress.tsx`         | ✅     |
-| 11  | Builder buttons `type="button"` + toggle ARIA roles                   | `ui/screens/Create.tsx`, `Header.tsx`      | ✅     |
+| #   | Finding                                                               | File(s)                                            | Status |
+| --- | --------------------------------------------------------------------- | -------------------------------------------------- | ------ |
+| 1   | Respond draft re-seed effect missing `definition()`/`existing()` deps | `ui/screens/Respond.tsx`                           | ✅     |
+| 2   | Respond role-pick mutates global `activeRole`                         | `ui/screens/Respond.tsx`                           | ✅     |
+| 3   | SealedResults reveal resource frozen to `props.records`               | `ui/screens/Survey.tsx`                            | ✅     |
+| 4   | Header `installedWallets` read non-reactively                         | `ui/components/Header.tsx`, `state.tsx`            | ✅     |
+| 5   | Settings `storedKoiosToken` read non-reactively                       | `ui/screens/Settings.tsx`                          | ✅     |
+| 6   | Numeric slider bypasses `clampStep`                                   | `ui/screens/Respond.tsx`                           | ✅     |
+| 7   | Header dropdowns: outside-click/Escape close + cleanup                | `ui/components/Header.tsx`                         | ✅     |
+| 8   | Gov submit never calls `trackTx`                                      | `ProposeInfoAction.tsx`, `state.tsx`, `Header.tsx` | ✅     |
+| 9   | Snapshot `error` rendered as "not found"/empty                        | `Respond.tsx`, `Explore.tsx`, `Survey.tsx`         | ✅     |
+| 10  | SubmitProgress modal a11y (dialog role/focus/aria-live)               | `ui/components/SubmitProgress.tsx`                 | ✅     |
+| 11  | Builder buttons `type="button"` + toggle ARIA roles                   | `ui/screens/Create.tsx`, `Header.tsx`              | ✅     |
 
 **Phase 3 verified:** `type-check`, `format:check`, all 47 unit tests pass. Item 9
 on Explore was already handled in Phase 2; this phase added the same error+retry
@@ -57,12 +57,22 @@ the running app (these are reactivity/UX fixes with no unit coverage).
 
 ## Phase 4 — Code quality (incremental, lowest urgency)
 
-| #   | Finding                                                       | File(s)                       | Status |
-| --- | ------------------------------------------------------------- | ----------------------------- | ------ |
-| 1   | `#E7E0D0` → `var(--line)` (zero-risk token swap)              | `Header.tsx`, `BottomNav.tsx` | ⬜     |
-| 2   | Extract `<SegmentedToggle>` / `<Note>` / `<Spinner>`          | `ui/components/`              | ⬜     |
-| 3   | Hoist CSV / `validateAnchorShape` / epoch-math into `domain/` | `domain/`, screens            | ⬜     |
-| 4   | Token cleanup for remaining hardcoded hex/radii               | `ui/`                         | ⬜     |
+| #   | Finding                                                       | File(s)                                                             | Status |
+| --- | ------------------------------------------------------------- | ------------------------------------------------------------------- | ------ |
+| 1   | `#E7E0D0` → `var(--line)` (zero-risk token swap)              | `Header`, `BottomNav`, `Survey`, `Explore`, `Respond`               | ✅     |
+| 2   | Extract `<SegmentedToggle>` / `<Note>` / `<Spinner>`          | `ui/components/` (+ Header/Settings/OnchainPreview/Respond/Submit…) | ✅     |
+| 3   | Hoist CSV / `validateAnchorShape` / epoch-math into `domain/` | `domain/answer`, `domain/govLink`, `domain/survey`, screens         | ✅     |
+| 4   | Token cleanup for remaining hardcoded hex/radii               | `theme.css`, `ui/`                                                  | ✅     |
+
+**Phase 4 verified:** `type-check`, `format:check`, all **66** unit tests pass
+(8 files — added `domain/answer.test.ts` (+9), `domain/govLink.test.ts` (+8),
+`voteDeadlineUnix` cases in `survey.test.ts`, and a 64-hex `parseGovLink` case).
+Scope note on item 4: I deliberately swapped only literals whose semantic intent
+matches a token (the `#E7E0D0` hairline; new dedicated tokens for the recurring
+card cluster / danger ink / menu shadow) and left the bespoke one-off colors and
+the standalone **role-color palette** (`roleColors`) untouched — some of its
+values coincidentally equal `--ok`/`--warn`, so tokenizing by value-equality
+would create misleading semantic coupling.
 
 ---
 
@@ -70,6 +80,35 @@ the running app (these are reactivity/UX fixes with no unit coverage).
 
 _(newest first)_
 
+- **Phase 4 — code quality (all 4 items)** —
+  - **Domain hoisting (#3)** — moved view-embedded pure logic into the
+    unit-tested domain layer:
+    - `domain/answer.ts` — `serializeAnswer` / `humanizeAnswer` / `optionLabelOf`
+      lifted out of `Survey.tsx` (which now imports them); the local `hex()`
+      duplicate was dropped for the existing `bytesToHex`. New `answer.test.ts`
+      (9 tests) pins the CSV + human render of every answer variant.
+    - `domain/govLink.ts` — `parseCip179Link` is now the single source of truth
+      for the CIP-179 survey-link shape, shared by `data/koios.ts#parseGovLink`
+      (discovery) and `ProposeInfoAction#validateAnchorShape` (builder, which
+      adds only the JSON-parse wrapper + `@context` nicety). Unified on the
+      stricter **64-hex** `surveyTxId` rule (the old discovery path accepted any
+      string → bogus refs); `koios.test.ts` fixtures updated, `govLink.test.ts`
+      (8 tests) added.
+    - `voteDeadlineUnix` moved from `Explore.tsx` into `domain/survey.ts`
+      alongside `epochOfSlot`; `survey.test.ts` gained deadline cases.
+  - **Shared components (#2)** — extracted `<SegmentedToggle>` (replaces the four
+    copy-pasted toggles in Header/Settings/OnchainPreview/Respond; uniformly adds
+    `role="group"` + `aria-pressed` + `type="button"`), `<Spinner>` (Header ×2 +
+    SubmitProgress), and `<Note>` (the gov-action callout, ~11 call sites in
+    ProposeInfoAction). The toggle's bg/line/off-text became `--toggle-*` tokens.
+  - **`#E7E0D0` → `var(--line)` (#1)** — all six hairline borders (Header,
+    BottomNav, Survey, Explore, Respond) now use the token.
+  - **Token cleanup (#4)** — added `--card-bg`/`--card-line`/`--label` (the
+    recurring inner-panel surface/border/label, ~31 literals), `--danger-ink`
+    (deeper danger body copy, 5), `--shadow-menu` (Header dropdowns, 2); swapped
+    `99px` → `var(--r-pill)` in `ResultBarCard`. Every swap is value-identical to
+    its token, so there is no visual change. Bespoke one-offs and the role-color
+    palette were left as-is on purpose (see Phase 4 scope note).
 - **Phase 3 — reactivity & UX bugs (all 11 items)** —
   - **Respond draft re-seed (#1)** — the `on(...)` re-seed effect now also tracks
     `definition()` and `existing()`, so a prior on-chain response that loads after

@@ -25,6 +25,7 @@ import type { Metadatum } from "cip-179";
 import { bytesToHex } from "~/util/hex";
 import { metadatumToDiagnostic } from "~/util/cbor-diagnostic";
 import { MAX_TX_BYTES, estimateMinFee, lovelaceToAda } from "~/domain/fee";
+import { SegmentedToggle } from "~/ui/components/SegmentedToggle";
 
 type View = "hex" | "diag";
 
@@ -111,20 +112,15 @@ export const OnchainPreview: Component<{
         }
       >
         <div style={controlsStyle()}>
-          <div style={segWrapStyle()}>
-            <button
-              style={segStyle(view() === "diag")}
-              onClick={() => setView("diag")}
-            >
-              Diagnostic
-            </button>
-            <button
-              style={segStyle(view() === "hex")}
-              onClick={() => setView("hex")}
-            >
-              Hex
-            </button>
-          </div>
+          <SegmentedToggle
+            ariaLabel="Preview format"
+            value={view()}
+            onChange={setView}
+            options={[
+              { value: "diag", label: "Diagnostic" },
+              { value: "hex", label: "Hex" },
+            ]}
+          />
           <button style={copyStyle()} onClick={copy}>
             {copied() ? "Copied ✓" : "Copy"}
           </button>
@@ -225,29 +221,6 @@ function controlsStyle(): JSX.CSSProperties {
     "align-items": "center",
     gap: "10px",
     "margin-top": "12px",
-  };
-}
-function segWrapStyle(): JSX.CSSProperties {
-  return {
-    display: "inline-flex",
-    "align-items": "center",
-    background: "#F1EADC",
-    border: "1px solid #E3DBC9",
-    "border-radius": "9px",
-    padding: "3px",
-  };
-}
-function segStyle(on: boolean): JSX.CSSProperties {
-  return {
-    "font-family": "inherit",
-    "font-size": "11.5px",
-    "font-weight": on ? "700" : "600",
-    cursor: "pointer",
-    border: "none",
-    "border-radius": "7px",
-    padding: "5px 12px",
-    background: on ? "var(--accent)" : "transparent",
-    color: on ? "#fff" : "#857B6B",
   };
 }
 function copyStyle(): JSX.CSSProperties {

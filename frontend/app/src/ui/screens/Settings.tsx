@@ -17,6 +17,7 @@ import { For, Show, createSignal, type Component, type JSX } from "solid-js";
 import { useApp } from "~/state";
 import { envKoiosToken, storedKoiosToken } from "~/config";
 import { IPFS_PROVIDERS } from "~/enrichment/providers";
+import { SegmentedToggle } from "~/ui/components/SegmentedToggle";
 
 export const Settings: Component = () => {
   return (
@@ -226,29 +227,17 @@ const KoiosSection: Component = () => {
         }}
       >
         <FactRow label="Network">
-          <div
-            style={{
-              display: "inline-flex",
-              "align-items": "center",
-              background: "#F1EADC",
-              border: "1px solid #E3DBC9",
-              "border-radius": "9px",
-              padding: "3px",
-            }}
-          >
-            <button
-              style={segStyle(app.config.network === "preview")}
-              onClick={() => app.setNetwork("preview")}
-            >
-              Preview
-            </button>
-            <button
-              style={segStyle(app.config.network === "mainnet")}
-              onClick={() => app.setNetwork("mainnet")}
-            >
-              Mainnet
-            </button>
-          </div>
+          <SegmentedToggle
+            ariaLabel="Network"
+            fontSize={12}
+            buttonPadding="6px 16px"
+            value={app.config.network}
+            onChange={(v) => app.setNetwork(v)}
+            options={[
+              { value: "preview", label: "Preview" },
+              { value: "mainnet", label: "Mainnet" },
+            ]}
+          />
         </FactRow>
         <FactRow label="Endpoint">
           <span
@@ -368,24 +357,18 @@ const DisplaySection: Component = () => {
         epochs, drand rounds, padding sizes, and extra authoring fields.{" "}
         <b>Plain</b> hides them. Also toggleable from the header.
       </p>
-      <div
-        style={{
-          display: "inline-flex",
-          "align-items": "center",
-          background: "#F1EADC",
-          border: "1px solid #E3DBC9",
-          "border-radius": "9px",
-          padding: "3px",
-          "margin-top": "14px",
-        }}
-      >
-        <button style={segStyle(!app.ui.pro)} onClick={() => app.setPro(false)}>
-          Plain
-        </button>
-        <button style={segStyle(app.ui.pro)} onClick={() => app.setPro(true)}>
-          Pro
-        </button>
-      </div>
+      <SegmentedToggle
+        ariaLabel="Display mode"
+        fontSize={12}
+        buttonPadding="6px 16px"
+        wrapStyle={{ "margin-top": "14px" }}
+        value={app.ui.pro ? "pro" : "plain"}
+        onChange={(v) => app.setPro(v === "pro")}
+        options={[
+          { value: "plain", label: "Plain" },
+          { value: "pro", label: "Pro" },
+        ]}
+      />
     </Section>
   );
 };
@@ -493,19 +476,6 @@ function btnGhostStyle(): JSX.CSSProperties {
     border: "1px solid var(--line)",
     "border-radius": "var(--r-input)",
     padding: "10px 14px",
-  };
-}
-function segStyle(on: boolean): JSX.CSSProperties {
-  return {
-    "font-family": "inherit",
-    "font-size": "12px",
-    "font-weight": on ? "700" : "600",
-    cursor: "pointer",
-    border: "none",
-    "border-radius": "7px",
-    padding: "6px 16px",
-    background: on ? "var(--accent)" : "transparent",
-    color: on ? "#fff" : "#857B6B",
   };
 }
 function infoNoteStyle(): JSX.CSSProperties {

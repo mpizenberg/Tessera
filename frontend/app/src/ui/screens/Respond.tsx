@@ -50,6 +50,7 @@ import { usePresentation } from "~/enrichment/usePresentation";
 import { IPFS_PROVIDERS } from "~/enrichment/providers";
 import { OnchainPreview } from "~/ui/components/OnchainPreview";
 import { ErrorBox, ProblemList } from "~/ui/components/Feedback";
+import { SegmentedToggle } from "~/ui/components/SegmentedToggle";
 import { TxLink } from "~/ui/components/TxLink";
 import {
   SubmitProgressModal,
@@ -900,8 +901,8 @@ const SealedBanner: Component<{ round: number }> = (props) => (
       display: "flex",
       "align-items": "flex-start",
       gap: "11px",
-      background: "#FBFAF6",
-      border: "1px solid #F0EBD8",
+      background: "var(--card-bg)",
+      border: "1px solid var(--card-line)",
       "border-radius": "13px",
       padding: "13px 16px",
       "margin-top": "14px",
@@ -917,7 +918,7 @@ const SealedBanner: Component<{ round: number }> = (props) => (
         style={{
           "font-size": "13.5px",
           "font-weight": "700",
-          color: "#7A6A45",
+          color: "var(--label)",
         }}
       >
         This is a sealed survey
@@ -925,7 +926,7 @@ const SealedBanner: Component<{ round: number }> = (props) => (
       <div
         style={{
           "font-size": "12.5px",
-          color: "#7A6A45",
+          color: "var(--label)",
           "line-height": "1.5",
           "margin-top": "3px",
         }}
@@ -950,8 +951,8 @@ const LabelsAbsentBanner: Component<{ keyStr: string }> = (props) => (
       display: "flex",
       "align-items": "flex-start",
       gap: "11px",
-      background: "#FBFAF6",
-      border: "1px solid #F0EBD8",
+      background: "var(--card-bg)",
+      border: "1px solid var(--card-line)",
       "border-radius": "13px",
       padding: "13px 16px",
       "margin-top": "14px",
@@ -967,7 +968,7 @@ const LabelsAbsentBanner: Component<{ keyStr: string }> = (props) => (
         style={{
           "font-size": "13.5px",
           "font-weight": "700",
-          color: "#7A6A45",
+          color: "var(--label)",
         }}
       >
         Presentation labels unavailable
@@ -975,7 +976,7 @@ const LabelsAbsentBanner: Component<{ keyStr: string }> = (props) => (
       <div
         style={{
           "font-size": "12.5px",
-          color: "#7A6A45",
+          color: "var(--label)",
           "line-height": "1.5",
           "margin-top": "3px",
         }}
@@ -1048,31 +1049,16 @@ const RationaleSection: Component<{
           "margin-top": "12px",
         }}
       >
-        <div
-          style={{
-            display: "inline-flex",
-            "align-self": "flex-start",
-            background: "#F1EADC",
-            border: "1px solid #E3DBC9",
-            "border-radius": "9px",
-            padding: "3px",
-          }}
-        >
-          <button
-            type="button"
-            style={ratTabStyle(props.mode === "write")}
-            onClick={() => props.onMode("write")}
-          >
-            Write &amp; pin
-          </button>
-          <button
-            type="button"
-            style={ratTabStyle(props.mode === "manual")}
-            onClick={() => props.onMode("manual")}
-          >
-            Paste anchor
-          </button>
-        </div>
+        <SegmentedToggle
+          ariaLabel="Rationale source"
+          wrapStyle={{ "align-self": "flex-start" }}
+          value={props.mode}
+          onChange={props.onMode}
+          options={[
+            { value: "write", label: "Write & pin" },
+            { value: "manual", label: "Paste anchor" },
+          ]}
+        />
 
         <Show
           when={props.mode === "write"}
@@ -1172,20 +1158,6 @@ const RationaleSection: Component<{
     </Show>
   </div>
 );
-
-function ratTabStyle(on: boolean): JSX.CSSProperties {
-  return {
-    "font-family": "inherit",
-    "font-size": "11.5px",
-    "font-weight": on ? "700" : "600",
-    cursor: "pointer",
-    border: "none",
-    "border-radius": "7px",
-    padding: "5px 12px",
-    background: on ? "var(--accent)" : "transparent",
-    color: on ? "#fff" : "#857B6B",
-  };
-}
 
 // ----------------------------------------------------------------------------
 // Question card (header + skip + body switch)
@@ -1480,8 +1452,8 @@ const MultiSelectBody: Component<{
             display: "flex",
             "align-items": "flex-start",
             gap: "9px",
-            background: "#FBFAF6",
-            border: "1px solid #F0EBD8",
+            background: "var(--card-bg)",
+            border: "1px solid var(--card-line)",
             "border-radius": "var(--r-md)",
             padding: "10px 12px",
             "margin-top": "10px",
@@ -1490,7 +1462,7 @@ const MultiSelectBody: Component<{
           <span
             style={{
               "font-size": "12px",
-              color: "#7A6A45",
+              color: "var(--label)",
               "line-height": "1.45",
             }}
           >
@@ -2015,7 +1987,7 @@ const SubmitBar: Component<{
         "z-index": "30",
         background: "rgba(255,255,255,.92)",
         "backdrop-filter": "blur(10px)",
-        "border-top": "1px solid #E7E0D0",
+        "border-top": "1px solid var(--line)",
       }}
     >
       <div
@@ -2381,7 +2353,7 @@ function rolePickStyle(on: boolean): JSX.CSSProperties {
     cursor: "pointer",
     "border-radius": "8px",
     padding: "6px 12px",
-    border: on ? "1px solid var(--accent)" : "1px solid #E7E0D0",
+    border: on ? "1px solid var(--accent)" : "1px solid var(--line)",
     background: on ? "var(--accent)" : "#F2ECDE",
     color: on ? "#FBF8F1" : "#6B6356",
   };

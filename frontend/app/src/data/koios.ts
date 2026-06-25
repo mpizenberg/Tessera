@@ -21,6 +21,7 @@ import type { AppConfig } from "~/config";
 import { bytesToHex, hexToBytes } from "~/util/hex";
 import { koiosJsonToMetadatum, type KoiosJson } from "./metadatum";
 import { decodeCancellationProof } from "./txProof";
+import { parseCip179Link } from "~/domain/govLink";
 import type {
   CancellationProof,
   CancellationRecord,
@@ -104,9 +105,6 @@ export interface ProposalRow {
   /** Anchor JSON, resolved by Koios when reachable (may be null). */
   meta_json: unknown;
 }
-
-/** The `kind` discriminator of a CIP-179 survey link inside `body.cip179`. */
-const GOV_LINK_KIND = "survey-link";
 
 export class KoiosDataSource implements DataSource {
   /**
@@ -428,23 +426,12 @@ export class KoiosDataSource implements DataSource {
  */
 export function parseGovLink(row: ProposalRow): GovLink | null {
   if (row.expiration === null) return null;
-  const meta = row.meta_json;
-  if (typeof meta !== "object" || meta === null) return null;
-  const obj = meta as Record<string, unknown>;
-  if (typeof obj["body"] !== "object" || obj["body"] === null) return null;
-  const body = obj["body"] as Record<string, unknown>;
-  if (typeof body["cip179"] !== "object" || body["cip179"] === null)
-    return null;
-  const link = body["cip179"] as Record<string, unknown>;
-  if (link["kind"] !== GOV_LINK_KIND) return null;
+  // Shared shape validation (single source of truth with the proposal builder);
+  // here we need only the ref — a missing/malformed link yields null.
+  const { surveyRef } = parseCip179Link(row.meta_json);
+  if (!surveyRef) return null;
 
-  const txid = link["surveyTxId"];
-  if (typeof txid !== "string") return null;
-  // surveyIndex is mandatory: a missing or malformed index is a broken link,
-  // never silently survey 0.
-  const index = link["surveyIndex"];
-  if (!(typeof index === "number" && Number.isInteger(index) && index >= 0))
-    return null;
+  // The human title shown is the action's own CIP-108 `body.title`.
   // TODO(govlink-title-trust): `title` is attacker-controlled off-chain anchor
   // JSON. It's escaped before render (no XSS), and epoch-alignment is enforced,
   // but the title's *content* is not authenticated — a malicious Info Action can
@@ -452,10 +439,12 @@ export function parseGovLink(row: ProposalRow): GovLink | null {
   // authority. The UI currently shows it as "Advertised by {title}". Later:
   // present it as unverified (length-clamp + an explicit caveat) and soften the
   // "Advertised by" wording so it doesn't overstate verification.
+  const meta = row.meta_json as Record<string, unknown>;
+  const body = meta["body"] as Record<string, unknown>;
   const title = typeof body["title"] === "string" ? body["title"] : null;
 
   return {
-    surveyKey: `${txid.toLowerCase()}:${index}`,
+    surveyKey: `${surveyRef.txId}:${surveyRef.index}`,
     actionId: row.proposal_id,
     // Koios's `expiration` is the epoch the action drops out (one past its last
     // active epoch); the action's voting-end epoch — what a linked survey's

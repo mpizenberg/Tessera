@@ -9,7 +9,7 @@ import type {
   Cip179Records,
   SurveyRecord,
 } from "~/data/source";
-import { aggregateSurveys } from "./survey";
+import { aggregateSurveys, voteDeadlineUnix } from "./survey";
 
 // Cancellation tri-state keys off tip.epoch vs the survey's end_epoch: a survey
 // is "open" (its cancellations are considered) while tip.epoch ≤ end_epoch, and
@@ -138,5 +138,23 @@ describe("aggregateSurveys — cancellation tri-state", () => {
     expect(a.cancelled).toBe(false);
     expect(a.cancellationClaimed).toBe(false);
     expect(a.status).toBe("active");
+  });
+});
+
+describe("voteDeadlineUnix", () => {
+  // TIP: epoch 10 began at unix 999_950 (time 1_000_000 − epochSlot 50).
+  // Each epoch spans SPE = 100s, so epoch N starts at 999_950 + (N − 10) * 100.
+  const SPE = 100;
+
+  it("is the start of the epoch after endEpoch (responses valid through it)", () => {
+    // endEpoch 10 → cutoff is the start of epoch 11.
+    expect(voteDeadlineUnix(10, TIP, SPE)).toBe(1_000_050);
+    // endEpoch 12 → start of epoch 13.
+    expect(voteDeadlineUnix(12, TIP, SPE)).toBe(1_000_250);
+  });
+
+  it("handles a survey ending in the previous epoch (cutoff = current start)", () => {
+    // endEpoch 9 → cutoff is the start of epoch 10 = 999_950.
+    expect(voteDeadlineUnix(9, TIP, SPE)).toBe(999_950);
   });
 });

@@ -13,6 +13,8 @@ import { useApp, type PendingKind, type PendingTx } from "~/state";
 import type { Network } from "~/config";
 import { networkMismatch, roleDescription, roleLabel } from "~/ui/format";
 import { TxLink } from "~/ui/components/TxLink";
+import { Spinner } from "~/ui/components/Spinner";
+import { SegmentedToggle } from "~/ui/components/SegmentedToggle";
 
 const NETWORKS: readonly Network[] = ["preview", "mainnet"];
 
@@ -71,7 +73,7 @@ export const Header: Component = () => {
         "z-index": "40",
         background: "rgba(255,255,255,.86)",
         "backdrop-filter": "blur(10px)",
-        "border-bottom": "1px solid #E7E0D0",
+        "border-bottom": "1px solid var(--line)",
       }}
     >
       <div
@@ -206,7 +208,7 @@ export const Header: Component = () => {
                     </span>
                   }
                 >
-                  <span style={spinnerStyle()} />
+                  <Spinner size={13} />
                 </Show>
                 <Show when={app.pendingTxs.length > 1}>
                   <span
@@ -237,33 +239,17 @@ export const Header: Component = () => {
             </div>
           </Show>
 
-          <div
-            style={{
-              display: "flex",
-              "align-items": "center",
-              background: "#F1EADC",
-              border: "1px solid #E3DBC9",
-              "border-radius": "9px",
-              padding: "2px",
-            }}
-          >
-            <button
-              type="button"
-              aria-pressed={!app.ui.pro}
-              style={proStyle(!app.ui.pro)}
-              onClick={() => app.setPro(false)}
-            >
-              Plain
-            </button>
-            <button
-              type="button"
-              aria-pressed={app.ui.pro}
-              style={proStyle(app.ui.pro)}
-              onClick={() => app.setPro(true)}
-            >
-              Pro
-            </button>
-          </div>
+          <SegmentedToggle
+            ariaLabel="Display mode"
+            trackPadding="2px"
+            buttonPadding="5px 13px"
+            value={app.ui.pro ? "pro" : "plain"}
+            onChange={(v) => app.setPro(v === "pro")}
+            options={[
+              { value: "plain", label: "Plain" },
+              { value: "pro", label: "Pro" },
+            ]}
+          />
 
           <Show
             when={app.wallet()}
@@ -552,7 +538,7 @@ const PendingRow: Component<{
   return (
     <div style={{ padding: "8px 10px" }}>
       <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
-        <Show when={confirmed()} fallback={<span style={spinnerStyle()} />}>
+        <Show when={confirmed()} fallback={<Spinner size={13} />}>
           <span style={{ color: "var(--ok)", "font-size": "12px" }}>✓</span>
         </Show>
         <span
@@ -721,19 +707,6 @@ function navStyle(on: boolean): JSX.CSSProperties {
     color: on ? "var(--accent)" : "var(--muted)",
   };
 }
-function proStyle(on: boolean): JSX.CSSProperties {
-  return {
-    "font-family": "inherit",
-    "font-size": "11.5px",
-    "font-weight": on ? "700" : "600",
-    cursor: "pointer",
-    border: "none",
-    "border-radius": "7px",
-    padding: "5px 13px",
-    background: on ? "var(--accent)" : "transparent",
-    color: on ? "#fff" : "#857B6B",
-  };
-}
 function connectBtnStyle(): JSX.CSSProperties {
   return {
     "font-family": "inherit",
@@ -770,7 +743,7 @@ function menuStyle(): JSX.CSSProperties {
     background: "#fff",
     border: "1px solid var(--line)",
     "border-radius": "var(--r-md)",
-    "box-shadow": "0 16px 40px -16px rgba(70,55,30,.35)",
+    "box-shadow": "var(--shadow-menu)",
     padding: "5px",
     "z-index": "50",
   };
@@ -789,19 +762,6 @@ function pendingBtnStyle(): JSX.CSSProperties {
     "font-family": "inherit",
   };
 }
-/** A small spinning ring — the pending-tx glyph (reuses the `spin` keyframe). */
-function spinnerStyle(): JSX.CSSProperties {
-  return {
-    width: "13px",
-    height: "13px",
-    "border-radius": "50%",
-    border: "2px solid var(--line)",
-    "border-top-color": "var(--accent)",
-    animation: "spin 0.8s linear infinite",
-    display: "inline-block",
-    flex: "none",
-  };
-}
 /** Pending dropdown, anchored under the spinner (opens rightward). */
 function pendingMenuStyle(): JSX.CSSProperties {
   return {
@@ -813,7 +773,7 @@ function pendingMenuStyle(): JSX.CSSProperties {
     background: "#fff",
     border: "1px solid var(--line)",
     "border-radius": "var(--r-md)",
-    "box-shadow": "0 16px 40px -16px rgba(70,55,30,.35)",
+    "box-shadow": "var(--shadow-menu)",
     padding: "5px",
     "z-index": "50",
   };

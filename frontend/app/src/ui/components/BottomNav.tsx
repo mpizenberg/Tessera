@@ -39,7 +39,7 @@ export const BottomNav: Component = () => {
           "z-index": "45",
           background: "rgba(255,255,255,.94)",
           "backdrop-filter": "blur(10px)",
-          "border-top": "1px solid #E7E0D0",
+          "border-top": "1px solid var(--line)",
           "padding-bottom": "env(safe-area-inset-bottom)",
         }}
       >

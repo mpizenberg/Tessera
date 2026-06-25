@@ -958,9 +958,9 @@ const VisibilitySection: Component<{
           <div
             style={{
               ...warnNoteStyle(),
-              color: "#7A6A45",
-              background: "#FBFAF6",
-              border: "1px solid #F0EBD8",
+              color: "var(--label)",
+              background: "var(--card-bg)",
+              border: "1px solid var(--card-line)",
             }}
           >
             Responses are encrypted as they come in and stay hidden until the
@@ -978,14 +978,14 @@ const OwnerSection: Component<{ identity: WalletIdentity }> = (props) => (
     <div
       style={{
         ...cardStyle(),
-        background: "#FBFAF6",
-        border: "1px solid #F0EBD8",
+        background: "var(--card-bg)",
+        border: "1px solid var(--card-line)",
       }}
     >
       <div
         style={{
           "font-size": "12.5px",
-          color: "#7A6A45",
+          color: "var(--label)",
           "line-height": "1.5",
         }}
       >
@@ -2016,7 +2016,7 @@ function addOptionBtnStyle(): JSX.CSSProperties {
     "border-radius": "var(--r-control)",
     padding: "7px 12px",
     border: "1px dashed var(--line2)",
-    background: "#FBFAF6",
+    background: "var(--card-bg)",
     color: "var(--muted)",
   };
 }

@@ -126,7 +126,7 @@ export const ResultBarCard: Component<ResultBarCardProps> = (props) => (
             <div
               style={{
                 height: "10px",
-                "border-radius": "99px",
+                "border-radius": "var(--r-pill)",
                 background: "var(--track)",
                 overflow: "hidden",
               }}
@@ -136,7 +136,7 @@ export const ResultBarCard: Component<ResultBarCardProps> = (props) => (
                   height: "100%",
                   width: `${Math.round(Math.max(0, Math.min(1, b.pct)) * 100)}%`,
                   background: "var(--accent)",
-                  "border-radius": "99px",
+                  "border-radius": "var(--r-pill)",
                 }}
               />
             </div>

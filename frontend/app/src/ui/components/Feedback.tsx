@@ -36,7 +36,7 @@ export const ProblemList: Component<{ title: string; problems: string[] }> = (
       style={{
         margin: "8px 0 0",
         padding: "0 0 0 18px",
-        color: "#8A3A2E",
+        color: "var(--danger-ink)",
         "font-size": "12.5px",
         "line-height": "1.6",
       }}
@@ -55,7 +55,7 @@ export const ErrorBox: Component<{ title?: string; message: string }> = (
     <div
       style={{
         "font-size": "12.5px",
-        color: "#8A3A2E",
+        color: "var(--danger-ink)",
         "line-height": "1.5",
         "margin-top": "5px",
         "word-break": "break-word",

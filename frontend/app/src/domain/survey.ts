@@ -113,6 +113,21 @@ export function epochOfSlot(
   return tip.epoch - back;
 }
 
+/**
+ * Unix deadline for accepting responses: responses are valid through `endEpoch`
+ * inclusive, so the cutoff is the *start* of the next epoch. Post-Shelley slots
+ * are 1s, so the current epoch began at `tip.time − tip.epochSlot` and each
+ * epoch spans `secondsPerEpoch` seconds.
+ */
+export function voteDeadlineUnix(
+  endEpoch: number,
+  tip: ChainTip,
+  secondsPerEpoch: number,
+): number {
+  const epochStartUnix = tip.time - tip.epochSlot;
+  return epochStartUnix + (endEpoch + 1 - tip.epoch) * secondsPerEpoch;
+}
+
 /** Verified (owner-proven) vs. merely claimed (unverified) cancellation. */
 export type CancellationState = "verified" | "claimed";
 
