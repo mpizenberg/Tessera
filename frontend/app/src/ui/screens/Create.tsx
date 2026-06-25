@@ -50,7 +50,7 @@ import {
   formatEpochEndDate,
   formatRevealDate,
 } from "~/tlock/drand";
-import { roleColors, roleLabel, shortRef } from "~/ui/format";
+import { networkMismatch, roleColors, roleLabel, shortRef } from "~/ui/format";
 import type { WalletIdentity } from "~/wallet/types";
 
 /** Add-a-question buttons: one per type, in tag order. Custom is Pro-only. */
@@ -193,6 +193,11 @@ export const Create: Component = () => {
     IPFS_PROVIDERS.some((p) => app.ipfsTokens[p.id]?.trim());
   const externalNoTokens = (): boolean =>
     meta.contentMode === "external" && !hasPinning();
+  // Block publishing while the wallet is on a different network than the app:
+  // the build would otherwise fail deep in evolution-sdk with a confusing error
+  // instead of a clear, up-front reason. Mirrors the respond + propose gates.
+  const mismatch = (): boolean =>
+    networkMismatch(app.wallet()?.identity.networkId, app.config.network);
 
   const toggleRole = (r: Role) =>
     setMeta("eligibleRoles", (rs) =>
@@ -420,9 +425,11 @@ export const Create: Component = () => {
               <PublishButton
                 problemCount={problems().length}
                 blockedReason={
-                  externalNoTokens()
-                    ? "Add an IPFS provider in Settings to publish external content"
-                    : null
+                  mismatch()
+                    ? `Switch your wallet to ${app.config.network} before publishing`
+                    : externalNoTokens()
+                      ? "Add an IPFS provider in Settings to publish external content"
+                      : null
                 }
                 submitting={submitting()}
                 busyText={busyText()}

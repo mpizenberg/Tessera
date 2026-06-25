@@ -25,6 +25,7 @@ import { findSurvey } from "~/domain/survey";
 import { bytesToHex } from "~/util/hex";
 import { IPFS_PROVIDERS, type ProviderId } from "~/enrichment/providers";
 import { TxLink } from "~/ui/components/TxLink";
+import { isSafeAnchorUri, networkMismatch } from "~/ui/format";
 
 /** The survey a well-formed anchor links to (tx id lower-cased, output index). */
 interface SurveyRefLite {
@@ -253,17 +254,19 @@ export const ProposeInfoAction: Component = () => {
     }
   };
 
-  const expectedNetworkId = () => (app.config.network === "mainnet" ? 1 : 0);
-  const mismatch = () => {
-    const w = app.wallet();
-    return w ? w.identity.networkId !== expectedNetworkId() : false;
-  };
+  const mismatch = () =>
+    networkMismatch(app.wallet()?.identity.networkId, app.config.network);
+  // The anchor URL is written verbatim into on-chain governance metadata and is
+  // later rendered as a clickable link by explorers and this app. Restrict it to
+  // the same ipfs/https allow-list the read path enforces, so a `javascript:`,
+  // `data:`, or plain-`http:` URL can never be committed to the chain.
+  const urlValid = () => isSafeAnchorUri(url().trim());
   const canSubmit = () =>
     !!anchor() &&
     !blocking() &&
     !!app.wallet() &&
     !mismatch() &&
-    url().trim() !== "" &&
+    urlValid() &&
     !busy();
 
   const copyHash = async () => {
@@ -524,6 +527,13 @@ export const ProposeInfoAction: Component = () => {
           Auto-filled when you pin to IPFS above; otherwise paste where you
           hosted the document. Stored on-chain alongside its hash.
         </p>
+        <Show when={url().trim() !== "" && !urlValid()}>
+          <div style={noteStyle("danger")}>
+            The anchor URL must be an <span style={mono()}>ipfs://</span> or{" "}
+            <span style={mono()}>https://</span> address — this one will be
+            rejected before signing.
+          </div>
+        </Show>
       </div>
 
       {/* 3 · Sign & submit */}

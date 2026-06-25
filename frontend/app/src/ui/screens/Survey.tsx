@@ -15,7 +15,6 @@ import {
   SPEC_VERSION,
   encodePayload,
   type AnswerItem,
-  type ContentAnchor,
   type Credential,
   type Question,
   type SurveyDefinition,
@@ -35,12 +34,12 @@ import { walletOwns } from "~/domain/roles";
 import { roleBreakdown, tallySurvey, type QuestionTally } from "~/domain/tally";
 import type { ResponseRecord } from "~/data/source";
 import { usePresentation } from "~/enrichment/usePresentation";
-import { IPFS_GATEWAYS } from "~/enrichment/providers";
 import { formatRevealDate, isQuicknet, roundIsAvailable } from "~/tlock/drand";
 import {
   fullRef,
   roleColors,
   roleLabel,
+  safeExternalHref,
   shortRef,
   viewStatus,
 } from "~/ui/format";
@@ -1768,20 +1767,27 @@ const ResponseCard: Component<{
         <span style={{ "margin-left": "auto" }} />
         <Show when={r().rationale}>
           {(anchor) => (
-            <a
-              href={anchorHttpUrl(anchor())}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Open the voter's rationale document in a new tab (not hash-verified)"
-              style={{
-                "font-size": "11.5px",
-                "font-weight": "700",
-                color: "var(--accent)",
-                "text-decoration": "none",
-              }}
-            >
-              rationale ↗
-            </a>
+            // Only render the link when the (attacker-controlled, on-chain)
+            // rationale URI resolves to a safe https/ipfs href; a `javascript:`
+            // or other scheme yields null and no link at all.
+            <Show when={safeExternalHref(anchor().uri)}>
+              {(href) => (
+                <a
+                  href={href()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Open the voter's rationale document in a new tab (not hash-verified)"
+                  style={{
+                    "font-size": "11.5px",
+                    "font-weight": "700",
+                    color: "var(--accent)",
+                    "text-decoration": "none",
+                  }}
+                >
+                  rationale ↗
+                </a>
+              )}
+            </Show>
           )}
         </Show>
         <span
@@ -2563,15 +2569,4 @@ function fullCred(cred: Credential): string {
   return cred.type === "key"
     ? `key:${hex(cred.keyHash)}`
     : `script:${hex(cred.scriptHash)}`;
-}
-
-/**
- * Browser-openable URL for a content anchor. `ipfs://` is rewritten to the
- * first public gateway (we don't hash-verify here — this is a "go look at the
- * raw document" link, not a trusted fetch); `https://` is used verbatim.
- */
-function anchorHttpUrl(anchor: ContentAnchor): string {
-  return anchor.uri.startsWith("ipfs://")
-    ? IPFS_GATEWAYS[0] + anchor.uri.slice("ipfs://".length)
-    : anchor.uri;
 }

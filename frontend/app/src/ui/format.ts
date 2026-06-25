@@ -3,6 +3,7 @@
 import { Role } from "cip-179";
 import type { Network } from "~/config";
 import type { SurveyAggregate } from "~/domain/survey";
+import { IPFS_GATEWAYS } from "~/enrichment/providers";
 
 /**
  * Link to a transaction on the Cardano Explorer aggregator. Mainnet lives at
@@ -11,6 +12,67 @@ import type { SurveyAggregate } from "~/domain/survey";
 export function explorerTxUrl(network: Network, txHash: string): string {
   const prefix = network === "mainnet" ? "" : `${network}/`;
   return `https://explorer.cardano.org/${prefix}tx/${txHash}`;
+}
+
+/**
+ * The CIP-30 `networkId` a configured {@link Network} expects: `1` for mainnet,
+ * `0` for every testnet (preview/preprod). The single source of truth for the
+ * wallet-vs-app network comparison.
+ */
+export function expectedNetworkId(network: Network): number {
+  return network === "mainnet" ? 1 : 0;
+}
+
+/**
+ * Whether a connected wallet is on a different network than the app is
+ * configured for. `undefined` (no wallet) is **not** a mismatch — gating on this
+ * blocks a signature against the wrong network, but absence of a wallet is
+ * handled by the connect prompt, not here. Shared by every submit gate (create,
+ * respond, propose) and the header warning so they can't drift apart.
+ */
+export function networkMismatch(
+  walletNetworkId: number | undefined,
+  network: Network,
+): boolean {
+  return (
+    walletNetworkId !== undefined &&
+    walletNetworkId !== expectedNetworkId(network)
+  );
+}
+
+/**
+ * A browser-openable href for an **untrusted** content-anchor URI, or `null` if
+ * the URI's scheme is not safe to navigate to. `ipfs://` is rewritten to the
+ * first public gateway; `https://` is returned verbatim. NOT hash-verified —
+ * this is only for "go look at the raw document" links, never trusted fetches.
+ *
+ * Returning `null` (rather than the raw string) is the security boundary: anchor
+ * URIs come from on-chain data an attacker controls, so a `javascript:`, `data:`,
+ * `file:`, or plain-`http:` URI must never reach an `<a href>`. Callers render
+ * the link only when this returns non-null. Mirrors the scheme allow-list that
+ * `enrichment/content.ts` enforces on the fetch path.
+ */
+export function safeExternalHref(uri: string): string | null {
+  if (uri.startsWith("ipfs://")) {
+    return IPFS_GATEWAYS[0] + uri.slice("ipfs://".length);
+  }
+  try {
+    return new URL(uri).protocol === "https:" ? uri : null;
+  } catch {
+    // Not a parseable absolute URL (e.g. a bare "javascript:alert(1)" with no
+    // authority still parses, but malformed input throws) — reject.
+    return null;
+  }
+}
+
+/**
+ * Whether an untrusted anchor URI uses a scheme we are willing to link to or
+ * record on-chain (`ipfs:` or `https:`). Single source of truth with
+ * {@link safeExternalHref}. Use to gate submit actions that would otherwise
+ * commit an attacker-navigable URI (e.g. a governance anchor) to the chain.
+ */
+export function isSafeAnchorUri(uri: string): boolean {
+  return safeExternalHref(uri) !== null;
 }
 
 const ROLE_LABEL: Record<number, string> = {

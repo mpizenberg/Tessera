@@ -28,7 +28,15 @@ let instance: Promise<Tlock> | null = null;
 
 function tlock(): Promise<Tlock> {
   if (!instance) {
-    instance = import("@mattpiz/tlock-js").then((m) => m.createTlock());
+    instance = import("@mattpiz/tlock-js")
+      .then((m) => m.createTlock())
+      .catch((err) => {
+        // Don't memoize a failed load: a transient chunk-fetch error would
+        // otherwise permanently break sealing/revealing until a full reload.
+        // Clear the cache so the next call retries the import.
+        instance = null;
+        throw err;
+      });
   }
   return instance;
 }

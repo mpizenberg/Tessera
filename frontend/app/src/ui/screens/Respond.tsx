@@ -59,6 +59,7 @@ import { hexToBytes } from "~/util/hex";
 import { formatRevealDate } from "~/tlock/drand";
 import {
   fullRef,
+  networkMismatch,
   roleBrowserClaimable,
   roleColors,
   roleDescription,
@@ -94,6 +95,10 @@ export const Respond: Component = () => {
   const pres = usePresentation(rawDefinition);
   const definition = (): SurveyDefinition | undefined => pres.def();
   const identity = (): WalletIdentity | null => app.wallet()?.identity ?? null;
+  // Block submitting while the wallet is on a different network than the app, so
+  // the signature can't be built against the wrong chain. Mirrors create + propose.
+  const mismatch = (): boolean =>
+    networkMismatch(app.wallet()?.identity.networkId, app.config.network);
 
   const respondable = createMemo<Role[]>(() => {
     const def = definition();
@@ -539,6 +544,8 @@ export const Respond: Component = () => {
           total={total()}
           replacing={existing() !== undefined}
           submitting={submitting()}
+          mismatch={mismatch()}
+          network={app.config.network}
           idleText={sealedMode() ? "Encrypt & submit" : "Sign & submit"}
           busyText={busyText()}
           onSubmit={() => void onSubmit()}
@@ -1946,11 +1953,14 @@ const SubmitBar: Component<{
   total: number;
   replacing: boolean;
   submitting: boolean;
+  mismatch: boolean;
+  network: string;
   idleText: string;
   busyText: string;
   onSubmit: () => void;
 }> = (props) => {
-  const ready = () => props.decided >= props.total && props.total > 0;
+  const ready = () =>
+    props.decided >= props.total && props.total > 0 && !props.mismatch;
   return (
     <div
       style={{
@@ -2007,6 +2017,17 @@ const SubmitBar: Component<{
               }}
             >
               ✓ replaces your previous response
+            </span>
+          </Show>
+          <Show when={props.mismatch}>
+            <span
+              style={{
+                "font-size": "11px",
+                "font-weight": "700",
+                color: "var(--danger)",
+              }}
+            >
+              Switch your wallet to {props.network} to submit
             </span>
           </Show>
         </div>

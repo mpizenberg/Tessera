@@ -37,7 +37,12 @@ export function isQuicknet(chainHash: Uint8Array): boolean {
  */
 export function roundForUnixTime(unix: number): number {
   if (unix <= GENESIS_TIME) return 1;
-  return Math.floor((unix - GENESIS_TIME) / PERIOD) + 1;
+  // `ceil`, not `floor`: we need the first round publishing *at or after* `unix`.
+  // The round for round number r publishes at GENESIS + (r-1)*PERIOD, so the
+  // smallest r with that ≥ unix is ceil((unix-GENESIS)/PERIOD) + 1. `floor`
+  // would return a round publishing up to PERIOD-1 seconds *before* `unix`,
+  // breaking the "deadline has passed" guarantee for any non-period-aligned time.
+  return Math.ceil((unix - GENESIS_TIME) / PERIOD) + 1;
 }
 
 /** The unix time (seconds) at which a given round's beacon publishes. */

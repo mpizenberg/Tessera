@@ -3,7 +3,7 @@ import { A, useLocation } from "@solidjs/router";
 
 import { useApp, type PendingKind, type PendingTx } from "~/state";
 import type { Network } from "~/config";
-import { roleDescription, roleLabel } from "~/ui/format";
+import { networkMismatch, roleDescription, roleLabel } from "~/ui/format";
 import { TxLink } from "~/ui/components/TxLink";
 
 const NETWORKS: readonly Network[] = ["preview", "mainnet"];
@@ -28,11 +28,8 @@ export const Header: Component = () => {
   const active = (href: string) =>
     href === "/" ? loc.pathname === "/" : loc.pathname.startsWith(href);
 
-  const expectedNetwork = () => (app.config.network === "mainnet" ? 1 : 0);
-  const networkMismatch = () => {
-    const w = app.wallet();
-    return w ? w.identity.networkId !== expectedNetwork() : false;
-  };
+  const mismatch = () =>
+    networkMismatch(app.wallet()?.identity.networkId, app.config.network);
 
   return (
     <header
@@ -248,16 +245,14 @@ export const Header: Component = () => {
                   setPendingOpen(false);
                   setMenuOpen((o) => !o);
                 }}
-                style={identityBtnStyle(networkMismatch())}
+                style={identityBtnStyle(mismatch())}
               >
                 <span
                   style={{
                     width: "7px",
                     height: "7px",
                     "border-radius": "50%",
-                    background: networkMismatch()
-                      ? "var(--danger)"
-                      : "var(--ok)",
+                    background: mismatch() ? "var(--danger)" : "var(--ok)",
                   }}
                 />
                 <span
@@ -320,7 +315,7 @@ export const Header: Component = () => {
                       app.setActiveRole(r);
                       setMenuOpen(false);
                     }}
-                    mismatch={networkMismatch()}
+                    mismatch={mismatch()}
                     expectedNetwork={app.config.network}
                     onDisconnect={() => {
                       app.disconnect();
