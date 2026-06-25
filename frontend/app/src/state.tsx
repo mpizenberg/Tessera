@@ -89,7 +89,7 @@ export interface UiState {
 }
 
 /** What kind of submission a pending transaction carries. */
-export type PendingKind = "survey" | "response" | "cancel";
+export type PendingKind = "survey" | "response" | "cancel" | "govAction";
 
 /** A submitted transaction we're watching for block inclusion. */
 export interface PendingTx {
@@ -149,7 +149,11 @@ interface AppState {
   setIpfsToken(id: ProviderId, token: string): void;
 
   // --- wallet / identity ---
-  /** Wallets advertised on window.cardano (read fresh each call). */
+  /**
+   * Wallets advertised on window.cardano. Reactive: backed by a signal that's
+   * refreshed briefly after mount (wallets inject asynchronously) and on focus,
+   * so a connect menu re-renders as a slow wallet appears.
+   */
   installedWallets(): InstalledWallet[];
   readonly wallet: Accessor<ConnectedWallet | null>;
   readonly connecting: Accessor<boolean>;
@@ -373,6 +377,34 @@ export const AppProvider: ParentComponent = (props) => {
   const [connectError, setConnectError] = createSignal<string | null>(null);
   const [activeRole, setActiveRole] = createSignal<number | null>(null);
 
+  // Reactive mirror of `window.cardano`. Wallets inject asynchronously, so a
+  // list read once at first paint can miss a slow-injecting wallet; we refresh
+  // it briefly after mount (and on window focus, for wallets enabled in another
+  // tab) so the connect menu lights up without a reload. Equality is by key set
+  // so identical lists don't churn dependents.
+  const [installed, setInstalled] = createSignal<InstalledWallet[]>(
+    listInstalledWallets(),
+    {
+      equals: (a, b) =>
+        a.map((w) => w.key).join() === b.map((w) => w.key).join(),
+    },
+  );
+  onMount(() => {
+    const refresh = (): void => {
+      setInstalled(listInstalledWallets());
+    };
+    let ticks = 0;
+    const id = setInterval(() => {
+      refresh();
+      if (++ticks >= 15) clearInterval(id);
+    }, 200);
+    window.addEventListener("focus", refresh);
+    onCleanup(() => {
+      clearInterval(id);
+      window.removeEventListener("focus", refresh);
+    });
+  });
+
   // `silent` is the auto-reconnect path: it must never surface an error popup —
   // a failed silent reconnect just forgets the wallet and stays disconnected.
   const doConnect = async (key: string, silent: boolean): Promise<void> => {
@@ -444,7 +476,7 @@ export const AppProvider: ParentComponent = (props) => {
     },
     ipfsTokens,
     setIpfsToken,
-    installedWallets: listInstalledWallets,
+    installedWallets: installed,
     wallet,
     connecting,
     connectError,

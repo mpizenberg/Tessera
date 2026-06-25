@@ -385,6 +385,7 @@ export const Create: Component = () => {
                     >
                       {(b) => (
                         <button
+                          type="button"
                           onClick={() => addQuestion(b.type)}
                           style={addTypeBtnStyle()}
                         >
@@ -503,6 +504,8 @@ const RolesSection: Component<{
             const [color, bg] = roleColors(r);
             return (
               <button
+                type="button"
+                aria-pressed={on()}
                 onClick={() => props.onToggle(r)}
                 style={roleToggleStyle(on(), color, bg)}
               >
@@ -743,6 +746,8 @@ const ContentSection: Component<{
         }}
       >
         <button
+          type="button"
+          aria-pressed={props.mode === "embedded"}
           onClick={() => props.onMode("embedded")}
           style={modeCardStyle(props.mode === "embedded")}
         >
@@ -752,6 +757,8 @@ const ContentSection: Component<{
           </div>
         </button>
         <button
+          type="button"
+          aria-pressed={props.mode === "external"}
           onClick={() => props.onMode("external")}
           style={modeCardStyle(props.mode === "external")}
         >
@@ -818,6 +825,8 @@ const VisibilitySection: Component<{
         }}
       >
         <button
+          type="button"
+          aria-pressed={props.mode === "public"}
           onClick={() => props.onMode("public")}
           style={modeCardStyle(props.mode === "public")}
         >
@@ -827,6 +836,8 @@ const VisibilitySection: Component<{
           </div>
         </button>
         <button
+          type="button"
+          aria-pressed={props.mode === "sealed"}
           onClick={() => props.onMode("sealed")}
           style={modeCardStyle(props.mode === "sealed")}
         >
@@ -863,12 +874,16 @@ const VisibilitySection: Component<{
               style={{ display: "flex", gap: "8px", "margin-bottom": "10px" }}
             >
               <button
+                type="button"
+                aria-pressed={props.drandMode === "auto"}
                 onClick={() => props.onDrandMode("auto")}
                 style={pillStyle(props.drandMode === "auto")}
               >
                 Auto
               </button>
               <button
+                type="button"
+                aria-pressed={props.drandMode === "manual"}
                 onClick={() => props.onDrandMode("manual")}
                 style={pillStyle(props.drandMode === "manual")}
               >
@@ -1030,6 +1045,8 @@ const QuestionEditor: Component<{
         </div>
         <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
           <button
+            type="button"
+            aria-pressed={props.draft.required}
             onClick={() => props.set(i(), "required", !props.draft.required)}
             style={requiredBtnStyle(props.draft.required)}
           >
@@ -1037,6 +1054,7 @@ const QuestionEditor: Component<{
           </button>
           <Show when={props.canRemove}>
             <button
+              type="button"
               onClick={() => props.onRemove()}
               style={removeBtnStyle()}
               aria-label="Remove question"
@@ -1147,12 +1165,16 @@ const TypeFields: Component<{
         <div style={{ "margin-top": "14px" }}>
           <div style={{ display: "flex", gap: "8px", "margin-bottom": "12px" }}>
             <button
+              type="button"
+              aria-pressed={props.draft.ratingScale === "numeric"}
               onClick={() => props.set(i(), "ratingScale", "numeric")}
               style={pillStyle(props.draft.ratingScale === "numeric")}
             >
               Numeric scale
             </button>
             <button
+              type="button"
+              aria-pressed={props.draft.ratingScale === "labels"}
               onClick={() => props.set(i(), "ratingScale", "labels")}
               style={pillStyle(props.draft.ratingScale === "labels")}
             >
@@ -1277,6 +1299,7 @@ const OptionsEditor: Component<{
           </Show>
           <Show when={props.labels.length > 2}>
             <button
+              type="button"
               onClick={() => props.onRemove(j)}
               style={removeBtnStyle()}
               aria-label={`Remove option ${j + 1}`}
@@ -1287,7 +1310,11 @@ const OptionsEditor: Component<{
         </div>
       )}
     </Index>
-    <button onClick={() => props.onAdd()} style={addOptionBtnStyle()}>
+    <button
+      type="button"
+      onClick={() => props.onAdd()}
+      style={addOptionBtnStyle()}
+    >
       {props.addLabel ?? "+ Add option"}
     </button>
   </div>
@@ -1478,6 +1505,7 @@ const PublishButton: Component<{
   return (
     <>
       <button
+        type="button"
         onClick={() => props.onPublish()}
         disabled={props.submitting || !!props.blockedReason}
         style={asidePublishStyle(ok() && !props.submitting)}
@@ -1569,6 +1597,7 @@ const SubmittedPanel: Component<{ hash: string }> = (props) => {
         }}
       >
         <button
+          type="button"
           onClick={() => navigate(`/survey/${encodeURIComponent(surveyKey)}`)}
           style={{
             background: "var(--accent)",
@@ -1585,6 +1614,7 @@ const SubmittedPanel: Component<{ hash: string }> = (props) => {
           View survey →
         </button>
         <button
+          type="button"
           onClick={() => navigate("/")}
           style={{
             background: "#fff",

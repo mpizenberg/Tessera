@@ -38,17 +38,22 @@ Small diffs, each needs manual verification in the running app.
 
 | #   | Finding                                                               | File(s)                                    | Status |
 | --- | --------------------------------------------------------------------- | ------------------------------------------ | ------ |
-| 1   | Respond draft re-seed effect missing `definition()`/`existing()` deps | `ui/screens/Respond.tsx`                   | ⬜     |
-| 2   | Respond role-pick mutates global `activeRole`                         | `ui/screens/Respond.tsx`                   | ⬜     |
-| 3   | SealedResults reveal resource frozen to `props.records`               | `ui/screens/Survey.tsx`                    | ⬜     |
-| 4   | Header `installedWallets` read non-reactively                         | `ui/components/Header.tsx`                 | ⬜     |
-| 5   | Settings `storedKoiosToken` read non-reactively                       | `ui/screens/Settings.tsx`                  | ⬜     |
-| 6   | Numeric slider bypasses `clampStep`                                   | `ui/screens/Respond.tsx`                   | ⬜     |
-| 7   | Header dropdowns: outside-click/Escape close + cleanup                | `ui/components/Header.tsx`                 | ⬜     |
-| 8   | Gov submit never calls `trackTx`                                      | `ui/screens/ProposeInfoAction.tsx`         | ⬜     |
-| 9   | Snapshot `error` rendered as "not found"/empty                        | `Respond.tsx`, `Explore.tsx`, `Survey.tsx` | ⬜     |
-| 10  | SubmitProgress modal a11y (dialog role/focus/aria-live)               | `ui/components/SubmitProgress.tsx`         | ⬜     |
-| 11  | Builder buttons `type="button"` + toggle ARIA roles                   | `ui/screens/Create.tsx`, `Header.tsx`      | ⬜     |
+| 1   | Respond draft re-seed effect missing `definition()`/`existing()` deps | `ui/screens/Respond.tsx`                   | ✅     |
+| 2   | Respond role-pick mutates global `activeRole`                         | `ui/screens/Respond.tsx`                   | ✅     |
+| 3   | SealedResults reveal resource frozen to `props.records`               | `ui/screens/Survey.tsx`                    | ✅     |
+| 4   | Header `installedWallets` read non-reactively                         | `ui/components/Header.tsx`, `state.tsx`    | ✅     |
+| 5   | Settings `storedKoiosToken` read non-reactively                       | `ui/screens/Settings.tsx`                  | ✅     |
+| 6   | Numeric slider bypasses `clampStep`                                   | `ui/screens/Respond.tsx`                   | ✅     |
+| 7   | Header dropdowns: outside-click/Escape close + cleanup                | `ui/components/Header.tsx`                 | ✅     |
+| 8   | Gov submit never calls `trackTx`                                      | `ProposeInfoAction.tsx`, `state.tsx`, `Header.tsx` | ✅ |
+| 9   | Snapshot `error` rendered as "not found"/empty                        | `Respond.tsx`, `Explore.tsx`, `Survey.tsx` | ✅     |
+| 10  | SubmitProgress modal a11y (dialog role/focus/aria-live)               | `ui/components/SubmitProgress.tsx`         | ✅     |
+| 11  | Builder buttons `type="button"` + toggle ARIA roles                   | `ui/screens/Create.tsx`, `Header.tsx`      | ✅     |
+
+**Phase 3 verified:** `type-check`, `format:check`, all 47 unit tests pass. Item 9
+on Explore was already handled in Phase 2; this phase added the same error+retry
+affordance to Respond and Survey. Each item still warrants a manual smoke test in
+the running app (these are reactivity/UX fixes with no unit coverage).
 
 ## Phase 4 — Code quality (incremental, lowest urgency)
 
@@ -65,6 +70,44 @@ Small diffs, each needs manual verification in the running app.
 
 _(newest first)_
 
+- **Phase 3 — reactivity & UX bugs (all 11 items)** —
+  - **Respond draft re-seed (#1)** — the `on(...)` re-seed effect now also tracks
+    `definition()` and `existing()`, so a prior on-chain response that loads after
+    the first seed (e.g. once the wallet auto-reconnects) and external-content
+    enrichment both pre-fill correctly. Added a `touched` guard (set by
+    `setValue`/`setSkipped`): a change of survey/role makes the form pristine
+    again, but late-arriving data and reloads never clobber in-progress answers.
+  - **Per-survey role (#2)** — picking a response role no longer calls
+    `app.setActiveRole`; it drives only the local `roleOverride`, so it can't
+    rewrite the app-wide active role used by the "mine" Explore filter.
+  - **Sealed reveal resource (#3)** — keyed on a fingerprint (`round` + sorted
+    response tx hashes) instead of the bare round number, so it re-tallies when
+    new sealed responses land, while still staying stable across the 30s clock
+    tick and object identity.
+  - **Reactive wallet list (#4)** — `installedWallets` is now a signal in
+    `state.tsx`, refreshed ~15×200ms after mount and on window focus (wallets
+    inject asynchronously); `Header`'s `WalletPicker` reads it reactively, so a
+    slow-injecting wallet appears without a remount.
+  - **Settings stored-token signal (#5)** — mirrored the persisted Koios override
+    into a signal so `dirty()` and the "Use app default" disabled state refresh
+    after save/reset (previously read non-reactive localStorage).
+  - **Slider step (#6)** — the numeric-range slider now routes through
+    `clampStep`, matching the number input, so it can't emit off-step values that
+    `validateResponse` would block.
+  - **Header dropdowns (#7)** — both menus close on outside `pointerdown` / Escape
+    via document listeners registered only while open and removed in `onCleanup`.
+  - **Gov-action tracking (#8)** — `ProposeInfoAction` now calls `trackTx` after a
+    successful submit; added a `"govAction"` `PendingKind` (+ Header pending /
+    confirmed labels) so the proposal shows in the pending indicator like Create.
+  - **Snapshot error (#9)** — Respond's and Survey's `Empty` now branch on
+    `snapshot.error` with a Retry (→ `app.reload()`) instead of masquerading a
+    transient Koios failure as "Survey not found." (Explore already did this.)
+  - **SubmitProgress a11y (#10)** — added `role="dialog"`/`aria-modal`/
+    `aria-labelledby`, focus-in on mount, and a visually-hidden `aria-live`
+    region announcing the current step.
+  - **Button semantics (#11)** — `type="button"` on all Create + Header buttons
+    (defensive: no `<form>` today); `aria-pressed` on the mode/role/scale toggles
+    and Plain/Pro switch; `aria-label`/`aria-expanded` on icon-only buttons.
 - **Scope cancellation verification to still-open surveys** — a cancellation can
   only suppress a survey while it's still answerable; once a survey has ended
   (tip past its `end_epoch`) it's closed regardless, so verifying its cancellation

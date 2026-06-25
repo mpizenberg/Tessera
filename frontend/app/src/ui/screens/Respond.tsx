@@ -150,12 +150,23 @@ export const Respond: Component = () => {
     { skipped: boolean; value: DraftValue }[]
   >([]);
 
-  // Re-seed drafts whenever the survey or chosen role changes (a different role
-  // means a different prior response to pre-fill from, or none).
+  // True once the user edits an answer; gates auto-(re)seeding so late-arriving
+  // data and reloads never clobber in-progress input.
+  const [touched, setTouched] = createSignal(false);
+
+  // (Re)seed drafts when the form's identity or its backing data changes:
+  //  - survey key / chosen role → a different prior response to pre-fill from
+  //  - definition()            → external-content enrichment swapping labels in
+  //  - existing()              → a prior on-chain response that resolves *after*
+  //    the first seed (e.g. once the wallet auto-reconnects)
+  // A change of survey or role makes the form pristine again; otherwise we only
+  // (re)seed while the user hasn't started editing.
   createEffect(
     on(
-      () => [survey()?.key, role()] as const,
-      () => {
+      () => [survey()?.key, role(), definition(), existing()] as const,
+      ([k, r], prev) => {
+        if (!prev || prev[0] !== k || prev[1] !== r) setTouched(false);
+        if (touched()) return;
         const def = definition();
         if (!def) {
           setDrafts([]);
@@ -202,10 +213,14 @@ export const Respond: Component = () => {
   const [ratUri, setRatUri] = createSignal("");
   const [ratHash, setRatHash] = createSignal("");
 
-  const setValue = (i: number, value: DraftValue) =>
+  const setValue = (i: number, value: DraftValue) => {
+    setTouched(true);
     setDrafts(i, "value", value);
-  const setSkipped = (i: number, skipped: boolean) =>
+  };
+  const setSkipped = (i: number, skipped: boolean) => {
+    setTouched(true);
     setDrafts(i, "skipped", skipped);
+  };
 
   // Parse the *manual* rationale anchor: the anchor, `undefined` (none), or
   // "invalid" (problems set). URI required; hash must be 32 bytes of hex. The
@@ -436,7 +451,16 @@ export const Respond: Component = () => {
         />
       </Show>
 
-      <Show when={survey()} fallback={<Empty loading={app.snapshot.loading} />}>
+      <Show
+        when={survey()}
+        fallback={
+          <Empty
+            loading={app.snapshot.loading}
+            error={app.snapshot.error}
+            onRetry={() => app.reload()}
+          />
+        }
+      >
         {(s) => (
           <Show
             when={txHash() === null}
@@ -448,10 +472,9 @@ export const Respond: Component = () => {
               pro={app.ui.pro}
               role={role()}
               respondable={respondable()}
-              onPickRole={(r) => {
-                setRoleOverride(r);
-                app.setActiveRole(r);
-              }}
+              // Per-survey choice only — must not rewrite the app-wide active
+              // role used by other screens (e.g. the "mine" Explore filter).
+              onPickRole={(r) => setRoleOverride(r)}
             />
 
             <Show when={s().cancellationClaimed}>
@@ -1664,7 +1687,9 @@ const NumericBody: Component<{
           max={Number(max)}
           step={Number(step)}
           value={Number(props.v.value)}
-          onInput={(e) => set(BigInt(e.currentTarget.value))}
+          onInput={(e) =>
+            set(clampStep(BigInt(e.currentTarget.value), min, max, step))
+          }
           style={{ width: "100%", "accent-color": "var(--accent)" }}
         />
         <div
@@ -2180,7 +2205,11 @@ const Notice: Component<{
   </div>
 );
 
-const Empty: Component<{ loading: boolean }> = (props) => (
+const Empty: Component<{
+  loading: boolean;
+  error?: unknown;
+  onRetry?: () => void;
+}> = (props) => (
   <div
     style={{
       ...cardStyle(),
@@ -2189,7 +2218,31 @@ const Empty: Component<{ loading: boolean }> = (props) => (
       "margin-top": "14px",
     }}
   >
-    {props.loading ? "Loading…" : "Survey not found."}
+    <Show
+      when={props.error}
+      fallback={props.loading ? "Loading…" : "Survey not found."}
+    >
+      <div style={{ color: "var(--danger)", "margin-bottom": "12px" }}>
+        Couldn't load from the network — this may be a transient error.
+      </div>
+      <button
+        type="button"
+        onClick={() => props.onRetry?.()}
+        style={{
+          "font-family": "inherit",
+          "font-size": "13px",
+          "font-weight": "700",
+          cursor: "pointer",
+          background: "var(--accent)",
+          color: "#fff",
+          border: "none",
+          "border-radius": "var(--r-input)",
+          padding: "9px 16px",
+        }}
+      >
+        Retry
+      </button>
+    </Show>
   </div>
 );
 

@@ -4,7 +4,14 @@
  * single button that just says "Submitting…". Single-step submits don't use it.
  */
 
-import { For, Show, type Component, type JSX } from "solid-js";
+import {
+  For,
+  Show,
+  createUniqueId,
+  onMount,
+  type Component,
+  type JSX,
+} from "solid-js";
 
 export interface SubmitStep {
   key: string;
@@ -27,10 +34,34 @@ export const SubmitProgressModal: Component<{
     if (i < a) return "done";
     return i === a ? "active" : "pending";
   };
+
+  const titleId = createUniqueId();
+  let cardRef: HTMLDivElement | undefined;
+  // Move focus into the blocking dialog on mount so keyboard / screen-reader
+  // users land on it (the card is programmatically focusable but out of tab order).
+  onMount(() => cardRef?.focus());
+
   return (
-    <div style={backdropStyle}>
-      <div style={cardStyle}>
-        <h3 style={titleStyle}>{props.title}</h3>
+    <div style={backdropStyle} role="presentation">
+      <div
+        ref={cardRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabindex="-1"
+        style={{ ...cardStyle, outline: "none" }}
+      >
+        <h3 id={titleId} style={titleStyle}>
+          {props.title}
+        </h3>
+        {/* Screen-reader announcement of the current step (the visual list
+            below conveys the same via icon/weight, which AT can't read). */}
+        <p style={srOnlyStyle} aria-live="polite">
+          <Show when={activeIndex() >= 0}>
+            Step {activeIndex() + 1} of {props.steps.length}:{" "}
+            {props.steps[activeIndex()]?.label}
+          </Show>
+        </p>
         <div
           style={{
             display: "flex",
@@ -50,6 +81,19 @@ export const SubmitProgressModal: Component<{
       </div>
     </div>
   );
+};
+
+/** Visually hidden but exposed to assistive tech (announcement region). */
+const srOnlyStyle: JSX.CSSProperties = {
+  position: "absolute",
+  width: "1px",
+  height: "1px",
+  padding: "0",
+  margin: "-1px",
+  overflow: "hidden",
+  clip: "rect(0 0 0 0)",
+  "white-space": "nowrap",
+  border: "0",
 };
 
 const StepRow: Component<{ label: string; state: StepState }> = (props) => (

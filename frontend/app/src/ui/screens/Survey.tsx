@@ -192,7 +192,16 @@ export const Survey: Component = () => {
         <span style={{ "font-size": "15px" }}>←</span> All surveys
       </A>
 
-      <Show when={survey()} fallback={<Empty loading={app.snapshot.loading} />}>
+      <Show
+        when={survey()}
+        fallback={
+          <Empty
+            loading={app.snapshot.loading}
+            error={app.snapshot.error}
+            onRetry={() => app.reload()}
+          />
+        }
+      >
         {(s) => (
           <>
             <Header
@@ -2287,16 +2296,23 @@ const SealedResults: Component<{
   // Reveal is opt-in: nothing decrypts until the viewer asks for it.
   const [revealRequested, setRevealRequested] = createSignal(false);
 
-  // The resource source is just the round number (a stable primitive), not a
-  // fresh `{ records, round }` object — otherwise the ticking clock behind
-  // `revealable()` would hand createResource a new object every 30s and
-  // re-decrypt every response on each tick. Records are read in the fetcher.
-  const revealRound = (): number | null =>
-    revealRequested() && revealable() && supported() && !props.s.cancelled
-      ? mode()!.round
-      : null;
+  // The resource source is a fingerprint string, not the bare round number or a
+  // fresh `{ records, round }` object: keying on the round alone would freeze the
+  // decrypted set to whatever was loaded the instant the round became available
+  // (later responses in a new snapshot would never re-tally), while a fresh
+  // object would re-decrypt every 30s as the clock behind `revealable()` ticks.
+  // The fingerprint = round + the sorted response tx hashes, so it changes on a
+  // genuine membership change but stays stable across ticks and object identity.
+  const revealKey = (): string | null => {
+    if (
+      !(revealRequested() && revealable() && supported() && !props.s.cancelled)
+    )
+      return null;
+    const hashes = props.records.map((r) => r.txHash).sort();
+    return `${mode()!.round}:${hashes.join(",")}`;
+  };
 
-  const [revealed] = createResource(revealRound, async (round) => {
+  const [revealed] = createResource(revealKey, async () => {
     const { revealResponses } = await import("~/tlock/seal");
     // Validate revealed answers against the *on-chain* definition (constraints
     // and indices are on-chain; enrichment only relabels), not the display one.
@@ -2304,7 +2320,7 @@ const SealedResults: Component<{
     const records = props.records;
     const results = await revealResponses(
       records.map((r) => r.response),
-      round,
+      mode()!.round,
     );
     const recs: ResponseRecord[] = [];
     // Decrypt/decode failures (null result) vs. responses that decrypt+decode
@@ -2536,7 +2552,11 @@ const LabelsUnavailable: Component<{ keyStr: string }> = (props) => (
   </div>
 );
 
-const Empty: Component<{ loading: boolean }> = (props) => (
+const Empty: Component<{
+  loading: boolean;
+  error?: unknown;
+  onRetry?: () => void;
+}> = (props) => (
   <div
     style={{
       background: "#fff",
@@ -2548,7 +2568,31 @@ const Empty: Component<{ loading: boolean }> = (props) => (
       color: "var(--muted)",
     }}
   >
-    {props.loading ? "Loading…" : "Survey not found."}
+    <Show
+      when={props.error}
+      fallback={props.loading ? "Loading…" : "Survey not found."}
+    >
+      <div style={{ color: "var(--danger)", "margin-bottom": "12px" }}>
+        Couldn't load from the network — this may be a transient error.
+      </div>
+      <button
+        type="button"
+        onClick={() => props.onRetry?.()}
+        style={{
+          "font-family": "inherit",
+          "font-size": "13px",
+          "font-weight": "700",
+          cursor: "pointer",
+          background: "var(--accent)",
+          color: "#fff",
+          border: "none",
+          "border-radius": "var(--r-input)",
+          padding: "9px 16px",
+        }}
+      >
+        Retry
+      </button>
+    </Show>
   </div>
 );
 

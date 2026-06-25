@@ -1,4 +1,12 @@
-import { For, Show, createSignal, type Component, type JSX } from "solid-js";
+import {
+  For,
+  Show,
+  createEffect,
+  createSignal,
+  onCleanup,
+  type Component,
+  type JSX,
+} from "solid-js";
 import { A, useLocation } from "@solidjs/router";
 
 import { useApp, type PendingKind, type PendingTx } from "~/state";
@@ -30,6 +38,30 @@ export const Header: Component = () => {
 
   const mismatch = () =>
     networkMismatch(app.wallet()?.identity.networkId, app.config.network);
+
+  // Close the open dropdown(s) on an outside click or Escape. Both menus live
+  // inside `actionsRef`, so a pointerdown outside it dismisses them; listeners
+  // are registered only while something is open and torn down on cleanup.
+  let actionsRef: HTMLDivElement | undefined;
+  const closeMenus = () => {
+    setMenuOpen(false);
+    setPendingOpen(false);
+  };
+  createEffect(() => {
+    if (!menuOpen() && !pendingOpen()) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (actionsRef && !actionsRef.contains(e.target as Node)) closeMenus();
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeMenus();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    onCleanup(() => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    });
+  });
 
   return (
     <header
@@ -144,6 +176,7 @@ export const Header: Component = () => {
         </nav>
 
         <div
+          ref={actionsRef}
           class="header-actions"
           style={{
             display: "flex",
@@ -155,11 +188,14 @@ export const Header: Component = () => {
           <Show when={app.pendingTxs.length > 0}>
             <div style={{ position: "relative" }}>
               <button
+                type="button"
                 onClick={() => {
                   setMenuOpen(false);
                   setPendingOpen((o) => !o);
                 }}
                 title="Pending transactions"
+                aria-label="Pending transactions"
+                aria-expanded={pendingOpen()}
                 style={pendingBtnStyle()}
               >
                 <Show
@@ -212,12 +248,16 @@ export const Header: Component = () => {
             }}
           >
             <button
+              type="button"
+              aria-pressed={!app.ui.pro}
               style={proStyle(!app.ui.pro)}
               onClick={() => app.setPro(false)}
             >
               Plain
             </button>
             <button
+              type="button"
+              aria-pressed={app.ui.pro}
               style={proStyle(app.ui.pro)}
               onClick={() => app.setPro(true)}
             >
@@ -229,6 +269,8 @@ export const Header: Component = () => {
             when={app.wallet()}
             fallback={
               <button
+                type="button"
+                aria-expanded={menuOpen()}
                 onClick={() => {
                   setPendingOpen(false);
                   setMenuOpen((o) => !o);
@@ -241,6 +283,8 @@ export const Header: Component = () => {
           >
             {(w) => (
               <button
+                type="button"
+                aria-expanded={menuOpen()}
                 onClick={() => {
                   setPendingOpen(false);
                   setMenuOpen((o) => !o);
@@ -334,21 +378,24 @@ export const Header: Component = () => {
 
 const WalletPicker: Component<{ onPick: (key: string) => void }> = (props) => {
   const app = useApp();
-  const wallets = app.installedWallets();
+  // Read reactively: wallets inject asynchronously, so the list can grow after
+  // the menu first opens (see `installedWallets` in state.tsx).
+  const wallets = () => app.installedWallets();
   return (
     <>
       <div style={menuHeadingStyle()}>Connect a CIP-30 wallet</div>
       <Show
-        when={wallets.length > 0}
+        when={wallets().length > 0}
         fallback={
           <div style={menuNoteStyle()}>
             No CIP-30 wallet detected in this browser.
           </div>
         }
       >
-        <For each={wallets}>
+        <For each={wallets()}>
           {(wl) => (
             <button
+              type="button"
               style={menuRowStyle(false)}
               onClick={() => props.onPick(wl.key)}
             >
@@ -411,6 +458,7 @@ const RoleMenu: Component<{
       <For each={props.roles}>
         {(r) => (
           <button
+            type="button"
             style={menuRowStyle(r === props.activeRole)}
             onClick={() => props.onPick(r)}
             title={roleDescription(r)}
@@ -460,6 +508,7 @@ const RoleMenu: Component<{
       {truncAddr(props.addr)}
     </div>
     <button
+      type="button"
       style={{ ...menuRowStyle(false), color: "var(--danger)" }}
       onClick={() => props.onDisconnect()}
     >
@@ -480,11 +529,13 @@ const PENDING_TEXT: Record<PendingKind, string> = {
   survey: "Publishing survey",
   response: "Submitting response",
   cancel: "Cancelling survey",
+  govAction: "Submitting governance action",
 };
 const CONFIRMED_TEXT: Record<PendingKind, string> = {
   survey: "Survey published",
   response: "Response confirmed",
   cancel: "Survey cancelled",
+  govAction: "Governance action submitted",
 };
 
 /** One row in the pending-transactions dropdown. */
@@ -515,8 +566,10 @@ const PendingRow: Component<{
           {headline()}
         </span>
         <button
+          type="button"
           onClick={() => props.onDismiss()}
           title="Dismiss"
+          aria-label="Dismiss"
           style={dismissStyle()}
         >
           ×
@@ -589,6 +642,7 @@ const NetworkSwitch: Component = () => {
           const on = () => n === app.config.network;
           return (
             <button
+              type="button"
               style={menuRowStyle(on())}
               onClick={() => app.setNetwork(n)}
             >

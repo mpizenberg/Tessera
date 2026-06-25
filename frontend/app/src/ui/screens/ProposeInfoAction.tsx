@@ -301,6 +301,13 @@ export const ProposeInfoAction: Component = () => {
     try {
       const hash = await app.submitInfoAction(url().trim(), a.hash);
       setTxHash(hash);
+      const ref = a.surveyRef;
+      app.trackTx({
+        txHash: hash,
+        kind: "govAction",
+        surveyKey: ref ? `${ref.txId}:${ref.index}` : undefined,
+        title: linkedSurvey()?.record.definition.title,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

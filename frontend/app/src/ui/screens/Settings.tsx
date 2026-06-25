@@ -183,19 +183,26 @@ const ProvidersSection: Component = () => {
 
 const KoiosSection: Component = () => {
   const app = useApp();
-  const [draft, setDraft] = createSignal(storedKoiosToken() ?? "");
+  // Mirror the persisted override into a signal: `storedKoiosToken()` reads
+  // localStorage (not reactive), so `dirty()` and the reset button wouldn't
+  // refresh after save/reset without this. `storeKoiosToken` trims before
+  // persisting, so we mirror the trimmed value to match.
+  const [stored, setStored] = createSignal(storedKoiosToken() ?? "");
+  const [draft, setDraft] = createSignal(stored());
   const [saved, setSaved] = createSignal(false);
 
   const overridden = () => app.koiosToken() !== envKoiosToken();
-  const dirty = () => draft().trim() !== (storedKoiosToken() ?? "");
+  const dirty = () => draft().trim() !== stored();
 
   const save = () => {
     app.setKoiosToken(draft());
+    setStored(draft().trim());
     setSaved(true);
   };
   const reset = () => {
     setDraft("");
     app.setKoiosToken("");
+    setStored("");
     setSaved(true);
   };
 
@@ -309,11 +316,7 @@ const KoiosSection: Component = () => {
         >
           Save
         </button>
-        <button
-          style={btnGhostStyle()}
-          disabled={!storedKoiosToken()}
-          onClick={reset}
-        >
+        <button style={btnGhostStyle()} disabled={!stored()} onClick={reset}>
           Use app default
         </button>
       </div>
