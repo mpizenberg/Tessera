@@ -1,0 +1,17 @@
+/*
+ * Co-located styles for Note.tsx (CSS Modules).
+ *
+ * Static layout lives here. The semantic colors (ink/background/border) are
+ * derived from the `kind` prop as `var(--${kind})` etc., so they stay inline
+ * in the .tsx — they're prop-driven and can't be expressed as a single static
+ * class without churn. The caller's `...props.style` is merged inline too.
+ */
+
+.box {
+  font-size: 12.5px;
+  border-radius: var(--r-control);
+  padding: 11px 13px;
+  line-height: 1.5;
+  margin-bottom: 12px;
+  word-break: break-word;
+}

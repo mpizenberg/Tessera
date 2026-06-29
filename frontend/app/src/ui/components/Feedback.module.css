@@ -1,0 +1,33 @@
+/* Co-located styles for Feedback.tsx (ProblemList + ErrorBox). */
+
+/* The danger-toned callout box shared by both ProblemList and ErrorBox. */
+.box {
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-line);
+  border-radius: var(--r-md);
+  padding: 13px 15px;
+  margin-top: 14px;
+}
+
+/* The danger heading shared by both components. */
+.heading {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--danger);
+}
+
+.list {
+  margin: 8px 0 0;
+  padding: 0 0 0 18px;
+  color: var(--danger-ink);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.message {
+  font-size: 12.5px;
+  color: var(--danger-ink);
+  line-height: 1.5;
+  margin-top: 5px;
+  word-break: break-word;
+}

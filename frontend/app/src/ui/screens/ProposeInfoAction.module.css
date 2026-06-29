@@ -1,0 +1,258 @@
+/*
+ * Co-located styles for ProposeInfoAction.tsx.
+ *
+ * Convention: one `Foo.module.css` next to `Foo.tsx`, imported as `s` and
+ * applied via `class={s.x}`. Static styles live here; design tokens
+ * (`var(--…)`) come from theme.css `:root`. Signal/prop-driven toggles use
+ * state classes flipped with `classList`. The `Note` component keeps its own
+ * inline `style` prop — only real DOM `style={}` attributes are migrated here.
+ */
+
+.main {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 22px 24px 90px;
+}
+
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 6px 0;
+}
+
+.backArrow {
+  font-size: 15px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.govPill {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--gov);
+  background: var(--gov-bg);
+  border: 1px solid var(--gov-line);
+  border-radius: var(--r-2xs);
+  padding: 4px 8px;
+}
+
+.title {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.018em;
+  margin: 0;
+  color: var(--ink);
+}
+
+.lead {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 12px 0 0;
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+.stepHead {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin: 24px 2px 0;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 16px 18px;
+  margin-top: 10px;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--dim);
+  line-height: 1.5;
+  margin: 10px 0 0;
+}
+
+/* The intro hint sits flush at the top of its card (no leading margin). */
+.hintFlush {
+  composes: hint;
+  margin-top: 0;
+}
+
+/* Hint variants that only differ by their top margin from the loaded ref. */
+.hintTight {
+  composes: hint;
+  margin-top: 6px;
+}
+
+/* Hint inside the success Note — drops its trailing margin. */
+.hintNoBottom {
+  composes: hint;
+  margin-bottom: 0;
+}
+
+.fileInput {
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+/* Loaded file name: mono, ink, with breathing room below. */
+.loadedName {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--ink);
+  margin-bottom: 12px;
+}
+
+.problemsTitle {
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+/* "Proposal submitted ✓" heading inside the success Note (tighter gap). */
+.submittedTitle {
+  font-weight: 700;
+  margin-bottom: 5px;
+}
+
+.problemsList {
+  margin: 0;
+  padding-left: 18px;
+}
+
+/* Survey ref line: mono, ink, wraps the long tx id. */
+.surveyRef {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  word-break: break-all;
+  color: var(--ink);
+}
+
+.refIndex {
+  color: var(--dim);
+}
+
+.onchainTitle {
+  color: var(--ink);
+}
+
+.actionRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+}
+
+/* Anchor hash readout: mono, gov-blue, wraps, with breathing room below. */
+.hashValue {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  word-break: break-all;
+  color: var(--gov);
+  margin-bottom: 12px;
+}
+
+.code {
+  margin: 0;
+  background: #0b0e14;
+  border-radius: var(--r-control);
+  padding: 13px 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.6;
+  color: #9fe7c0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  padding: 11px 13px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.settingsLink {
+  color: var(--gov);
+}
+
+/* Action buttons (Pin / Download / Copy hash): gov-tinted, ghost by default. */
+.btn {
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  border-radius: var(--r-input);
+  padding: 8px 13px;
+  color: var(--gov);
+  background: #fff;
+  border: 1px solid var(--gov-line);
+}
+
+.btnPrimary {
+  composes: btn;
+  color: #fff;
+  background: var(--gov);
+  border-color: var(--gov);
+}
+
+/* Submitted-confirmation tx hash line: mono, breaks the long hash. */
+.txLine {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  word-break: break-all;
+}
+
+/* Submit button: gov-filled when enabled, dimmed + not-allowed when not. */
+.submitBtn {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: not-allowed;
+  color: #fff;
+  background: var(--dim);
+  border: none;
+  border-radius: var(--r-md);
+  padding: 12px 20px;
+  opacity: 0.7;
+}
+
+.submitBtnEnabled {
+  cursor: pointer;
+  background: var(--gov);
+  opacity: 1;
+}

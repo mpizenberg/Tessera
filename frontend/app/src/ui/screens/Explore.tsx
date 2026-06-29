@@ -22,8 +22,11 @@ import { FormMosaic, RoleChips, VisGlyph } from "~/ui/components/glyphs";
 import type { ChainTip, GovLink } from "~/data/source";
 import type { WalletIdentity } from "~/wallet/types";
 import type { Question, SurveyDefinition } from "cip-179";
+import css from "./Explore.module.css";
 
 // Seven columns: Form · visibility · answered · survey · eligible · ends · replies.
+// Bridged to the grid via the `--cols` custom property so the header, rows and
+// skeleton rows all share one definition.
 const COLS = "52px 24px 26px minmax(190px,1fr) 122px 100px 52px";
 // Below this width the table gets cramped, so each row reflows into a card.
 const CARD_BREAKPOINT = 800;
@@ -263,120 +266,46 @@ export const Explore: Component = () => {
   });
 
   return (
-    <main
-      style={{
-        "max-width": "1100px",
-        margin: "0 auto",
-        padding: "30px 24px 76px",
-      }}
-    >
+    <main class={css.page}>
       <Show when={showIntro()}>
         <IntroHero onDismiss={dismissIntro} />
       </Show>
 
       {/* title row + summary */}
-      <div
-        style={{
-          display: "flex",
-          "align-items": "flex-end",
-          "justify-content": "space-between",
-          gap: "16px",
-          "border-bottom": "1px solid #E7DFCE",
-          "padding-bottom": "14px",
-          "flex-wrap": "wrap",
-        }}
-      >
-        <h1
-          style={{
-            "font-size": "31px",
-            "font-weight": "700",
-            "letter-spacing": "-.014em",
-            margin: "0",
-            color: "var(--ink)",
-          }}
-        >
-          Surveys &amp; polls
-        </h1>
-        <div style={{ display: "flex", "align-items": "center", gap: "16px" }}>
-          <span
-            style={{
-              "font-family": "var(--mono)",
-              "font-size": "11.5px",
-              color: "var(--dim)",
-              "white-space": "nowrap",
-            }}
-          >
+      <div class={css.titleRow}>
+        <h1 class={css.title}>Surveys &amp; polls</h1>
+        <div class={css.summary}>
+          <span class={css.entries}>
             {all().length} entries · current epoch {tipEpoch()}
           </span>
-          <A
-            href="/create"
-            style={{
-              display: "inline-flex",
-              "align-items": "center",
-              gap: "7px",
-              "white-space": "nowrap",
-              background: "var(--accent)",
-              color: "#fff",
-              "text-decoration": "none",
-              "border-radius": "var(--r-control)",
-              padding: "9px 14px",
-              "font-size": "13px",
-              "font-weight": "700",
-              "box-shadow": "0 6px 16px -9px var(--accent-shadow)",
-            }}
-          >
-            <span
-              style={{
-                "font-size": "15px",
-                "line-height": "0",
-                "margin-top": "-1px",
-              }}
-            >
-              +
-            </span>{" "}
-            New survey
+          <A href="/create" class={css.newBtn}>
+            <span class={css.newBtnPlus}>+</span> New survey
           </A>
         </div>
       </div>
 
       {/* filters + search */}
-      <div
-        style={{
-          display: "flex",
-          "align-items": "center",
-          gap: "12px",
-          "margin-top": "20px",
-          "flex-wrap": "wrap",
-        }}
-      >
-        <div style={{ display: "flex", gap: "7px", "flex-wrap": "wrap" }}>
+      <div class={css.toolbar}>
+        <div class={css.filterGroup}>
           <For each={FILTERS}>
             {(f) => (
               <button
                 onClick={() => app.setFilter(f.value)}
-                style={filterStyle(app.ui.filter === f.value)}
+                class={css.filter}
+                classList={{ [css.filterOn]: app.ui.filter === f.value }}
               >
                 {f.label}{" "}
-                <span style={filterCountStyle(app.ui.filter === f.value)}>
+                <span
+                  class={css.filterCount}
+                  classList={{ [css.filterCountOn]: app.ui.filter === f.value }}
+                >
                   {counts()[f.value]}
                 </span>
               </button>
             )}
           </For>
         </div>
-        <div
-          style={{
-            "margin-left": "auto",
-            display: "flex",
-            "align-items": "center",
-            gap: "8px",
-            background: "var(--surface2)",
-            border: "1px solid var(--line)",
-            "border-radius": "var(--r-input)",
-            padding: "8px 12px",
-            "min-width": "190px",
-          }}
-        >
+        <div class={css.search}>
           <svg
             width="14"
             height="14"
@@ -386,7 +315,7 @@ export const Explore: Component = () => {
             stroke-width="2.2"
             stroke-linecap="round"
             aria-hidden="true"
-            style={{ flex: "none", display: "block" }}
+            class={css.searchIcon}
           >
             <circle cx="10.5" cy="10.5" r="7" />
             <line x1="15.5" y1="15.5" x2="21" y2="21" />
@@ -395,23 +324,15 @@ export const Explore: Component = () => {
             value={searchInput()}
             onInput={(e) => onSearchInput(e.currentTarget.value)}
             placeholder="Search surveys…"
-            style={{
-              border: "none",
-              outline: "none",
-              "font-family": "inherit",
-              "font-size": "13px",
-              flex: "1",
-              background: "transparent",
-              color: "var(--ink)",
-            }}
+            class={css.searchInput}
           />
         </div>
       </div>
 
       {/* register table (cards on narrow screens) */}
-      <div style={{ "margin-top": "8px" }}>
-        <div style={{ "overflow-x": narrow() ? "visible" : "auto" }}>
-          <div style={{ "min-width": narrow() ? "auto" : "680px" }}>
+      <div class={css.tableWrap}>
+        <div class={css.scroll} classList={{ [css.scrollNarrow]: narrow() }}>
+          <div class={css.inner} classList={{ [css.innerNarrow]: narrow() }}>
             <Show when={!narrow()}>
               <HeaderRow />
             </Show>
@@ -429,17 +350,7 @@ export const Explore: Component = () => {
             </Show>
 
             <Show when={app.snapshot()?.records.incomplete}>
-              <div
-                style={{
-                  margin: "10px 0",
-                  padding: "9px 13px",
-                  border: "1px solid var(--warn-line)",
-                  background: "var(--warn-bg)",
-                  "border-radius": "var(--r-md)",
-                  "font-size": "12.5px",
-                  color: "var(--warn)",
-                }}
-              >
+              <div class={css.incomplete}>
                 Showing the most recent surveys and responses — more exist
                 on-chain than could be loaded, so some lists and tallies may be
                 incomplete.
@@ -449,16 +360,7 @@ export const Explore: Component = () => {
             <Show when={!app.snapshot.loading && !app.snapshot.error}>
               <Show when={govRows().length > 0}>
                 <SectionLabel
-                  dot={
-                    <span
-                      style={{
-                        width: "6px",
-                        height: "6px",
-                        "border-radius": "1.5px",
-                        background: "var(--gov)",
-                      }}
-                    />
-                  }
+                  dot={<span class={css.dotGov} />}
                   color="var(--gov)"
                   label="On-chain governance"
                   note="Tied to an Info Action — shown first."
@@ -468,16 +370,7 @@ export const Explore: Component = () => {
 
               <Show when={openRows().length > 0}>
                 <SectionLabel
-                  dot={
-                    <span
-                      style={{
-                        width: "6px",
-                        height: "6px",
-                        "border-radius": "50%",
-                        background: "#7E8B6A",
-                      }}
-                    />
-                  }
+                  dot={<span class={css.dotOpen} />}
                   color="#5E7B49"
                   label="Open · accepting responses"
                 />
@@ -486,23 +379,13 @@ export const Explore: Component = () => {
 
               <Show when={closedRows().length > 0}>
                 <SectionLabel
-                  dot={
-                    <span
-                      style={{
-                        width: "6px",
-                        height: "6px",
-                        "border-radius": "50%",
-                        border: "1.5px solid #BBB1A0",
-                        "box-sizing": "border-box",
-                      }}
-                    />
-                  }
+                  dot={<span class={css.dotClosed} />}
                   color="#A79C88"
                   label="Closed"
                   note="Ended or withdrawn — read-only."
                   topBorder
                 />
-                <div style={{ opacity: "0.56" }}>
+                <div class={css.closedRows}>
                   <For each={closedRows()}>
                     {(a) => <Entry {...rowProps(a)} />}
                   </For>
@@ -525,36 +408,20 @@ export const Explore: Component = () => {
 const HeaderRow: Component = () => {
   const cell = (label: string, align?: "center" | "right"): JSX.Element => (
     <span
-      style={{
-        "font-family": "var(--mono)",
-        "font-size": "9.5px",
-        "letter-spacing": ".09em",
-        "text-transform": "uppercase",
-        color: "#B0A488",
-        "font-weight": "600",
-        "text-align": align ?? "left",
+      class={css.headerCell}
+      classList={{
+        [css.cellCenter]: align === "center",
+        [css.cellRight]: align === "right",
       }}
     >
       {label}
     </span>
   );
   return (
-    <div
-      style={{
-        display: "grid",
-        "grid-template-columns": COLS,
-        gap: "14px",
-        "align-items": "center",
-        padding: "10px 6px",
-        "border-bottom": "1px solid #DDD3C0",
-      }}
-    >
+    <div class={css.header} style={{ "--cols": COLS }}>
       {cell("Form", "center")}
       <span />
-      <span
-        title="Surveys you have answered"
-        style={{ "text-align": "center" }}
-      >
+      <span title="Surveys you have answered" class={css.cellCenter}>
         {cell("✓", "center")}
       </span>
       {cell("Survey")}
@@ -572,35 +439,14 @@ const SectionLabel: Component<{
   note?: string;
   topBorder?: boolean;
 }> = (props) => (
-  <div
-    style={{
-      display: "flex",
-      "align-items": "baseline",
-      gap: "9px",
-      padding: props.topBorder ? "18px 6px 8px" : "16px 6px 8px",
-      ...(props.topBorder ? { "border-top": "1px solid #ECE2D0" } : {}),
-    }}
-  >
-    <span
-      style={{
-        display: "inline-flex",
-        "align-items": "center",
-        gap: "6px",
-        "font-family": "var(--mono)",
-        "font-size": "9.5px",
-        "font-weight": "600",
-        "letter-spacing": ".06em",
-        "text-transform": "uppercase",
-        color: props.color,
-      }}
-    >
+  <div class={css.section} classList={{ [css.sectionTop]: props.topBorder }}>
+    {/* Per-section accent is a free-form prop, so it rides in on a CSS var. */}
+    <span class={css.sectionTag} style={{ "--section-color": props.color }}>
       {props.dot}
       {props.label}
     </span>
     <Show when={props.note}>
-      <span style={{ "font-size": "12px", color: "#B0A488" }}>
-        {props.note}
-      </span>
+      <span class={css.sectionNote}>{props.note}</span>
     </Show>
   </div>
 );
@@ -627,67 +473,22 @@ const AnsweredCheck: Component = () => (
   <span
     title="You answered this survey"
     aria-label="answered"
-    style={{
-      color: "var(--ok)",
-      "font-size": "13px",
-      "font-weight": "700",
-      "line-height": "1",
-    }}
+    class={css.answered}
   >
     ✓
   </span>
 );
 
-const YoursBadge: Component = () => (
-  <span
-    style={{
-      flex: "none",
-      "font-size": "10px",
-      "font-weight": "700",
-      color: "var(--warn)",
-      background: "var(--warn-bg)",
-      border: "1px solid var(--warn-line)",
-      "border-radius": "5px",
-      padding: "1.5px 6px",
-      "white-space": "nowrap",
-    }}
-  >
-    Yours
-  </span>
-);
+const YoursBadge: Component = () => <span class={css.badge}>Yours</span>;
 
 const OffChainBadge: Component = () => (
-  <span
-    style={{
-      flex: "none",
-      "font-size": "10px",
-      "font-weight": "700",
-      color: "var(--warn)",
-      background: "var(--warn-bg)",
-      border: "1px solid var(--warn-line)",
-      "border-radius": "5px",
-      padding: "1.5px 6px",
-      "white-space": "nowrap",
-    }}
-  >
-    ⚠ labels off-chain
-  </span>
+  <span class={css.badge}>⚠ labels off-chain</span>
 );
 
 const GovLine: Component<{ actionId: string; title: string | null }> = (
   props,
 ) => (
-  <div
-    style={{
-      "font-family": "var(--mono)",
-      "font-size": "10.5px",
-      color: "var(--gov)",
-      "margin-top": "4px",
-      "white-space": "nowrap",
-      overflow: "hidden",
-      "text-overflow": "ellipsis",
-    }}
-  >
+  <div class={css.govLine}>
     ◇ Info Action {shortGovId(props.actionId)}
     {props.title ? ` · ${props.title}` : ""}
   </div>
@@ -712,78 +513,31 @@ const GridRow: Component<EntryProps> = (props) => {
     // click still opens the survey in a new tab natively.
     <A
       href={`/survey/${encodeURIComponent(props.a.key)}`}
-      style={{
-        display: "grid",
-        "grid-template-columns": COLS,
-        gap: "14px",
-        "align-items": "center",
-        padding: "12px 6px",
-        "border-bottom": "1px solid #ECE2D0",
-        cursor: "pointer",
-        "text-decoration": "none",
-        color: "inherit",
-      }}
+      class={css.row}
+      style={{ "--cols": COLS }}
     >
-      <div
-        style={{
-          display: "flex",
-          "flex-direction": "column",
-          "align-items": "center",
-          gap: "5px",
-        }}
-      >
+      <div class={css.formCell}>
         <FormMosaic count={def().questions.length} />
         <span
-          style={{
-            "font-family": "var(--mono)",
-            "font-size": "9.5px",
-            "font-weight": "600",
-            color: closed() ? "#B3A892" : "#A98A6E",
-          }}
+          class={css.formCount}
+          classList={{ [css.formCountClosed]: closed() }}
         >
           {def().questions.length}
         </span>
       </div>
-      <div
-        style={{
-          display: "flex",
-          "justify-content": "center",
-          "align-items": "center",
-        }}
-      >
+      <div class={css.centerCell}>
         <VisGlyph status={v()} />
       </div>
-      <div
-        style={{
-          display: "flex",
-          "justify-content": "center",
-          "align-items": "center",
-        }}
-      >
+      <div class={css.centerCell}>
         <Show when={props.flags.responded}>
           <AnsweredCheck />
         </Show>
       </div>
-      <div style={{ "min-width": "0" }}>
-        <div
-          style={{
-            display: "flex",
-            "align-items": "center",
-            gap: "8px",
-            "min-width": "0",
-          }}
-        >
+      <div class={css.titleCell}>
+        <div class={css.titleLine}>
           <span
-            style={{
-              "font-family": "var(--serif)",
-              "font-size": "16px",
-              "font-weight": "600",
-              "letter-spacing": "-.005em",
-              color: closed() ? "#5C5648" : "var(--ink)",
-              "white-space": "nowrap",
-              overflow: "hidden",
-              "text-overflow": "ellipsis",
-            }}
+            class={css.surveyTitle}
+            classList={{ [css.surveyTitleClosed]: closed() }}
           >
             {def().title || "Untitled · external content"}
           </span>
@@ -794,16 +548,7 @@ const GridRow: Component<EntryProps> = (props) => {
             <OffChainBadge />
           </Show>
         </div>
-        <div
-          style={{
-            "font-size": "12px",
-            color: "#A79C88",
-            "white-space": "nowrap",
-            overflow: "hidden",
-            "text-overflow": "ellipsis",
-            "margin-top": "2px",
-          }}
-        >
+        <div class={css.desc}>
           {def().description ||
             "Presentation text unavailable — on-chain structure intact."}
         </div>
@@ -815,26 +560,14 @@ const GridRow: Component<EntryProps> = (props) => {
       </div>
       <RoleChips roles={def().eligibleRoles} />
       <div>
-        <div
-          style={{
-            "font-size": "13px",
-            "font-weight": "500",
-            color: closed() ? "#8A8270" : "#5A5246",
-          }}
-        >
+        <div class={css.ends} classList={{ [css.endsClosed]: closed() }}>
           {ends()}
         </div>
         <Show when={props.pro}>
           <div
             title="Full survey ref — defining transaction hash and output index"
-            style={{
-              "font-family": "var(--mono)",
-              "font-size": "10.5px",
-              color: closed() ? "#9C9486" : "var(--gov)",
-              "margin-top": "2px",
-              "word-break": "break-all",
-              "line-height": "1.4",
-            }}
+            class={css.ref}
+            classList={{ [css.refClosed]: closed() }}
           >
             epoch {def().endEpoch}
             <br />
@@ -842,15 +575,8 @@ const GridRow: Component<EntryProps> = (props) => {
           </div>
         </Show>
       </div>
-      <div style={{ "text-align": "right" }}>
-        <span
-          style={{
-            "font-family": "var(--mono)",
-            "font-size": "13px",
-            "font-weight": "600",
-            color: closed() ? "#6C6657" : "var(--ink)",
-          }}
-        >
+      <div class={css.repliesCell}>
+        <span class={css.replies} classList={{ [css.repliesClosed]: closed() }}>
           {v() === "cancelled" ? "—" : props.a.responseCount}
         </span>
       </div>
@@ -862,24 +588,9 @@ const GridRow: Component<EntryProps> = (props) => {
 const MetaChip: Component<{ label: string; children: JSX.Element }> = (
   props,
 ) => (
-  <span style={{ display: "inline-flex", "align-items": "center", gap: "6px" }}>
-    <span
-      style={{
-        "font-family": "var(--mono)",
-        "font-size": "9px",
-        "letter-spacing": ".07em",
-        "text-transform": "uppercase",
-        color: "#B0A488",
-        "font-weight": "600",
-      }}
-    >
-      {props.label}
-    </span>
-    <span
-      style={{ "font-size": "12.5px", color: "#5A5246", "font-weight": "500" }}
-    >
-      {props.children}
-    </span>
+  <span class={css.metaChip}>
+    <span class={css.metaLabel}>{props.label}</span>
+    <span class={css.metaValue}>{props.children}</span>
   </span>
 );
 
@@ -895,43 +606,17 @@ const CardRow: Component<EntryProps> = (props) => {
       ? endsText(props.a, props.tip, props.secondsPerEpoch, props.nowUnix)
       : "—";
   return (
-    <A
-      href={`/survey/${encodeURIComponent(props.a.key)}`}
-      style={{
-        display: "block",
-        padding: "14px 4px",
-        "border-bottom": "1px solid #ECE2D0",
-        "text-decoration": "none",
-        color: "inherit",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          "align-items": "center",
-          gap: "8px",
-          "min-width": "0",
-        }}
-      >
-        <span style={{ flex: "none", display: "inline-flex" }}>
+    <A href={`/survey/${encodeURIComponent(props.a.key)}`} class={css.card}>
+      <div class={css.cardHead}>
+        <span class={css.cardGlyph}>
           <VisGlyph status={v()} />
         </span>
         <Show when={props.flags.responded}>
           <AnsweredCheck />
         </Show>
         <span
-          style={{
-            flex: "1",
-            "min-width": "0",
-            "font-family": "var(--serif)",
-            "font-size": "16px",
-            "font-weight": "600",
-            "letter-spacing": "-.005em",
-            color: closed() ? "#5C5648" : "var(--ink)",
-            "white-space": "nowrap",
-            overflow: "hidden",
-            "text-overflow": "ellipsis",
-          }}
+          class={css.cardTitle}
+          classList={{ [css.cardTitleClosed]: closed() }}
         >
           {def().title || "Untitled · external content"}
         </span>
@@ -940,23 +625,13 @@ const CardRow: Component<EntryProps> = (props) => {
         </Show>
       </div>
 
-      <div
-        style={{
-          "font-size": "12.5px",
-          color: "#A79C88",
-          "margin-top": "3px",
-          display: "-webkit-box",
-          "-webkit-line-clamp": "2",
-          "-webkit-box-orient": "vertical",
-          overflow: "hidden",
-        }}
-      >
+      <div class={css.cardDesc}>
         {def().description ||
           "Presentation text unavailable — on-chain structure intact."}
       </div>
 
       <Show when={labelsMissing()}>
-        <div style={{ "margin-top": "6px" }}>
+        <div class={css.cardBadgeRow}>
           <OffChainBadge />
         </div>
       </Show>
@@ -964,23 +639,9 @@ const CardRow: Component<EntryProps> = (props) => {
         {(link) => <GovLine actionId={link().actionId} title={link().title} />}
       </Show>
 
-      <div
-        style={{
-          display: "flex",
-          "flex-wrap": "wrap",
-          "align-items": "center",
-          gap: "8px 16px",
-          "margin-top": "11px",
-        }}
-      >
+      <div class={css.cardMeta}>
         <MetaChip label="Form">
-          <span
-            style={{
-              display: "inline-flex",
-              "align-items": "center",
-              gap: "6px",
-            }}
-          >
+          <span class={css.cardFormInline}>
             <FormMosaic count={def().questions.length} size={16} />
             {def().questions.length}
           </span>
@@ -991,7 +652,10 @@ const CardRow: Component<EntryProps> = (props) => {
           </MetaChip>
         </Show>
         <MetaChip label="Ends">
-          <span style={{ color: closed() ? "#8A8270" : "#5A5246" }}>
+          <span
+            class={css.cardEnds}
+            classList={{ [css.cardEndsClosed]: closed() }}
+          >
             {ends()}
           </span>
         </MetaChip>
@@ -1005,13 +669,7 @@ const CardRow: Component<EntryProps> = (props) => {
       <Show when={props.pro}>
         <div
           title="Full survey ref — defining transaction hash and output index"
-          style={{
-            "font-family": "var(--mono)",
-            "font-size": "10.5px",
-            color: "var(--gov)",
-            "word-break": "break-all",
-            "margin-top": "8px",
-          }}
+          class={css.cardRef}
         >
           ref {fullRef(props.a.key)}
         </div>
@@ -1021,69 +679,26 @@ const CardRow: Component<EntryProps> = (props) => {
 };
 
 const Legend: Component = () => (
-  <div
-    style={{
-      display: "flex",
-      "align-items": "center",
-      gap: "9px",
-      "margin-top": "14px",
-      padding: "0 2px",
-      "flex-wrap": "wrap",
-    }}
-  >
+  <div class={css.legend}>
     <FormMosaic count={4} size={14} />
-    <span style={{ "font-size": "11.5px", color: "#A79C88" }}>
-      Form — one tile per question.
-    </span>
-    <span
-      style={{
-        display: "inline-flex",
-        "align-items": "center",
-        gap: "6px",
-        "margin-left": "10px",
-      }}
-    >
-      <span
-        style={{
-          width: "11px",
-          height: "11px",
-          "border-radius": "50%",
-          border: "2px solid #7E8B6A",
-          "box-sizing": "border-box",
-        }}
-      />
-      <span style={{ "font-size": "11.5px", color: "#A79C88" }}>public</span>
-      <span style={{ "margin-left": "6px", display: "inline-flex" }}>
+    <span class={css.legendText}>Form — one tile per question.</span>
+    <span class={css.legendGroup}>
+      <span class={css.legendDot} />
+      <span class={css.legendText}>public</span>
+      <span class={css.legendSealed}>
         <VisGlyph status="sealed" />
       </span>
-      <span style={{ "font-size": "11.5px", color: "#A79C88" }}>
-        sealed until reveal
-      </span>
-      <span
-        style={{
-          "margin-left": "10px",
-          color: "var(--ok)",
-          "font-weight": "700",
-          "font-size": "12px",
-        }}
-      >
-        ✓
-      </span>
-      <span style={{ "font-size": "11.5px", color: "#A79C88" }}>
-        you answered
-      </span>
+      <span class={css.legendText}>sealed until reveal</span>
+      <span class={css.legendCheck}>✓</span>
+      <span class={css.legendText}>you answered</span>
     </span>
   </div>
 );
 
 const Notice: Component<{ text: string; tone?: "danger" }> = (props) => (
   <div
-    style={{
-      padding: "26px 6px",
-      "text-align": "center",
-      "font-size": "13.5px",
-      color: props.tone === "danger" ? "var(--danger)" : "var(--muted)",
-    }}
+    class={css.notice}
+    classList={{ [css.noticeDanger]: props.tone === "danger" }}
   >
     {props.text}
   </div>
@@ -1108,55 +723,16 @@ function rememberIntroDismissed(): void {
 
 /** Dismissible first-visit explainer, shown until a wallet connects. */
 const IntroHero: Component<{ onDismiss: () => void }> = (props) => (
-  <div
-    style={{
-      position: "relative",
-      background: "var(--surface2)",
-      border: "1px solid var(--line)",
-      "border-radius": "var(--r-card)",
-      padding: "20px 22px",
-      "margin-bottom": "22px",
-    }}
-  >
+  <div class={css.intro}>
     <button
       onClick={() => props.onDismiss()}
       title="Dismiss"
-      style={{
-        position: "absolute",
-        top: "12px",
-        right: "12px",
-        background: "none",
-        border: "none",
-        color: "var(--faint)",
-        "font-size": "18px",
-        "line-height": "1",
-        cursor: "pointer",
-        padding: "2px",
-      }}
+      class={css.introDismiss}
     >
       ×
     </button>
-    <h2
-      style={{
-        "font-family": "var(--serif)",
-        "font-size": "20px",
-        "font-weight": "700",
-        "letter-spacing": "-.01em",
-        margin: "0 0 6px",
-        color: "var(--ink)",
-      }}
-    >
-      On-chain surveys &amp; polls on Cardano
-    </h2>
-    <p
-      style={{
-        "font-size": "13.5px",
-        "line-height": "1.6",
-        color: "var(--muted)",
-        margin: "0",
-        "max-width": "680px",
-      }}
-    >
+    <h2 class={css.introTitle}>On-chain surveys &amp; polls on Cardano</h2>
+    <p class={css.introBody}>
       Tessera records surveys directly in Cardano transaction metadata — no
       backend, no accounts. Browse everything below for free; connect a wallet
       to respond as your on-chain role (DRep, SPO, CC, or stakeholder) or to
@@ -1166,18 +742,13 @@ const IntroHero: Component<{ onDismiss: () => void }> = (props) => (
   </div>
 );
 
-const SKELETON_SHIMMER = "#E9E1D0";
+// Width/height are computed per-instance, so they ride in on CSS vars consumed
+// by `.skeletonBar`; everything else is static.
 function skeletonBar(width: string, height = "12px"): JSX.Element {
   return (
     <span
-      style={{
-        display: "block",
-        width,
-        height,
-        "border-radius": "5px",
-        background: SKELETON_SHIMMER,
-        animation: "pulse 1.4s ease-in-out infinite",
-      }}
+      class={css.skeletonBar}
+      style={{ "--bar-w": width, "--bar-h": height }}
     />
   );
 }
@@ -1189,63 +760,20 @@ const SkeletonRows: Component<{ narrow: boolean }> = (props) => (
       <Show
         when={!props.narrow}
         fallback={
-          <div
-            style={{
-              padding: "14px 4px",
-              "border-bottom": "1px solid #EFE8DA",
-              display: "flex",
-              "flex-direction": "column",
-              gap: "9px",
-            }}
-          >
+          <div class={css.skeletonCard}>
             {skeletonBar("58%", "14px")}
             {skeletonBar("38%")}
           </div>
         }
       >
-        <div
-          style={{
-            display: "grid",
-            "grid-template-columns": COLS,
-            gap: "14px",
-            "align-items": "center",
-            padding: "15px 6px",
-            "border-bottom": "1px solid #EFE8DA",
-          }}
-        >
-          <span
-            style={{
-              width: "26px",
-              height: "26px",
-              "border-radius": "6px",
-              background: SKELETON_SHIMMER,
-              animation: "pulse 1.4s ease-in-out infinite",
-              margin: "0 auto",
-            }}
-          />
-          <span
-            style={{
-              width: "12px",
-              height: "12px",
-              "border-radius": "50%",
-              background: SKELETON_SHIMMER,
-              animation: "pulse 1.4s ease-in-out infinite",
-            }}
-          />
+        <div class={css.skeletonRow} style={{ "--cols": COLS }}>
+          <span class={css.skeletonForm} />
+          <span class={css.skeletonDot} />
           <span />
           {skeletonBar(`${74 - (i % 3) * 14}%`, "13px")}
           {skeletonBar("72%")}
           {skeletonBar("60%")}
-          <span
-            style={{
-              "justify-self": "end",
-              width: "24px",
-              height: "12px",
-              "border-radius": "5px",
-              background: SKELETON_SHIMMER,
-              animation: "pulse 1.4s ease-in-out infinite",
-            }}
-          />
+          <span class={css.skeletonReplies} />
         </div>
       </Show>
     )}
@@ -1255,31 +783,4 @@ const SkeletonRows: Component<{ narrow: boolean }> = (props) => (
 /** Shorten a bech32 governance action id for inline display. */
 function shortGovId(id: string): string {
   return id.length > 18 ? `${id.slice(0, 12)}…${id.slice(-4)}` : id;
-}
-
-function filterStyle(on: boolean): JSX.CSSProperties {
-  return {
-    display: "inline-flex",
-    "align-items": "center",
-    gap: "7px",
-    "font-family": "inherit",
-    "font-size": "12.5px",
-    "font-weight": on ? "700" : "600",
-    cursor: "pointer",
-    "border-radius": "8px",
-    padding: "6px 12px",
-    "white-space": "nowrap",
-    border: on ? "1px solid var(--accent)" : "1px solid var(--line)",
-    background: on ? "var(--accent)" : "#F2ECDE",
-    color: on ? "#FBF8F1" : "#6B6356",
-  };
-}
-
-function filterCountStyle(on: boolean): JSX.CSSProperties {
-  return {
-    "font-family": "var(--mono)",
-    "font-size": "10.5px",
-    "font-weight": "600",
-    color: on ? "rgba(251,248,241,.75)" : "#A79C88",
-  };
 }

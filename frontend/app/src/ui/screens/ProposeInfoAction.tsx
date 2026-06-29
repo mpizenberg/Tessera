@@ -9,14 +9,7 @@
  * pinned/offered for download, so the served document always matches the hash.
  */
 
-import {
-  For,
-  Show,
-  createMemo,
-  createSignal,
-  type Component,
-  type JSX,
-} from "solid-js";
+import { For, Show, createMemo, createSignal, type Component } from "solid-js";
 import { A } from "@solidjs/router";
 import { blake2b } from "@noble/hashes/blake2.js";
 
@@ -28,6 +21,7 @@ import { IPFS_PROVIDERS, type ProviderId } from "~/enrichment/providers";
 import { TxLink } from "~/ui/components/TxLink";
 import { Note, type NoteKind } from "~/ui/components/Note";
 import { isSafeAnchorUri, networkMismatch } from "~/ui/format";
+import css from "./ProposeInfoAction.module.css";
 
 /**
  * An anchor document loaded from disk: the *exact* bytes (what the on-chain hash
@@ -285,45 +279,32 @@ export const ProposeInfoAction: Component = () => {
   };
 
   return (
-    <main
-      style={{
-        "max-width": "780px",
-        margin: "0 auto",
-        padding: "22px 24px 90px",
-      }}
-    >
-      <A href="/" style={backLinkStyle()}>
-        <span style={{ "font-size": "15px" }}>←</span> All surveys
+    <main class={css.main}>
+      <A href="/" class={css.backLink}>
+        <span class={css.backArrow}>←</span> All surveys
       </A>
 
-      <div
-        style={{
-          display: "flex",
-          "align-items": "center",
-          gap: "10px",
-          "margin-top": "10px",
-        }}
-      >
-        <span style={govPillStyle()}>Governance</span>
-        <h1 style={titleStyle()}>Propose a survey Info Action</h1>
+      <div class={css.titleRow}>
+        <span class={css.govPill}>Governance</span>
+        <h1 class={css.title}>Propose a survey Info Action</h1>
       </div>
-      <p style={leadStyle()}>
+      <p class={css.lead}>
         Build and sign a Conway <b>Info Action</b> that advertises a CIP-179
         survey. The action carries no on-chain effect — it only points voters at
         the survey via its anchor. A refundable{" "}
-        <span style={mono()}>gov_action_deposit</span> is taken from your wallet
-        and returned to your stake address when the action is ratified or
+        <span class={css.mono}>gov_action_deposit</span> is taken from your
+        wallet and returned to your stake address when the action is ratified or
         expires (your wallet shows the exact amount before you sign).
       </p>
 
       {/* 1 · Load the anchor */}
-      <div style={stepHeadStyle()}>1 · Load the anchor document</div>
-      <div style={cardStyle()}>
-        <p style={{ ...hintStyle(), "margin-top": "0" }}>
-          Choose the CIP-108 anchor <span style={mono()}>.jsonld</span> file
-          (its <span style={mono()}>body.cip179</span> carries the survey link).
-          It's read locally — the on-chain hash is taken over the file's exact
-          bytes, so they're never re-formatted.
+      <div class={css.stepHead}>1 · Load the anchor document</div>
+      <div class={css.card}>
+        <p class={css.hintFlush}>
+          Choose the CIP-108 anchor <span class={css.mono}>.jsonld</span> file
+          (its <span class={css.mono}>body.cip179</span> carries the survey
+          link). It's read locally — the on-chain hash is taken over the file's
+          exact bytes, so they're never re-formatted.
         </p>
         <input
           type="file"
@@ -333,7 +314,7 @@ export const ProposeInfoAction: Component = () => {
             // Allow re-loading the same filename after an edit on disk.
             e.currentTarget.value = "";
           }}
-          style={{ "font-size": "13px", "margin-top": "4px" }}
+          class={css.fileInput}
         />
         <Show when={loadError()}>
           <Note kind="danger" style={{ "margin-top": "12px" }}>
@@ -345,26 +326,17 @@ export const ProposeInfoAction: Component = () => {
       {/* 1b · Loaded document — survey ref, hash, publish */}
       <Show when={anchor()}>
         {(a) => (
-          <div style={cardStyle()}>
-            <div style={labelStyle()}>Loaded</div>
-            <div
-              style={{
-                ...mono(),
-                "font-size": "12.5px",
-                color: "var(--ink)",
-                "margin-bottom": "12px",
-              }}
-            >
-              {a().fileName}
-            </div>
+          <div class={css.card}>
+            <div class={css.label}>Loaded</div>
+            <div class={css.loadedName}>{a().fileName}</div>
 
             {/* Validation: shape problems block submission. */}
             <Show when={a().problems.length > 0}>
               <Note kind="danger">
-                <div style={{ "font-weight": "700", "margin-bottom": "6px" }}>
+                <div class={css.problemsTitle}>
                   Not a valid CIP-179 survey link:
                 </div>
-                <ul style={{ margin: "0", "padding-left": "18px" }}>
+                <ul class={css.problemsList}>
                   <For each={a().problems}>{(p) => <li>{p}</li>}</For>
                 </ul>
               </Note>
@@ -374,29 +346,20 @@ export const ProposeInfoAction: Component = () => {
             <Show when={a().surveyRef}>
               {(ref) => (
                 <>
-                  <div style={labelStyle()}>Links to survey</div>
-                  <div
-                    style={{
-                      ...mono(),
-                      "font-size": "12.5px",
-                      "word-break": "break-all",
-                      color: "var(--ink)",
-                    }}
-                  >
+                  <div class={css.label}>Links to survey</div>
+                  <div class={css.surveyRef}>
                     {ref().txId}
-                    <span style={{ color: "var(--dim)" }}>
-                      {" "}
-                      · index {ref().index}
-                    </span>
+                    <span class={css.refIndex}> · index {ref().index}</span>
                   </div>
                   <Show when={linkedSurvey()}>
-                    {(s) => (
-                      <div style={{ ...hintStyle(), "margin-top": "6px" }}>
+                    {(survey) => (
+                      <div class={css.hintTight}>
                         On-chain:{" "}
-                        <b style={{ color: "var(--ink)" }}>
-                          {s().record.definition.title || "Untitled survey"}
+                        <b class={css.onchainTitle}>
+                          {survey().record.definition.title ||
+                            "Untitled survey"}
                         </b>{" "}
-                        · end_epoch {s().record.definition.endEpoch}
+                        · end_epoch {survey().record.definition.endEpoch}
                       </div>
                     )}
                   </Show>
@@ -414,44 +377,43 @@ export const ProposeInfoAction: Component = () => {
             <Show
               when={hasPinning()}
               fallback={
-                <p style={hintStyle()}>
+                <p class={css.hint}>
                   Host these exact bytes at a public URL (a GitHub raw link, or
                   add an IPFS provider in{" "}
-                  <A href="/settings" style={{ color: "var(--gov)" }}>
+                  <A href="/settings" class={css.settingsLink}>
                     Settings
                   </A>{" "}
                   to pin from here), then paste the URL in step 2.
                 </p>
               }
             >
-              <p style={hintStyle()}>
+              <p class={css.hint}>
                 Pin to the IPFS providers configured in your Settings, in one
                 click. The exact bytes below are pinned, so the served document
                 matches the on-chain hash.
               </p>
             </Show>
 
-            <div
-              style={{
-                display: "flex",
-                gap: "8px",
-                "flex-wrap": "wrap",
-                margin: "10px 0",
-              }}
-            >
+            <div class={css.actionRow}>
               <Show when={hasPinning()}>
                 <button
                   onClick={() => void pinToIpfs()}
                   disabled={pinning()}
-                  style={btnStyle(true)}
+                  class={css.btnPrimary}
                 >
                   {pinning() ? "Pinning…" : "Pin to IPFS"}
                 </button>
               </Show>
-              <button onClick={download} style={btnStyle(!hasPinning())}>
+              <button
+                onClick={download}
+                classList={{
+                  [css.btn]: hasPinning(),
+                  [css.btnPrimary]: !hasPinning(),
+                }}
+              >
                 Download .jsonld
               </button>
-              <button onClick={() => void copyHash()} style={btnStyle(false)}>
+              <button onClick={() => void copyHash()} class={css.btn}>
                 {copied() ? "Copied hash ✓" : "Copy anchor hash"}
               </button>
             </div>
@@ -467,49 +429,39 @@ export const ProposeInfoAction: Component = () => {
               <Note kind="danger">{pinError()}</Note>
             </Show>
 
-            <div style={labelStyle()}>Anchor hash (blake2b-256)</div>
-            <div
-              style={{
-                ...mono(),
-                "font-size": "11.5px",
-                "word-break": "break-all",
-                color: "var(--gov)",
-                "margin-bottom": "12px",
-              }}
-            >
-              {a().hashHex}
-            </div>
-            <pre style={codeStyle()}>{a().text}</pre>
+            <div class={css.label}>Anchor hash (blake2b-256)</div>
+            <div class={css.hashValue}>{a().hashHex}</div>
+            <pre class={css.code}>{a().text}</pre>
           </div>
         )}
       </Show>
 
       {/* 2 · Anchor URL */}
-      <div style={stepHeadStyle()}>2 · Anchor URL</div>
-      <div style={cardStyle()}>
+      <div class={css.stepHead}>2 · Anchor URL</div>
+      <div class={css.card}>
         <input
           type="url"
           value={url()}
           onInput={(e) => setUrl(e.currentTarget.value)}
           placeholder="ipfs://… or https://…/info-action-survey-link.jsonld"
-          style={inputStyle()}
+          class={css.input}
         />
-        <p style={hintStyle()}>
+        <p class={css.hint}>
           Auto-filled when you pin to IPFS above; otherwise paste where you
           hosted the document. Stored on-chain alongside its hash.
         </p>
         <Show when={url().trim() !== "" && !urlValid()}>
           <Note kind="danger">
-            The anchor URL must be an <span style={mono()}>ipfs://</span> or{" "}
-            <span style={mono()}>https://</span> address — this one will be
+            The anchor URL must be an <span class={css.mono}>ipfs://</span> or{" "}
+            <span class={css.mono}>https://</span> address — this one will be
             rejected before signing.
           </Note>
         </Show>
       </div>
 
       {/* 3 · Sign & submit */}
-      <div style={stepHeadStyle()}>3 · Sign &amp; submit</div>
-      <div style={cardStyle()}>
+      <div class={css.stepHead}>3 · Sign &amp; submit</div>
+      <div class={css.card}>
         <Show
           when={app.wallet()}
           fallback={
@@ -539,7 +491,8 @@ export const ProposeInfoAction: Component = () => {
             <button
               onClick={() => void submit()}
               disabled={!canSubmit()}
-              style={submitBtnStyle(canSubmit())}
+              class={css.submitBtn}
+              classList={{ [css.submitBtnEnabled]: canSubmit() }}
             >
               {busy() ? "Building & signing…" : "Build, sign & submit"}
             </button>
@@ -547,19 +500,11 @@ export const ProposeInfoAction: Component = () => {
         >
           {(h) => (
             <Note kind="ok">
-              <div style={{ "font-weight": "700", "margin-bottom": "5px" }}>
-                Proposal submitted ✓
-              </div>
-              <div
-                style={{
-                  ...mono(),
-                  "font-size": "11.5px",
-                  "word-break": "break-all",
-                }}
-              >
+              <div class={css.submittedTitle}>Proposal submitted ✓</div>
+              <div class={css.txLine}>
                 <TxLink hash={h()} color="var(--ok)" />
               </div>
-              <p style={{ ...hintStyle(), "margin-bottom": "0" }}>
+              <p class={css.hintNoBottom}>
                 Once it's in a block, the survey page will show it as “Linked to
                 governance” after the indexer resolves the anchor.
               </p>
@@ -574,143 +519,3 @@ export const ProposeInfoAction: Component = () => {
     </main>
   );
 };
-
-// --- styles -----------------------------------------------------------------
-
-const mono = (): JSX.CSSProperties => ({ "font-family": "var(--mono)" });
-
-function backLinkStyle(): JSX.CSSProperties {
-  return {
-    display: "inline-flex",
-    "align-items": "center",
-    gap: "7px",
-    "font-size": "13.5px",
-    "font-weight": "600",
-    color: "var(--muted)",
-    "text-decoration": "none",
-    padding: "6px 0",
-  };
-}
-function govPillStyle(): JSX.CSSProperties {
-  return {
-    "font-family": "var(--mono)",
-    "font-size": "10px",
-    "font-weight": "700",
-    "letter-spacing": ".04em",
-    "text-transform": "uppercase",
-    color: "var(--gov)",
-    background: "var(--gov-bg)",
-    border: "1px solid var(--gov-line)",
-    "border-radius": "var(--r-2xs)",
-    padding: "4px 8px",
-  };
-}
-function titleStyle(): JSX.CSSProperties {
-  return {
-    "font-size": "24px",
-    "font-weight": "700",
-    "letter-spacing": "-.018em",
-    margin: "0",
-    color: "var(--ink)",
-  };
-}
-function leadStyle(): JSX.CSSProperties {
-  return {
-    "font-size": "14px",
-    color: "var(--muted)",
-    "line-height": "1.55",
-    margin: "12px 0 0",
-  };
-}
-function stepHeadStyle(): JSX.CSSProperties {
-  return {
-    "font-family": "var(--mono)",
-    "font-size": "11px",
-    "font-weight": "700",
-    "letter-spacing": ".06em",
-    "text-transform": "uppercase",
-    color: "var(--dim)",
-    margin: "24px 2px 0",
-  };
-}
-function cardStyle(): JSX.CSSProperties {
-  return {
-    background: "#fff",
-    border: "1px solid var(--line)",
-    "border-radius": "var(--r-md)",
-    padding: "16px 18px",
-    "margin-top": "10px",
-  };
-}
-function labelStyle(): JSX.CSSProperties {
-  return {
-    "font-size": "12px",
-    "font-weight": "700",
-    color: "var(--muted)",
-    "margin-bottom": "6px",
-  };
-}
-function hintStyle(): JSX.CSSProperties {
-  return {
-    "font-size": "12px",
-    color: "var(--dim)",
-    "line-height": "1.5",
-    margin: "10px 0 0",
-  };
-}
-function codeStyle(): JSX.CSSProperties {
-  return {
-    margin: "0",
-    background: "#0B0E14",
-    "border-radius": "var(--r-control)",
-    padding: "13px 14px",
-    "font-family": "var(--mono)",
-    "font-size": "11px",
-    "line-height": "1.6",
-    color: "#9FE7C0",
-    "white-space": "pre-wrap",
-    "word-break": "break-word",
-    "max-height": "320px",
-    overflow: "auto",
-  };
-}
-function inputStyle(): JSX.CSSProperties {
-  return {
-    width: "100%",
-    border: "1px solid var(--line)",
-    "border-radius": "var(--r-control)",
-    padding: "11px 13px",
-    "font-family": "var(--mono)",
-    "font-size": "13px",
-    color: "var(--ink)",
-    outline: "none",
-    "box-sizing": "border-box",
-  };
-}
-function btnStyle(primary: boolean): JSX.CSSProperties {
-  return {
-    "font-family": "inherit",
-    "font-size": "12.5px",
-    "font-weight": "700",
-    cursor: "pointer",
-    "border-radius": "var(--r-input)",
-    padding: "8px 13px",
-    color: primary ? "#fff" : "var(--gov)",
-    background: primary ? "var(--gov)" : "#fff",
-    border: `1px solid ${primary ? "var(--gov)" : "var(--gov-line)"}`,
-  };
-}
-function submitBtnStyle(enabled: boolean): JSX.CSSProperties {
-  return {
-    "font-family": "inherit",
-    "font-size": "14px",
-    "font-weight": "700",
-    cursor: enabled ? "pointer" : "not-allowed",
-    color: "#fff",
-    background: enabled ? "var(--gov)" : "var(--dim)",
-    border: "none",
-    "border-radius": "var(--r-md)",
-    padding: "12px 20px",
-    opacity: enabled ? "1" : ".7",
-  };
-}

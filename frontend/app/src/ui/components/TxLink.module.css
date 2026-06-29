@@ -1,0 +1,9 @@
+/* Co-located styles for TxLink.tsx. */
+
+.link {
+  /* Colour is a prop, bridged via the --tx-color custom property; it defaults
+     to `inherit` so the link picks up the surrounding text colour. */
+  color: var(--tx-color, inherit);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

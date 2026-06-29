@@ -1,0 +1,35 @@
+/*
+ * Co-located styles for SegmentedToggle.tsx (CSS Modules).
+ *
+ * Static track/button styling lives here; design tokens (`var(--…)`) come from
+ * theme.css `:root`. The base `.btn` carries the unselected (off) state and
+ * `.on` overrides it for the selected segment, toggled via `classList`.
+ *
+ * Prop-driven bits stay inline in the .tsx: the track's `padding`
+ * (`props.trackPadding`) and `...props.wrapStyle` spread, and each button's
+ * `font-size` (`props.fontSize`) and `padding` (`props.buttonPadding`).
+ */
+
+.track {
+  display: inline-flex;
+  align-items: center;
+  background: var(--toggle-bg);
+  border: 1px solid var(--toggle-line);
+  border-radius: 9px;
+}
+
+.btn {
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--toggle-text-off);
+}
+
+.on {
+  font-weight: 700;
+  background: var(--accent);
+  color: #fff;
+}

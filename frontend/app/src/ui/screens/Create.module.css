@@ -1,0 +1,934 @@
+/*
+ * Co-located styles for Create.tsx.
+ *
+ * Convention: one `Foo.module.css` next to `Foo.tsx`, imported as `s` and
+ * applied via `class={s.x}`. Static styles live here; design tokens
+ * (`var(--…)`) come from theme.css `:root`. Signal/prop-driven toggles use
+ * state classes flipped with `classList`; genuinely continuous values bridge
+ * through inline CSS custom properties.
+ */
+
+/* ---- layout shells -------------------------------------------------------- */
+
+.main {
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 22px 24px 90px;
+}
+
+.singleColMain {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 22px 24px 90px;
+}
+
+.gridTop {
+  margin-top: 20px;
+}
+
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 6px 0;
+}
+
+.backArrow {
+  font-size: 15px;
+}
+
+.title {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.018em;
+  line-height: 1.16;
+  margin: 10px 0 0;
+  color: var(--ink);
+}
+
+.subtitle {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 8px 0 0;
+}
+
+/* ---- cards & section heads ------------------------------------------------ */
+
+.card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 18px 20px;
+  margin-top: 10px;
+}
+
+/*
+ * Governance-tinted variant of `.card`, used when the survey is being tied to
+ * an Info Action (same blue family as the linkage UI elsewhere).
+ */
+.govCard {
+  composes: card;
+  background: var(--gov-bg);
+  border-color: var(--gov-line);
+}
+
+/* `.card` with the soft surface treatment (owner credential note). */
+.cardSoft {
+  composes: card;
+  background: var(--card-bg);
+  border-color: var(--card-line);
+}
+
+.numberedHead {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+  margin: 0 2px 11px;
+}
+
+.headTrailing {
+  color: var(--dim);
+}
+
+.section {
+  margin-top: 22px;
+}
+
+.questionsSection {
+  margin-top: 24px;
+}
+
+.questionList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ---- generic field bits --------------------------------------------------- */
+
+.blockLabel {
+  display: block;
+}
+
+.blockLabelGap {
+  display: block;
+  margin-top: 14px;
+}
+
+.fieldLabel {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.textInput {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  padding: 11px 13px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  outline: none;
+  box-sizing: border-box;
+  margin-top: 0;
+}
+
+.textArea {
+  composes: textInput;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.monoInput {
+  composes: textInput;
+  font-family: var(--mono);
+}
+
+.miniNumber {
+  width: 110px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  padding: 9px 11px;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--ink);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.inlineField {
+  display: flex;
+  flex-direction: column;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--dim);
+  line-height: 1.5;
+  margin: 10px 0 0;
+}
+
+.warnNote {
+  font-size: 12px;
+  color: var(--warn);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-line);
+  border-radius: var(--r-control);
+  padding: 10px 12px;
+  line-height: 1.5;
+  margin-top: 10px;
+}
+
+/* Sealed-mode reassurance: same box as `.warnNote`, neutral card colors. */
+.sealedNote {
+  composes: warnNote;
+  color: var(--label);
+  background: var(--card-bg);
+  border-color: var(--card-line);
+}
+
+/* ---- roles ---------------------------------------------------------------- */
+
+.rowWrap {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/*
+ * Role toggle. The active border/background/text colors are role-specific, so
+ * the on-state colors are bridged in via inline custom properties; the
+ * `.roleToggleOn` modifier just consumes them.
+ */
+.roleToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+}
+
+.roleToggleOn {
+  border-color: var(--role-color);
+  background: var(--role-bg);
+  color: var(--role-color);
+}
+
+.checkbox {
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  border: 2px solid var(--line2);
+  background: #fff;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.checkboxOn {
+  border: none;
+  background: var(--accent);
+}
+
+/* ---- gov toggle / switch -------------------------------------------------- */
+
+.govToggleRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.govSwitchTrack {
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 22px;
+  border-radius: var(--r-pill);
+  background: var(--track);
+  border: 1px solid var(--line);
+  transition: background 0.15s ease;
+}
+
+.govSwitchTrackOn {
+  background: var(--gov);
+  border-color: var(--gov);
+}
+
+.govSwitchKnob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: left 0.15s ease;
+}
+
+.govSwitchKnobOn {
+  left: 18px;
+}
+
+.govToggleText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+
+.govToggleTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.govToggleTitleOn {
+  color: var(--gov);
+}
+
+.govToggleDesc {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.endEpochField {
+  display: block;
+  margin-top: 18px;
+}
+
+.endEpochLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.govAutoBadge {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--gov);
+  background: #fff;
+  border: 1px solid var(--gov-line);
+  border-radius: var(--r-3xs);
+  padding: 3px 6px;
+}
+
+/* End-epoch input: mono, capped width, locked variant tinted gov. */
+.epochInput {
+  composes: monoInput;
+  max-width: 200px;
+}
+
+.epochInputLocked {
+  background: var(--surface3);
+  color: var(--gov);
+  border-color: var(--gov-line);
+  cursor: not-allowed;
+}
+
+.revealLine {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--accent);
+  margin-top: 9px;
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+.govNote {
+  font-size: 12px;
+  color: var(--gov);
+  background: #fff;
+  border: 1px solid var(--gov-line);
+  border-radius: var(--r-control);
+  padding: 10px 12px;
+  line-height: 1.5;
+  margin-top: 10px;
+}
+
+/* ---- mode cards (embedded/external, public/sealed) ------------------------ */
+
+.modeGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.modeCard {
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: var(--r-control);
+  padding: 12px 13px;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+.modeCardOn {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.modeTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.modeTitleSealed {
+  composes: modeTitle;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.modeDesc {
+  font-size: 11.5px;
+  color: var(--faint);
+  line-height: 1.4;
+  margin-top: 5px;
+}
+
+.externalNote {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 14px 0 0;
+}
+
+.settingsLink {
+  color: var(--accent);
+}
+
+/* ---- sealed config -------------------------------------------------------- */
+
+.sealedConfig {
+  margin-top: 16px;
+}
+
+.fieldLabelGap {
+  composes: fieldLabel;
+  margin-top: 14px;
+}
+
+.chainHash {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--line2);
+  border-radius: var(--r-control);
+  padding: 9px 11px;
+}
+
+.pillRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.pill {
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 7px 13px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+}
+
+.pillOn {
+  font-weight: 700;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.roundInput {
+  composes: monoInput;
+  max-width: 240px;
+}
+
+.paddingInput {
+  composes: monoInput;
+  max-width: 160px;
+}
+
+/* ---- questions ------------------------------------------------------------ */
+
+.qHeadRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.qHeadLeft {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.qHeadRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.qChip {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-radius: var(--r-chip);
+  padding: 5px 8px;
+}
+
+.select {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  padding: 7px 10px;
+  cursor: pointer;
+}
+
+.requiredBtn {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  border-radius: var(--r-chip);
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+}
+
+.requiredBtnOn {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.removeBtn {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-xs);
+  border: 1px solid #f0d2d0;
+  background: #fff;
+  color: var(--danger);
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+  flex: none;
+}
+
+.promptInput {
+  composes: textInput;
+  margin-top: 12px;
+}
+
+.typeFields {
+  margin-top: 12px;
+}
+
+/* ---- type fields ---------------------------------------------------------- */
+
+.budgetInput {
+  composes: monoInput;
+  max-width: 140px;
+}
+
+.ratingBlock {
+  margin-top: 14px;
+}
+
+.ratingPillRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.customFields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.customInput {
+  composes: monoInput;
+  font-size: 12.5px;
+}
+
+/* ---- options editor ------------------------------------------------------- */
+
+.optionsList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.scaleHint {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--dim);
+  letter-spacing: 0.03em;
+}
+
+.optionRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.optIndex {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dim);
+  width: 18px;
+  text-align: center;
+  flex: none;
+}
+
+.optionInput {
+  composes: textInput;
+  margin-top: 0;
+}
+
+.endBadge {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  border-radius: var(--r-3xs);
+  padding: 3px 6px;
+  white-space: nowrap;
+  flex: none;
+}
+
+.endBadgeWorst {
+  composes: endBadge;
+  color: #cda892;
+  background: #fbf0f0;
+}
+
+.endBadgeBest {
+  composes: endBadge;
+  color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.addOptionBtn {
+  align-self: flex-start;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: var(--r-control);
+  padding: 7px 12px;
+  border: 1px dashed var(--line2);
+  background: var(--card-bg);
+  color: var(--muted);
+}
+
+/* ---- min/max + numeric rows ----------------------------------------------- */
+
+.fieldRow {
+  display: flex;
+  gap: 16px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+/* ---- add-a-question panel ------------------------------------------------- */
+
+.addPanel {
+  background: #fff;
+  border: 1px dashed #d8cdb6;
+  border-radius: var(--r-sm);
+  padding: 16px 18px;
+  margin-top: 12px;
+}
+
+.addPanelHead {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--body);
+  margin-bottom: 11px;
+}
+
+.addBtnRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.addTypeBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--body);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.addTypeTag {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+}
+
+/* ---- owner section -------------------------------------------------------- */
+
+.ownerText {
+  font-size: 12.5px;
+  color: var(--label);
+  line-height: 1.5;
+}
+
+.ownerHeading {
+  color: #5b4a22;
+}
+
+.ownerKey {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--dim);
+  margin-left: 6px;
+}
+
+/* ---- summary card --------------------------------------------------------- */
+
+.summaryCard {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 20px;
+  box-shadow: var(--shadow-card);
+}
+
+.summaryTitle {
+  font-family: var(--serif);
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 12px 0 0;
+  color: var(--ink);
+}
+
+.summaryRows {
+  display: flex;
+  flex-direction: column;
+  margin-top: 14px;
+}
+
+.summaryRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 0;
+  border-top: 1px solid var(--line2);
+}
+
+.summaryRowLabel {
+  font-size: 12.5px;
+  color: var(--muted);
+  flex: none;
+}
+
+.summaryRowValue {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: right;
+}
+
+/* ---- publish button + note ------------------------------------------------ */
+
+.publishBtn {
+  width: 100%;
+  margin-top: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  background: var(--line2);
+  color: var(--dim);
+  border: none;
+  border-radius: var(--r-md);
+  padding: 15px;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.publishBtnEnabled {
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 10px 24px -10px var(--accent-shadow);
+}
+
+.publishArrow {
+  font-size: 16px;
+}
+
+.publishNote {
+  text-align: center;
+  font-size: 10.5px;
+  color: var(--danger);
+  margin: 10px 0 0;
+  line-height: 1.5;
+}
+
+.publishNoteOk {
+  color: var(--dim);
+}
+
+/* ---- submitted panel ------------------------------------------------------ */
+
+.submittedCard {
+  composes: card;
+  text-align: center;
+  margin-top: 20px;
+}
+
+.submittedTick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  background: var(--ok-bg);
+  color: var(--ok);
+  font-size: 22px;
+}
+
+.submittedTitle {
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin: 14px 0 0;
+}
+
+.submittedBody {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 8px auto 0;
+  max-width: 440px;
+}
+
+.submittedRef {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--faint);
+  margin-top: 12px;
+  word-break: break-all;
+}
+
+.submittedActions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
+
+.submittedPrimary {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--r-control);
+  padding: 11px 18px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.submittedSecondary {
+  background: #fff;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  padding: 11px 18px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* ---- connect prompt ------------------------------------------------------- */
+
+.connectCard {
+  composes: card;
+  margin-top: 16px;
+  text-align: center;
+}
+
+.connectTitle {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.connectBody {
+  font-size: 13.5px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 8px auto 0;
+  max-width: 440px;
+}

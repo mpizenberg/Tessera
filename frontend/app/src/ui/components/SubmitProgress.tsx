@@ -4,16 +4,10 @@
  * single button that just says "Submitting…". Single-step submits don't use it.
  */
 
-import {
-  For,
-  Show,
-  createUniqueId,
-  onMount,
-  type Component,
-  type JSX,
-} from "solid-js";
+import { For, Show, createUniqueId, onMount, type Component } from "solid-js";
 
 import { Spinner } from "~/ui/components/Spinner";
+import css from "./SubmitProgress.module.css";
 
 export interface SubmitStep {
   key: string;
@@ -29,7 +23,7 @@ export const SubmitProgressModal: Component<{
   currentKey: string | null;
 }> = (props) => {
   const activeIndex = () =>
-    props.steps.findIndex((s) => s.key === props.currentKey);
+    props.steps.findIndex((step) => step.key === props.currentKey);
   const stateOf = (i: number): StepState => {
     const a = activeIndex();
     if (a < 0) return "pending";
@@ -44,39 +38,32 @@ export const SubmitProgressModal: Component<{
   onMount(() => cardRef?.focus());
 
   return (
-    <div style={backdropStyle} role="presentation">
+    <div class={css.backdrop} role="presentation">
       <div
         ref={cardRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         tabindex="-1"
-        style={{ ...cardStyle, outline: "none" }}
+        class={css.card}
       >
-        <h3 id={titleId} style={titleStyle}>
+        <h3 id={titleId} class={css.title}>
           {props.title}
         </h3>
         {/* Screen-reader announcement of the current step (the visual list
             below conveys the same via icon/weight, which AT can't read). */}
-        <p style={srOnlyStyle} aria-live="polite">
+        <p class={css.srOnly} aria-live="polite">
           <Show when={activeIndex() >= 0}>
             Step {activeIndex() + 1} of {props.steps.length}:{" "}
             {props.steps[activeIndex()]?.label}
           </Show>
         </p>
-        <div
-          style={{
-            display: "flex",
-            "flex-direction": "column",
-            gap: "13px",
-            "margin-top": "18px",
-          }}
-        >
+        <div class={css.steps}>
           <For each={props.steps}>
             {(step, i) => <StepRow label={step.label} state={stateOf(i())} />}
           </For>
         </div>
-        <p style={noteStyle}>
+        <p class={css.note}>
           Approve the transaction in your wallet when prompted — don't close
           this tab.
         </p>
@@ -85,27 +72,14 @@ export const SubmitProgressModal: Component<{
   );
 };
 
-/** Visually hidden but exposed to assistive tech (announcement region). */
-const srOnlyStyle: JSX.CSSProperties = {
-  position: "absolute",
-  width: "1px",
-  height: "1px",
-  padding: "0",
-  margin: "-1px",
-  overflow: "hidden",
-  clip: "rect(0 0 0 0)",
-  "white-space": "nowrap",
-  border: "0",
-};
-
 const StepRow: Component<{ label: string; state: StepState }> = (props) => (
-  <div style={{ display: "flex", "align-items": "center", gap: "11px" }}>
+  <div class={css.row}>
     <StepIcon state={props.state} />
     <span
-      style={{
-        "font-size": "13.5px",
-        "font-weight": props.state === "active" ? "700" : "600",
-        color: props.state === "pending" ? "var(--faint)" : "var(--ink)",
+      class={css.label}
+      classList={{
+        [css.labelActive]: props.state === "active",
+        [css.labelPending]: props.state === "pending",
       }}
     >
       {props.label}
@@ -116,77 +90,13 @@ const StepRow: Component<{ label: string; state: StepState }> = (props) => (
 const StepIcon: Component<{ state: StepState }> = (props) => (
   <Show
     when={props.state !== "pending"}
-    fallback={
-      <span
-        style={{
-          width: "16px",
-          height: "16px",
-          "border-radius": "50%",
-          border: "2px solid var(--line)",
-          flex: "none",
-        }}
-      />
-    }
+    fallback={<span class={css.iconPending} />}
   >
     <Show
       when={props.state === "active"}
-      fallback={
-        <span
-          style={{
-            display: "inline-flex",
-            "align-items": "center",
-            "justify-content": "center",
-            width: "16px",
-            height: "16px",
-            "border-radius": "50%",
-            background: "var(--ok-bg)",
-            color: "var(--ok)",
-            "font-size": "11px",
-            flex: "none",
-          }}
-        >
-          ✓
-        </span>
-      }
+      fallback={<span class={css.iconDone}>✓</span>}
     >
       <Spinner />
     </Show>
   </Show>
 );
-
-const backdropStyle: JSX.CSSProperties = {
-  position: "fixed",
-  inset: "0",
-  background: "rgba(40,33,20,.45)",
-  "backdrop-filter": "blur(2px)",
-  display: "flex",
-  "align-items": "center",
-  "justify-content": "center",
-  padding: "20px",
-  "z-index": "80",
-};
-
-const cardStyle: JSX.CSSProperties = {
-  background: "#fff",
-  border: "1px solid var(--line)",
-  "border-radius": "var(--r-card)",
-  "box-shadow": "0 24px 60px -20px rgba(70,55,30,.5)",
-  padding: "24px 26px",
-  width: "100%",
-  "max-width": "380px",
-};
-
-const titleStyle: JSX.CSSProperties = {
-  "font-size": "18px",
-  "font-weight": "800",
-  "letter-spacing": "-.01em",
-  margin: "0",
-  color: "var(--ink)",
-};
-
-const noteStyle: JSX.CSSProperties = {
-  "font-size": "12px",
-  color: "var(--muted)",
-  "line-height": "1.5",
-  margin: "18px 0 0",
-};

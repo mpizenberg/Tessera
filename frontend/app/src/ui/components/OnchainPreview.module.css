@@ -1,0 +1,122 @@
+/*
+ * Co-located styles for OnchainPreview.tsx (CSS Modules POC).
+ *
+ * Convention: one `Foo.module.css` next to `Foo.tsx`, imported as `s` and
+ * applied via `class={s.x}`. Static styles live here; design tokens
+ * (`var(--…)`) come from theme.css `:root`. Anything genuinely signal-driven
+ * stays inline in the .tsx (none in this file). Pseudo-classes like :hover /
+ * :focus-visible — impossible with inline styles — live here too.
+ */
+
+.card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 16px 18px;
+  margin-top: 12px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+  font-weight: 600;
+}
+
+.encBadge {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--warn);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-line);
+  border-radius: var(--r-3xs);
+  padding: 2px 6px;
+}
+
+.stat {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--body);
+}
+
+/*
+ * The leading stat owns `margin-left: auto`, pushing the stat cluster to the
+ * right edge of the head row. This replaces a dedicated empty spacer <span>
+ * that used to exist purely for layout — one fewer DOM node. `composes` pulls
+ * in all of .stat, so the two stay in sync.
+ */
+.statLead {
+  composes: stat;
+  margin-left: auto;
+}
+
+.empty {
+  font-size: 12.5px;
+  color: var(--dim);
+  line-height: 1.5;
+  margin-top: 10px;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.copy {
+  margin-left: auto;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: var(--r-chip);
+  padding: 6px 12px;
+  background: #fff;
+  color: var(--accent);
+}
+
+/* Interaction states the inline-style version could not express. */
+.copy:hover {
+  border-color: var(--accent);
+}
+.copy:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #c4ccda;
+  background: var(--ink);
+  border-radius: var(--r-control);
+  padding: 13px 14px;
+  margin: 11px 0 0;
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.note {
+  font-size: 11px;
+  color: var(--dim);
+  line-height: 1.5;
+  margin: 10px 0 0;
+}

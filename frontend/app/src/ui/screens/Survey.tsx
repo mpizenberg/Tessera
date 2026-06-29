@@ -49,6 +49,7 @@ import { ResultBarCard } from "~/ui/components/ResultBarCard";
 import { TxLink } from "~/ui/components/TxLink";
 import { toCsv, downloadCsv } from "~/util/csv";
 import { bytesToHex } from "~/util/hex";
+import css from "./Survey.module.css";
 
 const BASE_TYPE: Record<Question["type"], string> = {
   custom: "Custom",
@@ -170,27 +171,9 @@ export const Survey: Component = () => {
   };
 
   return (
-    <main
-      style={{
-        "max-width": "820px",
-        margin: "0 auto",
-        padding: "22px 24px 90px",
-      }}
-    >
-      <A
-        href="/"
-        style={{
-          display: "inline-flex",
-          "align-items": "center",
-          gap: "7px",
-          "font-size": "13.5px",
-          "font-weight": "600",
-          color: "var(--muted)",
-          "text-decoration": "none",
-          padding: "6px 0",
-        }}
-      >
-        <span style={{ "font-size": "15px" }}>←</span> All surveys
+    <main class={css.page}>
+      <A href="/" class={css.back}>
+        <span class={css.backArrow}>←</span> All surveys
       </A>
 
       <Show
@@ -203,11 +186,11 @@ export const Survey: Component = () => {
           />
         }
       >
-        {(s) => (
+        {(sv) => (
           <>
             <Header
-              s={s()}
-              def={def() ?? s().record.definition}
+              s={sv()}
+              def={def() ?? sv().record.definition}
               keyStr={key()}
               pro={app.ui.pro}
               roleStats={roleStats()}
@@ -215,7 +198,7 @@ export const Survey: Component = () => {
               pillKey={pillKey()}
             />
 
-            <Show when={s().cancellationClaimed}>
+            <Show when={sv().cancellationClaimed}>
               <ClaimedCancellationNotice />
             </Show>
 
@@ -225,55 +208,42 @@ export const Survey: Component = () => {
 
             <Show
               when={
-                viewStatus(s()) === "public" || viewStatus(s()) === "sealed"
+                viewStatus(sv()) === "public" || viewStatus(sv()) === "sealed"
               }
             >
               <A
                 href={`/survey/${encodeURIComponent(key())}/respond`}
-                style={{
-                  display: "inline-flex",
-                  "align-items": "center",
-                  gap: "9px",
-                  "margin-top": "16px",
-                  background: "var(--accent)",
-                  color: "#fff",
-                  "text-decoration": "none",
-                  "border-radius": "var(--r-md)",
-                  padding: "12px 20px",
-                  "font-size": "14px",
-                  "font-weight": "700",
-                  "box-shadow": "0 8px 20px -8px var(--accent-shadow)",
-                }}
+                class={css.respondCta}
               >
                 Respond to this survey{" "}
-                <span style={{ "font-size": "15px" }}>→</span>
+                <span class={css.respondCtaArrow}>→</span>
               </A>
             </Show>
 
             <Show
               when={
                 app.wallet() &&
-                s().status === "active" &&
-                walletOwns(app.wallet()!.identity, s().record.definition.owner)
+                sv().status === "active" &&
+                walletOwns(app.wallet()!.identity, sv().record.definition.owner)
               }
             >
-              <OwnerControls s={s()} />
+              <OwnerControls s={sv()} />
               {/* Once an Info Action already advertises this survey, the
                   copy-paste linking helper is redundant — hide it. */}
-              <Show when={!s().govLink}>
+              <Show when={!sv().govLink}>
                 <LinkActionPanel
-                  surveyRef={s().record.ref}
-                  endEpoch={s().record.definition.endEpoch}
+                  surveyRef={sv().record.ref}
+                  endEpoch={sv().record.definition.endEpoch}
                 />
               </Show>
             </Show>
 
             <Show
-              when={!s().sealed}
+              when={!sv().sealed}
               fallback={
                 <SealedResults
-                  s={s()}
-                  def={def() ?? s().record.definition}
+                  s={sv()}
+                  def={def() ?? sv().record.definition}
                   keyStr={key()}
                   records={records()}
                   excludedRecords={audit().excludedRecords}
@@ -282,7 +252,7 @@ export const Survey: Component = () => {
               }
             >
               <ResultsBody
-                def={def() ?? s().record.definition}
+                def={def() ?? sv().record.definition}
                 keyStr={key()}
                 records={records()}
                 excludedRecords={audit().excludedRecords}
@@ -302,18 +272,7 @@ export const Survey: Component = () => {
  * is informational, making the attempted suppression visible without acting on it.
  */
 const ClaimedCancellationNotice: Component = () => (
-  <div
-    style={{
-      "margin-top": "14px",
-      padding: "11px 14px",
-      border: "1px solid var(--warn-line)",
-      background: "var(--warn-bg)",
-      "border-radius": "var(--r-md)",
-      "font-size": "13px",
-      color: "var(--warn)",
-      "line-height": "1.45",
-    }}
-  >
+  <div class={css.claimedNotice}>
     <strong>Unverified cancellation claim.</strong> A cancellation referencing
     this survey was published, but this client couldn't verify it came from the
     survey owner — so it's ignored and the survey remains open. Only an
@@ -361,145 +320,51 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
     <Show
       when={hash() === null}
       fallback={
-        <div
-          style={{
-            background: "var(--danger-bg)",
-            border: "1px solid var(--danger-line)",
-            "border-radius": "var(--r-md)",
-            padding: "14px 16px",
-            "margin-top": "16px",
-          }}
-        >
-          <div
-            style={{
-              "font-size": "13.5px",
-              "font-weight": "700",
-              color: "var(--danger)",
-            }}
-          >
-            Cancellation submitted
-          </div>
-          <div
-            style={{
-              "font-family": "var(--mono)",
-              "font-size": "11.5px",
-              color: "var(--danger-ink)",
-              "margin-top": "5px",
-              "word-break": "break-all",
-            }}
-          >
+        <div class={css.cancelSubmitted}>
+          <div class={css.cancelSubmittedTitle}>Cancellation submitted</div>
+          <div class={css.cancelSubmittedHash}>
             <TxLink hash={hash()!} color="var(--danger-ink)" />
           </div>
-          <div
-            style={{
-              "font-size": "12.5px",
-              color: "var(--danger-ink)",
-              "line-height": "1.5",
-              "margin-top": "6px",
-            }}
-          >
+          <div class={css.cancelSubmittedBody}>
             New responses are rejected once it's indexed. The definition stays
             on-chain for reference.
           </div>
         </div>
       }
     >
-      <div
-        style={{
-          display: "flex",
-          "align-items": "center",
-          "justify-content": "space-between",
-          gap: "12px",
-          "flex-wrap": "wrap",
-          background: "var(--card-bg)",
-          border: "1px solid var(--card-line)",
-          "border-radius": "var(--r-md)",
-          padding: "12px 15px",
-          "margin-top": "16px",
-        }}
-      >
-        <span
-          style={{
-            "font-size": "12.5px",
-            color: "var(--label)",
-            "line-height": "1.45",
-          }}
-        >
-          <b style={{ color: "#5B4A22" }}>You own this survey.</b> You can
+      <div class={css.ownerBar}>
+        <span class={css.ownerText}>
+          <b class={css.ownerTextStrong}>You own this survey.</b> You can
           withdraw it — existing responses stay on-chain but new ones are
           rejected.
         </span>
         <Show
           when={confirming()}
           fallback={
-            <button
-              onClick={() => setConfirming(true)}
-              style={{
-                "font-family": "inherit",
-                "font-size": "13px",
-                "font-weight": "700",
-                cursor: "pointer",
-                color: "var(--danger)",
-                background: "#fff",
-                border: "1px solid var(--danger-line)",
-                "border-radius": "var(--r-input)",
-                padding: "9px 14px",
-                "white-space": "nowrap",
-              }}
-            >
+            <button onClick={() => setConfirming(true)} class={css.cancelBtn}>
               Cancel survey
             </button>
           }
         >
-          <div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
+          <div class={css.confirmRow}>
             <button
               onClick={() => void onCancel()}
               disabled={cancelling()}
-              style={{
-                "font-family": "inherit",
-                "font-size": "13px",
-                "font-weight": "700",
-                cursor: cancelling() ? "not-allowed" : "pointer",
-                color: "#fff",
-                background: "var(--danger)",
-                border: "none",
-                "border-radius": "var(--r-input)",
-                padding: "9px 14px",
-                "white-space": "nowrap",
-              }}
+              class={css.confirmBtn}
             >
               {cancelling() ? "Cancelling…" : "Confirm cancel"}
             </button>
             <button
               onClick={() => setConfirming(false)}
               disabled={cancelling()}
-              style={{
-                "font-family": "inherit",
-                "font-size": "13px",
-                "font-weight": "700",
-                cursor: "pointer",
-                color: "var(--muted)",
-                background: "#fff",
-                border: "1px solid var(--line)",
-                "border-radius": "var(--r-input)",
-                padding: "9px 14px",
-              }}
+              class={css.keepBtn}
             >
               Keep
             </button>
           </div>
         </Show>
         <Show when={error()}>
-          <div
-            style={{
-              "flex-basis": "100%",
-              "font-size": "12px",
-              color: "var(--danger)",
-              "word-break": "break-word",
-            }}
-          >
-            {error()}
-          </div>
+          <div class={css.ownerError}>{error()}</div>
         </Show>
       </div>
     </Show>
@@ -545,130 +410,31 @@ const LinkActionPanel: Component<{ surveyRef: SurveyRef; endEpoch: number }> = (
     }
   };
   return (
-    <div
-      style={{
-        background: "#F0F2F7",
-        border: "1px solid var(--gov-line)",
-        "border-radius": "var(--r-lg)",
-        padding: "16px 18px",
-        "margin-top": "10px",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          "align-items": "center",
-          gap: "9px",
-          "flex-wrap": "wrap",
-        }}
-      >
-        <span
-          style={{
-            display: "inline-flex",
-            "align-items": "center",
-            gap: "6px",
-            "font-size": "11px",
-            "font-weight": "700",
-            "letter-spacing": ".03em",
-            "text-transform": "uppercase",
-            color: "var(--faint)",
-            background: "var(--surface3)",
-            border: "1px solid var(--line)",
-            "border-radius": "var(--r-2xs)",
-            padding: "4px 8px",
-          }}
-        >
-          Optional
-        </span>
-        <h3
-          style={{
-            "font-size": "15px",
-            "font-weight": "800",
-            "letter-spacing": "-.01em",
-            margin: "0",
-          }}
-        >
+    <div class={css.linkPanel}>
+      <div class={css.linkHead}>
+        <span class={css.linkOptional}>Optional</span>
+        <h3 class={css.linkTitle}>
           Link this survey to a governance Info Action
         </h3>
       </div>
-      <p
-        style={{
-          "font-size": "13px",
-          color: "var(--muted)",
-          "line-height": "1.55",
-          margin: "10px 0 0",
-        }}
-      >
+      <p class={css.linkBody}>
         Linkage is <b>Action → Survey</b>: your survey already exists, so the
         Info Action just points at it. Nest this object as{" "}
-        <span style={{ "font-family": "var(--mono)", "font-size": "12px" }}>
-          cip179
-        </span>{" "}
-        inside the Info Action's CIP-108{" "}
-        <span style={{ "font-family": "var(--mono)", "font-size": "12px" }}>
-          body
-        </span>{" "}
-        (and add the CIP-179{" "}
-        <span style={{ "font-family": "var(--mono)", "font-size": "12px" }}>
-          @context
-        </span>{" "}
-        terms, per the spec, so the anchor stays valid JSON-LD). The action's
-        voting end epoch must equal this survey's{" "}
-        <span style={{ "font-family": "var(--mono)", "font-size": "12px" }}>
-          end_epoch {props.endEpoch}
-        </span>
-        , or tooling won't attach it.
+        <span class={css.linkMono}>cip179</span> inside the Info Action's
+        CIP-108 <span class={css.linkMono}>body</span> (and add the CIP-179{" "}
+        <span class={css.linkMono}>@context</span> terms, per the spec, so the
+        anchor stays valid JSON-LD). The action's voting end epoch must equal
+        this survey's{" "}
+        <span class={css.linkMono}>end_epoch {props.endEpoch}</span>, or tooling
+        won't attach it.
       </p>
-      <div
-        style={{
-          position: "relative",
-          background: "#0B0E14",
-          "border-radius": "var(--r-control)",
-          padding: "14px 15px",
-          "margin-top": "12px",
-        }}
-      >
-        <button
-          onClick={() => void copy()}
-          style={{
-            position: "absolute",
-            top: "10px",
-            right: "10px",
-            "font-family": "inherit",
-            "font-size": "11.5px",
-            "font-weight": "700",
-            color: "#C4CCDA",
-            background: "#1C2536",
-            border: "1px solid #2A3346",
-            "border-radius": "var(--r-xs)",
-            padding: "5px 10px",
-            cursor: "pointer",
-          }}
-        >
+      <div class={css.linkCodeBox}>
+        <button onClick={() => void copy()} class={css.linkCopy}>
           {copied() ? "Copied ✓" : "Copy JSON"}
         </button>
-        <pre
-          style={{
-            margin: "0",
-            "font-family": "var(--mono)",
-            "font-size": "11.5px",
-            "line-height": "1.7",
-            color: "#9FE7C0",
-            "white-space": "pre-wrap",
-            "word-break": "break-word",
-          }}
-        >
-          {json()}
-        </pre>
+        <pre class={css.linkCode}>{json()}</pre>
       </div>
-      <div
-        style={{
-          "font-family": "var(--mono)",
-          "font-size": "11px",
-          color: "var(--dim)",
-          "margin-top": "11px",
-        }}
-      >
+      <div class={css.linkFootnote}>
         only Info Actions may link · linkage is discovery + epoch-alignment,
         never an eligibility gate
       </div>
@@ -691,172 +457,54 @@ const Header: Component<{
 }> = (props) => {
   const pill = () => STATUS_PILL[props.pillKey];
   return (
-    <div
-      style={{
-        "border-bottom": "1px solid #E7DFCE",
-        padding: "14px 2px 20px",
-        "margin-top": "6px",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          "align-items": "center",
-          gap: "10px",
-          "flex-wrap": "wrap",
-        }}
-      >
+    <div class={css.header}>
+      <div class={css.headerTop}>
         <span
+          class={css.pill}
           style={{
-            display: "inline-flex",
-            "align-items": "center",
-            gap: "6px",
-            "font-size": "12px",
-            "font-weight": "700",
-            color: pill().color,
-            background: pill().bg,
-            border: `1px solid ${pill().line}`,
-            "border-radius": "var(--r-pill)",
-            padding: "5px 11px",
+            "--pill-color": pill().color,
+            "--pill-bg": pill().bg,
+            "--pill-line": pill().line,
           }}
         >
           {pill().label}
         </span>
         <Show when={props.s.govLink}>
-          <span
-            style={{
-              display: "inline-flex",
-              "align-items": "center",
-              gap: "6px",
-              "font-size": "12px",
-              "font-weight": "700",
-              color: "var(--gov)",
-              background: "var(--gov-bg)",
-              border: "1px solid var(--gov-line)",
-              "border-radius": "var(--r-pill)",
-              padding: "5px 11px",
-            }}
-          >
-            <span
-              style={{
-                width: "6px",
-                height: "6px",
-                "border-radius": "50%",
-                background: "var(--gov)",
-              }}
-            />
+          <span class={css.govPill}>
+            <span class={css.govPillDot} />
             Linked to governance
           </span>
         </Show>
-        <span style={{ "margin-left": "auto" }} />
         <Show when={props.pro}>
           <span
             title="Full survey ref — defining transaction hash and output index"
-            style={{
-              "font-family": "var(--mono)",
-              "font-size": "11px",
-              color: "var(--pale)",
-              "word-break": "break-all",
-            }}
+            class={css.headerRefLead}
           >
             ref {fullRef(props.keyStr)}
           </span>
         </Show>
       </div>
-      <h1
-        style={{
-          "font-size": "26px",
-          "font-weight": "700",
-          "letter-spacing": "-.018em",
-          "line-height": "1.16",
-          margin: "14px 0 0",
-          color: "var(--ink)",
-        }}
-      >
-        {props.def.title || "Untitled survey"}
-      </h1>
+      <h1 class={css.headerTitle}>{props.def.title || "Untitled survey"}</h1>
       <Show when={props.def.description}>
-        <p
-          style={{
-            "font-size": "14.5px",
-            color: "var(--muted)",
-            "line-height": "1.55",
-            margin: "8px 0 0",
-          }}
-        >
-          {props.def.description}
-        </p>
+        <p class={css.headerDesc}>{props.def.description}</p>
       </Show>
 
       <Show when={props.s.govLink}>
         {(link) => (
-          <div
-            style={{
-              display: "flex",
-              "align-items": "flex-start",
-              gap: "12px",
-              background: "#F1F5FA",
-              border: "1px solid var(--gov-line)",
-              "border-radius": "var(--r-md)",
-              padding: "13px 15px",
-              "margin-top": "16px",
-            }}
-          >
-            <span
-              style={{
-                display: "inline-flex",
-                "align-items": "center",
-                gap: "5px",
-                "font-family": "var(--mono)",
-                "font-size": "10px",
-                "font-weight": "700",
-                "letter-spacing": ".04em",
-                "text-transform": "uppercase",
-                color: "var(--gov)",
-                background: "var(--gov-bg)",
-                border: "1px solid var(--gov-line)",
-                "border-radius": "var(--r-2xs)",
-                padding: "4px 7px",
-                flex: "none",
-                "margin-top": "1px",
-              }}
-            >
-              Info Action
-            </span>
-            <div style={{ flex: "1", "min-width": "0" }}>
-              <div
-                style={{
-                  "font-size": "13.5px",
-                  color: "#3A352B",
-                  "line-height": "1.45",
-                }}
-              >
+          <div class={css.govLinkCard}>
+            <span class={css.govLinkBadge}>Info Action</span>
+            <div class={css.govLinkMain}>
+              <div class={css.govLinkText}>
                 <Show
                   when={link().title}
                   fallback={<>Advertised by a governance Info Action</>}
                 >
                   Advertised by{" "}
-                  <b style={{ color: "var(--ink)" }}>{link().title}</b>
+                  <b class={css.govLinkTextStrong}>{link().title}</b>
                 </Show>{" "}
-                <span
-                  style={{
-                    "font-family": "var(--mono)",
-                    "font-size": "11.5px",
-                    color: "var(--gov)",
-                    "word-break": "break-all",
-                  }}
-                >
-                  {link().actionId}
-                </span>
+                <span class={css.govLinkActionId}>{link().actionId}</span>
               </div>
-              <div
-                style={{
-                  "font-family": "var(--mono)",
-                  "font-size": "11px",
-                  color: "var(--faint)",
-                  "margin-top": "5px",
-                }}
-              >
+              <div class={css.govLinkMeta}>
                 survey &amp; vote both close at epoch {link().endEpoch} · open
                 to all eligible roles — casting the linked vote is optional
               </div>
@@ -866,75 +514,30 @@ const Header: Component<{
       </Show>
 
       <Show when={props.roleStats.length > 0}>
-        <div
-          style={{
-            display: "grid",
-            "grid-template-columns": "1fr 1fr",
-            gap: "14px",
-            "margin-top": "18px",
-          }}
-        >
+        <div class={css.roleGrid}>
           <For each={props.roleStats}>
             {(rs) => {
               const [color, bg] = roleColors(rs.role);
               return (
-                <div
-                  style={{
-                    border: "1px solid var(--line2)",
-                    "border-radius": "var(--r-md)",
-                    padding: "13px 15px",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      "align-items": "center",
-                      "justify-content": "space-between",
-                    }}
-                  >
+                <div class={css.roleCard}>
+                  <div class={css.roleCardHead}>
                     <span
-                      style={{
-                        "font-size": "12px",
-                        "font-weight": "700",
-                        color,
-                        background: bg,
-                        "border-radius": "6px",
-                        padding: "2.5px 8px",
-                      }}
+                      class={css.roleChip}
+                      style={{ "--role-color": color, "--role-bg": bg }}
                     >
                       {roleLabel(rs.role)}
                     </span>
-                    <span
-                      style={{
-                        "font-family": "var(--mono)",
-                        "font-size": "13px",
-                        "font-weight": "600",
-                        color: "var(--ink)",
-                      }}
-                    >
+                    <span class={css.roleCount}>
                       {rs.count}{" "}
-                      <span
-                        style={{ color: "var(--dim)", "font-size": "11px" }}
-                      >
-                        · {rs.pct}%
-                      </span>
+                      <span class={css.roleCountPct}>· {rs.pct}%</span>
                     </span>
                   </div>
-                  <div
-                    style={{
-                      height: "7px",
-                      "border-radius": "var(--r-pill)",
-                      background: "var(--track)",
-                      overflow: "hidden",
-                      "margin-top": "9px",
-                    }}
-                  >
+                  <div class={css.roleTrack}>
                     <div
+                      class={css.roleBar}
                       style={{
-                        width: `${rs.pct}%`,
-                        height: "100%",
-                        background: color,
-                        "border-radius": "var(--r-pill)",
+                        "--role-pct": `${rs.pct}%`,
+                        "--role-color": color,
                       }}
                     />
                   </div>
@@ -1047,78 +650,17 @@ const CardShell: Component<{
   abstain?: string;
   children: JSX.Element;
 }> = (props) => (
-  <div
-    style={{
-      background: "#fff",
-      border: "1px solid var(--line)",
-      "border-radius": "var(--r-card)",
-      padding: "22px",
-    }}
-  >
-    <div
-      style={{
-        display: "flex",
-        "align-items": "center",
-        "justify-content": "space-between",
-        gap: "10px",
-        "flex-wrap": "wrap",
-      }}
-    >
-      <div style={{ display: "flex", gap: "10px", "align-items": "center" }}>
-        <span
-          style={{
-            "font-family": "var(--mono)",
-            "font-size": "12px",
-            "font-weight": "600",
-            color: "var(--accent)",
-            background: "var(--accent-bg)",
-            "border-radius": "var(--r-chip)",
-            padding: "5px 8px",
-          }}
-        >
-          {props.qLabel}
-        </span>
-        <div
-          style={{
-            "font-family": "var(--mono)",
-            "font-size": "10px",
-            "letter-spacing": ".06em",
-            "text-transform": "uppercase",
-            color: "var(--dim)",
-          }}
-        >
-          {props.typeLabel}
-        </div>
+  <div class={css.card}>
+    <div class={css.cardHead}>
+      <div class={css.cardHeadLeft}>
+        <span class={css.qChip}>{props.qLabel}</span>
+        <div class={css.typeLabel}>{props.typeLabel}</div>
       </div>
       <Show when={props.abstain}>
-        <span
-          style={{
-            "font-family": "var(--mono)",
-            "font-size": "11px",
-            color: "var(--faint)",
-            background: "var(--surface3)",
-            "border-radius": "var(--r-xs)",
-            padding: "5px 9px",
-            "white-space": "nowrap",
-            flex: "none",
-          }}
-        >
-          {props.abstain}
-        </span>
+        <span class={css.abstain}>{props.abstain}</span>
       </Show>
     </div>
-    <h3
-      style={{
-        "font-family": "var(--serif)",
-        "font-size": "18px",
-        "font-weight": "600",
-        "line-height": "1.28",
-        margin: "11px 0 0",
-        color: "var(--ink)",
-      }}
-    >
-      {props.prompt || "(no prompt)"}
-    </h3>
+    <h3 class={css.cardTitle}>{props.prompt || "(no prompt)"}</h3>
     {props.children}
   </div>
 );
@@ -1137,88 +679,29 @@ const HistogramCard: Component<{
       prompt={props.prompt}
       abstain={`${props.t.abstained} abstained`}
     >
-      <div style={{ display: "flex", gap: "18px", "margin-top": "6px" }}>
-        <span
-          style={{
-            "font-family": "var(--mono)",
-            "font-size": "12px",
-            color: "var(--muted)",
-          }}
-        >
-          mean{" "}
-          <b style={{ color: "var(--accent)" }}>{props.t.mean.toFixed(2)}</b>
+      <div class={css.histStats}>
+        <span class={css.histStat}>
+          mean <b class={css.histStatValue}>{props.t.mean.toFixed(2)}</b>
         </span>
-        <span
-          style={{
-            "font-family": "var(--mono)",
-            "font-size": "12px",
-            color: "var(--muted)",
-          }}
-        >
-          median <b style={{ color: "var(--accent)" }}>{props.t.median}</b>
+        <span class={css.histStat}>
+          median <b class={css.histStatValue}>{props.t.median}</b>
         </span>
       </div>
       <Show when={props.t.bins.length > 0} fallback={<NoData />}>
-        <div
-          style={{
-            display: "flex",
-            "align-items": "flex-end",
-            gap: "12px",
-            height: "130px",
-            "margin-top": "14px",
-          }}
-        >
+        <div class={css.histBars}>
           <For each={props.t.bins}>
             {(b) => (
-              <div
-                style={{
-                  flex: "1",
-                  display: "flex",
-                  "flex-direction": "column",
-                  "align-items": "center",
-                  height: "100%",
-                  "justify-content": "flex-end",
-                  gap: "7px",
-                }}
-              >
-                <span
-                  style={{
-                    "font-family": "var(--mono)",
-                    "font-size": "10.5px",
-                    color: "var(--dim)",
-                  }}
-                >
-                  {b.count}
-                </span>
-                <div
-                  style={{
-                    width: "100%",
-                    flex: "1",
-                    display: "flex",
-                    "align-items": "flex-end",
-                  }}
-                >
+              <div class={css.histCol}>
+                <span class={css.histCount}>{b.count}</span>
+                <div class={css.histColTrack}>
                   <div
+                    class={css.histBar}
                     style={{
-                      width: "100%",
-                      height: `${Math.round((b.count / max()) * 100)}%`,
-                      background:
-                        "linear-gradient(180deg,var(--accent-2),var(--accent))",
-                      "border-radius": "4px 4px 0 0",
-                      "min-height": "2px",
+                      "--hist-h": `${Math.round((b.count / max()) * 100)}%`,
                     }}
                   />
                 </div>
-                <span
-                  style={{
-                    "font-family": "var(--mono)",
-                    "font-size": "12px",
-                    "font-weight": "600",
-                    color: "var(--body)",
-                  }}
-                >
-                  {b.label}
-                </span>
+                <span class={css.histLabel}>{b.label}</span>
               </div>
             )}
           </For>
@@ -1249,35 +732,11 @@ const RatingCard: Component<{
       abstain={`${props.t.abstained} abstained`}
     >
       <Show when={props.t.levelLabels}>
-        <div
-          style={{
-            display: "flex",
-            "flex-wrap": "wrap",
-            gap: "8px 16px",
-            "margin-top": "14px",
-          }}
-        >
+        <div class={css.ratingLegend}>
           <For each={props.t.levelLabels!}>
             {(label, i) => (
-              <span
-                style={{
-                  display: "inline-flex",
-                  "align-items": "center",
-                  gap: "6px",
-                  "font-size": "12px",
-                  color: "var(--muted)",
-                  "font-weight": "600",
-                }}
-              >
-                <span
-                  style={{
-                    "font-family": "var(--mono)",
-                    "font-size": "10px",
-                    color: "var(--dim)",
-                  }}
-                >
-                  {i()}
-                </span>
+              <span class={css.ratingLegendItem}>
+                <span class={css.ratingLegendIndex}>{i()}</span>
                 {label}
               </span>
             )}
@@ -1285,64 +744,20 @@ const RatingCard: Component<{
         </div>
       </Show>
       <Show when={props.t.answered > 0} fallback={<NoData />}>
-        <div
-          style={{
-            "margin-top": "16px",
-            display: "flex",
-            "flex-direction": "column",
-            gap: "14px",
-          }}
-        >
+        <div class={css.ratingRows}>
           <For each={props.t.rows}>
             {(row) => (
-              <div
-                style={{
-                  display: "flex",
-                  "align-items": "center",
-                  gap: "14px",
-                }}
-              >
-                <span
-                  style={{
-                    "font-size": "14px",
-                    "font-weight": "600",
-                    width: "120px",
-                    flex: "none",
-                  }}
-                >
-                  {row.label}
-                </span>
-                <div
-                  style={{
-                    flex: "1",
-                    height: "13px",
-                    "border-radius": "var(--r-pill)",
-                    background: "var(--track)",
-                    overflow: "hidden",
-                  }}
-                >
+              <div class={css.ratingRow}>
+                <span class={css.ratingRowLabel}>{row.label}</span>
+                <div class={css.ratingTrack}>
                   <div
+                    class={css.ratingBar}
                     style={{
-                      width: `${pctOf(row.avg, props.t.baseMin, top())}%`,
-                      height: "100%",
-                      background:
-                        "linear-gradient(90deg,var(--accent),var(--accent-2))",
-                      "border-radius": "var(--r-pill)",
+                      "--rating-pct": `${pctOf(row.avg, props.t.baseMin, top())}%`,
                     }}
                   />
                 </div>
-                <span
-                  style={{
-                    "font-family": "var(--mono)",
-                    "font-size": "14px",
-                    "font-weight": "600",
-                    color: "var(--accent)",
-                    width: "108px",
-                    "text-align": "right",
-                  }}
-                >
-                  {avgLabel(row.avg)}
-                </span>
+                <span class={css.ratingAvg}>{avgLabel(row.avg)}</span>
               </div>
             )}
           </For>
@@ -1363,52 +778,16 @@ const CustomCard: Component<{
     typeLabel={props.typeLabel}
     prompt={props.prompt}
   >
-    <div
-      style={{
-        display: "flex",
-        "align-items": "baseline",
-        gap: "9px",
-        "margin-top": "14px",
-      }}
-    >
-      <span
-        style={{
-          "font-family": "var(--mono)",
-          "font-size": "30px",
-          "font-weight": "600",
-          color: "var(--accent)",
-        }}
-      >
-        {props.t.answered}
-      </span>
-      <span style={{ "font-size": "13.5px", color: "var(--muted)" }}>
+    <div class={css.customCount}>
+      <span class={css.customCountValue}>{props.t.answered}</span>
+      <span class={css.customCountLabel}>
         free-form answers · tallied per the external schema
       </span>
     </div>
     <Show when={props.t.samples.length > 0}>
-      <div
-        style={{
-          display: "flex",
-          "flex-wrap": "wrap",
-          gap: "8px",
-          "margin-top": "14px",
-        }}
-      >
+      <div class={css.customSamples}>
         <For each={props.t.samples}>
-          {(x) => (
-            <span
-              style={{
-                "font-size": "13px",
-                color: "var(--body)",
-                background: "var(--surface)",
-                border: "1px solid var(--line2)",
-                "border-radius": "var(--r-chip)",
-                padding: "7px 11px",
-              }}
-            >
-              “{x}”
-            </span>
-          )}
+          {(x) => <span class={css.customSample}>“{x}”</span>}
         </For>
       </div>
     </Show>
@@ -1427,39 +806,20 @@ const RoleFilterBtn: Component<{
 }> = (props) => (
   <button
     onClick={() => props.onClick()}
-    style={{
-      display: "inline-flex",
-      "align-items": "center",
-      gap: "7px",
-      "font-family": "inherit",
-      "font-size": "12.5px",
-      "font-weight": props.on ? "700" : "600",
-      cursor: "pointer",
-      "border-radius": "8px",
-      padding: "6px 12px",
-      border: props.on ? "1px solid var(--accent)" : "1px solid var(--line)",
-      background: props.on ? "var(--accent)" : "#F2ECDE",
-      color: props.on ? "#FBF8F1" : "#6B6356",
-    }}
+    class={css.roleFilterBtn}
+    classList={{ [css.roleFilterBtnOn]: props.on }}
   >
     {props.label}
     <span
-      style={{
-        "font-family": "var(--mono)",
-        "font-size": "10.5px",
-        color: props.on ? "rgba(251,248,241,.75)" : "#A79C88",
-      }}
+      class={css.roleFilterCount}
+      classList={{ [css.roleFilterCountOn]: props.on }}
     >
       {props.count}
     </span>
   </button>
 );
 
-const NoData: Component = () => (
-  <p style={{ "font-size": "12.5px", color: "var(--dim)", margin: "14px 0 0" }}>
-    No responses yet.
-  </p>
-);
+const NoData: Component = () => <p class={css.noData}>No responses yet.</p>;
 
 // ----------------------------------------------------------------------------
 // Results body (public, or revealed-sealed) + sealed reveal pipeline
@@ -1537,125 +897,33 @@ const ExclusionPanel: Component<{
 }> = (props) => {
   const max = (): number => Math.max(1, ...props.excluded.map((e) => e.count));
   return (
-    <div
-      style={{
-        "margin-top": "12px",
-        border: "1px solid var(--warn-line)",
-        "border-radius": "var(--r-md)",
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          "align-items": "center",
-          gap: "10px",
-          background: "var(--card-bg)",
-          "border-bottom": "1px solid var(--card-line)",
-          padding: "12px 16px",
-          "flex-wrap": "wrap",
-        }}
-      >
-        <span
-          style={{
-            "font-size": "12.5px",
-            "font-weight": "700",
-            color: "var(--label)",
-          }}
-        >
-          Why responses weren't counted
-        </span>
-        <span
-          style={{
-            "font-family": "var(--mono)",
-            "font-size": "11px",
-            color: "#A89878",
-          }}
-        >
-          on-chain checks only
-        </span>
+    <div class={css.exclPanel}>
+      <div class={css.exclHead}>
+        <span class={css.exclHeadTitle}>Why responses weren't counted</span>
+        <span class={css.exclHeadNote}>on-chain checks only</span>
       </div>
-      <div style={{ background: "#fff", padding: "4px 16px 14px" }}>
+      <div class={css.exclBody}>
         <For each={props.excluded}>
           {(e) => (
-            <div
-              style={{
-                display: "flex",
-                "align-items": "center",
-                gap: "14px",
-                padding: "11px 0",
-                "border-top": "1px solid #F6F2E8",
-              }}
-            >
-              <div style={{ flex: "1", "min-width": "0" }}>
-                <div
-                  style={{
-                    "font-size": "13.5px",
-                    "font-weight": "600",
-                    color: "var(--body)",
-                  }}
-                >
-                  {e.label}
-                </div>
-                <div
-                  style={{
-                    "font-family": "var(--mono)",
-                    "font-size": "10.5px",
-                    color: "#A89878",
-                    "margin-top": "2px",
-                  }}
-                >
-                  {e.hint}
-                </div>
+            <div class={css.exclRow}>
+              <div class={css.exclRowMain}>
+                <div class={css.exclRowLabel}>{e.label}</div>
+                <div class={css.exclRowHint}>{e.hint}</div>
               </div>
-              <div
-                style={{
-                  width: "120px",
-                  flex: "none",
-                  height: "8px",
-                  "border-radius": "var(--r-pill)",
-                  background: "#F4ECE0",
-                  overflow: "hidden",
-                }}
-              >
+              <div class={css.exclTrack}>
                 <div
-                  style={{
-                    width: `${(e.count / max()) * 100}%`,
-                    height: "100%",
-                    "border-radius": "var(--r-pill)",
-                    background: "#E0857B",
-                  }}
+                  class={css.exclBar}
+                  style={{ "--excl-pct": `${(e.count / max()) * 100}%` }}
                 />
               </div>
-              <span
-                style={{
-                  "font-family": "var(--mono)",
-                  "font-size": "13px",
-                  "font-weight": "600",
-                  color: "var(--warn)",
-                  width: "28px",
-                  "text-align": "right",
-                  flex: "none",
-                }}
-              >
-                {e.count}
-              </span>
+              <span class={css.exclCount}>{e.count}</span>
             </div>
           )}
         </For>
-        <p
-          style={{
-            "font-size": "11.5px",
-            color: "#A89878",
-            "line-height": "1.5",
-            margin: "11px 0 0",
-          }}
-        >
+        <p class={css.exclFootnote}>
           Excluded responses stay on-chain but aren't tallied. Eligibility
           checks that need ledger state — role membership re-verified at the{" "}
-          <span style={{ "font-family": "var(--mono)", "font-size": "11px" }}>
-            end_epoch {props.endEpoch}
-          </span>{" "}
+          <span class={css.exclFootnoteMono}>end_epoch {props.endEpoch}</span>{" "}
           snapshot, credential proofs — are resolved by an indexer and aren't
           reflected here.
         </p>
@@ -1690,48 +958,22 @@ const IndividualResponses: Component<{
   const remaining = () => props.records.length - shown().length;
 
   return (
-    <div style={{ "margin-top": "26px" }}>
+    <div class={css.individual}>
       <button
         onClick={() => setOpen((o) => !o)}
         disabled={props.records.length === 0}
-        style={{
-          display: "inline-flex",
-          "align-items": "center",
-          gap: "8px",
-          "font-family": "inherit",
-          "font-size": "12.5px",
-          "font-weight": "700",
-          color: "var(--body)",
-          background: "#fff",
-          border: "1px solid var(--line)",
-          "border-radius": "var(--r-input)",
-          padding: "8px 13px",
-          cursor: props.records.length ? "pointer" : "not-allowed",
-          opacity: props.records.length ? "1" : ".5",
+        class={css.individualToggle}
+        classList={{
+          [css.individualToggleDisabled]: props.records.length === 0,
         }}
       >
         Individual responses
-        <span
-          style={{
-            "font-family": "var(--mono)",
-            "font-size": "11px",
-            color: "var(--dim)",
-          }}
-        >
-          {props.records.length}
-        </span>
-        <span style={{ "font-size": "9px" }}>{open() ? "▴" : "▾"}</span>
+        <span class={css.individualCount}>{props.records.length}</span>
+        <span class={css.individualCaret}>{open() ? "▴" : "▾"}</span>
       </button>
 
       <Show when={open()}>
-        <div
-          style={{
-            display: "flex",
-            "flex-direction": "column",
-            gap: "10px",
-            "margin-top": "12px",
-          }}
-        >
+        <div class={css.individualList}>
           <For each={shown()}>
             {(rec) => <ResponseCard rec={rec} def={props.def} />}
           </For>
@@ -1739,18 +981,7 @@ const IndividualResponses: Component<{
         <Show when={remaining() > 0}>
           <button
             onClick={() => setLimit((n) => n + RESPONSE_PAGE)}
-            style={{
-              "margin-top": "12px",
-              "font-family": "inherit",
-              "font-size": "12.5px",
-              "font-weight": "700",
-              color: "var(--accent)",
-              background: "#fff",
-              border: "1px solid var(--accent-line)",
-              "border-radius": "var(--r-input)",
-              padding: "8px 14px",
-              cursor: "pointer",
-            }}
+            class={css.showMore}
           >
             Show {Math.min(RESPONSE_PAGE, remaining())} more ({remaining()}{" "}
             left)
@@ -1772,46 +1003,17 @@ const ResponseCard: Component<{
   };
   const [color, bg] = roleColors(r().role);
   return (
-    <div
-      style={{
-        border: "1px solid var(--line)",
-        "border-radius": "var(--r-md)",
-        padding: "13px 15px",
-        background: "#fff",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          "align-items": "center",
-          gap: "9px",
-          "flex-wrap": "wrap",
-        }}
-      >
+    <div class={css.responseCard}>
+      <div class={css.responseHead}>
         <span
-          style={{
-            "font-size": "11.5px",
-            "font-weight": "700",
-            color,
-            background: bg,
-            "border-radius": "6px",
-            padding: "2.5px 8px",
-            flex: "none",
-          }}
+          class={css.responseRole}
+          style={{ "--role-color": color, "--role-bg": bg }}
         >
           {roleLabel(r().role)}
         </span>
-        <span
-          title={fullCred(r().credential)}
-          style={{
-            "font-family": "var(--mono)",
-            "font-size": "11px",
-            color: "var(--faint)",
-          }}
-        >
+        <span title={fullCred(r().credential)} class={css.responseCred}>
           {shortCred(r().credential)}
         </span>
-        <span style={{ "margin-left": "auto" }} />
         <Show when={r().rationale}>
           {(anchor) => (
             // Only render the link when the (attacker-controlled, on-chain)
@@ -1824,12 +1026,7 @@ const ResponseCard: Component<{
                   target="_blank"
                   rel="noopener noreferrer"
                   title="Open the voter's rationale document in a new tab (not hash-verified)"
-                  style={{
-                    "font-size": "11.5px",
-                    "font-weight": "700",
-                    color: "var(--accent)",
-                    "text-decoration": "none",
-                  }}
+                  class={css.responseRationale}
                 >
                   rationale ↗
                 </a>
@@ -1837,16 +1034,7 @@ const ResponseCard: Component<{
             </Show>
           )}
         </Show>
-        <span
-          style={{
-            "font-family": "var(--mono)",
-            "font-size": "10.5px",
-            "max-width": "150px",
-            overflow: "hidden",
-            "text-overflow": "ellipsis",
-            "white-space": "nowrap",
-          }}
-        >
+        <span class={css.responseTx}>
           <TxLink hash={props.rec.txHash} color="var(--dim)" />
         </span>
       </div>
@@ -1854,63 +1042,24 @@ const ResponseCard: Component<{
       <Show
         when={publicAnswers()}
         fallback={
-          <div
-            style={{
-              "font-family": "var(--mono)",
-              "font-size": "11.5px",
-              color: "var(--dim)",
-              "margin-top": "10px",
-            }}
-          >
-            (sealed — not yet revealed)
-          </div>
+          <div class={css.responseSealed}>(sealed — not yet revealed)</div>
         }
       >
         {(answers) => (
-          <div
-            style={{
-              display: "flex",
-              "flex-direction": "column",
-              gap: "7px",
-              "margin-top": "11px",
-            }}
-          >
+          <div class={css.responseAnswers}>
             <For each={answers()}>
               {(a) => {
                 const q = props.def.questions[a.questionIndex];
                 return (
-                  <div style={{ display: "flex", gap: "10px" }}>
-                    <span
-                      style={{
-                        "font-family": "var(--mono)",
-                        "font-size": "11px",
-                        "font-weight": "600",
-                        color: "var(--accent)",
-                        flex: "none",
-                        "padding-top": "1px",
-                      }}
-                    >
+                  <div class={css.responseAnswer}>
+                    <span class={css.responseAnswerQ}>
                       Q{a.questionIndex + 1}
                     </span>
-                    <div style={{ "min-width": "0" }}>
-                      <div
-                        style={{
-                          "font-size": "12px",
-                          color: "var(--muted)",
-                          "line-height": "1.4",
-                        }}
-                      >
+                    <div class={css.responseAnswerMain}>
+                      <div class={css.responseAnswerPrompt}>
                         {q?.prompt || "(no prompt)"}
                       </div>
-                      <div
-                        style={{
-                          "font-size": "13px",
-                          "font-weight": "600",
-                          color: "var(--body)",
-                          "line-height": "1.45",
-                          "margin-top": "1px",
-                        }}
-                      >
+                      <div class={css.responseAnswerValue}>
                         {humanizeAnswer(a, q)}
                       </div>
                     </div>
@@ -2042,97 +1191,32 @@ const ResultsBody: Component<{
   return (
     <>
       {/* counted + export */}
-      <div
-        style={{
-          display: "flex",
-          "align-items": "center",
-          gap: "10px",
-          "margin-top": "14px",
-          "flex-wrap": "wrap",
-        }}
-      >
-        <span
-          style={{
-            display: "inline-flex",
-            "align-items": "center",
-            gap: "7px",
-            "font-size": "12.5px",
-            "font-weight": "700",
-            color: "var(--ok)",
-            background: "var(--ok-bg)",
-            border: "1px solid var(--ok-line)",
-            "border-radius": "var(--r-sm)",
-            padding: "7px 12px",
-          }}
-        >
-          <span
-            style={{
-              width: "7px",
-              height: "7px",
-              "border-radius": "50%",
-              background: "var(--ok)",
-            }}
-          />
+      <div class={css.countedRow}>
+        <span class={css.countedPill}>
+          <span class={css.countedDot} />
           {publicResponses().length} counted
         </span>
         <Show when={excludedTotal() > 0}>
           <button
             onClick={() => setExclOpen((o) => !o)}
-            style={{
-              display: "inline-flex",
-              "align-items": "center",
-              gap: "7px",
-              "font-family": "inherit",
-              "font-size": "12.5px",
-              "font-weight": "700",
-              color: "var(--warn)",
-              background: "#FFF8EC",
-              border: "1px solid var(--warn-line)",
-              "border-radius": "var(--r-sm)",
-              padding: "7px 12px",
-              cursor: "pointer",
-            }}
+            class={css.excludedToggle}
           >
             {excludedTotal()} excluded{" "}
-            <span style={{ "font-size": "9px" }}>{exclOpen() ? "▴" : "▾"}</span>
+            <span class={css.excludedCaret}>{exclOpen() ? "▴" : "▾"}</span>
           </button>
         </Show>
         <button
           onClick={exportCsv}
           disabled={props.records.length === 0}
-          style={{
-            "margin-left": "auto",
-            display: "inline-flex",
-            "align-items": "center",
-            gap: "7px",
-            "font-family": "inherit",
-            "font-size": "13px",
-            "font-weight": "700",
-            color: "var(--accent)",
-            background: "#fff",
-            border: "1px solid var(--accent-line)",
-            "border-radius": "var(--r-input)",
-            padding: "9px 14px",
-            cursor: props.records.length ? "pointer" : "not-allowed",
-            opacity: props.records.length ? "1" : ".5",
-          }}
+          class={css.exportBtn}
+          classList={{ [css.exportBtnDisabled]: props.records.length === 0 }}
         >
-          <span style={{ "font-size": "14px" }}>⤓</span> Export CSV
+          <span class={css.exportIcon}>⤓</span> Export CSV
         </button>
       </div>
 
       <Show when={app.snapshot()?.records.incomplete}>
-        <div
-          style={{
-            "margin-top": "10px",
-            padding: "9px 13px",
-            border: "1px solid var(--warn-line)",
-            background: "var(--warn-bg)",
-            "border-radius": "var(--r-md)",
-            "font-size": "12.5px",
-            color: "var(--warn)",
-          }}
-        >
+        <div class={css.incomplete}>
           More label-17 transactions exist on-chain than could be loaded, so
           this tally may be missing responses.
         </div>
@@ -2146,43 +1230,9 @@ const ResultsBody: Component<{
       </Show>
 
       {/* weighting disclaimer */}
-      <div
-        style={{
-          display: "flex",
-          "align-items": "flex-start",
-          gap: "10px",
-          background: "var(--card-bg)",
-          border: "1px solid var(--card-line)",
-          "border-radius": "var(--r-md)",
-          padding: "12px 15px",
-          "margin-top": "14px",
-        }}
-      >
-        <span
-          style={{
-            "font-family": "var(--mono)",
-            "font-size": "9.5px",
-            "font-weight": "600",
-            "letter-spacing": ".06em",
-            "text-transform": "uppercase",
-            color: "var(--warn)",
-            background: "var(--warn-bg)",
-            border: "1px solid var(--warn-line)",
-            "border-radius": "var(--r-2xs)",
-            padding: "4px 7px",
-            flex: "none",
-            "margin-top": "1px",
-          }}
-        >
-          raw
-        </span>
-        <span
-          style={{
-            "font-size": "12.5px",
-            color: "var(--label)",
-            "line-height": "1.5",
-          }}
-        >
+      <div class={css.disclaimer}>
+        <span class={css.disclaimerBadge}>raw</span>
+        <span class={css.disclaimerText}>
           These are raw recorded responses — one per credential.{" "}
           <b>No weighting is applied;</b> stake-, pledge-, or quadratic
           weighting is downstream and out of scope for CIP-179.
@@ -2190,28 +1240,9 @@ const ResultsBody: Component<{
       </div>
 
       {/* role filter */}
-      <div
-        style={{
-          display: "flex",
-          "align-items": "center",
-          gap: "10px",
-          margin: "22px 0 6px",
-          "flex-wrap": "wrap",
-        }}
-      >
-        <span
-          style={{
-            "font-family": "var(--mono)",
-            "font-size": "10.5px",
-            "letter-spacing": ".08em",
-            "text-transform": "uppercase",
-            color: "var(--dim)",
-            "font-weight": "600",
-          }}
-        >
-          Tally by role
-        </span>
-        <div style={{ display: "flex", gap: "8px", "flex-wrap": "wrap" }}>
+      <div class={css.roleFilterRow}>
+        <span class={css.roleFilterLabel}>Tally by role</span>
+        <div class={css.roleFilterBtns}>
           <RoleFilterBtn
             label="All"
             count={publicResponses().length}
@@ -2232,14 +1263,7 @@ const ResultsBody: Component<{
       </div>
 
       {/* per-question results */}
-      <div
-        style={{
-          display: "flex",
-          "flex-direction": "column",
-          gap: "14px",
-          "margin-top": "8px",
-        }}
-      >
+      <div class={css.questionResults}>
         <For each={props.def.questions}>
           {(q, i) => (
             <QuestionResult q={q} index={i()} tally={tallies()[i()]} />
@@ -2249,16 +1273,7 @@ const ResultsBody: Component<{
 
       <IndividualResponses def={props.def} records={filteredRecords()} />
 
-      <p
-        style={{
-          "text-align": "center",
-          "font-family": "var(--mono)",
-          "font-size": "10.5px",
-          color: "#B8AE99",
-          margin: "22px 0 0",
-          "line-height": "1.6",
-        }}
-      >
+      <p class={css.tallyFootnote}>
         tally derived independently from on-chain data ·{" "}
         {publicResponses().length} responses counted
       </p>
@@ -2437,52 +1452,19 @@ const SealedStateNotice: Component<{
   action?: { label: string; onClick: () => void };
 }> = (props) => (
   <div
-    style={{
-      background: "#fff",
-      border: `1px solid ${props.tone === "warn" ? "var(--warn-line)" : "var(--line)"}`,
-      "border-radius": "var(--r-card)",
-      padding: "26px",
-      "margin-top": "16px",
-      "text-align": "center",
-    }}
+    class={css.sealedNotice}
+    classList={{ [css.sealedNoticeWarn]: props.tone === "warn" }}
   >
     <div
-      style={{
-        "font-size": "16px",
-        "font-weight": "800",
-        color: props.tone === "warn" ? "var(--warn)" : "var(--ink)",
-      }}
+      class={css.sealedNoticeTitle}
+      classList={{ [css.sealedNoticeTitleWarn]: props.tone === "warn" }}
     >
       {props.title}
     </div>
-    <p
-      style={{
-        "font-size": "13.5px",
-        color: "var(--muted)",
-        "line-height": "1.55",
-        margin: "8px auto 0",
-        "max-width": "460px",
-      }}
-    >
-      {props.body}
-    </p>
+    <p class={css.sealedNoticeBody}>{props.body}</p>
     <Show when={props.action}>
       {(action) => (
-        <button
-          onClick={() => action().onClick()}
-          style={{
-            "margin-top": "16px",
-            "font-family": "inherit",
-            "font-size": "13.5px",
-            "font-weight": "700",
-            cursor: "pointer",
-            border: "none",
-            "border-radius": "var(--r-control)",
-            padding: "10px 18px",
-            background: "var(--accent)",
-            color: "#fff",
-          }}
-        >
+        <button onClick={() => action().onClick()} class={css.sealedNoticeBtn}>
           {action().label}
         </button>
       )}
@@ -2496,62 +1478,17 @@ const SealedStateNotice: Component<{
  * answerable and tallyable from on-chain data (indices + constraints).
  */
 const LabelsUnavailable: Component<{ keyStr: string }> = (props) => (
-  <div
-    style={{
-      display: "flex",
-      "align-items": "flex-start",
-      gap: "12px",
-      background: "var(--card-bg)",
-      border: "1px solid var(--card-line)",
-      "border-radius": "var(--r-lg)",
-      padding: "15px 17px",
-      "margin-top": "14px",
-    }}
-  >
-    <span
-      style={{
-        width: "26px",
-        height: "26px",
-        "border-radius": "var(--r-chip)",
-        background: "var(--warn-bg)",
-        border: "1px solid var(--warn-line)",
-        color: "var(--warn)",
-        "font-size": "14px",
-        "font-weight": "700",
-        display: "flex",
-        "align-items": "center",
-        "justify-content": "center",
-        flex: "none",
-      }}
-    >
-      ⚠
-    </span>
-    <div style={{ flex: "1", "min-width": "0" }}>
-      <div
-        style={{
-          "font-size": "14px",
-          "font-weight": "700",
-          color: "var(--label)",
-        }}
-      >
-        Presentation labels unavailable
-      </div>
-      <p
-        style={{
-          "font-size": "12.5px",
-          color: "var(--label)",
-          "line-height": "1.5",
-          margin: "5px 0 0",
-        }}
-      >
+  <div class={css.labelsUnavailable}>
+    <span class={css.labelsIcon}>⚠</span>
+    <div class={css.labelsMain}>
+      <div class={css.labelsTitle}>Presentation labels unavailable</div>
+      <p class={css.labelsBody}>
         The off-chain document (
-        <span style={{ "font-family": "var(--mono)", "font-size": "11.5px" }}>
-          {shortRef(props.keyStr)}
-        </span>
-        ) couldn't be fetched or failed its hash check, so titles and option
-        labels can't be shown. <b>Results are still accurate</b> — every
-        question type, count and constraint is on-chain, and answers reference
-        option <i>indices</i>, which are tallied normally.
+        <span class={css.labelsMono}>{shortRef(props.keyStr)}</span>) couldn't
+        be fetched or failed its hash check, so titles and option labels can't
+        be shown. <b>Results are still accurate</b> — every question type, count
+        and constraint is on-chain, and answers reference option <i>indices</i>,
+        which are tallied normally.
       </p>
     </div>
   </div>
@@ -2562,38 +1499,18 @@ const Empty: Component<{
   error?: unknown;
   onRetry?: () => void;
 }> = (props) => (
-  <div
-    style={{
-      background: "#fff",
-      border: "1px solid var(--line)",
-      "border-radius": "var(--r-card)",
-      padding: "30px 24px",
-      "margin-top": "14px",
-      "text-align": "center",
-      color: "var(--muted)",
-    }}
-  >
+  <div class={css.empty}>
     <Show
       when={props.error}
       fallback={props.loading ? "Loading…" : "Survey not found."}
     >
-      <div style={{ color: "var(--danger)", "margin-bottom": "12px" }}>
+      <div class={css.emptyError}>
         Couldn't load from the network — this may be a transient error.
       </div>
       <button
         type="button"
         onClick={() => props.onRetry?.()}
-        style={{
-          "font-family": "inherit",
-          "font-size": "13px",
-          "font-weight": "700",
-          cursor: "pointer",
-          background: "var(--accent)",
-          color: "#fff",
-          border: "none",
-          "border-radius": "var(--r-input)",
-          padding: "9px 16px",
-        }}
+        class={css.retryBtn}
       >
         Retry
       </button>

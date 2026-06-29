@@ -3,6 +3,7 @@
 import type { Component } from "solid-js";
 import { useApp } from "~/state";
 import { explorerTxUrl } from "~/ui/format";
+import css from "./TxLink.module.css";
 
 export const TxLink: Component<{
   hash: string;
@@ -16,11 +17,8 @@ export const TxLink: Component<{
       target="_blank"
       rel="noopener noreferrer"
       title="View transaction on the Cardano Explorer"
-      style={{
-        color: props.color ?? "inherit",
-        "text-decoration": "underline",
-        "text-underline-offset": "2px",
-      }}
+      class={css.link}
+      style={props.color ? { "--tx-color": props.color } : undefined}
     >
       tx {props.hash}
     </a>

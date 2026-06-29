@@ -6,7 +6,6 @@ import {
   createMemo,
   createSignal,
   type Component,
-  type JSX,
 } from "solid-js";
 import { createStore, type SetStoreFunction } from "solid-js/store";
 import { A, useNavigate } from "@solidjs/router";
@@ -52,6 +51,7 @@ import {
 } from "~/tlock/drand";
 import { networkMismatch, roleColors, roleLabel, shortRef } from "~/ui/format";
 import type { WalletIdentity } from "~/wallet/types";
+import css from "./Create.module.css";
 
 /** Add-a-question buttons: one per type, in tag order. Custom is Pro-only. */
 const ADD_BUTTONS: ReadonlyArray<{
@@ -276,7 +276,7 @@ export const Create: Component = () => {
     <Show
       when={txHash() === null}
       fallback={
-        <main style={singleColMain()}>
+        <main class={css.singleColMain}>
           <BackLink />
           <SubmittedPanel hash={txHash()!} />
         </main>
@@ -285,19 +285,13 @@ export const Create: Component = () => {
       <Show
         when={identity()}
         fallback={
-          <main style={singleColMain()}>
+          <main class={css.singleColMain}>
             <BackLink />
             <ConnectPrompt />
           </main>
         }
       >
-        <main
-          style={{
-            "max-width": "1160px",
-            margin: "0 auto",
-            padding: "22px 24px 90px",
-          }}
-        >
+        <main class={css.main}>
           <Show when={submitting() && submitSteps().length > 1}>
             <SubmitProgressModal
               title="Publishing your survey"
@@ -307,14 +301,14 @@ export const Create: Component = () => {
           </Show>
 
           <BackLink />
-          <h1 style={titleStyle()}>Create a survey</h1>
-          <p style={subtitleStyle()}>
+          <h1 class={css.title}>Create a survey</h1>
+          <p class={css.subtitle}>
             Define the questions, who may respond, when it closes, and whether
             answers are public or sealed, then sign to publish the definition
             on-chain under metadata label 17.
           </p>
 
-          <div class="create-grid" style={{ "margin-top": "20px" }}>
+          <div class={`create-grid ${css.gridTop}`}>
             {/* left: builder */}
             <div>
               <DetailsSection meta={meta} setMeta={setMeta} />
@@ -346,19 +340,13 @@ export const Create: Component = () => {
                 hasPinning={hasPinning()}
               />
 
-              <div style={{ "margin-top": "24px" }}>
+              <div class={css.questionsSection}>
                 <SectionHead
                   n="07"
                   label="Questions"
                   trailing={questions.length}
                 />
-                <div
-                  style={{
-                    display: "flex",
-                    "flex-direction": "column",
-                    gap: "12px",
-                  }}
-                >
+                <div class={css.questionList}>
                   <For each={questions}>
                     {(q, i) => (
                       <QuestionEditor
@@ -371,11 +359,9 @@ export const Create: Component = () => {
                     )}
                   </For>
                 </div>
-                <div style={addPanelStyle()}>
-                  <div style={addPanelHeadStyle()}>Add a question</div>
-                  <div
-                    style={{ display: "flex", "flex-wrap": "wrap", gap: "8px" }}
-                  >
+                <div class={css.addPanel}>
+                  <div class={css.addPanelHead}>Add a question</div>
+                  <div class={css.addBtnRow}>
                     <For
                       each={
                         app.ui.pro
@@ -387,17 +373,9 @@ export const Create: Component = () => {
                         <button
                           type="button"
                           onClick={() => addQuestion(b.type)}
-                          style={addTypeBtnStyle()}
+                          class={css.addTypeBtn}
                         >
-                          <span
-                            style={{
-                              "font-family": "var(--mono)",
-                              "font-size": "11px",
-                              color: "var(--dim)",
-                            }}
-                          >
-                            {b.tag}
-                          </span>
+                          <span class={css.addTypeTag}>{b.tag}</span>
                           {b.short}
                         </button>
                       )}
@@ -446,8 +424,8 @@ export const Create: Component = () => {
 };
 
 const BackLink: Component = () => (
-  <A href="/" style={backLinkStyle()}>
-    <span style={{ "font-size": "15px" }}>←</span> All surveys
+  <A href="/" class={css.backLink}>
+    <span class={css.backArrow}>←</span> All surveys
   </A>
 );
 
@@ -461,29 +439,25 @@ const DetailsSection: Component<{
 }> = (props) => (
   <div>
     <SectionHead n="01" label="Basics" />
-    <div style={cardStyle()}>
-      <label style={{ display: "block" }}>
-        <span style={fieldLabelStyle()}>Title</span>
+    <div class={css.card}>
+      <label class={css.blockLabel}>
+        <span class={css.fieldLabel}>Title</span>
         <input
           type="text"
           value={props.meta.title}
           placeholder="e.g. Treasury priorities for next epoch"
           onInput={(e) => props.setMeta("title", e.currentTarget.value)}
-          style={textInputStyle()}
+          class={css.textInput}
         />
       </label>
-      <label style={{ display: "block", "margin-top": "14px" }}>
-        <span style={fieldLabelStyle()}>Description</span>
+      <label class={css.blockLabelGap}>
+        <span class={css.fieldLabel}>Description</span>
         <textarea
           value={props.meta.description}
           placeholder="Optional context for respondents."
           onInput={(e) => props.setMeta("description", e.currentTarget.value)}
           rows={3}
-          style={{
-            ...textInputStyle(),
-            resize: "vertical",
-            "font-family": "inherit",
-          }}
+          class={css.textArea}
         />
       </label>
     </div>
@@ -494,10 +468,10 @@ const RolesSection: Component<{
   roles: readonly Role[];
   onToggle: (r: Role) => void;
 }> = (props) => (
-  <div style={{ "margin-top": "22px" }}>
+  <div class={css.section}>
     <SectionHead n="03" label="Who can respond" />
-    <div style={cardStyle()}>
-      <div style={{ display: "flex", gap: "8px", "flex-wrap": "wrap" }}>
+    <div class={css.card}>
+      <div class={css.rowWrap}>
         <For each={ROLE_VALUES}>
           {(r) => {
             const on = () => props.roles.includes(r);
@@ -507,9 +481,14 @@ const RolesSection: Component<{
                 type="button"
                 aria-pressed={on()}
                 onClick={() => props.onToggle(r)}
-                style={roleToggleStyle(on(), color, bg)}
+                class={css.roleToggle}
+                classList={{ [css.roleToggleOn]: on() }}
+                style={{ "--role-color": color, "--role-bg": bg }}
               >
-                <span style={checkboxStyle(on())}>
+                <span
+                  class={css.checkbox}
+                  classList={{ [css.checkboxOn]: on() }}
+                >
                   <Show when={on()}>✓</Show>
                 </span>
                 {roleLabel(r)}
@@ -518,7 +497,7 @@ const RolesSection: Component<{
           }}
         </For>
       </div>
-      <p style={hintStyle()}>
+      <p class={css.hint}>
         Eligibility is a claim, verified independently against ledger state. SPO
         and CC can be listed, but can't respond from a browser wallet (they need
         cold/hot keys).
@@ -596,61 +575,44 @@ const TimingSection: Component<{
     );
   };
   return (
-    <div style={{ "margin-top": "22px" }}>
+    <div class={css.section}>
       <SectionHead n="04" label="Timing" />
-      <div style={govLinked() ? govCardStyle() : cardStyle()}>
+      <div class={css.card} classList={{ [css.govCard]: govLinked() }}>
         <button
           type="button"
           role="switch"
           aria-checked={govLinked()}
           onClick={() => setGovLinked((v) => !v)}
-          style={govToggleRowStyle()}
+          class={css.govToggleRow}
         >
-          <span style={govSwitchTrackStyle(govLinked())}>
-            <span style={govSwitchKnobStyle(govLinked())} />
-          </span>
           <span
-            style={{
-              display: "flex",
-              "flex-direction": "column",
-              gap: "2px",
-              "text-align": "left",
-            }}
+            class={css.govSwitchTrack}
+            classList={{ [css.govSwitchTrackOn]: govLinked() }}
           >
             <span
-              style={{
-                "font-size": "13px",
-                "font-weight": "700",
-                color: govLinked() ? "var(--gov)" : "var(--ink)",
-              }}
+              class={css.govSwitchKnob}
+              classList={{ [css.govSwitchKnobOn]: govLinked() }}
+            />
+          </span>
+          <span class={css.govToggleText}>
+            <span
+              class={css.govToggleTitle}
+              classList={{ [css.govToggleTitleOn]: govLinked() }}
             >
               Tie this survey to a governance Info Action
             </span>
-            <span
-              style={{
-                "font-size": "11.5px",
-                color: "var(--muted)",
-                "line-height": "1.45",
-              }}
-            >
+            <span class={css.govToggleDesc}>
               An on-chain Info Action will advertise this survey and they close
               together.
             </span>
           </span>
         </button>
 
-        <label style={{ display: "block", "margin-top": "18px" }}>
-          <span
-            style={{
-              ...fieldLabelStyle(),
-              display: "flex",
-              "align-items": "center",
-              gap: "8px",
-            }}
-          >
+        <label class={css.endEpochField}>
+          <span class={`${css.fieldLabel} ${css.endEpochLabel}`}>
             End epoch (inclusive)
             <Show when={locked()}>
-              <span style={govAutoBadgeStyle()}>auto · locked</span>
+              <span class={css.govAutoBadge}>auto · locked</span>
             </Show>
           </span>
           <input
@@ -659,28 +621,17 @@ const TimingSection: Component<{
             readOnly={locked()}
             aria-disabled={locked()}
             onInput={(e) => props.onInput(e.currentTarget.value)}
-            style={{
-              ...textInputStyle(),
-              "font-family": "var(--mono)",
-              "max-width": "200px",
-              ...(locked()
-                ? {
-                    background: "var(--surface3)",
-                    color: "var(--gov)",
-                    "border-color": "var(--gov-line)",
-                    cursor: "not-allowed",
-                  }
-                : {}),
-            }}
+            class={css.epochInput}
+            classList={{ [css.epochInputLocked]: locked() }}
           />
         </label>
         <Show when={endEpochDate()}>
-          {(date) => <div style={revealLineStyle()}>Closes ~{date()}</div>}
+          {(date) => <div class={css.revealLine}>Closes ~{date()}</div>}
         </Show>
         <Show
           when={govLinked()}
           fallback={
-            <p style={hintStyle()}>
+            <p class={css.hint}>
               Responses are accepted through this epoch.{" "}
               <Show
                 when={tipEpoch() !== undefined}
@@ -694,23 +645,20 @@ const TimingSection: Component<{
           <Show
             when={locked()}
             fallback={
-              <div style={warnNoteStyle()}>
-                Couldn't read{" "}
-                <span style={{ "font-family": "var(--mono)" }}>
-                  gov_action_lifetime
-                </span>{" "}
+              <div class={css.warnNote}>
+                Couldn't read <span class={css.mono}>gov_action_lifetime</span>{" "}
                 from the chain, so the deadline can't be computed. Enter the
                 Info Action's voting end epoch manually — they must match
                 exactly.
               </div>
             }
           >
-            <div style={govNoteStyle()}>
+            <div class={css.govNote}>
               Locked to the Info Action's voting deadline. On{" "}
               <b>{props.network}</b>, a governance action submitted this epoch
               {tipEpoch() !== undefined ? ` (${tipEpoch()})` : ""} closes at
               epoch <b>{autoEndEpoch()}</b> (
-              <span style={{ "font-family": "var(--mono)" }}>
+              <span class={css.mono}>
                 gov_action_lifetime = {govActionLifetime()}
               </span>
               ), so the survey's end epoch must equal that. If you'll submit the
@@ -720,7 +668,7 @@ const TimingSection: Component<{
           </Show>
         </Show>
         <Show when={!govLinked() && tooEarly()}>
-          <div style={warnNoteStyle()}>
+          <div class={css.warnNote}>
             End epoch must be later than the current epoch ({tipEpoch()}), or
             the survey is closed as soon as it's published.
           </div>
@@ -735,24 +683,19 @@ const ContentSection: Component<{
   onMode: (m: "embedded" | "external") => void;
   hasPinning: boolean;
 }> = (props) => (
-  <div style={{ "margin-top": "22px" }}>
+  <div class={css.section}>
     <SectionHead n="06" label="Content" />
-    <div style={cardStyle()}>
-      <div
-        style={{
-          display: "grid",
-          "grid-template-columns": "1fr 1fr",
-          gap: "10px",
-        }}
-      >
+    <div class={css.card}>
+      <div class={css.modeGrid}>
         <button
           type="button"
           aria-pressed={props.mode === "embedded"}
           onClick={() => props.onMode("embedded")}
-          style={modeCardStyle(props.mode === "embedded")}
+          class={css.modeCard}
+          classList={{ [css.modeCardOn]: props.mode === "embedded" }}
         >
-          <div style={modeTitleStyle()}>Embedded</div>
-          <div style={modeDescStyle()}>
+          <div class={css.modeTitle}>Embedded</div>
+          <div class={css.modeDesc}>
             All text on-chain. No external dependency — recommended.
           </div>
         </button>
@@ -760,10 +703,11 @@ const ContentSection: Component<{
           type="button"
           aria-pressed={props.mode === "external"}
           onClick={() => props.onMode("external")}
-          style={modeCardStyle(props.mode === "external")}
+          class={css.modeCard}
+          classList={{ [css.modeCardOn]: props.mode === "external" }}
         >
-          <div style={modeTitleStyle()}>External</div>
-          <div style={modeDescStyle()}>
+          <div class={css.modeTitle}>External</div>
+          <div class={css.modeDesc}>
             Prompts &amp; labels live in a pinned IPFS document; chain carries a
             hash anchor.
           </div>
@@ -771,14 +715,7 @@ const ContentSection: Component<{
       </div>
 
       <Show when={props.mode === "external"}>
-        <p
-          style={{
-            "font-size": "12.5px",
-            color: "var(--muted)",
-            "line-height": "1.5",
-            margin: "14px 0 0",
-          }}
-        >
+        <p class={css.externalNote}>
           On publish, the title, description, prompts and option labels are
           written to a <b>presentation document</b>, pinned to your IPFS
           providers, and anchored on-chain by its blake2b-256 hash. Only counts,
@@ -788,9 +725,9 @@ const ContentSection: Component<{
           surveys.
         </p>
         <Show when={!props.hasPinning}>
-          <div style={warnNoteStyle()}>
+          <div class={css.warnNote}>
             No IPFS provider is configured.{" "}
-            <A href="/settings" style={{ color: "var(--accent)" }}>
+            <A href="/settings" class={css.settingsLink}>
               Add one in Settings
             </A>{" "}
             to publish external content, or switch to Embedded.
@@ -814,24 +751,19 @@ const VisibilitySection: Component<{
   resolvedPadding: number;
   pro: boolean;
 }> = (props) => (
-  <div style={{ "margin-top": "22px" }}>
+  <div class={css.section}>
     <SectionHead n="05" label="Visibility" />
-    <div style={cardStyle()}>
-      <div
-        style={{
-          display: "grid",
-          "grid-template-columns": "1fr 1fr",
-          gap: "10px",
-        }}
-      >
+    <div class={css.card}>
+      <div class={css.modeGrid}>
         <button
           type="button"
           aria-pressed={props.mode === "public"}
           onClick={() => props.onMode("public")}
-          style={modeCardStyle(props.mode === "public")}
+          class={css.modeCard}
+          classList={{ [css.modeCardOn]: props.mode === "public" }}
         >
-          <div style={modeTitleStyle()}>Public</div>
-          <div style={modeDescStyle()}>
+          <div class={css.modeTitle}>Public</div>
+          <div class={css.modeDesc}>
             Answers are plaintext, tallied as they arrive.
           </div>
         </button>
@@ -839,45 +771,36 @@ const VisibilitySection: Component<{
           type="button"
           aria-pressed={props.mode === "sealed"}
           onClick={() => props.onMode("sealed")}
-          style={modeCardStyle(props.mode === "sealed")}
+          class={css.modeCard}
+          classList={{ [css.modeCardOn]: props.mode === "sealed" }}
         >
-          <div
-            style={{
-              ...modeTitleStyle(),
-              display: "inline-flex",
-              "align-items": "center",
-              gap: "7px",
-            }}
-          >
+          <div class={css.modeTitleSealed}>
             <VisGlyph status="sealed" /> Sealed
           </div>
-          <div style={modeDescStyle()}>
+          <div class={css.modeDesc}>
             Timelock-encrypted; opens at a drand round.
           </div>
         </button>
       </div>
 
       <Show when={props.mode === "sealed"}>
-        <div style={{ "margin-top": "16px" }}>
+        <div class={css.sealedConfig}>
           {/* Pro: pin chain + choose how the reveal round is set. Plain: Auto. */}
           <Show when={props.pro}>
-            <div style={fieldLabelStyle()}>Drand chain</div>
-            <div style={chainHashStyle()}>
+            <div class={css.fieldLabel}>Drand chain</div>
+            <div class={css.chainHash}>
               {QUICKNET_CHAIN_HASH_HEX.slice(0, 6)}…
               {QUICKNET_CHAIN_HASH_HEX.slice(-3)} · quicknet
             </div>
 
-            <div style={{ ...fieldLabelStyle(), "margin-top": "14px" }}>
-              Reveal round
-            </div>
-            <div
-              style={{ display: "flex", gap: "8px", "margin-bottom": "10px" }}
-            >
+            <div class={css.fieldLabelGap}>Reveal round</div>
+            <div class={css.pillRow}>
               <button
                 type="button"
                 aria-pressed={props.drandMode === "auto"}
                 onClick={() => props.onDrandMode("auto")}
-                style={pillStyle(props.drandMode === "auto")}
+                class={css.pill}
+                classList={{ [css.pillOn]: props.drandMode === "auto" }}
               >
                 Auto
               </button>
@@ -885,7 +808,8 @@ const VisibilitySection: Component<{
                 type="button"
                 aria-pressed={props.drandMode === "manual"}
                 onClick={() => props.onDrandMode("manual")}
-                style={pillStyle(props.drandMode === "manual")}
+                class={css.pill}
+                classList={{ [css.pillOn]: props.drandMode === "manual" }}
               >
                 Manual
               </button>
@@ -893,7 +817,7 @@ const VisibilitySection: Component<{
             <Show
               when={props.drandMode === "manual"}
               fallback={
-                <p style={hintStyle()}>
+                <p class={css.hint}>
                   Derived from the end epoch — the first drand round after
                   responses close.
                 </p>
@@ -904,17 +828,13 @@ const VisibilitySection: Component<{
                 value={props.drandRoundText}
                 placeholder="drand round number"
                 onInput={(e) => props.onDrandRoundText(e.currentTarget.value)}
-                style={{
-                  ...textInputStyle(),
-                  "font-family": "var(--mono)",
-                  "max-width": "240px",
-                }}
+                class={css.roundInput}
               />
             </Show>
           </Show>
 
           <Show when={props.resolvedRound > 0}>
-            <div style={revealLineStyle()}>
+            <div class={css.revealLine}>
               <Show
                 when={props.pro}
                 fallback={<>Reveals {formatRevealDate(props.resolvedRound)}</>}
@@ -926,8 +846,8 @@ const VisibilitySection: Component<{
           </Show>
 
           <Show when={props.pro}>
-            <label style={{ display: "block", "margin-top": "14px" }}>
-              <span style={fieldLabelStyle()}>Padding size (bytes)</span>
+            <label class={css.blockLabelGap}>
+              <span class={css.fieldLabel}>Padding size (bytes)</span>
               <input
                 type="number"
                 min={1}
@@ -940,14 +860,10 @@ const VisibilitySection: Component<{
                   // Positive integers only; blank or anything < 1 means auto.
                   props.onPaddingOverride(v === "" || n < 1 ? 0 : n);
                 }}
-                style={{
-                  ...textInputStyle(),
-                  "font-family": "var(--mono)",
-                  "max-width": "160px",
-                }}
+                class={css.paddingInput}
               />
             </label>
-            <p style={hintStyle()}>
+            <p class={css.hint}>
               Each response is zero-padded to this length before encryption, so
               ciphertext size doesn't leak how much was answered. Leave blank to
               auto-size to the worst-case answer (<b>{props.resolvedPadding}</b>{" "}
@@ -955,14 +871,7 @@ const VisibilitySection: Component<{
             </p>
           </Show>
 
-          <div
-            style={{
-              ...warnNoteStyle(),
-              color: "var(--label)",
-              background: "var(--card-bg)",
-              border: "1px solid var(--card-line)",
-            }}
-          >
+          <div class={css.sealedNote}>
             Responses are encrypted as they come in and stay hidden until the
             reveal time — not even you can read them early.
           </div>
@@ -973,32 +882,13 @@ const VisibilitySection: Component<{
 );
 
 const OwnerSection: Component<{ identity: WalletIdentity }> = (props) => (
-  <div style={{ "margin-top": "22px" }}>
+  <div class={css.section}>
     <SectionHead n="02" label="Who can cancel" />
-    <div
-      style={{
-        ...cardStyle(),
-        background: "var(--card-bg)",
-        border: "1px solid var(--card-line)",
-      }}
-    >
-      <div
-        style={{
-          "font-size": "12.5px",
-          color: "var(--label)",
-          "line-height": "1.5",
-        }}
-      >
-        <b style={{ color: "#5B4A22" }}>Owned by your payment credential.</b>{" "}
-        You sign with it to publish, and only it can cancel this survey later.
-        <span
-          style={{
-            "font-family": "var(--mono)",
-            "font-size": "11.5px",
-            color: "var(--dim)",
-            "margin-left": "6px",
-          }}
-        >
+    <div class={css.cardSoft}>
+      <div class={css.ownerText}>
+        <b class={css.ownerHeading}>Owned by your payment credential.</b> You
+        sign with it to publish, and only it can cancel this survey later.
+        <span class={css.ownerKey}>
           key:{shortHash(props.identity.payment.hashHex)}
         </span>
       </div>
@@ -1019,36 +909,29 @@ const QuestionEditor: Component<{
 }> = (props) => {
   const i = () => props.index;
   return (
-    <div style={cardStyle()}>
-      <div
-        style={{
-          display: "flex",
-          "align-items": "center",
-          "justify-content": "space-between",
-          gap: "10px",
-          "flex-wrap": "wrap",
-        }}
-      >
-        <div style={{ display: "flex", gap: "10px", "align-items": "center" }}>
-          <span style={qChipStyle()}>Q{props.index + 1}</span>
+    <div class={css.card}>
+      <div class={css.qHeadRow}>
+        <div class={css.qHeadLeft}>
+          <span class={css.qChip}>Q{props.index + 1}</span>
           <select
             value={props.draft.type}
             onChange={(e) =>
               props.set(i(), "type", e.currentTarget.value as QuestionType)
             }
-            style={selectStyle()}
+            class={css.select}
           >
             <For each={QUESTION_TYPES}>
               {(t) => <option value={t}>{questionTypeLabel(t)}</option>}
             </For>
           </select>
         </div>
-        <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
+        <div class={css.qHeadRight}>
           <button
             type="button"
             aria-pressed={props.draft.required}
             onClick={() => props.set(i(), "required", !props.draft.required)}
-            style={requiredBtnStyle(props.draft.required)}
+            class={css.requiredBtn}
+            classList={{ [css.requiredBtnOn]: props.draft.required }}
           >
             {props.draft.required ? "Required" : "Optional"}
           </button>
@@ -1056,7 +939,7 @@ const QuestionEditor: Component<{
             <button
               type="button"
               onClick={() => props.onRemove()}
-              style={removeBtnStyle()}
+              class={css.removeBtn}
               aria-label="Remove question"
             >
               ×
@@ -1070,10 +953,10 @@ const QuestionEditor: Component<{
         value={props.draft.prompt}
         placeholder="Question prompt"
         onInput={(e) => props.set(i(), "prompt", e.currentTarget.value)}
-        style={{ ...textInputStyle(), "margin-top": "12px" }}
+        class={css.promptInput}
       />
 
-      <div style={{ "margin-top": "12px" }}>
+      <div class={css.typeFields}>
         <TypeFields index={i()} draft={props.draft} set={props.set} />
       </div>
     </div>
@@ -1144,31 +1027,30 @@ const TypeFields: Component<{
       </Show>
 
       <Show when={props.draft.type === "pointsAllocation"}>
-        <label style={inlineFieldStyle()}>
-          <span style={fieldLabelStyle()}>Budget</span>
+        <label class={css.inlineField}>
+          <span class={css.fieldLabel}>Budget</span>
           <input
             type="number"
             value={props.draft.budget}
             onInput={(e) =>
               props.set(i(), "budget", intOf(e.currentTarget.value))
             }
-            style={{
-              ...textInputStyle(),
-              "font-family": "var(--mono)",
-              "max-width": "140px",
-            }}
+            class={css.budgetInput}
           />
         </label>
       </Show>
 
       <Show when={props.draft.type === "rating"}>
-        <div style={{ "margin-top": "14px" }}>
-          <div style={{ display: "flex", gap: "8px", "margin-bottom": "12px" }}>
+        <div class={css.ratingBlock}>
+          <div class={css.ratingPillRow}>
             <button
               type="button"
               aria-pressed={props.draft.ratingScale === "numeric"}
               onClick={() => props.set(i(), "ratingScale", "numeric")}
-              style={pillStyle(props.draft.ratingScale === "numeric")}
+              class={css.pill}
+              classList={{
+                [css.pillOn]: props.draft.ratingScale === "numeric",
+              }}
             >
               Numeric scale
             </button>
@@ -1176,7 +1058,8 @@ const TypeFields: Component<{
               type="button"
               aria-pressed={props.draft.ratingScale === "labels"}
               onClick={() => props.set(i(), "ratingScale", "labels")}
-              style={pillStyle(props.draft.ratingScale === "labels")}
+              class={css.pill}
+              classList={{ [css.pillOn]: props.draft.ratingScale === "labels" }}
             >
               Labelled scale
             </button>
@@ -1215,16 +1098,9 @@ const TypeFields: Component<{
       </Show>
 
       <Show when={props.draft.type === "custom"}>
-        <div
-          style={{
-            display: "flex",
-            "flex-direction": "column",
-            gap: "10px",
-            "margin-top": "4px",
-          }}
-        >
-          <label style={{ display: "block" }}>
-            <span style={fieldLabelStyle()}>Method schema URI</span>
+        <div class={css.customFields}>
+          <label class={css.blockLabel}>
+            <span class={css.fieldLabel}>Method schema URI</span>
             <input
               type="text"
               value={props.draft.customUri}
@@ -1232,17 +1108,11 @@ const TypeFields: Component<{
               onInput={(e) =>
                 props.set(i(), "customUri", e.currentTarget.value)
               }
-              style={{
-                ...textInputStyle(),
-                "font-family": "var(--mono)",
-                "font-size": "12.5px",
-              }}
+              class={css.customInput}
             />
           </label>
-          <label style={{ display: "block" }}>
-            <span style={fieldLabelStyle()}>
-              Schema hash (blake2b-256, hex)
-            </span>
+          <label class={css.blockLabel}>
+            <span class={css.fieldLabel}>Schema hash (blake2b-256, hex)</span>
             <input
               type="text"
               value={props.draft.customHash}
@@ -1250,11 +1120,7 @@ const TypeFields: Component<{
               onInput={(e) =>
                 props.set(i(), "customHash", e.currentTarget.value)
               }
-              style={{
-                ...textInputStyle(),
-                "font-family": "var(--mono)",
-                "font-size": "12.5px",
-              }}
+              class={css.customInput}
             />
           </label>
         </div>
@@ -1276,32 +1142,32 @@ const OptionsEditor: Component<{
   onAdd: () => void;
   onRemove: (j: number) => void;
 }> = (props) => (
-  <div style={{ display: "flex", "flex-direction": "column", gap: "8px" }}>
+  <div class={css.optionsList}>
     <Show when={props.hint}>
-      <div style={scaleHintStyle()}>{props.hint}</div>
+      <div class={css.scaleHint}>{props.hint}</div>
     </Show>
     <Index each={props.labels}>
       {(label, j) => (
-        <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
-          <span style={optIndexStyle()}>{props.zeroBased ? j : j + 1}</span>
+        <div class={css.optionRow}>
+          <span class={css.optIndex}>{props.zeroBased ? j : j + 1}</span>
           <input
             type="text"
             value={label()}
             placeholder={`Option ${j + 1}`}
             onInput={(e) => props.onLabel(j, e.currentTarget.value)}
-            style={{ ...textInputStyle(), "margin-top": "0" }}
+            class={css.optionInput}
           />
           <Show when={props.endBadges && j === 0}>
-            <span style={endBadgeStyle("worst")}>worst</span>
+            <span class={css.endBadgeWorst}>worst</span>
           </Show>
           <Show when={props.endBadges && j === props.labels.length - 1}>
-            <span style={endBadgeStyle("best")}>best</span>
+            <span class={css.endBadgeBest}>best</span>
           </Show>
           <Show when={props.labels.length > 2}>
             <button
               type="button"
               onClick={() => props.onRemove(j)}
-              style={removeBtnStyle()}
+              class={css.removeBtn}
               aria-label={`Remove option ${j + 1}`}
             >
               ×
@@ -1313,7 +1179,7 @@ const OptionsEditor: Component<{
     <button
       type="button"
       onClick={() => props.onAdd()}
-      style={addOptionBtnStyle()}
+      class={css.addOptionBtn}
     >
       {props.addLabel ?? "+ Add option"}
     </button>
@@ -1328,31 +1194,24 @@ const MinMaxRow: Component<{
   onMax: (n: number) => void;
   minAllowed: number;
 }> = (props) => (
-  <div
-    style={{
-      display: "flex",
-      gap: "16px",
-      "margin-top": "14px",
-      "flex-wrap": "wrap",
-    }}
-  >
-    <label style={inlineFieldStyle()}>
-      <span style={fieldLabelStyle()}>min {props.label}</span>
+  <div class={css.fieldRow}>
+    <label class={css.inlineField}>
+      <span class={css.fieldLabel}>min {props.label}</span>
       <input
         type="number"
         min={props.minAllowed}
         value={props.min}
         onInput={(e) => props.onMin(intOf(e.currentTarget.value))}
-        style={miniNumberStyle()}
+        class={css.miniNumber}
       />
     </label>
-    <label style={inlineFieldStyle()}>
-      <span style={fieldLabelStyle()}>max {props.label}</span>
+    <label class={css.inlineField}>
+      <span class={css.fieldLabel}>max {props.label}</span>
       <input
         type="number"
         value={props.max}
         onInput={(e) => props.onMax(intOf(e.currentTarget.value))}
-        style={miniNumberStyle()}
+        class={css.miniNumber}
       />
     </label>
   </div>
@@ -1366,40 +1225,33 @@ const NumericRow: Component<{
   onMax: (v: string) => void;
   onStep: (v: string) => void;
 }> = (props) => (
-  <div
-    style={{
-      display: "flex",
-      gap: "16px",
-      "margin-top": "14px",
-      "flex-wrap": "wrap",
-    }}
-  >
-    <label style={inlineFieldStyle()}>
-      <span style={fieldLabelStyle()}>min</span>
+  <div class={css.fieldRow}>
+    <label class={css.inlineField}>
+      <span class={css.fieldLabel}>min</span>
       <input
         type="text"
         value={props.min}
         onInput={(e) => props.onMin(e.currentTarget.value)}
-        style={miniNumberStyle()}
+        class={css.miniNumber}
       />
     </label>
-    <label style={inlineFieldStyle()}>
-      <span style={fieldLabelStyle()}>max</span>
+    <label class={css.inlineField}>
+      <span class={css.fieldLabel}>max</span>
       <input
         type="text"
         value={props.max}
         onInput={(e) => props.onMax(e.currentTarget.value)}
-        style={miniNumberStyle()}
+        class={css.miniNumber}
       />
     </label>
-    <label style={inlineFieldStyle()}>
-      <span style={fieldLabelStyle()}>step (optional)</span>
+    <label class={css.inlineField}>
+      <span class={css.fieldLabel}>step (optional)</span>
       <input
         type="text"
         value={props.step}
         placeholder="1"
         onInput={(e) => props.onStep(e.currentTarget.value)}
-        style={miniNumberStyle()}
+        class={css.miniNumber}
       />
     </label>
   </div>
@@ -1414,10 +1266,10 @@ const SectionHead: Component<{
   label: string;
   trailing?: number;
 }> = (props) => (
-  <div style={numberedHeadStyle()}>
+  <div class={css.numberedHead}>
     {props.n} · {props.label}
     <Show when={props.trailing !== undefined}>
-      <span style={{ color: "var(--dim)" }}> · {props.trailing}</span>
+      <span class={css.headTrailing}> · {props.trailing}</span>
     </Show>
   </div>
 );
@@ -1443,18 +1295,12 @@ const SummaryCard: Component<{ meta: DefinitionMeta; qCount: number }> = (
         : "Sealed"
       : "Public";
   return (
-    <div style={summaryCardStyle()}>
-      <div style={numberedHeadStyle()}>Summary</div>
-      <h3 style={summaryTitleStyle()}>
+    <div class={css.summaryCard}>
+      <div class={css.numberedHead}>Summary</div>
+      <h3 class={css.summaryTitle}>
         {props.meta.title.trim() || "Untitled survey"}
       </h3>
-      <div
-        style={{
-          display: "flex",
-          "flex-direction": "column",
-          "margin-top": "14px",
-        }}
-      >
+      <div class={css.summaryRows}>
         <SummaryRow label="Questions" value={String(props.qCount)} />
         <SummaryRow label="Who responds" value={roleList()} />
         <SummaryRow label="Ends" value={ends()} />
@@ -1465,31 +1311,9 @@ const SummaryCard: Component<{ meta: DefinitionMeta; qCount: number }> = (
 };
 
 const SummaryRow: Component<{ label: string; value: string }> = (props) => (
-  <div
-    style={{
-      display: "flex",
-      "align-items": "center",
-      "justify-content": "space-between",
-      gap: "12px",
-      padding: "11px 0",
-      "border-top": "1px solid var(--line2)",
-    }}
-  >
-    <span
-      style={{ "font-size": "12.5px", color: "var(--muted)", flex: "none" }}
-    >
-      {props.label}
-    </span>
-    <span
-      style={{
-        "font-size": "13px",
-        "font-weight": "600",
-        color: "var(--ink)",
-        "text-align": "right",
-      }}
-    >
-      {props.value}
-    </span>
+  <div class={css.summaryRow}>
+    <span class={css.summaryRowLabel}>{props.label}</span>
+    <span class={css.summaryRowValue}>{props.value}</span>
   </div>
 );
 
@@ -1508,12 +1332,13 @@ const PublishButton: Component<{
         type="button"
         onClick={() => props.onPublish()}
         disabled={props.submitting || !!props.blockedReason}
-        style={asidePublishStyle(ok() && !props.submitting)}
+        class={css.publishBtn}
+        classList={{ [css.publishBtnEnabled]: ok() && !props.submitting }}
       >
         {props.submitting ? props.busyText : "Sign & publish survey"}{" "}
-        <span style={{ "font-size": "16px" }}>→</span>
+        <span class={css.publishArrow}>→</span>
       </button>
-      <p style={asideNoteStyle(ok())}>
+      <p class={css.publishNote} classList={{ [css.publishNoteOk]: ok() }}>
         <Show
           when={ok()}
           fallback={
@@ -1522,10 +1347,8 @@ const PublishButton: Component<{
           }
         >
           signs with your owner credential ·{" "}
-          <span style={{ "font-family": "var(--mono)" }}>
-            key:{shortHash(props.paymentHashHex)}
-          </span>{" "}
-          · authorizes cancellation
+          <span class={css.mono}>key:{shortHash(props.paymentHashHex)}</span> ·
+          authorizes cancellation
         </Show>
       </p>
     </>
@@ -1536,97 +1359,28 @@ const SubmittedPanel: Component<{ hash: string }> = (props) => {
   const navigate = useNavigate();
   const surveyKey = `${props.hash}:0`;
   return (
-    <div
-      style={{ ...cardStyle(), "text-align": "center", "margin-top": "20px" }}
-    >
-      <span
-        style={{
-          display: "inline-flex",
-          "align-items": "center",
-          "justify-content": "center",
-          width: "46px",
-          height: "46px",
-          "border-radius": "13px",
-          background: "var(--ok-bg)",
-          color: "var(--ok)",
-          "font-size": "22px",
-        }}
-      >
-        ✓
-      </span>
-      <h3
-        style={{
-          "font-size": "19px",
-          "font-weight": "800",
-          "letter-spacing": "-.01em",
-          margin: "14px 0 0",
-        }}
-      >
-        Survey published
-      </h3>
-      <p
-        style={{
-          "font-size": "14px",
-          color: "var(--muted)",
-          "line-height": "1.55",
-          margin: "8px auto 0",
-          "max-width": "440px",
-        }}
-      >
+    <div class={css.submittedCard}>
+      <span class={css.submittedTick}>✓</span>
+      <h3 class={css.submittedTitle}>Survey published</h3>
+      <p class={css.submittedBody}>
         Your definition was submitted under metadata label 17. It may take a few
         moments to appear as the indexer catches up.
       </p>
-      <div
-        style={{
-          "font-family": "var(--mono)",
-          "font-size": "11.5px",
-          color: "var(--faint)",
-          "margin-top": "12px",
-          "word-break": "break-all",
-        }}
-      >
+      <div class={css.submittedRef}>
         <TxLink hash={props.hash} /> · ref {shortRef(surveyKey)}
       </div>
-      <div
-        style={{
-          display: "flex",
-          gap: "10px",
-          "justify-content": "center",
-          "margin-top": "18px",
-          "flex-wrap": "wrap",
-        }}
-      >
+      <div class={css.submittedActions}>
         <button
           type="button"
           onClick={() => navigate(`/survey/${encodeURIComponent(surveyKey)}`)}
-          style={{
-            background: "var(--accent)",
-            color: "#fff",
-            border: "none",
-            "border-radius": "var(--r-control)",
-            padding: "11px 18px",
-            "font-family": "inherit",
-            "font-size": "14px",
-            "font-weight": "700",
-            cursor: "pointer",
-          }}
+          class={css.submittedPrimary}
         >
           View survey →
         </button>
         <button
           type="button"
           onClick={() => navigate("/")}
-          style={{
-            background: "#fff",
-            color: "var(--muted)",
-            border: "1px solid var(--line)",
-            "border-radius": "var(--r-control)",
-            padding: "11px 18px",
-            "font-family": "inherit",
-            "font-size": "14px",
-            "font-weight": "700",
-            cursor: "pointer",
-          }}
+          class={css.submittedSecondary}
         >
           All surveys
         </button>
@@ -1636,21 +1390,9 @@ const SubmittedPanel: Component<{ hash: string }> = (props) => {
 };
 
 const ConnectPrompt: Component = () => (
-  <div style={{ ...cardStyle(), "margin-top": "16px", "text-align": "center" }}>
-    <div
-      style={{ "font-size": "16px", "font-weight": "800", color: "var(--ink)" }}
-    >
-      Connect a wallet to create
-    </div>
-    <p
-      style={{
-        "font-size": "13.5px",
-        color: "var(--muted)",
-        "line-height": "1.55",
-        margin: "8px auto 0",
-        "max-width": "440px",
-      }}
-    >
+  <div class={css.connectCard}>
+    <div class={css.connectTitle}>Connect a wallet to create</div>
+    <p class={css.connectBody}>
       The survey is owned by your wallet's credential, which signs to publish it
       and is the only key that can cancel it. Use the Connect wallet button in
       the header.
@@ -1669,474 +1411,4 @@ function intOf(s: string): number {
 
 function shortHash(h: string): string {
   return h.length > 12 ? `${h.slice(0, 6)}…${h.slice(-4)}` : h;
-}
-
-function backLinkStyle(): JSX.CSSProperties {
-  return {
-    display: "inline-flex",
-    "align-items": "center",
-    gap: "7px",
-    "font-size": "13.5px",
-    "font-weight": "600",
-    color: "var(--muted)",
-    "text-decoration": "none",
-    padding: "6px 0",
-  };
-}
-function titleStyle(): JSX.CSSProperties {
-  return {
-    "font-size": "26px",
-    "font-weight": "700",
-    "letter-spacing": "-.018em",
-    "line-height": "1.16",
-    margin: "10px 0 0",
-    color: "var(--ink)",
-  };
-}
-function subtitleStyle(): JSX.CSSProperties {
-  return {
-    "font-size": "14px",
-    color: "var(--muted)",
-    "line-height": "1.55",
-    margin: "8px 0 0",
-  };
-}
-function singleColMain(): JSX.CSSProperties {
-  return { "max-width": "760px", margin: "0 auto", padding: "22px 24px 90px" };
-}
-function numberedHeadStyle(): JSX.CSSProperties {
-  return {
-    "font-family": "var(--mono)",
-    "font-size": "10.5px",
-    "letter-spacing": ".1em",
-    "text-transform": "uppercase",
-    color: "var(--accent)",
-    "font-weight": "600",
-    margin: "0 2px 11px",
-  };
-}
-function summaryCardStyle(): JSX.CSSProperties {
-  return {
-    background: "#fff",
-    border: "1px solid var(--line)",
-    "border-radius": "var(--r-sm)",
-    padding: "20px",
-    "box-shadow": "var(--shadow-card)",
-  };
-}
-function summaryTitleStyle(): JSX.CSSProperties {
-  return {
-    "font-family": "var(--serif)",
-    "font-size": "19px",
-    "font-weight": "600",
-    "line-height": "1.25",
-    margin: "12px 0 0",
-    color: "var(--ink)",
-  };
-}
-function warnNoteStyle(): JSX.CSSProperties {
-  return {
-    "font-size": "12px",
-    color: "var(--warn)",
-    background: "var(--warn-bg)",
-    border: "1px solid var(--warn-line)",
-    "border-radius": "var(--r-control)",
-    padding: "10px 12px",
-    "line-height": "1.5",
-    "margin-top": "10px",
-  };
-}
-function scaleHintStyle(): JSX.CSSProperties {
-  return {
-    "font-family": "var(--mono)",
-    "font-size": "10.5px",
-    color: "var(--dim)",
-    "letter-spacing": ".03em",
-  };
-}
-function endBadgeStyle(kind: "worst" | "best"): JSX.CSSProperties {
-  return kind === "worst"
-    ? {
-        "font-family": "var(--mono)",
-        "font-size": "9.5px",
-        color: "#CDA892",
-        background: "#FBF0F0",
-        "border-radius": "var(--r-3xs)",
-        padding: "3px 6px",
-        "white-space": "nowrap",
-        flex: "none",
-      }
-    : {
-        "font-family": "var(--mono)",
-        "font-size": "9.5px",
-        color: "var(--accent)",
-        background: "var(--accent-bg)",
-        "border-radius": "var(--r-3xs)",
-        padding: "3px 6px",
-        "white-space": "nowrap",
-        flex: "none",
-      };
-}
-function cardStyle(): JSX.CSSProperties {
-  return {
-    background: "#fff",
-    border: "1px solid var(--line)",
-    "border-radius": "var(--r-sm)",
-    padding: "18px 20px",
-    "margin-top": "10px",
-  };
-}
-// Governance-tinted variant of `cardStyle`, used when the survey is being tied
-// to an Info Action (same blue family as the linkage UI elsewhere).
-function govCardStyle(): JSX.CSSProperties {
-  return {
-    background: "var(--gov-bg)",
-    border: "1px solid var(--gov-line)",
-    "border-radius": "var(--r-sm)",
-    padding: "18px 20px",
-    "margin-top": "10px",
-  };
-}
-function govAutoBadgeStyle(): JSX.CSSProperties {
-  return {
-    "font-family": "var(--mono)",
-    "font-size": "9.5px",
-    "font-weight": "700",
-    "letter-spacing": ".04em",
-    "text-transform": "uppercase",
-    color: "var(--gov)",
-    background: "#fff",
-    border: "1px solid var(--gov-line)",
-    "border-radius": "var(--r-3xs)",
-    padding: "3px 6px",
-  };
-}
-function govNoteStyle(): JSX.CSSProperties {
-  return {
-    "font-size": "12px",
-    color: "var(--gov)",
-    background: "#fff",
-    border: "1px solid var(--gov-line)",
-    "border-radius": "var(--r-control)",
-    padding: "10px 12px",
-    "line-height": "1.5",
-    "margin-top": "10px",
-  };
-}
-function govToggleRowStyle(): JSX.CSSProperties {
-  return {
-    display: "flex",
-    "align-items": "center",
-    gap: "12px",
-    width: "100%",
-    padding: "0",
-    background: "transparent",
-    border: "none",
-    cursor: "pointer",
-    "font-family": "inherit",
-  };
-}
-function govSwitchTrackStyle(on: boolean): JSX.CSSProperties {
-  return {
-    position: "relative",
-    flex: "none",
-    width: "38px",
-    height: "22px",
-    "border-radius": "var(--r-pill)",
-    background: on ? "var(--gov)" : "var(--track)",
-    border: `1px solid ${on ? "var(--gov)" : "var(--line)"}`,
-    transition: "background .15s ease",
-  };
-}
-function govSwitchKnobStyle(on: boolean): JSX.CSSProperties {
-  return {
-    position: "absolute",
-    top: "2px",
-    left: on ? "18px" : "2px",
-    width: "16px",
-    height: "16px",
-    "border-radius": "50%",
-    background: "#fff",
-    "box-shadow": "0 1px 2px rgba(0,0,0,.25)",
-    transition: "left .15s ease",
-  };
-}
-function fieldLabelStyle(): JSX.CSSProperties {
-  return {
-    display: "block",
-    "font-size": "12px",
-    "font-weight": "700",
-    color: "var(--muted)",
-    "margin-bottom": "6px",
-  };
-}
-function textInputStyle(): JSX.CSSProperties {
-  return {
-    width: "100%",
-    border: "1px solid var(--line)",
-    "border-radius": "var(--r-control)",
-    padding: "11px 13px",
-    "font-family": "inherit",
-    "font-size": "14px",
-    color: "var(--ink)",
-    outline: "none",
-    "box-sizing": "border-box",
-    "margin-top": "0",
-  };
-}
-function miniNumberStyle(): JSX.CSSProperties {
-  return {
-    width: "110px",
-    border: "1px solid var(--line)",
-    "border-radius": "var(--r-control)",
-    padding: "9px 11px",
-    "font-family": "var(--mono)",
-    "font-size": "14px",
-    color: "var(--ink)",
-    outline: "none",
-    "box-sizing": "border-box",
-  };
-}
-function inlineFieldStyle(): JSX.CSSProperties {
-  return { display: "flex", "flex-direction": "column" };
-}
-function hintStyle(): JSX.CSSProperties {
-  return {
-    "font-size": "12px",
-    color: "var(--dim)",
-    "line-height": "1.5",
-    margin: "10px 0 0",
-  };
-}
-function qChipStyle(): JSX.CSSProperties {
-  return {
-    "font-family": "var(--mono)",
-    "font-size": "12px",
-    "font-weight": "600",
-    color: "var(--accent)",
-    background: "var(--accent-bg)",
-    "border-radius": "var(--r-chip)",
-    padding: "5px 8px",
-  };
-}
-function selectStyle(): JSX.CSSProperties {
-  return {
-    "font-family": "inherit",
-    "font-size": "13px",
-    "font-weight": "600",
-    color: "var(--ink)",
-    background: "#fff",
-    border: "1px solid var(--line)",
-    "border-radius": "var(--r-control)",
-    padding: "7px 10px",
-    cursor: "pointer",
-  };
-}
-function requiredBtnStyle(on: boolean): JSX.CSSProperties {
-  return {
-    "font-family": "inherit",
-    "font-size": "12px",
-    "font-weight": "700",
-    cursor: "pointer",
-    "border-radius": "var(--r-chip)",
-    padding: "6px 12px",
-    border: on ? "1px solid var(--accent)" : "1px solid var(--line)",
-    background: on ? "var(--accent-bg)" : "#fff",
-    color: on ? "var(--accent)" : "var(--muted)",
-  };
-}
-function removeBtnStyle(): JSX.CSSProperties {
-  return {
-    width: "30px",
-    height: "30px",
-    "border-radius": "var(--r-xs)",
-    border: "1px solid #F0D2D0",
-    background: "#fff",
-    color: "var(--danger)",
-    "font-size": "16px",
-    cursor: "pointer",
-    "line-height": "1",
-    flex: "none",
-  };
-}
-function roleToggleStyle(
-  on: boolean,
-  color: string,
-  bg: string,
-): JSX.CSSProperties {
-  return {
-    display: "inline-flex",
-    "align-items": "center",
-    gap: "8px",
-    "font-family": "inherit",
-    "font-size": "12.5px",
-    "font-weight": "700",
-    cursor: "pointer",
-    "border-radius": "8px",
-    padding: "7px 12px",
-    border: on ? `1px solid ${color}` : "1px solid var(--line)",
-    background: on ? bg : "#fff",
-    color: on ? color : "var(--muted)",
-  };
-}
-function checkboxStyle(on: boolean): JSX.CSSProperties {
-  return {
-    width: "16px",
-    height: "16px",
-    "border-radius": "5px",
-    border: on ? "none" : "2px solid var(--line2)",
-    background: on ? "var(--accent)" : "#fff",
-    color: "#fff",
-    "font-size": "11px",
-    "font-weight": "700",
-    display: "flex",
-    "align-items": "center",
-    "justify-content": "center",
-    flex: "none",
-  };
-}
-function optIndexStyle(): JSX.CSSProperties {
-  return {
-    "font-family": "var(--mono)",
-    "font-size": "12px",
-    "font-weight": "600",
-    color: "var(--dim)",
-    width: "18px",
-    "text-align": "center",
-    flex: "none",
-  };
-}
-function addOptionBtnStyle(): JSX.CSSProperties {
-  return {
-    "align-self": "flex-start",
-    "font-family": "inherit",
-    "font-size": "12.5px",
-    "font-weight": "600",
-    cursor: "pointer",
-    "border-radius": "var(--r-control)",
-    padding: "7px 12px",
-    border: "1px dashed var(--line2)",
-    background: "var(--card-bg)",
-    color: "var(--muted)",
-  };
-}
-function addPanelStyle(): JSX.CSSProperties {
-  return {
-    background: "#fff",
-    border: "1px dashed #D8CDB6",
-    "border-radius": "var(--r-sm)",
-    padding: "16px 18px",
-    "margin-top": "12px",
-  };
-}
-function addPanelHeadStyle(): JSX.CSSProperties {
-  return {
-    "font-size": "13px",
-    "font-weight": "700",
-    color: "var(--body)",
-    "margin-bottom": "11px",
-  };
-}
-function addTypeBtnStyle(): JSX.CSSProperties {
-  return {
-    display: "inline-flex",
-    "align-items": "center",
-    gap: "7px",
-    "font-family": "inherit",
-    "font-size": "13px",
-    "font-weight": "600",
-    color: "var(--body)",
-    background: "var(--surface)",
-    border: "1px solid var(--line)",
-    "border-radius": "var(--r-sm)",
-    padding: "8px 12px",
-    cursor: "pointer",
-  };
-}
-function modeCardStyle(on: boolean): JSX.CSSProperties {
-  return {
-    "text-align": "left",
-    "font-family": "inherit",
-    cursor: "pointer",
-    "border-radius": "var(--r-control)",
-    padding: "12px 13px",
-    border: on ? "1px solid var(--accent)" : "1px solid var(--line)",
-    background: on ? "var(--accent-bg)" : "#fff",
-  };
-}
-function modeTitleStyle(): JSX.CSSProperties {
-  return {
-    "font-size": "14px",
-    "font-weight": "700",
-    color: "var(--ink)",
-  };
-}
-function modeDescStyle(): JSX.CSSProperties {
-  return {
-    "font-size": "11.5px",
-    color: "var(--faint)",
-    "line-height": "1.4",
-    "margin-top": "5px",
-  };
-}
-function chainHashStyle(): JSX.CSSProperties {
-  return {
-    "font-family": "var(--mono)",
-    "font-size": "12px",
-    color: "var(--muted)",
-    background: "var(--surface)",
-    border: "1px solid var(--line2)",
-    "border-radius": "var(--r-control)",
-    padding: "9px 11px",
-  };
-}
-function revealLineStyle(): JSX.CSSProperties {
-  return {
-    "font-family": "var(--mono)",
-    "font-size": "11.5px",
-    color: "var(--accent)",
-    "margin-top": "9px",
-  };
-}
-function pillStyle(on: boolean): JSX.CSSProperties {
-  return {
-    "font-family": "inherit",
-    "font-size": "12.5px",
-    "font-weight": on ? "700" : "600",
-    cursor: "pointer",
-    "border-radius": "8px",
-    padding: "7px 13px",
-    border: on ? "1px solid var(--accent)" : "1px solid var(--line)",
-    background: on ? "var(--accent)" : "#fff",
-    color: on ? "#fff" : "var(--muted)",
-  };
-}
-function asidePublishStyle(enabled: boolean): JSX.CSSProperties {
-  return {
-    width: "100%",
-    "margin-top": "14px",
-    display: "inline-flex",
-    "align-items": "center",
-    "justify-content": "center",
-    gap: "9px",
-    background: enabled ? "var(--accent)" : "var(--line2)",
-    color: enabled ? "#fff" : "var(--dim)",
-    border: "none",
-    "border-radius": "var(--r-md)",
-    padding: "15px",
-    "font-family": "inherit",
-    "font-size": "15px",
-    "font-weight": "700",
-    cursor: enabled ? "pointer" : "not-allowed",
-    "box-shadow": enabled ? "0 10px 24px -10px var(--accent-shadow)" : "none",
-  };
-}
-function asideNoteStyle(ok: boolean): JSX.CSSProperties {
-  return {
-    "text-align": "center",
-    "font-size": "10.5px",
-    color: ok ? "var(--dim)" : "var(--danger)",
-    margin: "10px 0 0",
-    "line-height": "1.5",
-  };
 }

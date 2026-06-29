@@ -1,4 +1,5 @@
 import { type Component, type JSX } from "solid-js";
+import css from "./Spinner.module.css";
 
 /**
  * A small spinning ring — the shared pending/loading glyph. Reuses the global
@@ -10,15 +11,10 @@ export const Spinner: Component<{
   style?: JSX.CSSProperties;
 }> = (props) => (
   <span
+    class={css.ring}
     style={{
       width: `${props.size ?? 16}px`,
       height: `${props.size ?? 16}px`,
-      "border-radius": "50%",
-      border: "2px solid var(--line)",
-      "border-top-color": "var(--accent)",
-      animation: "spin 0.8s linear infinite",
-      display: "inline-block",
-      flex: "none",
       ...props.style,
     }}
   />

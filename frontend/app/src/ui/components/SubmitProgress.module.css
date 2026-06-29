@@ -1,0 +1,107 @@
+/* Co-located styles for SubmitProgress.tsx (submission progress modal). */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(40, 33, 20, 0.45);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 80;
+}
+
+/* The focusable dialog card; `outline: none` was merged inline at the call site
+   (it's programmatically focused but should not show a focus ring). */
+.card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  box-shadow: 0 24px 60px -20px rgba(70, 55, 30, 0.5);
+  padding: 24px 26px;
+  width: 100%;
+  max-width: 380px;
+  outline: none;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin: 0;
+  color: var(--ink);
+}
+
+/* Visually hidden but exposed to assistive tech (announcement region). */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  margin-top: 18px;
+}
+
+.note {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 18px 0 0;
+}
+
+/* ===== StepRow ===== */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+/* Base label: weight 600, ink colour. The active/pending modifiers override. */
+.label {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.labelActive {
+  font-weight: 700;
+}
+.labelPending {
+  color: var(--faint);
+}
+
+/* ===== StepIcon ===== */
+
+/* Pending: hollow ring. */
+.iconPending {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  flex: none;
+}
+
+/* Done: filled green check badge. */
+.iconDone {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--ok-bg);
+  color: var(--ok);
+  font-size: 11px;
+  flex: none;
+}

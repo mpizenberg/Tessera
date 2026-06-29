@@ -5,7 +5,6 @@ import {
   createSignal,
   onCleanup,
   type Component,
-  type JSX,
 } from "solid-js";
 import { A, useLocation } from "@solidjs/router";
 
@@ -15,6 +14,7 @@ import { networkMismatch, roleDescription, roleLabel } from "~/ui/format";
 import { TxLink } from "~/ui/components/TxLink";
 import { Spinner } from "~/ui/components/Spinner";
 import { SegmentedToggle } from "~/ui/components/SegmentedToggle";
+import css from "./Header.module.css";
 
 const NETWORKS: readonly Network[] = ["preview", "mainnet"];
 
@@ -66,129 +66,48 @@ export const Header: Component = () => {
   });
 
   return (
-    <header
-      style={{
-        position: "sticky",
-        top: "0",
-        "z-index": "40",
-        background: "rgba(255,255,255,.86)",
-        "backdrop-filter": "blur(10px)",
-        "border-bottom": "1px solid var(--line)",
-      }}
-    >
-      <div
-        class="header-bar"
-        style={{
-          "max-width": "1160px",
-          margin: "0 auto",
-          display: "flex",
-          "align-items": "center",
-        }}
-      >
-        <A
-          href="/"
-          style={{
-            display: "flex",
-            "align-items": "center",
-            gap: "11px",
-            "text-decoration": "none",
-          }}
-        >
-          <span
-            style={{
-              display: "grid",
-              "grid-template-columns": "repeat(2,1fr)",
-              gap: "2px",
-              width: "20px",
-              height: "20px",
-            }}
-          >
-            <span
-              style={{ background: "var(--accent)", "border-radius": "1.5px" }}
-            />
-            <span
-              style={{ background: "var(--gov)", "border-radius": "1.5px" }}
-            />
-            <span
-              style={{ background: "var(--gov)", "border-radius": "1.5px" }}
-            />
-            <span
-              style={{ background: "var(--accent)", "border-radius": "1.5px" }}
-            />
+    <header class={css.header}>
+      <div class={`header-bar ${css.bar}`}>
+        <A href="/" class={css.brand}>
+          <span class={css.logo}>
+            <span class={css.tileAccent} />
+            <span class={css.tileGov} />
+            <span class={css.tileGov} />
+            <span class={css.tileAccent} />
           </span>
-          <span
-            style={{
-              "font-family": "var(--serif)",
-              "font-size": "20px",
-              "font-weight": "700",
-              "letter-spacing": "-.01em",
-              color: "var(--ink)",
-            }}
-          >
-            Tessera
-          </span>
-          <span
-            style={{
-              "font-family": "var(--mono)",
-              "font-size": "10px",
-              "font-weight": "500",
-              color: "var(--faint)",
-              border: "1px solid var(--line)",
-              "border-radius": "var(--r-3xs)",
-              padding: "2px 5px",
-              "letter-spacing": ".02em",
-              "white-space": "nowrap",
-            }}
-          >
-            CIP-179
-          </span>
+          <span class={css.wordmark}>Tessera</span>
+          <span class={css.cipTag}>CIP-179</span>
         </A>
 
         <span
-          style={networkTagStyle(app.config.network)}
+          class={css.networkTag}
+          classList={{ [css.mainnet]: app.config.network === "mainnet" }}
           title="Active network"
         >
           <span
-            style={{
-              width: "6px",
-              height: "6px",
-              "border-radius": "50%",
-              background:
-                app.config.network === "mainnet" ? "var(--gov)" : "var(--warn)",
-            }}
+            class={css.networkDot}
+            classList={{ [css.mainnet]: app.config.network === "mainnet" }}
           />
           {app.config.network}
         </span>
 
-        <nav
-          class="header-nav"
-          style={{
-            "align-items": "center",
-            gap: "4px",
-            "margin-left": "8px",
-          }}
-        >
+        <nav class={`header-nav ${css.nav}`}>
           <For each={NAV}>
             {(item) => (
-              <A href={item.href} style={navStyle(active(item.href))}>
+              <A
+                href={item.href}
+                class={css.navLink}
+                classList={{ [css.on]: active(item.href) }}
+              >
                 {item.label}
               </A>
             )}
           </For>
         </nav>
 
-        <div
-          ref={actionsRef}
-          class="header-actions"
-          style={{
-            display: "flex",
-            "align-items": "center",
-            gap: "10px",
-            position: "relative",
-          }}
-        >
+        <div ref={actionsRef} class={`header-actions ${css.actions}`}>
           <Show when={app.pendingTxs.length > 0}>
-            <div style={{ position: "relative" }}>
+            <div class={css.pendingAnchor}>
               <button
                 type="button"
                 onClick={() => {
@@ -198,33 +117,21 @@ export const Header: Component = () => {
                 title="Pending transactions"
                 aria-label="Pending transactions"
                 aria-expanded={pendingOpen()}
-                style={pendingBtnStyle()}
+                class={css.pendingBtn}
               >
                 <Show
                   when={anyPending()}
-                  fallback={
-                    <span style={{ color: "var(--ok)", "font-size": "13px" }}>
-                      ✓
-                    </span>
-                  }
+                  fallback={<span class={css.pendingDone}>✓</span>}
                 >
                   <Spinner size={13} />
                 </Show>
                 <Show when={app.pendingTxs.length > 1}>
-                  <span
-                    style={{
-                      "font-size": "11px",
-                      "font-weight": "700",
-                      color: "var(--muted)",
-                    }}
-                  >
-                    {app.pendingTxs.length}
-                  </span>
+                  <span class={css.pendingCount}>{app.pendingTxs.length}</span>
                 </Show>
               </button>
               <Show when={pendingOpen()}>
-                <div style={pendingMenuStyle()}>
-                  <div style={menuHeadingStyle()}>Pending transactions</div>
+                <div class={css.pendingMenu}>
+                  <div class={css.menuHeading}>Pending transactions</div>
                   <For each={app.pendingTxs}>
                     {(p) => (
                       <PendingRow
@@ -261,7 +168,7 @@ export const Header: Component = () => {
                   setPendingOpen(false);
                   setMenuOpen((o) => !o);
                 }}
-                style={connectBtnStyle()}
+                class={css.connectBtn}
               >
                 {app.connecting() ? "Connecting…" : "Connect wallet"}
               </button>
@@ -275,57 +182,33 @@ export const Header: Component = () => {
                   setPendingOpen(false);
                   setMenuOpen((o) => !o);
                 }}
-                style={identityBtnStyle(mismatch())}
+                class={css.identityBtn}
+                classList={{ [css.mismatch]: mismatch() }}
               >
                 <span
-                  style={{
-                    width: "7px",
-                    height: "7px",
-                    "border-radius": "50%",
-                    background: mismatch() ? "var(--danger)" : "var(--ok)",
-                  }}
+                  class={css.identityDot}
+                  classList={{ [css.mismatch]: mismatch() }}
                 />
-                <span
-                  style={{
-                    display: "flex",
-                    "flex-direction": "column",
-                    "line-height": "1.15",
-                    "text-align": "left",
-                  }}
-                >
-                  <span
-                    style={{
-                      "font-size": "11px",
-                      "font-weight": "700",
-                      color: "var(--ink)",
-                    }}
-                  >
+                <span class={css.identityText}>
+                  <span class={css.identityRole}>
                     {(() => {
                       const r = app.activeRole();
                       return r != null ? roleLabel(r) : "No role";
                     })()}
                   </span>
-                  <span
-                    style={{
-                      "font-family": "var(--mono)",
-                      "font-size": "10.5px",
-                      color: "var(--faint)",
-                    }}
-                  >
+                  <span class={css.identityAddr}>
                     {truncAddr(w().identity.changeAddressBech32)}
                   </span>
                 </span>
-                <span style={{ color: "var(--dim)", "font-size": "10px" }}>
-                  ▾
-                </span>
+                <span class={css.identityCaret}>▾</span>
               </button>
             )}
           </Show>
 
           <Show when={menuOpen()}>
-            <div style={menuStyle()}>
+            <div class={css.menu}>
               <NetworkSwitch />
-              <div style={menuDividerStyle()} />
+              <div class={css.menuDivider} />
               <Show
                 when={app.wallet()}
                 fallback={
@@ -369,11 +252,11 @@ const WalletPicker: Component<{ onPick: (key: string) => void }> = (props) => {
   const wallets = () => app.installedWallets();
   return (
     <>
-      <div style={menuHeadingStyle()}>Connect a CIP-30 wallet</div>
+      <div class={css.menuHeading}>Connect a CIP-30 wallet</div>
       <Show
         when={wallets().length > 0}
         fallback={
-          <div style={menuNoteStyle()}>
+          <div class={css.menuNote}>
             No CIP-30 wallet detected in this browser.
           </div>
         }
@@ -382,40 +265,22 @@ const WalletPicker: Component<{ onPick: (key: string) => void }> = (props) => {
           {(wl) => (
             <button
               type="button"
-              style={menuRowStyle(false)}
+              class={css.menuRow}
               onClick={() => props.onPick(wl.key)}
             >
               <Show
                 when={wl.icon}
-                fallback={<span style={{ width: "18px", height: "18px" }} />}
+                fallback={<span class={css.walletIconFallback} />}
               >
-                <img
-                  src={wl.icon}
-                  alt=""
-                  style={{
-                    width: "18px",
-                    height: "18px",
-                    "border-radius": "4px",
-                  }}
-                />
+                <img src={wl.icon} alt="" class={css.walletIcon} />
               </Show>
-              <span
-                style={{
-                  "font-size": "13px",
-                  "font-weight": "700",
-                  color: "var(--ink)",
-                }}
-              >
-                {wl.name}
-              </span>
+              <span class={css.walletName}>{wl.name}</span>
             </button>
           )}
         </For>
       </Show>
       <Show when={app.connectError()}>
-        <div style={{ ...menuNoteStyle(), color: "var(--danger)" }}>
-          {app.connectError()}
-        </div>
+        <div class={css.menuNoteDanger}>{app.connectError()}</div>
       </Show>
     </>
   );
@@ -431,11 +296,11 @@ const RoleMenu: Component<{
   onDisconnect: () => void;
 }> = (props) => (
   <>
-    <div style={menuHeadingStyle()}>Respond as · 1 wallet</div>
+    <div class={css.menuHeading}>Respond as · 1 wallet</div>
     <Show
       when={props.roles.length > 0}
       fallback={
-        <div style={menuNoteStyle()}>
+        <div class={css.menuNote}>
           This wallet holds no claimable role (needs a stake key or a registered
           DRep key).
         </div>
@@ -445,68 +310,33 @@ const RoleMenu: Component<{
         {(r) => (
           <button
             type="button"
-            style={menuRowStyle(r === props.activeRole)}
+            class={css.menuRow}
+            classList={{ [css.on]: r === props.activeRole }}
             onClick={() => props.onPick(r)}
             title={roleDescription(r)}
           >
-            <span
-              style={{
-                width: "7px",
-                height: "7px",
-                "border-radius": "50%",
-                background: "var(--ok)",
-              }}
-            />
-            <span
-              style={{
-                "font-size": "13px",
-                "font-weight": "700",
-                color: "var(--ink)",
-                flex: "1",
-                "text-align": "left",
-              }}
-            >
-              {roleLabel(r)}
-            </span>
+            <span class={css.roleDot} />
+            <span class={css.roleLabel}>{roleLabel(r)}</span>
             <Show when={r === props.activeRole}>
-              <span style={{ color: "var(--accent)", "font-size": "12px" }}>
-                ✓
-              </span>
+              <span class={css.roleCheck}>✓</span>
             </Show>
           </button>
         )}
       </For>
     </Show>
     <Show when={props.mismatch}>
-      <div style={{ ...menuNoteStyle(), color: "var(--danger)" }}>
+      <div class={css.menuNoteDanger}>
         Wallet is on a different network than the app ({props.expectedNetwork}).
         Switch networks in your wallet.
       </div>
     </Show>
-    <div
-      style={{
-        "font-family": "var(--mono)",
-        "font-size": "10.5px",
-        color: "var(--faint)",
-        padding: "6px 10px 2px",
-      }}
-    >
-      {truncAddr(props.addr)}
-    </div>
+    <div class={css.roleAddr}>{truncAddr(props.addr)}</div>
     <button
       type="button"
-      style={{ ...menuRowStyle(false), color: "var(--danger)" }}
+      class={css.menuRowDanger}
       onClick={() => props.onDisconnect()}
     >
-      <span
-        style={{
-          "font-size": "13px",
-          "font-weight": "700",
-          color: "var(--danger)",
-        }}
-      >
-        Disconnect
-      </span>
+      <span class={css.disconnectLabel}>Disconnect</span>
     </button>
   </>
 );
@@ -536,18 +366,14 @@ const PendingRow: Component<{
       ? CONFIRMED_TEXT[props.p.kind]
       : `${PENDING_TEXT[props.p.kind]}…`;
   return (
-    <div style={{ padding: "8px 10px" }}>
-      <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
+    <div class={css.pendingRow}>
+      <div class={css.pendingRowHead}>
         <Show when={confirmed()} fallback={<Spinner size={13} />}>
-          <span style={{ color: "var(--ok)", "font-size": "12px" }}>✓</span>
+          <span class={css.pendingRowDone}>✓</span>
         </Show>
         <span
-          style={{
-            "font-size": "12.5px",
-            "font-weight": "700",
-            color: confirmed() ? "var(--ok)" : "var(--ink)",
-            flex: "1",
-          }}
+          class={css.pendingRowTitle}
+          classList={{ [css.done]: confirmed() }}
         >
           {headline()}
         </span>
@@ -556,54 +382,28 @@ const PendingRow: Component<{
           onClick={() => props.onDismiss()}
           title="Dismiss"
           aria-label="Dismiss"
-          style={dismissStyle()}
+          class={css.dismiss}
         >
           ×
         </button>
       </div>
       <Show when={props.p.title}>
-        <div
-          style={{
-            "font-size": "11.5px",
-            color: "var(--muted)",
-            "margin-top": "2px",
-            overflow: "hidden",
-            "text-overflow": "ellipsis",
-            "white-space": "nowrap",
-          }}
-        >
-          {props.p.title}
-        </div>
+        <div class={css.pendingRowSub}>{props.p.title}</div>
       </Show>
-      <div
-        style={{
-          "font-family": "var(--mono)",
-          "font-size": "10.5px",
-          color: "var(--faint)",
-          "margin-top": "4px",
-          "word-break": "break-all",
-        }}
-      >
+      <div class={css.pendingRowHash}>
         <TxLink hash={props.p.txHash} />
       </div>
       <Show when={!confirmed() && props.p.slow}>
-        <div
-          style={{
-            "font-size": "11px",
-            color: "var(--warn)",
-            "margin-top": "4px",
-            "line-height": "1.4",
-          }}
-        >
+        <div class={css.pendingRowSlow}>
           Taking longer than usual — still pending.
         </div>
       </Show>
       <Show when={props.p.surveyKey}>
-        <div style={{ "margin-top": "5px" }}>
+        <div class={css.pendingRowLinkWrap}>
           <A
             href={`/survey/${encodeURIComponent(props.p.surveyKey!)}`}
             onClick={() => props.onNavigate()}
-            style={{ "font-size": "12px", "font-weight": "700" }}
+            class={css.pendingRowLink}
           >
             View survey →
           </A>
@@ -622,204 +422,30 @@ const NetworkSwitch: Component = () => {
   const app = useApp();
   return (
     <>
-      <div style={menuHeadingStyle()}>Network</div>
+      <div class={css.menuHeading}>Network</div>
       <For each={NETWORKS}>
         {(n) => {
           const on = () => n === app.config.network;
           return (
             <button
               type="button"
-              style={menuRowStyle(on())}
+              class={css.menuRow}
+              classList={{ [css.on]: on() }}
               onClick={() => app.setNetwork(n)}
             >
               <span
-                style={{
-                  width: "7px",
-                  height: "7px",
-                  "border-radius": "50%",
-                  background: n === "mainnet" ? "var(--gov)" : "var(--warn)",
-                }}
+                class={css.networkSwitchDot}
+                classList={{ [css.mainnet]: n === "mainnet" }}
               />
-              <span
-                style={{
-                  "font-size": "13px",
-                  "font-weight": "700",
-                  color: "var(--ink)",
-                  flex: "1",
-                  "text-align": "left",
-                  "text-transform": "capitalize",
-                }}
-              >
-                {n}
-              </span>
+              <span class={css.networkSwitchLabel}>{n}</span>
               <Show when={on()}>
-                <span style={{ color: "var(--accent)", "font-size": "12px" }}>
-                  ✓
-                </span>
+                <span class={css.networkSwitchCheck}>✓</span>
               </Show>
             </button>
           );
         }}
       </For>
-      <div style={menuNoteStyle()}>Switching reloads on Explore.</div>
+      <div class={css.menuNote}>Switching reloads on Explore.</div>
     </>
   );
 };
-
-// --- styles -----------------------------------------------------------------
-
-function networkTagStyle(network: Network): JSX.CSSProperties {
-  const mainnet = network === "mainnet";
-  return {
-    display: "flex",
-    "align-items": "center",
-    gap: "5px",
-    "font-family": "var(--mono)",
-    "font-size": "10px",
-    "font-weight": "600",
-    "letter-spacing": ".02em",
-    "text-transform": "capitalize",
-    "white-space": "nowrap",
-    color: mainnet ? "var(--gov)" : "var(--warn)",
-    background: mainnet ? "var(--gov-bg)" : "var(--warn-bg)",
-    border: `1px solid ${mainnet ? "var(--gov-line)" : "var(--warn-line)"}`,
-    "border-radius": "var(--r-3xs)",
-    padding: "2px 6px 2px 5px",
-  };
-}
-function menuDividerStyle(): JSX.CSSProperties {
-  return {
-    height: "1px",
-    background: "var(--line)",
-    margin: "5px 4px",
-  };
-}
-
-function navStyle(on: boolean): JSX.CSSProperties {
-  return {
-    "font-family": "inherit",
-    "font-size": "14px",
-    "font-weight": "600",
-    "text-decoration": "none",
-    "border-radius": "9px",
-    padding: "8px 13px",
-    background: on ? "var(--accent-bg)" : "transparent",
-    color: on ? "var(--accent)" : "var(--muted)",
-  };
-}
-function connectBtnStyle(): JSX.CSSProperties {
-  return {
-    "font-family": "inherit",
-    "font-size": "13px",
-    "font-weight": "700",
-    cursor: "pointer",
-    background: "var(--accent)",
-    color: "#fff",
-    border: "none",
-    "border-radius": "var(--r-input)",
-    padding: "8px 14px",
-  };
-}
-function identityBtnStyle(mismatch: boolean): JSX.CSSProperties {
-  return {
-    display: "flex",
-    "align-items": "center",
-    gap: "9px",
-    background: "#fff",
-    border: `1px solid ${mismatch ? "var(--danger-line)" : "var(--line)"}`,
-    "border-radius": "var(--r-input)",
-    padding: "6px 10px 6px 9px",
-    "box-shadow": "var(--shadow-card)",
-    cursor: "pointer",
-    "font-family": "inherit",
-  };
-}
-function menuStyle(): JSX.CSSProperties {
-  return {
-    position: "absolute",
-    top: "calc(100% + 8px)",
-    right: "0",
-    "min-width": "240px",
-    background: "#fff",
-    border: "1px solid var(--line)",
-    "border-radius": "var(--r-md)",
-    "box-shadow": "var(--shadow-menu)",
-    padding: "5px",
-    "z-index": "50",
-  };
-}
-function pendingBtnStyle(): JSX.CSSProperties {
-  return {
-    display: "flex",
-    "align-items": "center",
-    gap: "6px",
-    background: "#fff",
-    border: "1px solid var(--line)",
-    "border-radius": "var(--r-input)",
-    padding: "7px 9px",
-    "box-shadow": "var(--shadow-card)",
-    cursor: "pointer",
-    "font-family": "inherit",
-  };
-}
-/** Pending dropdown, anchored under the spinner (opens rightward). */
-function pendingMenuStyle(): JSX.CSSProperties {
-  return {
-    position: "absolute",
-    top: "calc(100% + 8px)",
-    left: "0",
-    "min-width": "250px",
-    "max-width": "300px",
-    background: "#fff",
-    border: "1px solid var(--line)",
-    "border-radius": "var(--r-md)",
-    "box-shadow": "var(--shadow-menu)",
-    padding: "5px",
-    "z-index": "50",
-  };
-}
-function dismissStyle(): JSX.CSSProperties {
-  return {
-    background: "none",
-    border: "none",
-    color: "var(--faint)",
-    "font-size": "15px",
-    "line-height": "1",
-    cursor: "pointer",
-    padding: "0 2px",
-  };
-}
-function menuHeadingStyle(): JSX.CSSProperties {
-  return {
-    "font-family": "var(--mono)",
-    "font-size": "9.5px",
-    "letter-spacing": ".08em",
-    "text-transform": "uppercase",
-    color: "var(--dim)",
-    "font-weight": "600",
-    padding: "7px 10px 6px",
-  };
-}
-function menuNoteStyle(): JSX.CSSProperties {
-  return {
-    "font-size": "11px",
-    color: "var(--dim)",
-    "line-height": "1.45",
-    padding: "6px 10px",
-  };
-}
-function menuRowStyle(on: boolean): JSX.CSSProperties {
-  return {
-    display: "flex",
-    "align-items": "center",
-    gap: "10px",
-    width: "100%",
-    "text-align": "left",
-    cursor: "pointer",
-    border: "none",
-    "border-radius": "10px",
-    padding: "9px 10px",
-    background: on ? "var(--accent-bg)" : "transparent",
-    "font-family": "inherit",
-  };
-}

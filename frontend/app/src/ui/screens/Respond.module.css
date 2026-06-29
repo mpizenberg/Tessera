@@ -1,0 +1,1064 @@
+/*
+ * Co-located styles for Respond.tsx (CSS Modules).
+ *
+ * Static styles live here; design tokens (`var(--…)`) come from theme.css
+ * `:root`. State-driven styling (selected option, skip toggle, ready/disabled
+ * buttons) uses modifier classes toggled via `classList`. The one continuous
+ * value — the rating input's fallback width — is a plain class; nothing here is
+ * truly numeric-continuous, so no CSS-var bridge is needed.
+ */
+
+/* --- Screen shell --------------------------------------------------------- */
+
+.main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 22px 24px 140px;
+}
+
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 6px 0;
+}
+
+.backArrow {
+  font-size: 15px;
+}
+
+/* --- Shared card ---------------------------------------------------------- */
+
+.card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 20px 22px;
+  margin-top: 12px;
+}
+
+/* --- Unverified-cancellation callout -------------------------------------- */
+
+.cancelClaim {
+  margin-top: 12px;
+  padding: 11px 14px;
+  border: 1px solid var(--warn-line);
+  background: var(--warn-bg);
+  border-radius: var(--r-md);
+  font-size: 13px;
+  color: var(--warn);
+  line-height: 1.45;
+}
+
+/* --- Question list column ------------------------------------------------- */
+
+.questionList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+/* --- Ineligible panel ----------------------------------------------------- */
+
+.ineligibleTitle {
+  font-size: 17px;
+  font-weight: 800;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.ineligibleLead {
+  font-size: 13.5px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 7px 0 0;
+}
+
+.ineligibleList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.ineligibleRow {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.roleChip {
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 6px;
+  padding: 3px 9px;
+  flex: none;
+}
+
+.roleDesc {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.notClaimable {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+/* --- Survey header -------------------------------------------------------- */
+
+.header {
+  border-bottom: 1px solid #e7dfce;
+  padding: 14px 2px 20px;
+  margin-top: 6px;
+}
+
+.headerTop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.respondLabel {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Owns margin-left:auto, replacing the empty spacer <span> that pushed the
+   ref to the right edge of the header top row. */
+.refText {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--pale);
+  word-break: break-all;
+}
+
+.headerTitle {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.018em;
+  line-height: 1.16;
+  margin: 12px 0 0;
+  color: var(--ink);
+}
+
+.headerDesc {
+  font-size: 14.5px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 8px 0 0;
+}
+
+.roleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.roleRowLabel {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.rolePick {
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  background: #f2ecde;
+  color: #6b6356;
+}
+
+.rolePickOn {
+  font-weight: 700;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fbf8f1;
+}
+
+/* --- Banners (responded / sealed / labels-absent) ------------------------- */
+
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  border-radius: 13px;
+  padding: 13px 16px;
+  margin-top: 14px;
+}
+
+.respondedBanner {
+  composes: banner;
+  background: #f0faf3;
+  border: 1px solid var(--ok-line);
+}
+
+.respondedCheck {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--ok);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  margin-top: 1px;
+}
+
+.bannerBody {
+  flex: 1;
+}
+
+.respondedTitle {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ok);
+}
+
+.respondedText {
+  font-size: 12.5px;
+  color: #3f7a55;
+  line-height: 1.45;
+  margin-top: 3px;
+}
+
+.cardBanner {
+  composes: banner;
+  background: var(--card-bg);
+  border: 1px solid var(--card-line);
+}
+
+.bannerIcon {
+  font-size: 15px;
+  color: var(--warn);
+  margin-top: 1px;
+}
+
+.bannerTitle {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--label);
+}
+
+.bannerText {
+  font-size: 12.5px;
+  color: var(--label);
+  line-height: 1.5;
+  margin-top: 3px;
+}
+
+.refInline {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+/* --- Rationale section ---------------------------------------------------- */
+
+.ratToggleLabel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.ratCheckbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.ratToggleText {
+  font-size: 13.5px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.ratToggleHint {
+  color: var(--dim);
+  font-weight: 400;
+}
+
+.ratBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.ratField {
+  display: block;
+}
+
+.ratLabel {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.numberInput {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 15px;
+  color: var(--ink);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.ratMonoInput {
+  composes: numberInput;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.ratTextarea {
+  composes: numberInput;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.ratHint {
+  font-size: 11.5px;
+  color: var(--dim);
+  line-height: 1.45;
+  margin: 0;
+}
+
+.ratWarn {
+  font-size: 11.5px;
+  color: var(--warn);
+  line-height: 1.45;
+  margin: 0;
+}
+
+.settingsLink {
+  color: var(--accent);
+}
+
+/* --- Question card -------------------------------------------------------- */
+
+.qHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.qHeadLeft {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.qChip {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-radius: var(--r-chip);
+  padding: 5px 8px;
+}
+
+.qType {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.qRequired {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-radius: var(--r-3xs);
+  padding: 2px 6px;
+}
+
+.skipBtn {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  border-radius: var(--r-chip);
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+}
+
+.skipBtnOn {
+  border: 1px solid var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.qPrompt {
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.28;
+  margin: 11px 0 0;
+  color: var(--ink);
+}
+
+.qSkipped {
+  font-size: 12.5px;
+  color: var(--dim);
+  margin: 12px 0 0;
+  font-style: italic;
+}
+
+.qBody {
+  margin-top: 14px;
+}
+
+/* --- Option rows (single choice / multi-select) --------------------------- */
+
+.optionGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.optionRow {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  cursor: pointer;
+  border-radius: var(--r-control);
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  background: #fff;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.optionRowOn {
+  border: 1px solid var(--accent);
+  background: var(--accent-bg);
+}
+
+.radio {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--line2);
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.radioOn {
+  border: none;
+  background: var(--accent);
+}
+
+.radioDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.checkbox {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 2px solid var(--line2);
+  background: #fff;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.checkboxOn {
+  border: none;
+  background: var(--accent);
+}
+
+.multiGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.multiCount {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+  margin-top: 10px;
+}
+
+.noneNote {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-line);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+  margin-top: 10px;
+}
+
+.noneNoteText {
+  font-size: 12px;
+  color: var(--label);
+  line-height: 1.45;
+}
+
+.noneNoteLead {
+  color: #5b4a22;
+}
+
+/* --- Ranking -------------------------------------------------------------- */
+
+.rankedList {
+  margin-bottom: 10px;
+}
+
+.rankedRow {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-control);
+  padding: 9px 11px;
+  margin-bottom: 7px;
+}
+
+.rankNum {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.rankLabel {
+  font-size: 14.5px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.rankBtn {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--accent-line);
+  background: #fff;
+  color: var(--accent);
+  font-size: 13px;
+  cursor: pointer;
+  line-height: 1;
+  flex: none;
+}
+
+.rankBtnDanger {
+  border: 1px solid #f0d2d0;
+  color: var(--danger);
+}
+
+.rankPoolHint {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--dim);
+  margin-bottom: 8px;
+}
+
+.rankPool {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.poolBtn {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 1;
+  border-radius: var(--r-control);
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  background: #f2ecde;
+  color: var(--body);
+}
+
+.poolBtnDisabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* --- Numeric range -------------------------------------------------------- */
+
+.numHero {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  justify-content: center;
+  margin: 4px 0 14px;
+}
+
+.numValue {
+  font-family: var(--mono);
+  font-size: 44px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: -0.02em;
+}
+
+.rangeFull {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.rangeFullBlock {
+  composes: rangeFull;
+  display: block;
+  cursor: pointer;
+}
+
+.rangeBounds {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+  margin-top: 8px;
+}
+
+/* --- Points allocation ---------------------------------------------------- */
+
+.pointsHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.pointsRemainLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.pointsRemain {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.pointsRemainDone {
+  color: var(--ok);
+}
+
+.pointsRow {
+  margin-bottom: 13px;
+}
+
+.pointsRowHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 7px;
+}
+
+.pointsOptLabel {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.pointsControls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.stepBtn {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--accent);
+  font-size: 17px;
+  cursor: pointer;
+  line-height: 1;
+  flex: none;
+}
+
+.pointsInput {
+  width: 52px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  padding: 5px 4px;
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: center;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.pointsFooter {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+}
+
+/* --- Rating --------------------------------------------------------------- */
+
+.ratingList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ratingRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--hair);
+  flex-wrap: wrap;
+}
+
+.ratingOptLabel {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.ratingNumberInput {
+  composes: numberInput;
+  width: 120px;
+}
+
+.ratingLevels {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ratingBtn {
+  min-width: 34px;
+  height: 34px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--body);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0 8px;
+}
+
+.ratingBtnOn {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+/* --- Custom --------------------------------------------------------------- */
+
+.customSchema {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--ink);
+  border-radius: var(--r-control);
+  padding: 11px 13px;
+  margin-bottom: 11px;
+}
+
+.customSchemaTag {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: #7e89a8;
+  background: #1c2536;
+  border-radius: var(--r-3xs);
+  padding: 3px 7px;
+}
+
+.customSchemaUri {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: #c4ccda;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.customInput {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  padding: 13px 14px;
+  font-family: inherit;
+  font-size: 14.5px;
+  color: var(--ink);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.customHint {
+  font-size: 11.5px;
+  color: var(--dim);
+  line-height: 1.45;
+  margin: 9px 0 0;
+}
+
+/* --- Submit bar ----------------------------------------------------------- */
+
+.submitBar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--line);
+}
+
+.submitInner {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 13px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.submitStatus {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.progressDots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.progressDot {
+  width: 16px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--line2);
+}
+
+.progressDotOn {
+  background: var(--accent);
+}
+
+.decidedCount {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.replacesNote {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ok);
+}
+
+.mismatchNote {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--danger);
+}
+
+.submitBtn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  background: var(--line2);
+  color: var(--dim);
+  border: none;
+  border-radius: var(--r-md);
+  padding: 14px 22px;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: not-allowed;
+}
+
+.submitBtnEnabled {
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+.submitArrow {
+  font-size: 15px;
+}
+
+/* --- Submitted panel ------------------------------------------------------ */
+
+.submittedPanel {
+  composes: card;
+  text-align: center;
+  margin-top: 20px;
+}
+
+.submittedCheck {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  background: var(--ok-bg);
+  color: var(--ok);
+  font-size: 22px;
+}
+
+.submittedTitle {
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin: 14px 0 0;
+}
+
+.submittedText {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 8px auto 0;
+  max-width: 440px;
+}
+
+.submittedTx {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--faint);
+  margin-top: 12px;
+  word-break: break-all;
+}
+
+.viewResultsBtn {
+  margin-top: 18px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--r-control);
+  padding: 11px 18px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* --- Notice / Empty ------------------------------------------------------- */
+
+.notice {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  padding: 26px 24px;
+  margin-top: 16px;
+  text-align: center;
+}
+
+.noticeWarn {
+  border: 1px solid var(--warn-line);
+}
+
+.noticeTitle {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.noticeTitleWarn {
+  color: var(--warn);
+}
+
+.noticeBody {
+  font-size: 13.5px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 8px auto 0;
+  max-width: 460px;
+}
+
+.empty {
+  composes: card;
+  text-align: center;
+  color: var(--muted);
+  margin-top: 14px;
+}
+
+.emptyError {
+  color: var(--danger);
+  margin-bottom: 12px;
+}
+
+.retryBtn {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--r-input);
+  padding: 9px 16px;
+}

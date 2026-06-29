@@ -1,0 +1,102 @@
+/*
+ * Co-located styles for BottomNav.tsx.
+ *
+ * The fixed bar's show/hide is owned by the global `.bottom-nav` media query in
+ * theme.css; that class stays on the <nav>. These rules add only the visual
+ * chrome (background, border, padding) that used to live inline.
+ *
+ * Active/idle coloring is a two-state toggle (accent vs dim). Rather than thread
+ * the color through each icon as a prop, the link sets `color` (via .active) and
+ * every icon glyph paints with `currentColor`, so it inherits the link's color
+ * exactly as before.
+ */
+
+.bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 45;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 58px;
+  text-decoration: none;
+  color: var(--dim);
+}
+.item.active {
+  color: var(--accent);
+}
+
+.label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* --- icons (mirror the mockup's inline glyphs) --- */
+
+.explore {
+  display: flex;
+  align-items: flex-end;
+  gap: 2.5px;
+  height: 16px;
+}
+.explore span {
+  width: 3px;
+  background: currentColor;
+  border-radius: 1px;
+}
+
+.create {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 16px;
+  border: 1.6px solid currentColor;
+  border-radius: var(--r-3xs);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 0;
+  color: currentColor;
+}
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 16px;
+  height: 16px;
+  justify-content: center;
+}
+.knob {
+  position: relative;
+  height: 2px;
+  background: currentColor;
+  border-radius: 2px;
+}
+.knob span {
+  position: absolute;
+  top: -2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.knobLeft span {
+  left: 3px;
+}
+.knobRight span {
+  right: 3px;
+}

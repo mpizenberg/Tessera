@@ -1,0 +1,420 @@
+/*
+ * Co-located styles for Header.tsx.
+ *
+ * Static chrome lives here as plain classes. Two-state styling (active nav link,
+ * selected menu row, network mainnet/preview, wallet network mismatch) uses a
+ * base class plus a modifier toggled with Solid `classList`. Design tokens come
+ * from theme.css `:root`.
+ *
+ * The global responsive classes `.header-bar`, `.header-actions` and
+ * `.header-nav` (with their @media rules in theme.css) stay on their elements;
+ * the module classes here only add the non-responsive inline styles those
+ * elements also carried.
+ */
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+
+.bar {
+  max-width: 1160px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  text-decoration: none;
+}
+
+.logo {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2px;
+  width: 20px;
+  height: 20px;
+}
+.tileAccent {
+  background: var(--accent);
+  border-radius: 1.5px;
+}
+.tileGov {
+  background: var(--gov);
+  border-radius: 1.5px;
+}
+
+.wordmark {
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.cipTag {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--faint);
+  border: 1px solid var(--line);
+  border-radius: var(--r-3xs);
+  padding: 2px 5px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* Network tag: clay/warn for preview, slate for mainnet. */
+.networkTag {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: capitalize;
+  white-space: nowrap;
+  color: var(--warn);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-line);
+  border-radius: var(--r-3xs);
+  padding: 2px 6px 2px 5px;
+}
+.networkTag.mainnet {
+  color: var(--gov);
+  background: var(--gov-bg);
+  border-color: var(--gov-line);
+}
+.networkDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+.networkDot.mainnet {
+  background: var(--gov);
+}
+
+.nav {
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+}
+
+.navLink {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: 9px;
+  padding: 8px 13px;
+  background: transparent;
+  color: var(--muted);
+}
+.navLink.on {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+}
+
+.pendingAnchor {
+  position: relative;
+}
+
+.pendingBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-input);
+  padding: 7px 9px;
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  font-family: inherit;
+}
+.pendingDone {
+  color: var(--ok);
+  font-size: 13px;
+}
+.pendingCount {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+/* Pending dropdown, anchored under the spinner (opens rightward). */
+.pendingMenu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 250px;
+  max-width: 300px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-menu);
+  padding: 5px;
+  z-index: 50;
+}
+
+.connectBtn {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--r-input);
+  padding: 8px 14px;
+}
+
+.identityBtn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-input);
+  padding: 6px 10px 6px 9px;
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  font-family: inherit;
+}
+.identityBtn.mismatch {
+  border-color: var(--danger-line);
+}
+.identityDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+.identityDot.mismatch {
+  background: var(--danger);
+}
+.identityText {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  text-align: left;
+}
+.identityRole {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.identityAddr {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
+}
+.identityCaret {
+  color: var(--dim);
+  font-size: 10px;
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 240px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-menu);
+  padding: 5px;
+  z-index: 50;
+}
+
+.menuDivider {
+  height: 1px;
+  background: var(--line);
+  margin: 5px 4px;
+}
+
+.menuHeading {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+  font-weight: 600;
+  padding: 7px 10px 6px;
+}
+
+.menuNote {
+  font-size: 11px;
+  color: var(--dim);
+  line-height: 1.45;
+  padding: 6px 10px;
+}
+.menuNoteDanger {
+  composes: menuNote;
+  color: var(--danger);
+}
+
+.menuRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  border: none;
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: transparent;
+  font-family: inherit;
+}
+.menuRow.on {
+  background: var(--accent-bg);
+}
+.menuRowDanger {
+  composes: menuRow;
+  color: var(--danger);
+}
+
+/* Wallet picker */
+.walletIconFallback {
+  width: 18px;
+  height: 18px;
+}
+.walletIcon {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+}
+.walletName {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* Role menu */
+.roleDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+.roleLabel {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  flex: 1;
+  text-align: left;
+}
+.roleCheck {
+  color: var(--accent);
+  font-size: 12px;
+}
+.roleAddr {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
+  padding: 6px 10px 2px;
+}
+.disconnectLabel {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--danger);
+}
+
+/* Network switch */
+.networkSwitchDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+.networkSwitchDot.mainnet {
+  background: var(--gov);
+}
+.networkSwitchLabel {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  flex: 1;
+  text-align: left;
+  text-transform: capitalize;
+}
+.networkSwitchCheck {
+  color: var(--accent);
+  font-size: 12px;
+}
+
+/* Pending rows */
+.pendingRow {
+  padding: 8px 10px;
+}
+.pendingRowHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pendingRowDone {
+  color: var(--ok);
+  font-size: 12px;
+}
+.pendingRowTitle {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+  flex: 1;
+}
+.pendingRowTitle.done {
+  color: var(--ok);
+}
+.dismiss {
+  background: none;
+  border: none;
+  color: var(--faint);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.pendingRowSub {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pendingRowHash {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
+  margin-top: 4px;
+  word-break: break-all;
+}
+.pendingRowSlow {
+  font-size: 11px;
+  color: var(--warn);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+.pendingRowLinkWrap {
+  margin-top: 5px;
+}
+.pendingRowLink {
+  font-size: 12px;
+  font-weight: 700;
+}

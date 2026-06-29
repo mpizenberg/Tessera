@@ -1,0 +1,293 @@
+/*
+ * Co-located styles for Settings.tsx.
+ *
+ * Convention: one `Foo.module.css` next to `Foo.tsx`, imported as `s` and
+ * applied via `class={s.x}`. Static styles live here; design tokens
+ * (`var(--…)`) come from theme.css `:root`. Signal-driven toggles use state
+ * classes flipped with `classList`. The `SegmentedToggle`'s `wrapStyle` prop
+ * object is left inline — only real DOM `style={}` attributes are migrated.
+ */
+
+.main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 34px 24px 96px;
+}
+
+.title {
+  font-size: 27px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0;
+  color: var(--ink);
+}
+
+.lead {
+  font-size: 14.5px;
+  color: var(--muted);
+  margin: 7px 0 0;
+  max-width: 540px;
+  line-height: 1.5;
+}
+
+/* ---- section shell -------------------------------------------------------- */
+
+.section {
+  margin-top: 20px;
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+  padding: 22px;
+}
+
+.kicker {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.sectionHead {
+  composes: kicker;
+  margin: 0 2px 11px;
+}
+
+.heading {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin: 11px 0 0;
+  color: var(--ink);
+}
+
+.prose {
+  font-size: 13.5px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 7px 0 0;
+}
+
+/* ---- IPFS providers ------------------------------------------------------- */
+
+.enabledCount {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+  margin-top: 10px;
+}
+
+.providerList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.providerCard {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 14px 15px;
+}
+
+.providerCardOn {
+  background: #fbf4ee;
+  border-color: var(--accent-line);
+}
+
+.providerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.providerLabel {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.providerLabelOn {
+  color: var(--accent);
+}
+
+.providerHint {
+  font-size: 11.5px;
+  color: var(--dim);
+  line-height: 1.4;
+  margin: 8px 0 0;
+}
+
+/* ---- token inputs --------------------------------------------------------- */
+
+.tokenInput {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-input);
+  padding: 9px 11px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  outline: none;
+  background: #fff;
+  color: var(--ink);
+}
+
+/* Koios token field: shares the token input, but sits flush in a flex row. */
+.koiosInput {
+  composes: tokenInput;
+  margin-top: 0;
+  flex: 1;
+  min-width: 220px;
+}
+
+/* ---- status badge --------------------------------------------------------- */
+
+.statusBadge {
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dim);
+  background: var(--surface3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-2xs);
+  padding: 4px 8px;
+  flex: none;
+}
+
+.statusBadgeOn {
+  color: var(--ok);
+  background: var(--ok-bg);
+  border-color: var(--ok-line);
+}
+
+/* ---- buttons -------------------------------------------------------------- */
+
+.btnPrimary {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: default;
+  background: var(--accent-tint);
+  color: #fff;
+  border: none;
+  border-radius: var(--r-input);
+  padding: 10px 16px;
+  opacity: 0.6;
+}
+
+.btnPrimaryOn {
+  cursor: pointer;
+  background: var(--accent);
+  opacity: 1;
+}
+
+.btnGhost {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  background: #fff;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: var(--r-input);
+  padding: 10px 14px;
+}
+
+/* ---- info callout --------------------------------------------------------- */
+
+.infoNote {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  background: #fbf6ec;
+  border: 1px solid #ece3d2;
+  border-radius: var(--r-control);
+  padding: 12px 14px;
+  margin-top: 16px;
+}
+
+.infoBadge {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-3xs);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  margin-top: 1px;
+}
+
+.noteText {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ---- Koios section -------------------------------------------------------- */
+
+.factGrid {
+  margin: 16px 0 4px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  row-gap: 10px;
+  column-gap: 18px;
+}
+
+.factLabel {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--dim);
+  align-self: center;
+}
+
+.factValue {
+  margin: 0;
+  align-self: center;
+}
+
+.endpoint {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* Token label: the kicker treatment, dimmed, as its own block above the row. */
+.tokenLabel {
+  composes: kicker;
+  color: var(--dim);
+  display: block;
+  margin-top: 14px;
+}
+
+.tokenRow {
+  display: flex;
+  gap: 9px;
+  margin-top: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.savedMsg {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ok);
+  margin-top: 9px;
+}

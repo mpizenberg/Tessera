@@ -18,7 +18,6 @@ import {
   createSignal,
   onCleanup,
   type Component,
-  type JSX,
 } from "solid-js";
 import type { Metadatum } from "cip-179";
 
@@ -26,6 +25,7 @@ import { bytesToHex } from "~/util/hex";
 import { metadatumToDiagnostic } from "~/util/cbor-diagnostic";
 import { MAX_TX_BYTES, estimateMinFee, lovelaceToAda } from "~/domain/fee";
 import { SegmentedToggle } from "~/ui/components/SegmentedToggle";
+import css from "./OnchainPreview.module.css";
 
 type View = "hex" | "diag";
 
@@ -82,19 +82,19 @@ export const OnchainPreview: Component<{
   const ready = () => bytes() !== undefined;
 
   return (
-    <div style={cardStyle()}>
-      <div style={headStyle()}>
-        <span style={labelStyle()}>
+    <div class={css.card}>
+      <div class={css.head}>
+        <span class={css.label}>
           {props.sealed ? "Plaintext to seal" : "On-chain preview"}
         </span>
         <Show when={props.sealed}>
-          <span style={encBadgeStyle()}>encrypted on submit</span>
+          <span class={css.encBadge}>encrypted on submit</span>
         </Show>
-        <span style={{ "margin-left": "auto" }} />
         <Show when={ready()}>
-          <span style={statStyle()}>{size().toLocaleString()} B</span>
+          {/* statLead carries margin-left:auto, so no spacer node is needed. */}
+          <span class={css.statLead}>{size().toLocaleString()} B</span>
           <Show when={!props.sealed}>
-            <span style={statStyle()}>
+            <span class={css.stat}>
               ≈ {lovelaceToAda(estimateMinFee(size()))} ₳
             </span>
           </Show>
@@ -104,14 +104,14 @@ export const OnchainPreview: Component<{
       <Show
         when={ready()}
         fallback={
-          <div style={emptyStyle()}>
+          <div class={css.empty}>
             {props.payload
               ? "Encoding…"
               : "Complete the form to preview the label-17 payload."}
           </div>
         }
       >
-        <div style={controlsStyle()}>
+        <div class={css.controls}>
           <SegmentedToggle
             ariaLabel="Preview format"
             value={view()}
@@ -121,17 +121,17 @@ export const OnchainPreview: Component<{
               { value: "hex", label: "Hex" },
             ]}
           />
-          <button style={copyStyle()} onClick={copy}>
+          <button class={css.copy} onClick={copy}>
             {copied() ? "Copied ✓" : "Copy"}
           </button>
         </div>
 
-        <pre style={codeStyle()}>{text()}</pre>
+        <pre class={css.code}>{text()}</pre>
 
         <Show
           when={props.sealed}
           fallback={
-            <p style={noteStyle()}>
+            <p class={css.note}>
               Estimated min fee for a simple transaction — the real fee depends
               on coin selection and witnesses. Payload is{" "}
               {size().toLocaleString()} of {MAX_TX_BYTES.toLocaleString()} max
@@ -139,7 +139,7 @@ export const OnchainPreview: Component<{
             </p>
           }
         >
-          <p style={noteStyle()}>
+          <p class={css.note}>
             These are the answers as they'll be timelock-encrypted when you
             submit — nothing is encrypted yet. The on-chain payload will be the
             resulting ciphertext, zero-padded
@@ -155,109 +155,3 @@ export const OnchainPreview: Component<{
     </div>
   );
 };
-
-// --- styles -----------------------------------------------------------------
-
-function cardStyle(): JSX.CSSProperties {
-  return {
-    background: "#fff",
-    border: "1px solid var(--line)",
-    "border-radius": "var(--r-sm)",
-    padding: "16px 18px",
-    "margin-top": "12px",
-  };
-}
-function headStyle(): JSX.CSSProperties {
-  return {
-    display: "flex",
-    "align-items": "center",
-    gap: "8px",
-    "flex-wrap": "wrap",
-  };
-}
-function labelStyle(): JSX.CSSProperties {
-  return {
-    "font-family": "var(--mono)",
-    "font-size": "10px",
-    "letter-spacing": ".08em",
-    "text-transform": "uppercase",
-    color: "var(--dim)",
-    "font-weight": "600",
-  };
-}
-function encBadgeStyle(): JSX.CSSProperties {
-  return {
-    "font-family": "var(--mono)",
-    "font-size": "9.5px",
-    "font-weight": "700",
-    "letter-spacing": ".04em",
-    "text-transform": "uppercase",
-    color: "var(--warn)",
-    background: "var(--warn-bg)",
-    border: "1px solid var(--warn-line)",
-    "border-radius": "var(--r-3xs)",
-    padding: "2px 6px",
-  };
-}
-function statStyle(): JSX.CSSProperties {
-  return {
-    "font-family": "var(--mono)",
-    "font-size": "11.5px",
-    "font-weight": "700",
-    color: "var(--body)",
-  };
-}
-function emptyStyle(): JSX.CSSProperties {
-  return {
-    "font-size": "12.5px",
-    color: "var(--dim)",
-    "line-height": "1.5",
-    "margin-top": "10px",
-  };
-}
-function controlsStyle(): JSX.CSSProperties {
-  return {
-    display: "flex",
-    "align-items": "center",
-    gap: "10px",
-    "margin-top": "12px",
-  };
-}
-function copyStyle(): JSX.CSSProperties {
-  return {
-    "margin-left": "auto",
-    "font-family": "inherit",
-    "font-size": "12px",
-    "font-weight": "700",
-    cursor: "pointer",
-    border: "1px solid var(--line)",
-    "border-radius": "var(--r-chip)",
-    padding: "6px 12px",
-    background: "#fff",
-    color: "var(--accent)",
-  };
-}
-function codeStyle(): JSX.CSSProperties {
-  return {
-    "font-family": "var(--mono)",
-    "font-size": "11.5px",
-    "line-height": "1.5",
-    color: "#C4CCDA",
-    background: "var(--ink)",
-    "border-radius": "var(--r-control)",
-    padding: "13px 14px",
-    margin: "11px 0 0",
-    "max-height": "260px",
-    overflow: "auto",
-    "white-space": "pre-wrap",
-    "word-break": "break-all",
-  };
-}
-function noteStyle(): JSX.CSSProperties {
-  return {
-    "font-size": "11px",
-    color: "var(--dim)",
-    "line-height": "1.5",
-    margin: "10px 0 0",
-  };
-}

@@ -18,36 +18,13 @@ import { useApp } from "~/state";
 import { envKoiosToken, storedKoiosToken } from "~/config";
 import { IPFS_PROVIDERS } from "~/enrichment/providers";
 import { SegmentedToggle } from "~/ui/components/SegmentedToggle";
+import css from "./Settings.module.css";
 
 export const Settings: Component = () => {
   return (
-    <main
-      style={{
-        "max-width": "720px",
-        margin: "0 auto",
-        padding: "34px 24px 96px",
-      }}
-    >
-      <h1
-        style={{
-          "font-size": "27px",
-          "font-weight": "800",
-          "letter-spacing": "-.02em",
-          margin: "0",
-          color: "var(--ink)",
-        }}
-      >
-        Settings
-      </h1>
-      <p
-        style={{
-          "font-size": "14.5px",
-          color: "var(--muted)",
-          margin: "7px 0 0",
-          "max-width": "540px",
-          "line-height": "1.5",
-        }}
-      >
+    <main class={css.main}>
+      <h1 class={css.title}>Settings</h1>
+      <p class={css.lead}>
         Stored only in this browser. None of it touches the on-chain payload —
         surveys always validate and tally from chain data alone.
       </p>
@@ -64,9 +41,9 @@ export const Settings: Component = () => {
  * the numbered heads on the Create page), then the card body.
  */
 const Section: Component<{ head: string; children: JSX.Element }> = (props) => (
-  <div style={{ "margin-top": "20px" }}>
-    <div style={sectionHeadStyle()}>{props.head}</div>
-    <div style={panelStyle()}>{props.children}</div>
+  <div class={css.section}>
+    <div class={css.sectionHead}>{props.head}</div>
+    <div class={css.panel}>{props.children}</div>
   </div>
 );
 
@@ -79,64 +56,37 @@ const ProvidersSection: Component = () => {
 
   return (
     <Section head="Off-chain content storage">
-      <h2 style={headingStyle()}>IPFS pinning services</h2>
-      <p style={proseStyle()}>
+      <h2 class={css.heading}>IPFS pinning services</h2>
+      <p class={css.prose}>
         Needed only to <b>author</b> content the app stores off-chain — an
         external survey's presentation document, or a voter rationale. Enable
         one or more; each document is pinned to <b>every</b> enabled service in
         parallel for wider availability (same content hash everywhere). Embedded
         surveys and reading never need these.
       </p>
-      <div
-        style={{
-          "font-family": "var(--mono)",
-          "font-size": "11px",
-          color: "var(--dim)",
-          "margin-top": "10px",
-        }}
-      >
-        {enabledCount()} enabled
-      </div>
+      <div class={css.enabledCount}>{enabledCount()} enabled</div>
 
-      <div
-        style={{
-          display: "flex",
-          "flex-direction": "column",
-          gap: "10px",
-          "margin-top": "16px",
-        }}
-      >
+      <div class={css.providerList}>
         <For each={IPFS_PROVIDERS}>
           {(p) => {
             const token = () => app.ipfsTokens[p.id] ?? "";
             const on = () => !!token().trim();
             return (
               <div
-                style={{
-                  background: on() ? "#FBF4EE" : "#fff",
-                  border: `1px solid ${on() ? "var(--accent-line)" : "var(--line)"}`,
-                  "border-radius": "var(--r-md)",
-                  padding: "14px 15px",
-                }}
+                class={css.providerCard}
+                classList={{ [css.providerCardOn]: on() }}
               >
-                <div
-                  style={{
-                    display: "flex",
-                    "align-items": "center",
-                    "justify-content": "space-between",
-                    gap: "10px",
-                  }}
-                >
+                <div class={css.providerRow}>
                   <span
-                    style={{
-                      "font-size": "14px",
-                      "font-weight": "700",
-                      color: on() ? "var(--accent)" : "var(--ink)",
-                    }}
+                    class={css.providerLabel}
+                    classList={{ [css.providerLabelOn]: on() }}
                   >
                     {p.label}
                   </span>
-                  <span style={statusBadgeStyle(on())}>
+                  <span
+                    class={css.statusBadge}
+                    classList={{ [css.statusBadgeOn]: on() }}
+                  >
                     {on() ? "Set" : "Not set"}
                   </span>
                 </div>
@@ -148,27 +98,18 @@ const ProvidersSection: Component = () => {
                   onInput={(e) => app.setIpfsToken(p.id, e.currentTarget.value)}
                   placeholder={p.tokenPlaceholder}
                   aria-label={`${p.label} API token`}
-                  style={tokenInputStyle()}
+                  class={css.tokenInput}
                 />
-                <p
-                  style={{
-                    "font-size": "11.5px",
-                    color: "var(--dim)",
-                    "line-height": "1.4",
-                    margin: "8px 0 0",
-                  }}
-                >
-                  {p.hint}
-                </p>
+                <p class={css.providerHint}>{p.hint}</p>
               </div>
             );
           }}
         </For>
       </div>
 
-      <div style={infoNoteStyle()}>
-        <span style={infoBadgeStyle()}>i</span>
-        <p style={noteTextStyle()}>
+      <div class={css.infoNote}>
+        <span class={css.infoBadge}>i</span>
+        <p class={css.noteText}>
           Pinning keeps a document reachable; if it ever drops, surveys still
           validate and tally from on-chain data — only the presentation labels
           can't be rendered. The anchor hash is computed locally (
@@ -209,23 +150,15 @@ const KoiosSection: Component = () => {
 
   return (
     <Section head="Network & data source">
-      <h2 style={headingStyle()}>Reading from Koios</h2>
-      <p style={proseStyle()}>
+      <h2 class={css.heading}>Reading from Koios</h2>
+      <p class={css.prose}>
         The app ships with a pre-configured Koios token that may get
         rate-limited under load. Paste your own to use it instead — it overrides
         the default and applies on save (the snapshot reloads). Switching
         network reloads the app on Explore to apply the new endpoint.
       </p>
 
-      <dl
-        style={{
-          margin: "16px 0 4px",
-          display: "grid",
-          "grid-template-columns": "auto 1fr",
-          "row-gap": "10px",
-          "column-gap": "18px",
-        }}
-      >
+      <dl class={css.factGrid}>
         <FactRow label="Network">
           <SegmentedToggle
             ariaLabel="Network"
@@ -240,18 +173,13 @@ const KoiosSection: Component = () => {
           />
         </FactRow>
         <FactRow label="Endpoint">
-          <span
-            style={{
-              "font-family": "var(--mono)",
-              "font-size": "12.5px",
-              color: "var(--muted)",
-            }}
-          >
-            {app.config.koiosUrl}
-          </span>
+          <span class={css.endpoint}>{app.config.koiosUrl}</span>
         </FactRow>
         <FactRow label="Active token">
-          <span style={statusBadgeStyle(!!app.koiosToken())}>
+          <span
+            class={css.statusBadge}
+            classList={{ [css.statusBadgeOn]: !!app.koiosToken() }}
+          >
             {app.koiosToken()
               ? overridden()
                 ? "your token"
@@ -261,25 +189,8 @@ const KoiosSection: Component = () => {
         </FactRow>
       </dl>
 
-      <label
-        style={{
-          ...kickerStyle(),
-          color: "var(--dim)",
-          display: "block",
-          "margin-top": "14px",
-        }}
-      >
-        Your Koios token
-      </label>
-      <div
-        style={{
-          display: "flex",
-          gap: "9px",
-          "margin-top": "8px",
-          "align-items": "center",
-          "flex-wrap": "wrap",
-        }}
-      >
+      <label class={css.tokenLabel}>Your Koios token</label>
+      <div class={css.tokenRow}>
         <input
           type="password"
           autocomplete="off"
@@ -291,35 +202,22 @@ const KoiosSection: Component = () => {
           }}
           placeholder="paste a Koios bearer token"
           aria-label="Koios bearer token"
-          style={{
-            ...tokenInputStyle(),
-            "margin-top": "0",
-            flex: "1",
-            "min-width": "220px",
-          }}
+          class={css.koiosInput}
         />
         <button
-          style={btnPrimaryStyle(dirty())}
+          class={css.btnPrimary}
+          classList={{ [css.btnPrimaryOn]: dirty() }}
           disabled={!dirty()}
           onClick={save}
         >
           Save
         </button>
-        <button style={btnGhostStyle()} disabled={!stored()} onClick={reset}>
+        <button class={css.btnGhost} disabled={!stored()} onClick={reset}>
           Use app default
         </button>
       </div>
       <Show when={saved()}>
-        <div
-          style={{
-            "font-family": "var(--mono)",
-            "font-size": "11px",
-            color: "var(--ok)",
-            "margin-top": "9px",
-          }}
-        >
-          ✓ saved · snapshot reloaded
-        </div>
+        <div class={css.savedMsg}>✓ saved · snapshot reloaded</div>
       </Show>
     </Section>
   );
@@ -329,19 +227,8 @@ const FactRow: Component<{ label: string; children: JSX.Element }> = (
   props,
 ) => (
   <>
-    <dt
-      style={{
-        "font-family": "var(--mono)",
-        "font-size": "10.5px",
-        "letter-spacing": ".05em",
-        "text-transform": "uppercase",
-        color: "var(--dim)",
-        "align-self": "center",
-      }}
-    >
-      {props.label}
-    </dt>
-    <dd style={{ margin: "0", "align-self": "center" }}>{props.children}</dd>
+    <dt class={css.factLabel}>{props.label}</dt>
+    <dd class={css.factValue}>{props.children}</dd>
   </>
 );
 
@@ -351,8 +238,8 @@ const DisplaySection: Component = () => {
   const app = useApp();
   return (
     <Section head="Display">
-      <h2 style={headingStyle()}>Detail level</h2>
-      <p style={proseStyle()}>
+      <h2 class={css.heading}>Detail level</h2>
+      <p class={css.prose}>
         <b>Pro</b> mode surfaces technical detail across the app — survey refs,
         epochs, drand rounds, padding sizes, and extra authoring fields.{" "}
         <b>Plain</b> hides them. Also toggleable from the header.
@@ -372,138 +259,3 @@ const DisplaySection: Component = () => {
     </Section>
   );
 };
-
-// --- styles ------------------------------------------------------------------
-
-function panelStyle(): JSX.CSSProperties {
-  return {
-    background: "#fff",
-    border: "1px solid var(--line)",
-    "border-radius": "var(--r-panel)",
-    padding: "22px",
-  };
-}
-function kickerStyle(): JSX.CSSProperties {
-  return {
-    "font-family": "var(--mono)",
-    "font-size": "10.5px",
-    "letter-spacing": ".1em",
-    "text-transform": "uppercase",
-    color: "var(--accent)",
-    "font-weight": "600",
-  };
-}
-function sectionHeadStyle(): JSX.CSSProperties {
-  return { ...kickerStyle(), margin: "0 2px 11px" };
-}
-function headingStyle(): JSX.CSSProperties {
-  return {
-    "font-size": "17px",
-    "font-weight": "800",
-    "letter-spacing": "-.01em",
-    margin: "11px 0 0",
-    color: "var(--ink)",
-  };
-}
-function proseStyle(): JSX.CSSProperties {
-  return {
-    "font-size": "13.5px",
-    color: "var(--muted)",
-    "line-height": "1.55",
-    margin: "7px 0 0",
-  };
-}
-function noteTextStyle(): JSX.CSSProperties {
-  return {
-    "font-size": "12.5px",
-    color: "var(--muted)",
-    "line-height": "1.5",
-    margin: "0",
-  };
-}
-function tokenInputStyle(): JSX.CSSProperties {
-  return {
-    width: "100%",
-    "box-sizing": "border-box",
-    "margin-top": "11px",
-    border: "1px solid var(--line)",
-    "border-radius": "var(--r-input)",
-    padding: "9px 11px",
-    "font-family": "var(--mono)",
-    "font-size": "12.5px",
-    outline: "none",
-    background: "#fff",
-    color: "var(--ink)",
-  };
-}
-function statusBadgeStyle(on: boolean): JSX.CSSProperties {
-  return {
-    "font-size": "10px",
-    "font-weight": "700",
-    "font-family": "var(--mono)",
-    "letter-spacing": ".04em",
-    "text-transform": "uppercase",
-    color: on ? "var(--ok)" : "var(--dim)",
-    background: on ? "var(--ok-bg)" : "var(--surface3)",
-    border: `1px solid ${on ? "var(--ok-line)" : "var(--line)"}`,
-    "border-radius": "var(--r-2xs)",
-    padding: "4px 8px",
-    flex: "none",
-  };
-}
-function btnPrimaryStyle(on: boolean): JSX.CSSProperties {
-  return {
-    "font-family": "inherit",
-    "font-size": "13px",
-    "font-weight": "700",
-    cursor: on ? "pointer" : "default",
-    background: on ? "var(--accent)" : "var(--accent-tint)",
-    color: "#fff",
-    border: "none",
-    "border-radius": "var(--r-input)",
-    padding: "10px 16px",
-    opacity: on ? "1" : ".6",
-  };
-}
-function btnGhostStyle(): JSX.CSSProperties {
-  return {
-    "font-family": "inherit",
-    "font-size": "13px",
-    "font-weight": "600",
-    cursor: "pointer",
-    background: "#fff",
-    color: "var(--muted)",
-    border: "1px solid var(--line)",
-    "border-radius": "var(--r-input)",
-    padding: "10px 14px",
-  };
-}
-function infoNoteStyle(): JSX.CSSProperties {
-  return {
-    display: "flex",
-    "align-items": "flex-start",
-    gap: "9px",
-    background: "#FBF6EC",
-    border: "1px solid #ECE3D2",
-    "border-radius": "var(--r-control)",
-    padding: "12px 14px",
-    "margin-top": "16px",
-  };
-}
-function infoBadgeStyle(): JSX.CSSProperties {
-  return {
-    width: "18px",
-    height: "18px",
-    "border-radius": "var(--r-3xs)",
-    background: "var(--accent-bg)",
-    border: "1px solid var(--accent-line)",
-    color: "var(--accent)",
-    "font-size": "11px",
-    "font-weight": "700",
-    display: "flex",
-    "align-items": "center",
-    "justify-content": "center",
-    flex: "none",
-    "margin-top": "1px",
-  };
-}

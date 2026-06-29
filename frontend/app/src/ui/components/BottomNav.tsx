@@ -7,13 +7,15 @@
  * sticky submit bar owns the bottom edge.
  */
 
-import { For, Show, type Accessor, type Component, type JSX } from "solid-js";
+import { For, Show, type Component, type JSX } from "solid-js";
 import { A, useLocation } from "@solidjs/router";
+
+import css from "./BottomNav.module.css";
 
 const ITEMS: ReadonlyArray<{
   href: string;
   label: string;
-  icon: Component<{ color: Accessor<string> }>;
+  icon: Component;
 }> = [
   { href: "/", label: "Explore", icon: ExploreIcon },
   { href: "/create", label: "Create", icon: CreateIcon },
@@ -29,81 +31,30 @@ export const BottomNav: Component = () => {
 
   return (
     <Show when={!hidden()}>
-      <nav
-        class="bottom-nav"
-        style={{
-          position: "fixed",
-          left: "0",
-          right: "0",
-          bottom: "0",
-          "z-index": "45",
-          background: "rgba(255,255,255,.94)",
-          "backdrop-filter": "blur(10px)",
-          "border-top": "1px solid var(--line)",
-          "padding-bottom": "env(safe-area-inset-bottom)",
-        }}
-      >
+      <nav class={`bottom-nav ${css.bar}`}>
         <For each={ITEMS}>
-          {(item) => {
-            const color = (): string =>
-              active(item.href) ? "var(--accent)" : "var(--dim)";
-            return (
-              <A href={item.href} style={itemStyle(color())}>
-                <item.icon color={color} />
-                <span
-                  style={{
-                    "font-size": "11px",
-                    "font-weight": "700",
-                    "letter-spacing": "-.01em",
-                  }}
-                >
-                  {item.label}
-                </span>
-              </A>
-            );
-          }}
+          {(item) => (
+            <A
+              href={item.href}
+              class={css.item}
+              classList={{ [css.active]: active(item.href) }}
+            >
+              <item.icon />
+              <span class={css.label}>{item.label}</span>
+            </A>
+          )}
         </For>
       </nav>
     </Show>
   );
 };
 
-function itemStyle(color: string): JSX.CSSProperties {
-  return {
-    flex: "1",
-    display: "flex",
-    "flex-direction": "column",
-    "align-items": "center",
-    "justify-content": "center",
-    gap: "4px",
-    height: "58px",
-    "text-decoration": "none",
-    color,
-  };
-}
-
 // --- icons (mirror the mockup's inline glyphs) -------------------------------
 
-function ExploreIcon(props: { color: Accessor<string> }): JSX.Element {
-  const bar = (h: string): JSX.Element => (
-    <span
-      style={{
-        width: "3px",
-        height: h,
-        background: props.color(),
-        "border-radius": "1px",
-      }}
-    />
-  );
+function ExploreIcon(): JSX.Element {
+  const bar = (h: string): JSX.Element => <span style={{ height: h }} />;
   return (
-    <span
-      style={{
-        display: "flex",
-        "align-items": "flex-end",
-        gap: "2.5px",
-        height: "16px",
-      }}
-    >
+    <span class={css.explore}>
       {bar("7px")}
       {bar("13px")}
       {bar("10px")}
@@ -111,62 +62,20 @@ function ExploreIcon(props: { color: Accessor<string> }): JSX.Element {
   );
 }
 
-function CreateIcon(props: { color: Accessor<string> }): JSX.Element {
-  return (
-    <span
-      style={{
-        display: "flex",
-        "align-items": "center",
-        "justify-content": "center",
-        width: "18px",
-        height: "16px",
-        border: `1.6px solid ${props.color()}`,
-        "border-radius": "var(--r-3xs)",
-        "font-size": "13px",
-        "font-weight": "700",
-        "line-height": "0",
-        color: props.color(),
-      }}
-    >
-      +
-    </span>
-  );
+function CreateIcon(): JSX.Element {
+  return <span class={css.create}>+</span>;
 }
 
-function SettingsIcon(props: { color: Accessor<string> }): JSX.Element {
+function SettingsIcon(): JSX.Element {
   const knob = (side: "left" | "right"): JSX.Element => (
     <span
-      style={{
-        position: "relative",
-        height: "2px",
-        background: props.color(),
-        "border-radius": "2px",
-      }}
+      class={`${css.knob} ${side === "left" ? css.knobLeft : css.knobRight}`}
     >
-      <span
-        style={{
-          position: "absolute",
-          top: "-2px",
-          [side]: "3px",
-          width: "6px",
-          height: "6px",
-          "border-radius": "50%",
-          background: props.color(),
-        }}
-      />
+      <span />
     </span>
   );
   return (
-    <span
-      style={{
-        display: "flex",
-        "flex-direction": "column",
-        gap: "4px",
-        width: "16px",
-        height: "16px",
-        "justify-content": "center",
-      }}
-    >
+    <span class={css.settings}>
       {knob("left")}
       {knob("right")}
     </span>

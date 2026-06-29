@@ -69,6 +69,7 @@ import {
   viewStatus,
 } from "~/ui/format";
 import type { WalletIdentity } from "~/wallet/types";
+import css from "./Respond.module.css";
 
 // ----------------------------------------------------------------------------
 // Screen
@@ -431,15 +432,9 @@ export const Respond: Component = () => {
   };
 
   return (
-    <main
-      style={{
-        "max-width": "760px",
-        margin: "0 auto",
-        padding: "22px 24px 140px",
-      }}
-    >
-      <A href={`/survey/${encodeURIComponent(key())}`} style={backLinkStyle()}>
-        <span style={{ "font-size": "15px" }}>←</span> Back to results
+    <main class={css.main}>
+      <A href={`/survey/${encodeURIComponent(key())}`} class={css.backLink}>
+        <span class={css.backArrow}>←</span> Back to results
       </A>
 
       <Show when={submitting() && submitSteps().length > 1}>
@@ -479,18 +474,7 @@ export const Respond: Component = () => {
             />
 
             <Show when={s().cancellationClaimed}>
-              <div
-                style={{
-                  "margin-top": "12px",
-                  padding: "11px 14px",
-                  border: "1px solid var(--warn-line)",
-                  background: "var(--warn-bg)",
-                  "border-radius": "var(--r-md)",
-                  "font-size": "13px",
-                  color: "var(--warn)",
-                  "line-height": "1.45",
-                }}
-              >
+              <div class={css.cancelClaim}>
                 <strong>Unverified cancellation claim.</strong> A cancellation
                 for this survey was published but couldn't be verified as the
                 owner's, so it's ignored — you can still respond.
@@ -513,14 +497,7 @@ export const Respond: Component = () => {
                 <LabelsAbsentBanner keyStr={key()} />
               </Show>
 
-              <div
-                style={{
-                  display: "flex",
-                  "flex-direction": "column",
-                  gap: "12px",
-                  "margin-top": "12px",
-                }}
-              >
+              <div class={css.questionList}>
                 <For each={(definition() ?? s().record.definition).questions}>
                   {(q, i) => (
                     <QuestionCard
@@ -655,60 +632,25 @@ const ConnectPrompt: Component = () => (
 );
 
 const Ineligible: Component<{ def: SurveyDefinition }> = (props) => (
-  <div style={cardStyle()}>
-    <h3
-      style={{
-        "font-size": "17px",
-        "font-weight": "800",
-        margin: "0",
-        "letter-spacing": "-.01em",
-      }}
-    >
-      You can't respond to this survey
-    </h3>
-    <p
-      style={{
-        "font-size": "13.5px",
-        color: "var(--muted)",
-        "line-height": "1.55",
-        margin: "7px 0 0",
-      }}
-    >
+  <div class={css.card}>
+    <h3 class={css.ineligibleTitle}>You can't respond to this survey</h3>
+    <p class={css.ineligibleLead}>
       It's open only to the roles below, and your connected wallet can't claim
       any of them here. Here's what each one means:
     </p>
-    <div
-      style={{
-        display: "flex",
-        "flex-direction": "column",
-        gap: "10px",
-        "margin-top": "14px",
-      }}
-    >
+    <div class={css.ineligibleList}>
       <For each={props.def.eligibleRoles}>
         {(r) => {
           const [color, bg] = roleColors(r);
           return (
-            <div
-              style={{
-                display: "flex",
-                gap: "10px",
-                "align-items": "flex-start",
-              }}
-            >
-              <span style={{ ...roleChipStyle(color, bg), flex: "none" }}>
+            <div class={css.ineligibleRow}>
+              <span class={css.roleChip} style={{ color, background: bg }}>
                 {roleLabel(r)}
               </span>
-              <span
-                style={{
-                  "font-size": "12.5px",
-                  color: "var(--muted)",
-                  "line-height": "1.5",
-                }}
-              >
+              <span class={css.roleDesc}>
                 {roleDescription(r)}
                 <Show when={!roleBrowserClaimable(r)}>
-                  <span style={{ color: "var(--warn)", "font-weight": "600" }}>
+                  <span class={css.notClaimable}>
                     {" "}
                     Not claimable in a browser wallet.
                   </span>
@@ -735,98 +677,34 @@ const SurveyHeader: Component<{
   respondable: Role[];
   onPickRole: (r: Role) => void;
 }> = (props) => (
-  <div
-    style={{
-      "border-bottom": "1px solid #E7DFCE",
-      padding: "14px 2px 20px",
-      "margin-top": "6px",
-    }}
-  >
-    <div
-      style={{
-        display: "flex",
-        "align-items": "center",
-        gap: "10px",
-        "flex-wrap": "wrap",
-      }}
-    >
-      <span
-        style={{
-          "font-family": "var(--mono)",
-          "font-size": "11px",
-          color: "var(--dim)",
-          "letter-spacing": ".04em",
-          "text-transform": "uppercase",
-        }}
-      >
-        Respond
-      </span>
-      <span style={{ "margin-left": "auto" }} />
+  <div class={css.header}>
+    <div class={css.headerTop}>
+      <span class={css.respondLabel}>Respond</span>
+      {/* refText carries margin-left:auto, so no spacer node is needed. When
+          pro is off, "Responding as" / title don't depend on the spacer. */}
       <Show when={props.pro}>
         <span
           title="Full survey ref — defining transaction hash and output index"
-          style={{
-            "font-family": "var(--mono)",
-            "font-size": "11px",
-            color: "var(--pale)",
-            "word-break": "break-all",
-          }}
+          class={css.refText}
         >
           ref {fullRef(props.s.key)}
         </span>
       </Show>
     </div>
-    <h1
-      style={{
-        "font-size": "26px",
-        "font-weight": "700",
-        "letter-spacing": "-.018em",
-        "line-height": "1.16",
-        margin: "12px 0 0",
-        color: "var(--ink)",
-      }}
-    >
-      {props.def.title || "Untitled survey"}
-    </h1>
+    <h1 class={css.headerTitle}>{props.def.title || "Untitled survey"}</h1>
     <Show when={props.def.description}>
-      <p
-        style={{
-          "font-size": "14.5px",
-          color: "var(--muted)",
-          "line-height": "1.55",
-          margin: "8px 0 0",
-        }}
-      >
-        {props.def.description}
-      </p>
+      <p class={css.headerDesc}>{props.def.description}</p>
     </Show>
 
     <Show when={props.respondable.length > 0}>
-      <div
-        style={{
-          display: "flex",
-          "align-items": "center",
-          gap: "10px",
-          "margin-top": "16px",
-          "flex-wrap": "wrap",
-        }}
-      >
-        <span
-          style={{
-            "font-family": "var(--mono)",
-            "font-size": "10px",
-            "letter-spacing": ".08em",
-            "text-transform": "uppercase",
-            color: "var(--dim)",
-          }}
-        >
-          Responding as
-        </span>
+      <div class={css.roleRow}>
+        <span class={css.roleRowLabel}>Responding as</span>
         <For each={props.respondable}>
           {(r) => (
             <button
               onClick={() => props.onPickRole(r)}
-              style={rolePickStyle(r === props.role)}
+              class={css.rolePick}
+              classList={{ [css.rolePickOn]: r === props.role }}
             >
               {roleLabel(r)}
             </button>
@@ -838,55 +716,14 @@ const SurveyHeader: Component<{
 );
 
 const RespondedBanner: Component<{ role: Role | null }> = (props) => (
-  <div
-    style={{
-      display: "flex",
-      "align-items": "flex-start",
-      gap: "11px",
-      background: "#F0FAF3",
-      border: "1px solid var(--ok-line)",
-      "border-radius": "13px",
-      padding: "13px 16px",
-      "margin-top": "14px",
-    }}
-  >
-    <span
-      style={{
-        width: "20px",
-        height: "20px",
-        "border-radius": "50%",
-        background: "var(--ok)",
-        color: "#fff",
-        "font-size": "12px",
-        "font-weight": "700",
-        display: "flex",
-        "align-items": "center",
-        "justify-content": "center",
-        flex: "none",
-        "margin-top": "1px",
-      }}
-    >
-      ✓
-    </span>
-    <div style={{ flex: "1" }}>
-      <div
-        style={{
-          "font-size": "13.5px",
-          "font-weight": "700",
-          color: "var(--ok)",
-        }}
-      >
+  <div class={css.respondedBanner}>
+    <span class={css.respondedCheck}>✓</span>
+    <div class={css.bannerBody}>
+      <div class={css.respondedTitle}>
         You already responded as{" "}
         {props.role !== null ? roleLabel(props.role) : "this role"}
       </div>
-      <div
-        style={{
-          "font-size": "12.5px",
-          color: "#3F7A55",
-          "line-height": "1.45",
-          "margin-top": "3px",
-        }}
-      >
+      <div class={css.respondedText}>
         Your previous answers are pre-filled. Submitting again publishes a new
         response that fully replaces the earlier one under latest-valid-wins;
         the old one stays on-chain but is no longer tallied.
@@ -896,41 +733,11 @@ const RespondedBanner: Component<{ role: Role | null }> = (props) => (
 );
 
 const SealedBanner: Component<{ round: number }> = (props) => (
-  <div
-    style={{
-      display: "flex",
-      "align-items": "flex-start",
-      gap: "11px",
-      background: "var(--card-bg)",
-      border: "1px solid var(--card-line)",
-      "border-radius": "13px",
-      padding: "13px 16px",
-      "margin-top": "14px",
-    }}
-  >
-    <span
-      style={{ "font-size": "15px", color: "var(--warn)", "margin-top": "1px" }}
-    >
-      ◆
-    </span>
-    <div style={{ flex: "1" }}>
-      <div
-        style={{
-          "font-size": "13.5px",
-          "font-weight": "700",
-          color: "var(--label)",
-        }}
-      >
-        This is a sealed survey
-      </div>
-      <div
-        style={{
-          "font-size": "12.5px",
-          color: "var(--label)",
-          "line-height": "1.5",
-          "margin-top": "3px",
-        }}
-      >
+  <div class={css.cardBanner}>
+    <span class={css.bannerIcon}>◆</span>
+    <div class={css.bannerBody}>
+      <div class={css.bannerTitle}>This is a sealed survey</div>
+      <div class={css.bannerText}>
         Your answers are timelock-encrypted on submit —{" "}
         <b>no one, not even you, can read them</b> until the drand round
         publishes ({formatRevealDate(props.round)}). Aggregate results appear
@@ -946,48 +753,16 @@ const SealedBanner: Component<{ round: number }> = (props) => (
  * on-chain, and answers reference option indices (validated + tallied normally).
  */
 const LabelsAbsentBanner: Component<{ keyStr: string }> = (props) => (
-  <div
-    style={{
-      display: "flex",
-      "align-items": "flex-start",
-      gap: "11px",
-      background: "var(--card-bg)",
-      border: "1px solid var(--card-line)",
-      "border-radius": "13px",
-      padding: "13px 16px",
-      "margin-top": "14px",
-    }}
-  >
-    <span
-      style={{ "font-size": "15px", color: "var(--warn)", "margin-top": "1px" }}
-    >
-      ⚠
-    </span>
-    <div style={{ flex: "1" }}>
-      <div
-        style={{
-          "font-size": "13.5px",
-          "font-weight": "700",
-          color: "var(--label)",
-        }}
-      >
-        Presentation labels unavailable
-      </div>
-      <div
-        style={{
-          "font-size": "12.5px",
-          color: "var(--label)",
-          "line-height": "1.5",
-          "margin-top": "3px",
-        }}
-      >
+  <div class={css.cardBanner}>
+    <span class={css.bannerIcon}>⚠</span>
+    <div class={css.bannerBody}>
+      <div class={css.bannerTitle}>Presentation labels unavailable</div>
+      <div class={css.bannerText}>
         The off-chain document (
-        <span style={{ "font-family": "var(--mono)", "font-size": "11.5px" }}>
-          {shortRef(props.keyStr)}
-        </span>
-        ) couldn't be fetched or failed its hash check, so option labels are
-        shown as indices. <b>You can still respond</b> — your answer references
-        option indices, validated and tallied normally.
+        <span class={css.refInline}>{shortRef(props.keyStr)}</span>) couldn't be
+        fetched or failed its hash check, so option labels are shown as indices.{" "}
+        <b>You can still respond</b> — your answer references option indices,
+        validated and tallied normally.
       </div>
     </div>
   </div>
@@ -1014,41 +789,21 @@ const RationaleSection: Component<{
   onUri: (v: string) => void;
   onHash: (v: string) => void;
 }> = (props) => (
-  <div style={{ ...cardStyle(), "margin-top": "12px" }}>
-    <label
-      style={{
-        display: "flex",
-        "align-items": "center",
-        gap: "10px",
-        cursor: "pointer",
-      }}
-    >
+  <div class={css.card}>
+    <label class={css.ratToggleLabel}>
       <input
         type="checkbox"
         checked={props.on}
         onChange={(e) => props.onToggle(e.currentTarget.checked)}
-        style={{
-          width: "16px",
-          height: "16px",
-          "accent-color": "var(--accent)",
-        }}
+        class={css.ratCheckbox}
       />
-      <span style={{ "font-size": "13.5px", "font-weight": "600", flex: "1" }}>
+      <span class={css.ratToggleText}>
         Attach a rationale document{" "}
-        <span style={{ color: "var(--dim)", "font-weight": "400" }}>
-          (off-chain, hash-anchored)
-        </span>
+        <span class={css.ratToggleHint}>(off-chain, hash-anchored)</span>
       </span>
     </label>
     <Show when={props.on}>
-      <div
-        style={{
-          display: "flex",
-          "flex-direction": "column",
-          gap: "10px",
-          "margin-top": "12px",
-        }}
-      >
+      <div class={css.ratBody}>
         <SegmentedToggle
           ariaLabel="Rationale source"
           wrapStyle={{ "align-self": "flex-start" }}
@@ -1064,90 +819,55 @@ const RationaleSection: Component<{
           when={props.mode === "write"}
           fallback={
             <>
-              <label style={{ display: "block" }}>
-                <span style={ratLabelStyle()}>Document URI</span>
+              <label class={css.ratField}>
+                <span class={css.ratLabel}>Document URI</span>
                 <input
                   type="text"
                   value={props.uri}
                   placeholder="ipfs://… or https://…"
                   onInput={(e) => props.onUri(e.currentTarget.value)}
-                  style={{
-                    ...numberInputStyle(),
-                    "font-family": "var(--mono)",
-                    "font-size": "12.5px",
-                  }}
+                  class={css.ratMonoInput}
                 />
               </label>
-              <label style={{ display: "block" }}>
-                <span style={ratLabelStyle()}>Hash (blake2b-256, hex)</span>
+              <label class={css.ratField}>
+                <span class={css.ratLabel}>Hash (blake2b-256, hex)</span>
                 <input
                   type="text"
                   value={props.hash}
                   placeholder="64 hex characters"
                   onInput={(e) => props.onHash(e.currentTarget.value)}
-                  style={{
-                    ...numberInputStyle(),
-                    "font-family": "var(--mono)",
-                    "font-size": "12.5px",
-                  }}
+                  class={css.ratMonoInput}
                 />
               </label>
-              <p
-                style={{
-                  "font-size": "11.5px",
-                  color: "var(--dim)",
-                  "line-height": "1.45",
-                  margin: "0",
-                }}
-              >
+              <p class={css.ratHint}>
                 Host the document yourself; the hash makes it tamper-evident.
               </p>
             </>
           }
         >
-          <label style={{ display: "block" }}>
-            <span style={ratLabelStyle()}>Rationale</span>
+          <label class={css.ratField}>
+            <span class={css.ratLabel}>Rationale</span>
             <textarea
               value={props.text}
               rows={4}
               placeholder="Why you answered this way…"
               onInput={(e) => props.onText(e.currentTarget.value)}
-              style={{
-                ...numberInputStyle(),
-                "font-family": "inherit",
-                "font-size": "13px",
-                "line-height": "1.5",
-                resize: "vertical",
-              }}
+              class={css.ratTextarea}
             />
           </label>
           <Show
             when={props.hasPinning}
             fallback={
-              <p
-                style={{
-                  "font-size": "11.5px",
-                  color: "var(--warn)",
-                  "line-height": "1.45",
-                  margin: "0",
-                }}
-              >
+              <p class={css.ratWarn}>
                 No IPFS provider is configured — add a token in{" "}
-                <A href="/settings" style={{ color: "var(--accent)" }}>
+                <A href="/settings" class={css.settingsLink}>
                   Settings
                 </A>{" "}
                 to pin from here, or switch to “Paste anchor”.
               </p>
             }
           >
-            <p
-              style={{
-                "font-size": "11.5px",
-                color: "var(--dim)",
-                "line-height": "1.45",
-                margin: "0",
-              }}
-            >
+            <p class={css.ratHint}>
               On submit, this is pinned to your IPFS providers and anchored (URI
               + blake2b-256 hash) on your response. Informational only — never
               affects validation or tallies.
@@ -1182,82 +902,36 @@ const QuestionCard: Component<{
 }> = (props) => {
   const skipped = () => props.draft?.skipped ?? false;
   return (
-    <div style={cardStyle()}>
-      <div
-        style={{
-          display: "flex",
-          "align-items": "center",
-          "justify-content": "space-between",
-          gap: "10px",
-          "flex-wrap": "wrap",
-        }}
-      >
-        <div style={{ display: "flex", gap: "10px", "align-items": "center" }}>
-          <span style={qChipStyle()}>Q{props.index + 1}</span>
-          <span
-            style={{
-              "font-family": "var(--mono)",
-              "font-size": "10px",
-              "letter-spacing": ".06em",
-              "text-transform": "uppercase",
-              color: "var(--dim)",
-            }}
-          >
-            {typeMeta(props.q)}
-          </span>
+    <div class={css.card}>
+      <div class={css.qHead}>
+        <div class={css.qHeadLeft}>
+          <span class={css.qChip}>Q{props.index + 1}</span>
+          <span class={css.qType}>{typeMeta(props.q)}</span>
           <Show when={props.q.required}>
-            <span
-              style={{
-                "font-size": "10px",
-                "font-weight": "700",
-                color: "var(--danger)",
-                background: "var(--danger-bg)",
-                "border-radius": "var(--r-3xs)",
-                padding: "2px 6px",
-              }}
-            >
-              Required
-            </span>
+            <span class={css.qRequired}>Required</span>
           </Show>
         </div>
         <Show when={!props.q.required}>
           <button
             onClick={() => props.onSkip(!skipped())}
-            style={skipBtnStyle(skipped())}
+            class={css.skipBtn}
+            classList={{ [css.skipBtnOn]: skipped() }}
           >
             {skipped() ? "Skipped" : "Skip"}
           </button>
         </Show>
       </div>
-      <h3
-        style={{
-          "font-family": "var(--serif)",
-          "font-size": "18px",
-          "font-weight": "600",
-          "line-height": "1.28",
-          margin: "11px 0 0",
-          color: "var(--ink)",
-        }}
-      >
-        {props.q.prompt || "(no prompt)"}
-      </h3>
+      <h3 class={css.qPrompt}>{props.q.prompt || "(no prompt)"}</h3>
 
       <Show
         when={!skipped()}
         fallback={
-          <p
-            style={{
-              "font-size": "12.5px",
-              color: "var(--dim)",
-              margin: "12px 0 0",
-              "font-style": "italic",
-            }}
-          >
+          <p class={css.qSkipped}>
             Skipped — abstaining. Nothing is recorded for this question.
           </p>
         }
       >
-        <div style={{ "margin-top": "14px" }}>
+        <div class={css.qBody}>
           <Show when={props.draft}>
             <QuestionBody
               q={props.q}
@@ -1353,10 +1027,7 @@ const SingleChoiceBody: Component<{
   v: Extract<DraftValue, { type: "singleChoice" }>;
   onChange: (v: DraftValue) => void;
 }> = (props) => (
-  <div
-    role="radiogroup"
-    style={{ display: "flex", "flex-direction": "column", gap: "8px" }}
-  >
+  <div role="radiogroup" class={css.optionGroup}>
     <For each={range(optionCount(props.q.options))}>
       {(i) => {
         const on = () => props.v.optionIndex === i;
@@ -1369,18 +1040,12 @@ const SingleChoiceBody: Component<{
             aria-checked={on()}
             onClick={pick}
             onKeyDown={activateOnKey(pick)}
-            style={optionRowStyle(on())}
+            class={css.optionRow}
+            classList={{ [css.optionRowOn]: on() }}
           >
-            <span style={radioStyle(on())}>
+            <span class={css.radio} classList={{ [css.radioOn]: on() }}>
               <Show when={on()}>
-                <span
-                  style={{
-                    width: "8px",
-                    height: "8px",
-                    "border-radius": "50%",
-                    background: "#fff",
-                  }}
-                />
+                <span class={css.radioDot} />
               </Show>
             </span>
             <span>{labelFor(props.q.options, i)}</span>
@@ -1407,13 +1072,7 @@ const MultiSelectBody: Component<{
   };
   return (
     <>
-      <div
-        style={{
-          display: "grid",
-          "grid-template-columns": "1fr 1fr",
-          gap: "8px",
-        }}
-      >
+      <div class={css.multiGrid}>
         <For each={range(optionCount(props.q.options))}>
           {(i) => {
             const on = () => props.v.selected.includes(i);
@@ -1424,9 +1083,13 @@ const MultiSelectBody: Component<{
                 aria-checked={on()}
                 onClick={() => toggle(i)}
                 onKeyDown={activateOnKey(() => toggle(i))}
-                style={optionRowStyle(on())}
+                class={css.optionRow}
+                classList={{ [css.optionRowOn]: on() }}
               >
-                <span style={checkboxStyle(on())}>
+                <span
+                  class={css.checkbox}
+                  classList={{ [css.checkboxOn]: on() }}
+                >
                   <Show when={on()}>✓</Show>
                 </span>
                 <span>{labelFor(props.q.options, i)}</span>
@@ -1435,40 +1098,14 @@ const MultiSelectBody: Component<{
           }}
         </For>
       </div>
-      <div
-        style={{
-          "font-family": "var(--mono)",
-          "font-size": "11px",
-          color: "var(--dim)",
-          "margin-top": "10px",
-        }}
-      >
+      <div class={css.multiCount}>
         select {props.q.minSelections}–{props.q.maxSelections} ·{" "}
         {props.v.selected.length} chosen
       </div>
       <Show when={props.q.minSelections === 0}>
-        <div
-          style={{
-            display: "flex",
-            "align-items": "flex-start",
-            gap: "9px",
-            background: "var(--card-bg)",
-            border: "1px solid var(--card-line)",
-            "border-radius": "var(--r-md)",
-            padding: "10px 12px",
-            "margin-top": "10px",
-          }}
-        >
-          <span
-            style={{
-              "font-size": "12px",
-              color: "var(--label)",
-              "line-height": "1.45",
-            }}
-          >
-            <b style={{ color: "#5B4A22" }}>
-              "None of these" is a real answer.
-            </b>{" "}
+        <div class={css.noneNote}>
+          <span class={css.noneNoteText}>
+            <b class={css.noneNoteLead}>"None of these" is a real answer.</b>{" "}
             This question allows 0 selections — submitting with nothing checked
             records a deliberate empty answer, different from Skip (abstain).
           </span>
@@ -1502,63 +1139,30 @@ const RankingBody: Component<{
   return (
     <>
       <Show when={ranked().length > 0}>
-        <div style={{ "margin-bottom": "10px" }}>
+        <div class={css.rankedList}>
           <For each={ranked()}>
             {(optIdx, pos) => (
-              <div
-                style={{
-                  display: "flex",
-                  "align-items": "center",
-                  gap: "11px",
-                  background: "var(--accent-bg)",
-                  border: "1px solid var(--accent-line)",
-                  "border-radius": "var(--r-control)",
-                  padding: "9px 11px",
-                  "margin-bottom": "7px",
-                }}
-              >
-                <span
-                  style={{
-                    width: "24px",
-                    height: "24px",
-                    "border-radius": "50%",
-                    background: "var(--accent)",
-                    color: "#fff",
-                    "font-size": "12.5px",
-                    "font-weight": "700",
-                    display: "flex",
-                    "align-items": "center",
-                    "justify-content": "center",
-                    flex: "none",
-                  }}
-                >
-                  {pos() + 1}
-                </span>
-                <span
-                  style={{
-                    "font-size": "14.5px",
-                    "font-weight": "600",
-                    flex: "1",
-                  }}
-                >
+              <div class={css.rankedRow}>
+                <span class={css.rankNum}>{pos() + 1}</span>
+                <span class={css.rankLabel}>
                   {labelFor(props.q.options, optIdx)}
                 </span>
                 <button
-                  style={rankBtnStyle()}
+                  class={css.rankBtn}
                   onClick={() => move(pos(), -1)}
                   aria-label="Move up"
                 >
                   ↑
                 </button>
                 <button
-                  style={rankBtnStyle()}
+                  class={css.rankBtn}
                   onClick={() => move(pos(), 1)}
                   aria-label="Move down"
                 >
                   ↓
                 </button>
                 <button
-                  style={rankBtnStyle("danger")}
+                  class={`${css.rankBtn} ${css.rankBtnDanger}`}
                   onClick={() => remove(optIdx)}
                   aria-label="Remove from ranking"
                 >
@@ -1570,23 +1174,19 @@ const RankingBody: Component<{
         </div>
       </Show>
       <Show when={pool().length > 0}>
-        <div
-          style={{
-            "font-family": "var(--mono)",
-            "font-size": "10.5px",
-            color: "var(--dim)",
-            "margin-bottom": "8px",
-          }}
-        >
+        <div class={css.rankPoolHint}>
           tap to add · rank {props.q.minRanked}–{props.q.maxRanked}
         </div>
-        <div style={{ display: "flex", "flex-wrap": "wrap", gap: "8px" }}>
+        <div class={css.rankPool}>
           <For each={pool()}>
             {(i) => (
               <button
                 onClick={() => add(i)}
                 disabled={ranked().length >= props.q.maxRanked}
-                style={poolBtnStyle(ranked().length >= props.q.maxRanked)}
+                class={css.poolBtn}
+                classList={{
+                  [css.poolBtnDisabled]: ranked().length >= props.q.maxRanked,
+                }}
               >
                 + {labelFor(props.q.options, i)}
               </button>
@@ -1610,26 +1210,8 @@ const NumericBody: Component<{
   const set = (value: bigint) => props.onChange({ type: "numeric", value });
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          "align-items": "baseline",
-          gap: "10px",
-          "justify-content": "center",
-          margin: "4px 0 14px",
-        }}
-      >
-        <span
-          style={{
-            "font-family": "var(--mono)",
-            "font-size": "44px",
-            "font-weight": "600",
-            color: "var(--accent)",
-            "letter-spacing": "-.02em",
-          }}
-        >
-          {props.v.value.toString()}
-        </span>
+      <div class={css.numHero}>
+        <span class={css.numValue}>{props.v.value.toString()}</span>
       </div>
       <Show
         when={sliderOk}
@@ -1649,7 +1231,7 @@ const NumericBody: Component<{
                 /* ignore non-integer input */
               }
             }}
-            style={numberInputStyle()}
+            class={css.numberInput}
           />
         }
       >
@@ -1662,18 +1244,9 @@ const NumericBody: Component<{
           onInput={(e) =>
             set(clampStep(BigInt(e.currentTarget.value), min, max, step))
           }
-          style={{ width: "100%", "accent-color": "var(--accent)" }}
+          class={css.rangeFull}
         />
-        <div
-          style={{
-            display: "flex",
-            "justify-content": "space-between",
-            "font-family": "var(--mono)",
-            "font-size": "11px",
-            color: "var(--dim)",
-            "margin-top": "8px",
-          }}
-        >
+        <div class={css.rangeBounds}>
           <span>{min.toString()}</span>
           <span>{max.toString()}</span>
         </div>
@@ -1713,57 +1286,24 @@ const PointsBody: Component<{
   };
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          "align-items": "baseline",
-          "justify-content": "flex-end",
-          gap: "8px",
-          "margin-bottom": "14px",
-        }}
-      >
+      <div class={css.pointsHeader}>
+        <span class={css.pointsRemainLabel}>Remaining to allocate</span>
         <span
-          style={{
-            "font-size": "13px",
-            "font-weight": "600",
-            color: "var(--muted)",
-          }}
-        >
-          Remaining to allocate
-        </span>
-        <span
-          style={{
-            "font-family": "var(--mono)",
-            "font-size": "15px",
-            "font-weight": "700",
-            color: remaining() === 0 ? "var(--ok)" : "var(--accent)",
-          }}
+          class={css.pointsRemain}
+          classList={{ [css.pointsRemainDone]: remaining() === 0 }}
         >
           {remaining()} pts
         </span>
       </div>
       <For each={range(optionCount(props.q.options))}>
         {(i) => (
-          <div style={{ "margin-bottom": "13px" }}>
-            <div
-              style={{
-                display: "flex",
-                "align-items": "center",
-                "justify-content": "space-between",
-                "margin-bottom": "7px",
-              }}
-            >
-              <span style={{ "font-size": "14.5px", "font-weight": "600" }}>
+          <div class={css.pointsRow}>
+            <div class={css.pointsRowHead}>
+              <span class={css.pointsOptLabel}>
                 {labelFor(props.q.options, i)}
               </span>
-              <div
-                style={{
-                  display: "flex",
-                  "align-items": "center",
-                  gap: "10px",
-                }}
-              >
-                <button style={stepBtnStyle()} onClick={() => bump(i, -1)}>
+              <div class={css.pointsControls}>
+                <button class={css.stepBtn} onClick={() => bump(i, -1)}>
                   −
                 </button>
                 <input
@@ -1775,9 +1315,9 @@ const PointsBody: Component<{
                     const n = parseInt(e.currentTarget.value, 10);
                     setPoints(i, Number.isFinite(n) ? n : 0);
                   }}
-                  style={pointsInputStyle()}
+                  class={css.pointsInput}
                 />
-                <button style={stepBtnStyle()} onClick={() => bump(i, 1)}>
+                <button class={css.stepBtn} onClick={() => bump(i, 1)}>
                   +
                 </button>
               </div>
@@ -1789,23 +1329,12 @@ const PointsBody: Component<{
               step={1}
               value={props.v.points[i] ?? 0}
               onInput={(e) => slideTo(i, e.currentTarget)}
-              style={{
-                width: "100%",
-                display: "block",
-                "accent-color": "var(--accent)",
-                cursor: "pointer",
-              }}
+              class={css.rangeFullBlock}
             />
           </div>
         )}
       </For>
-      <div
-        style={{
-          "font-family": "var(--mono)",
-          "font-size": "11px",
-          color: "var(--faint)",
-        }}
-      >
+      <div class={css.pointsFooter}>
         distribute {props.q.budget} points · sum must equal budget
       </div>
     </>
@@ -1824,21 +1353,11 @@ const RatingBody: Component<{
     props.onChange({ type: "rating", ratings: next });
   };
   return (
-    <div style={{ display: "flex", "flex-direction": "column", gap: "4px" }}>
+    <div class={css.ratingList}>
       <For each={range(optionCount(props.q.options))}>
         {(optIdx) => (
-          <div
-            style={{
-              display: "flex",
-              "align-items": "center",
-              "justify-content": "space-between",
-              gap: "12px",
-              padding: "9px 0",
-              "border-top": "1px solid var(--hair)",
-              "flex-wrap": "wrap",
-            }}
-          >
-            <span style={{ "font-size": "14.5px", "font-weight": "600" }}>
+          <div class={css.ratingRow}>
+            <span class={css.ratingOptLabel}>
               {labelFor(props.q.options, optIdx)}
             </span>
             <Show
@@ -1856,18 +1375,19 @@ const RatingBody: Component<{
                       /* ignore */
                     }
                   }}
-                  style={{ ...numberInputStyle(), width: "120px" }}
+                  class={css.ratingNumberInput}
                 />
               }
             >
-              <div style={{ display: "flex", gap: "6px", "flex-wrap": "wrap" }}>
+              <div class={css.ratingLevels}>
                 <For each={levels!}>
                   {(lvl) => {
                     const on = () => props.v.ratings[optIdx] === lvl.value;
                     return (
                       <button
                         onClick={() => setRating(optIdx, lvl.value)}
-                        style={ratingBtnStyle(on())}
+                        class={css.ratingBtn}
+                        classList={{ [css.ratingBtnOn]: on() }}
                       >
                         {lvl.label}
                       </button>
@@ -1889,43 +1409,9 @@ const CustomBody: Component<{
   onChange: (v: DraftValue) => void;
 }> = (props) => (
   <>
-    <div
-      style={{
-        display: "flex",
-        "align-items": "center",
-        gap: "10px",
-        background: "var(--ink)",
-        "border-radius": "var(--r-control)",
-        padding: "11px 13px",
-        "margin-bottom": "11px",
-      }}
-    >
-      <span
-        style={{
-          "font-family": "var(--mono)",
-          "font-size": "10px",
-          "font-weight": "600",
-          "letter-spacing": ".06em",
-          color: "#7E89A8",
-          background: "#1C2536",
-          "border-radius": "var(--r-3xs)",
-          padding: "3px 7px",
-        }}
-      >
-        schema
-      </span>
-      <span
-        style={{
-          "font-family": "var(--mono)",
-          "font-size": "11.5px",
-          color: "#C4CCDA",
-          overflow: "hidden",
-          "text-overflow": "ellipsis",
-          "white-space": "nowrap",
-        }}
-      >
-        {props.q.methodSchema.uri}
-      </span>
+    <div class={css.customSchema}>
+      <span class={css.customSchemaTag}>schema</span>
+      <span class={css.customSchemaUri}>{props.q.methodSchema.uri}</span>
     </div>
     <input
       type="text"
@@ -1934,26 +1420,9 @@ const CustomBody: Component<{
       onInput={(e) =>
         props.onChange({ type: "custom", text: e.currentTarget.value })
       }
-      style={{
-        width: "100%",
-        border: "1px solid var(--line)",
-        "border-radius": "var(--r-control)",
-        padding: "13px 14px",
-        "font-family": "inherit",
-        "font-size": "14.5px",
-        color: "var(--ink)",
-        outline: "none",
-        "box-sizing": "border-box",
-      }}
+      class={css.customInput}
     />
-    <p
-      style={{
-        "font-size": "11.5px",
-        color: "var(--dim)",
-        "line-height": "1.45",
-        margin: "9px 0 0",
-      }}
-    >
+    <p class={css.customHint}>
       Encoded as a raw text metadatum and interpreted by the method at the
       anchor.
     </p>
@@ -1978,71 +1447,29 @@ const SubmitBar: Component<{
   const ready = () =>
     props.decided >= props.total && props.total > 0 && !props.mismatch;
   return (
-    <div
-      style={{
-        position: "fixed",
-        left: "0",
-        right: "0",
-        bottom: "0",
-        "z-index": "30",
-        background: "rgba(255,255,255,.92)",
-        "backdrop-filter": "blur(10px)",
-        "border-top": "1px solid var(--line)",
-      }}
-    >
-      <div
-        style={{
-          "max-width": "760px",
-          margin: "0 auto",
-          padding: "13px 24px",
-          display: "flex",
-          "align-items": "center",
-          gap: "16px",
-          "flex-wrap": "wrap",
-        }}
-      >
-        <div
-          style={{ display: "flex", "flex-direction": "column", gap: "5px" }}
-        >
-          <span
-            style={{ display: "flex", "align-items": "center", gap: "4px" }}
-          >
+    <div class={css.submitBar}>
+      <div class={css.submitInner}>
+        <div class={css.submitStatus}>
+          <span class={css.progressDots}>
             <For each={range(props.total)}>
               {(i) => (
                 <span
-                  style={{
-                    width: "16px",
-                    height: "5px",
-                    "border-radius": "3px",
-                    background:
-                      i < props.decided ? "var(--accent)" : "var(--line2)",
-                  }}
+                  class={css.progressDot}
+                  classList={{ [css.progressDotOn]: i < props.decided }}
                 />
               )}
             </For>
           </span>
-          <span style={{ "font-size": "13.5px", "font-weight": "700" }}>
+          <span class={css.decidedCount}>
             {props.decided} of {props.total} decided
           </span>
           <Show when={props.replacing}>
-            <span
-              style={{
-                "font-family": "var(--mono)",
-                "font-size": "11px",
-                color: "var(--ok)",
-              }}
-            >
+            <span class={css.replacesNote}>
               ✓ replaces your previous response
             </span>
           </Show>
           <Show when={props.mismatch}>
-            <span
-              style={{
-                "font-size": "11px",
-                "font-weight": "700",
-                color: "var(--danger)",
-              }}
-            >
+            <span class={css.mismatchNote}>
               Switch your wallet to {props.network} to submit
             </span>
           </Show>
@@ -2050,10 +1477,11 @@ const SubmitBar: Component<{
         <button
           onClick={() => props.onSubmit()}
           disabled={!ready() || props.submitting}
-          style={submitBtnStyle(ready() && !props.submitting)}
+          class={css.submitBtn}
+          classList={{ [css.submitBtnEnabled]: ready() && !props.submitting }}
         >
           {props.submitting ? props.busyText : props.idleText}{" "}
-          <span style={{ "font-size": "15px" }}>→</span>
+          <span class={css.submitArrow}>→</span>
         </button>
       </div>
     </div>
@@ -2065,73 +1493,21 @@ const SubmittedPanel: Component<{ hash: string; surveyKey: string }> = (
 ) => {
   const navigate = useNavigate();
   return (
-    <div
-      style={{ ...cardStyle(), "text-align": "center", "margin-top": "20px" }}
-    >
-      <span
-        style={{
-          display: "inline-flex",
-          "align-items": "center",
-          "justify-content": "center",
-          width: "46px",
-          height: "46px",
-          "border-radius": "13px",
-          background: "var(--ok-bg)",
-          color: "var(--ok)",
-          "font-size": "22px",
-        }}
-      >
-        ✓
-      </span>
-      <h3
-        style={{
-          "font-size": "19px",
-          "font-weight": "800",
-          "letter-spacing": "-.01em",
-          margin: "14px 0 0",
-        }}
-      >
-        Response submitted
-      </h3>
-      <p
-        style={{
-          "font-size": "14px",
-          color: "var(--muted)",
-          "line-height": "1.55",
-          margin: "8px auto 0",
-          "max-width": "440px",
-        }}
-      >
+    <div class={css.submittedPanel}>
+      <span class={css.submittedCheck}>✓</span>
+      <h3 class={css.submittedTitle}>Response submitted</h3>
+      <p class={css.submittedText}>
         Your response was published under metadata label 17. It may take a few
         moments to appear in the tally as the indexer catches up.
       </p>
-      <div
-        style={{
-          "font-family": "var(--mono)",
-          "font-size": "11.5px",
-          color: "var(--faint)",
-          "margin-top": "12px",
-          "word-break": "break-all",
-        }}
-      >
+      <div class={css.submittedTx}>
         <TxLink hash={props.hash} />
       </div>
       <button
         onClick={() =>
           navigate(`/survey/${encodeURIComponent(props.surveyKey)}`)
         }
-        style={{
-          "margin-top": "18px",
-          background: "var(--accent)",
-          color: "#fff",
-          border: "none",
-          "border-radius": "var(--r-control)",
-          padding: "11px 18px",
-          "font-family": "inherit",
-          "font-size": "14px",
-          "font-weight": "700",
-          cursor: "pointer",
-        }}
+        class={css.viewResultsBtn}
       >
         View results →
       </button>
@@ -2145,35 +1521,16 @@ const Notice: Component<{
   body: string;
 }> = (props) => (
   <div
-    style={{
-      background: "#fff",
-      border: `1px solid ${props.tone === "warn" ? "var(--warn-line)" : "var(--line)"}`,
-      "border-radius": "var(--r-card)",
-      padding: "26px 24px",
-      "margin-top": "16px",
-      "text-align": "center",
-    }}
+    class={css.notice}
+    classList={{ [css.noticeWarn]: props.tone === "warn" }}
   >
     <div
-      style={{
-        "font-size": "16px",
-        "font-weight": "800",
-        color: props.tone === "warn" ? "var(--warn)" : "var(--ink)",
-      }}
+      class={css.noticeTitle}
+      classList={{ [css.noticeTitleWarn]: props.tone === "warn" }}
     >
       {props.title}
     </div>
-    <p
-      style={{
-        "font-size": "13.5px",
-        color: "var(--muted)",
-        "line-height": "1.55",
-        margin: "8px auto 0",
-        "max-width": "460px",
-      }}
-    >
-      {props.body}
-    </p>
+    <p class={css.noticeBody}>{props.body}</p>
   </div>
 );
 
@@ -2182,35 +1539,18 @@ const Empty: Component<{
   error?: unknown;
   onRetry?: () => void;
 }> = (props) => (
-  <div
-    style={{
-      ...cardStyle(),
-      "text-align": "center",
-      color: "var(--muted)",
-      "margin-top": "14px",
-    }}
-  >
+  <div class={css.empty}>
     <Show
       when={props.error}
       fallback={props.loading ? "Loading…" : "Survey not found."}
     >
-      <div style={{ color: "var(--danger)", "margin-bottom": "12px" }}>
+      <div class={css.emptyError}>
         Couldn't load from the network — this may be a transient error.
       </div>
       <button
         type="button"
         onClick={() => props.onRetry?.()}
-        style={{
-          "font-family": "inherit",
-          "font-size": "13px",
-          "font-weight": "700",
-          cursor: "pointer",
-          background: "var(--accent)",
-          color: "#fff",
-          border: "none",
-          "border-radius": "var(--r-input)",
-          padding: "9px 16px",
-        }}
+        class={css.retryBtn}
       >
         Retry
       </button>
@@ -2296,231 +1636,4 @@ function ratingLevels(
       });
     }
   }
-}
-
-// --- styles -----------------------------------------------------------------
-
-function backLinkStyle(): JSX.CSSProperties {
-  return {
-    display: "inline-flex",
-    "align-items": "center",
-    gap: "7px",
-    "font-size": "13.5px",
-    "font-weight": "600",
-    color: "var(--muted)",
-    "text-decoration": "none",
-    padding: "6px 0",
-  };
-}
-function cardStyle(): JSX.CSSProperties {
-  return {
-    background: "#fff",
-    border: "1px solid var(--line)",
-    "border-radius": "var(--r-sm)",
-    padding: "20px 22px",
-    "margin-top": "12px",
-  };
-}
-function qChipStyle(): JSX.CSSProperties {
-  return {
-    "font-family": "var(--mono)",
-    "font-size": "12px",
-    "font-weight": "600",
-    color: "var(--accent)",
-    background: "var(--accent-bg)",
-    "border-radius": "var(--r-chip)",
-    padding: "5px 8px",
-  };
-}
-function skipBtnStyle(on: boolean): JSX.CSSProperties {
-  return {
-    "font-family": "inherit",
-    "font-size": "12px",
-    "font-weight": "700",
-    cursor: "pointer",
-    "border-radius": "var(--r-chip)",
-    padding: "6px 12px",
-    border: on ? "1px solid var(--accent)" : "1px solid var(--line)",
-    background: on ? "var(--accent-bg)" : "#fff",
-    color: on ? "var(--accent)" : "var(--muted)",
-  };
-}
-function rolePickStyle(on: boolean): JSX.CSSProperties {
-  return {
-    "font-family": "inherit",
-    "font-size": "12.5px",
-    "font-weight": on ? "700" : "600",
-    cursor: "pointer",
-    "border-radius": "8px",
-    padding: "6px 12px",
-    border: on ? "1px solid var(--accent)" : "1px solid var(--line)",
-    background: on ? "var(--accent)" : "#F2ECDE",
-    color: on ? "#FBF8F1" : "#6B6356",
-  };
-}
-function roleChipStyle(color: string, bg: string): JSX.CSSProperties {
-  return {
-    "font-size": "12px",
-    "font-weight": "700",
-    color,
-    background: bg,
-    "border-radius": "6px",
-    padding: "3px 9px",
-  };
-}
-function optionRowStyle(on: boolean): JSX.CSSProperties {
-  return {
-    display: "flex",
-    "align-items": "center",
-    gap: "11px",
-    cursor: "pointer",
-    "border-radius": "var(--r-control)",
-    padding: "11px 13px",
-    border: on ? "1px solid var(--accent)" : "1px solid var(--line)",
-    background: on ? "var(--accent-bg)" : "#fff",
-    "font-size": "14.5px",
-    "font-weight": "600",
-    color: "var(--ink)",
-  };
-}
-function radioStyle(on: boolean): JSX.CSSProperties {
-  return {
-    width: "18px",
-    height: "18px",
-    "border-radius": "50%",
-    border: on ? "none" : "2px solid var(--line2)",
-    background: on ? "var(--accent)" : "#fff",
-    display: "flex",
-    "align-items": "center",
-    "justify-content": "center",
-    flex: "none",
-  };
-}
-function checkboxStyle(on: boolean): JSX.CSSProperties {
-  return {
-    width: "18px",
-    height: "18px",
-    "border-radius": "5px",
-    border: on ? "none" : "2px solid var(--line2)",
-    background: on ? "var(--accent)" : "#fff",
-    color: "#fff",
-    "font-size": "12px",
-    "font-weight": "700",
-    display: "flex",
-    "align-items": "center",
-    "justify-content": "center",
-    flex: "none",
-  };
-}
-function rankBtnStyle(tone?: "danger"): JSX.CSSProperties {
-  return {
-    width: "26px",
-    height: "26px",
-    "border-radius": "var(--r-xs)",
-    border: `1px solid ${tone === "danger" ? "#F0D2D0" : "var(--accent-line)"}`,
-    background: "#fff",
-    color: tone === "danger" ? "var(--danger)" : "var(--accent)",
-    "font-size": "13px",
-    cursor: "pointer",
-    "line-height": "1",
-    flex: "none",
-  };
-}
-function poolBtnStyle(disabled: boolean): JSX.CSSProperties {
-  return {
-    "font-family": "inherit",
-    "font-size": "13px",
-    "font-weight": "600",
-    cursor: disabled ? "not-allowed" : "pointer",
-    opacity: disabled ? ".5" : "1",
-    "border-radius": "var(--r-control)",
-    padding: "8px 12px",
-    border: "1px solid var(--line)",
-    background: "#F2ECDE",
-    color: "var(--body)",
-  };
-}
-function stepBtnStyle(): JSX.CSSProperties {
-  return {
-    width: "30px",
-    height: "30px",
-    "border-radius": "var(--r-xs)",
-    border: "1px solid var(--line)",
-    background: "#fff",
-    color: "var(--accent)",
-    "font-size": "17px",
-    cursor: "pointer",
-    "line-height": "1",
-    flex: "none",
-  };
-}
-function pointsInputStyle(): JSX.CSSProperties {
-  return {
-    width: "52px",
-    border: "1px solid var(--line)",
-    "border-radius": "var(--r-xs)",
-    padding: "5px 4px",
-    "font-family": "var(--mono)",
-    "font-size": "15px",
-    "font-weight": "600",
-    color: "var(--ink)",
-    "text-align": "center",
-    outline: "none",
-    "box-sizing": "border-box",
-  };
-}
-function ratingBtnStyle(on: boolean): JSX.CSSProperties {
-  return {
-    "min-width": "34px",
-    height: "34px",
-    "border-radius": "var(--r-xs)",
-    border: on ? "1px solid var(--accent)" : "1px solid var(--line)",
-    background: on ? "var(--accent)" : "#fff",
-    color: on ? "#fff" : "var(--body)",
-    "font-family": "inherit",
-    "font-size": "13px",
-    "font-weight": "700",
-    cursor: "pointer",
-    padding: "0 8px",
-  };
-}
-function numberInputStyle(): JSX.CSSProperties {
-  return {
-    width: "100%",
-    border: "1px solid var(--line)",
-    "border-radius": "var(--r-control)",
-    padding: "12px 14px",
-    "font-family": "var(--mono)",
-    "font-size": "15px",
-    color: "var(--ink)",
-    outline: "none",
-    "box-sizing": "border-box",
-  };
-}
-function ratLabelStyle(): JSX.CSSProperties {
-  return {
-    display: "block",
-    "font-size": "12px",
-    "font-weight": "700",
-    color: "var(--muted)",
-    "margin-bottom": "6px",
-  };
-}
-function submitBtnStyle(enabled: boolean): JSX.CSSProperties {
-  return {
-    "margin-left": "auto",
-    display: "inline-flex",
-    "align-items": "center",
-    "justify-content": "center",
-    gap: "9px",
-    background: enabled ? "var(--accent)" : "var(--line2)",
-    color: enabled ? "#fff" : "var(--dim)",
-    border: "none",
-    "border-radius": "var(--r-md)",
-    padding: "14px 22px",
-    "font-family": "inherit",
-    "font-size": "14.5px",
-    "font-weight": "700",
-    cursor: enabled ? "pointer" : "not-allowed",
-  };
 }

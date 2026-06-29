@@ -1,4 +1,5 @@
 import { For, type JSX } from "solid-js";
+import css from "./SegmentedToggle.module.css";
 
 export interface SegOption<T extends string> {
   readonly value: T;
@@ -30,12 +31,8 @@ export function SegmentedToggle<T extends string>(props: {
     <div
       role="group"
       aria-label={props.ariaLabel}
+      class={css.track}
       style={{
-        display: "inline-flex",
-        "align-items": "center",
-        background: "var(--toggle-bg)",
-        border: "1px solid var(--toggle-line)",
-        "border-radius": "9px",
         padding: props.trackPadding ?? "3px",
         ...props.wrapStyle,
       }}
@@ -48,16 +45,11 @@ export function SegmentedToggle<T extends string>(props: {
               type="button"
               aria-pressed={on()}
               onClick={() => props.onChange(opt.value)}
+              class={css.btn}
+              classList={{ [css.on]: on() }}
               style={{
-                "font-family": "inherit",
                 "font-size": `${props.fontSize ?? 11.5}px`,
-                "font-weight": on() ? "700" : "600",
-                cursor: "pointer",
-                border: "none",
-                "border-radius": "7px",
                 padding: props.buttonPadding ?? "5px 12px",
-                background: on() ? "var(--accent)" : "transparent",
-                color: on() ? "#fff" : "var(--toggle-text-off)",
               }}
             >
               {opt.label}
