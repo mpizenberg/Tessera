@@ -22,6 +22,7 @@ import { FormMosaic, RoleChips, VisGlyph } from "~/ui/components/glyphs";
 import type { ChainTip, GovLink } from "~/data/source";
 import type { WalletIdentity } from "~/wallet/types";
 import type { Question, SurveyDefinition } from "cip-179";
+import { t, n, type MsgKey } from "~/i18n";
 import css from "./Explore.module.css";
 
 // Seven columns: Form · visibility · answered · survey · eligible · ends · replies.
@@ -49,13 +50,14 @@ function useNarrow(maxWidth: number): Accessor<boolean> {
   return narrow;
 }
 
-const FILTERS: ReadonlyArray<{ value: ExploreFilter; label: string }> = [
-  { value: "all", label: "All" },
-  { value: "linked", label: "Governance" },
-  { value: "active", label: "Active" },
-  { value: "sealed", label: "Sealed" },
-  { value: "public", label: "Public" },
-  { value: "mine", label: "Mine" },
+// Label key resolved via `t()` at render time so it tracks the active locale.
+const FILTERS: ReadonlyArray<{ value: ExploreFilter; labelKey: MsgKey }> = [
+  { value: "all", labelKey: "explore.filterAll" },
+  { value: "linked", labelKey: "explore.filterLinked" },
+  { value: "active", labelKey: "explore.filterActive" },
+  { value: "sealed", labelKey: "explore.filterSealed" },
+  { value: "public", labelKey: "explore.filterPublic" },
+  { value: "mine", labelKey: "explore.filterMine" },
 ];
 
 function matchesFilter(
@@ -109,13 +111,13 @@ function searchHaystack(d: SurveyDefinition, govLink: GovLink | null): string {
 /** Coarse "time left to vote": days+hours up high, hours+minutes near the end. */
 function timeLeft(deadlineUnix: number, nowUnix: number): string {
   const s = deadlineUnix - nowUnix;
-  if (s <= 0) return "ending now";
+  if (s <= 0) return t("explore.endingNow");
   const d = Math.floor(s / 86400);
   const h = Math.floor((s % 86400) / 3600);
   const m = Math.floor((s % 3600) / 60);
-  if (d >= 1) return `${d}d ${h}h left`;
-  if (h >= 1) return `${h}h ${m}m left`;
-  return `${Math.max(1, m)}m left`;
+  if (d >= 1) return t("explore.timeLeftDaysHours", { d: n(d), h: n(h) });
+  if (h >= 1) return t("explore.timeLeftHoursMinutes", { h: n(h), m: n(m) });
+  return t("explore.timeLeftMinutes", { m: n(Math.max(1, m)) });
 }
 
 /** What the "Ends" cell reads: time-left while open, lifecycle word once closed. */
@@ -126,8 +128,8 @@ function endsText(
   nowUnix: number,
 ): string {
   const v = viewStatus(a);
-  if (v === "cancelled") return "withdrawn";
-  if (v === "ended") return "closed";
+  if (v === "cancelled") return t("explore.endsWithdrawn");
+  if (v === "ended") return t("explore.endsClosed");
   return timeLeft(
     voteDeadlineUnix(a.record.definition.endEpoch, tip, secondsPerEpoch),
     nowUnix,
@@ -273,13 +275,16 @@ export const Explore: Component = () => {
 
       {/* title row + summary */}
       <div class={css.titleRow}>
-        <h1 class={css.title}>Surveys &amp; polls</h1>
+        <h1 class={css.title}>{t("explore.pageTitle")}</h1>
         <div class={css.summary}>
           <span class={css.entries}>
-            {all().length} entries · current epoch {tipEpoch()}
+            {t("explore.summary", {
+              count: n(all().length),
+              epoch: tipEpoch(),
+            })}
           </span>
           <A href="/create" class={css.newBtn}>
-            <span class={css.newBtnPlus}>+</span> New survey
+            <span class={css.newBtnPlus}>+</span> {t("explore.newSurvey")}
           </A>
         </div>
       </div>
@@ -294,7 +299,7 @@ export const Explore: Component = () => {
                 class={css.filter}
                 classList={{ [css.filterOn]: app.ui.filter === f.value }}
               >
-                {f.label}{" "}
+                {t(f.labelKey)}{" "}
                 <span
                   class={css.filterCount}
                   classList={{ [css.filterCountOn]: app.ui.filter === f.value }}
@@ -323,7 +328,7 @@ export const Explore: Component = () => {
           <input
             value={searchInput()}
             onInput={(e) => onSearchInput(e.currentTarget.value)}
-            placeholder="Search surveys…"
+            placeholder={t("explore.searchPlaceholder")}
             class={css.searchInput}
           />
         </div>
@@ -344,17 +349,13 @@ export const Explore: Component = () => {
               {(err) => (
                 <Notice
                   tone="danger"
-                  text={`Failed to load: ${String(err())}`}
+                  text={t("explore.loadError", { error: String(err()) })}
                 />
               )}
             </Show>
 
             <Show when={app.snapshot()?.records.incomplete}>
-              <div class={css.incomplete}>
-                Showing the most recent surveys and responses — more exist
-                on-chain than could be loaded, so some lists and tallies may be
-                incomplete.
-              </div>
+              <div class={css.incomplete}>{t("explore.incomplete")}</div>
             </Show>
 
             <Show when={!app.snapshot.loading && !app.snapshot.error}>
@@ -362,8 +363,8 @@ export const Explore: Component = () => {
                 <SectionLabel
                   dot={<span class={css.dotGov} />}
                   color="var(--gov)"
-                  label="On-chain governance"
-                  note="Tied to an Info Action — shown first."
+                  label={t("explore.sectionGov")}
+                  note={t("explore.sectionGovNote")}
                 />
                 <For each={govRows()}>{(a) => <Entry {...rowProps(a)} />}</For>
               </Show>
@@ -372,7 +373,7 @@ export const Explore: Component = () => {
                 <SectionLabel
                   dot={<span class={css.dotOpen} />}
                   color="#5E7B49"
-                  label="Open · accepting responses"
+                  label={t("explore.sectionOpen")}
                 />
                 <For each={openRows()}>{(a) => <Entry {...rowProps(a)} />}</For>
               </Show>
@@ -381,8 +382,8 @@ export const Explore: Component = () => {
                 <SectionLabel
                   dot={<span class={css.dotClosed} />}
                   color="#A79C88"
-                  label="Closed"
-                  note="Ended or withdrawn — read-only."
+                  label={t("explore.sectionClosed")}
+                  note={t("explore.sectionClosedNote")}
                   topBorder
                 />
                 <div class={css.closedRows}>
@@ -393,7 +394,7 @@ export const Explore: Component = () => {
               </Show>
 
               <Show when={visible().length === 0}>
-                <Notice text="No surveys match." />
+                <Notice text={t("explore.noMatch")} />
               </Show>
             </Show>
           </div>
@@ -419,15 +420,15 @@ const HeaderRow: Component = () => {
   );
   return (
     <div class={css.header} style={{ "--cols": COLS }}>
-      {cell("Form", "center")}
+      {cell(t("explore.headerForm"), "center")}
       <span />
-      <span title="Surveys you have answered" class={css.cellCenter}>
+      <span title={t("explore.headerAnsweredTitle")} class={css.cellCenter}>
         {cell("✓", "center")}
       </span>
-      {cell("Survey")}
-      {cell("Eligible")}
-      {cell("Ends")}
-      {cell("Replies", "right")}
+      {cell(t("explore.headerSurvey"))}
+      {cell(t("explore.headerEligible"))}
+      {cell(t("explore.headerEnds"))}
+      {cell(t("explore.headerReplies"), "right")}
     </div>
   );
 };
@@ -471,26 +472,29 @@ const Entry: Component<EntryProps> = (props) => (
 /** Inline check shown on surveys the connected wallet has answered. */
 const AnsweredCheck: Component = () => (
   <span
-    title="You answered this survey"
-    aria-label="answered"
+    title={t("explore.answeredTitle")}
+    aria-label={t("explore.answeredAria")}
     class={css.answered}
   >
     ✓
   </span>
 );
 
-const YoursBadge: Component = () => <span class={css.badge}>Yours</span>;
+const YoursBadge: Component = () => (
+  <span class={css.badge}>{t("explore.badgeYours")}</span>
+);
 
 const OffChainBadge: Component = () => (
-  <span class={css.badge}>⚠ labels off-chain</span>
+  <span class={css.badge}>{t("explore.badgeOffChain")}</span>
 );
 
 const GovLine: Component<{ actionId: string; title: string | null }> = (
   props,
 ) => (
   <div class={css.govLine}>
-    ◇ Info Action {shortGovId(props.actionId)}
-    {props.title ? ` · ${props.title}` : ""}
+    {"◇ "}
+    {t("explore.govInfoAction", { id: shortGovId(props.actionId) })}
+    {props.title ? t("explore.govInfoActionTitle", { title: props.title }) : ""}
   </div>
 );
 
@@ -539,7 +543,7 @@ const GridRow: Component<EntryProps> = (props) => {
             class={css.surveyTitle}
             classList={{ [css.surveyTitleClosed]: closed() }}
           >
-            {def().title || "Untitled · external content"}
+            {def().title || t("explore.untitled")}
           </span>
           <Show when={props.flags.mine}>
             <YoursBadge />
@@ -549,8 +553,7 @@ const GridRow: Component<EntryProps> = (props) => {
           </Show>
         </div>
         <div class={css.desc}>
-          {def().description ||
-            "Presentation text unavailable — on-chain structure intact."}
+          {def().description || t("explore.noPresentation")}
         </div>
         <Show when={props.a.govLink}>
           {(link) => (
@@ -565,11 +568,11 @@ const GridRow: Component<EntryProps> = (props) => {
         </div>
         <Show when={props.pro}>
           <div
-            title="Full survey ref — defining transaction hash and output index"
+            title={t("explore.refTitle")}
             class={css.ref}
             classList={{ [css.refClosed]: closed() }}
           >
-            epoch {def().endEpoch}
+            {t("explore.refEpoch", { epoch: def().endEpoch })}
             <br />
             {fullRef(props.a.key)}
           </div>
@@ -618,7 +621,7 @@ const CardRow: Component<EntryProps> = (props) => {
           class={css.cardTitle}
           classList={{ [css.cardTitleClosed]: closed() }}
         >
-          {def().title || "Untitled · external content"}
+          {def().title || t("explore.untitled")}
         </span>
         <Show when={props.flags.mine}>
           <YoursBadge />
@@ -626,8 +629,7 @@ const CardRow: Component<EntryProps> = (props) => {
       </div>
 
       <div class={css.cardDesc}>
-        {def().description ||
-          "Presentation text unavailable — on-chain structure intact."}
+        {def().description || t("explore.noPresentation")}
       </div>
 
       <Show when={labelsMissing()}>
@@ -640,18 +642,18 @@ const CardRow: Component<EntryProps> = (props) => {
       </Show>
 
       <div class={css.cardMeta}>
-        <MetaChip label="Form">
+        <MetaChip label={t("explore.metaForm")}>
           <span class={css.cardFormInline}>
             <FormMosaic count={def().questions.length} size={16} />
             {def().questions.length}
           </span>
         </MetaChip>
         <Show when={def().eligibleRoles.length > 0}>
-          <MetaChip label="Eligible">
+          <MetaChip label={t("explore.metaEligible")}>
             <RoleChips roles={def().eligibleRoles} />
           </MetaChip>
         </Show>
-        <MetaChip label="Ends">
+        <MetaChip label={t("explore.metaEnds")}>
           <span
             class={css.cardEnds}
             classList={{ [css.cardEndsClosed]: closed() }}
@@ -659,19 +661,18 @@ const CardRow: Component<EntryProps> = (props) => {
             {ends()}
           </span>
         </MetaChip>
-        <MetaChip label="Replies">
+        <MetaChip label={t("explore.metaReplies")}>
           {v() === "cancelled" ? "—" : String(props.a.responseCount)}
         </MetaChip>
         <Show when={props.pro}>
-          <MetaChip label="Epoch">{String(def().endEpoch)}</MetaChip>
+          <MetaChip label={t("explore.metaEpoch")}>
+            {String(def().endEpoch)}
+          </MetaChip>
         </Show>
       </div>
       <Show when={props.pro}>
-        <div
-          title="Full survey ref — defining transaction hash and output index"
-          class={css.cardRef}
-        >
-          ref {fullRef(props.a.key)}
+        <div title={t("explore.refTitle")} class={css.cardRef}>
+          {t("explore.refLabel", { ref: fullRef(props.a.key) })}
         </div>
       </Show>
     </A>
@@ -681,16 +682,16 @@ const CardRow: Component<EntryProps> = (props) => {
 const Legend: Component = () => (
   <div class={css.legend}>
     <FormMosaic count={4} size={14} />
-    <span class={css.legendText}>Form — one tile per question.</span>
+    <span class={css.legendText}>{t("explore.legendForm")}</span>
     <span class={css.legendGroup}>
       <span class={css.legendDot} />
-      <span class={css.legendText}>public</span>
+      <span class={css.legendText}>{t("explore.legendPublic")}</span>
       <span class={css.legendSealed}>
         <VisGlyph status="sealed" />
       </span>
-      <span class={css.legendText}>sealed until reveal</span>
+      <span class={css.legendText}>{t("explore.legendSealed")}</span>
       <span class={css.legendCheck}>✓</span>
-      <span class={css.legendText}>you answered</span>
+      <span class={css.legendText}>{t("explore.legendAnswered")}</span>
     </span>
   </div>
 );
@@ -726,19 +727,13 @@ const IntroHero: Component<{ onDismiss: () => void }> = (props) => (
   <div class={css.intro}>
     <button
       onClick={() => props.onDismiss()}
-      title="Dismiss"
+      title={t("explore.introDismiss")}
       class={css.introDismiss}
     >
       ×
     </button>
-    <h2 class={css.introTitle}>On-chain surveys &amp; polls on Cardano</h2>
-    <p class={css.introBody}>
-      Tessera records surveys directly in Cardano transaction metadata — no
-      backend, no accounts. Browse everything below for free; connect a wallet
-      to respond as your on-chain role (DRep, SPO, CC, or stakeholder) or to
-      publish your own. Responses can be public or sealed — timelock-encrypted
-      for a delayed reveal.
-    </p>
+    <h2 class={css.introTitle}>{t("explore.introTitle")}</h2>
+    <p class={css.introBody}>{t("explore.introBody")}</p>
   </div>
 );
 

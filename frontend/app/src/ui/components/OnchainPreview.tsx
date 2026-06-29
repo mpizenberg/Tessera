@@ -25,6 +25,7 @@ import { bytesToHex } from "~/util/hex";
 import { metadatumToDiagnostic } from "~/util/cbor-diagnostic";
 import { MAX_TX_BYTES, estimateMinFee, lovelaceToAda } from "~/domain/fee";
 import { SegmentedToggle } from "~/ui/components/SegmentedToggle";
+import { t, n } from "~/i18n";
 import css from "./OnchainPreview.module.css";
 
 type View = "hex" | "diag";
@@ -85,17 +86,23 @@ export const OnchainPreview: Component<{
     <div class={css.card}>
       <div class={css.head}>
         <span class={css.label}>
-          {props.sealed ? "Plaintext to seal" : "On-chain preview"}
+          {props.sealed
+            ? t("onchainPreview.titleSealed")
+            : t("onchainPreview.titlePublic")}
         </span>
         <Show when={props.sealed}>
-          <span class={css.encBadge}>encrypted on submit</span>
+          <span class={css.encBadge}>{t("onchainPreview.encBadge")}</span>
         </Show>
         <Show when={ready()}>
           {/* statLead carries margin-left:auto, so no spacer node is needed. */}
-          <span class={css.statLead}>{size().toLocaleString()} B</span>
+          <span class={css.statLead}>
+            {t("onchainPreview.bytes", { size: n(size()) })}
+          </span>
           <Show when={!props.sealed}>
             <span class={css.stat}>
-              ≈ {lovelaceToAda(estimateMinFee(size()))} ₳
+              {t("onchainPreview.feeApprox", {
+                ada: lovelaceToAda(estimateMinFee(size())),
+              })}
             </span>
           </Show>
         </Show>
@@ -106,23 +113,23 @@ export const OnchainPreview: Component<{
         fallback={
           <div class={css.empty}>
             {props.payload
-              ? "Encoding…"
-              : "Complete the form to preview the label-17 payload."}
+              ? t("onchainPreview.encoding")
+              : t("onchainPreview.emptyForm")}
           </div>
         }
       >
         <div class={css.controls}>
           <SegmentedToggle
-            ariaLabel="Preview format"
+            ariaLabel={t("onchainPreview.formatLabel")}
             value={view()}
             onChange={setView}
             options={[
-              { value: "diag", label: "Diagnostic" },
-              { value: "hex", label: "Hex" },
+              { value: "diag", label: t("onchainPreview.formatDiagnostic") },
+              { value: "hex", label: t("onchainPreview.formatHex") },
             ]}
           />
           <button class={css.copy} onClick={copy}>
-            {copied() ? "Copied ✓" : "Copy"}
+            {copied() ? t("onchainPreview.copied") : t("onchainPreview.copy")}
           </button>
         </div>
 
@@ -132,23 +139,22 @@ export const OnchainPreview: Component<{
           when={props.sealed}
           fallback={
             <p class={css.note}>
-              Estimated min fee for a simple transaction — the real fee depends
-              on coin selection and witnesses. Payload is{" "}
-              {size().toLocaleString()} of {MAX_TX_BYTES.toLocaleString()} max
-              tx bytes.
+              {t("onchainPreview.notePublic", {
+                size: n(size()),
+                max: n(MAX_TX_BYTES),
+              })}
             </p>
           }
         >
           <p class={css.note}>
-            These are the answers as they'll be timelock-encrypted when you
-            submit — nothing is encrypted yet. The on-chain payload will be the
-            resulting ciphertext, zero-padded
-            <Show when={props.paddingSize}>
-              {" "}
-              to {props.paddingSize!.toLocaleString()} B
-            </Show>{" "}
-            so its size never reveals how much you answered. The fee is computed
-            at submit time.
+            {t("onchainPreview.noteSealed", {
+              padding:
+                props.paddingSize != null
+                  ? t("onchainPreview.noteSealedPadding", {
+                      size: n(props.paddingSize),
+                    })
+                  : "",
+            })}
           </p>
         </Show>
       </Show>

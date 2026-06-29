@@ -49,50 +49,56 @@ import { ResultBarCard } from "~/ui/components/ResultBarCard";
 import { TxLink } from "~/ui/components/TxLink";
 import { toCsv, downloadCsv } from "~/util/csv";
 import { bytesToHex } from "~/util/hex";
+import { t, n } from "~/i18n";
 import css from "./Survey.module.css";
 
-const BASE_TYPE: Record<Question["type"], string> = {
-  custom: "Custom",
-  singleChoice: "Single choice",
-  multiSelect: "Multi-select",
-  ranking: "Ranking",
-  numericRange: "Numeric range",
-  pointsAllocation: "Points",
-  rating: "Rating",
+const BASE_TYPE_KEY: Record<Question["type"], string> = {
+  custom: "typeCustom",
+  singleChoice: "typeSingleChoice",
+  multiSelect: "typeMultiSelect",
+  ranking: "typeRanking",
+  numericRange: "typeNumericRange",
+  pointsAllocation: "typePointsAllocation",
+  rating: "typeRating",
 };
+
+/** Localized base type label; resolved at render time so it tracks the locale. */
+const baseType = (type: Question["type"]): string =>
+  t(`survey.${BASE_TYPE_KEY[type]}` as Parameters<typeof t>[0]);
 
 type PillKey = ReturnType<typeof viewStatus> | "revealed";
 
+/** Pill styling per status; `labelKey` is resolved through `t()` at render. */
 const STATUS_PILL: Record<
   PillKey,
-  { label: string; color: string; bg: string; line: string }
+  { labelKey: string; color: string; bg: string; line: string }
 > = {
   public: {
-    label: "Open",
+    labelKey: "pillOpen",
     color: "var(--ok)",
     bg: "var(--ok-bg)",
     line: "var(--ok-line)",
   },
   sealed: {
-    label: "Sealed",
+    labelKey: "pillSealed",
     color: "var(--warn)",
     bg: "var(--warn-bg)",
     line: "var(--warn-line)",
   },
   revealed: {
-    label: "Revealed",
+    labelKey: "pillRevealed",
     color: "var(--gov)",
     bg: "var(--gov-bg)",
     line: "var(--gov-line)",
   },
   ended: {
-    label: "Closed",
+    labelKey: "pillClosed",
     color: "var(--muted)",
     bg: "var(--surface3)",
     line: "var(--line)",
   },
   cancelled: {
-    label: "Withdrawn",
+    labelKey: "pillWithdrawn",
     color: "var(--danger)",
     bg: "var(--danger-bg)",
     line: "var(--danger-line)",
@@ -173,7 +179,7 @@ export const Survey: Component = () => {
   return (
     <main class={css.page}>
       <A href="/" class={css.back}>
-        <span class={css.backArrow}>←</span> All surveys
+        <span class={css.backArrow}>←</span> {t("survey.backAll")}
       </A>
 
       <Show
@@ -215,7 +221,7 @@ export const Survey: Component = () => {
                 href={`/survey/${encodeURIComponent(key())}/respond`}
                 class={css.respondCta}
               >
-                Respond to this survey{" "}
+                {t("survey.respondCta")}{" "}
                 <span class={css.respondCtaArrow}>→</span>
               </A>
             </Show>
@@ -273,10 +279,8 @@ export const Survey: Component = () => {
  */
 const ClaimedCancellationNotice: Component = () => (
   <div class={css.claimedNotice}>
-    <strong>Unverified cancellation claim.</strong> A cancellation referencing
-    this survey was published, but this client couldn't verify it came from the
-    survey owner — so it's ignored and the survey remains open. Only an
-    owner-signed cancellation closes a survey.
+    <strong>{t("survey.claimedNoticeStrong")}</strong>{" "}
+    {t("survey.claimedNoticeRest")}
   </div>
 );
 
@@ -321,28 +325,28 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
       when={hash() === null}
       fallback={
         <div class={css.cancelSubmitted}>
-          <div class={css.cancelSubmittedTitle}>Cancellation submitted</div>
+          <div class={css.cancelSubmittedTitle}>
+            {t("survey.cancelSubmittedTitle")}
+          </div>
           <div class={css.cancelSubmittedHash}>
             <TxLink hash={hash()!} color="var(--danger-ink)" />
           </div>
           <div class={css.cancelSubmittedBody}>
-            New responses are rejected once it's indexed. The definition stays
-            on-chain for reference.
+            {t("survey.cancelSubmittedBody")}
           </div>
         </div>
       }
     >
       <div class={css.ownerBar}>
         <span class={css.ownerText}>
-          <b class={css.ownerTextStrong}>You own this survey.</b> You can
-          withdraw it — existing responses stay on-chain but new ones are
-          rejected.
+          <b class={css.ownerTextStrong}>{t("survey.ownerTextStrong")}</b>{" "}
+          {t("survey.ownerText")}
         </span>
         <Show
           when={confirming()}
           fallback={
             <button onClick={() => setConfirming(true)} class={css.cancelBtn}>
-              Cancel survey
+              {t("survey.cancelSurvey")}
             </button>
           }
         >
@@ -352,14 +356,16 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
               disabled={cancelling()}
               class={css.confirmBtn}
             >
-              {cancelling() ? "Cancelling…" : "Confirm cancel"}
+              {cancelling()
+                ? t("survey.cancelling")
+                : t("survey.confirmCancel")}
             </button>
             <button
               onClick={() => setConfirming(false)}
               disabled={cancelling()}
               class={css.keepBtn}
             >
-              Keep
+              {t("survey.keep")}
             </button>
           </div>
         </Show>
@@ -412,32 +418,25 @@ const LinkActionPanel: Component<{ surveyRef: SurveyRef; endEpoch: number }> = (
   return (
     <div class={css.linkPanel}>
       <div class={css.linkHead}>
-        <span class={css.linkOptional}>Optional</span>
-        <h3 class={css.linkTitle}>
-          Link this survey to a governance Info Action
-        </h3>
+        <span class={css.linkOptional}>{t("survey.linkOptional")}</span>
+        <h3 class={css.linkTitle}>{t("survey.linkTitle")}</h3>
       </div>
       <p class={css.linkBody}>
-        Linkage is <b>Action → Survey</b>: your survey already exists, so the
-        Info Action just points at it. Nest this object as{" "}
-        <span class={css.linkMono}>cip179</span> inside the Info Action's
-        CIP-108 <span class={css.linkMono}>body</span> (and add the CIP-179{" "}
-        <span class={css.linkMono}>@context</span> terms, per the spec, so the
-        anchor stays valid JSON-LD). The action's voting end epoch must equal
-        this survey's{" "}
-        <span class={css.linkMono}>end_epoch {props.endEpoch}</span>, or tooling
-        won't attach it.
+        {t("survey.linkBody1")} <b>{t("survey.linkBodyDirection")}</b>
+        {t("survey.linkBody2")} <span class={css.linkMono}>cip179</span>{" "}
+        {t("survey.linkBody3")} <span class={css.linkMono}>body</span>{" "}
+        {t("survey.linkBody4")} <span class={css.linkMono}>@context</span>{" "}
+        {t("survey.linkBody5")}{" "}
+        <span class={css.linkMono}>end_epoch {props.endEpoch}</span>
+        {t("survey.linkBody6")}
       </p>
       <div class={css.linkCodeBox}>
         <button onClick={() => void copy()} class={css.linkCopy}>
-          {copied() ? "Copied ✓" : "Copy JSON"}
+          {copied() ? t("survey.copied") : t("survey.copyJson")}
         </button>
         <pre class={css.linkCode}>{json()}</pre>
       </div>
-      <div class={css.linkFootnote}>
-        only Info Actions may link · linkage is discovery + epoch-alignment,
-        never an eligibility gate
-      </div>
+      <div class={css.linkFootnote}>{t("survey.linkFootnote")}</div>
     </div>
   );
 };
@@ -467,24 +466,23 @@ const Header: Component<{
             "--pill-line": pill().line,
           }}
         >
-          {pill().label}
+          {t(`survey.${pill().labelKey}` as Parameters<typeof t>[0])}
         </span>
         <Show when={props.s.govLink}>
           <span class={css.govPill}>
             <span class={css.govPillDot} />
-            Linked to governance
+            {t("survey.govPill")}
           </span>
         </Show>
         <Show when={props.pro}>
-          <span
-            title="Full survey ref — defining transaction hash and output index"
-            class={css.headerRefLead}
-          >
-            ref {fullRef(props.keyStr)}
+          <span title={t("survey.refTitle")} class={css.headerRefLead}>
+            {t("survey.refLead", { ref: fullRef(props.keyStr) })}
           </span>
         </Show>
       </div>
-      <h1 class={css.headerTitle}>{props.def.title || "Untitled survey"}</h1>
+      <h1 class={css.headerTitle}>
+        {props.def.title || t("survey.untitledSurvey")}
+      </h1>
       <Show when={props.def.description}>
         <p class={css.headerDesc}>{props.def.description}</p>
       </Show>
@@ -492,21 +490,20 @@ const Header: Component<{
       <Show when={props.s.govLink}>
         {(link) => (
           <div class={css.govLinkCard}>
-            <span class={css.govLinkBadge}>Info Action</span>
+            <span class={css.govLinkBadge}>{t("survey.govLinkBadge")}</span>
             <div class={css.govLinkMain}>
               <div class={css.govLinkText}>
                 <Show
                   when={link().title}
-                  fallback={<>Advertised by a governance Info Action</>}
+                  fallback={<>{t("survey.govLinkAdvertisedFallback")}</>}
                 >
-                  Advertised by{" "}
+                  {t("survey.govLinkAdvertisedBy")}{" "}
                   <b class={css.govLinkTextStrong}>{link().title}</b>
                 </Show>{" "}
                 <span class={css.govLinkActionId}>{link().actionId}</span>
               </div>
               <div class={css.govLinkMeta}>
-                survey &amp; vote both close at epoch {link().endEpoch} · open
-                to all eligible roles — casting the linked vote is optional
+                {t("survey.govLinkMeta", { epoch: link().endEpoch })}
               </div>
             </div>
           </div>
@@ -528,8 +525,10 @@ const Header: Component<{
                       {roleLabel(rs.role)}
                     </span>
                     <span class={css.roleCount}>
-                      {rs.count}{" "}
-                      <span class={css.roleCountPct}>· {rs.pct}%</span>
+                      {n(rs.count)}{" "}
+                      <span class={css.roleCountPct}>
+                        {t("survey.roleCountPct", { pct: n(rs.pct) })}
+                      </span>
                     </span>
                   </div>
                   <div class={css.roleTrack}>
@@ -560,26 +559,27 @@ const QuestionResult: Component<{
   index: number;
   tally: QuestionTally | undefined;
 }> = (props) => {
-  const qLabel = () => `Q${props.index + 1}`;
+  const qLabel = () => t("survey.qLabel", { n: props.index + 1 });
+  const join = (suffix: string): string =>
+    t("survey.typeLabelJoined", { base: baseType(props.q.type), suffix });
   return (
     <Show when={props.tally}>
-      {(t) => {
-        const tally = t();
-        const base = BASE_TYPE[props.q.type];
+      {(tallyOf) => {
+        const tally = tallyOf();
         switch (tally.kind) {
           case "bars": {
             const typeLabel =
               tally.unit === "responders"
-                ? `${base} · % of responders`
+                ? join(t("survey.typeSuffixResponders"))
                 : tally.unit === "first preferences"
-                  ? `${base} · first preferences`
-                  : base;
+                  ? join(t("survey.typeSuffixFirstPreferences"))
+                  : baseType(props.q.type);
             return (
               <ResultBarCard
                 qLabel={qLabel()}
                 typeLabel={typeLabel}
-                title={props.q.prompt || "(no prompt)"}
-                abstainText={`${tally.abstained} abstained`}
+                title={props.q.prompt || t("survey.noPrompt")}
+                abstainText={t("survey.abstained", { n: n(tally.abstained) })}
                 bars={tally.bars.map((b) => ({
                   label: b.label,
                   meta:
@@ -595,7 +595,7 @@ const QuestionResult: Component<{
             return (
               <HistogramCard
                 qLabel={qLabel()}
-                typeLabel={`${base} · distribution`}
+                typeLabel={join(t("survey.typeSuffixDistribution"))}
                 prompt={props.q.prompt}
                 t={tally}
               />
@@ -608,12 +608,12 @@ const QuestionResult: Component<{
             return (
               <ResultBarCard
                 qLabel={qLabel()}
-                typeLabel={`${base} · average allocation`}
-                title={props.q.prompt || "(no prompt)"}
-                abstainText={`${tally.abstained} abstained`}
+                typeLabel={join(t("survey.typeSuffixAverageAllocation"))}
+                title={props.q.prompt || t("survey.noPrompt")}
+                abstainText={t("survey.abstained", { n: n(tally.abstained) })}
                 bars={tally.rows.map((row) => ({
                   label: row.label,
-                  meta: `${row.avg.toFixed(1)} pts`,
+                  meta: t("survey.pointsMeta", { avg: row.avg.toFixed(1) }),
                   pct: max > 0 ? row.avg / max : 0,
                 }))}
               />
@@ -623,7 +623,11 @@ const QuestionResult: Component<{
             return (
               <RatingCard
                 qLabel={qLabel()}
-                typeLabel={`${base} · ${tally.numeric ? "numeric grid" : "labelled scale"}`}
+                typeLabel={join(
+                  tally.numeric
+                    ? t("survey.typeSuffixNumericGrid")
+                    : t("survey.typeSuffixLabelledScale"),
+                )}
                 prompt={props.q.prompt}
                 t={tally}
               />
@@ -632,7 +636,7 @@ const QuestionResult: Component<{
             return (
               <CustomCard
                 qLabel={qLabel()}
-                typeLabel={`${base} · interpreted off-chain`}
+                typeLabel={join(t("survey.typeSuffixInterpretedOffchain"))}
                 prompt={props.q.prompt}
                 t={tally}
               />
@@ -660,7 +664,7 @@ const CardShell: Component<{
         <span class={css.abstain}>{props.abstain}</span>
       </Show>
     </div>
-    <h3 class={css.cardTitle}>{props.prompt || "(no prompt)"}</h3>
+    <h3 class={css.cardTitle}>{props.prompt || t("survey.noPrompt")}</h3>
     {props.children}
   </div>
 );
@@ -677,14 +681,16 @@ const HistogramCard: Component<{
       qLabel={props.qLabel}
       typeLabel={props.typeLabel}
       prompt={props.prompt}
-      abstain={`${props.t.abstained} abstained`}
+      abstain={t("survey.abstained", { n: n(props.t.abstained) })}
     >
       <div class={css.histStats}>
         <span class={css.histStat}>
-          mean <b class={css.histStatValue}>{props.t.mean.toFixed(2)}</b>
+          {t("survey.histMean")}{" "}
+          <b class={css.histStatValue}>{props.t.mean.toFixed(2)}</b>
         </span>
         <span class={css.histStat}>
-          median <b class={css.histStatValue}>{props.t.median}</b>
+          {t("survey.histMedian")}{" "}
+          <b class={css.histStatValue}>{n(props.t.median)}</b>
         </span>
       </div>
       <Show when={props.t.bins.length > 0} fallback={<NoData />}>
@@ -692,7 +698,7 @@ const HistogramCard: Component<{
           <For each={props.t.bins}>
             {(b) => (
               <div class={css.histCol}>
-                <span class={css.histCount}>{b.count}</span>
+                <span class={css.histCount}>{n(b.count)}</span>
                 <div class={css.histColTrack}>
                   <div
                     class={css.histBar}
@@ -729,7 +735,7 @@ const RatingCard: Component<{
       qLabel={props.qLabel}
       typeLabel={props.typeLabel}
       prompt={props.prompt}
-      abstain={`${props.t.abstained} abstained`}
+      abstain={t("survey.abstained", { n: n(props.t.abstained) })}
     >
       <Show when={props.t.levelLabels}>
         <div class={css.ratingLegend}>
@@ -779,10 +785,8 @@ const CustomCard: Component<{
     prompt={props.prompt}
   >
     <div class={css.customCount}>
-      <span class={css.customCountValue}>{props.t.answered}</span>
-      <span class={css.customCountLabel}>
-        free-form answers · tallied per the external schema
-      </span>
+      <span class={css.customCountValue}>{n(props.t.answered)}</span>
+      <span class={css.customCountLabel}>{t("survey.customCountLabel")}</span>
     </div>
     <Show when={props.t.samples.length > 0}>
       <div class={css.customSamples}>
@@ -814,12 +818,14 @@ const RoleFilterBtn: Component<{
       class={css.roleFilterCount}
       classList={{ [css.roleFilterCountOn]: props.on }}
     >
-      {props.count}
+      {n(props.count)}
     </span>
   </button>
 );
 
-const NoData: Component = () => <p class={css.noData}>No responses yet.</p>;
+const NoData: Component = () => (
+  <p class={css.noData}>{t("survey.noResponsesYet")}</p>
+);
 
 // ----------------------------------------------------------------------------
 // Results body (public, or revealed-sealed) + sealed reveal pipeline
@@ -843,23 +849,23 @@ function exclusionMeta(
   switch (key) {
     case "after-deadline":
       return {
-        label: "Submitted after the deadline",
-        hint: `recorded past end_epoch ${endEpoch}`,
+        label: t("survey.exclAfterDeadlineLabel"),
+        hint: t("survey.exclAfterDeadlineHint", { epoch: endEpoch }),
       };
     case "invalid":
       return {
-        label: "Invalid for this survey",
-        hint: "out-of-constraint answer, ineligible role, or missing required answer",
+        label: t("survey.exclInvalidLabel"),
+        hint: t("survey.exclInvalidHint"),
       };
     case "superseded":
       return {
-        label: "Superseded by a later response",
-        hint: "same role + credential · latest-wins",
+        label: t("survey.exclSupersededLabel"),
+        hint: t("survey.exclSupersededHint"),
       };
     case "undecryptable":
       return {
-        label: "Couldn't be decrypted or decoded",
-        hint: "malformed or non-conformant payload",
+        label: t("survey.exclUndecryptableLabel"),
+        hint: t("survey.exclUndecryptableHint"),
       };
   }
 }
@@ -899,8 +905,8 @@ const ExclusionPanel: Component<{
   return (
     <div class={css.exclPanel}>
       <div class={css.exclHead}>
-        <span class={css.exclHeadTitle}>Why responses weren't counted</span>
-        <span class={css.exclHeadNote}>on-chain checks only</span>
+        <span class={css.exclHeadTitle}>{t("survey.exclHeadTitle")}</span>
+        <span class={css.exclHeadNote}>{t("survey.exclHeadNote")}</span>
       </div>
       <div class={css.exclBody}>
         <For each={props.excluded}>
@@ -916,16 +922,14 @@ const ExclusionPanel: Component<{
                   style={{ "--excl-pct": `${(e.count / max()) * 100}%` }}
                 />
               </div>
-              <span class={css.exclCount}>{e.count}</span>
+              <span class={css.exclCount}>{n(e.count)}</span>
             </div>
           )}
         </For>
         <p class={css.exclFootnote}>
-          Excluded responses stay on-chain but aren't tallied. Eligibility
-          checks that need ledger state — role membership re-verified at the{" "}
+          {t("survey.exclFootnote1")}{" "}
           <span class={css.exclFootnoteMono}>end_epoch {props.endEpoch}</span>{" "}
-          snapshot, credential proofs — are resolved by an indexer and aren't
-          reflected here.
+          {t("survey.exclFootnote2")}
         </p>
       </div>
     </div>
@@ -967,8 +971,8 @@ const IndividualResponses: Component<{
           [css.individualToggleDisabled]: props.records.length === 0,
         }}
       >
-        Individual responses
-        <span class={css.individualCount}>{props.records.length}</span>
+        {t("survey.individualResponses")}
+        <span class={css.individualCount}>{n(props.records.length)}</span>
         <span class={css.individualCaret}>{open() ? "▴" : "▾"}</span>
       </button>
 
@@ -980,11 +984,13 @@ const IndividualResponses: Component<{
         </div>
         <Show when={remaining() > 0}>
           <button
-            onClick={() => setLimit((n) => n + RESPONSE_PAGE)}
+            onClick={() => setLimit((prev) => prev + RESPONSE_PAGE)}
             class={css.showMore}
           >
-            Show {Math.min(RESPONSE_PAGE, remaining())} more ({remaining()}{" "}
-            left)
+            {t("survey.showMore", {
+              n: n(Math.min(RESPONSE_PAGE, remaining())),
+              left: n(remaining()),
+            })}
           </button>
         </Show>
       </Show>
@@ -1025,10 +1031,10 @@ const ResponseCard: Component<{
                   href={href()}
                   target="_blank"
                   rel="noopener noreferrer"
-                  title="Open the voter's rationale document in a new tab (not hash-verified)"
+                  title={t("survey.responseRationaleTitle")}
                   class={css.responseRationale}
                 >
-                  rationale ↗
+                  {t("survey.responseRationale")}
                 </a>
               )}
             </Show>
@@ -1042,7 +1048,7 @@ const ResponseCard: Component<{
       <Show
         when={publicAnswers()}
         fallback={
-          <div class={css.responseSealed}>(sealed — not yet revealed)</div>
+          <div class={css.responseSealed}>{t("survey.responseSealed")}</div>
         }
       >
         {(answers) => (
@@ -1053,11 +1059,11 @@ const ResponseCard: Component<{
                 return (
                   <div class={css.responseAnswer}>
                     <span class={css.responseAnswerQ}>
-                      Q{a.questionIndex + 1}
+                      {t("survey.responseAnswerQ", { n: a.questionIndex + 1 })}
                     </span>
                     <div class={css.responseAnswerMain}>
                       <div class={css.responseAnswerPrompt}>
-                        {q?.prompt || "(no prompt)"}
+                        {q?.prompt || t("survey.noPrompt")}
                       </div>
                       <div class={css.responseAnswerValue}>
                         {humanizeAnswer(a, q)}
@@ -1194,14 +1200,14 @@ const ResultsBody: Component<{
       <div class={css.countedRow}>
         <span class={css.countedPill}>
           <span class={css.countedDot} />
-          {publicResponses().length} counted
+          {t("survey.counted", { n: n(publicResponses().length) })}
         </span>
         <Show when={excludedTotal() > 0}>
           <button
             onClick={() => setExclOpen((o) => !o)}
             class={css.excludedToggle}
           >
-            {excludedTotal()} excluded{" "}
+            {t("survey.excluded", { n: n(excludedTotal()) })}{" "}
             <span class={css.excludedCaret}>{exclOpen() ? "▴" : "▾"}</span>
           </button>
         </Show>
@@ -1211,15 +1217,12 @@ const ResultsBody: Component<{
           class={css.exportBtn}
           classList={{ [css.exportBtnDisabled]: props.records.length === 0 }}
         >
-          <span class={css.exportIcon}>⤓</span> Export CSV
+          <span class={css.exportIcon}>⤓</span> {t("survey.exportCsv")}
         </button>
       </div>
 
       <Show when={app.snapshot()?.records.incomplete}>
-        <div class={css.incomplete}>
-          More label-17 transactions exist on-chain than could be loaded, so
-          this tally may be missing responses.
-        </div>
+        <div class={css.incomplete}>{t("survey.incomplete")}</div>
       </Show>
 
       <Show when={exclOpen() && excludedTotal() > 0}>
@@ -1231,20 +1234,20 @@ const ResultsBody: Component<{
 
       {/* weighting disclaimer */}
       <div class={css.disclaimer}>
-        <span class={css.disclaimerBadge}>raw</span>
+        <span class={css.disclaimerBadge}>{t("survey.disclaimerBadge")}</span>
         <span class={css.disclaimerText}>
-          These are raw recorded responses — one per credential.{" "}
-          <b>No weighting is applied;</b> stake-, pledge-, or quadratic
-          weighting is downstream and out of scope for CIP-179.
+          {t("survey.disclaimerText1")}{" "}
+          <b>{t("survey.disclaimerNoWeighting")}</b>{" "}
+          {t("survey.disclaimerText2")}
         </span>
       </div>
 
       {/* role filter */}
       <div class={css.roleFilterRow}>
-        <span class={css.roleFilterLabel}>Tally by role</span>
+        <span class={css.roleFilterLabel}>{t("survey.roleFilterLabel")}</span>
         <div class={css.roleFilterBtns}>
           <RoleFilterBtn
-            label="All"
+            label={t("survey.roleFilterAll")}
             count={publicResponses().length}
             on={roleFilter() === "all"}
             onClick={() => setRoleFilter("all")}
@@ -1274,8 +1277,7 @@ const ResultsBody: Component<{
       <IndividualResponses def={props.def} records={filteredRecords()} />
 
       <p class={css.tallyFootnote}>
-        tally derived independently from on-chain data ·{" "}
-        {publicResponses().length} responses counted
+        {t("survey.tallyFootnote", { n: n(publicResponses().length) })}
       </p>
     </>
   );
@@ -1380,35 +1382,42 @@ const SealedResults: Component<{
       <Match when={props.s.cancelled}>
         <SealedStateNotice
           tone="muted"
-          title="This survey was cancelled"
-          body="The owner withdrew it. Any sealed responses stay on-chain but aren't tallied."
+          title={t("survey.sealedCancelledTitle")}
+          body={t("survey.sealedCancelledBody")}
         />
       </Match>
       <Match when={!supported()}>
         <SealedStateNotice
           tone="warn"
-          title="Unsupported drand chain"
-          body="This sealed survey pins a drand chain Tessera can't decrypt — only quicknet is supported here."
+          title={t("survey.sealedUnsupportedTitle")}
+          body={t("survey.sealedUnsupportedBody")}
         />
       </Match>
       <Match when={!revealable()}>
         <SealedStateNotice
           tone="warn"
-          title="Answers are sealed"
-          body={`${props.records.length} encrypted response${props.records.length === 1 ? "" : "s"} collected. They open ${formatRevealDate(mode()!.round)} — no one, not even the owner, can read them until the drand round publishes.`}
+          title={t("survey.sealedTitle")}
+          body={t("survey.sealedBody", {
+            n: n(props.records.length),
+            responses:
+              props.records.length === 1
+                ? t("survey.responseSingular")
+                : t("survey.responsePlural"),
+            date: formatRevealDate(mode()!.round),
+          })}
         />
       </Match>
       <Match when={revealed.loading}>
         <SealedStateNotice
           tone="muted"
-          title="Revealing…"
-          body="Fetching the drand beacon and decrypting responses."
+          title={t("survey.revealingTitle")}
+          body={t("survey.revealingBody")}
         />
       </Match>
       <Match when={revealed.error}>
         <SealedStateNotice
           tone="warn"
-          title="Couldn't reveal"
+          title={t("survey.revealErrorTitle")}
           body={
             revealed.error instanceof Error
               ? revealed.error.message
@@ -1432,10 +1441,17 @@ const SealedResults: Component<{
       <Match when={true}>
         <SealedStateNotice
           tone="muted"
-          title="Answers can now be revealed"
-          body={`The drand round published on ${formatRevealDate(mode()!.round)}. Revealing decrypts all ${props.records.length} sealed response${props.records.length === 1 ? "" : "s"} in your browser and tallies them.`}
+          title={t("survey.sealedRevealableTitle")}
+          body={t("survey.sealedRevealableBody", {
+            date: formatRevealDate(mode()!.round),
+            n: n(props.records.length),
+            responses:
+              props.records.length === 1
+                ? t("survey.responseSingular")
+                : t("survey.responsePlural"),
+          })}
           action={{
-            label: "Reveal all responses",
+            label: t("survey.revealAll"),
             onClick: () => setRevealRequested(true),
           }}
         />
@@ -1481,14 +1497,13 @@ const LabelsUnavailable: Component<{ keyStr: string }> = (props) => (
   <div class={css.labelsUnavailable}>
     <span class={css.labelsIcon}>⚠</span>
     <div class={css.labelsMain}>
-      <div class={css.labelsTitle}>Presentation labels unavailable</div>
+      <div class={css.labelsTitle}>{t("survey.labelsTitle")}</div>
       <p class={css.labelsBody}>
-        The off-chain document (
-        <span class={css.labelsMono}>{shortRef(props.keyStr)}</span>) couldn't
-        be fetched or failed its hash check, so titles and option labels can't
-        be shown. <b>Results are still accurate</b> — every question type, count
-        and constraint is on-chain, and answers reference option <i>indices</i>,
-        which are tallied normally.
+        {t("survey.labelsBody1")}
+        <span class={css.labelsMono}>{shortRef(props.keyStr)}</span>
+        {t("survey.labelsBody2")} <b>{t("survey.labelsBodyAccurate")}</b>{" "}
+        {t("survey.labelsBody3")} <i>{t("survey.labelsBodyIndices")}</i>
+        {t("survey.labelsBody4")}
       </p>
     </div>
   </div>
@@ -1502,17 +1517,15 @@ const Empty: Component<{
   <div class={css.empty}>
     <Show
       when={props.error}
-      fallback={props.loading ? "Loading…" : "Survey not found."}
+      fallback={props.loading ? t("survey.loading") : t("survey.notFound")}
     >
-      <div class={css.emptyError}>
-        Couldn't load from the network — this may be a transient error.
-      </div>
+      <div class={css.emptyError}>{t("survey.loadError")}</div>
       <button
         type="button"
         onClick={() => props.onRetry?.()}
         class={css.retryBtn}
       >
-        Retry
+        {t("survey.retry")}
       </button>
     </Show>
   </div>

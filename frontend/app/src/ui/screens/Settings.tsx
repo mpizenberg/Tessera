@@ -18,16 +18,14 @@ import { useApp } from "~/state";
 import { envKoiosToken, storedKoiosToken } from "~/config";
 import { IPFS_PROVIDERS } from "~/enrichment/providers";
 import { SegmentedToggle } from "~/ui/components/SegmentedToggle";
+import { LOCALES, locale, setLocale, t, n } from "~/i18n";
 import css from "./Settings.module.css";
 
 export const Settings: Component = () => {
   return (
     <main class={css.main}>
-      <h1 class={css.title}>Settings</h1>
-      <p class={css.lead}>
-        Stored only in this browser. None of it touches the on-chain payload —
-        surveys always validate and tally from chain data alone.
-      </p>
+      <h1 class={css.title}>{t("settings.title")}</h1>
+      <p class={css.lead}>{t("settings.lead")}</p>
 
       <ProvidersSection />
       <KoiosSection />
@@ -55,16 +53,18 @@ const ProvidersSection: Component = () => {
     IPFS_PROVIDERS.filter((p) => app.ipfsTokens[p.id]?.trim()).length;
 
   return (
-    <Section head="Off-chain content storage">
-      <h2 class={css.heading}>IPFS pinning services</h2>
+    <Section head={t("settings.storageSectionHead")}>
+      <h2 class={css.heading}>{t("settings.storageHeading")}</h2>
       <p class={css.prose}>
-        Needed only to <b>author</b> content the app stores off-chain — an
-        external survey's presentation document, or a voter rationale. Enable
-        one or more; each document is pinned to <b>every</b> enabled service in
-        parallel for wider availability (same content hash everywhere). Embedded
-        surveys and reading never need these.
+        {t("settings.storageProse1")}
+        <b>{t("settings.storageProseAuthor")}</b>
+        {t("settings.storageProse2")}
+        <b>{t("settings.storageProseEvery")}</b>
+        {t("settings.storageProse3")}
       </p>
-      <div class={css.enabledCount}>{enabledCount()} enabled</div>
+      <div class={css.enabledCount}>
+        {t("settings.enabledCount", { count: n(enabledCount()) })}
+      </div>
 
       <div class={css.providerList}>
         <For each={IPFS_PROVIDERS}>
@@ -87,7 +87,9 @@ const ProvidersSection: Component = () => {
                     class={css.statusBadge}
                     classList={{ [css.statusBadgeOn]: on() }}
                   >
-                    {on() ? "Set" : "Not set"}
+                    {on()
+                      ? t("settings.providerSet")
+                      : t("settings.providerNotSet")}
                   </span>
                 </div>
                 <input
@@ -97,7 +99,9 @@ const ProvidersSection: Component = () => {
                   value={token()}
                   onInput={(e) => app.setIpfsToken(p.id, e.currentTarget.value)}
                   placeholder={p.tokenPlaceholder}
-                  aria-label={`${p.label} API token`}
+                  aria-label={t("settings.providerTokenLabel", {
+                    provider: p.label,
+                  })}
                   class={css.tokenInput}
                 />
                 <p class={css.providerHint}>{p.hint}</p>
@@ -110,11 +114,9 @@ const ProvidersSection: Component = () => {
       <div class={css.infoNote}>
         <span class={css.infoBadge}>i</span>
         <p class={css.noteText}>
-          Pinning keeps a document reachable; if it ever drops, surveys still
-          validate and tally from on-chain data — only the presentation labels
-          can't be rendered. The anchor hash is computed locally (
-          <b>blake2b-256</b>) from the exact bytes uploaded, so a provider can't
-          alter what you anchor. Tokens stay in this browser only.
+          {t("settings.storageNote1")}
+          <b>{t("settings.storageNoteBlake")}</b>
+          {t("settings.storageNote2")}
         </p>
       </div>
     </Section>
@@ -149,19 +151,14 @@ const KoiosSection: Component = () => {
   };
 
   return (
-    <Section head="Network & data source">
-      <h2 class={css.heading}>Reading from Koios</h2>
-      <p class={css.prose}>
-        The app ships with a pre-configured Koios token that may get
-        rate-limited under load. Paste your own to use it instead — it overrides
-        the default and applies on save (the snapshot reloads). Switching
-        network reloads the app on Explore to apply the new endpoint.
-      </p>
+    <Section head={t("settings.koiosSectionHead")}>
+      <h2 class={css.heading}>{t("settings.koiosHeading")}</h2>
+      <p class={css.prose}>{t("settings.koiosProse")}</p>
 
       <dl class={css.factGrid}>
-        <FactRow label="Network">
+        <FactRow label={t("settings.networkLabel")}>
           <SegmentedToggle
-            ariaLabel="Network"
+            ariaLabel={t("settings.networkLabel")}
             fontSize={12}
             buttonPadding="6px 16px"
             value={app.config.network}
@@ -172,24 +169,24 @@ const KoiosSection: Component = () => {
             ]}
           />
         </FactRow>
-        <FactRow label="Endpoint">
+        <FactRow label={t("settings.endpointLabel")}>
           <span class={css.endpoint}>{app.config.koiosUrl}</span>
         </FactRow>
-        <FactRow label="Active token">
+        <FactRow label={t("settings.activeTokenLabel")}>
           <span
             class={css.statusBadge}
             classList={{ [css.statusBadgeOn]: !!app.koiosToken() }}
           >
             {app.koiosToken()
               ? overridden()
-                ? "your token"
-                : "app default"
-              : "none"}
+                ? t("settings.tokenYours")
+                : t("settings.tokenAppDefault")
+              : t("settings.tokenNone")}
           </span>
         </FactRow>
       </dl>
 
-      <label class={css.tokenLabel}>Your Koios token</label>
+      <label class={css.tokenLabel}>{t("settings.koiosTokenLabel")}</label>
       <div class={css.tokenRow}>
         <input
           type="password"
@@ -200,8 +197,8 @@ const KoiosSection: Component = () => {
             setDraft(e.currentTarget.value);
             setSaved(false);
           }}
-          placeholder="paste a Koios bearer token"
-          aria-label="Koios bearer token"
+          placeholder={t("settings.koiosTokenPlaceholder")}
+          aria-label={t("settings.koiosTokenAria")}
           class={css.koiosInput}
         />
         <button
@@ -210,14 +207,14 @@ const KoiosSection: Component = () => {
           disabled={!dirty()}
           onClick={save}
         >
-          Save
+          {t("settings.save")}
         </button>
         <button class={css.btnGhost} disabled={!stored()} onClick={reset}>
-          Use app default
+          {t("settings.useAppDefault")}
         </button>
       </div>
       <Show when={saved()}>
-        <div class={css.savedMsg}>✓ saved · snapshot reloaded</div>
+        <div class={css.savedMsg}>{t("settings.savedMsg")}</div>
       </Show>
     </Section>
   );
@@ -237,24 +234,37 @@ const FactRow: Component<{ label: string; children: JSX.Element }> = (
 const DisplaySection: Component = () => {
   const app = useApp();
   return (
-    <Section head="Display">
-      <h2 class={css.heading}>Detail level</h2>
+    <Section head={t("settings.displaySectionHead")}>
+      <h2 class={css.heading}>{t("settings.detailHeading")}</h2>
       <p class={css.prose}>
-        <b>Pro</b> mode surfaces technical detail across the app — survey refs,
-        epochs, drand rounds, padding sizes, and extra authoring fields.{" "}
-        <b>Plain</b> hides them. Also toggleable from the header.
+        <b>{t("settings.detailProsePro")}</b>
+        {t("settings.detailProse1")}
+        <b>{t("settings.detailProsePlain")}</b>
+        {t("settings.detailProse2")}
       </p>
       <SegmentedToggle
-        ariaLabel="Display mode"
+        ariaLabel={t("settings.displayModeAria")}
         fontSize={12}
         buttonPadding="6px 16px"
         wrapStyle={{ "margin-top": "14px" }}
         value={app.ui.pro ? "pro" : "plain"}
         onChange={(v) => app.setPro(v === "pro")}
         options={[
-          { value: "plain", label: "Plain" },
-          { value: "pro", label: "Pro" },
+          { value: "plain", label: t("settings.displayPlain") },
+          { value: "pro", label: t("settings.displayPro") },
         ]}
+      />
+
+      <h2 class={css.subheading}>{t("settings.languageHeading")}</h2>
+      <p class={css.prose}>{t("settings.languageProse")}</p>
+      <SegmentedToggle
+        ariaLabel={t("settings.languageHeading")}
+        fontSize={12}
+        buttonPadding="6px 16px"
+        wrapStyle={{ "margin-top": "14px" }}
+        value={locale()}
+        onChange={(v) => void setLocale(v)}
+        options={LOCALES.map((l) => ({ value: l.code, label: l.name }))}
       />
     </Section>
   );

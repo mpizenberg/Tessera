@@ -14,14 +14,15 @@ import { networkMismatch, roleDescription, roleLabel } from "~/ui/format";
 import { TxLink } from "~/ui/components/TxLink";
 import { Spinner } from "~/ui/components/Spinner";
 import { SegmentedToggle } from "~/ui/components/SegmentedToggle";
+import { t, type MsgKey } from "~/i18n";
 import css from "./Header.module.css";
 
 const NETWORKS: readonly Network[] = ["preview", "mainnet"];
 
-const NAV: ReadonlyArray<{ href: string; label: string }> = [
-  { href: "/", label: "Explore" },
-  { href: "/create", label: "Create" },
-  { href: "/settings", label: "Settings" },
+const NAV: ReadonlyArray<{ href: string; labelKey: MsgKey }> = [
+  { href: "/", labelKey: "header.navExplore" },
+  { href: "/create", labelKey: "header.navCreate" },
+  { href: "/settings", labelKey: "header.navSettings" },
 ];
 
 function truncAddr(a: string): string {
@@ -82,7 +83,7 @@ export const Header: Component = () => {
         <span
           class={css.networkTag}
           classList={{ [css.mainnet]: app.config.network === "mainnet" }}
-          title="Active network"
+          title={t("header.activeNetwork")}
         >
           <span
             class={css.networkDot}
@@ -99,7 +100,7 @@ export const Header: Component = () => {
                 class={css.navLink}
                 classList={{ [css.on]: active(item.href) }}
               >
-                {item.label}
+                {t(item.labelKey)}
               </A>
             )}
           </For>
@@ -114,8 +115,8 @@ export const Header: Component = () => {
                   setMenuOpen(false);
                   setPendingOpen((o) => !o);
                 }}
-                title="Pending transactions"
-                aria-label="Pending transactions"
+                title={t("header.pendingTransactions")}
+                aria-label={t("header.pendingTransactions")}
                 aria-expanded={pendingOpen()}
                 class={css.pendingBtn}
               >
@@ -131,7 +132,9 @@ export const Header: Component = () => {
               </button>
               <Show when={pendingOpen()}>
                 <div class={css.pendingMenu}>
-                  <div class={css.menuHeading}>Pending transactions</div>
+                  <div class={css.menuHeading}>
+                    {t("header.pendingTransactions")}
+                  </div>
                   <For each={app.pendingTxs}>
                     {(p) => (
                       <PendingRow
@@ -147,14 +150,14 @@ export const Header: Component = () => {
           </Show>
 
           <SegmentedToggle
-            ariaLabel="Display mode"
+            ariaLabel={t("header.displayMode")}
             trackPadding="2px"
             buttonPadding="5px 13px"
             value={app.ui.pro ? "pro" : "plain"}
             onChange={(v) => app.setPro(v === "pro")}
             options={[
-              { value: "plain", label: "Plain" },
-              { value: "pro", label: "Pro" },
+              { value: "plain", label: t("header.displayPlain") },
+              { value: "pro", label: t("header.displayPro") },
             ]}
           />
 
@@ -170,7 +173,9 @@ export const Header: Component = () => {
                 }}
                 class={css.connectBtn}
               >
-                {app.connecting() ? "Connecting…" : "Connect wallet"}
+                {app.connecting()
+                  ? t("header.connecting")
+                  : t("header.connectWallet")}
               </button>
             }
           >
@@ -193,7 +198,7 @@ export const Header: Component = () => {
                   <span class={css.identityRole}>
                     {(() => {
                       const r = app.activeRole();
-                      return r != null ? roleLabel(r) : "No role";
+                      return r != null ? roleLabel(r) : t("header.noRole");
                     })()}
                   </span>
                   <span class={css.identityAddr}>
@@ -252,13 +257,11 @@ const WalletPicker: Component<{ onPick: (key: string) => void }> = (props) => {
   const wallets = () => app.installedWallets();
   return (
     <>
-      <div class={css.menuHeading}>Connect a CIP-30 wallet</div>
+      <div class={css.menuHeading}>{t("header.connectCip30")}</div>
       <Show
         when={wallets().length > 0}
         fallback={
-          <div class={css.menuNote}>
-            No CIP-30 wallet detected in this browser.
-          </div>
+          <div class={css.menuNote}>{t("header.noWalletDetected")}</div>
         }
       >
         <For each={wallets()}>
@@ -296,15 +299,10 @@ const RoleMenu: Component<{
   onDisconnect: () => void;
 }> = (props) => (
   <>
-    <div class={css.menuHeading}>Respond as · 1 wallet</div>
+    <div class={css.menuHeading}>{t("header.respondAs")}</div>
     <Show
       when={props.roles.length > 0}
-      fallback={
-        <div class={css.menuNote}>
-          This wallet holds no claimable role (needs a stake key or a registered
-          DRep key).
-        </div>
-      }
+      fallback={<div class={css.menuNote}>{t("header.noClaimableRole")}</div>}
     >
       <For each={props.roles}>
         {(r) => (
@@ -326,8 +324,7 @@ const RoleMenu: Component<{
     </Show>
     <Show when={props.mismatch}>
       <div class={css.menuNoteDanger}>
-        Wallet is on a different network than the app ({props.expectedNetwork}).
-        Switch networks in your wallet.
+        {t("header.networkMismatch", { network: props.expectedNetwork })}
       </div>
     </Show>
     <div class={css.roleAddr}>{truncAddr(props.addr)}</div>
@@ -336,22 +333,22 @@ const RoleMenu: Component<{
       class={css.menuRowDanger}
       onClick={() => props.onDisconnect()}
     >
-      <span class={css.disconnectLabel}>Disconnect</span>
+      <span class={css.disconnectLabel}>{t("header.disconnect")}</span>
     </button>
   </>
 );
 
-const PENDING_TEXT: Record<PendingKind, string> = {
-  survey: "Publishing survey",
-  response: "Submitting response",
-  cancel: "Cancelling survey",
-  govAction: "Submitting governance action",
+const PENDING_TEXT: Record<PendingKind, MsgKey> = {
+  survey: "header.pendingSurvey",
+  response: "header.pendingResponse",
+  cancel: "header.pendingCancel",
+  govAction: "header.pendingGovAction",
 };
-const CONFIRMED_TEXT: Record<PendingKind, string> = {
-  survey: "Survey published",
-  response: "Response confirmed",
-  cancel: "Survey cancelled",
-  govAction: "Governance action submitted",
+const CONFIRMED_TEXT: Record<PendingKind, MsgKey> = {
+  survey: "header.confirmedSurvey",
+  response: "header.confirmedResponse",
+  cancel: "header.confirmedCancel",
+  govAction: "header.confirmedGovAction",
 };
 
 /** One row in the pending-transactions dropdown. */
@@ -363,8 +360,8 @@ const PendingRow: Component<{
   const confirmed = () => props.p.status === "confirmed";
   const headline = () =>
     confirmed()
-      ? CONFIRMED_TEXT[props.p.kind]
-      : `${PENDING_TEXT[props.p.kind]}…`;
+      ? t(CONFIRMED_TEXT[props.p.kind])
+      : t("header.pendingHeadline", { label: t(PENDING_TEXT[props.p.kind]) });
   return (
     <div class={css.pendingRow}>
       <div class={css.pendingRowHead}>
@@ -380,8 +377,8 @@ const PendingRow: Component<{
         <button
           type="button"
           onClick={() => props.onDismiss()}
-          title="Dismiss"
-          aria-label="Dismiss"
+          title={t("header.dismiss")}
+          aria-label={t("header.dismiss")}
           class={css.dismiss}
         >
           ×
@@ -394,9 +391,7 @@ const PendingRow: Component<{
         <TxLink hash={props.p.txHash} />
       </div>
       <Show when={!confirmed() && props.p.slow}>
-        <div class={css.pendingRowSlow}>
-          Taking longer than usual — still pending.
-        </div>
+        <div class={css.pendingRowSlow}>{t("header.pendingSlow")}</div>
       </Show>
       <Show when={props.p.surveyKey}>
         <div class={css.pendingRowLinkWrap}>
@@ -405,7 +400,7 @@ const PendingRow: Component<{
             onClick={() => props.onNavigate()}
             class={css.pendingRowLink}
           >
-            View survey →
+            {t("header.viewSurvey")}
           </A>
         </div>
       </Show>
@@ -422,7 +417,7 @@ const NetworkSwitch: Component = () => {
   const app = useApp();
   return (
     <>
-      <div class={css.menuHeading}>Network</div>
+      <div class={css.menuHeading}>{t("header.network")}</div>
       <For each={NETWORKS}>
         {(n) => {
           const on = () => n === app.config.network;
@@ -445,7 +440,7 @@ const NetworkSwitch: Component = () => {
           );
         }}
       </For>
-      <div class={css.menuNote}>Switching reloads on Explore.</div>
+      <div class={css.menuNote}>{t("header.switchingReloads")}</div>
     </>
   );
 };

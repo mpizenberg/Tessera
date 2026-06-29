@@ -51,25 +51,48 @@ import {
 } from "~/tlock/drand";
 import { networkMismatch, roleColors, roleLabel, shortRef } from "~/ui/format";
 import type { WalletIdentity } from "~/wallet/types";
+import { t, n } from "~/i18n";
 import css from "./Create.module.css";
 
-/** Add-a-question buttons: one per type, in tag order. Custom is Pro-only. */
+/**
+ * Add-a-question buttons: one per type, in tag order. Custom is Pro-only.
+ * `shortKey` is an i18n message key, translated at render time.
+ */
 const ADD_BUTTONS: ReadonlyArray<{
   type: QuestionType;
-  short: string;
+  shortKey:
+    | "create.addSingle"
+    | "create.addMulti"
+    | "create.addRanking"
+    | "create.addNumeric"
+    | "create.addPoints"
+    | "create.addRating"
+    | "create.addCustom";
   tag: number;
 }> = [
-  { type: "singleChoice", short: "Single", tag: QuestionTag.SingleChoice },
-  { type: "multiSelect", short: "Multi", tag: QuestionTag.MultiSelect },
-  { type: "ranking", short: "Ranking", tag: QuestionTag.Ranking },
-  { type: "numericRange", short: "Numeric", tag: QuestionTag.NumericRange },
+  {
+    type: "singleChoice",
+    shortKey: "create.addSingle",
+    tag: QuestionTag.SingleChoice,
+  },
+  {
+    type: "multiSelect",
+    shortKey: "create.addMulti",
+    tag: QuestionTag.MultiSelect,
+  },
+  { type: "ranking", shortKey: "create.addRanking", tag: QuestionTag.Ranking },
+  {
+    type: "numericRange",
+    shortKey: "create.addNumeric",
+    tag: QuestionTag.NumericRange,
+  },
   {
     type: "pointsAllocation",
-    short: "Points",
+    shortKey: "create.addPoints",
     tag: QuestionTag.PointsAllocation,
   },
-  { type: "rating", short: "Rating", tag: QuestionTag.Rating },
-  { type: "custom", short: "Custom", tag: QuestionTag.Custom },
+  { type: "rating", shortKey: "create.addRating", tag: QuestionTag.Rating },
+  { type: "custom", shortKey: "create.addCustom", tag: QuestionTag.Custom },
 ];
 
 // ----------------------------------------------------------------------------
@@ -168,7 +191,7 @@ export const Create: Component = () => {
   };
 
   const [submitting, setSubmitting] = createSignal(false);
-  const [busyText, setBusyText] = createSignal("Publishing…");
+  const [busyText, setBusyText] = createSignal(t("create.busyPublishing"));
   const [stepKey, setStepKey] = createSignal<string | null>(null);
   const [submitError, setSubmitError] = createSignal<string | null>(null);
   const [txHash, setTxHash] = createSignal<string | null>(null);
@@ -179,10 +202,10 @@ export const Create: Component = () => {
   const submitSteps = createMemo<SubmitStep[]>(() => {
     const steps: SubmitStep[] = [];
     if (meta.contentMode === "external")
-      steps.push({ key: "pin", label: "Pinning the presentation to IPFS" });
+      steps.push({ key: "pin", label: t("create.stepPin") });
     steps.push({
       key: "submit",
-      label: "Signing & submitting the transaction",
+      label: t("create.stepSubmit"),
     });
     return steps;
   });
@@ -226,7 +249,7 @@ export const Create: Component = () => {
         // Pin the presentation document, then rebuild the definition with the
         // real anchor (the preview used a placeholder so the codec accepted the
         // count forms). The on-chain payload carries only the anchor + counts.
-        setBusyText("Pinning presentation…");
+        setBusyText(t("create.busyPinning"));
         const { pinJson } = await import("~/enrichment/pin");
         const doc = buildPresentationDoc(meta, questions);
         const pinned = await pinJson(doc, "survey.json", app.ipfsTokens);
@@ -239,7 +262,7 @@ export const Create: Component = () => {
         }).definition;
       }
       setStepKey("submit");
-      setBusyText("Submitting…");
+      setBusyText(t("create.busySubmitting"));
       const payload = encodePayload({
         type: "definitions",
         definitions: [definition],
@@ -266,7 +289,7 @@ export const Create: Component = () => {
       setSubmitError(e instanceof Error ? e.message : String(e));
     } finally {
       setSubmitting(false);
-      setBusyText("Publishing…");
+      setBusyText(t("create.busyPublishing"));
       setStepKey(null);
     }
   };
@@ -294,19 +317,15 @@ export const Create: Component = () => {
         <main class={css.main}>
           <Show when={submitting() && submitSteps().length > 1}>
             <SubmitProgressModal
-              title="Publishing your survey"
+              title={t("create.progressTitle")}
               steps={submitSteps()}
               currentKey={stepKey()}
             />
           </Show>
 
           <BackLink />
-          <h1 class={css.title}>Create a survey</h1>
-          <p class={css.subtitle}>
-            Define the questions, who may respond, when it closes, and whether
-            answers are public or sealed, then sign to publish the definition
-            on-chain under metadata label 17.
-          </p>
+          <h1 class={css.title}>{t("create.pageTitle")}</h1>
+          <p class={css.subtitle}>{t("create.pageSubtitle")}</p>
 
           <div class={`create-grid ${css.gridTop}`}>
             {/* left: builder */}
@@ -343,7 +362,7 @@ export const Create: Component = () => {
               <div class={css.questionsSection}>
                 <SectionHead
                   n="07"
-                  label="Questions"
+                  label={t("create.sectionQuestions")}
                   trailing={questions.length}
                 />
                 <div class={css.questionList}>
@@ -360,7 +379,7 @@ export const Create: Component = () => {
                   </For>
                 </div>
                 <div class={css.addPanel}>
-                  <div class={css.addPanelHead}>Add a question</div>
+                  <div class={css.addPanelHead}>{t("create.addAQuestion")}</div>
                   <div class={css.addBtnRow}>
                     <For
                       each={
@@ -376,7 +395,7 @@ export const Create: Component = () => {
                           class={css.addTypeBtn}
                         >
                           <span class={css.addTypeTag}>{b.tag}</span>
-                          {b.short}
+                          {t(b.shortKey)}
                         </button>
                       )}
                     </For>
@@ -386,7 +405,7 @@ export const Create: Component = () => {
 
               <Show when={showProblems() && problems().length > 0}>
                 <ProblemList
-                  title="Fix before publishing"
+                  title={t("create.fixBeforePublishing")}
                   problems={problems()}
                 />
               </Show>
@@ -405,9 +424,11 @@ export const Create: Component = () => {
                 problemCount={problems().length}
                 blockedReason={
                   mismatch()
-                    ? `Switch your wallet to ${app.config.network} before publishing`
+                    ? t("create.publishBlockedNetwork", {
+                        network: app.config.network,
+                      })
                     : externalNoTokens()
-                      ? "Add an IPFS provider in Settings to publish external content"
+                      ? t("create.publishBlockedNoIpfs")
                       : null
                 }
                 submitting={submitting()}
@@ -425,7 +446,7 @@ export const Create: Component = () => {
 
 const BackLink: Component = () => (
   <A href="/" class={css.backLink}>
-    <span class={css.backArrow}>←</span> All surveys
+    <span class={css.backArrow}>←</span> {t("create.backToSurveys")}
   </A>
 );
 
@@ -438,23 +459,23 @@ const DetailsSection: Component<{
   setMeta: SetStoreFunction<DefinitionMeta>;
 }> = (props) => (
   <div>
-    <SectionHead n="01" label="Basics" />
+    <SectionHead n="01" label={t("create.sectionBasics")} />
     <div class={css.card}>
       <label class={css.blockLabel}>
-        <span class={css.fieldLabel}>Title</span>
+        <span class={css.fieldLabel}>{t("create.fieldTitle")}</span>
         <input
           type="text"
           value={props.meta.title}
-          placeholder="e.g. Treasury priorities for next epoch"
+          placeholder={t("create.titlePlaceholder")}
           onInput={(e) => props.setMeta("title", e.currentTarget.value)}
           class={css.textInput}
         />
       </label>
       <label class={css.blockLabelGap}>
-        <span class={css.fieldLabel}>Description</span>
+        <span class={css.fieldLabel}>{t("create.fieldDescription")}</span>
         <textarea
           value={props.meta.description}
-          placeholder="Optional context for respondents."
+          placeholder={t("create.descriptionPlaceholder")}
           onInput={(e) => props.setMeta("description", e.currentTarget.value)}
           rows={3}
           class={css.textArea}
@@ -469,7 +490,7 @@ const RolesSection: Component<{
   onToggle: (r: Role) => void;
 }> = (props) => (
   <div class={css.section}>
-    <SectionHead n="03" label="Who can respond" />
+    <SectionHead n="03" label={t("create.sectionWhoCanRespond")} />
     <div class={css.card}>
       <div class={css.rowWrap}>
         <For each={ROLE_VALUES}>
@@ -497,11 +518,7 @@ const RolesSection: Component<{
           }}
         </For>
       </div>
-      <p class={css.hint}>
-        Eligibility is a claim, verified independently against ledger state. SPO
-        and CC can be listed, but can't respond from a browser wallet (they need
-        cold/hot keys).
-      </p>
+      <p class={css.hint}>{t("create.rolesHint")}</p>
     </div>
   </div>
 );
@@ -576,7 +593,7 @@ const TimingSection: Component<{
   };
   return (
     <div class={css.section}>
-      <SectionHead n="04" label="Timing" />
+      <SectionHead n="04" label={t("create.sectionTiming")} />
       <div class={css.card} classList={{ [css.govCard]: govLinked() }}>
         <button
           type="button"
@@ -599,20 +616,19 @@ const TimingSection: Component<{
               class={css.govToggleTitle}
               classList={{ [css.govToggleTitleOn]: govLinked() }}
             >
-              Tie this survey to a governance Info Action
+              {t("create.govToggleTitle")}
             </span>
-            <span class={css.govToggleDesc}>
-              An on-chain Info Action will advertise this survey and they close
-              together.
-            </span>
+            <span class={css.govToggleDesc}>{t("create.govToggleDesc")}</span>
           </span>
         </button>
 
         <label class={css.endEpochField}>
           <span class={`${css.fieldLabel} ${css.endEpochLabel}`}>
-            End epoch (inclusive)
+            {t("create.endEpochLabel")}
             <Show when={locked()}>
-              <span class={css.govAutoBadge}>auto · locked</span>
+              <span class={css.govAutoBadge}>
+                {t("create.autoLockedBadge")}
+              </span>
             </Show>
           </span>
           <input
@@ -626,19 +642,22 @@ const TimingSection: Component<{
           />
         </label>
         <Show when={endEpochDate()}>
-          {(date) => <div class={css.revealLine}>Closes ~{date()}</div>}
+          {(date) => (
+            <div class={css.revealLine}>
+              {t("create.closesOn", { date: date() })}
+            </div>
+          )}
         </Show>
         <Show
           when={govLinked()}
           fallback={
             <p class={css.hint}>
-              Responses are accepted through this epoch.{" "}
-              <Show
-                when={tipEpoch() !== undefined}
-                fallback="Loading current epoch…"
-              >
-                Current epoch is <b>{tipEpoch()}</b>.
-              </Show>
+              {t("create.acceptedThroughEpoch", {
+                hint:
+                  tipEpoch() !== undefined
+                    ? t("create.currentEpochIs", { epoch: tipEpoch()! })
+                    : t("create.loadingEpoch"),
+              })}
             </p>
           }
         >
@@ -646,31 +665,26 @@ const TimingSection: Component<{
             when={locked()}
             fallback={
               <div class={css.warnNote}>
-                Couldn't read <span class={css.mono}>gov_action_lifetime</span>{" "}
-                from the chain, so the deadline can't be computed. Enter the
-                Info Action's voting end epoch manually — they must match
-                exactly.
+                {t("create.govLifetimeUnreadable")}
               </div>
             }
           >
             <div class={css.govNote}>
-              Locked to the Info Action's voting deadline. On{" "}
-              <b>{props.network}</b>, a governance action submitted this epoch
-              {tipEpoch() !== undefined ? ` (${tipEpoch()})` : ""} closes at
-              epoch <b>{autoEndEpoch()}</b> (
+              {t("create.govNoteIntro", {
+                network: props.network,
+                epochParen: tipEpoch() !== undefined ? ` (${tipEpoch()})` : "",
+              })}{" "}
+              <b>{autoEndEpoch()}</b> (
               <span class={css.mono}>
                 gov_action_lifetime = {govActionLifetime()}
               </span>
-              ), so the survey's end epoch must equal that. If you'll submit the
-              action in a later epoch, untoggle and set a matching epoch by
-              hand.
+              ){t("create.govNoteOutro")}
             </div>
           </Show>
         </Show>
         <Show when={!govLinked() && tooEarly()}>
           <div class={css.warnNote}>
-            End epoch must be later than the current epoch ({tipEpoch()}), or
-            the survey is closed as soon as it's published.
+            {t("create.tooEarlyWarning", { epoch: tipEpoch()! })}
           </div>
         </Show>
       </div>
@@ -684,7 +698,7 @@ const ContentSection: Component<{
   hasPinning: boolean;
 }> = (props) => (
   <div class={css.section}>
-    <SectionHead n="06" label="Content" />
+    <SectionHead n="06" label={t("create.sectionContent")} />
     <div class={css.card}>
       <div class={css.modeGrid}>
         <button
@@ -694,10 +708,8 @@ const ContentSection: Component<{
           class={css.modeCard}
           classList={{ [css.modeCardOn]: props.mode === "embedded" }}
         >
-          <div class={css.modeTitle}>Embedded</div>
-          <div class={css.modeDesc}>
-            All text on-chain. No external dependency — recommended.
-          </div>
+          <div class={css.modeTitle}>{t("create.contentEmbeddedTitle")}</div>
+          <div class={css.modeDesc}>{t("create.contentEmbeddedDesc")}</div>
         </button>
         <button
           type="button"
@@ -706,31 +718,20 @@ const ContentSection: Component<{
           class={css.modeCard}
           classList={{ [css.modeCardOn]: props.mode === "external" }}
         >
-          <div class={css.modeTitle}>External</div>
-          <div class={css.modeDesc}>
-            Prompts &amp; labels live in a pinned IPFS document; chain carries a
-            hash anchor.
-          </div>
+          <div class={css.modeTitle}>{t("create.contentExternalTitle")}</div>
+          <div class={css.modeDesc}>{t("create.contentExternalDesc")}</div>
         </button>
       </div>
 
       <Show when={props.mode === "external"}>
-        <p class={css.externalNote}>
-          On publish, the title, description, prompts and option labels are
-          written to a <b>presentation document</b>, pinned to your IPFS
-          providers, and anchored on-chain by its blake2b-256 hash. Only counts,
-          constraints, owner and timing stay on-chain — so the survey still
-          validates and tallies even if the document later becomes unreachable
-          (only labels go missing). Keeps the on-chain payload small for large
-          surveys.
-        </p>
+        <p class={css.externalNote}>{t("create.contentExternalNote")}</p>
         <Show when={!props.hasPinning}>
           <div class={css.warnNote}>
-            No IPFS provider is configured.{" "}
+            {t("create.contentNoPinningPre")}
             <A href="/settings" class={css.settingsLink}>
-              Add one in Settings
-            </A>{" "}
-            to publish external content, or switch to Embedded.
+              {t("create.contentNoPinningLink")}
+            </A>
+            {t("create.contentNoPinningPost")}
           </div>
         </Show>
       </Show>
@@ -752,7 +753,7 @@ const VisibilitySection: Component<{
   pro: boolean;
 }> = (props) => (
   <div class={css.section}>
-    <SectionHead n="05" label="Visibility" />
+    <SectionHead n="05" label={t("create.sectionVisibility")} />
     <div class={css.card}>
       <div class={css.modeGrid}>
         <button
@@ -762,10 +763,8 @@ const VisibilitySection: Component<{
           class={css.modeCard}
           classList={{ [css.modeCardOn]: props.mode === "public" }}
         >
-          <div class={css.modeTitle}>Public</div>
-          <div class={css.modeDesc}>
-            Answers are plaintext, tallied as they arrive.
-          </div>
+          <div class={css.modeTitle}>{t("create.visPublicTitle")}</div>
+          <div class={css.modeDesc}>{t("create.visPublicDesc")}</div>
         </button>
         <button
           type="button"
@@ -775,11 +774,9 @@ const VisibilitySection: Component<{
           classList={{ [css.modeCardOn]: props.mode === "sealed" }}
         >
           <div class={css.modeTitleSealed}>
-            <VisGlyph status="sealed" /> Sealed
+            <VisGlyph status="sealed" /> {t("create.visSealedTitle")}
           </div>
-          <div class={css.modeDesc}>
-            Timelock-encrypted; opens at a drand round.
-          </div>
+          <div class={css.modeDesc}>{t("create.visSealedDesc")}</div>
         </button>
       </div>
 
@@ -787,13 +784,13 @@ const VisibilitySection: Component<{
         <div class={css.sealedConfig}>
           {/* Pro: pin chain + choose how the reveal round is set. Plain: Auto. */}
           <Show when={props.pro}>
-            <div class={css.fieldLabel}>Drand chain</div>
+            <div class={css.fieldLabel}>{t("create.drandChainLabel")}</div>
             <div class={css.chainHash}>
               {QUICKNET_CHAIN_HASH_HEX.slice(0, 6)}…
               {QUICKNET_CHAIN_HASH_HEX.slice(-3)} · quicknet
             </div>
 
-            <div class={css.fieldLabelGap}>Reveal round</div>
+            <div class={css.fieldLabelGap}>{t("create.revealRoundLabel")}</div>
             <div class={css.pillRow}>
               <button
                 type="button"
@@ -802,7 +799,7 @@ const VisibilitySection: Component<{
                 class={css.pill}
                 classList={{ [css.pillOn]: props.drandMode === "auto" }}
               >
-                Auto
+                {t("create.drandAuto")}
               </button>
               <button
                 type="button"
@@ -811,22 +808,17 @@ const VisibilitySection: Component<{
                 class={css.pill}
                 classList={{ [css.pillOn]: props.drandMode === "manual" }}
               >
-                Manual
+                {t("create.drandManual")}
               </button>
             </div>
             <Show
               when={props.drandMode === "manual"}
-              fallback={
-                <p class={css.hint}>
-                  Derived from the end epoch — the first drand round after
-                  responses close.
-                </p>
-              }
+              fallback={<p class={css.hint}>{t("create.drandAutoHint")}</p>}
             >
               <input
                 type="number"
                 value={props.drandRoundText}
-                placeholder="drand round number"
+                placeholder={t("create.drandRoundPlaceholder")}
                 onInput={(e) => props.onDrandRoundText(e.currentTarget.value)}
                 class={css.roundInput}
               />
@@ -837,44 +829,44 @@ const VisibilitySection: Component<{
             <div class={css.revealLine}>
               <Show
                 when={props.pro}
-                fallback={<>Reveals {formatRevealDate(props.resolvedRound)}</>}
+                fallback={t("create.revealsOn", {
+                  date: formatRevealDate(props.resolvedRound),
+                })}
               >
-                round {props.resolvedRound.toLocaleString()} · reveals{" "}
-                {formatRevealDate(props.resolvedRound)}
+                {t("create.revealsRoundOn", {
+                  round: n(props.resolvedRound),
+                  date: formatRevealDate(props.resolvedRound),
+                })}
               </Show>
             </div>
           </Show>
 
           <Show when={props.pro}>
             <label class={css.blockLabelGap}>
-              <span class={css.fieldLabel}>Padding size (bytes)</span>
+              <span class={css.fieldLabel}>{t("create.paddingLabel")}</span>
               <input
                 type="number"
                 min={1}
                 step={1}
                 value={props.paddingOverride === 0 ? "" : props.paddingOverride}
-                placeholder={`auto · ${props.resolvedPadding}`}
+                placeholder={t("create.paddingAutoPlaceholder", {
+                  size: n(props.resolvedPadding),
+                })}
                 onInput={(e) => {
                   const v = e.currentTarget.value.trim();
-                  const n = intOf(v);
+                  const parsed = intOf(v);
                   // Positive integers only; blank or anything < 1 means auto.
-                  props.onPaddingOverride(v === "" || n < 1 ? 0 : n);
+                  props.onPaddingOverride(v === "" || parsed < 1 ? 0 : parsed);
                 }}
                 class={css.paddingInput}
               />
             </label>
             <p class={css.hint}>
-              Each response is zero-padded to this length before encryption, so
-              ciphertext size doesn't leak how much was answered. Leave blank to
-              auto-size to the worst-case answer (<b>{props.resolvedPadding}</b>{" "}
-              bytes for these questions).
+              {t("create.paddingHint", { size: n(props.resolvedPadding) })}
             </p>
           </Show>
 
-          <div class={css.sealedNote}>
-            Responses are encrypted as they come in and stay hidden until the
-            reveal time — not even you can read them early.
-          </div>
+          <div class={css.sealedNote}>{t("create.sealedNote")}</div>
         </div>
       </Show>
     </div>
@@ -883,11 +875,11 @@ const VisibilitySection: Component<{
 
 const OwnerSection: Component<{ identity: WalletIdentity }> = (props) => (
   <div class={css.section}>
-    <SectionHead n="02" label="Who can cancel" />
+    <SectionHead n="02" label={t("create.sectionWhoCanCancel")} />
     <div class={css.cardSoft}>
       <div class={css.ownerText}>
-        <b class={css.ownerHeading}>Owned by your payment credential.</b> You
-        sign with it to publish, and only it can cancel this survey later.
+        <b class={css.ownerHeading}>{t("create.ownerHeading")}</b>{" "}
+        {t("create.ownerBody")}
         <span class={css.ownerKey}>
           key:{shortHash(props.identity.payment.hashHex)}
         </span>
@@ -912,7 +904,9 @@ const QuestionEditor: Component<{
     <div class={css.card}>
       <div class={css.qHeadRow}>
         <div class={css.qHeadLeft}>
-          <span class={css.qChip}>Q{props.index + 1}</span>
+          <span class={css.qChip}>
+            {t("create.questionChip", { n: props.index + 1 })}
+          </span>
           <select
             value={props.draft.type}
             onChange={(e) =>
@@ -933,14 +927,14 @@ const QuestionEditor: Component<{
             class={css.requiredBtn}
             classList={{ [css.requiredBtnOn]: props.draft.required }}
           >
-            {props.draft.required ? "Required" : "Optional"}
+            {props.draft.required ? t("create.required") : t("create.optional")}
           </button>
           <Show when={props.canRemove}>
             <button
               type="button"
               onClick={() => props.onRemove()}
               class={css.removeBtn}
-              aria-label="Remove question"
+              aria-label={t("create.removeQuestion")}
             >
               ×
             </button>
@@ -951,7 +945,7 @@ const QuestionEditor: Component<{
       <input
         type="text"
         value={props.draft.prompt}
-        placeholder="Question prompt"
+        placeholder={t("create.promptPlaceholder")}
         onInput={(e) => props.set(i(), "prompt", e.currentTarget.value)}
         class={css.promptInput}
       />
@@ -995,22 +989,22 @@ const TypeFields: Component<{
 
       <Show when={props.draft.type === "multiSelect"}>
         <MinMaxRow
-          label="selections"
+          label={t("create.selectionsLabel")}
           min={props.draft.minSelections}
           max={props.draft.maxSelections}
-          onMin={(n) => props.set(i(), "minSelections", n)}
-          onMax={(n) => props.set(i(), "maxSelections", n)}
+          onMin={(v) => props.set(i(), "minSelections", v)}
+          onMax={(v) => props.set(i(), "maxSelections", v)}
           minAllowed={0}
         />
       </Show>
 
       <Show when={props.draft.type === "ranking"}>
         <MinMaxRow
-          label="ranked"
+          label={t("create.rankedLabel")}
           min={props.draft.minRanked}
           max={props.draft.maxRanked}
-          onMin={(n) => props.set(i(), "minRanked", n)}
-          onMax={(n) => props.set(i(), "maxRanked", n)}
+          onMin={(v) => props.set(i(), "minRanked", v)}
+          onMax={(v) => props.set(i(), "maxRanked", v)}
           minAllowed={1}
         />
       </Show>
@@ -1028,7 +1022,7 @@ const TypeFields: Component<{
 
       <Show when={props.draft.type === "pointsAllocation"}>
         <label class={css.inlineField}>
-          <span class={css.fieldLabel}>Budget</span>
+          <span class={css.fieldLabel}>{t("create.budget")}</span>
           <input
             type="number"
             value={props.draft.budget}
@@ -1052,7 +1046,7 @@ const TypeFields: Component<{
                 [css.pillOn]: props.draft.ratingScale === "numeric",
               }}
             >
-              Numeric scale
+              {t("create.ratingNumericScale")}
             </button>
             <button
               type="button"
@@ -1061,7 +1055,7 @@ const TypeFields: Component<{
               class={css.pill}
               classList={{ [css.pillOn]: props.draft.ratingScale === "labels" }}
             >
-              Labelled scale
+              {t("create.ratingLabelledScale")}
             </button>
           </div>
           <Show
@@ -1069,10 +1063,10 @@ const TypeFields: Component<{
             fallback={
               <OptionsEditor
                 labels={props.draft.ratingLabels}
-                addLabel="+ Add level"
+                addLabel={t("create.addLevel")}
                 zeroBased
                 endBadges
-                hint="ordered worst → best · answers store the 0-based index"
+                hint={t("create.scaleHint")}
                 onLabel={(j, v) => props.set(i(), "ratingLabels", j, v)}
                 onAdd={() =>
                   props.set(i(), "ratingLabels", (ls) => [...ls, ""])
@@ -1100,11 +1094,11 @@ const TypeFields: Component<{
       <Show when={props.draft.type === "custom"}>
         <div class={css.customFields}>
           <label class={css.blockLabel}>
-            <span class={css.fieldLabel}>Method schema URI</span>
+            <span class={css.fieldLabel}>{t("create.customUriLabel")}</span>
             <input
               type="text"
               value={props.draft.customUri}
-              placeholder="ipfs://… or https://…"
+              placeholder={t("create.customUriPlaceholder")}
               onInput={(e) =>
                 props.set(i(), "customUri", e.currentTarget.value)
               }
@@ -1112,11 +1106,11 @@ const TypeFields: Component<{
             />
           </label>
           <label class={css.blockLabel}>
-            <span class={css.fieldLabel}>Schema hash (blake2b-256, hex)</span>
+            <span class={css.fieldLabel}>{t("create.customHashLabel")}</span>
             <input
               type="text"
               value={props.draft.customHash}
-              placeholder="64 hex characters"
+              placeholder={t("create.customHashPlaceholder")}
               onInput={(e) =>
                 props.set(i(), "customHash", e.currentTarget.value)
               }
@@ -1153,22 +1147,22 @@ const OptionsEditor: Component<{
           <input
             type="text"
             value={label()}
-            placeholder={`Option ${j + 1}`}
+            placeholder={t("create.optionPlaceholder", { n: j + 1 })}
             onInput={(e) => props.onLabel(j, e.currentTarget.value)}
             class={css.optionInput}
           />
           <Show when={props.endBadges && j === 0}>
-            <span class={css.endBadgeWorst}>worst</span>
+            <span class={css.endBadgeWorst}>{t("create.endBadgeWorst")}</span>
           </Show>
           <Show when={props.endBadges && j === props.labels.length - 1}>
-            <span class={css.endBadgeBest}>best</span>
+            <span class={css.endBadgeBest}>{t("create.endBadgeBest")}</span>
           </Show>
           <Show when={props.labels.length > 2}>
             <button
               type="button"
               onClick={() => props.onRemove(j)}
               class={css.removeBtn}
-              aria-label={`Remove option ${j + 1}`}
+              aria-label={t("create.removeOption", { n: j + 1 })}
             >
               ×
             </button>
@@ -1181,7 +1175,7 @@ const OptionsEditor: Component<{
       onClick={() => props.onAdd()}
       class={css.addOptionBtn}
     >
-      {props.addLabel ?? "+ Add option"}
+      {props.addLabel ?? t("create.addOption")}
     </button>
   </div>
 );
@@ -1196,7 +1190,9 @@ const MinMaxRow: Component<{
 }> = (props) => (
   <div class={css.fieldRow}>
     <label class={css.inlineField}>
-      <span class={css.fieldLabel}>min {props.label}</span>
+      <span class={css.fieldLabel}>
+        {t("create.minOf", { label: props.label })}
+      </span>
       <input
         type="number"
         min={props.minAllowed}
@@ -1206,7 +1202,9 @@ const MinMaxRow: Component<{
       />
     </label>
     <label class={css.inlineField}>
-      <span class={css.fieldLabel}>max {props.label}</span>
+      <span class={css.fieldLabel}>
+        {t("create.maxOf", { label: props.label })}
+      </span>
       <input
         type="number"
         value={props.max}
@@ -1227,7 +1225,7 @@ const NumericRow: Component<{
 }> = (props) => (
   <div class={css.fieldRow}>
     <label class={css.inlineField}>
-      <span class={css.fieldLabel}>min</span>
+      <span class={css.fieldLabel}>{t("create.min")}</span>
       <input
         type="text"
         value={props.min}
@@ -1236,7 +1234,7 @@ const NumericRow: Component<{
       />
     </label>
     <label class={css.inlineField}>
-      <span class={css.fieldLabel}>max</span>
+      <span class={css.fieldLabel}>{t("create.max")}</span>
       <input
         type="text"
         value={props.max}
@@ -1245,11 +1243,11 @@ const NumericRow: Component<{
       />
     </label>
     <label class={css.inlineField}>
-      <span class={css.fieldLabel}>step (optional)</span>
+      <span class={css.fieldLabel}>{t("create.stepOptional")}</span>
       <input
         type="text"
         value={props.step}
-        placeholder="1"
+        placeholder={t("create.numericStepPlaceholder")}
         onInput={(e) => props.onStep(e.currentTarget.value)}
         class={css.miniNumber}
       />
@@ -1279,32 +1277,40 @@ const SummaryCard: Component<{ meta: DefinitionMeta; qCount: number }> = (
 ) => {
   const roleList = () =>
     props.meta.eligibleRoles.length === 0
-      ? "No roles selected"
+      ? t("create.noRolesSelected")
       : [...props.meta.eligibleRoles]
           .sort((a, b) => a - b)
           .map(roleLabel)
           .join(", ");
   const ends = () =>
     props.meta.endEpoch.trim() === ""
-      ? "—"
-      : `epoch ${props.meta.endEpoch.trim()}`;
+      ? t("create.endsNone")
+      : t("create.endsEpoch", { epoch: props.meta.endEpoch.trim() });
   const visibility = () =>
     props.meta.mode === "sealed"
       ? props.meta.sealedRound > 0
-        ? `Sealed · reveals ${formatRevealDate(props.meta.sealedRound)}`
-        : "Sealed"
-      : "Public";
+        ? t("create.summarySealedReveals", {
+            date: formatRevealDate(props.meta.sealedRound),
+          })
+        : t("create.summarySealed")
+      : t("create.summaryPublic");
   return (
     <div class={css.summaryCard}>
-      <div class={css.numberedHead}>Summary</div>
+      <div class={css.numberedHead}>{t("create.summary")}</div>
       <h3 class={css.summaryTitle}>
-        {props.meta.title.trim() || "Untitled survey"}
+        {props.meta.title.trim() || t("create.untitledSurvey")}
       </h3>
       <div class={css.summaryRows}>
-        <SummaryRow label="Questions" value={String(props.qCount)} />
-        <SummaryRow label="Who responds" value={roleList()} />
-        <SummaryRow label="Ends" value={ends()} />
-        <SummaryRow label="Visibility" value={visibility()} />
+        <SummaryRow
+          label={t("create.summaryQuestions")}
+          value={n(props.qCount)}
+        />
+        <SummaryRow label={t("create.summaryWhoResponds")} value={roleList()} />
+        <SummaryRow label={t("create.summaryEnds")} value={ends()} />
+        <SummaryRow
+          label={t("create.summaryVisibility")}
+          value={visibility()}
+        />
       </div>
     </div>
   );
@@ -1335,7 +1341,7 @@ const PublishButton: Component<{
         class={css.publishBtn}
         classList={{ [css.publishBtnEnabled]: ok() && !props.submitting }}
       >
-        {props.submitting ? props.busyText : "Sign & publish survey"}{" "}
+        {props.submitting ? props.busyText : t("create.signAndPublish")}{" "}
         <span class={css.publishArrow}>→</span>
       </button>
       <p class={css.publishNote} classList={{ [css.publishNoteOk]: ok() }}>
@@ -1343,12 +1349,16 @@ const PublishButton: Component<{
           when={ok()}
           fallback={
             props.blockedReason ??
-            `${props.problemCount} thing${props.problemCount === 1 ? "" : "s"} to fix before publishing`
+            t("create.publishNoteProblems", {
+              count: props.problemCount,
+              plural:
+                props.problemCount === 1 ? "" : t("create.problemPluralSuffix"),
+            })
           }
         >
-          signs with your owner credential ·{" "}
-          <span class={css.mono}>key:{shortHash(props.paymentHashHex)}</span> ·
-          authorizes cancellation
+          {t("create.publishNoteOkPre")}
+          <span class={css.mono}>key:{shortHash(props.paymentHashHex)}</span>
+          {t("create.publishNoteOkPost")}
         </Show>
       </p>
     </>
@@ -1361,13 +1371,11 @@ const SubmittedPanel: Component<{ hash: string }> = (props) => {
   return (
     <div class={css.submittedCard}>
       <span class={css.submittedTick}>✓</span>
-      <h3 class={css.submittedTitle}>Survey published</h3>
-      <p class={css.submittedBody}>
-        Your definition was submitted under metadata label 17. It may take a few
-        moments to appear as the indexer catches up.
-      </p>
+      <h3 class={css.submittedTitle}>{t("create.surveyPublished")}</h3>
+      <p class={css.submittedBody}>{t("create.submittedBody")}</p>
       <div class={css.submittedRef}>
-        <TxLink hash={props.hash} /> · ref {shortRef(surveyKey)}
+        <TxLink hash={props.hash} /> ·{" "}
+        {t("create.submittedRef", { ref: shortRef(surveyKey) })}
       </div>
       <div class={css.submittedActions}>
         <button
@@ -1375,14 +1383,14 @@ const SubmittedPanel: Component<{ hash: string }> = (props) => {
           onClick={() => navigate(`/survey/${encodeURIComponent(surveyKey)}`)}
           class={css.submittedPrimary}
         >
-          View survey →
+          {t("create.viewSurvey")}
         </button>
         <button
           type="button"
           onClick={() => navigate("/")}
           class={css.submittedSecondary}
         >
-          All surveys
+          {t("create.allSurveysButton")}
         </button>
       </div>
     </div>
@@ -1391,12 +1399,8 @@ const SubmittedPanel: Component<{ hash: string }> = (props) => {
 
 const ConnectPrompt: Component = () => (
   <div class={css.connectCard}>
-    <div class={css.connectTitle}>Connect a wallet to create</div>
-    <p class={css.connectBody}>
-      The survey is owned by your wallet's credential, which signs to publish it
-      and is the only key that can cancel it. Use the Connect wallet button in
-      the header.
-    </p>
+    <div class={css.connectTitle}>{t("create.connectTitle")}</div>
+    <p class={css.connectBody}>{t("create.connectBody")}</p>
   </div>
 );
 

@@ -72,6 +72,12 @@
   margin: 7px 0 0;
 }
 
+/* A second heading within a panel, with extra separation from the block above. */
+.subheading {
+  composes: heading;
+  margin-top: 26px;
+}
+
 /* ---- IPFS providers ------------------------------------------------------- */
 
 .enabledCount {

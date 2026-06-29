@@ -7,6 +7,7 @@
 import { For, Show, createUniqueId, onMount, type Component } from "solid-js";
 
 import { Spinner } from "~/ui/components/Spinner";
+import { t, n } from "~/i18n";
 import css from "./SubmitProgress.module.css";
 
 export interface SubmitStep {
@@ -54,8 +55,11 @@ export const SubmitProgressModal: Component<{
             below conveys the same via icon/weight, which AT can't read). */}
         <p class={css.srOnly} aria-live="polite">
           <Show when={activeIndex() >= 0}>
-            Step {activeIndex() + 1} of {props.steps.length}:{" "}
-            {props.steps[activeIndex()]?.label}
+            {t("submitProgress.srStep", {
+              current: n(activeIndex() + 1),
+              total: n(props.steps.length),
+              label: props.steps[activeIndex()]?.label ?? "",
+            })}
           </Show>
         </p>
         <div class={css.steps}>
@@ -63,10 +67,7 @@ export const SubmitProgressModal: Component<{
             {(step, i) => <StepRow label={step.label} state={stateOf(i())} />}
           </For>
         </div>
-        <p class={css.note}>
-          Approve the transaction in your wallet when prompted — don't close
-          this tab.
-        </p>
+        <p class={css.note}>{t("submitProgress.approveNote")}</p>
       </div>
     </div>
   );

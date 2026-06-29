@@ -10,16 +10,19 @@
 import { For, Show, type Component, type JSX } from "solid-js";
 import { A, useLocation } from "@solidjs/router";
 
+import { t } from "~/i18n";
 import css from "./BottomNav.module.css";
 
+// `label` is a message key resolved reactively in the render, so the labels
+// re-translate on a locale switch (a module-level `t()` would resolve once).
 const ITEMS: ReadonlyArray<{
   href: string;
-  label: string;
+  label: "explore" | "create" | "settings";
   icon: Component;
 }> = [
-  { href: "/", label: "Explore", icon: ExploreIcon },
-  { href: "/create", label: "Create", icon: CreateIcon },
-  { href: "/settings", label: "Settings", icon: SettingsIcon },
+  { href: "/", label: "explore", icon: ExploreIcon },
+  { href: "/create", label: "create", icon: CreateIcon },
+  { href: "/settings", label: "settings", icon: SettingsIcon },
 ];
 
 export const BottomNav: Component = () => {
@@ -40,7 +43,7 @@ export const BottomNav: Component = () => {
               classList={{ [css.active]: active(item.href) }}
             >
               <item.icon />
-              <span class={css.label}>{item.label}</span>
+              <span class={css.label}>{t(`bottomNav.${item.label}`)}</span>
             </A>
           )}
         </For>

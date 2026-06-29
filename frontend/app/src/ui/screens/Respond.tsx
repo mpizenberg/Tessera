@@ -69,6 +69,7 @@ import {
   viewStatus,
 } from "~/ui/format";
 import type { WalletIdentity } from "~/wallet/types";
+import { t, n } from "~/i18n";
 import css from "./Respond.module.css";
 
 // ----------------------------------------------------------------------------
@@ -196,7 +197,7 @@ export const Respond: Component = () => {
   });
 
   const [submitting, setSubmitting] = createSignal(false);
-  const [busyText, setBusyText] = createSignal("Submitting…");
+  const [busyText, setBusyText] = createSignal(t("respond.submitting"));
   const [stepKey, setStepKey] = createSignal<string | null>(null);
   const [problems, setProblems] = createSignal<string[]>([]);
   const [submitError, setSubmitError] = createSignal<string | null>(null);
@@ -232,15 +233,14 @@ export const Respond: Component = () => {
       return undefined;
     const uri = ratUri().trim();
     const probs: string[] = [];
-    if (uri === "") probs.push("Rationale: document URI is required.");
+    if (uri === "") probs.push(t("respond.ratProblemUriRequired"));
     let hash: Uint8Array | null = null;
     try {
       const b = hexToBytes(ratHash().trim());
-      if (b.length !== 32)
-        probs.push("Rationale: hash must be 32 bytes (64 hex chars).");
+      if (b.length !== 32) probs.push(t("respond.ratProblemHashBytes"));
       else hash = b;
     } catch {
-      probs.push("Rationale: hash is not valid hex.");
+      probs.push(t("respond.ratProblemHashHex"));
     }
     if (probs.length > 0 || !hash) {
       setProblems(probs);
@@ -259,7 +259,7 @@ export const Respond: Component = () => {
     if (ratMode() === "manual") return manual;
     const text = ratText().trim();
     if (text === "") return undefined;
-    setBusyText("Pinning rationale…");
+    setBusyText(t("respond.pinningRationale"));
     const { pinJson } = await import("~/enrichment/pin");
     const doc = {
       specVersion: SPEC_VERSION,
@@ -341,12 +341,12 @@ export const Respond: Component = () => {
   const submitSteps = createMemo<SubmitStep[]>(() => {
     const steps: SubmitStep[] = [];
     if (willPinRationale())
-      steps.push({ key: "pin", label: "Pinning rationale to IPFS" });
+      steps.push({ key: "pin", label: t("respond.stepPin") });
     if (sealedMode())
-      steps.push({ key: "encrypt", label: "Timelock-encrypting your answers" });
+      steps.push({ key: "encrypt", label: t("respond.stepEncrypt") });
     steps.push({
       key: "submit",
-      label: "Signing & submitting the transaction",
+      label: t("respond.stepSubmit"),
     });
     return steps;
   });
@@ -394,7 +394,7 @@ export const Respond: Component = () => {
         // Timelock-encrypt the answers to the survey's drand round, then submit
         // the ciphertext instead of the plaintext answers.
         setStepKey("encrypt");
-        setBusyText("Encrypting…");
+        setBusyText(t("respond.encrypting"));
         const { sealAnswers } = await import("~/tlock/seal");
         const answers = collectAnswers(def.questions, drafts);
         const ciphertext = await sealAnswers(
@@ -411,7 +411,7 @@ export const Respond: Component = () => {
         );
       }
       setStepKey("submit");
-      setBusyText("Submitting…");
+      setBusyText(t("respond.submitting"));
       const payload = encodePayload({
         type: "responses",
         responses: [response],
@@ -426,7 +426,7 @@ export const Respond: Component = () => {
       setSubmitError(e instanceof Error ? e.message : String(e));
     } finally {
       setSubmitting(false);
-      setBusyText("Submitting…");
+      setBusyText(t("respond.submitting"));
       setStepKey(null);
     }
   };
@@ -434,13 +434,15 @@ export const Respond: Component = () => {
   return (
     <main class={css.main}>
       <A href={`/survey/${encodeURIComponent(key())}`} class={css.backLink}>
-        <span class={css.backArrow}>←</span> Back to results
+        <span class={css.backArrow}>←</span> {t("respond.backToResults")}
       </A>
 
       <Show when={submitting() && submitSteps().length > 1}>
         <SubmitProgressModal
           title={
-            sealedMode() ? "Sealing your response" : "Submitting your response"
+            sealedMode()
+              ? t("respond.progressTitleSealed")
+              : t("respond.progressTitlePublic")
           }
           steps={submitSteps()}
           currentKey={stepKey()}
@@ -475,9 +477,8 @@ export const Respond: Component = () => {
 
             <Show when={s().cancellationClaimed}>
               <div class={css.cancelClaim}>
-                <strong>Unverified cancellation claim.</strong> A cancellation
-                for this survey was published but couldn't be verified as the
-                owner's, so it's ignored — you can still respond.
+                <strong>{t("respond.cancelClaimLead")}</strong>{" "}
+                {t("respond.cancelClaimBody")}
               </div>
             </Show>
 
@@ -529,7 +530,7 @@ export const Respond: Component = () => {
 
               <Show when={problems().length > 0}>
                 <ProblemList
-                  title="Please fix before submitting"
+                  title={t("respond.problemsTitle")}
                   problems={problems()}
                 />
               </Show>
@@ -566,7 +567,11 @@ export const Respond: Component = () => {
           submitting={submitting()}
           mismatch={mismatch()}
           network={app.config.network}
-          idleText={sealedMode() ? "Encrypt & submit" : "Sign & submit"}
+          idleText={
+            sealedMode()
+              ? t("respond.encryptAndSubmit")
+              : t("respond.signAndSubmit")
+          }
           busyText={busyText()}
           onSubmit={() => void onSubmit()}
         />
@@ -612,13 +617,13 @@ const ClosedNotice: Component<{ v: ReturnType<typeof viewStatus> }> = (
     tone="muted"
     title={
       props.v === "cancelled"
-        ? "This survey was cancelled"
-        : "This survey has closed"
+        ? t("respond.closedCancelledTitle")
+        : t("respond.closedTitle")
     }
     body={
       props.v === "cancelled"
-        ? "The owner withdrew it with a tag-2 cancellation. New responses are rejected. The definition stays on-chain for reference."
-        : "Its end epoch has passed, so new responses are no longer accepted. You can still read the results."
+        ? t("respond.closedCancelledBody")
+        : t("respond.closedBody")
     }
   />
 );
@@ -626,18 +631,15 @@ const ClosedNotice: Component<{ v: ReturnType<typeof viewStatus> }> = (
 const ConnectPrompt: Component = () => (
   <Notice
     tone="muted"
-    title="Connect a wallet to respond"
-    body="Use the Connect wallet button in the header. Eligibility is checked against your wallet's credentials. You can read the survey and its results without connecting."
+    title={t("respond.connectTitle")}
+    body={t("respond.connectBody")}
   />
 );
 
 const Ineligible: Component<{ def: SurveyDefinition }> = (props) => (
   <div class={css.card}>
-    <h3 class={css.ineligibleTitle}>You can't respond to this survey</h3>
-    <p class={css.ineligibleLead}>
-      It's open only to the roles below, and your connected wallet can't claim
-      any of them here. Here's what each one means:
-    </p>
+    <h3 class={css.ineligibleTitle}>{t("respond.ineligibleTitle")}</h3>
+    <p class={css.ineligibleLead}>{t("respond.ineligibleLead")}</p>
     <div class={css.ineligibleList}>
       <For each={props.def.eligibleRoles}>
         {(r) => {
@@ -651,8 +653,7 @@ const Ineligible: Component<{ def: SurveyDefinition }> = (props) => (
                 {roleDescription(r)}
                 <Show when={!roleBrowserClaimable(r)}>
                   <span class={css.notClaimable}>
-                    {" "}
-                    Not claimable in a browser wallet.
+                    {t("respond.notClaimable")}
                   </span>
                 </Show>
               </span>
@@ -679,26 +680,25 @@ const SurveyHeader: Component<{
 }> = (props) => (
   <div class={css.header}>
     <div class={css.headerTop}>
-      <span class={css.respondLabel}>Respond</span>
+      <span class={css.respondLabel}>{t("respond.respondLabel")}</span>
       {/* refText carries margin-left:auto, so no spacer node is needed. When
           pro is off, "Responding as" / title don't depend on the spacer. */}
       <Show when={props.pro}>
-        <span
-          title="Full survey ref — defining transaction hash and output index"
-          class={css.refText}
-        >
-          ref {fullRef(props.s.key)}
+        <span title={t("respond.refTitle")} class={css.refText}>
+          {t("respond.refPrefix", { ref: fullRef(props.s.key) })}
         </span>
       </Show>
     </div>
-    <h1 class={css.headerTitle}>{props.def.title || "Untitled survey"}</h1>
+    <h1 class={css.headerTitle}>
+      {props.def.title || t("respond.untitledSurvey")}
+    </h1>
     <Show when={props.def.description}>
       <p class={css.headerDesc}>{props.def.description}</p>
     </Show>
 
     <Show when={props.respondable.length > 0}>
       <div class={css.roleRow}>
-        <span class={css.roleRowLabel}>Responding as</span>
+        <span class={css.roleRowLabel}>{t("respond.respondingAs")}</span>
         <For each={props.respondable}>
           {(r) => (
             <button
@@ -720,14 +720,14 @@ const RespondedBanner: Component<{ role: Role | null }> = (props) => (
     <span class={css.respondedCheck}>✓</span>
     <div class={css.bannerBody}>
       <div class={css.respondedTitle}>
-        You already responded as{" "}
-        {props.role !== null ? roleLabel(props.role) : "this role"}
+        {t("respond.alreadyResponded", {
+          role:
+            props.role !== null
+              ? roleLabel(props.role)
+              : t("respond.alreadyRespondedRoleFallback"),
+        })}
       </div>
-      <div class={css.respondedText}>
-        Your previous answers are pre-filled. Submitting again publishes a new
-        response that fully replaces the earlier one under latest-valid-wins;
-        the old one stays on-chain but is no longer tallied.
-      </div>
+      <div class={css.respondedText}>{t("respond.alreadyRespondedText")}</div>
     </div>
   </div>
 );
@@ -736,12 +736,13 @@ const SealedBanner: Component<{ round: number }> = (props) => (
   <div class={css.cardBanner}>
     <span class={css.bannerIcon}>◆</span>
     <div class={css.bannerBody}>
-      <div class={css.bannerTitle}>This is a sealed survey</div>
+      <div class={css.bannerTitle}>{t("respond.sealedTitle")}</div>
       <div class={css.bannerText}>
-        Your answers are timelock-encrypted on submit —{" "}
-        <b>no one, not even you, can read them</b> until the drand round
-        publishes ({formatRevealDate(props.round)}). Aggregate results appear
-        only after the reveal.
+        {t("respond.sealedTextBefore")}
+        <b>{t("respond.sealedNoOne")}</b>
+        {t("respond.sealedTextAfter", {
+          reveal: formatRevealDate(props.round),
+        })}
       </div>
     </div>
   </div>
@@ -756,13 +757,13 @@ const LabelsAbsentBanner: Component<{ keyStr: string }> = (props) => (
   <div class={css.cardBanner}>
     <span class={css.bannerIcon}>⚠</span>
     <div class={css.bannerBody}>
-      <div class={css.bannerTitle}>Presentation labels unavailable</div>
+      <div class={css.bannerTitle}>{t("respond.labelsAbsentTitle")}</div>
       <div class={css.bannerText}>
-        The off-chain document (
-        <span class={css.refInline}>{shortRef(props.keyStr)}</span>) couldn't be
-        fetched or failed its hash check, so option labels are shown as indices.{" "}
-        <b>You can still respond</b> — your answer references option indices,
-        validated and tallied normally.
+        {t("respond.labelsAbsentTextBefore")}
+        <span class={css.refInline}>{shortRef(props.keyStr)}</span>
+        {t("respond.labelsAbsentTextMid")}
+        <b>{t("respond.labelsAbsentCanRespond")}</b>
+        {t("respond.labelsAbsentTextAfter")}
       </div>
     </div>
   </div>
@@ -798,20 +799,20 @@ const RationaleSection: Component<{
         class={css.ratCheckbox}
       />
       <span class={css.ratToggleText}>
-        Attach a rationale document{" "}
-        <span class={css.ratToggleHint}>(off-chain, hash-anchored)</span>
+        {t("respond.ratToggle")}{" "}
+        <span class={css.ratToggleHint}>{t("respond.ratToggleHint")}</span>
       </span>
     </label>
     <Show when={props.on}>
       <div class={css.ratBody}>
         <SegmentedToggle
-          ariaLabel="Rationale source"
+          ariaLabel={t("respond.ratSourceLabel")}
           wrapStyle={{ "align-self": "flex-start" }}
           value={props.mode}
           onChange={props.onMode}
           options={[
-            { value: "write", label: "Write & pin" },
-            { value: "manual", label: "Paste anchor" },
+            { value: "write", label: t("respond.ratModeWrite") },
+            { value: "manual", label: t("respond.ratModeManual") },
           ]}
         />
 
@@ -820,37 +821,35 @@ const RationaleSection: Component<{
           fallback={
             <>
               <label class={css.ratField}>
-                <span class={css.ratLabel}>Document URI</span>
+                <span class={css.ratLabel}>{t("respond.ratDocUri")}</span>
                 <input
                   type="text"
                   value={props.uri}
-                  placeholder="ipfs://… or https://…"
+                  placeholder={t("respond.ratDocUriPlaceholder")}
                   onInput={(e) => props.onUri(e.currentTarget.value)}
                   class={css.ratMonoInput}
                 />
               </label>
               <label class={css.ratField}>
-                <span class={css.ratLabel}>Hash (blake2b-256, hex)</span>
+                <span class={css.ratLabel}>{t("respond.ratHashLabel")}</span>
                 <input
                   type="text"
                   value={props.hash}
-                  placeholder="64 hex characters"
+                  placeholder={t("respond.ratHashPlaceholder")}
                   onInput={(e) => props.onHash(e.currentTarget.value)}
                   class={css.ratMonoInput}
                 />
               </label>
-              <p class={css.ratHint}>
-                Host the document yourself; the hash makes it tamper-evident.
-              </p>
+              <p class={css.ratHint}>{t("respond.ratManualHint")}</p>
             </>
           }
         >
           <label class={css.ratField}>
-            <span class={css.ratLabel}>Rationale</span>
+            <span class={css.ratLabel}>{t("respond.ratWriteLabel")}</span>
             <textarea
               value={props.text}
               rows={4}
-              placeholder="Why you answered this way…"
+              placeholder={t("respond.ratWritePlaceholder")}
               onInput={(e) => props.onText(e.currentTarget.value)}
               class={css.ratTextarea}
             />
@@ -859,19 +858,15 @@ const RationaleSection: Component<{
             when={props.hasPinning}
             fallback={
               <p class={css.ratWarn}>
-                No IPFS provider is configured — add a token in{" "}
+                {t("respond.ratNoPinningBefore")}{" "}
                 <A href="/settings" class={css.settingsLink}>
-                  Settings
+                  {t("respond.ratSettingsLink")}
                 </A>{" "}
-                to pin from here, or switch to “Paste anchor”.
+                {t("respond.ratNoPinningAfter")}
               </p>
             }
           >
-            <p class={css.ratHint}>
-              On submit, this is pinned to your IPFS providers and anchored (URI
-              + blake2b-256 hash) on your response. Informational only — never
-              affects validation or tallies.
-            </p>
+            <p class={css.ratHint}>{t("respond.ratWriteHint")}</p>
           </Show>
         </Show>
       </div>
@@ -883,15 +878,19 @@ const RationaleSection: Component<{
 // Question card (header + skip + body switch)
 // ----------------------------------------------------------------------------
 
-const TYPE_LABEL: Record<Question["type"], string> = {
-  custom: "Custom · external schema",
-  singleChoice: "Single choice",
-  multiSelect: "Multi-select",
-  ranking: "Ranking",
-  numericRange: "Numeric range",
-  pointsAllocation: "Points allocation",
-  rating: "Rating",
+// Reactive label lookup (calls t() per type, so it re-renders on locale switch).
+const TYPE_LABEL_KEY: Record<Question["type"], string> = {
+  custom: "respond.typeCustom",
+  singleChoice: "respond.typeSingleChoice",
+  multiSelect: "respond.typeMultiSelect",
+  ranking: "respond.typeRanking",
+  numericRange: "respond.typeNumericRange",
+  pointsAllocation: "respond.typePointsAllocation",
+  rating: "respond.typeRating",
 };
+function typeLabel(type: Question["type"]): string {
+  return t(TYPE_LABEL_KEY[type] as Parameters<typeof t>[0]);
+}
 
 const QuestionCard: Component<{
   q: Question;
@@ -905,10 +904,12 @@ const QuestionCard: Component<{
     <div class={css.card}>
       <div class={css.qHead}>
         <div class={css.qHeadLeft}>
-          <span class={css.qChip}>Q{props.index + 1}</span>
+          <span class={css.qChip}>
+            {t("respond.questionChip", { n: n(props.index + 1) })}
+          </span>
           <span class={css.qType}>{typeMeta(props.q)}</span>
           <Show when={props.q.required}>
-            <span class={css.qRequired}>Required</span>
+            <span class={css.qRequired}>{t("respond.required")}</span>
           </Show>
         </div>
         <Show when={!props.q.required}>
@@ -917,19 +918,15 @@ const QuestionCard: Component<{
             class={css.skipBtn}
             classList={{ [css.skipBtnOn]: skipped() }}
           >
-            {skipped() ? "Skipped" : "Skip"}
+            {skipped() ? t("respond.skipped") : t("respond.skip")}
           </button>
         </Show>
       </div>
-      <h3 class={css.qPrompt}>{props.q.prompt || "(no prompt)"}</h3>
+      <h3 class={css.qPrompt}>{props.q.prompt || t("respond.noPrompt")}</h3>
 
       <Show
         when={!skipped()}
-        fallback={
-          <p class={css.qSkipped}>
-            Skipped — abstaining. Nothing is recorded for this question.
-          </p>
-        }
+        fallback={<p class={css.qSkipped}>{t("respond.skippedNote")}</p>}
       >
         <div class={css.qBody}>
           <Show when={props.draft}>
@@ -1099,15 +1096,17 @@ const MultiSelectBody: Component<{
         </For>
       </div>
       <div class={css.multiCount}>
-        select {props.q.minSelections}–{props.q.maxSelections} ·{" "}
-        {props.v.selected.length} chosen
+        {t("respond.multiSelectCount", {
+          min: n(props.q.minSelections),
+          max: n(props.q.maxSelections),
+          chosen: n(props.v.selected.length),
+        })}
       </div>
       <Show when={props.q.minSelections === 0}>
         <div class={css.noneNote}>
           <span class={css.noneNoteText}>
-            <b class={css.noneNoteLead}>"None of these" is a real answer.</b>{" "}
-            This question allows 0 selections — submitting with nothing checked
-            records a deliberate empty answer, different from Skip (abstain).
+            <b class={css.noneNoteLead}>{t("respond.noneLead")}</b>{" "}
+            {t("respond.noneNote")}
           </span>
         </div>
       </Show>
@@ -1150,21 +1149,21 @@ const RankingBody: Component<{
                 <button
                   class={css.rankBtn}
                   onClick={() => move(pos(), -1)}
-                  aria-label="Move up"
+                  aria-label={t("respond.rankMoveUp")}
                 >
                   ↑
                 </button>
                 <button
                   class={css.rankBtn}
                   onClick={() => move(pos(), 1)}
-                  aria-label="Move down"
+                  aria-label={t("respond.rankMoveDown")}
                 >
                   ↓
                 </button>
                 <button
                   class={`${css.rankBtn} ${css.rankBtnDanger}`}
                   onClick={() => remove(optIdx)}
-                  aria-label="Remove from ranking"
+                  aria-label={t("respond.rankRemove")}
                 >
                   ×
                 </button>
@@ -1175,7 +1174,10 @@ const RankingBody: Component<{
       </Show>
       <Show when={pool().length > 0}>
         <div class={css.rankPoolHint}>
-          tap to add · rank {props.q.minRanked}–{props.q.maxRanked}
+          {t("respond.rankPoolHint", {
+            min: n(props.q.minRanked),
+            max: n(props.q.maxRanked),
+          })}
         </div>
         <div class={css.rankPool}>
           <For each={pool()}>
@@ -1287,12 +1289,14 @@ const PointsBody: Component<{
   return (
     <>
       <div class={css.pointsHeader}>
-        <span class={css.pointsRemainLabel}>Remaining to allocate</span>
+        <span class={css.pointsRemainLabel}>
+          {t("respond.pointsRemainLabel")}
+        </span>
         <span
           class={css.pointsRemain}
           classList={{ [css.pointsRemainDone]: remaining() === 0 }}
         >
-          {remaining()} pts
+          {t("respond.pointsRemain", { n: n(remaining()) })}
         </span>
       </div>
       <For each={range(optionCount(props.q.options))}>
@@ -1335,7 +1339,7 @@ const PointsBody: Component<{
         )}
       </For>
       <div class={css.pointsFooter}>
-        distribute {props.q.budget} points · sum must equal budget
+        {t("respond.pointsFooter", { budget: n(props.q.budget) })}
       </div>
     </>
   );
@@ -1410,22 +1414,19 @@ const CustomBody: Component<{
 }> = (props) => (
   <>
     <div class={css.customSchema}>
-      <span class={css.customSchemaTag}>schema</span>
+      <span class={css.customSchemaTag}>{t("respond.customSchemaTag")}</span>
       <span class={css.customSchemaUri}>{props.q.methodSchema.uri}</span>
     </div>
     <input
       type="text"
       value={props.v.text}
-      placeholder="Your answer"
+      placeholder={t("respond.customPlaceholder")}
       onInput={(e) =>
         props.onChange({ type: "custom", text: e.currentTarget.value })
       }
       class={css.customInput}
     />
-    <p class={css.customHint}>
-      Encoded as a raw text metadatum and interpreted by the method at the
-      anchor.
-    </p>
+    <p class={css.customHint}>{t("respond.customHint")}</p>
   </>
 );
 
@@ -1461,16 +1462,17 @@ const SubmitBar: Component<{
             </For>
           </span>
           <span class={css.decidedCount}>
-            {props.decided} of {props.total} decided
+            {t("respond.decidedCount", {
+              decided: n(props.decided),
+              total: n(props.total),
+            })}
           </span>
           <Show when={props.replacing}>
-            <span class={css.replacesNote}>
-              ✓ replaces your previous response
-            </span>
+            <span class={css.replacesNote}>{t("respond.replacesNote")}</span>
           </Show>
           <Show when={props.mismatch}>
             <span class={css.mismatchNote}>
-              Switch your wallet to {props.network} to submit
+              {t("respond.switchNetwork", { network: props.network })}
             </span>
           </Show>
         </div>
@@ -1495,11 +1497,8 @@ const SubmittedPanel: Component<{ hash: string; surveyKey: string }> = (
   return (
     <div class={css.submittedPanel}>
       <span class={css.submittedCheck}>✓</span>
-      <h3 class={css.submittedTitle}>Response submitted</h3>
-      <p class={css.submittedText}>
-        Your response was published under metadata label 17. It may take a few
-        moments to appear in the tally as the indexer catches up.
-      </p>
+      <h3 class={css.submittedTitle}>{t("respond.submittedTitle")}</h3>
+      <p class={css.submittedText}>{t("respond.submittedText")}</p>
       <div class={css.submittedTx}>
         <TxLink hash={props.hash} />
       </div>
@@ -1509,7 +1508,7 @@ const SubmittedPanel: Component<{ hash: string; surveyKey: string }> = (
         }
         class={css.viewResultsBtn}
       >
-        View results →
+        {t("respond.viewResults")}
       </button>
     </div>
   );
@@ -1542,17 +1541,15 @@ const Empty: Component<{
   <div class={css.empty}>
     <Show
       when={props.error}
-      fallback={props.loading ? "Loading…" : "Survey not found."}
+      fallback={props.loading ? t("respond.loading") : t("respond.notFound")}
     >
-      <div class={css.emptyError}>
-        Couldn't load from the network — this may be a transient error.
-      </div>
+      <div class={css.emptyError}>{t("respond.loadError")}</div>
       <button
         type="button"
         onClick={() => props.onRetry?.()}
         class={css.retryBtn}
       >
-        Retry
+        {t("respond.retry")}
       </button>
     </Show>
   </div>
@@ -1580,25 +1577,40 @@ function activateOnKey(fn: () => void) {
 }
 
 function labelFor(opts: OptionsOrCount, i: number): string {
-  return opts.type === "options"
-    ? (opts.labels[i] ?? `Option ${i + 1}`)
-    : `Option ${i + 1}`;
+  const fallback = () => t("respond.optionFallback", { n: n(i + 1) });
+  return opts.type === "options" ? (opts.labels[i] ?? fallback()) : fallback();
 }
 
 function typeMeta(q: Question): string {
   switch (q.type) {
     case "multiSelect":
-      return `${TYPE_LABEL[q.type]} · ${q.minSelections}–${q.maxSelections}`;
+      return t("respond.typeMetaRange", {
+        base: typeLabel(q.type),
+        min: n(q.minSelections),
+        max: n(q.maxSelections),
+      });
     case "ranking":
-      return `${TYPE_LABEL[q.type]} · ${q.minRanked}–${q.maxRanked}`;
+      return t("respond.typeMetaRange", {
+        base: typeLabel(q.type),
+        min: n(q.minRanked),
+        max: n(q.maxRanked),
+      });
     case "numericRange": {
+      // Bounds are bigints (possibly large) — shown verbatim, ungrouped.
       const { min, max } = q.constraints;
-      return `${TYPE_LABEL[q.type]} · ${min}–${max}`;
+      return t("respond.typeMetaRange", {
+        base: typeLabel(q.type),
+        min: min.toString(),
+        max: max.toString(),
+      });
     }
     case "pointsAllocation":
-      return `${TYPE_LABEL[q.type]} · budget ${q.budget}`;
+      return t("respond.typeMetaBudget", {
+        base: typeLabel(q.type),
+        budget: n(q.budget),
+      });
     default:
-      return TYPE_LABEL[q.type];
+      return typeLabel(q.type);
   }
 }
 

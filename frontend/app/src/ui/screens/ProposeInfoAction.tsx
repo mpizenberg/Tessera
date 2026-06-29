@@ -21,6 +21,7 @@ import { IPFS_PROVIDERS, type ProviderId } from "~/enrichment/providers";
 import { TxLink } from "~/ui/components/TxLink";
 import { Note, type NoteKind } from "~/ui/components/Note";
 import { isSafeAnchorUri, networkMismatch } from "~/ui/format";
+import { t, n } from "~/i18n";
 import css from "./ProposeInfoAction.module.css";
 
 /**
@@ -59,7 +60,11 @@ function validateAnchorShape(text: string): {
   } catch (e) {
     return {
       surveyRef: null,
-      problems: [`Not valid JSON: ${(e as Error).message}`],
+      problems: [
+        t("proposeInfoAction.problemNotJson", {
+          message: (e as Error).message,
+        }),
+      ],
     };
   }
   // The survey-link shape itself is validated by the shared parser (single
@@ -74,7 +79,7 @@ function validateAnchorShape(text: string): {
     (typeof (parsed as Record<string, unknown>)["@context"] !== "object" ||
       (parsed as Record<string, unknown>)["@context"] === null)
   ) {
-    result.problems.unshift('Missing JSON-LD "@context" (CIP-100/108 terms).');
+    result.problems.unshift(t("proposeInfoAction.problemMissingContext"));
   }
   return result;
 }
@@ -121,19 +126,19 @@ export const ProposeInfoAction: Component = () => {
     if (!tip)
       return {
         level: "warn",
-        text: "Chain tip not loaded yet — can't verify epoch alignment.",
+        text: t("proposeInfoAction.alignTipNotLoaded"),
       };
     const survey = linkedSurvey();
     if (!survey)
       return {
         level: "warn",
-        text: "Linked survey isn't on-chain yet — can't verify its end_epoch. Make sure it's published and indexed.",
+        text: t("proposeInfoAction.alignSurveyNotOnchain"),
       };
     const lifetime = tip.govActionLifetime;
     if (lifetime <= 0)
       return {
         level: "warn",
-        text: "gov_action_lifetime is unknown — can't compute the voting deadline.",
+        text: t("proposeInfoAction.alignLifetimeUnknown"),
       };
     const surveyEnd = survey.record.definition.endEpoch;
     const deadlineIfNow = tip.epoch + lifetime;
@@ -141,16 +146,29 @@ export const ProposeInfoAction: Component = () => {
     if (deadlineIfNow === surveyEnd)
       return {
         level: "ok",
-        text: `Aligned — submitting now (epoch ${tip.epoch}) gives a voting deadline of epoch ${surveyEnd}, matching the survey's end_epoch.`,
+        text: t("proposeInfoAction.alignAligned", {
+          epoch: tip.epoch,
+          end: surveyEnd,
+        }),
       };
     if (tip.epoch < submitEpoch)
       return {
         level: "danger",
-        text: `Too early — submit in epoch ${submitEpoch} (in ${submitEpoch - tip.epoch} more) to match the survey's end_epoch ${surveyEnd}. Submitting now would set the deadline to ${deadlineIfNow}.`,
+        text: t("proposeInfoAction.alignTooEarly", {
+          submitEpoch,
+          remaining: n(submitEpoch - tip.epoch),
+          end: surveyEnd,
+          deadline: deadlineIfNow,
+        }),
       };
     return {
       level: "danger",
-      text: `Window passed — the survey ends at epoch ${surveyEnd}, so this action had to be submitted in epoch ${submitEpoch}. Submitted now (epoch ${tip.epoch}) it would expire at ${deadlineIfNow} and can no longer link to that survey.`,
+      text: t("proposeInfoAction.alignWindowPassed", {
+        end: surveyEnd,
+        submitEpoch,
+        epoch: tip.epoch,
+        deadline: deadlineIfNow,
+      }),
     };
   });
 
@@ -281,30 +299,31 @@ export const ProposeInfoAction: Component = () => {
   return (
     <main class={css.main}>
       <A href="/" class={css.backLink}>
-        <span class={css.backArrow}>←</span> All surveys
+        <span class={css.backArrow}>←</span>{" "}
+        {t("proposeInfoAction.backToSurveys")}
       </A>
 
       <div class={css.titleRow}>
-        <span class={css.govPill}>Governance</span>
-        <h1 class={css.title}>Propose a survey Info Action</h1>
+        <span class={css.govPill}>{t("proposeInfoAction.govPill")}</span>
+        <h1 class={css.title}>{t("proposeInfoAction.title")}</h1>
       </div>
       <p class={css.lead}>
-        Build and sign a Conway <b>Info Action</b> that advertises a CIP-179
-        survey. The action carries no on-chain effect — it only points voters at
-        the survey via its anchor. A refundable{" "}
-        <span class={css.mono}>gov_action_deposit</span> is taken from your
-        wallet and returned to your stake address when the action is ratified or
-        expires (your wallet shows the exact amount before you sign).
+        {t("proposeInfoAction.leadPre")}
+        <b>Info Action</b>
+        {t("proposeInfoAction.leadMid")}
+        <span class={css.mono}>gov_action_deposit</span>
+        {t("proposeInfoAction.leadPost")}
       </p>
 
       {/* 1 · Load the anchor */}
-      <div class={css.stepHead}>1 · Load the anchor document</div>
+      <div class={css.stepHead}>{t("proposeInfoAction.step1Head")}</div>
       <div class={css.card}>
         <p class={css.hintFlush}>
-          Choose the CIP-108 anchor <span class={css.mono}>.jsonld</span> file
-          (its <span class={css.mono}>body.cip179</span> carries the survey
-          link). It's read locally — the on-chain hash is taken over the file's
-          exact bytes, so they're never re-formatted.
+          {t("proposeInfoAction.loadHintPre")}
+          <span class={css.mono}>.jsonld</span>
+          {t("proposeInfoAction.loadHintMid")}
+          <span class={css.mono}>body.cip179</span>
+          {t("proposeInfoAction.loadHintPost")}
         </p>
         <input
           type="file"
@@ -327,14 +346,14 @@ export const ProposeInfoAction: Component = () => {
       <Show when={anchor()}>
         {(a) => (
           <div class={css.card}>
-            <div class={css.label}>Loaded</div>
+            <div class={css.label}>{t("proposeInfoAction.loaded")}</div>
             <div class={css.loadedName}>{a().fileName}</div>
 
             {/* Validation: shape problems block submission. */}
             <Show when={a().problems.length > 0}>
               <Note kind="danger">
                 <div class={css.problemsTitle}>
-                  Not a valid CIP-179 survey link:
+                  {t("proposeInfoAction.problemsTitle")}
                 </div>
                 <ul class={css.problemsList}>
                   <For each={a().problems}>{(p) => <li>{p}</li>}</For>
@@ -346,20 +365,26 @@ export const ProposeInfoAction: Component = () => {
             <Show when={a().surveyRef}>
               {(ref) => (
                 <>
-                  <div class={css.label}>Links to survey</div>
+                  <div class={css.label}>
+                    {t("proposeInfoAction.linksToSurvey")}
+                  </div>
                   <div class={css.surveyRef}>
                     {ref().txId}
-                    <span class={css.refIndex}> · index {ref().index}</span>
+                    <span class={css.refIndex}>
+                      {t("proposeInfoAction.refIndex", { index: ref().index })}
+                    </span>
                   </div>
                   <Show when={linkedSurvey()}>
                     {(survey) => (
                       <div class={css.hintTight}>
-                        On-chain:{" "}
+                        {t("proposeInfoAction.onchainPre")}
                         <b class={css.onchainTitle}>
                           {survey().record.definition.title ||
-                            "Untitled survey"}
-                        </b>{" "}
-                        · end_epoch {survey().record.definition.endEpoch}
+                            t("proposeInfoAction.untitledSurvey")}
+                        </b>
+                        {t("proposeInfoAction.onchainPost", {
+                          endEpoch: survey().record.definition.endEpoch,
+                        })}
                       </div>
                     )}
                   </Show>
@@ -378,20 +403,15 @@ export const ProposeInfoAction: Component = () => {
               when={hasPinning()}
               fallback={
                 <p class={css.hint}>
-                  Host these exact bytes at a public URL (a GitHub raw link, or
-                  add an IPFS provider in{" "}
+                  {t("proposeInfoAction.hostHintPre")}
                   <A href="/settings" class={css.settingsLink}>
-                    Settings
-                  </A>{" "}
-                  to pin from here), then paste the URL in step 2.
+                    {t("proposeInfoAction.settingsLinkText")}
+                  </A>
+                  {t("proposeInfoAction.hostHintPost")}
                 </p>
               }
             >
-              <p class={css.hint}>
-                Pin to the IPFS providers configured in your Settings, in one
-                click. The exact bytes below are pinned, so the served document
-                matches the on-chain hash.
-              </p>
+              <p class={css.hint}>{t("proposeInfoAction.pinHint")}</p>
             </Show>
 
             <div class={css.actionRow}>
@@ -401,7 +421,9 @@ export const ProposeInfoAction: Component = () => {
                   disabled={pinning()}
                   class={css.btnPrimary}
                 >
-                  {pinning() ? "Pinning…" : "Pin to IPFS"}
+                  {pinning()
+                    ? t("proposeInfoAction.pinning")
+                    : t("proposeInfoAction.pinToIpfs")}
                 </button>
               </Show>
               <button
@@ -411,17 +433,21 @@ export const ProposeInfoAction: Component = () => {
                   [css.btnPrimary]: !hasPinning(),
                 }}
               >
-                Download .jsonld
+                {t("proposeInfoAction.downloadJsonld")}
               </button>
               <button onClick={() => void copyHash()} class={css.btn}>
-                {copied() ? "Copied hash ✓" : "Copy anchor hash"}
+                {copied()
+                  ? t("proposeInfoAction.copiedHash")
+                  : t("proposeInfoAction.copyAnchorHash")}
               </button>
             </div>
 
             <Show when={pinnedBy()}>
               {(by) => (
                 <Note kind="ok">
-                  Pinned to {by().join(", ")}. URL filled in below.
+                  {t("proposeInfoAction.pinnedNote", {
+                    providers: by().join(", "),
+                  })}
                 </Note>
               )}
             </Show>
@@ -429,7 +455,9 @@ export const ProposeInfoAction: Component = () => {
               <Note kind="danger">{pinError()}</Note>
             </Show>
 
-            <div class={css.label}>Anchor hash (blake2b-256)</div>
+            <div class={css.label}>
+              {t("proposeInfoAction.anchorHashLabel")}
+            </div>
             <div class={css.hashValue}>{a().hashHex}</div>
             <pre class={css.code}>{a().text}</pre>
           </div>
@@ -437,52 +465,47 @@ export const ProposeInfoAction: Component = () => {
       </Show>
 
       {/* 2 · Anchor URL */}
-      <div class={css.stepHead}>2 · Anchor URL</div>
+      <div class={css.stepHead}>{t("proposeInfoAction.step2Head")}</div>
       <div class={css.card}>
         <input
           type="url"
           value={url()}
           onInput={(e) => setUrl(e.currentTarget.value)}
-          placeholder="ipfs://… or https://…/info-action-survey-link.jsonld"
+          placeholder={t("proposeInfoAction.urlPlaceholder")}
           class={css.input}
         />
-        <p class={css.hint}>
-          Auto-filled when you pin to IPFS above; otherwise paste where you
-          hosted the document. Stored on-chain alongside its hash.
-        </p>
+        <p class={css.hint}>{t("proposeInfoAction.urlHint")}</p>
         <Show when={url().trim() !== "" && !urlValid()}>
           <Note kind="danger">
-            The anchor URL must be an <span class={css.mono}>ipfs://</span> or{" "}
-            <span class={css.mono}>https://</span> address — this one will be
-            rejected before signing.
+            {t("proposeInfoAction.urlInvalidPre")}
+            <span class={css.mono}>ipfs://</span>
+            {t("proposeInfoAction.urlInvalidMid")}
+            <span class={css.mono}>https://</span>
+            {t("proposeInfoAction.urlInvalidPost")}
           </Note>
         </Show>
       </div>
 
       {/* 3 · Sign & submit */}
-      <div class={css.stepHead}>3 · Sign &amp; submit</div>
+      <div class={css.stepHead}>{t("proposeInfoAction.step3Head")}</div>
       <div class={css.card}>
         <Show
           when={app.wallet()}
           fallback={
-            <Note kind="warn">
-              Connect a CIP-30 wallet (top-right) to sign the proposal.
-            </Note>
+            <Note kind="warn">{t("proposeInfoAction.connectWallet")}</Note>
           }
         >
           <Show when={mismatch()}>
             <Note kind="danger">
-              Your wallet is on a different network than the app (
-              {app.config.network}). Switch it before submitting.
+              {t("proposeInfoAction.networkMismatch", {
+                network: app.config.network,
+              })}
             </Note>
           </Show>
         </Show>
 
         <Show when={anchor() && blocking() && !txHash()}>
-          <Note kind="danger">
-            Resolve the validation issues in step 1 before submitting — the
-            action wouldn't be a valid CIP-179 survey link.
-          </Note>
+          <Note kind="danger">{t("proposeInfoAction.resolveIssues")}</Note>
         </Show>
 
         <Show
@@ -494,19 +517,22 @@ export const ProposeInfoAction: Component = () => {
               class={css.submitBtn}
               classList={{ [css.submitBtnEnabled]: canSubmit() }}
             >
-              {busy() ? "Building & signing…" : "Build, sign & submit"}
+              {busy()
+                ? t("proposeInfoAction.building")
+                : t("proposeInfoAction.submit")}
             </button>
           }
         >
           {(h) => (
             <Note kind="ok">
-              <div class={css.submittedTitle}>Proposal submitted ✓</div>
+              <div class={css.submittedTitle}>
+                {t("proposeInfoAction.submittedTitle")}
+              </div>
               <div class={css.txLine}>
                 <TxLink hash={h()} color="var(--ok)" />
               </div>
               <p class={css.hintNoBottom}>
-                Once it's in a block, the survey page will show it as “Linked to
-                governance” after the indexer resolves the anchor.
+                {t("proposeInfoAction.submittedHint")}
               </p>
             </Note>
           )}

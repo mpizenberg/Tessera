@@ -8,6 +8,7 @@
 
 import { For, type Component } from "solid-js";
 
+import { t } from "~/i18n";
 import css from "./Feedback.module.css";
 
 /** A bulleted list of blocking problems (e.g. unmet publish/submit rules). */
@@ -27,7 +28,9 @@ export const ErrorBox: Component<{ title?: string; message: string }> = (
   props,
 ) => (
   <div class={css.box}>
-    <div class={css.heading}>{props.title ?? "Submission failed"}</div>
+    <div class={css.heading}>
+      {props.title ?? t("feedback.submissionFailed")}
+    </div>
     <div class={css.message}>{props.message}</div>
   </div>
 );
