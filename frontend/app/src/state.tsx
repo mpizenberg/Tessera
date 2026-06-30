@@ -494,13 +494,23 @@ export const AppProvider: ParentComponent = (props) => {
       // Lazy-load the evolution-sdk transaction builder so its weight is fetched
       // only when a user actually submits, not on first paint.
       const { submitMetadataTx } = await import("~/wallet/submit");
-      return submitMetadataTx(config, w.api, payload, proveCredentials);
+      return submitMetadataTx(
+        { ...config, koiosToken: koiosToken() },
+        w.api,
+        payload,
+        proveCredentials,
+      );
     },
     submitInfoAction: async (anchorUrl, anchorDataHash) => {
       const w = wallet();
       if (!w) throw new Error("No wallet connected");
       const { submitInfoActionProposal } = await import("~/wallet/submit");
-      return submitInfoActionProposal(config, w.api, anchorUrl, anchorDataHash);
+      return submitInfoActionProposal(
+        { ...config, koiosToken: koiosToken() },
+        w.api,
+        anchorUrl,
+        anchorDataHash,
+      );
     },
     pendingTxs,
     trackTx,
