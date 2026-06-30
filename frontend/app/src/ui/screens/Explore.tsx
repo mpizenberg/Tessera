@@ -139,14 +139,20 @@ function endsText(
 export const Explore: Component = () => {
   const app = useApp();
 
+  // Reading the resource accessor throws while the snapshot is in error state
+  // (Solid resource semantics). Every *value* read goes through this guard so a
+  // failed Koios load surfaces via `app.snapshot.error` (the inline Notice
+  // below) rather than throwing — the `.error`/`.loading` reads are always safe.
+  const snapData = () => (app.snapshot.error ? undefined : app.snapshot());
+
   const all = createMemo(() => {
-    const real = app.snapshot()?.surveys ?? [];
+    const real = snapData()?.surveys ?? [];
     const realKeys = new Set(real.map((s) => s.key));
     // Surveys just created this session, shown until the indexer catches up.
     const opt = app.optimisticSurveys().filter((a) => !realKeys.has(a.key));
     return opt.length ? [...opt, ...real] : real;
   });
-  const tip = createMemo<ChainTip | undefined>(() => app.snapshot()?.tip);
+  const tip = createMemo<ChainTip | undefined>(() => snapData()?.tip);
   const tipEpoch = createMemo(() => tip()?.epoch ?? 0);
   const identity = (): WalletIdentity | null => app.wallet()?.identity ?? null;
 
@@ -184,7 +190,7 @@ export const Explore: Component = () => {
   // Survey ref keys the connected wallet has responded to.
   const respondedKeys = createMemo<Set<string>>(() => {
     const id = identity();
-    const snap = app.snapshot();
+    const snap = snapData();
     if (!id || !snap) return new Set();
     const keys = new Set<string>();
     for (const r of snap.records.responses) {
@@ -354,7 +360,7 @@ export const Explore: Component = () => {
               )}
             </Show>
 
-            <Show when={app.snapshot()?.records.incomplete}>
+            <Show when={snapData()?.records.incomplete}>
               <div class={css.incomplete}>{t("explore.incomplete")}</div>
             </Show>
 

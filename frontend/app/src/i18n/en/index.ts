@@ -20,6 +20,7 @@
  * both this file and `fr/index.ts`.
  */
 
+import appError from "./appError";
 import bottomNav from "./bottomNav";
 import create from "./create";
 import explore from "./explore";
@@ -34,6 +35,7 @@ import survey from "./survey";
 import txLink from "./txLink";
 
 const en = {
+  appError,
   bottomNav,
   create,
   explore,

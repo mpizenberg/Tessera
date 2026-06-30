@@ -7,6 +7,7 @@
  */
 
 import type { Dict } from "../en";
+import appError from "./appError";
 import bottomNav from "./bottomNav";
 import create from "./create";
 import explore from "./explore";
@@ -21,6 +22,7 @@ import survey from "./survey";
 import txLink from "./txLink";
 
 const fr: Dict = {
+  appError,
   bottomNav,
   create,
   explore,

@@ -256,6 +256,14 @@ export const AppProvider: ParentComponent = (props) => {
     };
   });
 
+  // Refetch but swallow the returned promise's rejection: a failed load is
+  // already captured in `snapshot.error` (and surfaced by the UI / the app-wide
+  // ErrorBoundary), so the bare promise must not also bubble as an unhandled
+  // rejection. `refetch()` may return a value or a promise, hence Promise.resolve.
+  const safeRefetch = (): void => {
+    void Promise.resolve(refetch()).catch(() => {});
+  };
+
   const [ui, setUi] = createStore<UiState>({
     filter: "all",
     search: "",
@@ -456,7 +464,7 @@ export const AppProvider: ParentComponent = (props) => {
     config,
     source,
     snapshot,
-    reload: () => void refetch(),
+    reload: safeRefetch,
     ui,
     setFilter: (f) => setUi("filter", f),
     setSearch: (s) => setUi("search", s),
@@ -465,7 +473,7 @@ export const AppProvider: ParentComponent = (props) => {
     setKoiosToken: (token) => {
       storeKoiosToken(token);
       setKoiosTokenSig(token.trim() || envKoiosToken());
-      refetch();
+      safeRefetch();
     },
     setNetwork: (network) => {
       if (network === config.network) return;

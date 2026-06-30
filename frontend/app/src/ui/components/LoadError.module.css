@@ -1,0 +1,59 @@
+.wrap {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 30px 24px 76px;
+}
+.card {
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-line);
+  border-radius: var(--r-card);
+  padding: 26px 28px;
+  margin-top: 24px;
+}
+.title {
+  font-size: 19px;
+  color: var(--danger);
+  margin: 0 0 10px;
+}
+.body {
+  font-size: 14px;
+  color: var(--danger-ink);
+  margin: 0 0 6px;
+  font-family: var(--mono);
+  word-break: break-word;
+}
+.hint {
+  font-size: 13.5px;
+  color: var(--body);
+  margin: 0 0 18px;
+}
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.retry,
+.settings {
+  font: inherit;
+  font-size: 13.5px;
+  padding: 8px 18px;
+  border-radius: var(--r-control);
+  cursor: pointer;
+}
+.retry {
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent);
+}
+.retry:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.settings {
+  background: transparent;
+  color: var(--body);
+  border: 1px solid var(--border-strong);
+}
+.settings:hover {
+  background: var(--surface2);
+}
