@@ -1,0 +1,19 @@
+{
+  "name": "tessera",
+  "version": "0.0.0",
+  "description": "Tessera — CIP-179 on-chain surveys & polls (monorepo)",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.30.2",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=10"
+  },
+  "scripts": {
+    "type-check": "pnpm -r type-check",
+    "test": "pnpm -r test",
+    "build": "pnpm -r build",
+    "build:libs": "pnpm --filter cip-179 build",
+    "backend:dev": "pnpm --filter @tessera/backend dev"
+  }
+}

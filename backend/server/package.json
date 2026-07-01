@@ -1,0 +1,29 @@
+{
+  "name": "@tessera/backend",
+  "version": "0.1.0",
+  "description": "Tessera Tier-1 serving backend: the Koios read-path snapshot, cached in SQLite and served over HTTP. Runs as a local Node process now; the same Hono app + a D1 adapter target Cloudflare Workers later.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "type-check": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@tessera/core": "workspace:*",
+    "@tessera/koios": "workspace:*",
+    "cip-179": "workspace:*",
+    "@hono/node-server": "^1.13.0",
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

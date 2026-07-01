@@ -8,9 +8,11 @@ export default defineConfig({
   plugins: [solid()],
   resolve: {
     alias: {
-      // Resolve the pure CIP-179 library straight from its TypeScript source
+      // Resolve the workspace libraries straight from their TypeScript source
       // so edits are live with no separate build step.
       "cip-179": r("../cip179/src/index.ts"),
+      "@tessera/core": r("../../packages/core/src/index.ts"),
+      "@tessera/koios": r("../../packages/koios/src/index.ts"),
       "~": r("./src"),
     },
   },

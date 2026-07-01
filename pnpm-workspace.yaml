@@ -1,0 +1,12 @@
+packages:
+  - frontend/app
+  - frontend/cip179
+  - packages/core
+  - packages/koios
+  - backend/server
+
+# `@mattpiz/tlock-js` is the maintainer's own package; its latest release is
+# newer than the global `minimumReleaseAge` supply-chain delay, so allow it
+# explicitly instead of relaxing the delay for every dependency.
+minimumReleaseAgeExclude:
+  - '@mattpiz/tlock-js'

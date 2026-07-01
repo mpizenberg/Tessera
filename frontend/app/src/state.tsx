@@ -40,7 +40,7 @@ import {
   type ProviderId,
   type ProviderTokens,
 } from "~/enrichment/providers";
-import { KoiosDataSource } from "~/data/koios";
+import { KoiosDataSource } from "@tessera/koios";
 import type {
   ChainTip,
   Cip179Records,

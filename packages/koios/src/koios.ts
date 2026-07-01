@@ -17,12 +17,9 @@ import {
   type SurveyRef,
 } from "cip-179";
 
-import type { AppConfig } from "~/config";
-import { bytesToHex, hexToBytes } from "~/util/hex";
-import { koiosJsonToMetadatum, type KoiosJson } from "./metadatum";
-import { decodeCancellationProof } from "./txProof";
-import { parseCip179Link } from "~/domain/govLink";
+import { bytesToHex, hexToBytes, parseCip179Link } from "@tessera/core";
 import type {
+  AppConfig,
   CancellationProof,
   CancellationRecord,
   ChainTip,
@@ -31,7 +28,9 @@ import type {
   GovLink,
   ResponseRecord,
   SurveyRecord,
-} from "./source";
+} from "@tessera/core";
+import { koiosJsonToMetadatum, type KoiosJson } from "./metadatum";
+import { decodeCancellationProof } from "./txProof";
 
 /** Max tx hashes per /tx_metadata POST (larger bodies return HTTP 413). */
 const TX_METADATA_BATCH = 50;

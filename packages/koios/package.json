@@ -1,0 +1,30 @@
+{
+  "name": "@tessera/koios",
+  "version": "0.1.0",
+  "description": "Tessera Koios data-access: the KoiosDataSource read path plus the Koios-JSON and tx-CBOR adapters. Shared by the browser app (power-user/offline path) and the serving tier.",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "type-check": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@tessera/core": "workspace:*",
+    "cip-179": "workspace:*",
+    "@evolution-sdk/evolution": "^0.5.9",
+    "@noble/hashes": "^2.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

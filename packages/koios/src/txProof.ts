@@ -14,8 +14,8 @@
  * returns `null`, so the cancellation is treated as unverified — the safe side.
  */
 
-import { bytesToHex } from "~/util/hex";
-import type { CancellationProof, NativeScriptInfo } from "./source";
+import { bytesToHex } from "@tessera/core";
+import type { CancellationProof, NativeScriptInfo } from "@tessera/core";
 
 /**
  * Minimal structural view of an evolution-sdk native script that tolerates both

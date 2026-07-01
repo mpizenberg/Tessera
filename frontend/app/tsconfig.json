@@ -20,6 +20,8 @@
     "baseUrl": ".",
     "paths": {
       "cip-179": ["../cip179/src/index.ts"],
+      "@tessera/core": ["../../packages/core/src/index.ts"],
+      "@tessera/koios": ["../../packages/koios/src/index.ts"],
       "~/*": ["./src/*"]
     }
   },

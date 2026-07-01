@@ -1,0 +1,7 @@
+node_modules/
+*.sqlite
+*.sqlite-*
+tessera-cache.*
+.env
+*.tsbuildinfo
+.DS_Store

@@ -1,42 +1,17 @@
 /** Cardano network selection and per-network endpoints. */
 
-export type Network = "mainnet" | "preview";
+import {
+  KOIOS_URL,
+  SECONDS_PER_EPOCH,
+  type AppConfig,
+  type Network,
+} from "@tessera/core";
 
-export interface AppConfig {
-  readonly network: Network;
-  /** Koios REST base URL for the active network. */
-  readonly koiosUrl: string;
-  /**
-   * Koios bearer token resolved at startup: a user override from Settings
-   * (localStorage) takes precedence over the build-time `VITE_KOIOS_TOKEN`.
-   * Runtime changes flow through `state.tsx` (reactive), this is just the seed.
-   */
-  readonly koiosToken: string | undefined;
-  /**
-   * Only index CIP-179 transactions at or after this unix time. Anchored on a
-   * wall-clock date (not an epoch number) so it works across networks, since
-   * the epoch active on a given date differs per network.
-   */
-  readonly sinceUnix: number;
-  /**
-   * Epoch length in seconds for the active network (mainnet 5 days, preview
-   * 1 day). Used only to estimate the wall-clock reveal time of a future end
-   * epoch when auto-deriving a sealed survey's drand round — a coarse estimate,
-   * not consensus-critical.
-   */
-  readonly secondsPerEpoch: number;
-}
-
-const KOIOS_URL: Record<Network, string> = {
-  mainnet: "https://api.koios.rest/api/v1",
-  preview: "https://preview.koios.rest/api/v1",
-};
-
-/** Epoch length per network, in seconds (mainnet 432000 = 5d, preview 86400 = 1d). */
-const SECONDS_PER_EPOCH: Record<Network, number> = {
-  mainnet: 432000,
-  preview: 86400,
-};
+// The config *shape* + endpoint tables are shared with the serving tier and
+// live in `@tessera/core`; this module owns only how the browser *resolves*
+// them (localStorage overrides + Vite build env). Re-export the types so the
+// many `~/config` consumers keep their import path.
+export type { AppConfig, Network } from "@tessera/core";
 
 /** CIP-179 went live around here — ignore older label-17 history. */
 const SURVEYS_SINCE_ISO = "2026-06-01T00:00:00Z";
