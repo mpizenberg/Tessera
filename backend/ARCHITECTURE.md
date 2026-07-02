@@ -180,6 +180,45 @@ secret instead of in each browser.
 The browser's `IndexerDataSource` becomes "fetch one snapshot" — lighter client,
 faster load, no per-device paging/batching.
 
+### 5.1 Phase 2: split the snapshot into per-page slices
+
+The monolithic `GET /api/snapshot` ships every response record to every client,
+and `responses` is the one unbounded section (it grows with users × surveys;
+sealed responses each carry a tlock ciphertext blob). Phase 1 mitigates with
+compression + an `ETag` versioned by `fetchedAt` (304 between refreshes); the
+real fix, deferred to Phase 2 because it shares its prerequisites with the tally
+work, is to serve what each page actually reads:
+
+- **`GET /api/surveys`** — the Explore-list payload: survey records + tip +
+  gov links + raw cancellations (tiny, and shipping them raw keeps cancellation
+  proofs client-verifiable) + a server-computed **deduped** `responseCount` per
+  survey, and the `fetchedAt`/`ageSeconds` stamp. Bounded regardless of
+  participation.
+- **`GET /api/surveys/{txHash}/{index}`** — the self-contained per-survey
+  bundle: the definition record, **all** its `ResponseRecord`s (including sealed
+  ciphertexts), and the cancellations targeting it. One request serves the
+  detail/respond pages *and* the standalone verifier — a survey result is
+  re-verified from exactly this slice, so **the verifier never needs the full
+  snapshot** and `/api/snapshot` can be dropped once the app has migrated
+  (it is not kept for the verifier's sake).
+- **`GET /api/responded?credential=<hex>`** — slim `[surveyKey]` projection so
+  Explore can flag "surveys I answered" without downloading responses (the
+  mapping is public on-chain data; today it is the only reason the list view
+  touches raw responses).
+
+Prerequisites this shares with Phase 2's tally work (why it waits):
+
+- The **dedupe rule** (latest-valid-per-credential, today in the app's
+  `domain/survey.ts`) moves into `@tessera/core` so the server's
+  `responseCount` and the client's audit agree by construction.
+- The store grows from one JSON blob row to sliceable shape — at minimum an
+  in-memory index (responses grouped by survey key, rebuilt each refresh) in
+  front of the blob; naturally the §6.5 tables when those land.
+- The frontend seam widens: `state.tsx`'s single eager resource becomes a list
+  resource + a lazy per-survey resource, and `DataSource` grows per-survey
+  methods (`KoiosDataSource` implements them by filtering its full scan, so the
+  direct/power-user path keeps working unchanged).
+
 ---
 
 ## 6. Tally model
@@ -514,6 +553,9 @@ Contents (sketch):
    - Weighted per-role tally in `@tessera/core` (§6.6).
    - Content-addressed artifacts on R2 (§7); optional IPFS pin from the frontend;
      standalone verifier reusing `@tessera/core`.
+   - Split `/api/snapshot` into per-page slices (§5.1): `/api/surveys` list,
+     per-survey bundle (also the verifier's input — it never needs the full
+     snapshot), `/api/responded` projection; then retire `/api/snapshot`.
 3. **Phase 3 — node + indexer (post-PoC, `RESEARCH.md`).**
    - Tier 2 implements the same `TallyInputSource` and emits the same artifact.
      The Koios→node swap is invisible to the verifier and UI.

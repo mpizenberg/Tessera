@@ -22,6 +22,9 @@ port, refresh interval, or db path.
 - `GET /health` — liveness + active network.
 - `GET /api/snapshot` — cached label-17 records + tip + gov links, plus
   `fetchedAt` / `ageSeconds`. Returns `503` until the first refresh completes.
+  Carries an `ETag` versioned by `fetchedAt`, so revalidation between refreshes
+  is a bodiless `304`. Slated to be split into per-page slices in Phase 2
+  (`backend/ARCHITECTURE.md` §5.1).
 - `GET /api/tip` — near-live chain tip (~20 s cache, so request bursts collapse
   into one Koios call).
 - `GET /api/tx_status?hashes=<h1>,<h2>` — live confirmation counts.
@@ -34,6 +37,7 @@ The snapshot payload uses the `@tessera/core` JSON-safe wire form (bytes → hex
 under `$bytes`, big integers → decimal strings under `$bigint`) so it round-trips
 losslessly to the browser. The `/api/*` routes send permissive CORS headers (the
 data is public and cookieless), so the browser app can read them cross-origin.
+Bodies are compressed when the client accepts it (hex-heavy JSON shrinks ~4×).
 
 ## Use from the app
 

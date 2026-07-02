@@ -12,11 +12,18 @@
  * per window, while staying fresh enough for their consumers — the tip moves
  * every ~20 s anyway, and pparams change only at epoch boundaries.
  *
+ * Transfer economics: responses are compressed (hex-heavy JSON shrinks several
+ * fold), and `/api/snapshot` carries an `ETag` versioned by `fetchedAt` — the
+ * body only changes when a refresh lands, so a browser revalidation between
+ * refreshes is a 304 with no body. Splitting the snapshot into per-page slices
+ * is deliberately deferred to Phase 2 (`backend/ARCHITECTURE.md` §5).
+ *
  * A plain Hono app: the same object runs under `@hono/node-server` locally and,
  * unchanged, on a Cloudflare Worker later.
  */
 
 import { Hono } from "hono";
+import { compress } from "hono/compress";
 import { cors } from "hono/cors";
 
 import { toJsonSafe } from "@tessera/core";
@@ -60,6 +67,9 @@ export function createApp(config: ServerConfig, store: SnapshotStore): Hono {
   // protect, and `IndexerDataSource` sends no cookies. Restrict `origin` here
   // if a deployment ever needs to.
   app.use("/api/*", cors());
+  // Compress bodies when the client accepts it. The snapshot is hex-string-heavy
+  // JSON, which deflates several fold; on Cloudflare the edge does this instead.
+  app.use(compress());
   // Passthroughs go to Koios: tx status live (it's per-hash and post-submit),
   // tip and pparams behind the short memo above.
   const source = new KoiosDataSource(config.app);
@@ -73,6 +83,15 @@ export function createApp(config: ServerConfig, store: SnapshotStore): Hono {
   app.get("/api/snapshot", (c) => {
     const cached = store.get();
     if (!cached) return c.json({ error: "snapshot not ready" }, 503);
+    // The body is fully determined by which refresh produced it, so `fetchedAt`
+    // is the version: `no-cache` makes the browser revalidate every time, and an
+    // unchanged snapshot answers 304 with no body. (`ageSeconds` drifts within a
+    // refresh window — clients wanting live staleness should derive it from
+    // `fetchedAt`, which is why the ETag deliberately ignores it.)
+    const etag = `W/"snap-${cached.fetchedAt}"`;
+    c.header("Cache-Control", "no-cache");
+    c.header("ETag", etag);
+    if (c.req.header("If-None-Match") === etag) return c.body(null, 304);
     const now = Math.floor(Date.now() / 1000);
     return c.json({
       ...(cached.payload as Record<string, unknown>),
