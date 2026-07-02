@@ -6,7 +6,10 @@
 # (ARCHITECTURE.md §11). Create databases with `wrangler d1 create <name>`,
 # paste the ids below, then `wrangler d1 migrations apply DB [--local|--remote]`.
 
-name = "tessera-backend"
+# Naming rule across the project: the network is always an explicit suffix
+# (tessera-{preview,mainnet} for the app, tessera-backend-{preview,mainnet}
+# here) — bare pretty names are a custom domain's job, not the workers'.
+name = "tessera-backend-preview"
 main = "src/worker.ts"
 compatibility_date = "2026-06-01"
 compatibility_flags = ["nodejs_compat"]
@@ -26,6 +29,7 @@ migrations_dir = "migrations"
 
 # Environments do not inherit [vars] or bindings — redeclare everything.
 [env.mainnet]
+name = "tessera-backend-mainnet"
 [env.mainnet.vars]
 NETWORK = "mainnet"
 

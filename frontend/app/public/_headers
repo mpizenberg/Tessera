@@ -1,5 +1,7 @@
-# Cloudflare Pages security + caching headers.
-# https://developers.cloudflare.com/pages/configuration/headers/
+# Security + caching headers, applied by Cloudflare's static-asset serving
+# (Workers assets and Pages both honor this file). The SPA fallback lives in
+# wrangler.toml (`not_found_handling`), not here.
+# https://developers.cloudflare.com/workers/static-assets/headers/
 
 /*
   X-Content-Type-Options: nosniff
