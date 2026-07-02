@@ -22,11 +22,13 @@ port, refresh interval, or db path.
 - `GET /health` — liveness + active network.
 - `GET /api/snapshot` — cached label-17 records + tip + gov links, plus
   `fetchedAt` / `ageSeconds`. Returns `503` until the first refresh completes.
-- `GET /api/tip` — live chain tip (bypasses the cache, for immediacy).
+- `GET /api/tip` — near-live chain tip (~20 s cache, so request bursts collapse
+  into one Koios call).
 - `GET /api/tx_status?hashes=<h1>,<h2>` — live confirmation counts.
 - `GET /api/pparams` — latest-epoch protocol parameters (evolution-sdk shape,
-  wire-encoded). Lets the browser build a transaction without querying Koios, so
-  the app needs no Koios token even to create surveys/responses/actions.
+  wire-encoded, ~20 s cache). Lets the browser build a transaction without
+  querying Koios, so the app needs no Koios token even to create
+  surveys/responses/actions.
 
 The snapshot payload uses the `@tessera/core` JSON-safe wire form (bytes → hex
 under `$bytes`, big integers → decimal strings under `$bigint`) so it round-trips
