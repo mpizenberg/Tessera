@@ -78,8 +78,11 @@ export function createApp(
   // a different origin (the app may be served separately from this serving
   // tier). Permissive CORS is the right default — there is no credential to
   // protect, and `IndexerDataSource` sends no cookies. Restrict `origin` here
-  // if a deployment ever needs to.
+  // if a deployment ever needs to. `/health` is included because the app reads
+  // it cross-origin too: `IndexerDataSource` checks the backend's network
+  // against its own before trusting the snapshot.
   app.use("/api/*", cors());
+  app.use("/health", cors());
   // Compress bodies when the client accepts it. The snapshot is hex-string-heavy
   // JSON, which deflates several fold; on Cloudflare the edge does this instead.
   if (options.compress !== false) app.use(compress());

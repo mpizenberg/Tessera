@@ -16,41 +16,43 @@ export type { AppConfig, Network } from "@tessera/core";
 /** CIP-179 went live around here — ignore older label-17 history. */
 const SURVEYS_SINCE_ISO = "2026-06-01T00:00:00Z";
 
-/** localStorage key for a user-supplied Koios token (overrides the build env). */
-export const KOIOS_TOKEN_STORAGE_KEY = "tessera.koiosToken";
-
-/** localStorage key for a Tier-1 backend URL (overrides the build env). */
-export const INDEXER_URL_STORAGE_KEY = "tessera.indexerUrl";
-
-/** localStorage key for a user-selected network (overrides the build env). */
-export const NETWORK_STORAGE_KEY = "tessera.network";
-
 /** localStorage key for the last connected CIP-30 wallet (for auto-reconnect). */
 export const LAST_WALLET_STORAGE_KEY = "tessera.lastWallet";
 
-/** The build-time default network (from env), ignoring any user override. */
+/**
+ * The network this deployment serves, from the build env. **One deployment,
+ * one network**: there is no runtime switch — the paired backend (Worker + D1)
+ * is single-network too, so switching in place could only mix networks. The
+ * mainnet and preview apps are two builds of the same code, cross-linked via
+ * {@link otherNetworkUrl}.
+ */
 export function envNetwork(): Network {
   return import.meta.env.VITE_NETWORK === "mainnet" ? "mainnet" : "preview";
 }
 
-/** A persisted network override, if the user picked one (validated). */
-export function storedNetwork(): Network | undefined {
-  try {
-    const v = localStorage.getItem(NETWORK_STORAGE_KEY);
-    return v === "mainnet" || v === "preview" ? v : undefined;
-  } catch {
-    return undefined;
-  }
+/** The counterpart network — the one this deployment does *not* serve. */
+export function otherNetwork(): Network {
+  return envNetwork() === "mainnet" ? "preview" : "mainnet";
 }
 
-/** Persist the selected network. */
-export function storeNetwork(network: Network): void {
-  try {
-    localStorage.setItem(NETWORK_STORAGE_KEY, network);
-  } catch {
-    // storage unavailable — the in-memory value won't survive a reload
-  }
+/**
+ * Where the counterpart-network deployment lives (`VITE_OTHER_NETWORK_URL`),
+ * so the UI can link to it instead of switching in place. Optional — without
+ * it the UI simply shows the active network with no link.
+ */
+export function otherNetworkUrl(): string | undefined {
+  return import.meta.env.VITE_OTHER_NETWORK_URL || undefined;
 }
+
+/**
+ * localStorage keys for user overrides are **per network**. Deployed apps get
+ * isolation from being on separate origins already; these keys cover the one
+ * place origins collide — local dev, where `localhost` serves whichever
+ * network `.env` picks — so a preview override never leaks into a mainnet
+ * session on the same origin.
+ */
+const koiosTokenKey = (): string => `tessera.koiosToken.${envNetwork()}`;
+const indexerUrlKey = (): string => `tessera.indexerUrl.${envNetwork()}`;
 
 /** The CIP-30 key of the last connected wallet, if one was remembered. */
 export function storedLastWallet(): string | undefined {
@@ -85,21 +87,21 @@ export function envKoiosToken(): string | undefined {
   return import.meta.env.VITE_KOIOS_TOKEN || undefined;
 }
 
-/** A persisted Koios token override, if the user set one in Settings. */
+/** A persisted Koios token override for this network, if the user set one. */
 export function storedKoiosToken(): string | undefined {
   try {
-    return localStorage.getItem(KOIOS_TOKEN_STORAGE_KEY) || undefined;
+    return localStorage.getItem(koiosTokenKey()) || undefined;
   } catch {
     return undefined;
   }
 }
 
-/** Persist (or clear, when empty) the Koios token override. */
+/** Persist (or clear, when empty) the Koios token override for this network. */
 export function storeKoiosToken(token: string): void {
   const trimmed = token.trim();
   try {
-    if (trimmed) localStorage.setItem(KOIOS_TOKEN_STORAGE_KEY, trimmed);
-    else localStorage.removeItem(KOIOS_TOKEN_STORAGE_KEY);
+    if (trimmed) localStorage.setItem(koiosTokenKey(), trimmed);
+    else localStorage.removeItem(koiosTokenKey());
   } catch {
     // storage unavailable — keep the in-memory value only
   }
@@ -109,27 +111,29 @@ export function storeKoiosToken(token: string): void {
  * The build-time Tier-1 backend base URL (from env), ignoring any user override.
  * When set, the app reads its snapshot from this serving tier
  * (`IndexerDataSource`) instead of scanning Koios from the browser; empty ⇒ the
- * direct-Koios path. See `backend/ARCHITECTURE.md` §2/§8.
+ * direct-Koios path. Must serve the same network as `VITE_NETWORK` — the app
+ * verifies this against the backend's `/health` and refuses mixed-network data.
+ * See `backend/ARCHITECTURE.md` §2/§8.
  */
 export function envIndexerUrl(): string | undefined {
   return import.meta.env.VITE_INDEXER_URL || undefined;
 }
 
-/** A persisted Tier-1 backend URL override, if the user set one. */
+/** A persisted Tier-1 backend URL override for this network, if the user set one. */
 export function storedIndexerUrl(): string | undefined {
   try {
-    return localStorage.getItem(INDEXER_URL_STORAGE_KEY) || undefined;
+    return localStorage.getItem(indexerUrlKey()) || undefined;
   } catch {
     return undefined;
   }
 }
 
-/** Persist (or clear, when empty) the Tier-1 backend URL override. */
+/** Persist (or clear, when empty) the Tier-1 backend URL override for this network. */
 export function storeIndexerUrl(url: string): void {
   const trimmed = url.trim();
   try {
-    if (trimmed) localStorage.setItem(INDEXER_URL_STORAGE_KEY, trimmed);
-    else localStorage.removeItem(INDEXER_URL_STORAGE_KEY);
+    if (trimmed) localStorage.setItem(indexerUrlKey(), trimmed);
+    else localStorage.removeItem(indexerUrlKey());
   } catch {
     // storage unavailable — keep the in-memory value only
   }
@@ -148,16 +152,15 @@ export function resolveIndexerUrl(): string | undefined {
 }
 
 /**
- * Network resolves localStorage override → `VITE_NETWORK` (default Preview).
- * The switch is applied by persisting the choice and reloading, so this runs
- * fresh with the new value — nothing downstream needs to react to it live.
+ * The network is fixed at build time (`VITE_NETWORK`, default Preview) — see
+ * {@link envNetwork} for why there is no runtime override.
  *
  * The Koios token resolves localStorage override → `VITE_KOIOS_TOKEN`. The free
  * (anonymous) tier does not send CORS headers, so an authenticated token is
  * required for browser requests; without one, Koios calls will be CORS-blocked.
  */
 export function loadConfig(): AppConfig {
-  const network: Network = storedNetwork() ?? envNetwork();
+  const network = envNetwork();
   return {
     network,
     koiosUrl: KOIOS_URL[network],

@@ -24,6 +24,7 @@ import type {
   Cip179Records,
   DataSource,
   GovLink,
+  Network,
 } from "@tessera/core";
 
 /** Abort a serving-tier request that hangs (the snapshot is cache-served, fast). */
@@ -51,11 +52,26 @@ export class IndexerDataSource implements DataSource {
   private current: Promise<Snapshot> | null = null;
 
   /**
+   * One-time confirmation that the backend serves the network this app was
+   * built for. Deployments are single-network on both sides, so a mismatch is
+   * always a configuration error (wrong URL in the env or the Settings
+   * override) — and silently mixing networks would show the wrong surveys and
+   * feed the wrong protocol parameters into transaction building. Checked
+   * against `/health` alongside the first snapshot fetch; memoized on success,
+   * evicted on failure so a transient error doesn't poison later loads.
+   */
+  private networkOk: Promise<void> | null = null;
+
+  /**
    * @param baseUrl serving-tier origin (no trailing slash), e.g.
    * `http://localhost:8787`. May be a same-origin path prefix; routes are joined
    * as plain strings so a prefix is preserved.
+   * @param network the network this app serves; the backend must match.
    */
-  constructor(private readonly baseUrl: string) {}
+  constructor(
+    private readonly baseUrl: string,
+    private readonly network: Network,
+  ) {}
 
   async fetchAll(): Promise<Cip179Records> {
     const snap = (this.current = this.fetchSnapshot());
@@ -91,9 +107,35 @@ export class IndexerDataSource implements DataSource {
   }
 
   private async fetchSnapshot(): Promise<Snapshot> {
-    const raw = await this.getJson<unknown>(`${this.baseUrl}/api/snapshot`);
+    const [raw] = await Promise.all([
+      this.getJson<unknown>(`${this.baseUrl}/api/snapshot`),
+      this.assertNetwork(),
+    ]);
     // Decode the wire form back to Uint8Array/bigint/Map-bearing records.
     return fromJsonSafe(raw) as Snapshot;
+  }
+
+  /** See {@link networkOk}. */
+  private assertNetwork(): Promise<void> {
+    if (!this.networkOk) {
+      const p = (async (): Promise<void> => {
+        const health = await this.getJson<{ network?: string }>(
+          `${this.baseUrl}/health`,
+        );
+        if (health.network !== this.network) {
+          throw new Error(
+            `Backend at ${this.baseUrl} serves network "${health.network}", ` +
+              `but this app is built for "${this.network}" — fix the backend ` +
+              `URL (VITE_INDEXER_URL or the Settings override).`,
+          );
+        }
+      })();
+      this.networkOk = p;
+      p.catch(() => {
+        if (this.networkOk === p) this.networkOk = null;
+      });
+    }
+    return this.networkOk;
   }
 
   private async getJson<T>(url: string): Promise<T> {

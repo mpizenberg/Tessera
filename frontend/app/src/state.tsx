@@ -28,12 +28,10 @@ import {
   resolveIndexerUrl,
   storeKoiosToken,
   envKoiosToken,
-  storeNetwork,
   storedLastWallet,
   storeLastWallet,
   clearLastWallet,
   type AppConfig,
-  type Network,
 } from "~/config";
 import {
   loadProviderTokens,
@@ -137,14 +135,6 @@ interface AppState {
   readonly koiosToken: Accessor<string | undefined>;
   /** Persist a Koios token override (empty clears it) and reload the snapshot. */
   setKoiosToken(token: string): void;
-  /**
-   * Switch the active network. Persists the choice and navigates to Explore with
-   * a full page load: the endpoint, epoch math, and any connected wallet all
-   * hinge on network, so a clean reload is simpler and safer than hot-swapping
-   * them — and we land on Explore because survey-specific pages don't exist on
-   * the other network. No-op if unchanged.
-   */
-  setNetwork(network: Network): void;
   /** IPFS pinning-provider API tokens (reactive store), for in-app uploads. */
   readonly ipfsTokens: ProviderTokens;
   /** Persist (or clear, when empty) a provider's token. */
@@ -243,7 +233,7 @@ export const AppProvider: ParentComponent = (props) => {
   // Koios (the direct/power-user/offline path). See `backend/ARCHITECTURE.md` §8.
   const indexerUrl = resolveIndexerUrl();
   const source: DataSource = indexerUrl
-    ? new IndexerDataSource(indexerUrl)
+    ? new IndexerDataSource(indexerUrl, config.network)
     : new KoiosDataSource(config, () => koiosToken());
 
   const [snapshot, { refetch }] = createResource<Snapshot>(async () => {
@@ -484,13 +474,6 @@ export const AppProvider: ParentComponent = (props) => {
       storeKoiosToken(token);
       setKoiosTokenSig(token.trim() || envKoiosToken());
       safeRefetch();
-    },
-    setNetwork: (network) => {
-      if (network === config.network) return;
-      storeNetwork(network);
-      // Full load onto Explore — survey pages are network-specific, so reloading
-      // the current URL could land on a survey that doesn't exist here.
-      location.assign("/");
     },
     ipfsTokens,
     setIpfsToken,

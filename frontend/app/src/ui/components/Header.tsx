@@ -9,15 +9,13 @@ import {
 import { A, useLocation } from "@solidjs/router";
 
 import { useApp, type PendingKind, type PendingTx } from "~/state";
-import type { Network } from "~/config";
+import { otherNetwork, otherNetworkUrl } from "~/config";
 import { networkMismatch, roleDescription, roleLabel } from "~/ui/format";
 import { TxLink } from "~/ui/components/TxLink";
 import { Spinner } from "~/ui/components/Spinner";
 import { SegmentedToggle } from "~/ui/components/SegmentedToggle";
 import { t, type MsgKey } from "~/i18n";
 import css from "./Header.module.css";
-
-const NETWORKS: readonly Network[] = ["preview", "mainnet"];
 
 const NAV: ReadonlyArray<{ href: string; labelKey: MsgKey }> = [
   { href: "/", labelKey: "header.navExplore" },
@@ -409,38 +407,37 @@ const PendingRow: Component<{
 };
 
 /**
- * Network picker shown at the top of the identity menu (connected or not, since
- * you may want to choose a network before connecting). Switching persists the
- * choice and reloads — see `setNetwork`.
+ * Network section at the top of the identity menu. One deployment serves one
+ * network (see `envNetwork` in `config.ts`), so this shows the active network
+ * and — when `VITE_OTHER_NETWORK_URL` is configured — links to the counterpart
+ * deployment instead of switching in place.
  */
 const NetworkSwitch: Component = () => {
   const app = useApp();
   return (
     <>
       <div class={css.menuHeading}>{t("header.network")}</div>
-      <For each={NETWORKS}>
-        {(n) => {
-          const on = () => n === app.config.network;
-          return (
-            <button
-              type="button"
-              class={css.menuRow}
-              classList={{ [css.on]: on() }}
-              onClick={() => app.setNetwork(n)}
-            >
-              <span
-                class={css.networkSwitchDot}
-                classList={{ [css.mainnet]: n === "mainnet" }}
-              />
-              <span class={css.networkSwitchLabel}>{n}</span>
-              <Show when={on()}>
-                <span class={css.networkSwitchCheck}>✓</span>
-              </Show>
-            </button>
-          );
-        }}
-      </For>
-      <div class={css.menuNote}>{t("header.switchingReloads")}</div>
+      <div class={`${css.menuRow} ${css.on}`}>
+        <span
+          class={css.networkSwitchDot}
+          classList={{ [css.mainnet]: app.config.network === "mainnet" }}
+        />
+        <span class={css.networkSwitchLabel}>{app.config.network}</span>
+        <span class={css.networkSwitchCheck}>✓</span>
+      </div>
+      <Show when={otherNetworkUrl()}>
+        {(url) => (
+          <a class={css.menuRow} href={url()}>
+            <span
+              class={css.networkSwitchDot}
+              classList={{ [css.mainnet]: otherNetwork() === "mainnet" }}
+            />
+            <span class={css.networkSwitchLabel}>{otherNetwork()}</span>
+            <span class={css.networkSwitchCheck}>↗</span>
+          </a>
+        )}
+      </Show>
+      <div class={css.menuNote}>{t("header.oneNetworkNote")}</div>
     </>
   );
 };

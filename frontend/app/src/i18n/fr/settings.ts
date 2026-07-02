@@ -35,8 +35,9 @@ const settings: Messages = {
   koiosSectionHead: "Réseau et source de données",
   koiosHeading: "Réseau et jeton Koios",
   koiosProse:
-    "La lecture et la construction des transactions passent par le backend Tessera par défaut : aucun jeton Koios n'est nécessaire (les transactions sont tout de même signées par votre portefeuille). Un jeton n'est utile que pour la voie Koios directe, employée en l'absence de backend — il sert alors à lire les données de la chaîne et à construire les transactions. Stocké uniquement dans ce navigateur ; appliqué à l'enregistrement. Changer de réseau recharge l'application sur Explorer pour appliquer le nouveau point d'accès.",
+    "La lecture et la construction des transactions passent par le backend Tessera par défaut : aucun jeton Koios n'est nécessaire (les transactions sont tout de même signées par votre portefeuille). Un jeton n'est utile que pour la voie Koios directe, employée en l'absence de backend — il sert alors à lire les données de la chaîne et à construire les transactions. Stocké uniquement dans ce navigateur ; appliqué à l'enregistrement. Chaque déploiement dessert un seul réseau.",
   networkLabel: "Réseau",
+  otherNetworkLink: "ouvrir l'application {network} ↗",
   dataSourceLabel: "Source de données",
   dataSourceDirect: "Koios direct",
   endpointLabel: "Point d'accès Koios",
@@ -49,6 +50,11 @@ const settings: Messages = {
   save: "Enregistrer",
   clearToken: "Effacer",
   savedMsg: "✓ enregistré · instantané rechargé",
+  indexerUrlLabel: "Votre URL de backend",
+  indexerUrlPlaceholder: "https://… (vide = Koios direct)",
+  indexerUrlAria: "URL du backend Tessera",
+  indexerUrlHint:
+    "Remplace le backend intégré pour ce réseau, uniquement dans ce navigateur. Il doit desservir le même réseau — l'application vérifie et refuse un backend discordant. Enregistrer ou effacer recharge l'application.",
 
   // --- Display preferences section ---
   displaySectionHead: "Affichage",

@@ -31,8 +31,10 @@ const settings = {
   koiosSectionHead: "Network & data source",
   koiosHeading: "Network & Koios token",
   koiosProse:
-    "Reads and transaction-building both go through the Tessera backend by default, so no Koios token is needed (transactions are still signed by your wallet). A token is only for the direct-Koios path, used when no backend is configured — then it reads chain data and builds transactions. Stored only in this browser; applies on save. Switching network reloads the app on Explore to apply the new endpoint.",
+    "Reads and transaction-building both go through the Tessera backend by default, so no Koios token is needed (transactions are still signed by your wallet). A token is only for the direct-Koios path, used when no backend is configured — then it reads chain data and builds transactions. Stored only in this browser; applies on save. Each deployment serves a single network.",
   networkLabel: "Network",
+  /** {network} is a network identifier (preview/mainnet), untranslated. */
+  otherNetworkLink: "open the {network} app ↗",
   dataSourceLabel: "Data source",
   dataSourceDirect: "Direct Koios",
   endpointLabel: "Koios endpoint",
@@ -45,6 +47,11 @@ const settings = {
   save: "Save",
   clearToken: "Clear",
   savedMsg: "✓ saved · snapshot reloaded",
+  indexerUrlLabel: "Your backend URL",
+  indexerUrlPlaceholder: "https://… (empty = direct Koios)",
+  indexerUrlAria: "Tessera backend URL",
+  indexerUrlHint:
+    "Overrides the built-in backend for this network, in this browser only. It must serve the same network — the app checks and refuses a mismatched backend. Saving or clearing reloads the app.",
 
   // --- Display preferences section ---
   displaySectionHead: "Display",

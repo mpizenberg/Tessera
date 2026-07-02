@@ -55,6 +55,11 @@ Leave `VITE_INDEXER_URL` unset and the app reads from Koios directly (the
 power-user/offline path), which then needs a Koios token pasted in the app's
 Settings.
 
+Deployments are single-network on both sides: the app is built for one network
+(`VITE_NETWORK`) and must point at a backend serving the same one — it checks
+this against `/health` (which reports the active network) and refuses a
+mismatched backend rather than mixing networks.
+
 ## Run on Cloudflare
 
 The Worker entry reuses the same app with a D1 store; the cron trigger

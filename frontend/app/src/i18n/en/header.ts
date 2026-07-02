@@ -48,9 +48,9 @@ const header = {
     "Wallet is on a different network than the app ({network}). Switch networks in your wallet.",
   disconnect: "Disconnect",
 
-  // Network switch.
+  // Network section (one network per deployment; a link opens the other app).
   network: "Network",
-  switchingReloads: "Switching reloads on Explore.",
+  oneNetworkNote: "One network per deployment.",
 };
 
 export type Messages = typeof header;

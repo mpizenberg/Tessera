@@ -64,7 +64,9 @@ interface DecodedView {
 }
 
 /** Install a fetch stub returning real `Response`s; returns the mock for asserts. */
-function stubFetch(handler: (url: string) => { status?: number; body: unknown }) {
+function stubFetch(
+  handler: (url: string) => { status?: number; body: unknown },
+) {
   const mock = vi.fn(async (input: string | URL) => {
     const { status = 200, body } = handler(String(input));
     return new Response(JSON.stringify(body), { status });
@@ -73,24 +75,36 @@ function stubFetch(handler: (url: string) => { status?: number; body: unknown })
   return mock;
 }
 
+/** The stub's `/health` answer (network check) alongside per-route bodies. */
+function withHealth(
+  handler: (url: string) => { status?: number; body: unknown },
+  network = "preview",
+): (url: string) => { status?: number; body: unknown } {
+  return (url) =>
+    url.endsWith("/health") ? { body: { ok: true, network } } : handler(url);
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe("IndexerDataSource", () => {
   it("serves records, tip, and govLinks from a single snapshot fetch", async () => {
-    const fetchMock = stubFetch((url) => {
-      expect(url).toBe(`${BASE}/api/snapshot`);
-      return { body: snapshotBody() };
-    });
-    const src = new IndexerDataSource(BASE);
+    const fetchMock = stubFetch(
+      withHealth((url) => {
+        expect(url).toBe(`${BASE}/api/snapshot`);
+        return { body: snapshotBody() };
+      }),
+    );
+    const src = new IndexerDataSource(BASE, "preview");
 
     // The exact load order state.tsx uses: fetchAll + chainTip concurrently,
-    // then fetchGovernanceLinks right after — all served by one request.
+    // then fetchGovernanceLinks right after — all served by one request
+    // (plus the one-time /health network check).
     const [records, tip] = await Promise.all([src.fetchAll(), src.chainTip()]);
     const links = await src.fetchGovernanceLinks(0);
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2); // /health + /api/snapshot
 
     const view = records as unknown as DecodedView;
     const survey = view.surveys[0];
@@ -108,12 +122,21 @@ describe("IndexerDataSource", () => {
     expect(links[0].title).toBe("Linked");
   });
 
-  it("refetches the snapshot on each new load (reload)", async () => {
-    const fetchMock = stubFetch(() => ({ body: snapshotBody() }));
-    const src = new IndexerDataSource(BASE);
+  it("refetches the snapshot on each new load, checking the network once", async () => {
+    const fetchMock = stubFetch(withHealth(() => ({ body: snapshotBody() })));
+    const src = new IndexerDataSource(BASE, "preview");
     await src.fetchAll();
     await src.fetchAll();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Two snapshot fetches, but /health only on the first (memoized).
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls.filter((u) => u.endsWith("/health"))).toHaveLength(1);
+  });
+
+  it("rejects a backend that serves a different network", async () => {
+    stubFetch(withHealth(() => ({ body: snapshotBody() }), "mainnet"));
+    const src = new IndexerDataSource(BASE, "preview");
+    await expect(src.fetchAll()).rejects.toThrow(/mainnet.*preview/s);
   });
 
   it("maps tx_status to confirmations, keeping null for txs not yet in a block", async () => {
@@ -122,7 +145,7 @@ describe("IndexerDataSource", () => {
       expect(url).toContain("hashes=h1%2Ch2"); // comma is URL-encoded
       return { body: { h1: 3, h2: null } };
     });
-    const src = new IndexerDataSource(BASE);
+    const src = new IndexerDataSource(BASE, "preview");
 
     const statuses = await src.txStatus(["h1", "h2"]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -132,7 +155,7 @@ describe("IndexerDataSource", () => {
 
   it("makes no request for an empty tx_status query", async () => {
     const fetchMock = stubFetch(() => ({ body: {} }));
-    const src = new IndexerDataSource(BASE);
+    const src = new IndexerDataSource(BASE, "preview");
 
     const statuses = await src.txStatus([]);
     expect(statuses.size).toBe(0);
@@ -140,8 +163,13 @@ describe("IndexerDataSource", () => {
   });
 
   it("throws a clear error when the snapshot is not ready yet (503)", async () => {
-    stubFetch(() => ({ status: 503, body: { error: "snapshot not ready" } }));
-    const src = new IndexerDataSource(BASE);
+    stubFetch(
+      withHealth(() => ({
+        status: 503,
+        body: { error: "snapshot not ready" },
+      })),
+    );
+    const src = new IndexerDataSource(BASE, "preview");
     await expect(src.fetchAll()).rejects.toThrow(/503.*not ready/);
   });
 });

@@ -16,7 +16,15 @@
 import { For, Show, createSignal, type Component, type JSX } from "solid-js";
 
 import { useApp } from "~/state";
-import { resolveIndexerUrl, storedKoiosToken } from "~/config";
+import {
+  envIndexerUrl,
+  otherNetwork,
+  otherNetworkUrl,
+  resolveIndexerUrl,
+  storedIndexerUrl,
+  storeIndexerUrl,
+  storedKoiosToken,
+} from "~/config";
 import { IPFS_PROVIDERS } from "~/enrichment/providers";
 import { SegmentedToggle } from "~/ui/components/SegmentedToggle";
 import { LOCALES, locale, setLocale, t, n } from "~/i18n";
@@ -153,6 +161,21 @@ const KoiosSection: Component = () => {
     setSaved(true);
   };
 
+  // Backend URL override (per network, this browser only). Unlike the token,
+  // the data source is constructed once at boot, so applying it is a full
+  // reload — no saved-message signal needed, the page restarts.
+  const storedUrl = storedIndexerUrl() ?? "";
+  const [urlDraft, setUrlDraft] = createSignal(storedUrl);
+  const urlDirty = () => urlDraft().trim() !== storedUrl;
+  const saveUrl = () => {
+    storeIndexerUrl(urlDraft());
+    location.reload();
+  };
+  const clearUrl = () => {
+    storeIndexerUrl("");
+    location.reload();
+  };
+
   return (
     <Section head={t("settings.koiosSectionHead")}>
       <h2 class={css.heading}>{t("settings.koiosHeading")}</h2>
@@ -160,17 +183,17 @@ const KoiosSection: Component = () => {
 
       <dl class={css.factGrid}>
         <FactRow label={t("settings.networkLabel")}>
-          <SegmentedToggle
-            ariaLabel={t("settings.networkLabel")}
-            fontSize={12}
-            buttonPadding="6px 16px"
-            value={app.config.network}
-            onChange={(v) => app.setNetwork(v)}
-            options={[
-              { value: "preview", label: "Preview" },
-              { value: "mainnet", label: "Mainnet" },
-            ]}
-          />
+          <span class={css.endpoint}>{app.config.network}</span>
+          <Show when={otherNetworkUrl()}>
+            {(url) => (
+              <>
+                {" · "}
+                <a href={url()}>
+                  {t("settings.otherNetworkLink", { network: otherNetwork() })}
+                </a>
+              </>
+            )}
+          </Show>
         </FactRow>
         <FactRow label={t("settings.dataSourceLabel")}>
           <span class={css.endpoint}>
@@ -222,6 +245,32 @@ const KoiosSection: Component = () => {
       <Show when={saved()}>
         <div class={css.savedMsg}>{t("settings.savedMsg")}</div>
       </Show>
+
+      <label class={css.tokenLabel}>{t("settings.indexerUrlLabel")}</label>
+      <div class={css.tokenRow}>
+        <input
+          type="text"
+          autocomplete="off"
+          spellcheck={false}
+          value={urlDraft()}
+          onInput={(e) => setUrlDraft(e.currentTarget.value)}
+          placeholder={envIndexerUrl() ?? t("settings.indexerUrlPlaceholder")}
+          aria-label={t("settings.indexerUrlAria")}
+          class={css.koiosInput}
+        />
+        <button
+          class={css.btnPrimary}
+          classList={{ [css.btnPrimaryOn]: urlDirty() }}
+          disabled={!urlDirty()}
+          onClick={saveUrl}
+        >
+          {t("settings.save")}
+        </button>
+        <button class={css.btnGhost} disabled={!storedUrl} onClick={clearUrl}>
+          {t("settings.clearToken")}
+        </button>
+      </div>
+      <p class={css.prose}>{t("settings.indexerUrlHint")}</p>
     </Section>
   );
 };

@@ -594,4 +594,8 @@ Contents (sketch):
 - **Two-network split** (mainnet/preview) — resolved: wrangler environments
   (`backend/server/wrangler.toml` — top-level is preview, `[env.mainnet]` its
   own D1 + vars), two deployments of one Worker, no network path segment. The
-  frontend picks its backend per network via `VITE_INDEXER_URL`.
+  frontend mirrors this: **one network per frontend deployment** (`VITE_NETWORK`
+  - `VITE_INDEXER_URL`, no runtime switch), cross-linked via
+    `VITE_OTHER_NETWORK_URL`, and `IndexerDataSource` verifies the backend's
+    network against `/health` so a misconfigured pairing fails loudly instead of
+    mixing networks.

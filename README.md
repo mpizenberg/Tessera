@@ -12,7 +12,10 @@ computed client-side directly from chain data.
 
 > **Status:** active development. The frontend (explore, results, wallet,
 > respond, create, cancel, sealed mode, IPFS enrichment, governance linkage) is
-> functional; a semantic indexer backend is still in the research stage.
+> functional, as is a light Tier-1 serving backend (Koios read path cached
+> server-side; runs as a Node process or a Cloudflare Worker). Server-side
+> stake-weighted tallies and result artifacts are the next phase — see
+> `backend/ARCHITECTURE.md`.
 
 ## Governance linkage
 
@@ -30,59 +33,74 @@ served document matches the on-chain hash.
 
 ## Repository layout
 
-| Path                  | What it is                                                                                     |
-| --------------------- | ---------------------------------------------------------------------------------------------- |
-| `frontend/app`        | The browser app — [SolidJS][solid] + [Vite][vite] + TypeScript.                                |
-| `frontend/cip179`     | A pure, dependency-free TypeScript library to encode / decode / validate the label-17 format.  |
-| `backend`             | Research notes and submodules (Adder / Yaci Store / Oura) for a future indexer. Not yet wired. |
+| Path              | What it is                                                                                          |
+| ----------------- | --------------------------------------------------------------------------------------------------- |
+| `frontend/app`    | The browser app — [SolidJS][solid] + [Vite][vite] + TypeScript.                                     |
+| `frontend/cip179` | A pure, dependency-free TypeScript library to encode / decode / validate the label-17 format.       |
+| `packages/core`   | Shared portable domain types + wire codec (`@tessera/core`), used by app and backend.               |
+| `packages/koios`  | The Koios read path (`KoiosDataSource`), shared by the app's direct mode and the backend.           |
+| `backend/server`  | Tier-1 serving backend: cached snapshot over HTTP. Node process or Cloudflare Worker + D1.          |
+| `backend/deps`    | Indexer submodules (Adder / Yaci Store / Oura) for a future Tier-2; design notes in `backend/*.md`. |
 
 ## Quick start
 
-Requires **Node ≥ 20** and **pnpm ≥ 10** ([install pnpm][pnpm]).
+Requires **Node ≥ 22.5** and **pnpm ≥ 10** ([install pnpm][pnpm]). This is a
+pnpm workspace — install once at the repository root:
 
 ```sh
-cd frontend/app
-cp .env.example .env     # then add a Koios token — see below
 pnpm install
-pnpm dev                 # http://127.0.0.1:3000
+pnpm --filter @tessera/backend dev                                     # terminal 1
+VITE_INDEXER_URL=http://localhost:8787 pnpm --filter tessera-app dev   # terminal 2
 ```
+
+The app serves at http://127.0.0.1:3000, reading chain data through the local
+backend — **no Koios token needed**, for reads or for building transactions
+(they are signed and submitted by your CIP-30 wallet).
+
+Alternatively, skip the backend and let the browser scan [Koios][koios]
+directly (the power-user/offline path) by leaving `VITE_INDEXER_URL` unset.
+That path requires an authenticated Koios token (tier 1 is free): the anonymous
+tier does not send CORS headers, so browser requests need one. Paste it in the
+app's **Settings**, or set `VITE_KOIOS_TOKEN` in `frontend/app/.env`.
 
 ### Environment
 
-An authenticated [Koios][koios] token is required: the free anonymous tier does
-not send CORS headers, so browser requests need a token (tier 1 is free). Copy
-`frontend/app/.env.example` to `frontend/app/.env` and fill in:
+Copy `frontend/app/.env.example` to `frontend/app/.env`; every variable is
+optional and documented there. The main ones:
 
-```
-VITE_KOIOS_TOKEN=<your tier-1 Koios token>
-VITE_NETWORK=preview      # "preview" (default) or "mainnet"
-```
+- `VITE_NETWORK` — `preview` (default) or `mainnet`. **One deployment serves
+  one network** (no runtime switch); the header links to the counterpart app
+  when `VITE_OTHER_NETWORK_URL` is set.
+- `VITE_INDEXER_URL` — the Tier-1 backend for that network. The app verifies
+  the backend serves the same network (via its `/health`) and refuses a
+  mismatch. Overridable per network in Settings.
 
-The Koios token can also be overridden at runtime in the app's **Settings**.
 IPFS reads race a built-in list of public gateways (no config); IPFS _pinning_
 (for authoring external content / rationales) uses per-provider API tokens
 entered in Settings, stored only in the browser.
 
 ## Development
 
-The app and the `cip-179` library are two independent pnpm packages. The app
-resolves the library from source via a Vite alias + tsconfig path, so library
-edits are live with no build step.
+The repo is a pnpm workspace (`frontend/app`, `frontend/cip179`,
+`packages/core`, `packages/koios`, `backend/server`). Packages are consumed
+from TypeScript source (Vite aliases / `exports` pointing at `src`), so
+cross-package edits are live with no build step.
 
-In `frontend/app`:
+From the repository root:
 
-| Command             | What it does                            |
-| ------------------- | --------------------------------------- |
-| `pnpm dev`          | Start the Vite dev server.              |
-| `pnpm type-check`   | TypeScript type-check (`tsc --noEmit`). |
-| `pnpm test`         | Run unit tests (Vitest).                |
-| `pnpm build`        | Production build.                       |
-| `pnpm format`       | Format with Prettier.                   |
-| `pnpm format:check` | Check formatting without writing.       |
+| Command                              | What it does                                                                 |
+| ------------------------------------ | ---------------------------------------------------------------------------- |
+| `pnpm -r type-check`                 | Type-check every package.                                                    |
+| `pnpm -r test`                       | Run every package's unit tests (Vitest).                                     |
+| `pnpm --filter tessera-app dev`      | Start the app's Vite dev server.                                             |
+| `pnpm --filter @tessera/backend dev` | Run the Tier-1 backend locally (see its [README](backend/server/README.md)). |
+| `pnpm --filter tessera-app build`    | Production build of the app.                                                 |
 
-In `frontend/cip179`: `pnpm test`, `pnpm type-check`, and `pnpm build`.
+Formatting is Prettier (`pnpm format` / `pnpm format:check` in `frontend/app`).
 
-The backend submodules are not needed for frontend work. To fetch them anyway:
+The backend deploys to Cloudflare (Workers + D1 + Cron) with `wrangler` —
+`backend/server/README.md` has the walkthrough. The `backend/deps` submodules
+are not needed for any of this; to fetch them anyway:
 `git submodule update --init --recursive`.
 
 ## Contributing
@@ -90,8 +108,9 @@ The backend submodules are not needed for frontend work. To fetch them anyway:
 Contributions are welcome. Until a `CONTRIBUTING.md` lands, the basics:
 
 - Open an issue to discuss substantial changes before investing in a PR.
-- Keep the build green: `pnpm type-check`, `pnpm test`, and `pnpm format:check`
-  should all pass (CI runs these on every PR).
+- Keep the build green: `pnpm -r type-check`, `pnpm -r test`, and
+  `pnpm format:check` (in `frontend/app`) should all pass (CI runs these on
+  every PR).
 - Match the existing code style — Prettier is the source of truth for formatting.
 
 ## License
