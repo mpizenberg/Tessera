@@ -6,7 +6,9 @@
  * by the pure `cip-179` codec) and gets back a transaction hash; evolution-sdk
  * never leaks past this module.
  *
- * Koios is used only for one read — protocol parameters (a GET) — during build.
+ * Protocol parameters are the only ledger read a build needs: from the serving
+ * tier (`GET /api/pparams`) when one is configured — so the browser needs no
+ * Koios token at all — otherwise fetched from Koios directly during build.
  * Everything wallet-scoped goes through CIP-30, never Koios:
  * - **UTxOs + change address** come from the wallet (`getUtxos` / `getChangeAddress`)
  *   and are passed into the build, so no Koios `/address_info` round-trip.
@@ -33,11 +35,35 @@ import {
   mainnet,
   preview,
 } from "@evolution-sdk/evolution";
+import type { ProtocolParameters } from "@evolution-sdk/evolution/sdk/provider/Provider";
 import { METADATA_LABEL, type Credential, type Metadatum } from "cip-179";
+
+import { fromJsonSafe } from "@tessera/core";
 
 import type { AppConfig } from "~/config";
 import { toTxMetadatum } from "./cbor";
 import type { Cip30Api } from "./types";
+
+/**
+ * Build config plus, optionally, the Tier-1 backend URL. When set, protocol
+ * parameters are fetched from it (`/api/pparams`) and handed to the builder, so
+ * building a transaction needs no Koios token; the tx is signed and submitted
+ * through the CIP-30 wallet regardless.
+ */
+export interface SubmitConfig extends AppConfig {
+  readonly indexerUrl?: string | undefined;
+}
+
+/** Full protocol parameters from the serving tier, decoded from the wire form. */
+async function fetchBackendPParams(
+  indexerUrl: string,
+): Promise<ProtocolParameters> {
+  const res = await fetch(`${indexerUrl}/api/pparams`, {
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`Indexer /api/pparams → ${res.status}`);
+  return fromJsonSafe(await res.json()) as ProtocolParameters;
+}
 
 /**
  * Convert one CIP-30 UTxO (CBOR hex of `[transaction_input, transaction_output]`)
@@ -81,12 +107,14 @@ function cip30UtxoToCore(hex: string): UTxO.UTxO {
 }
 
 /**
- * Shared build context: an evolution-sdk client wired to Koios (reads only) and
- * the connected wallet (CIP-30), plus wallet-sourced UTxOs and change address so
- * the build never round-trips Koios for `/address_info`. Sign + submit still go
- * through the wallet at the call site.
+ * Shared build context: an evolution-sdk client wired to Koios and the connected
+ * wallet (CIP-30), plus wallet-sourced UTxOs and change address so the build
+ * never round-trips Koios for `/address_info`. When a serving tier is configured,
+ * protocol parameters come from it and are passed to `build()` — the build then
+ * makes no Koios call at all (the redeemer-free flows here never trigger script
+ * evaluation). Sign + submit still go through the wallet at the call site.
  */
-async function txContext(config: AppConfig, api: Cip30Api) {
+async function txContext(config: SubmitConfig, api: Cip30Api) {
   const chain = config.network === "mainnet" ? mainnet : preview;
   const reader = Client.make(chain).withKoios(
     config.koiosToken
@@ -101,7 +129,26 @@ async function txContext(config: AppConfig, api: Cip30Api) {
   const utxoHexes = (await api.getUtxos()) ?? [];
   const availableUtxos = utxoHexes.map(cip30UtxoToCore);
   const changeAddress = Address.fromHex(await api.getChangeAddress());
-  return { client, availableUtxos, changeAddress };
+  // Serving-tier pparams (no Koios token needed); without a backend, leave it
+  // undefined and the provider fetches them from Koios during build as before.
+  const fullProtocolParameters = config.indexerUrl
+    ? await fetchBackendPParams(config.indexerUrl)
+    : undefined;
+  return { client, availableUtxos, changeAddress, fullProtocolParameters };
+}
+
+/**
+ * `build()` options with protocol parameters injected only when we have them, so
+ * the SDK skips its own Koios pparams fetch. Spread (rather than passing
+ * `undefined`) to satisfy `exactOptionalPropertyTypes`.
+ */
+function buildOpts(ctx: Awaited<ReturnType<typeof txContext>>) {
+  const { availableUtxos, changeAddress, fullProtocolParameters } = ctx;
+  return {
+    availableUtxos,
+    changeAddress,
+    ...(fullProtocolParameters ? { fullProtocolParameters } : {}),
+  };
 }
 
 /** Sign an unsigned tx with the wallet and submit it; returns the tx hash. */
@@ -125,15 +172,13 @@ async function signAndSubmit(
  * cancellations pass the survey `owner`; responses pass the responder credential.
  */
 export async function submitMetadataTx(
-  config: AppConfig,
+  config: SubmitConfig,
   api: Cip30Api,
   payload: Metadatum,
   proveCredentials: readonly Credential[] = [],
 ): Promise<string> {
-  const { client, availableUtxos, changeAddress } = await txContext(
-    config,
-    api,
-  );
+  const ctx = await txContext(config, api);
+  const { client } = ctx;
 
   let tx = client.newTx().attachMetadata({
     label: BigInt(METADATA_LABEL),
@@ -150,7 +195,7 @@ export async function submitMetadataTx(
     tx = tx.addSigner({ keyHash: KeyHash.fromBytes(cred.keyHash) });
   }
 
-  const built = await tx.build({ availableUtxos, changeAddress });
+  const built = await tx.build(buildOpts(ctx));
 
   // Sign + submit via the wallet (CIP-30), bypassing the provider's submit.
   const unsignedHex = Transaction.toCBORHex(await built.toTransaction());
@@ -170,15 +215,13 @@ export async function submitMetadataTx(
  * `required_signers` are added.
  */
 export async function submitInfoActionProposal(
-  config: AppConfig,
+  config: SubmitConfig,
   api: Cip30Api,
   anchorUrl: string,
   anchorDataHash: Uint8Array,
 ): Promise<string> {
-  const { client, availableUtxos, changeAddress } = await txContext(
-    config,
-    api,
-  );
+  const ctx = await txContext(config, api);
+  const { client } = ctx;
 
   const rewardHex = (await api.getRewardAddresses())?.[0];
   if (!rewardHex) {
@@ -196,7 +239,7 @@ export async function submitInfoActionProposal(
     }),
   });
 
-  const built = await tx.build({ availableUtxos, changeAddress });
+  const built = await tx.build(buildOpts(ctx));
   const unsignedHex = Transaction.toCBORHex(await built.toTransaction());
   return signAndSubmit(api, unsignedHex);
 }

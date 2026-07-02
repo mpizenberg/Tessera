@@ -24,10 +24,29 @@ port, refresh interval, or db path.
   `fetchedAt` / `ageSeconds`. Returns `503` until the first refresh completes.
 - `GET /api/tip` — live chain tip (bypasses the cache, for immediacy).
 - `GET /api/tx_status?hashes=<h1>,<h2>` — live confirmation counts.
+- `GET /api/pparams` — latest-epoch protocol parameters (evolution-sdk shape,
+  wire-encoded). Lets the browser build a transaction without querying Koios, so
+  the app needs no Koios token even to create surveys/responses/actions.
 
 The snapshot payload uses the `@tessera/core` JSON-safe wire form (bytes → hex
 under `$bytes`, big integers → decimal strings under `$bigint`) so it round-trips
-losslessly to the browser.
+losslessly to the browser. The `/api/*` routes send permissive CORS headers (the
+data is public and cookieless), so the browser app can read them cross-origin.
+
+## Use from the app
+
+Point the frontend at this backend with `VITE_INDEXER_URL`, and it reads the
+snapshot from here (via `IndexerDataSource`) instead of scanning Koios itself —
+no Koios token needed for reads:
+
+```sh
+pnpm --filter @tessera/backend dev                              # terminal 1
+VITE_INDEXER_URL=http://localhost:8787 pnpm --filter tessera-app dev   # terminal 2
+```
+
+Leave `VITE_INDEXER_URL` unset and the app reads from Koios directly (the
+power-user/offline path), which then needs a Koios token pasted in the app's
+Settings.
 
 ## Requirements
 

@@ -25,6 +25,7 @@ import { createStore, produce } from "solid-js/store";
 
 import {
   loadConfig,
+  resolveIndexerUrl,
   storeKoiosToken,
   envKoiosToken,
   storeNetwork,
@@ -41,6 +42,7 @@ import {
   type ProviderTokens,
 } from "~/enrichment/providers";
 import { KoiosDataSource } from "@tessera/koios";
+import { IndexerDataSource } from "~/data/indexer";
 import type {
   ChainTip,
   Cip179Records,
@@ -232,9 +234,17 @@ export const AppProvider: ParentComponent = (props) => {
   const config = loadConfig();
 
   // Koios token: reactive so a Settings override applies on the next reload
-  // without rebuilding the source (which reads it through this getter).
+  // without rebuilding the source (which reads it through this getter). Still
+  // used even in indexer mode — building a transaction reads protocol parameters
+  // from Koios (the tx itself is signed and submitted via the CIP-30 wallet).
   const [koiosToken, setKoiosTokenSig] = createSignal(config.koiosToken);
-  const source: DataSource = new KoiosDataSource(config, () => koiosToken());
+  // Reads flow through the Tier-1 serving backend when one is configured
+  // (`VITE_INDEXER_URL`) — the secure/scalable default — otherwise straight to
+  // Koios (the direct/power-user/offline path). See `backend/ARCHITECTURE.md` §8.
+  const indexerUrl = resolveIndexerUrl();
+  const source: DataSource = indexerUrl
+    ? new IndexerDataSource(indexerUrl)
+    : new KoiosDataSource(config, () => koiosToken());
 
   const [snapshot, { refetch }] = createResource<Snapshot>(async () => {
     const [records, tip] = await Promise.all([
@@ -503,7 +513,7 @@ export const AppProvider: ParentComponent = (props) => {
       // only when a user actually submits, not on first paint.
       const { submitMetadataTx } = await import("~/wallet/submit");
       return submitMetadataTx(
-        { ...config, koiosToken: koiosToken() },
+        { ...config, koiosToken: koiosToken(), indexerUrl },
         w.api,
         payload,
         proveCredentials,
@@ -514,7 +524,7 @@ export const AppProvider: ParentComponent = (props) => {
       if (!w) throw new Error("No wallet connected");
       const { submitInfoActionProposal } = await import("~/wallet/submit");
       return submitInfoActionProposal(
-        { ...config, koiosToken: koiosToken() },
+        { ...config, koiosToken: koiosToken(), indexerUrl },
         w.api,
         anchorUrl,
         anchorDataHash,

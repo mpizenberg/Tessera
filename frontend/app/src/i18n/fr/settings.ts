@@ -33,20 +33,21 @@ const settings: Messages = {
 
   // --- Network & data source (Koios) section ---
   koiosSectionHead: "Réseau et source de données",
-  koiosHeading: "Lecture depuis Koios",
+  koiosHeading: "Réseau et jeton Koios",
   koiosProse:
-    "L'application est livrée avec un jeton Koios préconfiguré qui peut être limité en débit en cas de forte charge. Collez le vôtre pour l'utiliser à la place — il remplace celui par défaut et s'applique à l'enregistrement (l'instantané est rechargé). Changer de réseau recharge l'application sur Explorer pour appliquer le nouveau point d'accès.",
+    "La lecture et la construction des transactions passent par le backend Tessera par défaut : aucun jeton Koios n'est nécessaire (les transactions sont tout de même signées par votre portefeuille). Un jeton n'est utile que pour la voie Koios directe, employée en l'absence de backend — il sert alors à lire les données de la chaîne et à construire les transactions. Stocké uniquement dans ce navigateur ; appliqué à l'enregistrement. Changer de réseau recharge l'application sur Explorer pour appliquer le nouveau point d'accès.",
   networkLabel: "Réseau",
-  endpointLabel: "Point d'accès",
-  activeTokenLabel: "Jeton actif",
-  tokenYours: "votre jeton",
-  tokenAppDefault: "défaut de l'app",
+  dataSourceLabel: "Source de données",
+  dataSourceDirect: "Koios direct",
+  endpointLabel: "Point d'accès Koios",
+  activeTokenLabel: "Jeton Koios",
+  tokenYours: "défini",
   tokenNone: "aucun",
   koiosTokenLabel: "Votre jeton Koios",
   koiosTokenPlaceholder: "collez un jeton bearer Koios",
   koiosTokenAria: "Jeton bearer Koios",
   save: "Enregistrer",
-  useAppDefault: "Utiliser le défaut de l'app",
+  clearToken: "Effacer",
   savedMsg: "✓ enregistré · instantané rechargé",
 
   // --- Display preferences section ---

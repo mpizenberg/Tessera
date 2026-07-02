@@ -7,15 +7,16 @@
  *    in-app uploading of off-chain content (external-survey presentation docs,
  *    voter rationales). A document is pinned to every configured provider in
  *    parallel. Reading never needs these — it races public gateways.
- *  - **Koios token override**: use your own token instead of the app's
- *    pre-configured one (which may be rate-limited). Applies on save.
+ *  - **Koios token**: optional. With the backend configured, reads and
+ *    transaction-building both go through it — no token needed. A token is only
+ *    for the direct-Koios path (no backend). Applies on save.
  *  - the Plain/Pro detail toggle (mirrors the header switch).
  */
 
 import { For, Show, createSignal, type Component, type JSX } from "solid-js";
 
 import { useApp } from "~/state";
-import { envKoiosToken, storedKoiosToken } from "~/config";
+import { resolveIndexerUrl, storedKoiosToken } from "~/config";
 import { IPFS_PROVIDERS } from "~/enrichment/providers";
 import { SegmentedToggle } from "~/ui/components/SegmentedToggle";
 import { LOCALES, locale, setLocale, t, n } from "~/i18n";
@@ -135,7 +136,9 @@ const KoiosSection: Component = () => {
   const [draft, setDraft] = createSignal(stored());
   const [saved, setSaved] = createSignal(false);
 
-  const overridden = () => app.koiosToken() !== envKoiosToken();
+  // Where reads come from: the serving backend (its URL) or direct Koios. Fixed
+  // for the session — changing it is a config/reload concern, not live state.
+  const indexerUrl = resolveIndexerUrl();
   const dirty = () => draft().trim() !== stored();
 
   const save = () => {
@@ -169,6 +172,11 @@ const KoiosSection: Component = () => {
             ]}
           />
         </FactRow>
+        <FactRow label={t("settings.dataSourceLabel")}>
+          <span class={css.endpoint}>
+            {indexerUrl ?? t("settings.dataSourceDirect")}
+          </span>
+        </FactRow>
         <FactRow label={t("settings.endpointLabel")}>
           <span class={css.endpoint}>{app.config.koiosUrl}</span>
         </FactRow>
@@ -178,9 +186,7 @@ const KoiosSection: Component = () => {
             classList={{ [css.statusBadgeOn]: !!app.koiosToken() }}
           >
             {app.koiosToken()
-              ? overridden()
-                ? t("settings.tokenYours")
-                : t("settings.tokenAppDefault")
+              ? t("settings.tokenYours")
               : t("settings.tokenNone")}
           </span>
         </FactRow>
@@ -210,7 +216,7 @@ const KoiosSection: Component = () => {
           {t("settings.save")}
         </button>
         <button class={css.btnGhost} disabled={!stored()} onClick={reset}>
-          {t("settings.useAppDefault")}
+          {t("settings.clearToken")}
         </button>
       </div>
       <Show when={saved()}>

@@ -10,7 +10,9 @@
  */
 
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 
+import { toJsonSafe } from "@tessera/core";
 import { KoiosDataSource } from "@tessera/koios";
 
 import type { ServerConfig } from "./config";
@@ -18,6 +20,12 @@ import type { SnapshotStore } from "./store";
 
 export function createApp(config: ServerConfig, store: SnapshotStore): Hono {
   const app = new Hono();
+  // The read API is public, cookieless data meant for browser consumption from
+  // a different origin (the app may be served separately from this serving
+  // tier). Permissive CORS is the right default — there is no credential to
+  // protect, and `IndexerDataSource` sends no cookies. Restrict `origin` here
+  // if a deployment ever needs to.
+  app.use("/api/*", cors());
   // Live passthroughs (tip / tx status) go straight to Koios for immediacy.
   const source = new KoiosDataSource(config.app);
 
@@ -48,6 +56,16 @@ export function createApp(config: ServerConfig, store: SnapshotStore): Hono {
       .filter(Boolean);
     const statuses = await source.txStatus(hashes);
     return c.json(Object.fromEntries(statuses));
+  });
+
+  // Latest-epoch protocol parameters, so the browser can build a transaction
+  // (`build({ fullProtocolParameters })`) without querying Koios itself — the
+  // last thing that otherwise needed a client-side Koios token. Wire-encoded
+  // (bigints → decimal strings) like the snapshot; a live read (pparams change
+  // only at epoch boundaries, and tx building is infrequent).
+  app.get("/api/pparams", async (c) => {
+    const pparams = await source.protocolParameters();
+    return c.json(toJsonSafe(pparams));
   });
 
   return app;

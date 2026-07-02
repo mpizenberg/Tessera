@@ -69,7 +69,7 @@ export function loadConfig(): ServerConfig {
   return {
     app,
     port: Number(env["PORT"] ?? 8787),
-    refreshSeconds: Number(env["REFRESH_SECONDS"] ?? 90),
+    refreshSeconds: Number(env["REFRESH_SECONDS"] ?? 180),
     dbPath: env["DB_PATH"] ?? "./tessera-cache.sqlite",
   };
 }

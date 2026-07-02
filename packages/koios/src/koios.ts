@@ -29,6 +29,8 @@ import type {
   ResponseRecord,
   SurveyRecord,
 } from "@tessera/core";
+import { Koios } from "@evolution-sdk/evolution/sdk/provider/Koios";
+import type { ProtocolParameters } from "@evolution-sdk/evolution/sdk/provider/Provider";
 import { koiosJsonToMetadatum, type KoiosJson } from "./metadatum";
 import { decodeCancellationProof } from "./txProof";
 
@@ -177,6 +179,24 @@ export class KoiosDataSource implements DataSource {
       console.warn(`gov_action_lifetime lookup failed: ${String(err)}`);
       return 0;
     }
+  }
+
+  /**
+   * Full protocol parameters for the latest epoch, in evolution-sdk's
+   * `ProtocolParameters` shape. The serving tier exposes these so the browser's
+   * transaction builder can pass them as `build({ fullProtocolParameters })` and
+   * skip the provider's own pparams fetch — the one Koios read that tx building
+   * otherwise needs, letting the client build without a Koios token
+   * (`backend/ARCHITECTURE.md` §8). Deposits, execution budgets, and
+   * coins-per-UTxO-byte are BigInt; cost models are index-keyed per language.
+   */
+  async protocolParameters(): Promise<ProtocolParameters> {
+    // The SDK's own Koios provider already fetches and maps /epoch_params into
+    // this shape — delegate rather than duplicate the field-by-field mapping.
+    return new Koios(
+      this.config.koiosUrl,
+      this.getToken(),
+    ).getProtocolParameters();
   }
 
   async fetchAll(): Promise<Cip179Records> {
