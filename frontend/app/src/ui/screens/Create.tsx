@@ -132,14 +132,14 @@ export const Create: Component = () => {
   // Seed a sensible default end epoch once the tip is known (don't clobber
   // input): the next epoch, the soonest a survey can still be open on arrival.
   createEffect(() => {
-    const tip = app.snapshot()?.tip;
+    const tip = app.list()?.tip;
     if (tip && meta.endEpoch === "") setMeta("endEpoch", String(tip.epoch + 1));
   });
 
   // Auto reveal round: the first drand round a couple of minutes after the end
   // epoch closes. 0 until the tip + a valid end epoch are known.
   const autoRound = createMemo<number>(() => {
-    const tip = app.snapshot()?.tip;
+    const tip = app.list()?.tip;
     const end = Number(meta.endEpoch.trim());
     if (!tip || meta.endEpoch.trim() === "" || !Number.isInteger(end)) return 0;
     return autoRevealRound(
@@ -336,7 +336,7 @@ export const Create: Component = () => {
               <TimingSection
                 value={meta.endEpoch}
                 onInput={(v) => setMeta("endEpoch", v)}
-                tip={app.snapshot()?.tip}
+                tip={app.list()?.tip}
                 secondsPerEpoch={app.config.secondsPerEpoch}
                 network={app.config.network}
               />

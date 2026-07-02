@@ -129,29 +129,71 @@ export interface GovLink {
   readonly title: string | null;
 }
 
+/**
+ * Everything the survey *list* page (Explore) renders from — one bounded
+ * payload regardless of participation volume. Responses are the only unbounded
+ * record set, and the list only needs their per-survey count, so they're
+ * pre-deduped (the core `dedupeResponses` rule) into `responseCounts` at the
+ * source. Cancellations ride raw (they're tiny) so owner-proof verification
+ * stays client-side.
+ */
+export interface SurveyListPayload {
+  readonly surveys: readonly SurveyRecord[];
+  readonly cancellations: readonly CancellationRecord[];
+  readonly govLinks: readonly GovLink[];
+  readonly tip: ChainTip;
+  /** Distinct responders per survey key ("<txHex>:<index>"), latest-valid-wins. */
+  readonly responseCounts: Record<string, number>;
+  /** Mirrors {@link Cip179Records.incomplete} for the scan behind this list. */
+  readonly incomplete?: boolean;
+}
+
+/**
+ * The self-contained slice for one survey: its definition record, ALL of its
+ * responses (sealed ciphertexts included — client-side audit/tally/reveal need
+ * the raw set), the cancellations targeting it, and the tip that anchors
+ * epoch-dependent checks. A published result re-verifies from exactly this
+ * bundle; a verifier never needs a full snapshot.
+ */
+export interface SurveyBundle {
+  readonly survey: SurveyRecord;
+  readonly responses: readonly ResponseRecord[];
+  readonly cancellations: readonly CancellationRecord[];
+  readonly tip: ChainTip;
+}
+
+/**
+ * The seam the UI reads through — one method per page-shaped read, so a
+ * serving-tier implementation maps each onto one bounded HTTP route. Full-scan
+ * reads (`fetchAll`, `chainTip`, `fetchGovernanceLinks`) are deliberately NOT
+ * part of the seam: they live on `KoiosDataSource` concretely, where the
+ * serving tier's refresh (and the Koios implementation of the methods below)
+ * still need them.
+ */
 export interface DataSource {
-  /** Current chain tip (epoch + slot). */
-  chainTip(): Promise<ChainTip>;
   /**
-   * Fetch every CIP-179 (label 17) record currently known.
-   *
-   * Koios returns the lot in two round-trips; an indexer may stream or
-   * paginate. Either way the result is the full snapshot the UI renders from.
+   * The Explore-list payload: every survey with per-survey response counts,
+   * plus tip / governance links / raw cancellations. See {@link SurveyListPayload}.
    */
-  fetchAll(): Promise<Cip179Records>;
+  surveyList(): Promise<SurveyListPayload>;
   /**
-   * Discover governance Info Actions whose anchor links to a survey, scanning
-   * only actions created at or after `sinceUnix` (typically the oldest active
-   * survey's creation time — older actions can't link to a live survey).
-   * Best-effort enrichment: a failure here must not sink the main snapshot
-   * (callers default to no links). An indexer would serve this far more cheaply.
+   * The self-contained per-survey slice (detail/respond pages, verifiers).
+   * Rejects when the ref matches no known survey.
    */
-  fetchGovernanceLinks(sinceUnix: number): Promise<GovLink[]>;
+  surveyBundle(ref: SurveyRef): Promise<SurveyBundle>;
+  /**
+   * Survey keys ("<txHex>:<index>") having at least one response from any of
+   * the given credentials, each in the `credentialKey` form
+   * ("key:<hex>" | "script:<hex>"). Raw responses, no dedupe/validity filter —
+   * this feeds Explore's "surveys I answered" flags, where any attempt counts.
+   * Empty input resolves to [] without a fetch.
+   */
+  respondedKeys(credentialKeys: readonly string[]): Promise<string[]>;
   /**
    * Block-inclusion status for a set of just-submitted transactions, keyed by
    * tx hash. The value is the number of confirmations, or `null` when the tx is
    * not yet in a block (the chain indexer can't see the mempool). Used only to
-   * flip a "pending" indicator to "confirmed" — never to drive the snapshot.
+   * flip a "pending" indicator to "confirmed" — never to drive the survey list.
    */
   txStatus(txHashes: readonly string[]): Promise<Map<string, number | null>>;
 }

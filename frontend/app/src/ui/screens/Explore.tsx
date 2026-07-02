@@ -2,6 +2,7 @@ import {
   For,
   Show,
   createMemo,
+  createResource,
   createSignal,
   onCleanup,
   type Accessor,
@@ -11,16 +12,12 @@ import {
 import { A } from "@solidjs/router";
 
 import { useApp, type ExploreFilter } from "~/state";
-import {
-  refKey,
-  voteDeadlineUnix,
-  type SurveyAggregate,
-} from "~/domain/survey";
-import { walletControls, walletOwns } from "~/domain/roles";
+import { voteDeadlineUnix, type SurveyAggregate } from "~/domain/survey";
+import { walletOwns } from "~/domain/roles";
 import { fullRef, isClosed, viewStatus } from "~/ui/format";
 import { FormMosaic, RoleChips, VisGlyph } from "~/ui/components/glyphs";
 import type { ChainTip, GovLink } from "~/data/source";
-import type { WalletIdentity } from "~/wallet/types";
+import type { WalletCredential, WalletIdentity } from "~/wallet/types";
 import type { Question, SurveyDefinition } from "cip-179";
 import { t, n, type MsgKey } from "~/i18n";
 import css from "./Explore.module.css";
@@ -139,11 +136,11 @@ function endsText(
 export const Explore: Component = () => {
   const app = useApp();
 
-  // Reading the resource accessor throws while the snapshot is in error state
+  // Reading the resource accessor throws while the list is in error state
   // (Solid resource semantics). Every *value* read goes through this guard so a
-  // failed Koios load surfaces via `app.snapshot.error` (the inline Notice
-  // below) rather than throwing — the `.error`/`.loading` reads are always safe.
-  const snapData = () => (app.snapshot.error ? undefined : app.snapshot());
+  // failed load surfaces via `app.list.error` (the inline Notice below) rather
+  // than throwing — the `.error`/`.loading` reads are always safe.
+  const snapData = () => (app.list.error ? undefined : app.list());
 
   const all = createMemo(() => {
     const real = snapData()?.surveys ?? [];
@@ -187,18 +184,26 @@ export const Explore: Component = () => {
   );
   onCleanup(() => clearInterval(clock));
 
-  // Survey ref keys the connected wallet has responded to.
-  const respondedKeys = createMemo<Set<string>>(() => {
+  // Survey ref keys the connected wallet has responded to (any attempt counts).
+  // Fetched through the seam's slim projection — the wallet's credentials
+  // (payment + stake, the same set `walletControls` checks) go out as core
+  // `credentialKey` strings, survey keys come back. Joined to one string so the
+  // resource only refetches when the credential set genuinely changes.
+  const credentialKeys = createMemo<string | undefined>(() => {
     const id = identity();
-    const snap = snapData();
-    if (!id || !snap) return new Set();
-    const keys = new Set<string>();
-    for (const r of snap.records.responses) {
-      if (walletControls(id, r.response.credential)) {
-        keys.add(refKey(r.response.surveyRef));
-      }
-    }
-    return keys;
+    if (!id) return undefined;
+    return [id.payment, id.stake]
+      .filter((c): c is WalletCredential => c !== undefined)
+      .map((c) => `${c.kind}:${c.hashHex}`)
+      .join(",");
+  });
+  const [responded] = createResource(credentialKeys, (keys) =>
+    app.source.respondedKeys(keys.split(",")),
+  );
+  const respondedKeys = createMemo<Set<string>>(() => {
+    // Best-effort flags: no wallet (or a failed fetch) just means no checkmarks.
+    if (!identity() || responded.error) return new Set();
+    return new Set(responded() ?? []);
   });
 
   const flagsOf = (a: SurveyAggregate): Flags => {
@@ -348,10 +353,10 @@ export const Explore: Component = () => {
               <HeaderRow />
             </Show>
 
-            <Show when={app.snapshot.loading}>
+            <Show when={app.list.loading}>
               <SkeletonRows narrow={narrow()} />
             </Show>
-            <Show when={app.snapshot.error as unknown}>
+            <Show when={app.list.error as unknown}>
               {(err) => (
                 <Notice
                   tone="danger"
@@ -360,11 +365,11 @@ export const Explore: Component = () => {
               )}
             </Show>
 
-            <Show when={snapData()?.records.incomplete}>
+            <Show when={snapData()?.incomplete}>
               <div class={css.incomplete}>{t("explore.incomplete")}</div>
             </Show>
 
-            <Show when={!app.snapshot.loading && !app.snapshot.error}>
+            <Show when={!app.list.loading && !app.list.error}>
               <Show when={govRows().length > 0}>
                 <SectionLabel
                   dot={<span class={css.dotGov} />}

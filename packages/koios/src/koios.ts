@@ -17,7 +17,14 @@ import {
   type SurveyRef,
 } from "cip-179";
 
-import { bytesToHex, hexToBytes, parseCip179Link } from "@tessera/core";
+import {
+  bytesToHex,
+  credentialKey,
+  hexToBytes,
+  parseCip179Link,
+  refKey,
+  responseCounts,
+} from "@tessera/core";
 import type {
   AppConfig,
   CancellationProof,
@@ -27,6 +34,8 @@ import type {
   DataSource,
   GovLink,
   ResponseRecord,
+  SurveyBundle,
+  SurveyListPayload,
   SurveyRecord,
 } from "@tessera/core";
 import { Koios } from "@evolution-sdk/evolution/sdk/provider/Koios";
@@ -108,6 +117,17 @@ export interface ProposalRow {
 }
 
 export class KoiosDataSource implements DataSource {
+  /**
+   * The full scan (records + tip) for the current load. `surveyList()` starts a
+   * fresh one; `surveyBundle()`/`respondedKeys()` reuse it, so one page load
+   * runs one Koios scan even though the seam exposes three per-page reads —
+   * mirroring the memo `IndexerDataSource` keeps over its HTTP fetches.
+   */
+  private currentScan: Promise<{
+    records: Cip179Records;
+    tip: ChainTip;
+  }> | null = null;
+
   /**
    * `getToken` lets the active Koios token change at runtime (Settings override)
    * without rebuilding the source; defaults to the startup-resolved config token.
@@ -318,6 +338,69 @@ export class KoiosDataSource implements DataSource {
       ],
       incomplete,
     };
+  }
+
+  /** The current load's scan, starting one if nothing is in flight yet. */
+  private scan(): Promise<{ records: Cip179Records; tip: ChainTip }> {
+    return (this.currentScan ??= Promise.all([
+      this.fetchAll(),
+      this.chainTip(),
+    ]).then(([records, tip]) => ({ records, tip })));
+  }
+
+  async surveyList(): Promise<SurveyListPayload> {
+    this.currentScan = null; // a list load always scans fresh
+    const { records, tip } = await this.scan();
+    // Governance links are best-effort enrichment (mirrors the serving tier's
+    // refresh): a proposal-endpoint failure must not sink the survey list.
+    // Bounded by the same `sinceUnix` floor as the survey scan itself — an
+    // action older than the scan window can't link to a survey we'd show.
+    const govLinks = await this.fetchGovernanceLinks(
+      this.config.sinceUnix,
+    ).catch((err) => {
+      console.warn(`governance linkage unavailable: ${String(err)}`);
+      return [];
+    });
+    return {
+      surveys: records.surveys,
+      cancellations: records.cancellations,
+      govLinks,
+      tip,
+      responseCounts: responseCounts(records.responses),
+      ...(records.incomplete !== undefined && {
+        incomplete: records.incomplete,
+      }),
+    };
+  }
+
+  async surveyBundle(ref: SurveyRef): Promise<SurveyBundle> {
+    const { records, tip } = await this.scan();
+    const key = refKey(ref);
+    const survey = records.surveys.find((s) => refKey(s.ref) === key);
+    if (!survey) throw new Error(`unknown survey ${key}`);
+    return {
+      survey,
+      responses: records.responses.filter(
+        (r) => refKey(r.response.surveyRef) === key,
+      ),
+      cancellations: records.cancellations.filter(
+        (c) => refKey(c.target) === key,
+      ),
+      tip,
+    };
+  }
+
+  async respondedKeys(credentialKeys: readonly string[]): Promise<string[]> {
+    if (credentialKeys.length === 0) return [];
+    const { records } = await this.scan();
+    const wanted = new Set(credentialKeys);
+    const keys = new Set<string>();
+    for (const r of records.responses) {
+      if (wanted.has(credentialKey(r.response.credential))) {
+        keys.add(refKey(r.response.surveyRef));
+      }
+    }
+    return [...keys];
   }
 
   /**

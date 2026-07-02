@@ -9,29 +9,23 @@
  * the indexer will later confirm it proved the owner credential.
  */
 
-import type { Credential, SurveyDefinition, SurveyRef } from "cip-179";
+import type { SurveyDefinition } from "cip-179";
 
-import { bytesToHex } from "~/util/hex";
+import { refKey, responseCounts } from "@tessera/core";
 import type {
+  CancellationRecord,
   ChainTip,
   Cip179Records,
   GovLink,
-  ResponseRecord,
+  SurveyListPayload,
   SurveyRecord,
 } from "~/data/source";
 import { cancellationVerified } from "./cancellation";
 
-/** Stable string identity for a survey reference: "<txHex>:<index>". */
-export function refKey(ref: SurveyRef): string {
-  return `${bytesToHex(ref.txId)}:${ref.index}`;
-}
-
-/** Stable identity for a responder credential. */
-export function credentialKey(cred: Credential): string {
-  return cred.type === "key"
-    ? `key:${bytesToHex(cred.keyHash)}`
-    : `script:${bytesToHex(cred.scriptHash)}`;
-}
+// The dedupe rule and its identity keys live in @tessera/core (the server's
+// per-survey `responseCount` calls the same code); re-exported here so app
+// importers keep their `~/domain/survey` path.
+export { refKey, credentialKey, dedupeResponses } from "@tessera/core";
 
 export type SurveyStatus = "active" | "ended" | "cancelled";
 
@@ -60,30 +54,6 @@ export interface SurveyAggregate {
    * change status or block responding, so it can't be used to suppress a survey.
    */
   readonly cancellationClaimed: boolean;
-}
-
-/**
- * Latest-valid-wins: at most one response per (survey, role, credential),
- * keeping the one at the highest slot (ties broken by tx hash for determinism).
- */
-export function dedupeResponses(
-  responses: readonly ResponseRecord[],
-): ResponseRecord[] {
-  const best = new Map<string, ResponseRecord>();
-  for (const r of responses) {
-    const id =
-      `${refKey(r.response.surveyRef)}|${r.response.role}|` +
-      credentialKey(r.response.credential);
-    const prev = best.get(id);
-    if (
-      !prev ||
-      r.slot > prev.slot ||
-      (r.slot === prev.slot && r.txHash > prev.txHash)
-    ) {
-      best.set(id, r);
-    }
-  }
-  return [...best.values()];
 }
 
 function statusOf(
@@ -170,25 +140,54 @@ export function aggregateSurveys(
   tip: ChainTip,
   govLinks: readonly GovLink[] = [],
 ): SurveyAggregate[] {
+  return aggregate(
+    records.surveys,
+    records.cancellations,
+    responseCounts(records.responses),
+    tip,
+    govLinks,
+  );
+}
+
+/**
+ * Build per-survey aggregates from a `surveyList()` payload, whose response
+ * counts the source already deduped — with the same core rule, so the numbers
+ * match what {@link aggregateSurveys} computes from raw responses.
+ */
+export function aggregateSurveyList(
+  list: SurveyListPayload,
+): SurveyAggregate[] {
+  return aggregate(
+    list.surveys,
+    list.cancellations,
+    list.responseCounts,
+    list.tip,
+    list.govLinks,
+  );
+}
+
+function aggregate(
+  surveys: readonly SurveyRecord[],
+  cancellations: readonly CancellationRecord[],
+  countByKey: Record<string, number>,
+  tip: ChainTip,
+  govLinks: readonly GovLink[],
+): SurveyAggregate[] {
   // A cancellation only takes effect when the cancelling tx proves the survey's
   // owner credential (CIP-179 mechanism A); unproven ones are surfaced as
   // unverified claims, never acted on — so they can't be used to suppress a
   // survey. See {@link cancellationStates} / {@link import("./cancellation")}.
-  const cancelStates = cancellationStates(records, tip);
+  const cancelStates = cancellationStates(
+    { surveys, responses: [], cancellations },
+    tip,
+  );
 
   // Index links by survey key; a survey is "linked" only when the action's
   // voting end epoch exactly equals the survey's end_epoch (the CIP invariant).
   const linkByKey = new Map<string, GovLink>();
   for (const link of govLinks) linkByKey.set(link.surveyKey, link);
 
-  const deduped = dedupeResponses(records.responses);
-  const countByKey = new Map<string, number>();
-  for (const r of deduped) {
-    const k = refKey(r.response.surveyRef);
-    countByKey.set(k, (countByKey.get(k) ?? 0) + 1);
-  }
-
-  return records.surveys.map((record) => {
+  return surveys.map((record) => {
     const key = refKey(record.ref);
     const cancelState = cancelStates.get(key);
     const cancelled = cancelState === "verified";
@@ -203,41 +202,10 @@ export function aggregateSurveys(
       sealed: record.definition.submissionMode.type === "sealed",
       external: record.definition.contentAnchor !== undefined,
       govLink,
-      responseCount: countByKey.get(key) ?? 0,
+      responseCount: countByKey[key] ?? 0,
       status: statusOf(record.definition.endEpoch, cancelled, tip.epoch),
     };
   });
-}
-
-/**
- * Unix-time floor for scanning governance actions: the on-chain creation time of
- * the **oldest still-active survey**. Linkage is Action → Survey (the action
- * points at an already-existing survey), so a linking Info Action can never
- * predate the survey it links to — actions older than our oldest active survey
- * can't link to any of them, and scanning them is just overload. Falls back to
- * `fallbackUnix` when no survey is currently active.
- *
- * Post-Shelley slots are 1s, so a survey's slot projects to wall-clock from the
- * tip (`tip.time − (tip.slot − slot)`), no per-network genesis math.
- */
-export function governanceSinceUnix(
-  records: Cip179Records,
-  tip: ChainTip,
-  fallbackUnix: number,
-): number {
-  // Only an owner-verified cancellation makes a survey inactive; an unverified
-  // claim leaves it active (mirrors aggregateSurveys).
-  const cancelStates = cancellationStates(records, tip);
-  let oldestSlot = Infinity;
-  for (const s of records.surveys) {
-    // Active = not cancelled and not past its end epoch (responses accepted
-    // through end_epoch inclusive, mirroring `statusOf`).
-    if (cancelStates.get(refKey(s.ref)) === "verified") continue;
-    if (s.definition.endEpoch < tip.epoch) continue;
-    if (s.slot < oldestSlot) oldestSlot = s.slot;
-  }
-  if (!Number.isFinite(oldestSlot)) return fallbackUnix;
-  return tip.time - (tip.slot - oldestSlot);
 }
 
 /** Find one aggregate by its ref key (for the survey detail screen). */

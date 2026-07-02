@@ -33,14 +33,14 @@ served document matches the on-chain hash.
 
 ## Repository layout
 
-| Path              | What it is                                                                                          |
-| ----------------- | --------------------------------------------------------------------------------------------------- |
-| `frontend/app`    | The browser app — [SolidJS][solid] + [Vite][vite] + TypeScript.                                     |
-| `frontend/cip179` | A pure, dependency-free TypeScript library to encode / decode / validate the label-17 format.       |
-| `packages/core`   | Shared portable domain types + wire codec (`@tessera/core`), used by app and backend.               |
-| `packages/koios`  | The Koios read path (`KoiosDataSource`), shared by the app's direct mode and the backend.           |
-| `backend/server`  | Tier-1 serving backend: cached snapshot over HTTP. Node process or Cloudflare Worker + D1.          |
-| `backend/deps`    | Indexer submodules (Adder / Yaci Store / Oura) for a future Tier-2; design notes in `backend/*.md`. |
+| Path              | What it is                                                                                                    |
+| ----------------- | ------------------------------------------------------------------------------------------------------------- |
+| `frontend/app`    | The browser app — [SolidJS][solid] + [Vite][vite] + TypeScript.                                               |
+| `frontend/cip179` | A pure, dependency-free TypeScript library to encode / decode / validate the label-17 format.                 |
+| `packages/core`   | Shared portable domain types + wire codec (`@tessera/core`), used by app and backend.                         |
+| `packages/koios`  | The Koios read path (`KoiosDataSource`), shared by the app's direct mode and the backend.                     |
+| `backend/server`  | Tier-1 serving backend: cached chain reads served per page over HTTP. Node process or Cloudflare Worker + D1. |
+| `backend/deps`    | Indexer submodules (Adder / Yaci Store / Oura) for a future Tier-2; design notes in `backend/*.md`.           |
 
 ## Quick start
 

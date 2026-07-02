@@ -171,23 +171,23 @@ secret instead of in each browser.
 
 - A **scheduled refresh** (Cron / loop) rebuilds the current label-17 snapshot
   (surveys, responses, cancellations, tip, governance links) into the SQL store.
-- The serving endpoint returns the cached snapshot (`GET /api/snapshot`) plus a
+- The serving endpoints slice the cached snapshot per page (§5.1) plus a
   freshness stamp; `/tip` and `/tx_status` may stay live passthroughs for
   immediacy.
 - Freshness target: snapshot is interval-old (e.g. 60–120s); acceptable for a
   survey app. The browser shows "updated Ns ago".
 
-The browser's `IndexerDataSource` becomes "fetch one snapshot" — lighter client,
-faster load, no per-device paging/batching.
+The browser's `IndexerDataSource` becomes "one bounded fetch per page" —
+lighter client, faster load, no per-device paging/batching.
 
-### 5.1 Phase 2: split the snapshot into per-page slices
+### 5.1 Phase 2: split the snapshot into per-page slices — DONE
 
-The monolithic `GET /api/snapshot` ships every response record to every client,
-and `responses` is the one unbounded section (it grows with users × surveys;
-sealed responses each carry a tlock ciphertext blob). Phase 1 mitigates with
-compression + an `ETag` versioned by `fetchedAt` (304 between refreshes); the
-real fix, deferred to Phase 2 because it shares its prerequisites with the tally
-work, is to serve what each page actually reads:
+The monolithic `GET /api/snapshot` shipped every response record to every
+client, and `responses` is the one unbounded section (it grows with users ×
+surveys; sealed responses each carry a tlock ciphertext blob). Phase 1
+mitigated with compression + an `ETag` versioned by `fetchedAt` (304 between
+refreshes); the real fix — **implemented, `/api/snapshot` is retired** — is to
+serve what each page actually reads:
 
 - **`GET /api/surveys`** — the Explore-list payload: survey records + tip +
   gov links + raw cancellations (tiny, and shipping them raw keeps cancellation
@@ -196,28 +196,33 @@ work, is to serve what each page actually reads:
   participation.
 - **`GET /api/surveys/{txHash}/{index}`** — the self-contained per-survey
   bundle: the definition record, **all** its `ResponseRecord`s (including sealed
-  ciphertexts), and the cancellations targeting it. One request serves the
-  detail/respond pages _and_ the standalone verifier — a survey result is
+  ciphertexts), the cancellations targeting it, and the tip. One request serves
+  the detail/respond pages _and_ the standalone verifier — a survey result is
   re-verified from exactly this slice, so **the verifier never needs the full
-  snapshot** and `/api/snapshot` can be dropped once the app has migrated
-  (it is not kept for the verifier's sake).
-- **`GET /api/responded?credential=<hex>`** — slim `[surveyKey]` projection so
-  Explore can flag "surveys I answered" without downloading responses (the
-  mapping is public on-chain data; today it is the only reason the list view
-  touches raw responses).
+  snapshot** (which is why `/api/snapshot` could be dropped outright once the
+  app migrated).
+- **`GET /api/responded?credentials=key:<hex>,script:<hex>`** — slim
+  `[surveyKey]` projection so Explore can flag "surveys I answered" without
+  downloading responses (the mapping is public on-chain data; it was the only
+  reason the list view touched raw responses). Credentials travel in the core
+  `credentialKey` form and several fit one request, since a wallet controls
+  both a payment and a stake credential.
 
-Prerequisites this shares with Phase 2's tally work (why it waits):
+How it landed (shared with Phase 2's tally work, which is why it waited):
 
-- The **dedupe rule** (latest-valid-per-credential, today in the app's
-  `domain/survey.ts`) moves into `@tessera/core` so the server's
-  `responseCount` and the client's audit agree by construction.
-- The store grows from one JSON blob row to sliceable shape — at minimum an
-  in-memory index (responses grouped by survey key, rebuilt each refresh) in
-  front of the blob; naturally the §6.5 tables when those land.
-- The frontend seam widens: `state.tsx`'s single eager resource becomes a list
-  resource + a lazy per-survey resource, and `DataSource` grows per-survey
-  methods (`KoiosDataSource` implements them by filtering its full scan, so the
-  direct/power-user path keeps working unchanged).
+- The **dedupe rule** (latest-valid-per-credential) lives in `@tessera/core`
+  (`dedupe.ts`: `refKey`/`credentialKey`/`dedupeResponses`/`responseCounts`),
+  so the server's `responseCount` and the client's audit agree by construction.
+- The store keeps its one JSON blob row; each route decodes and slices it per
+  request (fine at current sizes). If profiling ever disagrees, an in-memory
+  index per isolate (rebuilt when `fetchedAt` changes) or the §6.5 tables
+  replace the per-request parse.
+- The frontend seam widened: `state.tsx`'s single eager resource became a list
+  resource + a lazy per-survey bundle resource, and `DataSource` is now exactly
+  `surveyList`/`surveyBundle`/`respondedKeys`/`txStatus` (`KoiosDataSource`
+  implements the per-page methods by filtering one memoized full scan, so the
+  direct/power-user path keeps working unchanged; its full-scan reads remain as
+  concrete methods for the serving tier's refresh).
 
 ---
 
@@ -562,9 +567,11 @@ Contents (sketch):
    - Weighted per-role tally in `@tessera/core` (§6.6).
    - Content-addressed artifacts on R2 (§7); optional IPFS pin from the frontend;
      standalone verifier reusing `@tessera/core`.
-   - Split `/api/snapshot` into per-page slices (§5.1): `/api/surveys` list,
+   - ~~Split `/api/snapshot` into per-page slices (§5.1): `/api/surveys` list,
      per-survey bundle (also the verifier's input — it never needs the full
-     snapshot), `/api/responded` projection; then retire `/api/snapshot`.
+     snapshot), `/api/responded` projection; then retire `/api/snapshot`.~~
+     **Done** — the three per-page routes serve everything; `/api/snapshot`
+     is removed.
 3. **Phase 3 — node + indexer (post-PoC, `RESEARCH.md`).**
    - Tier 2 implements the same `TallyInputSource` and emits the same artifact.
      The Koios→node swap is invisible to the verifier and UI.

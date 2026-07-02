@@ -105,7 +105,7 @@ export const ProposeInfoAction: Component = () => {
   // optimistic twin, for a survey just published this session).
   const linkedSurvey = createMemo(() => {
     const ref = anchor()?.surveyRef;
-    const snap = app.snapshot();
+    const snap = app.list();
     if (!ref || !snap) return undefined;
     const key = `${ref.txId}:${ref.index}`;
     return (
@@ -122,7 +122,7 @@ export const ProposeInfoAction: Component = () => {
   const alignment = createMemo<{ level: NoteKind; text: string } | null>(() => {
     const a = anchor();
     if (!a || !a.surveyRef) return null; // no link → nothing to align
-    const tip = app.snapshot()?.tip;
+    const tip = app.list()?.tip;
     if (!tip)
       return {
         level: "warn",

@@ -1,11 +1,23 @@
 /**
- * The HTTP contract `IndexerDataSource` will speak (`backend/ARCHITECTURE.md`
- * §2, §8). Routes mirror the `DataSource` seam one-to-one:
- *   - GET /api/snapshot     cached label-17 records + tip + gov links + freshness
- *   - GET /api/tip          near-live chain tip (short cache, see below)
- *   - GET /api/tx_status    live confirmation counts for just-submitted txs
- *   - GET /api/pparams      latest-epoch protocol parameters (short cache), so
- *                           the browser can build a tx without a Koios token
+ * The HTTP contract `IndexerDataSource` speaks (`backend/ARCHITECTURE.md`
+ * §2, §5.1, §8). Routes mirror the `DataSource` seam one-to-one:
+ *   - GET /api/surveys                    Explore-list payload: surveys + tip +
+ *                                         gov links + raw cancellations +
+ *                                         deduped per-survey response counts
+ *   - GET /api/surveys/{txHash}/{index}   one survey's self-contained bundle:
+ *                                         definition, ALL its responses (sealed
+ *                                         ciphertexts included), cancellations
+ *   - GET /api/responded?credentials=     survey keys with a response from any
+ *                                         of the given credentials, each in the
+ *                                         core `credentialKey` form
+ *                                         ("key:<hex>" | "script:<hex>", comma-
+ *                                         separated — a wallet controls both a
+ *                                         payment and a stake credential, so one
+ *                                         request carries the whole identity)
+ *   - GET /api/tip                        near-live chain tip (short cache)
+ *   - GET /api/tx_status                  live confirmation counts
+ *   - GET /api/pparams                    latest-epoch protocol parameters, so
+ *                                         the browser builds txs tokenlessly
  *
  * `/api/tip` and `/api/pparams` sit behind a ~20 s memo: a burst of requests
  * (many tabs, a refresh storm) collapses into at most one upstream Koios call
@@ -13,20 +25,30 @@
  * every ~20 s anyway, and pparams change only at epoch boundaries.
  *
  * Transfer economics: responses are compressed (hex-heavy JSON shrinks several
- * fold), and `/api/snapshot` carries an `ETag` versioned by `fetchedAt` — the
- * body only changes when a refresh lands, so a browser revalidation between
- * refreshes is a 304 with no body. Splitting the snapshot into per-page slices
- * is deliberately deferred to Phase 2 (`backend/ARCHITECTURE.md` §5).
+ * fold), and every snapshot-derived route carries an `ETag` versioned by
+ * `fetchedAt` — the body only changes when a refresh lands, so a browser
+ * revalidation between refreshes is a 304 with no body. The per-page routes
+ * slice the cached blob per request (it is ~tens of KB); if that ever shows up
+ * in a profile, an in-memory per-isolate index (rebuilt when `fetchedAt`
+ * changes) or the §6.5 tables replace it — don't build that early.
  *
  * A plain Hono app: the same object runs under `@hono/node-server` locally
  * (`main.ts`) and on a Cloudflare Worker (`worker.ts`).
  */
 
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { compress } from "hono/compress";
 import { cors } from "hono/cors";
 
-import { toJsonSafe } from "@tessera/core";
+import {
+  credentialKey,
+  fromJsonSafe,
+  refKey,
+  responseCounts,
+  toJsonSafe,
+} from "@tessera/core";
+import type { ChainTip, Cip179Records, GovLink } from "@tessera/core";
 import { KoiosDataSource } from "@tessera/koios";
 
 import type { ServerConfig } from "./config";
@@ -57,6 +79,29 @@ function ttlCache<T>(
     }
     return value;
   };
+}
+
+/** The decoded shape of the cached snapshot payload (built in `refresh.ts`). */
+interface SnapshotBody {
+  readonly records: Cip179Records;
+  readonly tip: ChainTip;
+  readonly govLinks: readonly GovLink[];
+}
+
+/**
+ * Shared conditional-request handling for snapshot-derived routes. The body of
+ * each is fully determined by which refresh produced it, so `fetchedAt` is the
+ * version: `no-cache` makes the browser revalidate every time, and an unchanged
+ * snapshot answers 304 with no body — checked BEFORE the blob is decoded, so a
+ * revalidation costs no JSON parse. (`ageSeconds` drifts within a refresh
+ * window — clients wanting live staleness should derive it from `fetchedAt`,
+ * which is why the ETag deliberately ignores it. The ETag doesn't need to
+ * encode the query/path either: caches key entries by full URL.)
+ */
+function notModified(c: Context, etag: string): boolean {
+  c.header("Cache-Control", "no-cache");
+  c.header("ETag", etag);
+  return c.req.header("If-None-Match") === etag;
 }
 
 export interface AppOptions {
@@ -96,23 +141,88 @@ export function createApp(
 
   app.get("/health", (c) => c.json({ ok: true, network: config.app.network }));
 
-  app.get("/api/snapshot", async (c) => {
+  // The per-page routes decode the cached wire blob per request and slice
+  // it — the simplest correct thing at today's snapshot size (see file header).
+  app.get("/api/surveys", async (c) => {
     const cached = await store.get();
     if (!cached) return c.json({ error: "snapshot not ready" }, 503);
-    // The body is fully determined by which refresh produced it, so `fetchedAt`
-    // is the version: `no-cache` makes the browser revalidate every time, and an
-    // unchanged snapshot answers 304 with no body. (`ageSeconds` drifts within a
-    // refresh window — clients wanting live staleness should derive it from
-    // `fetchedAt`, which is why the ETag deliberately ignores it.)
-    const etag = `W/"snap-${cached.fetchedAt}"`;
-    c.header("Cache-Control", "no-cache");
-    c.header("ETag", etag);
-    if (c.req.header("If-None-Match") === etag) return c.body(null, 304);
+    if (notModified(c, `W/"surveys-${cached.fetchedAt}"`))
+      return c.body(null, 304);
+    const { records, tip, govLinks } = fromJsonSafe(
+      cached.payload,
+    ) as SnapshotBody;
     const now = Math.floor(Date.now() / 1000);
+    return c.json(
+      toJsonSafe({
+        surveys: records.surveys,
+        cancellations: records.cancellations,
+        govLinks,
+        tip,
+        // Counted with the same core dedupe rule the client audit runs, so the
+        // list's numbers and a survey page's tally agree by construction.
+        responseCounts: responseCounts(records.responses),
+        ...(records.incomplete !== undefined && {
+          incomplete: records.incomplete,
+        }),
+        fetchedAt: cached.fetchedAt,
+        ageSeconds: now - cached.fetchedAt,
+      }) as Record<string, unknown>,
+    );
+  });
+
+  app.get("/api/surveys/:txHash/:index", async (c) => {
+    const cached = await store.get();
+    if (!cached) return c.json({ error: "snapshot not ready" }, 503);
+    const txHash = c.req.param("txHash").toLowerCase();
+    const index = Number(c.req.param("index"));
+    if (!/^[0-9a-f]{64}$/.test(txHash) || !Number.isInteger(index) || index < 0)
+      return c.json({ error: "malformed survey ref" }, 404);
+    if (notModified(c, `W/"survey-${cached.fetchedAt}"`))
+      return c.body(null, 304);
+    const { records, tip } = fromJsonSafe(cached.payload) as SnapshotBody;
+    const key = `${txHash}:${index}`;
+    const survey = records.surveys.find((s) => refKey(s.ref) === key);
+    if (!survey) return c.json({ error: `unknown survey ${key}` }, 404);
+    const now = Math.floor(Date.now() / 1000);
+    return c.json(
+      toJsonSafe({
+        survey,
+        responses: records.responses.filter(
+          (r) => refKey(r.response.surveyRef) === key,
+        ),
+        cancellations: records.cancellations.filter(
+          (x) => refKey(x.target) === key,
+        ),
+        tip,
+        fetchedAt: cached.fetchedAt,
+        ageSeconds: now - cached.fetchedAt,
+      }) as Record<string, unknown>,
+    );
+  });
+
+  app.get("/api/responded", async (c) => {
+    const cached = await store.get();
+    if (!cached) return c.json({ error: "snapshot not ready" }, 503);
+    if (notModified(c, `W/"responded-${cached.fetchedAt}"`))
+      return c.body(null, 304);
+    const wanted = new Set(
+      (c.req.query("credentials") ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
+    // Raw responses, no dedupe/validity filter: this feeds "surveys I answered"
+    // flags, where any response attempt counts (mirrors the seam contract).
+    const { records } = fromJsonSafe(cached.payload) as SnapshotBody;
+    const surveyKeys = new Set<string>();
+    for (const r of records.responses) {
+      if (wanted.has(credentialKey(r.response.credential))) {
+        surveyKeys.add(refKey(r.response.surveyRef));
+      }
+    }
     return c.json({
-      ...(cached.payload as Record<string, unknown>),
+      surveyKeys: [...surveyKeys],
       fetchedAt: cached.fetchedAt,
-      ageSeconds: now - cached.fetchedAt,
     });
   });
 

@@ -21,11 +21,15 @@ port, refresh interval, or db path.
 ## Endpoints
 
 - `GET /health` — liveness + active network.
-- `GET /api/snapshot` — cached label-17 records + tip + gov links, plus
-  `fetchedAt` / `ageSeconds`. Returns `503` until the first refresh completes.
-  Carries an `ETag` versioned by `fetchedAt`, so revalidation between refreshes
-  is a bodiless `304`. Slated to be split into per-page slices in Phase 2
-  (`backend/ARCHITECTURE.md` §5.1).
+- `GET /api/surveys` — the Explore-list payload: survey records + tip + gov
+  links + raw cancellations + server-deduped `responseCounts` per survey, plus
+  `fetchedAt` / `ageSeconds`. Bounded regardless of participation volume.
+- `GET /api/surveys/{txHash}/{index}` — one survey's self-contained bundle:
+  its definition record, ALL of its responses (sealed ciphertexts included),
+  the cancellations targeting it, and the tip. `404` for an unknown ref.
+- `GET /api/responded?credentials=key:<hex>,script:<hex>` — survey keys with at
+  least one response from any of the given credentials (a wallet's payment +
+  stake in one request); feeds the Explore "answered" flags.
 - `GET /api/tip` — near-live chain tip (~20 s cache, so request bursts collapse
   into one Koios call).
 - `GET /api/tx_status?hashes=<h1>,<h2>` — live confirmation counts.
@@ -34,9 +38,12 @@ port, refresh interval, or db path.
   querying Koios, so the app needs no Koios token even to create
   surveys/responses/actions.
 
-The snapshot payload uses the `@tessera/core` JSON-safe wire form (bytes → hex
-under `$bytes`, big integers → decimal strings under `$bigint`) so it round-trips
-losslessly to the browser. The `/api/*` routes send permissive CORS headers (the
+Snapshot-derived routes answer `503` until the first refresh completes, and
+carry an `ETag` versioned by `fetchedAt`, so revalidation between refreshes is
+a bodiless `304`. Payloads use the `@tessera/core` JSON-safe wire form (bytes →
+hex under `$bytes`, big integers → decimal strings under `$bigint`) so they
+round-trip losslessly to the browser. The `/api/*` routes send permissive CORS
+headers (the
 data is public and cookieless), so the browser app can read them cross-origin.
 Bodies are compressed when the client accepts it (hex-heavy JSON shrinks ~4×).
 

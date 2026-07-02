@@ -1,12 +1,14 @@
 /**
  * App-wide state, provided once at the root.
  *
- * - `source`     the active DataSource (Koios today, indexer later) — the seam.
- * - `snapshot`   a Solid resource holding the decoded records + chain tip +
- *                derived survey aggregates. Loading/error states come for free.
- * - `ui`         small client-only UI state (explore filter + search) in a store.
+ * - `source`  the active DataSource (Koios or the indexer backend) — the seam.
+ * - `list`    a Solid resource holding the survey-list payload (tip + derived
+ *             survey aggregates). Loading/error states come for free. Per-survey
+ *             data (raw responses for audit/tally) is NOT here — detail pages
+ *             fetch their own `surveyBundle(ref)` lazily through `source`.
+ * - `ui`      small client-only UI state (explore filter + search) in a store.
  *
- * Domain data lives only in the resource; the store never duplicates it.
+ * Domain data lives only in the resources; the store never duplicates it.
  */
 
 import {
@@ -41,15 +43,10 @@ import {
 } from "~/enrichment/providers";
 import { KoiosDataSource } from "@tessera/koios";
 import { IndexerDataSource } from "~/data/indexer";
-import type {
-  ChainTip,
-  Cip179Records,
-  DataSource,
-  SurveyRecord,
-} from "~/data/source";
+import type { ChainTip, DataSource, SurveyRecord } from "~/data/source";
 import {
+  aggregateSurveyList,
   aggregateSurveys,
-  governanceSinceUnix,
   type SurveyAggregate,
 } from "~/domain/survey";
 import { claimableRoles } from "~/domain/roles";
@@ -67,10 +64,12 @@ import {
 import { loadAllDocs, putDoc } from "~/enrichment/docStore";
 import type { Credential, Metadatum, SurveyDefinition } from "cip-179";
 
-export interface Snapshot {
-  readonly records: Cip179Records;
+/** What the eager list resource holds — everything Explore renders from. */
+export interface SurveyList {
   readonly tip: ChainTip;
   readonly surveys: readonly SurveyAggregate[];
+  /** True when the source's scan may have missed records (paging cap hit). */
+  readonly incomplete?: boolean;
 }
 
 export type ExploreFilter =
@@ -121,7 +120,7 @@ const SLOW_AFTER_MS = 150_000;
 interface AppState {
   readonly config: AppConfig;
   readonly source: DataSource;
-  readonly snapshot: Resource<Snapshot>;
+  readonly list: Resource<SurveyList>;
   reload(): void;
   readonly ui: UiState;
   setFilter(f: ExploreFilter): void;
@@ -236,23 +235,17 @@ export const AppProvider: ParentComponent = (props) => {
     ? new IndexerDataSource(indexerUrl, config.network)
     : new KoiosDataSource(config, () => koiosToken());
 
-  const [snapshot, { refetch }] = createResource<Snapshot>(async () => {
-    const [records, tip] = await Promise.all([
-      source.fetchAll(),
-      source.chainTip(),
-    ]);
-    // Bound the governance scan to actions recent enough to link a live survey
-    // (oldest active survey's creation time). Best-effort enrichment: never let
-    // a governance-endpoint failure (or CORS) sink the main snapshot.
-    const since = governanceSinceUnix(records, tip, config.sinceUnix);
-    const govLinks = await source.fetchGovernanceLinks(since).catch((e) => {
-      console.warn(`governance linkage unavailable: ${String(e)}`);
-      return [];
-    });
+  const [list, { refetch }] = createResource<SurveyList>(async () => {
+    // One bounded read regardless of participation volume: responses arrive
+    // pre-deduped as per-survey counts, and governance-link failures are
+    // already absorbed source-side (best-effort enrichment).
+    const payload = await source.surveyList();
     return {
-      records,
-      tip,
-      surveys: aggregateSurveys(records, tip, govLinks),
+      tip: payload.tip,
+      surveys: aggregateSurveyList(payload),
+      ...(payload.incomplete !== undefined && {
+        incomplete: payload.incomplete,
+      }),
     };
   });
 
@@ -325,11 +318,11 @@ export const AppProvider: ParentComponent = (props) => {
   });
 
   const addOptimisticSurvey = (record: SurveyRecord): void => {
-    const snap = snapshot();
-    if (!snap) return;
+    const tip = list()?.tip;
+    if (!tip) return;
     const [agg] = aggregateSurveys(
       { surveys: [record], responses: [], cancellations: [] },
-      snap.tip,
+      tip,
     );
     if (!agg) return;
     setOptimisticSurveys((prev) => [
@@ -372,11 +365,11 @@ export const AppProvider: ParentComponent = (props) => {
     }
   };
 
-  // Once the real indexed survey appears in a snapshot, drop its optimistic twin.
+  // Once the real indexed survey appears in the list, drop its optimistic twin.
   createEffect(() => {
-    const snap = snapshot();
-    if (!snap) return;
-    const realKeys = new Set(snap.surveys.map((s) => s.key));
+    const surveys = list()?.surveys;
+    if (!surveys) return;
+    const realKeys = new Set(surveys.map((s) => s.key));
     setOptimisticSurveys((prev) => prev.filter((a) => !realKeys.has(a.key)));
   });
 
@@ -463,7 +456,7 @@ export const AppProvider: ParentComponent = (props) => {
   const value: AppState = {
     config,
     source,
-    snapshot,
+    list,
     reload: safeRefetch,
     ui,
     setFilter: (f) => setUi("filter", f),
@@ -532,6 +525,3 @@ export function useApp(): AppState {
   if (!v) throw new Error("useApp must be used within <AppProvider>");
   return v;
 }
-
-/** Records helper unused at the type level — re-exported for screens. */
-export type { Cip179Records };

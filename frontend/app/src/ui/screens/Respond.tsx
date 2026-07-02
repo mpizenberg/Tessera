@@ -3,6 +3,7 @@ import {
   Show,
   createEffect,
   createMemo,
+  createResource,
   createSignal,
   on,
   type Component,
@@ -30,7 +31,6 @@ import { useApp } from "~/state";
 import {
   dedupeResponses,
   findSurvey,
-  refKey,
   type SurveyAggregate,
 } from "~/domain/survey";
 import { respondableRoles, roleCredential } from "~/domain/roles";
@@ -83,11 +83,22 @@ export const Respond: Component = () => {
 
   // Fall back to the optimistic set so a just-created survey is answerable
   // immediately, before Koios indexes it (mirrors the results page).
-  const survey = createMemo(() => {
-    const snap = app.snapshot();
-    const found = snap ? findSurvey(snap.surveys, key()) : undefined;
-    return found ?? app.optimisticSurveys().find((a) => a.key === key());
+  const indexed = createMemo(() => {
+    const snap = app.list.error ? undefined : app.list();
+    return snap ? findSurvey(snap.surveys, key()) : undefined;
   });
+  const survey = createMemo(
+    () => indexed() ?? app.optimisticSurveys().find((a) => a.key === key()),
+  );
+
+  // The survey's raw responses ride in its lazily-fetched bundle (the list
+  // payload carries only counts); they're needed here solely to pre-fill the
+  // form from a prior response. Best-effort: an optimistic survey has no
+  // bundle to fetch, and a failed fetch just means no pre-fill.
+  const [bundle] = createResource(
+    () => indexed()?.record.ref,
+    (ref) => app.source.surveyBundle(ref),
+  );
   // External-content surveys: render labels from the off-chain presentation doc
   // when available. `definition()` is the enriched (display) definition; it
   // falls back to the on-chain one, which is always answerable since indices and
@@ -137,13 +148,9 @@ export const Respond: Component = () => {
     const s = survey();
     const r = role();
     const cred = credential();
-    const snap = app.snapshot();
-    if (!def || !s || r === null || !cred || !snap) return undefined;
-    const mine = dedupeResponses(
-      snap.records.responses.filter(
-        (rr) => refKey(rr.response.surveyRef) === s.key,
-      ),
-    ).map((x) => x.response);
+    const b = bundle.error ? undefined : bundle();
+    if (!def || !s || r === null || !cred || !b) return undefined;
+    const mine = dedupeResponses(b.responses).map((x) => x.response);
     return findExistingResponse(mine, s.record.ref, r, cred);
   });
 
@@ -453,8 +460,8 @@ export const Respond: Component = () => {
         when={survey()}
         fallback={
           <Empty
-            loading={app.snapshot.loading}
-            error={app.snapshot.error}
+            loading={app.list.loading}
+            error={app.list.error}
             onRetry={() => app.reload()}
           />
         }

@@ -23,7 +23,7 @@ import {
 } from "cip-179";
 
 import { useApp } from "~/state";
-import { findSurvey, refKey, type SurveyAggregate } from "~/domain/survey";
+import { findSurvey, type SurveyAggregate } from "~/domain/survey";
 import { humanizeAnswer, serializeAnswer } from "~/domain/answer";
 import {
   auditResponses,
@@ -109,12 +109,29 @@ export const Survey: Component = () => {
   const app = useApp();
   const params = useParams<{ key: string }>();
   const key = () => decodeURIComponent(params.key);
-  const survey = createMemo(() => {
-    const snap = app.snapshot();
-    const found = snap ? findSurvey(snap.surveys, key()) : undefined;
-    // A just-created survey isn't indexed yet — fall back to its optimistic twin.
-    return found ?? app.optimisticSurveys().find((a) => a.key === key());
+  const indexed = createMemo(() => {
+    const snap = app.list.error ? undefined : app.list();
+    return snap ? findSurvey(snap.surveys, key()) : undefined;
   });
+  // A just-created survey isn't indexed yet — fall back to its optimistic twin.
+  const survey = createMemo(
+    () => indexed() ?? app.optimisticSurveys().find((a) => a.key === key()),
+  );
+
+  // The survey's own slice — raw responses (audit/tally/reveal need them),
+  // cancellations, tip — fetched lazily; the list payload deliberately carries
+  // none of it. Keyed on the *indexed* record: an optimistic survey isn't
+  // fetchable yet (nothing on-chain), and auditing it as "no responses" is
+  // exactly right.
+  const [bundle, { refetch: refetchBundle }] = createResource(
+    () => indexed()?.record.ref,
+    (ref) => app.source.surveyBundle(ref),
+  );
+  // Same swallow-the-promise rule as `reload`: a failed retry is already
+  // captured in `bundle.error`.
+  const retryBundle = (): void => {
+    void Promise.resolve(refetchBundle()).catch(() => {});
+  };
 
   // External-content surveys: fetch + hash-verify the off-chain presentation
   // doc and render its labels; `pres.def()` falls back to the on-chain
@@ -126,16 +143,13 @@ export const Survey: Component = () => {
   // set to tally; `excluded` is the client-detectable breakdown (after-deadline
   // + superseded). Ledger-state exclusions (role/credential) are indexer-side.
   const audit = createMemo<ResponseAudit>(() => {
-    const snap = app.snapshot();
     const s = survey();
-    if (!snap || !s) return { counted: [], excludedRecords: [] };
-    const raw = snap.records.responses.filter(
-      (r) => refKey(r.response.surveyRef) === key(),
-    );
+    const b = bundle.error ? undefined : bundle();
+    if (!s || !b) return { counted: [], excludedRecords: [] };
     return auditResponses(
-      raw,
+      b.responses,
       s.record.definition,
-      snap.tip,
+      b.tip,
       app.config.secondsPerEpoch,
     );
   });
@@ -186,8 +200,8 @@ export const Survey: Component = () => {
         when={survey()}
         fallback={
           <Empty
-            loading={app.snapshot.loading}
-            error={app.snapshot.error}
+            loading={app.list.loading}
+            error={app.list.error}
             onRetry={() => app.reload()}
           />
         }
@@ -244,25 +258,39 @@ export const Survey: Component = () => {
               </Show>
             </Show>
 
+            {/* Results render from the survey's own bundle; until it lands (or
+                if it fails) show the same loading/error affordance as the page
+                shell, never a tally that silently reads as "0 responses". */}
             <Show
-              when={!sv().sealed}
+              when={!bundle.loading && !bundle.error}
               fallback={
-                <SealedResults
-                  s={sv()}
+                <Empty
+                  loading={bundle.loading}
+                  error={bundle.error}
+                  onRetry={retryBundle}
+                />
+              }
+            >
+              <Show
+                when={!sv().sealed}
+                fallback={
+                  <SealedResults
+                    s={sv()}
+                    def={def() ?? sv().record.definition}
+                    keyStr={key()}
+                    records={records()}
+                    excludedRecords={audit().excludedRecords}
+                    nowUnix={now()}
+                  />
+                }
+              >
+                <ResultsBody
                   def={def() ?? sv().record.definition}
                   keyStr={key()}
                   records={records()}
                   excludedRecords={audit().excludedRecords}
-                  nowUnix={now()}
                 />
-              }
-            >
-              <ResultsBody
-                def={def() ?? sv().record.definition}
-                keyStr={key()}
-                records={records()}
-                excludedRecords={audit().excludedRecords}
-              />
+              </Show>
             </Show>
           </>
         )}
@@ -1221,7 +1249,7 @@ const ResultsBody: Component<{
         </button>
       </div>
 
-      <Show when={app.snapshot()?.records.incomplete}>
+      <Show when={app.list()?.incomplete}>
         <div class={css.incomplete}>{t("survey.incomplete")}</div>
       </Show>
 
