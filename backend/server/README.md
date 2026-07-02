@@ -1,8 +1,9 @@
 # @tessera/backend
 
 Tier-1 serving backend for Tessera: runs the CIP-179 Koios read path once per
-interval, caches it in SQLite, and serves it over HTTP. A local Node process
-today; the same Hono app targets Cloudflare Workers (with D1) later. See
+interval, caches it in SQLite, and serves it over HTTP. One Hono app, two
+runtimes: a local Node process (`src/main.ts`, node:sqlite + setInterval) and a
+Cloudflare Worker (`src/worker.ts`, D1 + Cron trigger). See
 `backend/ARCHITECTURE.md`.
 
 ## Run locally
@@ -53,6 +54,26 @@ VITE_INDEXER_URL=http://localhost:8787 pnpm --filter tessera-app dev   # termina
 Leave `VITE_INDEXER_URL` unset and the app reads from Koios directly (the
 power-user/offline path), which then needs a Koios token pasted in the app's
 Settings.
+
+## Run on Cloudflare
+
+The Worker entry reuses the same app with a D1 store; the cron trigger
+(`*/3 * * * *`, wrangler.toml) replaces the refresh loop. Locally, against
+Miniflare's bundled D1 (no Cloudflare account needed):
+
+```sh
+pnpm --filter @tessera/backend exec wrangler d1 migrations apply DB --local
+pnpm --filter @tessera/backend dev:cf        # wrangler dev --test-scheduled
+curl "http://localhost:8787/__scheduled"     # trigger one refresh by hand
+```
+
+To deploy: `wrangler d1 create tessera-cache-preview`, paste the database id
+into `wrangler.toml`, apply migrations with `--remote`, then
+`pnpm --filter @tessera/backend deploy:cf`. Mainnet is a wrangler environment —
+same steps with `--env mainnet` and its own database. A refresh currently costs
+~6 Koios subrequests (logged on every cron run in `wrangler tail`), comfortably
+inside the free plan's 50-per-invocation cap; revisit if the survey volume
+grows the label pages / cbor batches.
 
 ## Requirements
 

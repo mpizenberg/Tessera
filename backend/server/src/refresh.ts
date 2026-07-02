@@ -32,7 +32,7 @@ export async function refreshSnapshot(
     });
 
   const payload = toJsonSafe({ records, tip, govLinks });
-  store.put({ payload, fetchedAt: Math.floor(Date.now() / 1000) });
+  await store.put({ payload, fetchedAt: Math.floor(Date.now() / 1000) });
 
   console.log(
     `snapshot refreshed: ${records.surveys.length} surveys, ` +

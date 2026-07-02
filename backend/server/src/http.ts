@@ -18,8 +18,8 @@
  * refreshes is a 304 with no body. Splitting the snapshot into per-page slices
  * is deliberately deferred to Phase 2 (`backend/ARCHITECTURE.md` §5).
  *
- * A plain Hono app: the same object runs under `@hono/node-server` locally and,
- * unchanged, on a Cloudflare Worker later.
+ * A plain Hono app: the same object runs under `@hono/node-server` locally
+ * (`main.ts`) and on a Cloudflare Worker (`worker.ts`).
  */
 
 import { Hono } from "hono";
@@ -59,7 +59,20 @@ function ttlCache<T>(
   };
 }
 
-export function createApp(config: ServerConfig, store: SnapshotStore): Hono {
+export interface AppOptions {
+  /**
+   * Compress bodies in-process (default). The Worker entry turns this off:
+   * Cloudflare's edge compresses responses itself, and hono/compress relies on
+   * a CompressionStream behaviour workerd doesn't reproduce.
+   */
+  readonly compress?: boolean;
+}
+
+export function createApp(
+  config: ServerConfig,
+  store: SnapshotStore,
+  options: AppOptions = {},
+): Hono {
   const app = new Hono();
   // The read API is public, cookieless data meant for browser consumption from
   // a different origin (the app may be served separately from this serving
@@ -69,7 +82,7 @@ export function createApp(config: ServerConfig, store: SnapshotStore): Hono {
   app.use("/api/*", cors());
   // Compress bodies when the client accepts it. The snapshot is hex-string-heavy
   // JSON, which deflates several fold; on Cloudflare the edge does this instead.
-  app.use(compress());
+  if (options.compress !== false) app.use(compress());
   // Passthroughs go to Koios: tx status live (it's per-hash and post-submit),
   // tip and pparams behind the short memo above.
   const source = new KoiosDataSource(config.app);
@@ -80,8 +93,8 @@ export function createApp(config: ServerConfig, store: SnapshotStore): Hono {
 
   app.get("/health", (c) => c.json({ ok: true, network: config.app.network }));
 
-  app.get("/api/snapshot", (c) => {
-    const cached = store.get();
+  app.get("/api/snapshot", async (c) => {
+    const cached = await store.get();
     if (!cached) return c.json({ error: "snapshot not ready" }, 503);
     // The body is fully determined by which refresh produced it, so `fetchedAt`
     // is the version: `no-cache` makes the browser revalidate every time, and an

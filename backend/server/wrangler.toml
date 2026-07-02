@@ -1,0 +1,36 @@
+# Cloudflare deployment of the Tier-1 backend (src/worker.ts).
+#
+# The top-level config is the default (preview-network) deployment; mainnet is
+# a wrangler environment (`wrangler deploy --env mainnet`) with its own D1
+# database and vars — two deployments of one Worker, no network path segment
+# (ARCHITECTURE.md §11). Create databases with `wrangler d1 create <name>`,
+# paste the ids below, then `wrangler d1 migrations apply DB [--local|--remote]`.
+
+name = "tessera-backend"
+main = "src/worker.ts"
+compatibility_date = "2026-06-01"
+compatibility_flags = ["nodejs_compat"]
+
+[triggers]
+# ≈ the Node entry's 180 s REFRESH_SECONDS default (cron floor is 1 minute).
+crons = ["*/3 * * * *"]
+
+[vars]
+NETWORK = "preview"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tessera-cache-preview"
+database_id = "00000000-0000-0000-0000-000000000000" # placeholder — replace after `wrangler d1 create`
+migrations_dir = "migrations"
+
+# Environments do not inherit [vars] or bindings — redeclare everything.
+[env.mainnet]
+[env.mainnet.vars]
+NETWORK = "mainnet"
+
+[[env.mainnet.d1_databases]]
+binding = "DB"
+database_name = "tessera-cache-mainnet"
+database_id = "00000000-0000-0000-0000-000000000000" # placeholder — replace after `wrangler d1 create`
+migrations_dir = "migrations"

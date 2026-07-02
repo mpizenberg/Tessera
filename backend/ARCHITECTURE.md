@@ -2,13 +2,13 @@
 
 > **Status:** decided design for the current proof-of-concept phase. Continues
 > `RESEARCH.md` §9 ("the indexer choice is secondary to the state strategy") by
-> committing to the *light, Koios-backed* corner of the trilemma now, and
+> committing to the _light, Koios-backed_ corner of the trilemma now, and
 > deferring the trustless node+indexer until after the app is validated with
 > users. Nothing here is trustless; weights come from Koios (an oracle). The
 > design's job is to **go as far as possible without a node** while staying
 > **reproducible, self-hostable, and forward-compatible** with the eventual
-> node+indexer — which drops in behind the same seams and produces the *same
-> artifact format*.
+> node+indexer — which drops in behind the same seams and produces the _same
+> artifact format_.
 
 ---
 
@@ -20,7 +20,7 @@
 - **Scalable.** Koios load is decoupled from user count (one server-side scan
   serves everyone, instead of every browser re-scanning).
 - **Reproducible.** Anyone can re-run the whole setup with their own Cloudflare
-  account *or* self-host it without a Cloudflare account at all.
+  account _or_ self-host it without a Cloudflare account at all.
 - **Tally-ready.** Produce per-role, stake-weighted survey results from Koios,
   with results published as immutable, independently re-verifiable artifacts.
 - **Forward-compatible.** The Koios path is the first implementation of a seam;
@@ -48,14 +48,14 @@ proofs, `/proposal_list` for governance links, `/tip`, and polled `/tx_status`.
 1. **Security.** `VITE_KOIOS_TOKEN` is baked into the JS bundle — a shared
    credential visible to anyone, burnable against one quota. The anonymous tier
    is CORS-blocked, so today a client-side token is effectively mandatory.
-2. **Scalability.** Koios load scales with *users × refreshes*, all on one quota,
+2. **Scalability.** Koios load scales with _users × refreshes_, all on one quota,
    and each client re-scans the full label-17 history from `sinceUnix` with no
    shared cache — cost grows for every user as surveys accumulate, and the
    `MAX_PAGES` cap (`incomplete` flag) is a real ceiling.
 
 The `DataSource` seam (`src/data/source.ts`) was built for exactly this swap:
-*"a future semantic indexer backend can implement the same interface and drop in
-with no change to the domain or UI layers."*
+_"a future semantic indexer backend can implement the same interface and drop in
+with no change to the domain or UI layers."_
 
 ---
 
@@ -93,8 +93,8 @@ with no change to the domain or UI layers."*
 - **`DataSource`** (exists) — reads CIP-179 records + chain tip. Implementations:
   `KoiosDataSource` (direct, kept as power-user/offline path) and a new
   `IndexerDataSource` (HTTP to Tier 1).
-- **`TallyInputSource`** (new) — *given a survey at its `end_epoch`, return each
-  counted responder's weight + membership.* Implementations: `KoiosTallyInputs`
+- **`TallyInputSource`** (new) — _given a survey at its `end_epoch`, return each
+  counted responder's weight + membership._ Implementations: `KoiosTallyInputs`
   (this spec) and, later, the node+indexer. Everything downstream (artifact,
   pure tally, verifier, UI) is provenance-agnostic.
 
@@ -106,24 +106,24 @@ The two constraints — "anyone can re-run on their own Cloudflare account" **an
 "self-hostable without much effort" — are reconciled by **layering**: a portable
 core, a thin swappable runtime/storage adapter, and a portable HTTP contract.
 
-| Layer | Portable? | Notes |
-|---|---|---|
-| **Core** (TS): chain-follow/decode + pure `@tessera/core` (audit, tally) + tally-input gathering | yes | No Cloudflare APIs. Runs in Worker, Node/Bun, or a CLI. |
-| **Storage**: repository interface over **SQL (SQLite dialect)** | yes | D1 *is* SQLite. Self-host → libsql/better-sqlite3 (or Postgres). KV/Cache used **only** as an optional edge cache, never as the source of truth. |
-| **Runtime adapter** | thin | CF: `wrangler.toml` + fetch handler + `[triggers] crons` + D1 binding. Self-host: tiny HTTP server + `node-cron`/loop + SQLite file. Both call **Core**. |
-| **HTTP `/api` contract** | yes | What `IndexerDataSource` speaks. Identical whether served by a Worker or a process. |
+| Layer                                                                                            | Portable? | Notes                                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------ | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Core** (TS): chain-follow/decode + pure `@tessera/core` (audit, tally) + tally-input gathering | yes       | No Cloudflare APIs. Runs in Worker, Node/Bun, or a CLI.                                                                                                  |
+| **Storage**: repository interface over **SQL (SQLite dialect)**                                  | yes       | D1 _is_ SQLite. Self-host → libsql/better-sqlite3 (or Postgres). KV/Cache used **only** as an optional edge cache, never as the source of truth.         |
+| **Runtime adapter**                                                                              | thin      | CF: `wrangler.toml` + fetch handler + `[triggers] crons` + D1 binding. Self-host: tiny HTTP server + `node-cron`/loop + SQLite file. Both call **Core**. |
+| **HTTP `/api` contract**                                                                         | yes       | What `IndexerDataSource` speaks. Identical whether served by a Worker or a process.                                                                      |
 
 **Consequences**
 
 - The **baseline reproducible artifact is a container/compose stack**; Cloudflare
-  is *one* managed deploy target for Tier 1, not a requirement.
+  is _one_ managed deploy target for Tier 1, not a requirement.
 - Substrate is **SQL/SQLite**, the most portable Cloudflare primitive (vs KV,
   which is the least). Avoid Durable Objects in the core path; if used later for
   live push, treat as a CF-only enhancement.
 - **Token handling:** the Koios token becomes a server secret
   (`wrangler secret put` / env var). Because server-side `fetch` is not
   CORS-bound, Tier 1 may even use Koios's **anonymous tier with no token** — so
-  there is, by default, *no shared secret to leak*. A token remains optional for
+  there is, by default, _no shared secret to leak_. A token remains optional for
   rate headroom.
 - The existing **user-token override is preserved** as the direct
   `KoiosDataSource` path (decentralization escape hatch / "verify against chain
@@ -133,7 +133,7 @@ core, a thin swappable runtime/storage adapter, and a portable HTTP contract.
 
 ## 4. Workspace packaging (prerequisite refactor)
 
-Running the *same* validation + tally code in the browser, the serving tier, and
+Running the _same_ validation + tally code in the browser, the serving tier, and
 a standalone verifier requires factoring the shared code out of the app. This is
 load-bearing for the verifiability story, not just hygiene.
 
@@ -151,8 +151,8 @@ load-bearing for the verifiability story, not just hygiene.
     wallet-facing helpers, `wallet/*`) or `~/config` runtime. `roles.ts` splits:
     the pure credential/eligibility core may move; the `WalletIdentity`-coupled
     helpers stay.
-  - **Cut line:** *data-model types + pure validation/tally/aggregation →
-    package; anything wallet/CIP-30/runtime → app.*
+  - **Cut line:** _data-model types + pure validation/tally/aggregation →
+    package; anything wallet/CIP-30/runtime → app._
 - `@tessera/core` is authored **BigInt- and rational-ready** from the outset
   (§6.6): weighted aggregates are BigInt; ratios are returned as integer
   `{numerator, denominator}` pairs, never floats.
@@ -197,7 +197,7 @@ work, is to serve what each page actually reads:
 - **`GET /api/surveys/{txHash}/{index}`** — the self-contained per-survey
   bundle: the definition record, **all** its `ResponseRecord`s (including sealed
   ciphertexts), and the cancellations targeting it. One request serves the
-  detail/respond pages *and* the standalone verifier — a survey result is
+  detail/respond pages _and_ the standalone verifier — a survey result is
   re-verified from exactly this slice, so **the verifier never needs the full
   snapshot** and `/api/snapshot` can be dropped once the app has migrated
   (it is not kept for the verifier's sake).
@@ -229,13 +229,13 @@ Tallies and weighting are **always per-role; never combined** (the same ada woul
 otherwise be double-counted across a holder's stakeholder stake, their DRep's
 voting power, and their pool's stake).
 
-| Role | Weight measure | Membership gate | Browser-producible? |
-|---|---|---|---|
-| **Stakeholder** | active ada stake at `end_epoch` | stake address **registered** at `end_epoch` | yes |
-| **DRep** | DRep voting power at `end_epoch` | DRep **registered** at `end_epoch` | yes |
-| **SPO** | pool active stake at `end_epoch` | pool registered at `end_epoch` | **no** (specified, deferred) |
-| **Owner** | **count-only** (weight = 1) | owner-proof (already on-chain, client-verifiable) | yes |
-| **CC** | **TODO** | **TODO** | no |
+| Role            | Weight measure                   | Membership gate                                   | Browser-producible?          |
+| --------------- | -------------------------------- | ------------------------------------------------- | ---------------------------- |
+| **Stakeholder** | active ada stake at `end_epoch`  | stake address **registered** at `end_epoch`       | yes                          |
+| **DRep**        | DRep voting power at `end_epoch` | DRep **registered** at `end_epoch`                | yes                          |
+| **SPO**         | pool active stake at `end_epoch` | pool registered at `end_epoch`                    | **no** (specified, deferred) |
+| **Owner**       | **count-only** (weight = 1)      | owner-proof (already on-chain, client-verifiable) | yes                          |
+| **CC**          | **TODO**                         | **TODO**                                          | no                           |
 
 - **Membership = registration.** A Stakeholder/DRep response whose credential is
   **not registered** at `end_epoch` is **excluded as invalid** (it is not a
@@ -259,7 +259,7 @@ voting power, and their pool's stake).
   `end_epoch` value (possibly 0). Deliberate, matching governance snapshot
   semantics. This rule string is part of `ruleset_hash` (§7).
 - **Row-freeze timing.** Koios per-epoch history freezes epoch `E`'s row once
-  epoch `E` *begins* (the latest row, for the next epoch, is the live-evolving
+  epoch `E` _begins_ (the latest row, for the next epoch, is the live-evolving
   value until the boundary). Finalization runs **after `end_epoch` closes**, so
   `E`'s row is always frozen and available — no estimation needed.
 - **Sealed surveys** use **deadline weights**: freeze the `end_epoch` weights at
@@ -269,18 +269,18 @@ voting power, and their pool's stake).
 
 ### 6.3 Validation → the hashed counted set
 
-The hashed `tally` (§7) is a pure function of *which responses count* and *their
-answer values*, so the validation ruleset **is** part of the hash preimage — a
+The hashed `tally` (§7) is a pure function of _which responses count_ and _their
+answer values_, so the validation ruleset **is** part of the hash preimage — a
 verifier reproduces the hash only by applying it byte-for-byte, which is what
 `rulesetHash` binds. This authoritative validation is distinct from the browser's
 fast **approximate** pass (`audit.ts`: `epochOfSlot`-estimated deadline,
-`(slot, txHash)` dedup) that drives the live UI but is *not* authoritative for the
+`(slot, txHash)` dedup) that drives the live UI but is _not_ authoritative for the
 artifact; the serving tier produces the counted set below from ledger facts.
 
 A response is **tally-valid** iff all of:
 
 1. **On-time.** The response tx's block epoch ≤ `end_epoch` (inclusive, §6.2),
-   read from the block's authoritative `epoch_no` (Koios) — *not* the tip-relative
+   read from the block's authoritative `epoch_no` (Koios) — _not_ the tip-relative
    `epochOfSlot` estimate, which can disagree at a boundary slot.
 2. **Credential proof** (CIP-179 Mechanism A/B). Control of `credential` is proven
    by `required_signers` (field 14: key hash present, or native script resolved +
@@ -298,7 +298,7 @@ A response is **tally-valid** iff all of:
 **Dedup.** Among the tally-valid responses, one wins per
 `(survey_ref, role, credential)` by CIP-179 chain order
 **`(slot, tx_index_in_block, response_index)`** — a total order (no ties), latest
-wins. Deduping over the *tally-valid* set (not all responses) means an invalid
+wins. Deduping over the _tally-valid_ set (not all responses) means an invalid
 later response never suppresses a valid earlier one. This requires two read-model
 fields the UI lacks — `tx_index_in_block` (Koios block tx index) and
 `response_index` (payload array position); the UI's `(slot, txHash)` key is a
@@ -329,13 +329,13 @@ emits an artifact whose hashed body is a single **cancellation record** (cancell
 
 ### 6.4 Koios endpoints
 
-| Purpose | Endpoint | Shape | Notes |
-|---|---|---|---|
-| Stakeholder stake (per epoch) | `POST /account_stake_history` | **bulk** (many stake addresses) | exact, historical, queryable any time after `E`. |
-| DRep voting power (per epoch) | `GET /drep_voting_power_history` | one DRep per request | exact; N = **distinct** responding DReps (small). Chosen over the bulk-but-current `/drep_info` estimate: exact, lazy, re-derivable, and no boundary-timing job. `/drep_info` kept only as a fallback if a history row is missing. |
-| SPO pool stake (per epoch) | `GET /pool_voting_power_history` (exact) or bulk `POST /pool_info` (current) | — | deferred; not browser-producible. |
-| Stakeholder total | `GET /epoch_info` | per epoch | total active stake denominator. |
-| DRep total | `GET /drep_epoch_summary` | per epoch | total DRep voting power denominator. |
+| Purpose                       | Endpoint                                                                     | Shape                           | Notes                                                                                                                                                                                                                              |
+| ----------------------------- | ---------------------------------------------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stakeholder stake (per epoch) | `POST /account_stake_history`                                                | **bulk** (many stake addresses) | exact, historical, queryable any time after `E`.                                                                                                                                                                                   |
+| DRep voting power (per epoch) | `GET /drep_voting_power_history`                                             | one DRep per request            | exact; N = **distinct** responding DReps (small). Chosen over the bulk-but-current `/drep_info` estimate: exact, lazy, re-derivable, and no boundary-timing job. `/drep_info` kept only as a fallback if a history row is missing. |
+| SPO pool stake (per epoch)    | `GET /pool_voting_power_history` (exact) or bulk `POST /pool_info` (current) | —                               | deferred; not browser-producible.                                                                                                                                                                                                  |
+| Stakeholder total             | `GET /epoch_info`                                                            | per epoch                       | total active stake denominator.                                                                                                                                                                                                    |
+| DRep total                    | `GET /drep_epoch_summary`                                                    | per epoch                       | total DRep voting power denominator.                                                                                                                                                                                               |
 
 - **Totals** (`/epoch_info`, `/drep_epoch_summary`) are O(1) per epoch, fetched
   once, and **distributed with the artifact**. What to do with them (participation
@@ -361,7 +361,7 @@ The key efficiency rule: **aggregate by epoch, not by survey.**
   credentials (a participant who answered several surveys closing at `E`) are
   fetched **once**.
 - Persist a **shared snapshot** keyed `(epoch, role, credential) → {weight,
-  registered, provenance}`, plus per-`(epoch, role)` totals. This table is shared
+registered, provenance}`, plus per-`(epoch, role)` totals. This table is shared
   by every survey ending at `E`.
 - **Finalization** (after `end_epoch` + a small safety margin (5 min?) for Koios indexing
   lag / shallow reorg near the boundary): fill any missing snapshot rows from
@@ -464,32 +464,41 @@ Contents (sketch):
 {
   // hashed:  artifactHash = H(canonical(tally))
   "tally": {
-    "rulesetHash": "...",        // binds §6.3 validation ruleset + epoch semantics + role→measure + pinned cip-179 validator
+    "rulesetHash": "...", // binds §6.3 validation ruleset + epoch semantics + role→measure + pinned cip-179 validator
     "network": "mainnet",
     "survey": { "txId": "...", "index": 0, "endEpoch": 642 },
-    "sealed": false,             // if true, also records deterministic reveal context
+    "sealed": false, // if true, also records deterministic reveal context
     "perRole": [
       {
-        "role": 1,               // CIP-179 Role
+        "role": 1, // CIP-179 Role
         "total": "12345678901234", // epoch total for this role (denominator; presentation decides use)
         "responders": [
-          { "credential": "…", "weight": "1000000000",
-            "registered": true, "txHash": "…" }
+          {
+            "credential": "…",
+            "weight": "1000000000",
+            "registered": true,
+            "txHash": "…",
+          },
           // unregistered responders are excluded, not listed here
         ],
-        "questions": [ /* BigInt-string aggregates + {numerator,denominator} ratios */ ]
-      }
-    ]
+        "questions": [
+          /* BigInt-string aggregates + {numerator,denominator} ratios */
+        ],
+      },
+    ],
   },
   // NOT hashed: provenance envelope
   "provenance": {
-    "source": { "provider": "koios", "baseUrl": "https://api.koios.rest/api/v1" },
+    "source": {
+      "provider": "koios",
+      "baseUrl": "https://api.koios.rest/api/v1",
+    },
     "fetchedAt": 0,
     "byRole": [
-      { "role": 1, "endpoint": "/account_stake_history" }
+      { "role": 1, "endpoint": "/account_stake_history" },
       // fallback-estimated weights, if any: "estimated": [ "<cred>", … ]
-    ]
-  }
+    ],
+  },
 }
 ```
 
@@ -529,7 +538,7 @@ Contents (sketch):
 - **Weights are an oracle dependency.** A credential's stake = Σ(ada in every UTxO
   under that credential) + rewards, snapshotted at an epoch boundary — there is no
   certificate-only shortcut (`RESEARCH.md` §8.1). Koios (db-sync-backed) is the
-  pragmatic oracle, and crucially it *retains epoch history* that a live node
+  pragmatic oracle, and crucially it _retains epoch history_ that a live node
   cannot serve (`RESEARCH.md` §7.2) — so on the historical axis Koios is not a
   downgrade from a bare node, only a different trust basis.
 - The honest framing in the UI: results are **reproducible** (anyone re-runs the
@@ -582,5 +591,7 @@ Contents (sketch):
 - **Finalization safety margin** — choose the post-`end_epoch` delay (epochs /
   hours) that absorbs Koios indexing lag and shallow reorgs.
 - **On-chain anchor** of the artifact hash — future, closes the CIP-179 loop.
-- **Two-network split** (mainnet/preview) — two Worker environments or one Worker
-  with a network path segment; mirror `config.ts`'s per-network `koiosUrl`.
+- **Two-network split** (mainnet/preview) — resolved: wrangler environments
+  (`backend/server/wrangler.toml` — top-level is preview, `[env.mainnet]` its
+  own D1 + vars), two deployments of one Worker, no network path segment. The
+  frontend picks its backend per network via `VITE_INDEXER_URL`.

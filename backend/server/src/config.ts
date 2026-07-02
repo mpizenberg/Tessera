@@ -1,10 +1,16 @@
 /**
  * Server config: resolve the portable {@link AppConfig} (shared with the app)
- * from environment variables, plus the server-only knobs (port, refresh cadence,
- * db path). Everything has a default, so the backend runs with an empty env.
+ * from an environment record, plus the server-only knobs (port, refresh
+ * cadence, db path). Everything has a default, so the backend runs with an
+ * empty env.
+ *
+ * The env is a parameter rather than `process.env` because Cloudflare Workers
+ * receive their env per invocation (there is no process): the Node entry
+ * passes `process.env` (after its `.env` overlay), the Worker entry passes its
+ * `env` binding. `port`/`dbPath`/`refreshSeconds` are Node-only — the Worker
+ * gets its port from the platform, its storage from a D1 binding, and its
+ * cadence from the cron trigger.
  */
-
-import { readFileSync } from "node:fs";
 
 import {
   KOIOS_URL,
@@ -25,38 +31,9 @@ export interface ServerConfig {
   readonly dbPath: string;
 }
 
-/**
- * Minimal `.env` loader (no dependency): `KEY=VALUE` lines, `#` comments, and
- * optional surrounding quotes. Real environment variables win over the file.
- * Absent file is fine — defaults + real env cover everything.
- */
-function loadDotenv(path = ".env"): void {
-  let text: string;
-  try {
-    text = readFileSync(path, "utf8");
-  } catch {
-    return;
-  }
-  for (const line of text.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq < 0) continue;
-    const key = trimmed.slice(0, eq).trim();
-    let val = trimmed.slice(eq + 1).trim();
-    if (
-      (val.startsWith('"') && val.endsWith('"')) ||
-      (val.startsWith("'") && val.endsWith("'"))
-    ) {
-      val = val.slice(1, -1);
-    }
-    if (!(key in process.env)) process.env[key] = val;
-  }
-}
-
-export function loadConfig(): ServerConfig {
-  loadDotenv();
-  const env = process.env;
+export function loadConfig(
+  env: Record<string, string | undefined>,
+): ServerConfig {
   const network: Network = env["NETWORK"] === "mainnet" ? "mainnet" : "preview";
   const sinceIso = env["SINCE"] ?? SURVEYS_SINCE_ISO_DEFAULT;
   const app: AppConfig = {

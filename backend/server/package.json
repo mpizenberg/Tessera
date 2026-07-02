@@ -10,6 +10,8 @@
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",
+    "dev:cf": "wrangler dev --test-scheduled",
+    "deploy:cf": "wrangler deploy",
     "type-check": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests"
   },
@@ -24,6 +26,7 @@
     "@types/node": "^25.9.3",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "vitest": "^2.1.0",
+    "wrangler": "^4.0.0"
   }
 }
