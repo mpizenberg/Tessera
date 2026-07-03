@@ -370,7 +370,7 @@ describe("finalizeClosedSurveys", () => {
     expect(store.artifacts.size).toBe(0); // TODO(sealed-artifact)
   });
 
-  it("applies the counted-set rules: dedupe latest-wins, unproven/pending excluded, unregistered dropped", async () => {
+  it("applies the counted-set rules: dedupe latest-wins, unproven excluded, unregistered dropped", async () => {
     const store = memBackendStore();
     const rA2 = response("33".repeat(32), CRED_A, 1, 250); // A's later answer: "no"
     const rC = response("44".repeat(32), keyCred("c3".repeat(28)), 0);
@@ -378,7 +378,7 @@ describe("finalizeClosedSurveys", () => {
     await seed(store, [
       validatedRow(rA),
       validatedRow(rA2),
-      validatedRow(rC, { proofOk: null }), // verdict pending → excluded
+      validatedRow(rC, { proofOk: false }), // unproven → excluded (final verdict)
       validatedRow(rD), // proven but unregistered at END_EPOCH
     ]);
     const inputs = fakeInputs({
@@ -409,6 +409,45 @@ describe("finalizeClosedSurveys", () => {
       },
     ]);
     expect(role3.questions[0]).toMatchObject({ optionWeights: ["0", "100"] });
+  });
+
+  it("postpones emission while any counted-candidate verdict or block index is pending (finding 1)", async () => {
+    const store = memBackendStore();
+    const rC = response("44".repeat(32), keyCred("c3".repeat(28)), 0);
+    await seed(store, [
+      validatedRow(rA),
+      validatedRow(rC, { proofOk: null }), // verdict not in yet → postpone
+    ]);
+    const inputs = fakeInputs({
+      [KEY_A]: { weight: 100n, registered: true },
+      [credentialKey(rC.response.credential)]: { weight: 7n, registered: true },
+    });
+    const recs = records(survey(), [rA, rC]);
+
+    await finalizeClosedSurveys(CONFIG, store, inputs, noProofs, recs, TIP);
+    // Artifact must NOT be emitted: rC could still resolve to counted, and an
+    // immutable artifact would freeze it out forever.
+    expect(store.artifacts.size).toBe(0);
+
+    // A null block index on an otherwise-proven row also postpones.
+    await store.upsertValidatedResponses([
+      validatedRow(rC, { proofOk: true, blockIndex: null }),
+    ]);
+    await finalizeClosedSurveys(CONFIG, store, inputs, noProofs, recs, TIP);
+    expect(store.artifacts.size).toBe(0);
+
+    // Both verdict and block index final → the survey finalizes, rC included.
+    await store.upsertValidatedResponses([
+      validatedRow(rC, { proofOk: true, blockIndex: 0 }),
+    ]);
+    await finalizeClosedSurveys(CONFIG, store, inputs, noProofs, recs, TIP);
+    const artifact = JSON.parse(
+      store.artifacts.get(SURVEY_KEY)!.artifact,
+    ) as TallyArtifact;
+    const role3 = artifact.tally.perRole.find((r) => r.role === 3)!;
+    expect(role3.responders.map((r) => r.credential).sort()).toEqual(
+      [KEY_A, credentialKey(rC.response.credential)].sort(),
+    );
   });
 
   it("leaves still-open or too-recent surveys alone", async () => {

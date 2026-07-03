@@ -12,9 +12,12 @@
  *    cut short (Worker subrequest cap) or a total is temporarily unavailable;
  *  - the artifact insert is INSERT-OR-IGNORE keyed by survey.
  *
- * A survey is emitted only when *complete*: every counted responder has a
- * weight row and every covered role has its electorate total. Sealed surveys
- * get their weights frozen the same way but no artifact yet
+ * A survey is emitted only when *complete*: every counted-candidate response
+ * has a final proof verdict and block index, every counted responder has a
+ * weight row, and every covered role has its electorate total. Any of these
+ * still pending postpones emission to a later cron (artifacts are immutable, so
+ * emitting early would freeze a legitimately valid response out forever).
+ * Sealed surveys get their weights frozen the same way but no artifact yet
  * (TODO(sealed-artifact): emission awaits the reveal-aware tally).
  */
 
@@ -106,8 +109,9 @@ export async function finalizeClosedSurveys(
   }
 
   for (const [epoch, surveys] of byEpoch) {
-    // Counted rows per survey (rules 1–3 verdicts joined at tally time).
-    const countedBySurvey = new Map<string, ValidatedResponseRow[]>();
+    // Counted rows per survey (rules 1–3 verdicts joined at tally time), plus
+    // whether any counted-candidate row is still awaiting a verdict/block index.
+    const countedBySurvey = new Map<string, CountedRows>();
     for (const s of surveys) {
       countedBySurvey.set(
         refKey(s.ref),
@@ -117,8 +121,8 @@ export async function finalizeClosedSurveys(
 
     // Union of counted credentials per role across all surveys ending at E.
     const credsByRole = new Map<number, Set<string>>();
-    for (const rows of countedBySurvey.values()) {
-      for (const r of rows) {
+    for (const { counted } of countedBySurvey.values()) {
+      for (const r of counted) {
         let set = credsByRole.get(r.role);
         if (!set) credsByRole.set(r.role, (set = new Set()));
         set.add(r.credential);
@@ -152,8 +156,9 @@ export async function finalizeClosedSurveys(
         console.log(`finalize: ${key} is sealed — weights frozen, no artifact`);
         continue;
       }
-      const rows = countedBySurvey.get(key)!;
-      const missing = incompleteReason(rows, weightByRole, totalByRole);
+      const { counted, pending } = countedBySurvey.get(key)!;
+      const missing =
+        pending ?? incompleteReason(counted, weightByRole, totalByRole);
       if (missing) {
         console.warn(`finalize: ${key} postponed — ${missing}`);
         continue;
@@ -161,7 +166,7 @@ export async function finalizeClosedSurveys(
       const artifact = buildArtifact(
         config,
         s,
-        rows,
+        counted,
         records,
         weightByRole,
         totalByRole,
@@ -254,28 +259,48 @@ async function withCancellations(
   return open;
 }
 
-/** The §6.3 counted set for one survey: valid, proven, in-window, deduped. */
+/** The counted set for one survey, plus why (if at all) emission must wait. */
+interface CountedRows {
+  counted: ValidatedResponseRow[];
+  /** A pending-enrichment reason that forces postponement, or null. */
+  pending: string | null;
+}
+
+/**
+ * The §6.3 counted set for one survey: valid, proven, in-window, deduped.
+ *
+ * A candidate row (well-formed, in-window, covered role) whose proof verdict or
+ * block index is still pending forces the whole survey to postpone: a null
+ * `proofOk` may yet resolve to counted, and a null `blockIndex` (the `-1`
+ * dedup sentinel) can resolve a same-slot tie differently from the verifier's
+ * real index. Emitting now would freeze either divergence into the immutable,
+ * hash-committed artifact, so we wait for a later cron instead (finding 1).
+ */
 async function countedRows(
   store: TallyStore,
   surveyKey: string,
   endEpoch: number,
-): Promise<ValidatedResponseRow[]> {
+): Promise<CountedRows> {
   const rows = await store.validatedForSurvey(surveyKey);
   const eligible: ValidatedResponseRow[] = [];
+  let pending: string | null = null;
   for (const r of rows) {
     if (!r.wellFormed || r.epochNo > endEpoch) continue;
-    if (r.proofOk === null) {
-      // Enrichment still pending (retried each refresh) — excluded this round.
-      console.warn(
-        `finalize: ${surveyKey} response ${r.txHash}:${r.responseIndex} has no proof verdict yet — excluded`,
-      );
-      continue;
-    }
-    if (!r.proofOk) continue;
     if (!COVERED_ROLES.includes(r.role)) {
       console.warn(
         `finalize: ${surveyKey} drops role-${r.role} response ${r.txHash} (SPO/CC weighting deferred)`,
       );
+      continue;
+    }
+    if (r.proofOk === null) {
+      // Enrichment still pending (retried each refresh) — can't finalize yet.
+      pending ??= `response ${r.txHash}:${r.responseIndex} has no proof verdict yet`;
+      continue;
+    }
+    if (!r.proofOk) continue;
+    if (r.blockIndex === null) {
+      // Proven but its dedup ordering isn't final yet — can't finalize yet.
+      pending ??= `response ${r.txHash}:${r.responseIndex} has no block index yet`;
       continue;
     }
     eligible.push(r);
@@ -287,7 +312,7 @@ async function countedRows(
     const prev = best.get(id);
     if (!prev || laterInChain(r, prev)) best.set(id, r);
   }
-  return [...best.values()];
+  return { counted: [...best.values()], pending };
 }
 
 /** Ensure a weight row exists for every credential; return the row map. */

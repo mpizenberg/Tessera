@@ -13,7 +13,7 @@ the fix deviated from the report's suggested direction.
 
 | # | Finding (short) | Status |
 | --- | --- | --- |
-| 1 | Finalize emits artifacts while proof verdicts pending (`proofOk`/`blockIndex` null not an incompleteness reason) | todo |
+| 1 | Finalize emits artifacts while proof verdicts pending (`proofOk`/`blockIndex` null not an incompleteness reason) | done (pending commit) |
 | 2 | Mechanism-B verdicts pinned to gov links known at first validation, never re-checked | todo |
 | 3 | Failed `tx_metadata` batch silently shrinks snapshot; finalize emits from it (`!record` not guarded) | todo |
 | 4 | No pagination on bulk weight/membership reads — Koios 1000-row cap truncates silently | todo |
