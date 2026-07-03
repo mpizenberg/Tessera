@@ -25,7 +25,7 @@ import type { Credential, SurveyResponse } from "cip-179";
 import { Role } from "cip-179";
 
 import { bytesToHex } from "./hex";
-import { nativeScriptSatisfied } from "./cancellation";
+import { cancellationVerified } from "./cancellation";
 import type { TxProof, VoteBinding } from "./source";
 
 /** The CIP-179 role a Conway voter tag proves, or null for an unknown tag. */
@@ -68,15 +68,13 @@ function bindingsByCredential(
   );
 }
 
-/** Mechanism A: required signers / satisfied native script (same as owner-proof). */
+/**
+ * Mechanism A: required signers / satisfied native script. This is exactly the
+ * cancellation owner-proof over the same evidence (TxProof extends
+ * CancellationProof), so reuse it rather than duplicate the evaluation.
+ */
 function mechanismA(credential: Credential, proof: TxProof): boolean {
-  if (credential.type === "key") {
-    return proof.requiredSigners.includes(bytesToHex(credential.keyHash));
-  }
-  const wanted = bytesToHex(credential.scriptHash);
-  const ns = proof.nativeScripts.find((s) => s.scriptHash === wanted);
-  if (!ns) return false;
-  return nativeScriptSatisfied(ns.script, new Set(proof.requiredSigners));
+  return cancellationVerified(credential, proof);
 }
 
 /**
