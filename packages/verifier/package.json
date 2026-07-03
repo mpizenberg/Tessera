@@ -1,0 +1,32 @@
+{
+  "name": "@tessera/verifier",
+  "version": "0.1.0",
+  "description": "Standalone re-verifier for Tessera tally artifacts: refetches every input from Koios, re-runs the pure @tessera/core tally, and compares content hashes. Trusts only Koios and the survey bundle — never the backend's own validation tables.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.5"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/verify.ts",
+      "import": "./src/verify.ts"
+    }
+  },
+  "scripts": {
+    "verify": "tsx src/cli.ts",
+    "type-check": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@tessera/core": "workspace:*",
+    "@tessera/koios": "workspace:*",
+    "cip-179": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

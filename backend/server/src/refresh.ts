@@ -8,14 +8,16 @@
  */
 
 import { toJsonSafe } from "@tessera/core";
-import { KoiosDataSource } from "@tessera/koios";
+import { KoiosDataSource, KoiosTallyInputs } from "@tessera/koios";
 
 import type { ServerConfig } from "./config";
-import type { SnapshotStore } from "./store";
+import { finalizeClosedSurveys } from "./finalize";
+import type { BackendStore } from "./store";
+import { validateNewResponses } from "./validate";
 
 export async function refreshSnapshot(
   config: ServerConfig,
-  store: SnapshotStore,
+  store: BackendStore,
 ): Promise<void> {
   const source = new KoiosDataSource(config.app);
   const [records, tip] = await Promise.all([
@@ -40,6 +42,27 @@ export async function refreshSnapshot(
       `${records.cancellations.length} cancellations` +
       `${records.incomplete ? " (incomplete)" : ""}`,
   );
+
+  // §6.3 validation rides the same refresh (Node loop + Worker cron alike):
+  // incremental, so already-validated responses cost nothing. Best-effort —
+  // the snapshot above is already stored either way.
+  await validateNewResponses(store, records, govLinks, source).catch((err) =>
+    console.warn(`response validation failed (will retry): ${String(err)}`),
+  );
+
+  // Finalization (§6.5/§7) runs last, on the freshly validated state: weight
+  // snapshotting + artifact emission for safely-closed surveys. Idempotent and
+  // resumable, so a failure here just retries next refresh.
+  await finalizeClosedSurveys(
+    config,
+    store,
+    new KoiosTallyInputs(config.app),
+    source,
+    records,
+    tip,
+  ).catch((err) =>
+    console.warn(`finalization failed (will retry): ${String(err)}`),
+  );
 }
 
 /**
@@ -48,7 +71,7 @@ export async function refreshSnapshot(
  */
 export function startRefreshLoop(
   config: ServerConfig,
-  store: SnapshotStore,
+  store: BackendStore,
 ): () => void {
   const tick = (): void => {
     refreshSnapshot(config, store).catch((err) =>

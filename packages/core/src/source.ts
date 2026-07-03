@@ -14,12 +14,20 @@
 
 import type { SurveyDefinition, SurveyResponse, SurveyRef } from "cip-179";
 
+import type { TallyArtifact } from "./artifact";
+
 /** Where a record sits in the chain, for ordering and dedup. */
 export interface ChainPos {
   /** Transaction hash (hex). */
   readonly txHash: string;
   /** Absolute slot of the containing block. */
   readonly slot: number;
+  /**
+   * Epoch of the containing block, as reported by the chain indexer — the
+   * authoritative input to the §6.3 deadline rule (`epochNo ≤ end_epoch`),
+   * unlike the tip-relative `epochOfSlot` estimate.
+   */
+  readonly epochNo: number;
 }
 
 /** A survey definition as published on-chain. */
@@ -31,6 +39,15 @@ export interface SurveyRecord extends ChainPos {
 
 /** A response as published on-chain. */
 export interface ResponseRecord extends ChainPos {
+  /** Position within the carrying payload's `responses` array. */
+  readonly responseIndex: number;
+  /**
+   * Position of the transaction within its block (`tx_block_index`), when the
+   * source has enriched the record with it (one `/tx_info` round-trip — the
+   * serving tier does, the browser's direct Koios scan doesn't). Same-slot
+   * responses order by it in {@link import("./dedupe").laterInChain}.
+   */
+  readonly blockIndex?: number;
   readonly response: SurveyResponse;
 }
 
@@ -54,7 +71,7 @@ export type NativeScriptInfo =
 /**
  * Evidence proving (or not) that a cancelling transaction authorized the
  * cancellation — decoded from the cancelling tx's CBOR. The owner-credential
- * check is pure domain logic ({@link import("~/domain/cancellation")}); the
+ * check is pure domain logic ({@link import("./cancellation")}); the
  * source's job is only to surface what the tx contains.
  */
 export interface CancellationProof {
@@ -65,6 +82,34 @@ export interface CancellationProof {
     readonly scriptHash: string;
     readonly script: NativeScriptInfo;
   }[];
+}
+
+/**
+ * A governance vote cast by the transaction (one `voting_procedures` entry) —
+ * the evidence CIP-179 mechanism B evaluates: a response credential can prove
+ * itself by voting on the survey's linked action in the same transaction.
+ */
+export interface VoteBinding {
+  /**
+   * Conway voter tag: 0/1 CC hot key/script, 2/3 DRep key/script, 4 SPO.
+   * Determines both the credential kind (key vs script) and the role the
+   * binding can prove.
+   */
+  readonly voterTag: number;
+  /** The voter's credential hash (hex, 28 bytes). */
+  readonly credentialHash: string;
+  /** Bech32 CIP-129 ids (`gov_action1…`) of the actions this voter voted on. */
+  readonly actionIds: readonly string[];
+}
+
+/**
+ * Everything a transaction contains that can prove a CIP-179 credential:
+ * mechanism A evidence (required signers + native scripts, the
+ * {@link CancellationProof} part) plus mechanism B evidence (governance vote
+ * bindings) — decoded from the transaction's CBOR by the data source.
+ */
+export interface TxProof extends CancellationProof {
+  readonly votes: readonly VoteBinding[];
 }
 
 /** A cancellation as published on-chain (references the cancelled survey). */
@@ -196,4 +241,11 @@ export interface DataSource {
    * flip a "pending" indicator to "confirmed" — never to drive the survey list.
    */
   txStatus(txHashes: readonly string[]): Promise<Map<string, number | null>>;
+  /**
+   * The survey's final tally artifact ({@link import("./artifact").TallyArtifact}),
+   * or `null` when none exists (survey still open, not yet finalized, or the
+   * source can't produce artifacts — the direct Koios path never does; the UI
+   * then falls back to the raw client-side tally).
+   */
+  artifact(ref: SurveyRef): Promise<TallyArtifact | null>;
 }

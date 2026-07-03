@@ -52,7 +52,7 @@ import type { ChainTip, Cip179Records, GovLink } from "@tessera/core";
 import { KoiosDataSource } from "@tessera/koios";
 
 import type { ServerConfig } from "./config";
-import type { SnapshotStore } from "./store";
+import type { BackendStore } from "./store";
 
 /** How long `/api/tip` and `/api/pparams` reuse one upstream Koios call. */
 const UPSTREAM_TTL_MS = 20_000;
@@ -115,7 +115,7 @@ export interface AppOptions {
 
 export function createApp(
   config: ServerConfig,
-  store: SnapshotStore,
+  store: BackendStore,
   options: AppOptions = {},
 ): Hono {
   const app = new Hono();
@@ -224,6 +224,36 @@ export function createApp(
       surveyKeys: [...surveyKeys],
       fetchedAt: cached.fetchedAt,
     });
+  });
+
+  // Final tally artifacts (§7): immutable, content-addressed. The stored JSON
+  // text is served verbatim (byte identity with the hash), with a strong ETag
+  // and immutable caching — once emitted, the body never changes.
+  const serveArtifact = (
+    c: Context,
+    row: { artifact: string; artifactHash: string } | null,
+  ): Response => {
+    if (!row) return c.json({ error: "no artifact" }, 404);
+    const etag = `"${row.artifactHash}"`;
+    c.header("ETag", etag);
+    c.header("Cache-Control", "public, max-age=31536000, immutable");
+    if (c.req.header("If-None-Match") === etag) return c.body(null, 304);
+    return c.body(row.artifact, 200, { "Content-Type": "application/json" });
+  };
+
+  app.get("/api/surveys/:txHash/:index/artifact", async (c) => {
+    const txHash = c.req.param("txHash").toLowerCase();
+    const index = Number(c.req.param("index"));
+    if (!/^[0-9a-f]{64}$/.test(txHash) || !Number.isInteger(index) || index < 0)
+      return c.json({ error: "malformed survey ref" }, 404);
+    return serveArtifact(c, await store.artifactBySurvey(`${txHash}:${index}`));
+  });
+
+  app.get("/api/artifacts/:hash", async (c) => {
+    const hash = c.req.param("hash").toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(hash))
+      return c.json({ error: "malformed artifact hash" }, 404);
+    return serveArtifact(c, await store.artifactByHash(hash));
   });
 
   app.get("/api/tip", async (c) => {

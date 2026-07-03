@@ -168,6 +168,31 @@ const survey = {
   disclaimerText2:
     "stake-, pledge-, or quadratic weighting is downstream and out of scope for CIP-179.",
 
+  // Final weighted results (artifact view)
+  weightedBadge: "final",
+  /** Provenance note split around the bold {@link weightedNoteStrong} run. */
+  weightedNoteStrong: "Final weighted results.",
+  weightedNote:
+    "Membership and weights snapshotted at the survey's end epoch ({epoch}) from {provider}; independently re-verifiable from chain data.",
+  weightedShowRaw: "View raw responses",
+  weightedShowFinal: "\u2190 Final weighted results",
+  /** Per-role section header meta: "{n} counted". */
+  weightedCounted: "{n} counted",
+  /** Stake-weighted roles: total voting weight behind the counted responses. */
+  weightedVotingWeight: "{ada} \u20b3 voting weight",
+  /** Turnout against the role's electorate total. */
+  weightedTurnout: "{pct}% turnout",
+  /** Weighted mean shown on numeric results. */
+  weightedMean: "weighted mean",
+  /** Bar meta on weighted results: ada weight + responder count. */
+  weightedBarMeta: "{ada} \u20b3 \u00b7 {n}",
+  weightedCancelledTitle: "Survey cancelled by its owner",
+  weightedCancelledBody:
+    "An owner-proven cancellation was recorded on-chain in epoch {epoch}; no results are tallied.",
+  /** Footer under the weighted tally; {hash} is the artifact content address. */
+  weightedFootnote:
+    "final result computed at the survey's end epoch \u00b7 artifact {hash}",
+
   // Role filter
   roleFilterLabel: "Tally by role",
 

@@ -1,28 +1,50 @@
 /**
- * {@link SnapshotStore} over Cloudflare D1 for the Worker. Same single-row
- * `snapshot_cache` schema as `store-node.ts`, but created by the checked-in
- * `migrations/0001_snapshot_cache.sql` (applied with
- * `wrangler d1 migrations apply`) rather than at open time.
+ * {@link BackendStore} over Cloudflare D1 for the Worker. Same schema as
+ * `store-node.ts`, but created by the checked-in `migrations/*.sql` (applied
+ * with `wrangler d1 migrations apply`) rather than at open time.
  *
- * D1 is typed structurally here (just the prepare/bind/first/run slice we use)
- * instead of pulling in `@cloudflare/workers-types`, whose global declarations
- * clash with `@types/node` in this package's single tsconfig.
+ * D1 is typed structurally here (just the prepare/bind/first/run/all slice we
+ * use) instead of pulling in `@cloudflare/workers-types`, whose global
+ * declarations clash with `@types/node` in this package's single tsconfig.
  */
 
-import type { CachedSnapshot, SnapshotStore } from "./store";
+import type {
+  ArtifactRow,
+  BackendStore,
+  CachedSnapshot,
+  ValidatedResponseRow,
+  WeightRow,
+} from "./store";
+import { validationKey } from "./store";
 
 interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
   first<T = unknown>(): Promise<T | null>;
   run(): Promise<unknown>;
+  all<T = unknown>(): Promise<{ results: T[] }>;
 }
 
 /** The slice of Cloudflare's `D1Database` this store needs. */
 export interface D1Like {
   prepare(query: string): D1PreparedStatement;
+  batch(statements: D1PreparedStatement[]): Promise<unknown>;
 }
 
-export function d1SnapshotStore(db: D1Like): SnapshotStore {
+interface DbValidatedRow extends Omit<
+  ValidatedResponseRow,
+  "proofOk" | "wellFormed"
+> {
+  proofOk: number | null;
+  wellFormed: number;
+}
+
+const fromDb = (r: DbValidatedRow): ValidatedResponseRow => ({
+  ...r,
+  proofOk: r.proofOk === null ? null : r.proofOk !== 0,
+  wellFormed: r.wellFormed !== 0,
+});
+
+export function d1BackendStore(db: D1Like): BackendStore {
   return {
     async get(): Promise<CachedSnapshot | null> {
       const row = await db
@@ -44,8 +66,180 @@ export function d1SnapshotStore(db: D1Like): SnapshotStore {
         .bind(JSON.stringify(snapshot.payload), snapshot.fetchedAt)
         .run();
     },
+
+    async completedValidationKeys(): Promise<Set<string>> {
+      const { results } = await db
+        .prepare(
+          `SELECT tx_hash AS txHash, response_index AS responseIndex
+           FROM validated_response
+           WHERE block_index IS NOT NULL AND proof_ok IS NOT NULL`,
+        )
+        .all<{ txHash: string; responseIndex: number }>();
+      return new Set(
+        results.map((r) => validationKey(r.txHash, r.responseIndex)),
+      );
+    },
+    async upsertValidatedResponses(
+      rows: readonly ValidatedResponseRow[],
+    ): Promise<void> {
+      if (rows.length === 0) return;
+      const stmt = db.prepare(`
+        INSERT INTO validated_response
+          (tx_hash, response_index, survey_key, role, credential,
+           slot, epoch_no, block_index, proof_ok, well_formed, checked_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(tx_hash, response_index) DO UPDATE SET
+          survey_key = excluded.survey_key,
+          role = excluded.role,
+          credential = excluded.credential,
+          slot = excluded.slot,
+          epoch_no = excluded.epoch_no,
+          block_index = excluded.block_index,
+          proof_ok = excluded.proof_ok,
+          well_formed = excluded.well_formed,
+          checked_at = excluded.checked_at
+      `);
+      await db.batch(
+        rows.map((r) =>
+          stmt.bind(
+            r.txHash,
+            r.responseIndex,
+            r.surveyKey,
+            r.role,
+            r.credential,
+            r.slot,
+            r.epochNo,
+            r.blockIndex,
+            r.proofOk === null ? null : r.proofOk ? 1 : 0,
+            r.wellFormed ? 1 : 0,
+            r.checkedAt,
+          ),
+        ),
+      );
+    },
+    async validatedForSurvey(
+      surveyKey: string,
+    ): Promise<ValidatedResponseRow[]> {
+      const { results } = await db
+        .prepare(
+          `SELECT tx_hash AS txHash, response_index AS responseIndex,
+                  survey_key AS surveyKey, role, credential, slot,
+                  epoch_no AS epochNo, block_index AS blockIndex,
+                  proof_ok AS proofOk, well_formed AS wellFormed,
+                  checked_at AS checkedAt
+           FROM validated_response WHERE survey_key = ?`,
+        )
+        .bind(surveyKey)
+        .all<DbValidatedRow>();
+      return results.map(fromDb);
+    },
+
+    async weightRows(epoch: number, role: number): Promise<WeightRow[]> {
+      const { results } = await db
+        .prepare(
+          `SELECT epoch, role, credential, weight, registered,
+                  fetched_at AS fetchedAt
+           FROM weight_snapshot WHERE epoch = ? AND role = ?`,
+        )
+        .bind(epoch, role)
+        .all<Omit<WeightRow, "registered"> & { registered: number }>();
+      return results.map((r) => ({ ...r, registered: r.registered !== 0 }));
+    },
+    async upsertWeightRows(rows: readonly WeightRow[]): Promise<void> {
+      if (rows.length === 0) return;
+      const stmt = db.prepare(`
+        INSERT INTO weight_snapshot
+          (epoch, role, credential, weight, registered, fetched_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(epoch, role, credential) DO UPDATE SET
+          weight = excluded.weight,
+          registered = excluded.registered,
+          fetched_at = excluded.fetched_at
+      `);
+      await db.batch(
+        rows.map((r) =>
+          stmt.bind(
+            r.epoch,
+            r.role,
+            r.credential,
+            r.weight,
+            r.registered ? 1 : 0,
+            r.fetchedAt,
+          ),
+        ),
+      );
+    },
+    async epochTotal(epoch: number, role: number): Promise<string | null> {
+      const row = await db
+        .prepare("SELECT total FROM epoch_totals WHERE epoch = ? AND role = ?")
+        .bind(epoch, role)
+        .first<{ total: string }>();
+      return row?.total ?? null;
+    },
+    async putEpochTotal(
+      epoch: number,
+      role: number,
+      total: string,
+      endpoint: string,
+      fetchedAt: number,
+    ): Promise<void> {
+      await db
+        .prepare(
+          `INSERT INTO epoch_totals (epoch, role, total, endpoint, fetched_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(epoch, role) DO UPDATE SET
+             total = excluded.total,
+             endpoint = excluded.endpoint,
+             fetched_at = excluded.fetched_at`,
+        )
+        .bind(epoch, role, total, endpoint, fetchedAt)
+        .run();
+    },
+
+    async artifactBySurvey(surveyKey: string): Promise<ArtifactRow | null> {
+      return db
+        .prepare(
+          `SELECT ${ARTIFACT_COLUMNS} FROM tally_artifact WHERE survey_key = ?`,
+        )
+        .bind(surveyKey)
+        .first<ArtifactRow>();
+    },
+    async artifactByHash(artifactHash: string): Promise<ArtifactRow | null> {
+      return db
+        .prepare(
+          `SELECT ${ARTIFACT_COLUMNS} FROM tally_artifact WHERE artifact_hash = ?`,
+        )
+        .bind(artifactHash)
+        .first<ArtifactRow>();
+    },
+    async putArtifact(row: ArtifactRow): Promise<void> {
+      await db
+        .prepare(
+          `INSERT OR IGNORE INTO tally_artifact
+             (survey_key, end_epoch, artifact_hash, artifact, created_at)
+           VALUES (?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          row.surveyKey,
+          row.endEpoch,
+          row.artifactHash,
+          row.artifact,
+          row.createdAt,
+        )
+        .run();
+    },
+    async finalizedSurveyKeys(): Promise<Set<string>> {
+      const { results } = await db
+        .prepare("SELECT survey_key AS surveyKey FROM tally_artifact")
+        .all<{ surveyKey: string }>();
+      return new Set(results.map((r) => r.surveyKey));
+    },
+
     close() {
       // Nothing to release: D1 connections are managed by the runtime.
     },
   };
 }
+
+const ARTIFACT_COLUMNS = `survey_key AS surveyKey, end_epoch AS endEpoch,
+       artifact_hash AS artifactHash, artifact, created_at AS createdAt`;

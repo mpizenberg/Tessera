@@ -18,20 +18,13 @@ import type {
 
 import { loadConfig } from "./config";
 import { createApp } from "./http";
-import type { CachedSnapshot, SnapshotStore } from "./store";
+import type { CachedSnapshot } from "./store";
+import { memBackendStore, type MemBackendStore } from "./store-mem";
 
-function memStore(initial: CachedSnapshot | null): SnapshotStore {
-  let snap = initial;
-  return {
-    get: async () => snap,
-    put: async (s) => {
-      snap = s;
-    },
-    close() {},
-  };
-}
+const memStore = (initial: CachedSnapshot | null): MemBackendStore =>
+  memBackendStore(initial);
 
-function appWith(store: SnapshotStore) {
+function appWith(store: MemBackendStore) {
   return createApp(loadConfig({}), store, { compress: false });
 }
 
@@ -55,12 +48,14 @@ const def = { endEpoch: 510 } as unknown as SurveyDefinition;
 const surveyA: SurveyRecord = {
   txHash: TX_A,
   slot: 900_000,
+  epochNo: 499,
   ref: { txId: hexToBytes(TX_A), index: 0 },
   definition: def,
 };
 const surveyB: SurveyRecord = {
   txHash: TX_B,
   slot: 910_000,
+  epochNo: 499,
   ref: { txId: hexToBytes(TX_B), index: 1 },
   definition: def,
 };
@@ -77,6 +72,8 @@ function response(
   return {
     txHash,
     slot,
+    epochNo: 500,
+    responseIndex: 0,
     response: {
       specVersion: 1,
       surveyRef: survey.ref,
@@ -97,6 +94,7 @@ const responses = [
 const cancellation: CancellationRecord = {
   txHash: "99".repeat(32),
   slot: 970_000,
+  epochNo: 500,
   target: surveyB.ref,
   proof: null,
 };
@@ -198,6 +196,64 @@ describe("GET /api/surveys/{txHash}/{index}", () => {
       headers: { "If-None-Match": first.headers.get("ETag")! },
     });
     expect(again.status).toBe(304);
+  });
+});
+
+describe("artifact routes", () => {
+  const HASH = "ab".repeat(32);
+  // Deliberately non-canonical spacing: the stored text must be served
+  // byte-for-byte, never re-serialized.
+  const ARTIFACT_TEXT = `{"tally": {"x": 1},  "provenance": {}}`;
+
+  function storeWithArtifact() {
+    const store = memStore(snapshot);
+    void store.putArtifact({
+      surveyKey: `${TX_A}:0`,
+      endEpoch: 510,
+      artifactHash: HASH,
+      artifact: ARTIFACT_TEXT,
+      createdAt: 1,
+    });
+    return store;
+  }
+
+  it("serves the stored JSON verbatim with a strong immutable ETag", async () => {
+    const app = appWith(storeWithArtifact());
+    for (const path of [
+      `/api/surveys/${TX_A}/0/artifact`,
+      `/api/artifacts/${HASH}`,
+    ]) {
+      const res = await app.request(path);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe(ARTIFACT_TEXT); // byte identity
+      expect(res.headers.get("ETag")).toBe(`"${HASH}"`);
+      expect(res.headers.get("Cache-Control")).toBe(
+        "public, max-age=31536000, immutable",
+      );
+      expect(res.headers.get("Content-Type")).toContain("application/json");
+    }
+  });
+
+  it("answers 304 on a matching If-None-Match", async () => {
+    const app = appWith(storeWithArtifact());
+    const res = await app.request(`/api/surveys/${TX_A}/0/artifact`, {
+      headers: { "If-None-Match": `"${HASH}"` },
+    });
+    expect(res.status).toBe(304);
+  });
+
+  it("404s when no artifact exists or the ref/hash is malformed", async () => {
+    const app = appWith(storeWithArtifact());
+    expect((await app.request(`/api/surveys/${TX_B}/1/artifact`)).status).toBe(
+      404,
+    );
+    expect(
+      (await app.request(`/api/artifacts/${"00".repeat(32)}`)).status,
+    ).toBe(404);
+    expect((await app.request("/api/surveys/nothex/0/artifact")).status).toBe(
+      404,
+    );
+    expect((await app.request("/api/artifacts/nothex")).status).toBe(404);
   });
 });
 

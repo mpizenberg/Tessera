@@ -1,21 +1,27 @@
 /**
- * Decode owner-proof evidence from a cancelling transaction's CBOR.
+ * Decode credential-proof evidence from a transaction's CBOR.
  *
- * Owner-proof for a CIP-179 cancellation lives in the transaction, not the
- * metadata: the survey's `owner` credential must be proven via the tx body's
- * `required_signers` (key-based) or a native script in the witness set that they
- * satisfy (mechanism A). This reads exactly those two fields and nothing else.
+ * CIP-179 credential proof lives in the transaction, not the metadata:
+ *  - **Mechanism A** — the tx body's `required_signers` (key-based) or a native
+ *    script in the witness set that they satisfy. Used by cancellation
+ *    owner-proof and response credential-proof alike.
+ *  - **Mechanism B** — the tx body's `voting_procedures` (Conway field 19):
+ *    a response credential can prove itself by voting on the survey's linked
+ *    governance action in the same transaction. Surfaced as
+ *    {@link TxProof.votes}, evaluated in core's `responseCredentialProven`.
  *
  * evolution-sdk is heavy and otherwise confined to the write path, so it (and
  * the blake2b hasher) are dynamically imported here — the module's static
  * footprint on the read path is negligible, and the SDK chunk loads only when a
- * cancellation actually needs verifying. `Transaction.fromCBORHex` decodes every
+ * proof actually needs decoding. `Transaction.fromCBORHex` decodes every
  * post-Alonzo transaction (all CIP-179 txs are recent); any decode failure
- * returns `null`, so the cancellation is treated as unverified — the safe side.
+ * returns `null`, so the credential is treated as unproven — the safe side.
  */
 
 import { bytesToHex } from "@tessera/core";
-import type { CancellationProof, NativeScriptInfo } from "@tessera/core";
+import type { NativeScriptInfo, TxProof, VoteBinding } from "@tessera/core";
+
+import { govActionId } from "./bech32";
 
 /**
  * Minimal structural view of an evolution-sdk native script that tolerates both
@@ -78,12 +84,112 @@ function toInfo(node: RawNativeScript): NativeScriptInfo {
 }
 
 /**
- * Decode `required_signers` and witness-set native scripts from a transaction's
- * CBOR hex, or `null` if the transaction can't be decoded (→ unverified).
+ * Minimal structural view of a decoded `voting_procedures` entry — the SDK's
+ * runtime shape (verified against real preview vote transactions), narrowed
+ * locally like {@link RawNativeScript}. `procedures` is a
+ * `Map<voter, Map<govActionId, procedure>>` at runtime; typed as iterables of
+ * pairs so both Maps and plain pair-arrays satisfy it.
  */
-export async function decodeCancellationProof(
+interface RawVotingProcedures {
+  readonly procedures: Iterable<
+    readonly [RawVoter, Iterable<readonly [RawGovActionId, unknown]>]
+  >;
+}
+
+type RawVoter =
+  | {
+      readonly _tag: "ConstitutionalCommitteeVoter";
+      readonly credential:
+        | { readonly _tag: "KeyHash"; readonly hash: Uint8Array }
+        | { readonly _tag: "ScriptHash"; readonly hash: Uint8Array };
+    }
+  | {
+      readonly _tag: "DRepVoter";
+      readonly drep:
+        | {
+            readonly _tag: "KeyHashDRep";
+            readonly keyHash: { readonly hash: Uint8Array };
+          }
+        | {
+            readonly _tag: "ScriptHashDRep";
+            readonly scriptHash: { readonly hash: Uint8Array };
+          }
+        | { readonly _tag: "AlwaysAbstainDRep" }
+        | { readonly _tag: "AlwaysNoConfidenceDRep" };
+    }
+  | {
+      readonly _tag: "StakePoolVoter";
+      readonly poolKeyHash: { readonly hash: Uint8Array };
+    };
+
+interface RawGovActionId {
+  readonly transactionId: { readonly hash: Uint8Array | string };
+  readonly govActionIndex: bigint | number;
+}
+
+/** Conway voter tag + credential hash of a voter, or null (Abstain/NoConf). */
+function voterCredential(
+  voter: RawVoter,
+): { voterTag: number; credentialHash: string } | null {
+  switch (voter._tag) {
+    case "ConstitutionalCommitteeVoter":
+      return {
+        voterTag: voter.credential._tag === "KeyHash" ? 0 : 1,
+        credentialHash: bytesToHex(voter.credential.hash),
+      };
+    case "DRepVoter":
+      switch (voter.drep._tag) {
+        case "KeyHashDRep":
+          return {
+            voterTag: 2,
+            credentialHash: bytesToHex(voter.drep.keyHash.hash),
+          };
+        case "ScriptHashDRep":
+          return {
+            voterTag: 3,
+            credentialHash: bytesToHex(voter.drep.scriptHash.hash),
+          };
+        default:
+          // Abstain/NoConfidence carry no credential — can't bind a response.
+          return null;
+      }
+    case "StakePoolVoter":
+      return {
+        voterTag: 4,
+        credentialHash: bytesToHex(voter.poolKeyHash.hash),
+      };
+  }
+}
+
+/** The tx's vote bindings, as (voter tag, credential, voted action ids). */
+async function decodeVotes(
+  votingProcedures: RawVotingProcedures | undefined | null,
+): Promise<VoteBinding[]> {
+  if (!votingProcedures?.procedures) return [];
+  const votes: VoteBinding[] = [];
+  for (const [voter, entries] of votingProcedures.procedures) {
+    const cred = voterCredential(voter);
+    if (!cred) continue;
+    const actionIds = await Promise.all(
+      [...entries].map(([ga]) => {
+        const hash = ga.transactionId.hash;
+        const txIdHex = typeof hash === "string" ? hash : bytesToHex(hash);
+        return govActionId(txIdHex, Number(ga.govActionIndex));
+      }),
+    );
+    votes.push({ ...cred, actionIds });
+  }
+  return votes;
+}
+
+/**
+ * Decode a transaction's credential-proof evidence — `required_signers`,
+ * witness-set native scripts (mechanism A) and vote bindings (mechanism B) —
+ * from its CBOR hex, or `null` if it can't be decoded (→ unproven).
+ */
+export async function decodeTxProof(
   txCborHex: string,
-): Promise<CancellationProof | null> {
+): Promise<TxProof | null> {
   try {
     const [{ Transaction, KeyHash, NativeScripts }, { blake2b }] =
       await Promise.all([
@@ -109,9 +215,19 @@ export async function decodeCancellationProof(
           }))
         : [];
 
-    return { requiredSigners, nativeScripts };
+    const votes = await decodeVotes(
+      tx.body.votingProcedures as unknown as RawVotingProcedures | undefined,
+    );
+
+    return { requiredSigners, nativeScripts, votes };
   } catch (err) {
-    console.warn(`could not decode cancellation proof: ${String(err)}`);
+    console.warn(`could not decode tx proof: ${String(err)}`);
     return null;
   }
 }
+
+/**
+ * Cancellation owner-proof is the mechanism-A slice of {@link decodeTxProof};
+ * kept as a named alias for the read path that only verifies cancellations.
+ */
+export const decodeCancellationProof = decodeTxProof;

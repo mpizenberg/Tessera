@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AnswerItem, Role, SurveyDefinition } from "cip-179";
 
-import type { ChainTip, ResponseRecord } from "~/data/source";
+import type { ChainTip, ResponseRecord } from "./source";
 import { auditResponses, epochOfSlot, responseIsCountable } from "./audit";
 
 // secondsPerEpoch = 100 → epochs are 100 slots; current epoch 10 starts at
@@ -53,6 +53,7 @@ const sc = (optionIndex: number): AnswerItem => ({
   optionIndex,
 });
 
+/** epochNo derives from the slot on the same 100-slot grid as TIP above. */
 function recWith(
   txHash: string,
   slot: number,
@@ -63,6 +64,8 @@ function recWith(
   return {
     txHash,
     slot,
+    epochNo: Math.floor(slot / 100),
+    responseIndex: 0,
     response: {
       specVersion: 4,
       surveyRef: REF,
@@ -107,14 +110,14 @@ describe("responseIsCountable", () => {
 describe("auditResponses", () => {
   it("counts all on-time, distinct responses with no exclusions", () => {
     const raw = [rec("a", 950, 0, 1), rec("b", 960, 1, 2)];
-    const audit = auditResponses(raw, DEF, TIP, SPE);
+    const audit = auditResponses(raw, DEF);
     expect(audit.counted).toHaveLength(2);
     expect(audit.excludedRecords).toEqual([]);
   });
 
   it("excludes earlier duplicates as superseded (latest-wins)", () => {
     const raw = [rec("a", 950, 0, 1), rec("b", 960, 0, 1)];
-    const audit = auditResponses(raw, DEF, TIP, SPE);
+    const audit = auditResponses(raw, DEF);
     expect(audit.counted).toHaveLength(1);
     expect(audit.counted[0]!.slot).toBe(960); // the later one wins
     // The superseded record itself is retained, tagged, for per-response audit.
@@ -125,7 +128,7 @@ describe("auditResponses", () => {
 
   it("excludes responses recorded after the end epoch", () => {
     const raw = [rec("a", 950, 0, 1), rec("late", 1050, 0, 2)]; // 1050 → epoch 10
-    const audit = auditResponses(raw, DEF, TIP, SPE);
+    const audit = auditResponses(raw, DEF);
     expect(audit.counted).toHaveLength(1);
     expect(audit.counted[0]!.txHash).toBe("a");
     expect(audit.excludedRecords).toHaveLength(1);
@@ -133,11 +136,19 @@ describe("auditResponses", () => {
     expect(audit.excludedRecords[0]!.record.txHash).toBe("late");
   });
 
+  it("the deadline reads the record's epochNo, not a slot estimate", () => {
+    // In-window slot but an authoritative epochNo past the deadline (e.g. a
+    // chain where the slot grid assumption breaks): the explicit epoch decides.
+    const late = { ...rec("x", 950, 0, 1), epochNo: 10 };
+    const audit = auditResponses([late], DEF);
+    expect(audit.excludedRecords.map((e) => e.key)).toEqual(["after-deadline"]);
+  });
+
   it("a late response never suppresses an on-time one for the same identity", () => {
     // Same role+credential: late slot 1050 is dropped first, so the on-time
     // slot 950 is counted (not treated as superseded by the invalid later one).
     const raw = [rec("ontime", 950, 1, 1), rec("late", 1050, 1, 1)];
-    const audit = auditResponses(raw, DEF, TIP, SPE);
+    const audit = auditResponses(raw, DEF);
     expect(audit.counted).toHaveLength(1);
     expect(audit.counted[0]!.txHash).toBe("ontime");
     expect(audit.excludedRecords.map((e) => e.key)).toEqual(["after-deadline"]);
@@ -148,7 +159,7 @@ describe("auditResponses", () => {
       recWith("ok", 950, 0, 1, [sc(0)]), // valid option
       recWith("bad", 960, 1, 2, [sc(5)]), // optionIndex out of range
     ];
-    const audit = auditResponses(raw, DEF_SC, TIP, SPE);
+    const audit = auditResponses(raw, DEF_SC);
     expect(audit.counted.map((r) => r.txHash)).toEqual(["ok"]);
     expect(audit.excludedRecords).toHaveLength(1);
     expect(audit.excludedRecords[0]!.key).toBe("invalid");
@@ -162,7 +173,7 @@ describe("auditResponses", () => {
       recWith("early", 950, 0, 1, [sc(0)]), // valid
       recWith("laterBad", 960, 0, 1, [sc(9)]), // invalid, same identity
     ];
-    const audit = auditResponses(raw, DEF_SC, TIP, SPE);
+    const audit = auditResponses(raw, DEF_SC);
     expect(audit.counted.map((r) => r.txHash)).toEqual(["early"]);
     expect(audit.excludedRecords.map((e) => e.key)).toEqual(["invalid"]);
   });
@@ -174,7 +185,7 @@ describe("auditResponses", () => {
       recWith("bad", 955, 3, 9, [sc(7)]), // invalid answer
       recWith("late", 1050, 2, 3, [sc(0)]), // after deadline
     ];
-    const audit = auditResponses(raw, DEF_SC, TIP, SPE);
+    const audit = auditResponses(raw, DEF_SC);
     expect(audit.counted.map((r) => r.txHash)).toEqual(["b"]);
     // Compared order-independently: after-deadline/invalid are emitted in raw
     // order during the scan, superseded after dedup — what matters is each

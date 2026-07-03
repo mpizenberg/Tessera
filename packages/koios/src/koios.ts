@@ -27,7 +27,6 @@ import {
 } from "@tessera/core";
 import type {
   AppConfig,
-  CancellationProof,
   CancellationRecord,
   ChainTip,
   Cip179Records,
@@ -37,11 +36,13 @@ import type {
   SurveyBundle,
   SurveyListPayload,
   SurveyRecord,
+  TallyArtifact,
+  TxProof,
 } from "@tessera/core";
 import { Koios } from "@evolution-sdk/evolution/sdk/provider/Koios";
 import type { ProtocolParameters } from "@evolution-sdk/evolution/sdk/provider/Provider";
 import { koiosJsonToMetadatum, type KoiosJson } from "./metadatum";
-import { decodeCancellationProof } from "./txProof";
+import { decodeTxProof } from "./txProof";
 
 /** Max tx hashes per /tx_metadata POST (larger bodies return HTTP 413). */
 const TX_METADATA_BATCH = 50;
@@ -69,6 +70,13 @@ const REQUEST_TIMEOUT_MS = 15_000;
 interface TxByLabel {
   tx_hash: string;
   absolute_slot: number;
+  epoch_no: number;
+}
+
+interface TxInfoRow {
+  tx_hash: string;
+  /** Position of the tx within its block (§6.3 same-slot ordering). */
+  tx_block_index: number | null;
 }
 
 interface TxMetadata {
@@ -238,19 +246,22 @@ export class KoiosDataSource implements DataSource {
     // page cap, which flags the snapshot `incomplete` instead of lying. Keyed by
     // tx_hash in a Map so a row re-seen across pages (a tx landing mid-scan) is
     // deduped rather than fetched twice.
-    const slotByHash = new Map<string, number>();
+    const posByHash = new Map<string, { slot: number; epochNo: number }>();
     let incomplete = false;
     for (let page = 0; page < MAX_PAGES; page++) {
       const rows = await this.get<TxByLabel[]>(
         `/tx_by_metalabel?_label=${METADATA_LABEL}` +
-          `&select=tx_hash,absolute_slot` +
+          `&select=tx_hash,absolute_slot,epoch_no` +
           `&absolute_slot=gte.${sinceSlot}` +
           `&order=absolute_slot.desc` +
           `&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`,
       );
       for (const s of rows) {
-        if (!slotByHash.has(s.tx_hash))
-          slotByHash.set(s.tx_hash, s.absolute_slot);
+        if (!posByHash.has(s.tx_hash))
+          posByHash.set(s.tx_hash, {
+            slot: s.absolute_slot,
+            epochNo: s.epoch_no,
+          });
       }
       if (rows.length < PAGE_SIZE) break; // last page reached → exhausted
       if (page === MAX_PAGES - 1) {
@@ -261,7 +272,7 @@ export class KoiosDataSource implements DataSource {
         );
       }
     }
-    const hashes = [...slotByHash.keys()];
+    const hashes = [...posByHash.keys()];
 
     const surveys: SurveyRecord[] = [];
     const responses: ResponseRecord[] = [];
@@ -293,7 +304,7 @@ export class KoiosDataSource implements DataSource {
     for (const row of metas) {
       const raw = row.metadata?.[String(METADATA_LABEL)];
       if (raw === undefined) continue;
-      const slot = slotByHash.get(row.tx_hash) ?? 0;
+      const pos = posByHash.get(row.tx_hash) ?? { slot: 0, epochNo: 0 };
       let payload: Cip179Payload;
       try {
         payload = decodePayload(koiosJsonToMetadatum(raw));
@@ -301,7 +312,7 @@ export class KoiosDataSource implements DataSource {
         console.warn(`skipping label-17 tx ${row.tx_hash}: ${String(err)}`);
         continue;
       }
-      this.classify(payload, row.tx_hash, slot, {
+      this.classify(payload, row.tx_hash, pos, {
         surveys,
         responses,
         cancellations,
@@ -418,8 +429,29 @@ export class KoiosDataSource implements DataSource {
     cancellations: readonly CancellationRecord[],
   ): Promise<CancellationRecord[]> {
     if (cancellations.length === 0) return [...cancellations];
+    const proofByHash = await this.txProofs([
+      ...new Set(cancellations.map((c) => c.txHash)),
+    ]);
+    return cancellations.map((c) => ({
+      ...c,
+      proof: proofByHash.get(c.txHash) ?? null,
+    }));
+  }
 
-    const txHashes = [...new Set(cancellations.map((c) => c.txHash))];
+  /**
+   * Credential-proof evidence per transaction: fetch each tx's CBOR
+   * (`/tx_cbor`, batched) and decode required signers, native scripts, and
+   * vote bindings. A hash whose fetch or decode fails maps to `null`
+   * (unproven — callers may retry on a later refresh). Used for cancellation
+   * owner-proofs at scan time and response credential-proofs (§6.3 rule 2) by
+   * the serving tier's validation pass.
+   */
+  async txProofs(
+    txHashes: readonly string[],
+  ): Promise<Map<string, TxProof | null>> {
+    const proofByHash = new Map<string, TxProof | null>(
+      txHashes.map((h) => [h, null]),
+    );
     const cborByHash = new Map<string, string>();
     for (let i = 0; i < txHashes.length; i += TX_CBOR_BATCH) {
       const batch = txHashes.slice(i, i + TX_CBOR_BATCH);
@@ -431,22 +463,43 @@ export class KoiosDataSource implements DataSource {
         for (const r of rows) if (r.cbor) cborByHash.set(r.tx_hash, r.cbor);
       } catch (err) {
         console.warn(
-          `tx_cbor batch failed; cancellations stay unverified: ${String(err)}`,
+          `tx_cbor batch failed; its txs stay unproven: ${String(err)}`,
         );
       }
     }
-
-    const proofByHash = new Map<string, CancellationProof | null>();
     await Promise.all(
       [...cborByHash.entries()].map(async ([hash, cbor]) => {
-        proofByHash.set(hash, await decodeCancellationProof(cbor));
+        proofByHash.set(hash, await decodeTxProof(cbor));
       }),
     );
+    return proofByHash;
+  }
 
-    return cancellations.map((c) => ({
-      ...c,
-      proof: proofByHash.get(c.txHash) ?? null,
-    }));
+  /**
+   * `tx_block_index` (position within the block) per transaction, via
+   * `/tx_info` — the §6.3 same-slot ordering input. A failed batch just leaves
+   * its hashes out of the map (callers treat missing as "retry next refresh").
+   */
+  async txBlockIndices(
+    txHashes: readonly string[],
+  ): Promise<Map<string, number>> {
+    const byHash = new Map<string, number>();
+    for (let i = 0; i < txHashes.length; i += TX_METADATA_BATCH) {
+      const batch = txHashes.slice(i, i + TX_METADATA_BATCH);
+      try {
+        const rows = await this.post<TxInfoRow[]>(
+          "/tx_info?select=tx_hash,tx_block_index",
+          { _tx_hashes: batch },
+        );
+        for (const r of rows) {
+          if (r.tx_block_index !== null)
+            byHash.set(r.tx_hash, r.tx_block_index);
+        }
+      } catch (err) {
+        console.warn(`tx_info batch failed: ${String(err)}`);
+      }
+    }
+    return byHash;
   }
 
   async txStatus(
@@ -457,6 +510,15 @@ export class KoiosDataSource implements DataSource {
       _tx_hashes: [...txHashes],
     });
     return new Map(rows.map((r) => [r.tx_hash, r.num_confirmations ?? null]));
+  }
+
+  /**
+   * Always `null`: artifacts are emitted by the serving tier's finalization,
+   * which the direct Koios path has no access to. The UI shows the raw
+   * client-side tally instead (the pre-artifact behaviour).
+   */
+  async artifact(_ref: SurveyRef): Promise<TallyArtifact | null> {
+    return null;
   }
 
   async fetchGovernanceLinks(sinceUnix: number): Promise<GovLink[]> {
@@ -482,13 +544,14 @@ export class KoiosDataSource implements DataSource {
   private classify(
     payload: Cip179Payload,
     txHash: string,
-    slot: number,
+    pos: { slot: number; epochNo: number },
     out: {
       surveys: SurveyRecord[];
       responses: ResponseRecord[];
       cancellations: CancellationRecord[];
     },
   ): void {
+    const { slot, epochNo } = pos;
     switch (payload.type) {
       case "definitions": {
         const txId = hexToBytes(txHash);
@@ -496,6 +559,7 @@ export class KoiosDataSource implements DataSource {
           out.surveys.push({
             txHash,
             slot,
+            epochNo,
             ref: { txId, index },
             definition,
           });
@@ -503,15 +567,28 @@ export class KoiosDataSource implements DataSource {
         break;
       }
       case "responses":
-        for (const response of payload.responses) {
-          out.responses.push({ txHash, slot, response });
-        }
+        payload.responses.forEach((response, responseIndex) => {
+          // The payload index is part of the §6.3 chain order (same-tx ties).
+          out.responses.push({
+            txHash,
+            slot,
+            epochNo,
+            responseIndex,
+            response,
+          });
+        });
         break;
       case "cancellations":
         for (const target of payload.cancellations) {
           // `proof` is filled in a second pass (withCancellationProofs), which
           // fetches the cancelling tx's CBOR to read its owner-proof evidence.
-          out.cancellations.push({ txHash, slot, target, proof: null });
+          out.cancellations.push({
+            txHash,
+            slot,
+            epochNo,
+            target,
+            proof: null,
+          });
         }
         break;
     }

@@ -1,0 +1,179 @@
+import { describe, expect, it } from "vitest";
+import type { Role, SurveyResponse } from "cip-179";
+
+import {
+  RULESET_DESCRIPTOR,
+  artifactHash,
+  rulesetHash,
+  toArtifactQuestions,
+  toArtifactResponders,
+  type TallyBody,
+} from "./artifact";
+import { canonicalJson } from "./canonical";
+import type { WeightedQuestionTally, WeightedResponder } from "./weightedTally";
+
+const RESPONSE: SurveyResponse = {
+  specVersion: 4,
+  surveyRef: { txId: Uint8Array.of(9), index: 0 },
+  role: 3 as Role,
+  credential: { type: "key", keyHash: Uint8Array.of(1) },
+  answers: { type: "public", answers: [] },
+};
+
+function body(perRoleTotal: string | null): TallyBody {
+  return {
+    rulesetHash: rulesetHash(),
+    network: "preview",
+    survey: { txId: "aa".repeat(32), index: 0, endEpoch: 900 },
+    sealed: false,
+    perRole: [
+      {
+        role: 3,
+        total: perRoleTotal,
+        responders: [
+          { credential: "key:01", weight: "45000000000000000", txHash: "cc" },
+        ],
+        questions: [
+          {
+            kind: "custom",
+            answeredCount: 1,
+            answeredWeight: "45000000000000000",
+          },
+        ],
+      },
+    ],
+  };
+}
+
+describe("rulesetHash", () => {
+  it("is a stable blake2b-256 of the canonical descriptor", () => {
+    expect(rulesetHash()).toMatch(/^[0-9a-f]{64}$/);
+    expect(rulesetHash()).toBe(rulesetHash());
+  });
+
+  it("pins every counting dimension in the descriptor", () => {
+    // The hash only protects what the descriptor *says* — make sure the
+    // load-bearing rules are actually in there.
+    const text = canonicalJson(RULESET_DESCRIPTOR);
+    for (const needle of [
+      "end_epoch",
+      "required_signers",
+      "voting_procedures",
+      "(slot, tx_block_index, response_index)",
+      "drep_voting_power_at_end_epoch",
+      "active_stake_at_end_epoch",
+    ]) {
+      expect(text).toContain(needle);
+    }
+    expect(RULESET_DESCRIPTOR.coveredRoles).toEqual([0, 3, 4]);
+  });
+});
+
+describe("artifactHash", () => {
+  it("is deterministic and ignores property insertion order", () => {
+    const a = body("100");
+    // Same content, reversed property insertion order at two levels.
+    const b = {
+      perRole: a.perRole,
+      sealed: a.sealed,
+      survey: { endEpoch: 900, index: 0, txId: "aa".repeat(32) },
+      network: a.network,
+      rulesetHash: a.rulesetHash,
+    } as TallyBody;
+    expect(artifactHash(a)).toBe(artifactHash(b));
+  });
+
+  it("changes when any committed value changes", () => {
+    expect(artifactHash(body("100"))).not.toBe(artifactHash(body("101")));
+    expect(artifactHash(body("100"))).not.toBe(artifactHash(body(null)));
+  });
+
+  it("survives a JSON round-trip (artifact bodies are wire-plain)", () => {
+    const a = body(null);
+    const roundTripped = JSON.parse(JSON.stringify(a)) as TallyBody;
+    expect(artifactHash(roundTripped)).toBe(artifactHash(a));
+  });
+});
+
+describe("toArtifactQuestions", () => {
+  it("converts every bigint aggregate to a decimal string", () => {
+    const tallies: WeightedQuestionTally[] = [
+      {
+        kind: "options",
+        unit: "singleChoice",
+        optionWeights: [45_000_000_000_000_000n, 0n],
+        optionCounts: [1, 0],
+        answeredCount: 1,
+        answeredWeight: 45_000_000_000_000_000n,
+      },
+      {
+        kind: "numeric",
+        weightedSum: 10n,
+        answeredWeight: 2n,
+        answeredCount: 2,
+        values: [{ value: 5n, weight: 2n, count: 2 }],
+      },
+      {
+        kind: "perOption",
+        unit: "rating",
+        perOption: [{ weightedSum: 6n, answeredWeight: 2n, count: 2 }],
+        levelWeights: [[0n, 2n]],
+        answeredCount: 2,
+        answeredWeight: 2n,
+      },
+      { kind: "custom", answeredCount: 3, answeredWeight: 3n },
+    ];
+    const qs = toArtifactQuestions(tallies);
+    expect(qs[0]).toEqual({
+      kind: "options",
+      unit: "singleChoice",
+      optionWeights: ["45000000000000000", "0"],
+      optionCounts: [1, 0],
+      answeredCount: 1,
+      answeredWeight: "45000000000000000",
+    });
+    expect(qs[1]).toMatchObject({
+      weightedSum: "10",
+      values: [{ value: "5", weight: "2", count: 2 }],
+    });
+    expect(qs[2]).toMatchObject({ levelWeights: [["0", "2"]] });
+    expect(qs[3]).toEqual({
+      kind: "custom",
+      answeredCount: 3,
+      answeredWeight: "3",
+    });
+    // The converted form must be canonicalizable (no bigints slipped through).
+    expect(() => canonicalJson(qs)).not.toThrow();
+  });
+
+  it("omits levelWeights when the tally has none (points)", () => {
+    const qs = toArtifactQuestions([
+      {
+        kind: "perOption",
+        unit: "points",
+        perOption: [],
+        answeredCount: 0,
+        answeredWeight: 0n,
+      },
+    ]);
+    expect("levelWeights" in qs[0]!).toBe(false);
+  });
+});
+
+describe("toArtifactResponders", () => {
+  it("converts and sorts by credential identity", () => {
+    const rs: WeightedResponder[] = [
+      {
+        credentialKey: "script:ff",
+        weight: 2n,
+        txHash: "t2",
+        response: RESPONSE,
+      },
+      { credentialKey: "key:aa", weight: 1n, txHash: "t1", response: RESPONSE },
+    ];
+    expect(toArtifactResponders(rs)).toEqual([
+      { credential: "key:aa", weight: "1", txHash: "t1" },
+      { credential: "script:ff", weight: "2", txHash: "t2" },
+    ]);
+  });
+});

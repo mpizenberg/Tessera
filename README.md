@@ -12,10 +12,13 @@ computed client-side directly from chain data.
 
 > **Status:** active development. The frontend (explore, results, wallet,
 > respond, create, cancel, sealed mode, IPFS enrichment, governance linkage) is
-> functional, as is a light Tier-1 serving backend (Koios read path cached
-> server-side; runs as a Node process or a Cloudflare Worker). Server-side
-> stake-weighted tallies and result artifacts are the next phase — see
-> `backend/ARCHITECTURE.md`.
+> functional, as is the Tier-1 serving backend (Koios read path cached
+> server-side; runs as a Node process or a Cloudflare Worker). The backend also
+> validates responses (deadline, credential proof, dedup), snapshots
+> stake/voting-power weights at each survey's end epoch, and finalizes closed
+> surveys into **content-addressed, re-verifiable result artifacts** that the
+> app renders as final weighted results; `packages/verifier` re-derives any
+> artifact from chain data and checks the hash. See `backend/ARCHITECTURE.md`.
 
 ## Governance linkage
 
@@ -33,14 +36,15 @@ served document matches the on-chain hash.
 
 ## Repository layout
 
-| Path              | What it is                                                                                                    |
-| ----------------- | ------------------------------------------------------------------------------------------------------------- |
-| `frontend/app`    | The browser app — [SolidJS][solid] + [Vite][vite] + TypeScript.                                               |
-| `frontend/cip179` | A pure, dependency-free TypeScript library to encode / decode / validate the label-17 format.                 |
-| `packages/core`   | Shared portable domain types + wire codec (`@tessera/core`), used by app and backend.                         |
-| `packages/koios`  | The Koios read path (`KoiosDataSource`), shared by the app's direct mode and the backend.                     |
-| `backend/server`  | Tier-1 serving backend: cached chain reads served per page over HTTP. Node process or Cloudflare Worker + D1. |
-| `backend/deps`    | Indexer submodules (Adder / Yaci Store / Oura) for a future Tier-2; design notes in `backend/*.md`.           |
+| Path                | What it is                                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `frontend/app`      | The browser app — [SolidJS][solid] + [Vite][vite] + TypeScript.                                                          |
+| `frontend/cip179`   | A pure, dependency-free TypeScript library to encode / decode / validate the label-17 format.                            |
+| `packages/core`     | Shared pure domain (`@tessera/core`): types, wire codec, audit/tally rules, weighted tally, canonical artifact + hashes. |
+| `packages/koios`    | The Koios read path (`KoiosDataSource`, tally inputs, tx-proof decoding), shared by direct mode, backend, and verifier.  |
+| `packages/verifier` | Standalone CLI that re-derives a survey's result artifact from chain data and checks its content hash.                   |
+| `backend/server`    | Tier-1 serving backend: cached chain reads, response validation, weight snapshots, artifact finalization. Node or CF+D1. |
+| `backend/deps`      | Indexer submodules (Adder / Yaci Store / Oura) for a future Tier-2; design notes in `backend/*.md`.                      |
 
 ## Quick start
 
@@ -82,19 +86,20 @@ entered in Settings, stored only in the browser.
 ## Development
 
 The repo is a pnpm workspace (`frontend/app`, `frontend/cip179`,
-`packages/core`, `packages/koios`, `backend/server`). Packages are consumed
-from TypeScript source (Vite aliases / `exports` pointing at `src`), so
-cross-package edits are live with no build step.
+`packages/core`, `packages/koios`, `packages/verifier`, `backend/server`).
+Packages are consumed from TypeScript source (Vite aliases / `exports` pointing
+at `src`), so cross-package edits are live with no build step.
 
 From the repository root:
 
-| Command                              | What it does                                                                 |
-| ------------------------------------ | ---------------------------------------------------------------------------- |
-| `pnpm -r type-check`                 | Type-check every package.                                                    |
-| `pnpm -r test`                       | Run every package's unit tests (Vitest).                                     |
-| `pnpm --filter tessera-app dev`      | Start the app's Vite dev server.                                             |
-| `pnpm --filter @tessera/backend dev` | Run the Tier-1 backend locally (see its [README](backend/server/README.md)). |
-| `pnpm --filter tessera-app build`    | Production build of the app.                                                 |
+| Command                                                                       | What it does                                                                 |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `pnpm -r type-check`                                                          | Type-check every package.                                                    |
+| `pnpm -r test`                                                                | Run every package's unit tests (Vitest).                                     |
+| `pnpm --filter tessera-app dev`                                               | Start the app's Vite dev server.                                             |
+| `pnpm --filter @tessera/backend dev`                                          | Run the Tier-1 backend locally (see its [README](backend/server/README.md)). |
+| `pnpm --filter tessera-app build`                                             | Production build of the app.                                                 |
+| `pnpm --filter @tessera/verifier verify -- --backend <url> --survey <tx>:<i>` | Re-verify a survey's final result artifact from chain data.                  |
 
 Formatting is Prettier (`pnpm format` / `pnpm format:check` in `frontend/app`).
 

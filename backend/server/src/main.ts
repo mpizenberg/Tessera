@@ -13,7 +13,7 @@ import { serve } from "@hono/node-server";
 import { loadConfig } from "./config";
 import { createApp } from "./http";
 import { startRefreshLoop } from "./refresh";
-import { openSnapshotStore } from "./store-node";
+import { openBackendStore } from "./store-node";
 
 /**
  * Minimal `.env` loader (no dependency): `KEY=VALUE` lines, `#` comments, and
@@ -46,7 +46,7 @@ function loadDotenv(path = ".env"): void {
 
 loadDotenv();
 const config = loadConfig(process.env);
-const store = openSnapshotStore(config.dbPath);
+const store = openBackendStore(config.dbPath);
 
 startRefreshLoop(config, store);
 const app = createApp(config, store);

@@ -26,6 +26,7 @@ import type {
   Network,
   SurveyBundle,
   SurveyListPayload,
+  TallyArtifact,
 } from "@tessera/core";
 import type { SurveyRef } from "cip-179";
 
@@ -88,6 +89,24 @@ export class IndexerDataSource implements DataSource {
       this.assertNetwork(),
     ]);
     return body.surveyKeys;
+  }
+
+  /**
+   * The survey's final artifact, or null if none exists yet (404). Artifacts
+   * are wire-plain by design (weights are decimal strings, no bytes/bigints),
+   * so this is a plain `JSON.parse` — no `fromJsonSafe` decode.
+   */
+  async artifact(ref: SurveyRef): Promise<TallyArtifact | null> {
+    const url =
+      `${this.baseUrl}/api/surveys/` +
+      `${bytesToHex(ref.txId)}/${ref.index}/artifact`;
+    const res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`Indexer ${url} → ${res.status}`);
+    return (await res.json()) as TallyArtifact;
   }
 
   async txStatus(

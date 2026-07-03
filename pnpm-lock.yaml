@@ -102,6 +102,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@noble/hashes':
+        specifier: ^2.2.0
+        version: 2.2.0
       cip-179:
         specifier: workspace:*
         version: link:../../frontend/cip179
@@ -128,6 +131,31 @@ importers:
         specifier: workspace:*
         version: link:../../frontend/cip179
     devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@25.9.4)
+
+  packages/verifier:
+    dependencies:
+      '@tessera/core':
+        specifier: workspace:*
+        version: link:../core
+      '@tessera/koios':
+        specifier: workspace:*
+        version: link:../koios
+      cip-179:
+        specifier: workspace:*
+        version: link:../../frontend/cip179
+    devDependencies:
+      '@types/node':
+        specifier: ^25.9.3
+        version: 25.9.4
+      tsx:
+        specifier: ^4.19.0
+        version: 4.22.4
       typescript:
         specifier: ^5.6.0
         version: 5.9.3

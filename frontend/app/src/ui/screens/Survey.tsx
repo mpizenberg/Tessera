@@ -22,9 +22,16 @@ import {
   type SurveyResponse,
 } from "cip-179";
 
+import { artifactHash, type TallyArtifact } from "@tessera/core";
+
 import { useApp } from "~/state";
 import { findSurvey, type SurveyAggregate } from "~/domain/survey";
 import { humanizeAnswer, serializeAnswer } from "~/domain/answer";
+import {
+  formatAda,
+  weightedRoleViews,
+  type WeightedQuestionView,
+} from "~/domain/artifactView";
 import {
   auditResponses,
   responseIsCountable,
@@ -133,6 +140,23 @@ export const Survey: Component = () => {
     void Promise.resolve(refetchBundle()).catch(() => {});
   };
 
+  // The final tally artifact — only a closed/cancelled survey can have one,
+  // and only the serving tier produces them (the direct Koios source answers
+  // null by contract). Any fetch error degrades to the raw view, never blocks
+  // the page.
+  const [artifactRes] = createResource(
+    () => {
+      const s = indexed();
+      return s && s.status !== "active" ? s.record.ref : undefined;
+    },
+    (ref) => app.source.artifact(ref).catch(() => null),
+  );
+  const artifact = (): TallyArtifact | null =>
+    (artifactRes.error ? null : artifactRes()) ?? null;
+  // Viewer toggle: the weighted view is the default whenever an artifact
+  // exists; the raw per-credential tally stays one click away.
+  const [showRaw, setShowRaw] = createSignal(false);
+
   // External-content surveys: fetch + hash-verify the off-chain presentation
   // doc and render its labels; `pres.def()` falls back to the on-chain
   // definition (count forms, blank titles) until/unless it resolves.
@@ -146,12 +170,7 @@ export const Survey: Component = () => {
     const s = survey();
     const b = bundle.error ? undefined : bundle();
     if (!s || !b) return { counted: [], excludedRecords: [] };
-    return auditResponses(
-      b.responses,
-      s.record.definition,
-      b.tip,
-      app.config.secondsPerEpoch,
-    );
+    return auditResponses(b.responses, s.record.definition);
   });
   const records = createMemo<ResponseRecord[]>(() => audit().counted);
 
@@ -284,12 +303,33 @@ export const Survey: Component = () => {
                   />
                 }
               >
-                <ResultsBody
-                  def={def() ?? sv().record.definition}
-                  keyStr={key()}
-                  records={records()}
-                  excludedRecords={audit().excludedRecords}
-                />
+                <Show
+                  when={artifact() && !showRaw()}
+                  fallback={
+                    <>
+                      <Show when={artifact()}>
+                        <button
+                          class={css.excludedToggle}
+                          onClick={() => setShowRaw(false)}
+                        >
+                          {t("survey.weightedShowFinal")}
+                        </button>
+                      </Show>
+                      <ResultsBody
+                        def={def() ?? sv().record.definition}
+                        keyStr={key()}
+                        records={records()}
+                        excludedRecords={audit().excludedRecords}
+                      />
+                    </>
+                  }
+                >
+                  <WeightedResults
+                    artifact={artifact()!}
+                    def={def() ?? sv().record.definition}
+                    onShowRaw={() => setShowRaw(true)}
+                  />
+                </Show>
               </Show>
             </Show>
           </>
@@ -1105,6 +1145,206 @@ const ResponseCard: Component<{
         )}
       </Show>
     </div>
+  );
+};
+
+// ----------------------------------------------------------------------------
+// Final weighted results (artifact view)
+// ----------------------------------------------------------------------------
+
+/**
+ * The final, server-finalized results of a closed survey, rendered from its
+ * content-addressed artifact: per-role sections with stake-weighted bars and
+ * exact-integer-derived means (all floats presentation-side, in
+ * `~/domain/artifactView`). Replaces the raw live tally once an artifact
+ * exists; a toggle hands back to the raw per-credential view.
+ */
+const WeightedResults: Component<{
+  artifact: TallyArtifact;
+  def: SurveyDefinition;
+  onShowRaw: () => void;
+}> = (props) => {
+  const roles = createMemo(() => weightedRoleViews(props.artifact, props.def));
+  const endEpoch = () => props.artifact.tally.survey.endEpoch;
+  // The content address, recomputed locally from the received body — what a
+  // verifier reproduces; shown shortened, full value in the title attribute.
+  const hash = createMemo(() => artifactHash(props.artifact.tally));
+
+  return (
+    <>
+      {/* provenance note — the weighted counterpart of the raw disclaimer */}
+      <div class={css.disclaimer}>
+        <span class={css.weightedBadge}>{t("survey.weightedBadge")}</span>
+        <span class={css.disclaimerText}>
+          <b>{t("survey.weightedNoteStrong")}</b>{" "}
+          {t("survey.weightedNote", {
+            epoch: n(endEpoch()),
+            provider: props.artifact.provenance.source.provider,
+          })}
+        </span>
+        <button class={css.excludedToggle} onClick={() => props.onShowRaw()}>
+          {t("survey.weightedShowRaw")}
+        </button>
+      </div>
+
+      <Show
+        when={!props.artifact.tally.cancelled}
+        fallback={
+          <div class={css.cancelSubmitted}>
+            <div class={css.cancelSubmittedTitle}>
+              {t("survey.weightedCancelledTitle")}
+            </div>
+            <div class={css.cancelSubmittedHash}>
+              <TxLink
+                hash={props.artifact.tally.cancelled!.txHash}
+                color="var(--danger-ink)"
+              />
+            </div>
+            <div class={css.cancelSubmittedBody}>
+              {t("survey.weightedCancelledBody", {
+                epoch: n(props.artifact.tally.cancelled!.epoch),
+              })}
+            </div>
+          </div>
+        }
+      >
+        <For each={roles()}>
+          {(rv) => (
+            <section>
+              <div class={css.weightedRoleHead}>
+                <span class={css.weightedRoleTitle}>{roleLabel(rv.role)}</span>
+                <span class={css.weightedRoleMeta}>
+                  {t("survey.weightedCounted", { n: n(rv.responderCount) })}
+                  <Show when={rv.total !== null}>
+                    {" · "}
+                    {t("survey.weightedVotingWeight", {
+                      ada: formatAda(rv.votedWeight),
+                    })}
+                    <Show when={rv.turnout !== null}>
+                      {" · "}
+                      {t("survey.weightedTurnout", {
+                        pct: (rv.turnout! * 100).toFixed(2),
+                      })}
+                    </Show>
+                  </Show>
+                </span>
+              </div>
+              <div class={css.questionResults}>
+                <For each={props.def.questions}>
+                  {(q, i) => (
+                    <WeightedQuestionResult
+                      q={q}
+                      index={i()}
+                      view={rv.questions[i()]}
+                      countOnly={rv.total === null}
+                    />
+                  )}
+                </For>
+              </div>
+            </section>
+          )}
+        </For>
+      </Show>
+
+      <p class={css.tallyFootnote} title={hash()}>
+        {t("survey.weightedFootnote", {
+          hash: `${hash().slice(0, 10)}…${hash().slice(-6)}`,
+        })}
+      </p>
+    </>
+  );
+};
+
+/**
+ * One question's weighted result. Every kind maps onto {@link ResultBarCard}:
+ * option weights as bars, numeric values as a per-value bar list with the
+ * weighted mean in the type label, per-option means as average bars. Bar meta
+ * shows ada weight + responder count for stake-weighted roles, plain counts
+ * for count-only roles (Owner).
+ */
+const WeightedQuestionResult: Component<{
+  q: Question;
+  index: number;
+  view: WeightedQuestionView | undefined;
+  countOnly: boolean;
+}> = (props) => {
+  const qLabel = () => t("survey.qLabel", { n: props.index + 1 });
+  const meta = (weight: bigint, count: number): string =>
+    props.countOnly
+      ? String(count)
+      : t("survey.weightedBarMeta", { ada: formatAda(weight), n: n(count) });
+  return (
+    <Show when={props.view}>
+      {(viewOf) => {
+        const v = viewOf();
+        switch (v.kind) {
+          case "bars":
+            return (
+              <ResultBarCard
+                qLabel={qLabel()}
+                typeLabel={baseType(props.q.type)}
+                title={props.q.prompt || t("survey.noPrompt")}
+                abstainText={t("survey.counted", { n: n(v.answeredCount) })}
+                bars={v.bars.map((b) => ({
+                  label: b.label,
+                  meta: meta(b.weight, b.count),
+                  pct: b.frac,
+                }))}
+              />
+            );
+          case "histogram":
+            return (
+              <ResultBarCard
+                qLabel={qLabel()}
+                typeLabel={
+                  v.mean !== null
+                    ? t("survey.typeLabelJoined", {
+                        base: baseType(props.q.type),
+                        suffix: `${t("survey.weightedMean")} ${n(v.mean)}`,
+                      })
+                    : baseType(props.q.type)
+                }
+                title={props.q.prompt || t("survey.noPrompt")}
+                abstainText={t("survey.counted", { n: n(v.answeredCount) })}
+                bars={v.bins.map((b) => ({
+                  label: b.label,
+                  meta: meta(b.weight, b.count),
+                  pct: b.frac,
+                }))}
+              />
+            );
+          case "rows": {
+            const max = Math.max(0, ...v.rows.map((r) => r.avg ?? 0));
+            return (
+              <ResultBarCard
+                qLabel={qLabel()}
+                typeLabel={t("survey.typeLabelJoined", {
+                  base: baseType(props.q.type),
+                  suffix: t("survey.weightedMean"),
+                })}
+                title={props.q.prompt || t("survey.noPrompt")}
+                abstainText={t("survey.counted", { n: n(v.answeredCount) })}
+                bars={v.rows.map((row) => ({
+                  label: row.label,
+                  meta: row.avg === null ? "—" : n(row.avg),
+                  pct: max > 0 && row.avg !== null ? row.avg / max : 0,
+                }))}
+              />
+            );
+          }
+          case "custom":
+            return (
+              <ResultBarCard
+                qLabel={qLabel()}
+                typeLabel={baseType(props.q.type)}
+                title={props.q.prompt || t("survey.noPrompt")}
+                abstainText={t("survey.counted", { n: n(v.answeredCount) })}
+                bars={[]}
+              />
+            );
+        }
+      }}
+    </Show>
   );
 };
 

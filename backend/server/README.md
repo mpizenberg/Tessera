@@ -6,6 +6,23 @@ runtimes: a local Node process (`src/main.ts`, node:sqlite + setInterval) and a
 Cloudflare Worker (`src/worker.ts`, D1 + Cron trigger). See
 `backend/ARCHITECTURE.md`.
 
+Each refresh cycle does three things, in order:
+
+1. **Snapshot** — fetch all label-17 records + chain tip + governance links
+   from Koios and cache the result (what the read endpoints serve).
+2. **Validate** — for responses not seen before, fetch their tx block index
+   and proof evidence and persist the §6.3 checks (well-formedness, credential
+   proof via required signers / native scripts / vote bindings). Incremental:
+   already-validated responses cost zero further Koios calls.
+3. **Finalize** — for surveys safely past their `end_epoch`, snapshot
+   stake/voting-power weights at that epoch, run the stake-weighted tally, and
+   emit an immutable, content-addressed **result artifact**
+   (blake2b-256 over canonical JSON). Idempotent and resumable: weight rows
+   already written are never re-fetched, and a temporarily unavailable
+   electorate total just postpones the survey to the next cycle.
+   `packages/verifier` can re-derive any artifact from chain data alone and
+   check the hash.
+
 ## Run locally
 
 ```sh
@@ -37,6 +54,12 @@ port, refresh interval, or db path.
   wire-encoded, ~20 s cache). Lets the browser build a transaction without
   querying Koios, so the app needs no Koios token even to create
   surveys/responses/actions.
+- `GET /api/surveys/{txHash}/{index}/artifact` — the survey's final tally
+  artifact, or `404` while the survey is open / not yet finalized. Served
+  byte-for-byte as stored (its content hash stays verifiable), with a strong
+  `ETag` (the artifact hash) and `Cache-Control: immutable`.
+- `GET /api/artifacts/{hash}` — the same artifact addressed by its content
+  hash directly.
 
 Snapshot-derived routes answer `503` until the first refresh completes, and
 carry an `ETag` versioned by `fetchedAt`, so revalidation between refreshes is
@@ -82,10 +105,15 @@ curl "http://localhost:8787/__scheduled"     # trigger one refresh by hand
 To deploy: `wrangler d1 create tessera-cache-preview`, paste the database id
 into `wrangler.toml`, apply migrations with `--remote`, then
 `pnpm --filter @tessera/backend deploy:cf`. Mainnet is a wrangler environment —
-same steps with `--env mainnet` and its own database. A refresh currently costs
-~6 Koios subrequests (logged on every cron run in `wrangler tail`), comfortably
-inside the free plan's 50-per-invocation cap; revisit if the survey volume
-grows the label pages / cbor batches.
+same steps with `--env mainnet` and its own database.
+
+Subrequests (logged on every cron run in `wrangler tail`): a steady-state
+refresh costs ~6 Koios calls; validating new responses and finalizing closing
+surveys add batched calls only when there is new work (a full live cycle —
+refresh + validation + weight snapshotting + artifact emission — measured 18).
+That sits comfortably inside the free plan's 50-per-invocation cap, and
+finalization is resumable: if a run were ever cut short, already-written weight
+rows are not re-fetched and the next cron picks up where it left off.
 
 ## Requirements
 

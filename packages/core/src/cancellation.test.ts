@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Credential } from "cip-179";
 
-import { bytesToHex } from "~/util/hex";
-import type { CancellationProof, NativeScriptInfo } from "~/data/source";
+import { bytesToHex } from "./hex";
+import type { CancellationProof, NativeScriptInfo } from "./source";
 import { cancellationVerified, nativeScriptSatisfied } from "./cancellation";
 
 const keyHash = (b: number) => Uint8Array.of(b);

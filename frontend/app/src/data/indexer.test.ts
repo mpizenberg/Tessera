@@ -168,6 +168,24 @@ describe("IndexerDataSource", () => {
     );
   });
 
+  it("fetches an artifact as plain JSON, mapping 404 to null", async () => {
+    const artifact = {
+      tally: { rulesetHash: "ab", perRole: [{ role: 3, total: "1000" }] },
+      provenance: { source: { provider: "koios" } },
+    };
+    const fetchMock = stubFetch((url) =>
+      url.endsWith(`/api/surveys/deadbeef/3/artifact`)
+        ? { body: artifact }
+        : { status: 404, body: { error: "no artifact" } },
+    );
+    const src = new IndexerDataSource(BASE, "preview");
+
+    // Wire-plain: decimal strings arrive as-is, no fromJsonSafe decode.
+    expect(await src.artifact({ txId: TX_ID, index: 3 })).toEqual(artifact);
+    expect(await src.artifact({ txId: TX_ID, index: 9 })).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2); // no /health round-trip
+  });
+
   it("queries responded keys for a credential set, skipping the empty set", async () => {
     const fetchMock = stubFetch(
       withHealth((url) => {

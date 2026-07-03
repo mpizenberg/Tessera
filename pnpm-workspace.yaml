@@ -3,6 +3,7 @@ packages:
   - frontend/cip179
   - packages/core
   - packages/koios
+  - packages/verifier
   - backend/server
 
 # `@mattpiz/tlock-js` is the maintainer's own package; its latest release is

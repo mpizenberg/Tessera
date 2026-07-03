@@ -144,6 +144,24 @@ const survey: Messages = {
   disclaimerText2:
     "la pondération par stake, par pledge ou quadratique est en aval et hors du périmètre de CIP-179.",
 
+  // Résultats finaux pondérés (vue artefact)
+  weightedBadge: "final",
+  weightedNoteStrong: "Résultats finaux pondérés.",
+  weightedNote:
+    "Appartenance et pondérations figées à l'époque de clôture du sondage ({epoch}) depuis {provider} ; re-vérifiables indépendamment depuis les données de la chaîne.",
+  weightedShowRaw: "Voir les réponses brutes",
+  weightedShowFinal: "← Résultats finaux pondérés",
+  weightedCounted: "{n} comptées",
+  weightedVotingWeight: "{ada} ₳ de poids de vote",
+  weightedTurnout: "{pct} % de participation",
+  weightedMean: "moyenne pondérée",
+  weightedBarMeta: "{ada} ₳ · {n}",
+  weightedCancelledTitle: "Sondage annulé par son propriétaire",
+  weightedCancelledBody:
+    "Une annulation prouvée par le propriétaire a été enregistrée sur la chaîne à l'époque {epoch} ; aucun résultat n'est décompté.",
+  weightedFootnote:
+    "résultat final calculé à l'époque de clôture du sondage · artefact {hash}",
+
   // Role filter
   roleFilterLabel: "Décompte par rôle",
 

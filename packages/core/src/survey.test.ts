@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { Credential, SurveyDefinition } from "cip-179";
 
-import { bytesToHex } from "~/util/hex";
+import { bytesToHex } from "./hex";
 import type {
   CancellationProof,
   CancellationRecord,
   ChainTip,
   Cip179Records,
   SurveyRecord,
-} from "~/data/source";
+} from "./source";
 import { aggregateSurveys, voteDeadlineUnix } from "./survey";
 
 // Cancellation tri-state keys off tip.epoch vs the survey's end_epoch: a survey
@@ -45,6 +45,7 @@ const def = (owner: Credential, endEpoch: number): SurveyDefinition => ({
 const survey = (index: number, d: SurveyDefinition): SurveyRecord => ({
   txHash: `s${index}`,
   slot: 900,
+  epochNo: 9,
   ref: { txId: TXID, index },
   definition: d,
 });
@@ -61,6 +62,7 @@ const cancel = (
 ): CancellationRecord => ({
   txHash: `c${index}-${slot}`,
   slot,
+  epochNo: Math.floor(slot / 100),
   target: { txId: TXID, index },
   proof: p,
 });

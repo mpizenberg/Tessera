@@ -282,6 +282,7 @@ export const Create: Component = () => {
       app.addOptimisticSurvey({
         txHash: hash,
         slot: 0, // unknown until indexed; not surfaced for a fresh survey
+        epochNo: 0, // likewise — replaced by the indexed record
         ref: { txId: hexToBytes(hash), index: 0 },
         definition,
       });

@@ -207,6 +207,12 @@ serve what each page actually reads:
   reason the list view touched raw responses). Credentials travel in the core
   `credentialKey` form and several fit one request, since a wallet controls
   both a payment and a stake credential.
+- **`GET /api/surveys/{txHash}/{index}/artifact`** and
+  **`GET /api/artifacts/{hash}`** — the final tally artifact (§7) of a
+  finalized survey, by ref or by content address. The stored JSON text is
+  served **verbatim** (byte identity with the hash), with a strong
+  `ETag: "<artifactHash>"` and `Cache-Control: public, max-age=31536000,
+immutable`; 404 while the survey is open or not yet finalized.
 
 How it landed (shared with Phase 2's tally work, which is why it waited):
 
@@ -334,13 +340,14 @@ emits an artifact whose hashed body is a single **cancellation record** (cancell
 
 ### 6.4 Koios endpoints
 
-| Purpose                       | Endpoint                                                                     | Shape                           | Notes                                                                                                                                                                                                                              |
-| ----------------------------- | ---------------------------------------------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Stakeholder stake (per epoch) | `POST /account_stake_history`                                                | **bulk** (many stake addresses) | exact, historical, queryable any time after `E`.                                                                                                                                                                                   |
-| DRep voting power (per epoch) | `GET /drep_voting_power_history`                                             | one DRep per request            | exact; N = **distinct** responding DReps (small). Chosen over the bulk-but-current `/drep_info` estimate: exact, lazy, re-derivable, and no boundary-timing job. `/drep_info` kept only as a fallback if a history row is missing. |
-| SPO pool stake (per epoch)    | `GET /pool_voting_power_history` (exact) or bulk `POST /pool_info` (current) | —                               | deferred; not browser-producible.                                                                                                                                                                                                  |
-| Stakeholder total             | `GET /epoch_info`                                                            | per epoch                       | total active stake denominator.                                                                                                                                                                                                    |
-| DRep total                    | `GET /drep_epoch_summary`                                                    | per epoch                       | total DRep voting power denominator.                                                                                                                                                                                               |
+| Purpose                       | Endpoint                                                                     | Shape                           | Notes                                                                                                                                                                                                                            |
+| ----------------------------- | ---------------------------------------------------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stakeholder stake (per epoch) | `POST /account_stake_history?epoch_no=eq.E`                                  | **bulk** (many stake addresses) | exact, historical, queryable any time after `E`; one row per **pool-delegated** account — a registered account with no row counts with weight 0. (The similarly-named `/account_history` is the deprecated variant — don't use.) |
+| Stakeholder membership at `E` | `POST /account_update_history?epoch_no=lte.E`                                | **bulk**                        | registration/deregistration/delegation event rows; registered at `E` iff the last event in `absolute_slot` order isn't a deregistration. (`/account_updates` is the deprecated variant.)                                         |
+| DRep voting power (per epoch) | `GET /drep_voting_power_history?_drep_id=…&epoch_no=eq.E`                    | one DRep per request            | exact; a row exists iff the DRep was registered at `E`. N = **distinct** responding DReps (small). NB: the endpoint's own `_epoch_no` parameter misbehaves for current epochs — use the PostgREST column filter (verified live). |
+| SPO pool stake (per epoch)    | `GET /pool_voting_power_history` (exact) or bulk `POST /pool_info` (current) | —                               | deferred; not browser-producible.                                                                                                                                                                                                |
+| Stakeholder total             | `GET /epoch_info`                                                            | per epoch                       | total active stake denominator. **Flaky**: some (preview) epochs answer db-sync `word128` errors — treated as "unavailable, retry next cron", never fatal.                                                                       |
+| DRep total                    | `GET /drep_epoch_summary`                                                    | per epoch                       | total DRep voting power denominator.                                                                                                                                                                                             |
 
 - **Totals** (`/epoch_info`, `/drep_epoch_summary`) are O(1) per epoch, fetched
   once, and **distributed with the artifact**. What to do with them (participation
@@ -353,9 +360,11 @@ emits an artifact whose hashed body is a single **cancellation record** (cancell
 - **Batch caps:** bulk POSTs have per-request element limits (cf. the existing
   `TX_METADATA_BATCH = 50` in `koios.ts`); chunk accordingly. At PoC scale this
   is a handful of batches in one invocation.
-- **Encodings to verify at build:** stake-credential → bech32 stake address must
-  handle **script** stake credentials, not just keys; DRep credential → the
-  `drep_id` format Koios expects (CIP-129 `drep1…`).
+- **Encodings** — resolved: thin wrappers over evolution-sdk in
+  `packages/koios/src/bech32.ts` (no hand-rolled bech32): `stakeAddress`
+  (CIP-19 headers, key **and** script credentials, both networks), `drepId`
+  (CIP-129 `drep1…`), `govActionId` (CIP-129 `gov_action1…`) — each verified
+  against ids Koios itself emits.
 
 ### 6.5 The snapshotting system
 
@@ -368,26 +377,38 @@ The key efficiency rule: **aggregate by epoch, not by survey.**
 - Persist a **shared snapshot** keyed `(epoch, role, credential) → {weight,
 registered, provenance}`, plus per-`(epoch, role)` totals. This table is shared
   by every survey ending at `E`.
-- **Finalization** (after `end_epoch` + a small safety margin (5 min?) for Koios indexing
-  lag / shallow reorg near the boundary): fill any missing snapshot rows from
-  Koios, then emit each survey's artifact once all its responders' weights are
-  present.
+- **Finalization** (implemented in `backend/server/src/finalize.ts`, run at the
+  end of every refresh): a survey is a candidate once `tip.epoch > end_epoch`
+  **and** `now ≥ voteDeadlineUnix(end_epoch) + 600 s` (the margin absorbing
+  Koios indexing lag / shallow reorg near the boundary) and it has no artifact
+  row yet. Fill any missing snapshot rows from Koios, then emit each survey's
+  artifact once complete: every counted responder has a weight row **and**
+  every covered role has its electorate total (a flaky `/epoch_info` postpones
+  emission to a later cron, never fails it).
 - **Execution.** At PoC scale (stakeholders bulk; DReps small-N single-GET) this
   fits a single Worker invocation. The `(epoch, role, credential)` table **is**
-  the resume cursor if it ever doesn't: fill missing weights idempotently, emit
-  artifacts when complete — no separate job orchestration.
+  the resume cursor if it ever doesn't: rows are written only once known, so a
+  run cut short (Worker subrequest cap) just resumes next cron — fill missing
+  weights idempotently, emit artifacts when complete (INSERT-OR-IGNORE), no
+  separate job orchestration.
+- **Known caveat (PoC):** the refresh only scans transactions since the
+  configured `SINCE` floor. A survey that ages out of that window before it
+  closes never becomes a finalization candidate — acceptable at PoC scale;
+  Tier 2's full index removes the window.
 
-Suggested store (SQLite/D1):
+Store (SQLite/D1 — `migrations/0003_tally.sql`, mirrored inline by
+`store-node.ts`):
 
 ```sql
--- shared across all surveys ending at the same epoch
+-- shared across all surveys ending at the same epoch; a row is written only
+-- once fetched (complete), so "row exists" = "weight known" = resume cursor
 weight_snapshot(
   epoch      INTEGER NOT NULL,
   role       INTEGER NOT NULL,          -- CIP-179 Role
-  credential TEXT    NOT NULL,          -- hex (stake cred / drep id / pool id)
-  weight     TEXT,                      -- lovelace as decimal string; NULL until fetched
-  registered INTEGER,                   -- 0/1 membership at `epoch`; NULL until fetched
-  fetched_at INTEGER,                   -- fill time (debug/resume only; endpoint = f(role))
+  credential TEXT    NOT NULL,          -- core credentialKey form ("key:<hex>" | "script:<hex>")
+  weight     TEXT    NOT NULL,          -- lovelace as decimal string ("1" per Owner)
+  registered INTEGER NOT NULL,          -- 0/1 membership at `epoch`
+  fetched_at INTEGER NOT NULL,          -- fill time (debug only; endpoint = f(role))
   PRIMARY KEY (epoch, role, credential)
 );
 
@@ -395,7 +416,7 @@ epoch_totals(
   epoch INTEGER NOT NULL,
   role  INTEGER NOT NULL,
   total TEXT NOT NULL,                  -- decimal string
-  endpoint TEXT, fetched_at INTEGER,
+  endpoint TEXT NOT NULL, fetched_at INTEGER NOT NULL,
   PRIMARY KEY (epoch, role)
 );
 
@@ -404,10 +425,16 @@ tally_artifact(
   survey_key   TEXT PRIMARY KEY,
   end_epoch    INTEGER NOT NULL,
   artifact_hash TEXT NOT NULL,          -- content address = H(canonical(tally)) (§7)
-  artifact     TEXT NOT NULL,           -- the full {tally, provenance} JSON
+  artifact     TEXT NOT NULL,           -- the full {tally, provenance} JSON, served verbatim
   created_at   INTEGER NOT NULL
 );
 ```
+
+There is also `validated_response` (`migrations/0002_validated_responses.sql`):
+the §6.3 rules 1–3 verdicts per `(tx_hash, response_index)`, filled
+**incrementally during each snapshot refresh** — only never-seen keys cost the
+`/tx_cbor` + `/tx_info` reads, so the steady state adds zero subrequests, and a
+failed enrichment leaves NULLs that are retried on the next refresh.
 
 ### 6.6 Weighted tally computation (`@tessera/core`)
 
@@ -434,8 +461,13 @@ Weighting is the mechanical generalization of the existing tally: **replace
 
 The unit of result publication and the Koios→node seam.
 
-- **Canonical JSON**, content-addressed by hash (e.g. RFC 8785 / JCS profile,
-  with the number caveat below). The hash is the artifact's identity.
+- **Canonical JSON**, content-addressed by hash. Pinned (implemented in
+  `@tessera/core`'s `canonical.ts`, shared by emitter and verifier):
+  `canonicalJson()` is a strict JCS-lite — keys sorted by UTF-16 code units, no
+  whitespace, **safe integers only** (throws on floats/bigints/non-plain
+  objects) — and the hash is **blake2b-256** of its UTF-8 bytes (the hash
+  family everything on Cardano already uses). The hash is the artifact's
+  identity.
 - **Large integers as decimal strings.** JSON-the-format has no precision limit,
   but (a) JavaScript's `JSON.parse` coerces to lossy doubles and `JSON.stringify`
   throws on BigInt, and (b) the JCS canonicalization profile only covers
@@ -454,7 +486,8 @@ how, and when goes in `provenance`.
 
 - **`tally` (hashed):** `rulesetHash`, `network`, `survey`, `sealed` +
   deterministic reveal context, and per role: `role`, `total`, `responders`
-  (`credential`, `weight`, `registered`, answer `txHash`), integer `questions`
+  (`credential`, `weight`, answer `txHash` — unregistered responders are
+  excluded rather than flagged, so no `registered` field), integer `questions`
   aggregates.
 - **`provenance` (not hashed):** `source`, snapshot `fetchedAt`, per-role
   `endpoint`.
@@ -507,7 +540,12 @@ Contents (sketch):
 }
 ```
 
-- **Immutable** once `end_epoch` is finalized. Stored on **R2** keyed by hash.
+- **Immutable** once `end_epoch` is finalized. **Stored in the D1/SQLite
+  `tally_artifact` table** (deliberate deviation from the original R2 sketch:
+  artifacts are small JSON documents, the store already exists on both
+  runtimes, and one storage system beats two at PoC scale — R2 remains an easy
+  later move since rows are keyed by the same content hash). Served verbatim by
+  the two artifact routes (§5.1).
 - The **frontend can pin the identical bytes to IPFS** (reusing
   `enrichment/pin.ts`) for durability / censorship-resistance; same bytes → same
   hash → same id.
@@ -527,11 +565,29 @@ Contents (sketch):
   via the existing seam in `state.tsx`; `KoiosDataSource` is retained as the
   direct/power-user/offline path (and the user-token override keeps working
   against it).
-- Results UI consumes artifacts: it derives every float (averages, percentages,
-  participation-by-stake using the embedded totals) from the integer aggregates.
-- The existing "no weighting applied / out of scope" disclaimer is replaced by an
-  honest **provenance + trust** note: weights are Koios-sourced at `end_epoch`,
-  re-verifiable, not yet trustless.
+- Results UI consumes artifacts — **implemented**: `DataSource` grew
+  `artifact(ref)` (`IndexerDataSource` maps the route's 404 to null;
+  `KoiosDataSource` always answers null, so direct mode keeps the raw tally).
+  The survey page fetches it lazily for closed/cancelled surveys and renders a
+  **final weighted results** view — per-role sections, stake-weighted bars,
+  turnout against the embedded totals — with a toggle back to the raw
+  per-credential tally. Every float (bar fractions, means, percentages) is
+  derived presentation-side from the integer aggregates
+  (`frontend/app/src/domain/artifactView.ts`).
+- The existing "no weighting applied / out of scope" disclaimer is replaced (in
+  the weighted view; the raw view keeps it) by an honest **provenance + trust**
+  note: weights are Koios-sourced at `end_epoch`, re-verifiable, not yet
+  trustless — plus the artifact's content hash.
+- **Standalone verifier** — implemented as the workspace package
+  `packages/verifier` (`@tessera/verifier`):
+  `pnpm --filter @tessera/verifier verify -- --backend <url> --survey
+<txHash>:<index>`. It fetches the bundle + artifact from the backend, refetches
+  every verification input straight from Koios (tx proofs, block indices,
+  weights, membership, totals, governance links), re-runs the pinned ruleset
+  via the same `@tessera/core` code, and compares content hashes —
+  `MATCH`/`MISMATCH` (with a diff), exit 0/1. It never reads the backend's
+  validation tables; a total the upstream can't re-serve is taken from the
+  artifact with an explicit "not independently confirmed" note.
 
 ---
 
@@ -563,10 +619,13 @@ Contents (sketch):
      `IndexerDataSource`.
    - Reproducible via `wrangler` **and** a container/compose. No node required.
 2. **Phase 2 — Koios tally inputs + artifacts.**
-   - `TallyInputSource` (Koios impl): per-epoch shared snapshot (§6.5).
-   - Weighted per-role tally in `@tessera/core` (§6.6).
-   - Content-addressed artifacts on R2 (§7); optional IPFS pin from the frontend;
-     standalone verifier reusing `@tessera/core`.
+   - ~~`TallyInputSource` (Koios impl): per-epoch shared snapshot (§6.5).~~
+     **Done** — `packages/koios/src/tallyInputs.ts` + `finalize.ts`.
+   - ~~Weighted per-role tally in `@tessera/core` (§6.6).~~ **Done** —
+     `weightedTally.ts` (+ §6.3 rules 1–3 in `proof.ts`/`audit.ts`/`dedupe.ts`,
+     persisted incrementally in `validated_response`).
+   - Content-addressed artifacts (§7 — in D1, not R2; **done**); optional IPFS
+     pin from the frontend; standalone verifier reusing `@tessera/core`.
    - ~~Split `/api/snapshot` into per-page slices (§5.1): `/api/surveys` list,
      per-survey bundle (also the verifier's input — it never needs the full
      snapshot), `/api/responded` projection; then retire `/api/snapshot`.~~
@@ -580,23 +639,24 @@ Contents (sketch):
 
 ## 11. Open items / TODO
 
-- **CC (committee) role** — weighting + membership semantics. Deferred.
+- **CC (committee) role** — weighting + membership semantics. Deferred
+  (artifacts pin covered roles {DRep, Stakeholder, Owner} in their ruleset).
 - **SPO role** — specified, not exercised until non-browser responders / Tier 2.
-- **Exact Koios shapes** — confirm `/account_stake_history` POST element cap,
-  the `active_stake` field semantics, `/drep_epoch_summary` total field, and the
-  per-tx block `epoch_no` + `tx_block_index` fields the §6.3 deadline/dedup rules
-  depend on.
-- **Credential-proof verification** (§6.3 rule 2) — implement Mechanism A
-  (`required_signers` + native-script resolution) / B (`voting_procedures`
-  binding); the read path must surface the tx body witnesses. Anti-forgery, so
-  not deferrable past the first tally.
-- **Credential encodings** — script stake credentials → stake address; CIP-129
-  `drep_id`.
-- **Canonicalization profile** — pin JCS (RFC 8785) subset + the
-  big-integer-as-string convention in a small shared serializer used by both the
-  emitter and the verifier.
-- **Finalization safety margin** — choose the post-`end_epoch` delay (epochs /
-  hours) that absorbs Koios indexing lag and shallow reorgs.
+- ~~**Exact Koios shapes**~~ — resolved empirically; see the §6.4 table (incl.
+  the deprecated-variant and `_epoch_no` pitfalls and `/epoch_info` flakiness).
+- ~~**Credential-proof verification** (§6.3 rule 2)~~ — **done**: mechanism A/B
+  evaluated in `@tessera/core`'s `proof.ts` over `TxProof` evidence decoded by
+  `packages/koios/src/txProof.ts` (voting_procedures shape pinned by real
+  preview vote-tx fixtures); verdicts persisted per response (§6.5).
+- ~~**Credential encodings**~~ — **done**: `packages/koios/src/bech32.ts` (§6.4).
+- ~~**Canonicalization profile**~~ — **done**: `@tessera/core` `canonical.ts`
+  (JCS-lite + decimal-string bigints + blake2b-256), used by emitter and
+  verifier (§7).
+- ~~**Finalization safety margin**~~ — chosen: 600 s past the `end_epoch`
+  boundary (§6.5).
+- **Sealed-survey artifact emission** — deferred: finalization freezes a sealed
+  survey's weights at `end_epoch` but emits no artifact until the reveal-aware
+  tally lands (`TODO(sealed-artifact)` in `finalize.ts`).
 - **On-chain anchor** of the artifact hash — future, closes the CIP-179 loop.
 - **Two-network split** (mainnet/preview) — resolved: wrangler environments
   (`backend/server/wrangler.toml` — top-level is preview, `[env.mainnet]` its

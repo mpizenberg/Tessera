@@ -1132,6 +1132,43 @@
   line-height: 1.5;
 }
 
+/* Final weighted results (artifact view): same note shell as .disclaimer,
+   but the badge reads as settled ("final"), not cautionary ("raw"). */
+.weightedBadge {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ok);
+  background: var(--ok-bg);
+  border: 1px solid var(--ok-line);
+  border-radius: var(--r-2xs);
+  padding: 4px 7px;
+  flex: none;
+  margin-top: 1px;
+}
+
+.weightedRoleHead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 22px 0 4px;
+}
+
+.weightedRoleTitle {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.weightedRoleMeta {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--label);
+}
+
 .roleFilterRow {
   display: flex;
   align-items: center;

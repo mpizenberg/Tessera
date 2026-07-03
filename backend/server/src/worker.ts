@@ -14,8 +14,8 @@ import type { ExecutionContext } from "hono";
 import { loadConfig, type ServerConfig } from "./config";
 import { createApp, type AppOptions } from "./http";
 import { refreshSnapshot } from "./refresh";
-import type { SnapshotStore } from "./store";
-import { d1SnapshotStore, type D1Like } from "./store-d1";
+import type { BackendStore } from "./store";
+import { d1BackendStore, type D1Like } from "./store-d1";
 
 interface Env {
   /** D1 binding (see wrangler.toml). */
@@ -28,7 +28,7 @@ interface Env {
 
 interface Wiring {
   config: ServerConfig;
-  store: SnapshotStore;
+  store: BackendStore;
   app: ReturnType<typeof createApp>;
 }
 
@@ -38,7 +38,7 @@ function init(env: Env): Wiring {
   if (!wiring) {
     const { DB, ...vars } = env;
     const config = loadConfig(vars);
-    const store = d1SnapshotStore(DB);
+    const store = d1BackendStore(DB);
     // The edge compresses responses itself — skip hono/compress (see AppOptions).
     const options: AppOptions = { compress: false };
     wiring = { config, store, app: createApp(config, store, options) };
@@ -55,7 +55,7 @@ function init(env: Env): Wiring {
  */
 async function countedRefresh(
   config: ServerConfig,
-  store: SnapshotStore,
+  store: BackendStore,
 ): Promise<void> {
   const realFetch = globalThis.fetch;
   let subrequests = 0;

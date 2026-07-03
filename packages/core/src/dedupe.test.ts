@@ -5,6 +5,7 @@ import { Role, type Credential, type SurveyRef } from "cip-179";
 import {
   credentialKey,
   dedupeResponses,
+  laterInChain,
   refKey,
   responseCounts,
 } from "./dedupe";
@@ -24,10 +25,14 @@ function record(
   slot: number,
   txHash: string,
   role: Role = Role.Stakeholder,
+  pos: { responseIndex?: number; blockIndex?: number } = {},
 ): ResponseRecord {
   return {
     txHash,
     slot,
+    epochNo: 10,
+    responseIndex: pos.responseIndex ?? 0,
+    ...(pos.blockIndex !== undefined && { blockIndex: pos.blockIndex }),
     response: {
       specVersion: 1,
       surveyRef: ref,
@@ -56,6 +61,47 @@ describe("refKey / credentialKey", () => {
   });
 });
 
+describe("laterInChain", () => {
+  const at = (
+    slot: number,
+    pos: { responseIndex?: number; blockIndex?: number } = {},
+  ) => record(refA, keyCred(1), slot, "t", Role.Stakeholder, pos);
+
+  it("orders by slot first", () => {
+    expect(laterInChain(at(200), at(100))).toBe(true);
+    expect(laterInChain(at(100), at(200))).toBe(false);
+  });
+
+  it("breaks slot ties by tx position within the block", () => {
+    expect(
+      laterInChain(at(100, { blockIndex: 3 }), at(100, { blockIndex: 1 })),
+    ).toBe(true);
+    expect(
+      laterInChain(at(100, { blockIndex: 1 }), at(100, { blockIndex: 3 })),
+    ).toBe(false);
+  });
+
+  it("a missing blockIndex sorts before any present one (-1)", () => {
+    expect(laterInChain(at(100, { blockIndex: 0 }), at(100))).toBe(true);
+    expect(laterInChain(at(100), at(100, { blockIndex: 0 }))).toBe(false);
+  });
+
+  it("breaks full ties by position within the payload's responses array", () => {
+    expect(
+      laterInChain(
+        at(100, { responseIndex: 2 }),
+        at(100, { responseIndex: 1 }),
+      ),
+    ).toBe(true);
+    expect(
+      laterInChain(
+        at(100, { responseIndex: 1 }),
+        at(100, { responseIndex: 1 }),
+      ),
+    ).toBe(false);
+  });
+});
+
 describe("dedupeResponses", () => {
   it("keeps the highest-slot response per (survey, role, credential)", () => {
     const early = record(refA, keyCred(1), 100, "tx-early");
@@ -64,11 +110,25 @@ describe("dedupeResponses", () => {
     expect(dedupeResponses([late, early])).toEqual([late]);
   });
 
-  it("breaks slot ties by tx hash, independent of input order", () => {
-    const a = record(refA, keyCred(1), 100, "aaaa");
-    const b = record(refA, keyCred(1), 100, "bbbb");
+  it("breaks slot ties by (blockIndex, responseIndex), independent of input order", () => {
+    const a = record(refA, keyCred(1), 100, "a", Role.Stakeholder, {
+      blockIndex: 1,
+      responseIndex: 5,
+    });
+    const b = record(refA, keyCred(1), 100, "b", Role.Stakeholder, {
+      blockIndex: 2,
+      responseIndex: 0,
+    });
     expect(dedupeResponses([a, b])).toEqual([b]);
     expect(dedupeResponses([b, a])).toEqual([b]);
+
+    const c = record(refA, keyCred(1), 100, "c", Role.Stakeholder, {
+      responseIndex: 1,
+    });
+    const d = record(refA, keyCred(1), 100, "d", Role.Stakeholder, {
+      responseIndex: 2,
+    });
+    expect(dedupeResponses([d, c])).toEqual([d]);
   });
 
   it("treats survey, role, and credential as independent identities", () => {
