@@ -40,11 +40,11 @@ the fix deviated from the report's suggested direction.
 | 15 | Dead code cluster: `domain/cancellation.ts` shim, `decodeCancellationProof` alias (+ alias test), dead `metadatum.ts` helpers; mixed shim/direct core imports | done f5a3f75 — deleted the three dead items; broader shim-vs-direct-import migration deferred |
 | 16 | `mechanismA` duplicates `cancellationVerified` | done f8ecb70 |
 | 17 | Can't-happen `?? {slot: 0, epochNo: 0}` fallback in `fetchAll` — throw instead | done 681fc09 |
-| 18 | Presentation floats/types (`Bar.pct`, sample cap) inside `@tessera/core` tally.ts vs §4 claim | todo |
+| 18 | Presentation floats/types (`Bar.pct`, sample cap) inside `@tessera/core` tally.ts vs §4 claim | done (pending) — doc-scoped (§4 clarified; tally.ts marked display-only). Kept display tally in core; not moved app-side |
 | 19 | Post-close cancellations invisible outside the artifact (list shows "Ended", raw tally in direct mode) | todo |
 | 20 | Dead artifact error guard in Survey.tsx (fetcher `.catch(() => null)` makes it unreachable) | done cabbe81 |
 | 21 | Numeric slider precision above 2^53 (`sliderOk` doesn't bound min/max) | done 45222db |
 | 22 | Delete stale `frontend/app/review-progress.md` / `review-report.md` | done cfde1b3 |
-| 23 | Doc drift ×3: Settings Pro-toggle persistence claim, "poll Koios" comments, hardcoded English role descriptions | done (pending) |
+| 23 | Doc drift ×3: Settings Pro-toggle persistence claim, "poll Koios" comments, hardcoded English role descriptions | done 73107a4 |
 | 24 | cip179: `[0]` public submission mode accepts trailing elements | done 53ff9f9 — `expectLen(arr,1,1)` on public submission mode |
 | 25 | tlock padding tests never exercise labels/count scales or count-form options | todo |

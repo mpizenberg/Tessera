@@ -1,6 +1,14 @@
 /**
  * Pure tallying of public responses against a survey definition.
  *
+ * **This is the unweighted, count-based _display_ tally** — the shapes each
+ * Results widget renders (bar fill fractions, means/medians, capped samples,
+ * "Option N" fallback labels). It intentionally uses floats and is **never
+ * content-addressed**: the hashed artifact comes from the weighted BigInt path
+ * (`weightedTally*`), which the ARCHITECTURE §4 "integer pairs, never floats"
+ * guarantee is about. This one is a presentation helper that happens to live in
+ * the package.
+ *
  * Sealed responses are opaque until their drand round publishes, so they are
  * not tallied here — the UI shows a "reveals in …" placeholder instead.
  *

@@ -154,8 +154,12 @@ load-bearing for the verifiability story, not just hygiene.
   - **Cut line:** _data-model types + pure validation/tally/aggregation →
     package; anything wallet/CIP-30/runtime → app._
 - `@tessera/core` is authored **BigInt- and rational-ready** from the outset
-  (§6.6): weighted aggregates are BigInt; ratios are returned as integer
-  `{numerator, denominator}` pairs, never floats.
+  (§6.6): the **weighted, content-addressed** tally (`weightedTally*` → the
+  hashed artifact) uses BigInt aggregates and returns ratios as integer
+  `{numerator, denominator}` pairs, never floats. Note this applies to the
+  *hashed* path only: `tally.ts` is the unweighted, count-based **display**
+  tally (bar fill fractions, mean/median), which uses floats and is never
+  hashed — a presentation helper that happens to live in the package.
 
 `KoiosDataSource` (the concrete Koios reader) stays in the app/serving tier, not
 in `@tessera/core` — the package is pure logic + types only.
