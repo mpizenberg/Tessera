@@ -3,9 +3,11 @@ import {
   Match,
   Show,
   Switch,
+  createEffect,
   createMemo,
   createResource,
   createSignal,
+  on,
   onCleanup,
   type Component,
   type JSX,
@@ -117,13 +119,19 @@ export const Survey: Component = () => {
       const s = indexed();
       return s && s.status !== "active" ? s.record.ref : undefined;
     },
-    (ref) => app.source.artifact(ref).catch(() => null),
+    (ref) => app.source.artifact(ref),
   );
+  // A fetch error is captured in `artifactRes.error` (like `bundle`/`list`) and
+  // guarded here, degrading to the raw view rather than blocking the page.
   const artifact = (): TallyArtifact | null =>
     (artifactRes.error ? null : artifactRes()) ?? null;
   // Viewer toggle: the weighted view is the default whenever an artifact
   // exists; the raw per-credential tally stays one click away.
   const [showRaw, setShowRaw] = createSignal(false);
+  // solid-router reuses this component instance across `:key` changes (e.g. the
+  // header's "View survey" link), so per-survey view state must be reset by hand
+  // or it leaks into the next survey (finding 11).
+  createEffect(on(key, () => setShowRaw(false), { defer: true }));
 
   // External-content surveys: fetch + hash-verify the off-chain presentation
   // doc and render its labels; `pres.def()` falls back to the on-chain
@@ -1466,6 +1474,17 @@ const ResultsBody: Component<{
   // is picked yet (or the picked role no longer has responses after a refresh).
   const [pickedRole, setPickedRole] = createSignal<number | null>(null);
   const [exclOpen, setExclOpen] = createSignal(false);
+  // Reset when navigating between surveys (the component instance is reused).
+  createEffect(
+    on(
+      () => props.keyStr,
+      () => {
+        setPickedRole(null);
+        setExclOpen(false);
+      },
+      { defer: true },
+    ),
+  );
   const excludedTotal = (): number => props.excludedRecords.length;
   const exclusionSummary = (): ExclusionSummary[] =>
     summarizeExclusions(props.excludedRecords, props.def.endEpoch);
@@ -1663,8 +1682,17 @@ const SealedResults: Component<{
     return !!m && roundIsAvailable(m.round, props.nowUnix);
   };
 
-  // Reveal is opt-in: nothing decrypts until the viewer asks for it.
+  // Reveal is opt-in: nothing decrypts until the viewer asks for it. Reset on a
+  // survey change (the instance is reused across `:key`) so navigating from a
+  // revealed survey to another sealed one never auto-starts decryption.
   const [revealRequested, setRevealRequested] = createSignal(false);
+  createEffect(
+    on(
+      () => props.keyStr,
+      () => setRevealRequested(false),
+      { defer: true },
+    ),
+  );
 
   // The resource source is a fingerprint string, not the bare round number or a
   // fresh `{ records, round }` object: keying on the round alone would freeze the

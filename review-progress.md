@@ -27,8 +27,8 @@ the fix deviated from the report's suggested direction.
 | 7 | cip179: points decoded via unchecked `Number()`, budget validated with float sum | done 53ff9f9 — points via checked `safeNumber`; budget summed with BigInt |
 | 8 | cip179: option/scale labels encoded without the 64-byte bound | done 53ff9f9 — `boundedLabel` (≤64 UTF-8 bytes) in encode + `checkLabels` in validateDefinition |
 | 9 | ProposeInfoAction reads list resource unguarded → crashes to error screen | done 1598ec9 |
-| 10 | Wallet-connect failures silently swallowed by header menu | done (pending) |
-| 11 | Survey screen state leaks across surveys (component not keyed on `:key`) | todo |
+| 10 | Wallet-connect failures silently swallowed by header menu | done f41167c |
+| 11 | Survey screen state leaks across surveys (component not keyed on `:key`) | done (pending) |
 | 12 | Test-suite gaps: finalize pending-verdict behavior, koios pagination, verifier dedup-tie/mech-B, cip179 roundtrips, create/respond untested | todo |
 | 13 | cip179: empty answer arrays accepted against CDDL `[+ …]` | done 53ff9f9 — reject empty public answer array and empty points/rating pair lists at decode |
 | 14 | `addOptimisticSurvey` silently no-ops when list isn't loaded | todo |
@@ -42,7 +42,7 @@ the fix deviated from the report's suggested direction.
 | 17 | Can't-happen `?? {slot: 0, epochNo: 0}` fallback in `fetchAll` — throw instead | done 681fc09 |
 | 18 | Presentation floats/types (`Bar.pct`, sample cap) inside `@tessera/core` tally.ts vs §4 claim | todo |
 | 19 | Post-close cancellations invisible outside the artifact (list shows "Ended", raw tally in direct mode) | todo |
-| 20 | Dead artifact error guard in Survey.tsx (fetcher `.catch(() => null)` makes it unreachable) | todo |
+| 20 | Dead artifact error guard in Survey.tsx (fetcher `.catch(() => null)` makes it unreachable) | done (pending) |
 | 21 | Numeric slider precision above 2^53 (`sliderOk` doesn't bound min/max) | todo |
 | 22 | Delete stale `frontend/app/review-progress.md` / `review-report.md` | done cfde1b3 |
 | 23 | Doc drift ×3: Settings Pro-toggle persistence claim, "poll Koios" comments, hardcoded English role descriptions | todo |
