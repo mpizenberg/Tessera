@@ -160,22 +160,23 @@ const survey = {
   incomplete:
     "More label-17 transactions exist on-chain than could be loaded, so this tally may be missing responses.",
 
-  // Weighting disclaimer
-  disclaimerBadge: "raw",
-  /** Disclaimer split around the bold {@link disclaimerNoWeighting} run. */
-  disclaimerText1: "These are raw recorded responses — one per credential.",
-  disclaimerNoWeighting: "No weighting is applied;",
-  disclaimerText2:
-    "stake-, pledge-, or quadratic weighting is downstream and out of scope for CIP-179.",
+  // Informational note (shown on every results view). Tessera tallies are
+  // indicative; the survey creator interprets the outcome. Split around the
+  // bold {@link infoNoteStrong} lead.
+  infoBadge: "info",
+  infoNoteStrong: "Informational tally.",
+  infoNote:
+    "Tessera counts on-chain responses under generic CIP-179 rules. It can't apply a survey's own validity rules, allow-lists, or custom weighting (quadratic, caps, …) — interpreting the result is the survey creator's job.",
 
-  // Final weighted results (artifact view)
-  weightedBadge: "final",
-  /** Provenance note split around the bold {@link weightedNoteStrong} run. */
-  weightedNoteStrong: "Final weighted results.",
-  weightedNote:
-    "Membership and weights snapshotted at the survey's end epoch ({epoch}) from {provider}; independently re-verifiable from chain data.",
+  // Final results (artifact view): weighting switch + exports
+  /** Segmented-switch label preceding the two weighting options. */
+  weightingLabel: "Weighting",
+  weightingChain: "Chain-weighted",
+  weightingOne: "One vote each",
+  exportArtifact: "Export artifact",
+  exportVotesCsv: "Export votes (CSV)",
   weightedShowRaw: "View raw responses",
-  weightedShowFinal: "\u2190 Final weighted results",
+  weightedShowFinal: "\u2190 Final results",
   /** Per-role section header meta: "{n} counted". */
   weightedCounted: "{n} counted",
   /** Stake-weighted roles: total voting weight behind the counted responses. */
@@ -189,9 +190,12 @@ const survey = {
   weightedCancelledTitle: "Survey cancelled by its owner",
   weightedCancelledBody:
     "An owner-proven cancellation was recorded on-chain in epoch {epoch}; no results are tallied.",
-  /** Footer under the weighted tally; {hash} is the artifact content address. */
+  /**
+   * Footer under the final tally; {epoch} end epoch, {provider} weight source,
+   * {hash} the artifact content address.
+   */
   weightedFootnote:
-    "final result computed at the survey's end epoch \u00b7 artifact {hash}",
+    "membership & weights snapshotted at end epoch {epoch} from {provider} \u00b7 independently re-verifiable \u00b7 artifact {hash}",
 
   // Role filter
   roleFilterLabel: "Tally by role",

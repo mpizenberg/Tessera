@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { Question, Role, SurveyDefinition } from "cip-179";
+import type { Question, Role, SurveyDefinition, SurveyResponse } from "cip-179";
 
-import type { TallyArtifact } from "@tessera/core";
+import { hexToBytes, type TallyArtifact } from "@tessera/core";
 
 import {
   formatAda,
   fracOf,
   ratioOf,
+  resultRoleViews,
   weightedQuestionView,
-  weightedRoleViews,
+  type CountedResponse,
 } from "./artifactView";
 
 const SC: Question = {
@@ -93,7 +94,7 @@ describe("weightedQuestionView", () => {
   });
 });
 
-describe("weightedRoleViews", () => {
+describe("resultRoleViews", () => {
   const def: SurveyDefinition = {
     specVersion: 4,
     owner: { type: "key", keyHash: Uint8Array.of(0) },
@@ -153,8 +154,28 @@ describe("weightedRoleViews", () => {
     },
   };
 
-  it("sums voted weight and derives turnout only when a total exists", () => {
-    const [stakeholder, owner] = weightedRoleViews(artifact, def);
+  // Two stakeholders (a1 → yes, b2 → no) whose txs match the artifact, so the
+  // one-vote view can rejoin their answers by (txHash, credential).
+  const response = (
+    keyHashHex: string,
+    optionIndex: number,
+  ): SurveyResponse => ({
+    specVersion: 4,
+    surveyRef: { txId: hexToBytes("aa".repeat(32)), index: 0 },
+    role: 3 as Role,
+    credential: { type: "key", keyHash: hexToBytes(keyHashHex) },
+    answers: {
+      type: "public",
+      answers: [{ type: "singleChoice", questionIndex: 0, optionIndex }],
+    },
+  });
+  const responses: CountedResponse[] = [
+    { txHash: "t1", response: response("a1", 0) },
+    { txHash: "t2", response: response("b2", 1) },
+  ];
+
+  it("chain weighting: sums voted weight and derives turnout only when a total exists", () => {
+    const [stakeholder, owner] = resultRoleViews(artifact, def, [], "chain");
     expect(stakeholder).toMatchObject({
       role: 3,
       responderCount: 2,
@@ -169,5 +190,22 @@ describe("weightedRoleViews", () => {
       total: null,
       turnout: null,
     });
+  });
+
+  it("one-vote weighting: same counted set, equal weights, no ada total", () => {
+    const [stakeholder] = resultRoleViews(artifact, def, responses, "one");
+    expect(stakeholder).toMatchObject({
+      role: 3,
+      responderCount: 2,
+      votedWeight: null,
+      total: null,
+      turnout: null,
+    });
+    const q = stakeholder!.questions[0]!;
+    if (q.kind !== "bars") throw new Error("expected bars");
+    // yes/no each got exactly one vote — equal weight, equal fill.
+    expect(q.bars.map((b) => b.weight)).toEqual([1n, 1n]);
+    expect(q.bars.map((b) => b.count)).toEqual([1, 1]);
+    expect(q.bars.map((b) => b.frac)).toEqual([1, 1]);
   });
 });

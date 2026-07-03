@@ -136,31 +136,31 @@ const survey: Messages = {
   incomplete:
     "Il existe on-chain plus de transactions label 17 que ce qui a pu être chargé, ce décompte peut donc omettre des réponses.",
 
-  // Weighting disclaimer
-  disclaimerBadge: "brut",
-  disclaimerText1:
-    "Ce sont des réponses enregistrées brutes — une par identifiant.",
-  disclaimerNoWeighting: "Aucune pondération n'est appliquée ;",
-  disclaimerText2:
-    "la pondération par stake, par pledge ou quadratique est en aval et hors du périmètre de CIP-179.",
+  // Note informative (affichée sur chaque vue de résultats). Les décomptes de
+  // Tessera sont indicatifs ; le créateur du sondage interprète le résultat.
+  infoBadge: "info",
+  infoNoteStrong: "Décompte informatif.",
+  infoNote:
+    "Tessera comptabilise les réponses on-chain selon les règles génériques de CIP-179. Il ne peut pas appliquer les règles de validité propres à un sondage, ses listes d'autorisation ou une pondération personnalisée (quadratique, plafonds, …) — l'interprétation du résultat revient au créateur du sondage.",
 
-  // Résultats finaux pondérés (vue artefact)
-  weightedBadge: "final",
-  weightedNoteStrong: "Résultats finaux pondérés.",
-  weightedNote:
-    "Appartenance et pondérations figées à l'époque de clôture du sondage ({epoch}) depuis {provider} ; re-vérifiables indépendamment depuis les données de la chaîne.",
+  // Résultats finaux (vue artefact) : sélecteur de pondération + exports
+  weightingLabel: "Pondération",
+  weightingChain: "Pondéré par la chaîne",
+  weightingOne: "Une voix chacun",
+  exportArtifact: "Exporter l'artefact",
+  exportVotesCsv: "Exporter les votes (CSV)",
   weightedShowRaw: "Voir les réponses brutes",
-  weightedShowFinal: "← Résultats finaux pondérés",
+  weightedShowFinal: "← Résultats finaux",
   weightedCounted: "{n} comptées",
   weightedVotingWeight: "{ada} ₳ de poids de vote",
-  weightedTurnout: "{pct} % de participation",
+  weightedTurnout: "{pct} % de participation",
   weightedMean: "moyenne pondérée",
   weightedBarMeta: "{ada} ₳ · {n}",
   weightedCancelledTitle: "Sondage annulé par son propriétaire",
   weightedCancelledBody:
-    "Une annulation prouvée par le propriétaire a été enregistrée sur la chaîne à l'époque {epoch} ; aucun résultat n'est décompté.",
+    "Une annulation prouvée par le propriétaire a été enregistrée sur la chaîne à l'époque {epoch} ; aucun résultat n'est décompté.",
   weightedFootnote:
-    "résultat final calculé à l'époque de clôture du sondage · artefact {hash}",
+    "appartenance & pondérations figées à l'époque de clôture {epoch} depuis {provider} · re-vérifiable indépendamment · artefact {hash}",
 
   // Role filter
   roleFilterLabel: "Décompte par rôle",

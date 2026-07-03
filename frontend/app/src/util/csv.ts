@@ -8,8 +8,13 @@ export function toCsv(rows: ReadonlyArray<ReadonlyArray<string>>): string {
   return rows.map((r) => r.map(cell).join(",")).join("\r\n");
 }
 
-export function downloadCsv(filename: string, csv: string): void {
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+/** Trigger a browser download of `content` as `filename` (the one side effect). */
+export function downloadText(
+  filename: string,
+  content: string,
+  type = "text/plain;charset=utf-8",
+): void {
+  const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -19,4 +24,12 @@ export function downloadCsv(filename: string, csv: string): void {
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+export function downloadCsv(filename: string, csv: string): void {
+  downloadText(filename, csv, "text/csv;charset=utf-8");
+}
+
+export function downloadJson(filename: string, json: string): void {
+  downloadText(filename, json, "application/json;charset=utf-8");
 }

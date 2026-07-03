@@ -6,13 +6,19 @@
  * framework, no I/O; unit-testable in isolation.
  */
 
-import type { Question, SurveyDefinition } from "cip-179";
+import type { Question, SurveyDefinition, SurveyResponse } from "cip-179";
 
-import { optionLabelOf } from "@tessera/core";
+import {
+  credentialKey,
+  optionLabelOf,
+  toArtifactQuestions,
+  weightedTallySurvey,
+} from "@tessera/core";
 import type {
   ArtifactQuestion,
   ArtifactRoleTally,
   TallyArtifact,
+  WeightedResponder,
 } from "@tessera/core";
 
 /** Fill fraction 0–1 of `part` relative to `max` (4 decimal places). */
@@ -78,13 +84,34 @@ export type WeightedQuestionView =
       readonly answeredWeight: bigint;
     };
 
-export interface WeightedRoleView {
+/**
+ * The two ways the same artifact is presented (`Survey` screen switch). Both
+ * range over the artifact's *counted set* — the proof-validated responders it
+ * committed to — differing only in the weight each responder carries:
+ *
+ * - `"chain"`: each responder's snapshotted stake / voting power (lovelace);
+ *   turnout against the role's electorate total is meaningful.
+ * - `"one"`: every responder weighs `1` (one credential, one vote); there is
+ *   no ada total, so voting-weight and turnout are omitted.
+ */
+export type Weighting = "chain" | "one";
+
+/** An on-chain response, keyed for joining back to an artifact responder. */
+export interface CountedResponse {
+  readonly txHash: string;
+  readonly response: SurveyResponse;
+}
+
+export interface RoleResultView {
   readonly role: number;
   /** Counted responders for this role. */
   readonly responderCount: number;
-  /** Σ counted responder weights (lovelace, or votes for count-only roles). */
-  readonly votedWeight: bigint;
-  /** The role's electorate total, or null for count-only roles. */
+  /**
+   * Σ counted responder weights (lovelace) in `"chain"` weighting; `null` in
+   * `"one"` weighting and for count-only roles, where the count is the story.
+   */
+  readonly votedWeight: bigint | null;
+  /** The role's electorate total, or null (count-only roles / one-vote). */
   readonly total: bigint | null;
   /** votedWeight / total, or null when there is no meaningful total. */
   readonly turnout: number | null;
@@ -157,10 +184,15 @@ export function weightedQuestionView(
   }
 }
 
-function roleView(
+/**
+ * Chain-weighted view of one role: the artifact's committed aggregates as-is,
+ * with turnout derived from the stored electorate total. Byte-authoritative —
+ * these are the exact numbers the content hash commits to.
+ */
+function chainRoleView(
   role: ArtifactRoleTally,
   def: SurveyDefinition,
-): WeightedRoleView {
+): RoleResultView {
   const votedWeight = role.responders.reduce(
     (sum, r) => sum + BigInt(r.weight),
     0n,
@@ -178,10 +210,61 @@ function roleView(
   };
 }
 
-/** Per-role render models, in the artifact's (role-ascending) order. */
-export function weightedRoleViews(
+/**
+ * One-vote view of one role: the same counted responders re-tallied with every
+ * weight set to 1. The artifact commits only aggregates + responder identities
+ * (not answers), so the answers are rejoined from the on-chain responses by
+ * `(txHash, credential)`; a responder whose response isn't in `byKey` is
+ * dropped from the aggregate (can't happen for a finalized on-chain survey).
+ */
+function oneVoteRoleView(
+  role: ArtifactRoleTally,
+  def: SurveyDefinition,
+  byKey: ReadonlyMap<string, SurveyResponse>,
+): RoleResultView {
+  const responders: WeightedResponder[] = [];
+  for (const r of role.responders) {
+    const response = byKey.get(`${r.txHash}|${r.credential}`);
+    if (response)
+      responders.push({
+        credentialKey: r.credential,
+        weight: 1n,
+        txHash: r.txHash,
+        response,
+      });
+  }
+  return {
+    role: role.role,
+    responderCount: role.responders.length,
+    votedWeight: null,
+    total: null,
+    turnout: null,
+    questions: toArtifactQuestions(weightedTallySurvey(def, responders)).map(
+      (aq, i) => weightedQuestionView(def.questions[i], aq),
+    ),
+  };
+}
+
+/**
+ * Per-role render models under the chosen `weighting`, in the artifact's
+ * (role-ascending) order. `responses` are the survey's on-chain responses,
+ * needed only to rejoin answers for the `"one"` weighting.
+ */
+export function resultRoleViews(
   artifact: TallyArtifact,
   def: SurveyDefinition,
-): WeightedRoleView[] {
-  return artifact.tally.perRole.map((r) => roleView(r, def));
+  responses: readonly CountedResponse[],
+  weighting: Weighting,
+): RoleResultView[] {
+  if (weighting === "chain") {
+    return artifact.tally.perRole.map((r) => chainRoleView(r, def));
+  }
+  const byKey = new Map<string, SurveyResponse>();
+  for (const r of responses) {
+    byKey.set(
+      `${r.txHash}|${credentialKey(r.response.credential)}`,
+      r.response,
+    );
+  }
+  return artifact.tally.perRole.map((r) => oneVoteRoleView(r, def, byKey));
 }

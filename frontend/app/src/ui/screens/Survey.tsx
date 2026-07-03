@@ -22,14 +22,20 @@ import {
   type SurveyResponse,
 } from "cip-179";
 
-import { artifactHash, type TallyArtifact } from "@tessera/core";
+import {
+  RULESET_DESCRIPTOR,
+  artifactHash,
+  credentialKey,
+  type TallyArtifact,
+} from "@tessera/core";
 
 import { useApp } from "~/state";
 import { findSurvey, type SurveyAggregate } from "~/domain/survey";
 import { humanizeAnswer, serializeAnswer } from "~/domain/answer";
 import {
   formatAda,
-  weightedRoleViews,
+  resultRoleViews,
+  type Weighting,
   type WeightedQuestionView,
 } from "~/domain/artifactView";
 import {
@@ -54,7 +60,7 @@ import {
 } from "~/ui/format";
 import { ResultBarCard } from "~/ui/components/ResultBarCard";
 import { TxLink } from "~/ui/components/TxLink";
-import { toCsv, downloadCsv } from "~/util/csv";
+import { toCsv, downloadCsv, downloadJson } from "~/util/csv";
 import { bytesToHex } from "~/util/hex";
 import { t, n } from "~/i18n";
 import css from "./Survey.module.css";
@@ -324,9 +330,11 @@ export const Survey: Component = () => {
                     </>
                   }
                 >
-                  <WeightedResults
+                  <FinalResults
                     artifact={artifact()!}
                     def={def() ?? sv().record.definition}
+                    keyStr={key()}
+                    responses={bundle()?.responses ?? []}
                     onShowRaw={() => setShowRaw(true)}
                   />
                 </Show>
@@ -1153,61 +1161,185 @@ const ResponseCard: Component<{
 // ----------------------------------------------------------------------------
 
 /**
- * The final, server-finalized results of a closed survey, rendered from its
- * content-addressed artifact: per-role sections with stake-weighted bars and
- * exact-integer-derived means (all floats presentation-side, in
- * `~/domain/artifactView`). Replaces the raw live tally once an artifact
- * exists; a toggle hands back to the raw per-credential view.
+ * Informational note shown above every results view: Tessera's tallies are
+ * generic and indicative — a survey's own validity/allow-list/weighting rules
+ * are the creator's to apply and interpret. In the final (artifact) view it
+ * carries the "view raw responses" escape hatch on its right.
  */
-const WeightedResults: Component<{
+const InfoNote: Component<{ onShowRaw?: () => void }> = (props) => (
+  <div class={css.disclaimer}>
+    <span class={css.disclaimerBadge}>{t("survey.infoBadge")}</span>
+    <span class={css.disclaimerText}>
+      <b>{t("survey.infoNoteStrong")}</b> {t("survey.infoNote")}
+    </span>
+    <Show when={props.onShowRaw}>
+      <button class={css.excludedToggle} onClick={() => props.onShowRaw!()}>
+        {t("survey.weightedShowRaw")}
+      </button>
+    </Show>
+  </div>
+);
+
+/**
+ * The final, server-finalized results of a closed survey, rendered from its
+ * content-addressed artifact. One presentation, two weightings of the *same*
+ * counted set (the proof-validated responders the artifact committed to):
+ * `"chain"` shows each responder's snapshotted stake / voting power (with
+ * turnout), `"one"` re-tallies the identical set with one vote per credential.
+ * Only DRep/Stakeholder/Owner are covered here; the full, inclusive per-role
+ * breakdown (SPO/CC included) lives in the raw view, one toggle away.
+ *
+ * Every float is derived presentation-side in `~/domain/artifactView`.
+ */
+const FinalResults: Component<{
   artifact: TallyArtifact;
   def: SurveyDefinition;
+  keyStr: string;
+  /** The survey's on-chain responses, to rejoin answers for the one-vote view. */
+  responses: readonly ResponseRecord[];
   onShowRaw: () => void;
 }> = (props) => {
-  const roles = createMemo(() => weightedRoleViews(props.artifact, props.def));
+  const [weighting, setWeighting] = createSignal<Weighting>("chain");
+  const cancelled = () => props.artifact.tally.cancelled;
+  const roles = createMemo(() =>
+    resultRoleViews(props.artifact, props.def, props.responses, weighting()),
+  );
   const endEpoch = () => props.artifact.tally.survey.endEpoch;
+  const responderTotal = createMemo(() =>
+    props.artifact.tally.perRole.reduce(
+      (sum, r) => sum + r.responders.length,
+      0,
+    ),
+  );
   // The content address, recomputed locally from the received body — what a
   // verifier reproduces; shown shortened, full value in the title attribute.
   const hash = createMemo(() => artifactHash(props.artifact.tally));
 
+  const exportArtifact = (): void =>
+    downloadJson(
+      `tessera-${shortRef(props.keyStr)}-artifact.json`,
+      JSON.stringify(props.artifact, null, 2),
+    );
+
+  // One row per counted responder × answer, weight reflecting the active
+  // switch (chain weight, or 1). `weight_unit` names what the weight measures
+  // per role, since it's heterogeneous (voting power vs active stake vs count).
+  const exportVotesCsv = (): void => {
+    const w = weighting();
+    const header = [
+      "role",
+      "credential",
+      "weight",
+      "weight_unit",
+      "response_tx",
+      "question_index",
+      "question_type",
+      "answer",
+    ];
+    const measures = RULESET_DESCRIPTOR.roleMeasures as Record<string, string>;
+    const byKey = new Map<string, SurveyResponse>();
+    for (const rec of props.responses)
+      byKey.set(
+        `${rec.txHash}|${credentialKey(rec.response.credential)}`,
+        rec.response,
+      );
+    const rows = props.artifact.tally.perRole.flatMap((role) => {
+      const unit = w === "one" ? "count" : (measures[String(role.role)] ?? "");
+      return role.responders.flatMap((r) => {
+        const weight = w === "one" ? "1" : r.weight;
+        const resp = byKey.get(`${r.txHash}|${r.credential}`);
+        if (!resp || resp.answers.type !== "public") {
+          const type = resp ? "sealed" : "";
+          return [
+            [
+              roleLabel(role.role),
+              r.credential,
+              weight,
+              unit,
+              r.txHash,
+              "",
+              type,
+              "",
+            ],
+          ];
+        }
+        return resp.answers.answers.map((a) => [
+          roleLabel(role.role),
+          r.credential,
+          weight,
+          unit,
+          r.txHash,
+          String(a.questionIndex),
+          a.type,
+          serializeAnswer(a),
+        ]);
+      });
+    });
+    downloadCsv(
+      `tessera-${shortRef(props.keyStr)}-${w}.csv`,
+      toCsv([header, ...rows]),
+    );
+  };
+
   return (
     <>
-      {/* provenance note — the weighted counterpart of the raw disclaimer */}
-      <div class={css.disclaimer}>
-        <span class={css.weightedBadge}>{t("survey.weightedBadge")}</span>
-        <span class={css.disclaimerText}>
-          <b>{t("survey.weightedNoteStrong")}</b>{" "}
-          {t("survey.weightedNote", {
-            epoch: n(endEpoch()),
-            provider: props.artifact.provenance.source.provider,
-          })}
-        </span>
-        <button class={css.excludedToggle} onClick={() => props.onShowRaw()}>
-          {t("survey.weightedShowRaw")}
+      <InfoNote onShowRaw={props.onShowRaw} />
+
+      {/* Export the raw artifact + a votes/weights CSV — available even for a
+          cancelled survey (the artifact still records the cancellation). */}
+      <div class={css.artifactActions}>
+        <button class={css.artifactBtn} onClick={exportArtifact}>
+          <span class={css.exportIcon}>⤓</span> {t("survey.exportArtifact")}
+        </button>
+        <button
+          class={css.artifactBtn}
+          classList={{ [css.artifactBtnDisabled]: responderTotal() === 0 }}
+          disabled={responderTotal() === 0}
+          onClick={exportVotesCsv}
+        >
+          <span class={css.exportIcon}>⤓</span> {t("survey.exportVotesCsv")}
         </button>
       </div>
 
       <Show
-        when={!props.artifact.tally.cancelled}
+        when={!cancelled()}
         fallback={
           <div class={css.cancelSubmitted}>
             <div class={css.cancelSubmittedTitle}>
               {t("survey.weightedCancelledTitle")}
             </div>
             <div class={css.cancelSubmittedHash}>
-              <TxLink
-                hash={props.artifact.tally.cancelled!.txHash}
-                color="var(--danger-ink)"
-              />
+              <TxLink hash={cancelled()!.txHash} color="var(--danger-ink)" />
             </div>
             <div class={css.cancelSubmittedBody}>
               {t("survey.weightedCancelledBody", {
-                epoch: n(props.artifact.tally.cancelled!.epoch),
+                epoch: n(cancelled()!.epoch),
               })}
             </div>
           </div>
         }
       >
+        {/* Weighting switch: same counted set, one vote each vs chain weight. */}
+        <div class={css.roleFilterRow}>
+          <span class={css.roleFilterLabel}>{t("survey.weightingLabel")}</span>
+          <div class={css.roleFilterBtns}>
+            <button
+              class={css.roleFilterBtn}
+              classList={{ [css.roleFilterBtnOn]: weighting() === "chain" }}
+              onClick={() => setWeighting("chain")}
+            >
+              {t("survey.weightingChain")}
+            </button>
+            <button
+              class={css.roleFilterBtn}
+              classList={{ [css.roleFilterBtnOn]: weighting() === "one" }}
+              onClick={() => setWeighting("one")}
+            >
+              {t("survey.weightingOne")}
+            </button>
+          </div>
+        </div>
+
         <For each={roles()}>
           {(rv) => (
             <section>
@@ -1215,10 +1347,10 @@ const WeightedResults: Component<{
                 <span class={css.weightedRoleTitle}>{roleLabel(rv.role)}</span>
                 <span class={css.weightedRoleMeta}>
                   {t("survey.weightedCounted", { n: n(rv.responderCount) })}
-                  <Show when={rv.total !== null}>
+                  <Show when={rv.total !== null && rv.votedWeight !== null}>
                     {" · "}
                     {t("survey.weightedVotingWeight", {
-                      ada: formatAda(rv.votedWeight),
+                      ada: formatAda(rv.votedWeight!),
                     })}
                     <Show when={rv.turnout !== null}>
                       {" · "}
@@ -1248,6 +1380,8 @@ const WeightedResults: Component<{
 
       <p class={css.tallyFootnote} title={hash()}>
         {t("survey.weightedFootnote", {
+          epoch: n(endEpoch()),
+          provider: props.artifact.provenance.source.provider,
           hash: `${hash().slice(0, 10)}…${hash().slice(-6)}`,
         })}
       </p>
@@ -1500,15 +1634,8 @@ const ResultsBody: Component<{
         />
       </Show>
 
-      {/* weighting disclaimer */}
-      <div class={css.disclaimer}>
-        <span class={css.disclaimerBadge}>{t("survey.disclaimerBadge")}</span>
-        <span class={css.disclaimerText}>
-          {t("survey.disclaimerText1")}{" "}
-          <b>{t("survey.disclaimerNoWeighting")}</b>{" "}
-          {t("survey.disclaimerText2")}
-        </span>
-      </div>
+      {/* informational note — these raw counts are indicative, not a verdict */}
+      <InfoNote />
 
       {/* role filter */}
       <div class={css.roleFilterRow}>
