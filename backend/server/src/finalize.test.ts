@@ -451,6 +451,52 @@ describe("finalizeClosedSurveys", () => {
     );
   });
 
+  it("skips all finalization when the snapshot is incomplete (finding 3)", async () => {
+    const store = memBackendStore();
+    await seed(store, [validatedRow(rA)]);
+    const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
+
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      inputs,
+      noProofs,
+      { ...records(survey(), [rA]), incomplete: true },
+      TIP,
+    );
+    expect(store.artifacts.size).toBe(0);
+    expect(store.weights.size).toBe(0); // no weight work either
+    expect(inputs.stakeholderCalls).toBe(0);
+  });
+
+  it("postpones a survey whose counted response fell out of the snapshot (finding 3)", async () => {
+    const store = memBackendStore();
+    await seed(store, [validatedRow(rA)]); // validated earlier…
+    const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
+
+    // …but the response tx is no longer in the snapshot's records.
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      inputs,
+      noProofs,
+      records(survey(), []),
+      TIP,
+    );
+    expect(store.artifacts.size).toBe(0);
+
+    // It finalizes once the response is back in the snapshot.
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      inputs,
+      noProofs,
+      records(survey(), [rA]),
+      TIP,
+    );
+    expect(store.artifacts.size).toBe(1);
+  });
+
   it("leaves still-open or too-recent surveys alone", async () => {
     const store = memBackendStore();
     await seed(store, [validatedRow(rA)]);

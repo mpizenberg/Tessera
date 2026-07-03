@@ -74,6 +74,14 @@ export async function finalizeClosedSurveys(
   records: Cip179Records,
   tip: ChainTip,
 ): Promise<void> {
+  // An incomplete snapshot (a dropped metadata batch or the page cap) may be
+  // missing a responder tx or a cancellation for *any* survey, and we can't tell
+  // which — so no artifact this refresh is safe to hash. Postpone all of them.
+  if (records.incomplete) {
+    console.warn("finalize: snapshot incomplete — skipping finalization");
+    return;
+  }
+
   const nowSec = Math.floor(Date.now() / 1000);
   const spe = config.app.secondsPerEpoch;
   const finalized = await store.finalizedSurveyKeys();
@@ -98,6 +106,13 @@ export async function finalizeClosedSurveys(
     records,
     candidates,
     nowSec,
+  );
+
+  // A counted row joins back to its full response payload at emit time; if the
+  // snapshot no longer carries that response (it aged out or a batch dropped it)
+  // the artifact would silently omit a counted responder — so postpone instead.
+  const presentResponses = new Set(
+    records.responses.map((r) => `${r.txHash}:${r.responseIndex}`),
   );
 
   // --- weight snapshotting, per end epoch ------------------------------------
@@ -157,8 +172,14 @@ export async function finalizeClosedSurveys(
         continue;
       }
       const { counted, pending } = countedBySurvey.get(key)!;
+      const absent = counted.find(
+        (r) => !presentResponses.has(`${r.txHash}:${r.responseIndex}`),
+      );
       const missing =
-        pending ?? incompleteReason(counted, weightByRole, totalByRole);
+        pending ??
+        (absent
+          ? `response ${absent.txHash}:${absent.responseIndex} missing from snapshot`
+          : incompleteReason(counted, weightByRole, totalByRole));
       if (missing) {
         console.warn(`finalize: ${key} postponed — ${missing}`);
         continue;
@@ -444,7 +465,9 @@ function buildArtifact(
       if (r.role !== role) continue;
       const weight = weightByRole.get(role)?.get(r.credential);
       const record = responseByKey.get(`${r.txHash}:${r.responseIndex}`);
-      if (!weight || !record) continue; // guarded by incompleteReason
+      // Both are guaranteed present by the emit-time completeness check
+      // (incompleteReason for the weight, presentResponses for the record).
+      if (!weight || !record) continue;
       if (!weight.registered) {
         // §6.1: membership at end_epoch is a hard filter (weight-0 registered
         // credentials stay counted; unregistered ones don't).

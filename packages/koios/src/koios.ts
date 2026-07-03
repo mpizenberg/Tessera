@@ -298,7 +298,15 @@ export class KoiosDataSource implements DataSource {
     const metas: TxMetadata[] = [];
     for (const page of metaPages) {
       if (page.status === "fulfilled") metas.push(...page.value);
-      else console.warn(`skipping tx_metadata batch: ${String(page.reason)}`);
+      else {
+        // A dropped batch shrinks the snapshot (missing responses/cancellations)
+        // — flag it incomplete so finalization postpones instead of hashing a
+        // tally that's missing responders or misses a cancellation.
+        incomplete = true;
+        console.warn(
+          `skipping tx_metadata batch (snapshot incomplete): ${String(page.reason)}`,
+        );
+      }
     }
 
     for (const row of metas) {
