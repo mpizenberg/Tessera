@@ -402,27 +402,64 @@
   margin-top: 5px;
 }
 
-.roleGrid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
+/* Survey summary card: orientation metadata (questions / eligible roles / ends
+   / responses) over a plain per-role response count. Deliberately no
+   percentages or proportional bars — roles are separate electorates, not slices
+   of one whole. */
+.summary {
   margin-top: 18px;
-}
-
-.roleCard {
   border: 1px solid var(--line2);
   border-radius: var(--r-md);
-  padding: 13px 15px;
+  padding: 14px 16px;
 }
 
-.roleCardHead {
+.summaryMeta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px 22px;
+}
+
+.summaryItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.summaryLabel {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--dim);
+}
+
+.summaryValue {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* Per-role response counts, under a hairline divider — plain integers. */
+.summaryRoles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.summaryRole {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
 }
 
 /* Role chip colors come from `roleColors()`, bridged as inline CSS vars. */
-.roleChip {
+.summaryRoleChip {
   font-size: 12px;
   font-weight: 700;
   color: var(--role-color);
@@ -431,32 +468,11 @@
   padding: 2.5px 8px;
 }
 
-.roleCount {
+.summaryRoleCount {
   font-family: var(--mono);
   font-size: 13px;
   font-weight: 600;
   color: var(--ink);
-}
-
-.roleCountPct {
-  color: var(--dim);
-  font-size: 11px;
-}
-
-.roleTrack {
-  height: 7px;
-  border-radius: var(--r-pill);
-  background: var(--track);
-  overflow: hidden;
-  margin-top: 9px;
-}
-
-/* Width is computed (`${pct}%`) and the fill color is the role color. */
-.roleBar {
-  width: var(--role-pct);
-  height: 100%;
-  background: var(--role-color);
-  border-radius: var(--r-pill);
 }
 
 /* ---------------------------------------------------------------------------

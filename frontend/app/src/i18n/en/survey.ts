@@ -80,8 +80,13 @@ const survey = {
   /** {epoch} is the raw end epoch, shown untranslated. */
   govLinkMeta:
     "survey & vote both close at epoch {epoch} · open to all eligible roles — casting the linked vote is optional",
-  /** Sub-run of the role count, the "· {pct}%" tail in muted style. */
-  roleCountPct: "· {pct}%",
+  // Survey summary card (header): orientation metadata, plus a plain per-role
+  // response count — no cross-role percentages, since roles are separate
+  // electorates that shouldn't be compared as shares of one whole.
+  summaryQuestions: "Questions",
+  summaryEligible: "Eligible",
+  summaryEnds: "Ends",
+  summaryResponses: "Responses",
 
   // Per-question result widgets
   /** Question chip, e.g. "Q1"; {n} is the 1-based index (data). */

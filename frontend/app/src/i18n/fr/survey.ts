@@ -72,7 +72,12 @@ const survey: Messages = {
   govLinkAdvertisedBy: "Annoncé par",
   govLinkMeta:
     "le sondage et le vote se clôturent tous deux à l'epoch {epoch} · ouvert à tous les rôles éligibles — voter sur l'action liée est optionnel",
-  roleCountPct: "· {pct}%",
+  // Carte de résumé du sondage (en-tête) : métadonnées + décompte par rôle
+  // (sans pourcentages inter-rôles — électorats distincts, non comparables).
+  summaryQuestions: "Questions",
+  summaryEligible: "Éligibles",
+  summaryEnds: "Clôture",
+  summaryResponses: "Réponses",
 
   // Per-question result widgets
   qLabel: "Q{n}",

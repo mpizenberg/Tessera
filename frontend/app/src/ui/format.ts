@@ -2,8 +2,10 @@
 
 import { Role } from "cip-179";
 import type { Network } from "~/config";
-import type { SurveyAggregate } from "~/domain/survey";
+import { voteDeadlineUnix, type SurveyAggregate } from "~/domain/survey";
+import type { ChainTip } from "~/data/source";
 import { IPFS_GATEWAYS } from "~/enrichment/providers";
+import { t, n } from "~/i18n";
 
 /**
  * Link to a transaction on the Cardano Explorer aggregator. Mainnet lives at
@@ -171,4 +173,32 @@ export function shortRef(key: string): string {
 export function fullRef(key: string): string {
   const [hash, index] = key.split(":");
   return `${hash ?? ""}#${index ?? "0"}`;
+}
+
+/** Coarse "time left to vote": days+hours up high, hours+minutes near the end. */
+export function timeLeft(deadlineUnix: number, nowUnix: number): string {
+  const s = deadlineUnix - nowUnix;
+  if (s <= 0) return t("explore.endingNow");
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (d >= 1) return t("explore.timeLeftDaysHours", { d: n(d), h: n(h) });
+  if (h >= 1) return t("explore.timeLeftHoursMinutes", { h: n(h), m: n(m) });
+  return t("explore.timeLeftMinutes", { m: n(Math.max(1, m)) });
+}
+
+/** What an "Ends" cell reads: time-left while open, lifecycle word once closed. */
+export function endsText(
+  a: SurveyAggregate,
+  tip: ChainTip,
+  secondsPerEpoch: number,
+  nowUnix: number,
+): string {
+  const v = viewStatus(a);
+  if (v === "cancelled") return t("explore.endsWithdrawn");
+  if (v === "ended") return t("explore.endsClosed");
+  return timeLeft(
+    voteDeadlineUnix(a.record.definition.endEpoch, tip, secondsPerEpoch),
+    nowUnix,
+  );
 }

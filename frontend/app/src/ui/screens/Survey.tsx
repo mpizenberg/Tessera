@@ -47,10 +47,11 @@ import {
 } from "~/domain/audit";
 import { walletOwns } from "~/domain/roles";
 import { roleBreakdown, tallySurvey, type QuestionTally } from "~/domain/tally";
-import type { ResponseRecord } from "~/data/source";
+import type { ChainTip, ResponseRecord } from "~/data/source";
 import { usePresentation } from "~/enrichment/usePresentation";
 import { formatRevealDate, isQuicknet, roundIsAvailable } from "~/tlock/drand";
 import {
+  endsText,
   fullRef,
   roleColors,
   roleLabel,
@@ -58,6 +59,7 @@ import {
   shortRef,
   viewStatus,
 } from "~/ui/format";
+import { RoleChips } from "~/ui/components/glyphs";
 import { ResultBarCard } from "~/ui/components/ResultBarCard";
 import { TxLink } from "~/ui/components/TxLink";
 import { toCsv, downloadCsv, downloadJson } from "~/util/csv";
@@ -180,16 +182,18 @@ export const Survey: Component = () => {
   });
   const records = createMemo<ResponseRecord[]>(() => audit().counted);
 
-  // Role participation. Works even while sealed — role and credential are
-  // plaintext in the envelope; only the answers are encrypted.
-  const roleStats = createMemo(() => {
-    const rows = roleBreakdown(records().map((r) => r.response));
-    const total = Math.max(1, records().length);
-    return rows.map((r) => ({
-      ...r,
-      pct: Math.round((r.count / total) * 100),
-    }));
-  });
+  // Per-role response counts (plain integers, no cross-role percentages —
+  // separate electorates aren't comparable as shares of one whole). Works even
+  // while sealed: role + credential are plaintext; only the answers are sealed.
+  const roleCounts = createMemo(() =>
+    roleBreakdown(records().map((r) => r.response)),
+  );
+
+  // The chain tip drives the summary's "ends" countdown; guarded like the list
+  // read so an errored snapshot degrades to "—" rather than throwing.
+  const tip = createMemo<ChainTip | undefined>(
+    () => (app.list.error ? undefined : app.list())?.tip,
+  );
 
   // A coarse clock that ticks while the page is open, so a sealed survey's
   // reveal affordance lights up the moment its drand round publishes — without
@@ -238,8 +242,11 @@ export const Survey: Component = () => {
               def={def() ?? sv().record.definition}
               keyStr={key()}
               pro={app.ui.pro}
-              roleStats={roleStats()}
+              roleCounts={roleCounts()}
               total={records().length}
+              tip={tip()}
+              secondsPerEpoch={app.config.secondsPerEpoch}
+              nowUnix={now()}
               pillKey={pillKey()}
             />
 
@@ -526,11 +533,18 @@ const Header: Component<{
   def: SurveyDefinition;
   keyStr: string;
   pro: boolean;
-  roleStats: Array<{ role: number; count: number; pct: number }>;
+  roleCounts: ReadonlyArray<{ role: number; count: number }>;
   total: number;
+  tip: ChainTip | undefined;
+  secondsPerEpoch: number;
+  nowUnix: number;
   pillKey: PillKey;
 }> = (props) => {
   const pill = () => STATUS_PILL[props.pillKey];
+  const ends = (): string =>
+    props.tip
+      ? endsText(props.s, props.tip, props.secondsPerEpoch, props.nowUnix)
+      : "—";
   return (
     <div class={css.header}>
       <div class={css.headerTop}>
@@ -586,45 +600,62 @@ const Header: Component<{
         )}
       </Show>
 
-      <Show when={props.roleStats.length > 0}>
-        <div class={css.roleGrid}>
-          <For each={props.roleStats}>
-            {(rs) => {
-              const [color, bg] = roleColors(rs.role);
-              return (
-                <div class={css.roleCard}>
-                  <div class={css.roleCardHead}>
+      <div class={css.summary}>
+        <div class={css.summaryMeta}>
+          <SummaryItem label={t("survey.summaryQuestions")}>
+            <span class={css.summaryValue}>
+              {n(props.def.questions.length)}
+            </span>
+          </SummaryItem>
+          <Show when={props.def.eligibleRoles.length > 0}>
+            <SummaryItem label={t("survey.summaryEligible")}>
+              <RoleChips roles={props.def.eligibleRoles} />
+            </SummaryItem>
+          </Show>
+          <SummaryItem label={t("survey.summaryEnds")}>
+            <span class={css.summaryValue}>{ends()}</span>
+          </SummaryItem>
+          <SummaryItem label={t("survey.summaryResponses")}>
+            <span class={css.summaryValue}>{n(props.total)}</span>
+          </SummaryItem>
+        </div>
+
+        {/* Plain per-role response counts — no percentages, no comparative
+            bars: separate electorates aren't slices of one whole. */}
+        <Show when={props.roleCounts.length > 0}>
+          <div class={css.summaryRoles}>
+            <For each={props.roleCounts}>
+              {(rc) => {
+                const [color, bg] = roleColors(rc.role);
+                return (
+                  <span class={css.summaryRole}>
                     <span
-                      class={css.roleChip}
+                      class={css.summaryRoleChip}
                       style={{ "--role-color": color, "--role-bg": bg }}
                     >
-                      {roleLabel(rs.role)}
+                      {roleLabel(rc.role)}
                     </span>
-                    <span class={css.roleCount}>
-                      {n(rs.count)}{" "}
-                      <span class={css.roleCountPct}>
-                        {t("survey.roleCountPct", { pct: n(rs.pct) })}
-                      </span>
-                    </span>
-                  </div>
-                  <div class={css.roleTrack}>
-                    <div
-                      class={css.roleBar}
-                      style={{
-                        "--role-pct": `${rs.pct}%`,
-                        "--role-color": color,
-                      }}
-                    />
-                  </div>
-                </div>
-              );
-            }}
-          </For>
-        </div>
-      </Show>
+                    <span class={css.summaryRoleCount}>{n(rc.count)}</span>
+                  </span>
+                );
+              }}
+            </For>
+          </div>
+        </Show>
+      </div>
     </div>
   );
 };
+
+/** One labelled metadata pair in the survey summary card. */
+const SummaryItem: Component<{ label: string; children: JSX.Element }> = (
+  props,
+) => (
+  <div class={css.summaryItem}>
+    <span class={css.summaryLabel}>{props.label}</span>
+    {props.children}
+  </div>
+);
 
 // ----------------------------------------------------------------------------
 // Per-question result widgets
@@ -1510,14 +1541,9 @@ const ResultsBody: Component<{
       .map((r) => r.response)
       .filter((r) => r.answers.type === "public"),
   );
-  const roleStats = createMemo(() => {
-    const rows = roleBreakdown(props.records.map((r) => r.response));
-    const total = Math.max(1, props.records.length);
-    return rows.map((r) => ({
-      ...r,
-      pct: Math.round((r.count / total) * 100),
-    }));
-  });
+  const roleCounts = createMemo(() =>
+    roleBreakdown(props.records.map((r) => r.response)),
+  );
   const filtered = createMemo<SurveyResponse[]>(() => {
     const f = roleFilter();
     return f === "all"
@@ -1647,13 +1673,13 @@ const ResultsBody: Component<{
             on={roleFilter() === "all"}
             onClick={() => setRoleFilter("all")}
           />
-          <For each={roleStats()}>
-            {(rs) => (
+          <For each={roleCounts()}>
+            {(rc) => (
               <RoleFilterBtn
-                label={roleLabel(rs.role)}
-                count={rs.count}
-                on={roleFilter() === rs.role}
-                onClick={() => setRoleFilter(rs.role)}
+                label={roleLabel(rc.role)}
+                count={rc.count}
+                on={roleFilter() === rc.role}
+                onClick={() => setRoleFilter(rc.role)}
               />
             )}
           </For>
