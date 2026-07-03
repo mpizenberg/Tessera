@@ -312,7 +312,11 @@ export class KoiosDataSource implements DataSource {
     for (const row of metas) {
       const raw = row.metadata?.[String(METADATA_LABEL)];
       if (raw === undefined) continue;
-      const pos = posByHash.get(row.tx_hash) ?? { slot: 0, epochNo: 0 };
+      // Every metadata row was requested by tx_hash from posByHash, so a miss is
+      // impossible. Throw rather than fabricate {slot:0, epochNo:0}, which would
+      // silently mark the response on-time and collapse every dedup tie.
+      const pos = posByHash.get(row.tx_hash);
+      if (!pos) throw new Error(`metadata for unknown tx ${row.tx_hash}`);
       let payload: Cip179Payload;
       try {
         payload = decodePayload(koiosJsonToMetadatum(raw));

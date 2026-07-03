@@ -38,8 +38,8 @@ the fix deviated from the report's suggested direction.
 | # | Finding (short) | Status |
 | --- | --- | --- |
 | 15 | Dead code cluster: `domain/cancellation.ts` shim, `decodeCancellationProof` alias (+ alias test), dead `metadatum.ts` helpers; mixed shim/direct core imports | todo |
-| 16 | `mechanismA` duplicates `cancellationVerified` | done (pending commit) |
-| 17 | Can't-happen `?? {slot: 0, epochNo: 0}` fallback in `fetchAll` — throw instead | todo |
+| 16 | `mechanismA` duplicates `cancellationVerified` | done f8ecb70 |
+| 17 | Can't-happen `?? {slot: 0, epochNo: 0}` fallback in `fetchAll` — throw instead | done (pending commit) |
 | 18 | Presentation floats/types (`Bar.pct`, sample cap) inside `@tessera/core` tally.ts vs §4 claim | todo |
 | 19 | Post-close cancellations invisible outside the artifact (list shows "Ended", raw tally in direct mode) | todo |
 | 20 | Dead artifact error guard in Survey.tsx (fetcher `.catch(() => null)` makes it unreachable) | todo |
