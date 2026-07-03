@@ -131,6 +131,52 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
     });
   });
 
+  it("offset-paginates account_update_history past Koios's row cap (finding 4)", async () => {
+    const addrA = await stakeAddress(cred(HASH_A), "preview");
+    const PAGE = 1000;
+    const seenOffsets: number[] = [];
+    stubFetch((url) => {
+      if (url.includes("/account_stake_history")) return [];
+      if (url.includes("/account_update_history")) {
+        const offset = Number(new URL(url).searchParams.get("offset"));
+        seenOffsets.push(offset);
+        if (offset === 0) {
+          // A full page of registration/delegation events at low slots — every
+          // one implies "registered", so without page 2 the account looks live.
+          return Array.from({ length: PAGE }, (_, i) => ({
+            stake_address: addrA,
+            action_type: "delegation_pool",
+            absolute_slot: i + 1,
+            epoch_no: 1,
+          }));
+        }
+        // The final event — a deregistration at the highest slot — lives only
+        // on the second page; it must win, proving the page was read.
+        if (offset === PAGE) {
+          return [
+            {
+              stake_address: addrA,
+              action_type: "deregistration",
+              absolute_slot: 10_000,
+              epoch_no: 5,
+            },
+          ];
+        }
+        return [];
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+
+    const weights = await new KoiosTallyInputs(CONFIG).stakeholderWeights(1345, [
+      cred(HASH_A),
+    ]);
+    expect(seenOffsets).toEqual([0, PAGE]); // followed the offset cursor
+    expect(weights.get(`key:${HASH_A}`)).toEqual({
+      registered: false, // the page-2 deregistration wins
+      weight: 0n,
+    });
+  });
+
   it("covers a credential with no events at all (never registered)", async () => {
     stubFetch((url) =>
       url.includes("/account_update_history") ||

@@ -3,12 +3,13 @@
  * survey's `end_epoch` (ARCHITECTURE.md §6.1/§6.5).
  *
  * Stakeholders (role 3) resolve in two bulk reads per 50-credential chunk:
- *  - `/account_update_history?epoch_no=lte.E` — registration state. A
- *    credential is registered at E iff, walking its events (registration /
- *    deregistration / delegation…) in `absolute_slot` order up to E, the last
- *    state-changing event leaves it registered — any non-deregistration event
- *    (a delegation implies an active registration) after the last
- *    deregistration counts.
+ *  - `/account_update_history?epoch_no=lte.E` — registration state (offset-
+ *    paginated: this returns *every* lifecycle event for the batch and can
+ *    exceed Koios's ~1000-row cap). A credential is registered at E iff, walking
+ *    its events (registration / deregistration / delegation…) in `absolute_slot`
+ *    order up to E, the last state-changing event leaves it registered — any
+ *    non-deregistration event (a delegation implies an active registration)
+ *    after the last deregistration counts.
  *  - `/account_stake_history?epoch_no=eq.E` — active stake. One row per
  *    account *delegated to a pool* at E; a registered account with no row
  *    counts with weight 0 (§6.1 "registered but empty").
@@ -32,6 +33,21 @@ import { drepId, stakeAddress } from "./bech32";
 
 /** Max stake addresses per bulk POST (matches the other Koios batch sizes). */
 const ACCOUNT_BATCH = 50;
+
+/**
+ * Rows per page when following an unbounded Koios result set. Koios caps a
+ * single response at ~1000 rows, so any read that can exceed that (notably
+ * `account_update_history` over `lte.E`, which returns *every* lifecycle event
+ * for the batch) must offset-paginate or it silently truncates.
+ */
+const PAGE_LIMIT = 1000;
+
+/**
+ * Runaway guard for `postAll`: only trips if Koios ignores our `offset` (which
+ * would loop forever). A million rows for 50 accounts is already absurd, so
+ * hitting this means something is wrong — fail loudly rather than truncate.
+ */
+const MAX_ACCOUNT_PAGES = 1000;
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
@@ -90,6 +106,30 @@ export class KoiosTallyInputs implements TallyInputSource {
     return res.json() as Promise<T>;
   }
 
+  /**
+   * POST an RPC endpoint, following `offset` pages until a short one — so a
+   * result set larger than Koios's single-response cap is fully read instead of
+   * silently truncated. `path` already carries its filter query string.
+   */
+  private async postAll<T>(path: string, body: unknown): Promise<T[]> {
+    const sep = path.includes("?") ? "&" : "?";
+    const all: T[] = [];
+    for (let page = 0; ; page++) {
+      if (page >= MAX_ACCOUNT_PAGES) {
+        throw new Error(
+          `Koios POST ${path} exceeded ${MAX_ACCOUNT_PAGES} pages — offset likely ignored`,
+        );
+      }
+      const rows = await this.post<T[]>(
+        `${path}${sep}limit=${PAGE_LIMIT}&offset=${page * PAGE_LIMIT}`,
+        body,
+      );
+      all.push(...rows);
+      if (rows.length < PAGE_LIMIT) break; // short page → exhausted
+    }
+    return all;
+  }
+
   async stakeholderWeights(
     epoch: number,
     credentials: readonly Credential[],
@@ -109,13 +149,17 @@ export class KoiosTallyInputs implements TallyInputSource {
     const stakeByAddress = new Map<string, bigint>();
     for (let i = 0; i < addresses.length; i += ACCOUNT_BATCH) {
       const batch = addresses.slice(i, i + ACCOUNT_BATCH);
+      // Both reads offset-paginate: `account_update_history` over `lte.E`
+      // returns every lifecycle event for the batch and readily exceeds Koios's
+      // ~1000-row cap on long-lived accounts; losing a row (e.g. a final
+      // deregistration) would corrupt registration state in the hashed artifact.
       const [updates, stakes] = await Promise.all([
-        this.post<AccountUpdateRow[]>(
+        this.postAll<AccountUpdateRow>(
           `/account_update_history?epoch_no=lte.${epoch}` +
             `&select=stake_address,action_type,absolute_slot,epoch_no`,
           { _stake_addresses: batch },
         ),
-        this.post<AccountStakeRow[]>(
+        this.postAll<AccountStakeRow>(
           `/account_stake_history?epoch_no=eq.${epoch}` +
             `&select=stake_address,epoch_no,active_stake`,
           { _stake_addresses: batch },
