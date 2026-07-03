@@ -24,7 +24,9 @@ import type { WeightedQuestionTally, WeightedResponder } from "./weightedTally";
  * happens. Mirrors §6.2/§6.3 and the CIP-179 credential-proof mechanisms.
  */
 export const RULESET_DESCRIPTOR = {
-  rulesetVersion: 1,
+  // v2: responders record (txHash, responseIndex) — the artifact body schema
+  // changed, so hashes are incomparable with v1 artifacts.
+  rulesetVersion: 2,
   cip179SpecVersion: 4,
   /** Roles artifacts cover: 0 DRep, 3 Stakeholder, 4 Keyholder (SPO/CC deferred). */
   coveredRoles: [0, 3, 4],
@@ -57,6 +59,12 @@ export interface ArtifactResponder {
   readonly weight: string;
   /** Tx that carried the counted response. */
   readonly txHash: string;
+  /**
+   * Index of the response within that tx's label-17 payload. With `txHash`,
+   * the full on-chain coordinate of the exact response dedup counted — a tx
+   * can carry several responses, so the hash alone is ambiguous.
+   */
+  readonly responseIndex: number;
 }
 
 /** JSON-plain mirror of {@link WeightedQuestionTally} (bigints → strings). */
@@ -225,6 +233,7 @@ export function toArtifactResponders(
       credential: r.credentialKey,
       weight: String(r.weight),
       txHash: r.txHash,
+      responseIndex: r.responseIndex,
     }))
     .sort((a, b) =>
       a.credential < b.credential ? -1 : a.credential > b.credential ? 1 : 0,

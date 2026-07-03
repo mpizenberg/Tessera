@@ -9,7 +9,6 @@
 import type { Question, SurveyDefinition, SurveyResponse } from "cip-179";
 
 import {
-  credentialKey,
   optionLabelOf,
   toArtifactQuestions,
   weightedTallySurvey,
@@ -99,6 +98,7 @@ export type Weighting = "chain" | "one";
 /** An on-chain response, keyed for joining back to an artifact responder. */
 export interface CountedResponse {
   readonly txHash: string;
+  readonly responseIndex: number;
   readonly response: SurveyResponse;
 }
 
@@ -214,8 +214,9 @@ function chainRoleView(
  * One-vote view of one role: the same counted responders re-tallied with every
  * weight set to 1. The artifact commits only aggregates + responder identities
  * (not answers), so the answers are rejoined from the on-chain responses by
- * `(txHash, credential)`; a responder whose response isn't in `byKey` is
- * dropped from the aggregate (can't happen for a finalized on-chain survey).
+ * `(txHash, responseIndex)` — the exact response dedup counted; a responder
+ * whose response isn't in `byKey` is dropped from the aggregate (can't happen
+ * for a finalized on-chain survey).
  */
 function oneVoteRoleView(
   role: ArtifactRoleTally,
@@ -224,12 +225,13 @@ function oneVoteRoleView(
 ): RoleResultView {
   const responders: WeightedResponder[] = [];
   for (const r of role.responders) {
-    const response = byKey.get(`${r.txHash}|${r.credential}`);
+    const response = byKey.get(`${r.txHash}|${r.responseIndex}`);
     if (response)
       responders.push({
         credentialKey: r.credential,
         weight: 1n,
         txHash: r.txHash,
+        responseIndex: r.responseIndex,
         response,
       });
   }
@@ -261,10 +263,7 @@ export function resultRoleViews(
   }
   const byKey = new Map<string, SurveyResponse>();
   for (const r of responses) {
-    byKey.set(
-      `${r.txHash}|${credentialKey(r.response.credential)}`,
-      r.response,
-    );
+    byKey.set(`${r.txHash}|${r.responseIndex}`, r.response);
   }
   return artifact.tally.perRole.map((r) => oneVoteRoleView(r, def, byKey));
 }

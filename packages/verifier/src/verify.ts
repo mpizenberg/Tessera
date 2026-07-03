@@ -158,6 +158,7 @@ export async function rebuildTally(
         credentialKey: credentialKey(r.response.credential),
         weight: 1n,
         txHash: r.txHash,
+        responseIndex: r.responseIndex,
         response: r.response,
       }));
     } else {
@@ -175,6 +176,7 @@ export async function rebuildTally(
           credentialKey: key,
           weight: info.weight,
           txHash: r.txHash,
+          responseIndex: r.responseIndex,
           response: r.response,
         });
       }

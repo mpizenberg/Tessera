@@ -29,6 +29,9 @@ export interface WeightedResponder {
   readonly weight: bigint;
   /** Tx that carried the counted response (provenance). */
   readonly txHash: string;
+  /** Index of the response within that tx's label-17 payload — with `txHash`,
+   * the full on-chain coordinate of the counted response. */
+  readonly responseIndex: number;
   readonly response: SurveyResponse;
 }
 

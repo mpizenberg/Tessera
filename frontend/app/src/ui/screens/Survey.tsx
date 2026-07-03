@@ -25,7 +25,6 @@ import {
 import {
   RULESET_DESCRIPTOR,
   artifactHash,
-  credentialKey,
   type TallyArtifact,
 } from "@tessera/core";
 
@@ -1193,6 +1192,7 @@ const FinalResults: Component<{
       "weight",
       "weight_unit",
       "response_tx",
+      "response_index",
       "question_index",
       "question_type",
       "answer",
@@ -1200,15 +1200,12 @@ const FinalResults: Component<{
     const measures = RULESET_DESCRIPTOR.roleMeasures as Record<string, string>;
     const byKey = new Map<string, SurveyResponse>();
     for (const rec of props.responses)
-      byKey.set(
-        `${rec.txHash}|${credentialKey(rec.response.credential)}`,
-        rec.response,
-      );
+      byKey.set(`${rec.txHash}|${rec.responseIndex}`, rec.response);
     const rows = props.artifact.tally.perRole.flatMap((role) => {
       const unit = w === "one" ? "count" : (measures[String(role.role)] ?? "");
       return role.responders.flatMap((r) => {
         const weight = w === "one" ? "1" : r.weight;
-        const resp = byKey.get(`${r.txHash}|${r.credential}`);
+        const resp = byKey.get(`${r.txHash}|${r.responseIndex}`);
         if (!resp || resp.answers.type !== "public") {
           const type = resp ? "sealed" : "";
           return [
@@ -1218,6 +1215,7 @@ const FinalResults: Component<{
               weight,
               unit,
               r.txHash,
+              String(r.responseIndex),
               "",
               type,
               "",
@@ -1230,6 +1228,7 @@ const FinalResults: Component<{
           weight,
           unit,
           r.txHash,
+          String(r.responseIndex),
           String(a.questionIndex),
           a.type,
           serializeAnswer(a),

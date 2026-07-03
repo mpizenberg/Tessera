@@ -31,7 +31,12 @@ function body(perRoleTotal: string | null): TallyBody {
         role: 3,
         total: perRoleTotal,
         responders: [
-          { credential: "key:01", weight: "45000000000000000", txHash: "cc" },
+          {
+            credential: "key:01",
+            weight: "45000000000000000",
+            txHash: "cc",
+            responseIndex: 0,
+          },
         ],
         questions: [
           {
@@ -167,13 +172,20 @@ describe("toArtifactResponders", () => {
         credentialKey: "script:ff",
         weight: 2n,
         txHash: "t2",
+        responseIndex: 1,
         response: RESPONSE,
       },
-      { credentialKey: "key:aa", weight: 1n, txHash: "t1", response: RESPONSE },
+      {
+        credentialKey: "key:aa",
+        weight: 1n,
+        txHash: "t1",
+        responseIndex: 0,
+        response: RESPONSE,
+      },
     ];
     expect(toArtifactResponders(rs)).toEqual([
-      { credential: "key:aa", weight: "1", txHash: "t1" },
-      { credential: "script:ff", weight: "2", txHash: "t2" },
+      { credential: "key:aa", weight: "1", txHash: "t1", responseIndex: 0 },
+      { credential: "script:ff", weight: "2", txHash: "t2", responseIndex: 1 },
     ]);
   });
 });

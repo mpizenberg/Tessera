@@ -432,6 +432,7 @@ function buildArtifact(
         credentialKey: r.credential,
         weight: BigInt(weight.weight),
         txHash: r.txHash,
+        responseIndex: r.responseIndex,
         response: record.response,
       });
     }

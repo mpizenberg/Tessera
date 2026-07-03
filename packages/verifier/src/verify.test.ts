@@ -147,12 +147,14 @@ function emittedArtifact(): TallyArtifact {
       credentialKey: credentialKey(CRED_A),
       weight: 100n,
       txHash: R_A.txHash,
+      responseIndex: R_A.responseIndex,
       response: R_A.response,
     },
     {
       credentialKey: credentialKey(CRED_B),
       weight: 7n,
       txHash: R_B.txHash,
+      responseIndex: R_B.responseIndex,
       response: R_B.response,
     },
   ];

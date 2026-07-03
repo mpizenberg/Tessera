@@ -401,7 +401,12 @@ describe("finalizeClosedSurveys", () => {
     const role3 = artifact.tally.perRole.find((r) => r.role === 3)!;
     // Only A counted, via its LATER response (option "no").
     expect(role3.responders).toEqual([
-      { credential: KEY_A, weight: "100", txHash: rA2.txHash },
+      {
+        credential: KEY_A,
+        weight: "100",
+        txHash: rA2.txHash,
+        responseIndex: rA2.responseIndex,
+      },
     ]);
     expect(role3.questions[0]).toMatchObject({ optionWeights: ["0", "100"] });
   });

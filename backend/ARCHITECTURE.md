@@ -486,9 +486,9 @@ how, and when goes in `provenance`.
 
 - **`tally` (hashed):** `rulesetHash`, `network`, `survey`, `sealed` +
   deterministic reveal context, and per role: `role`, `total`, `responders`
-  (`credential`, `weight`, answer `txHash` — unregistered responders are
-  excluded rather than flagged, so no `registered` field), integer `questions`
-  aggregates.
+  (`credential`, `weight`, and the counted answer's full on-chain coordinate
+  `txHash` + `responseIndex` — unregistered responders are excluded rather
+  than flagged, so no `registered` field), integer `questions` aggregates.
 - **`provenance` (not hashed):** `source`, snapshot `fetchedAt`, per-role
   `endpoint`.
 
@@ -514,8 +514,8 @@ Contents (sketch):
           {
             "credential": "…",
             "weight": "1000000000",
-            "registered": true,
             "txHash": "…",
+            "responseIndex": 0, // position in the tx's label-17 payload
           },
           // unregistered responders are excluded, not listed here
         ],

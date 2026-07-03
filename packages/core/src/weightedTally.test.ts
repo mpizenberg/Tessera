@@ -74,6 +74,7 @@ function responder(
     credentialKey: `key:0${cred}`,
     weight,
     txHash: `tx${cred}`,
+    responseIndex: 0,
     response: respWith(cred, answers),
   };
 }

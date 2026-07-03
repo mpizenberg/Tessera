@@ -116,8 +116,18 @@ describe("resultRoleViews", () => {
           role: 3,
           total: "1000",
           responders: [
-            { credential: "key:a1", weight: "100", txHash: "t1" },
-            { credential: "key:b2", weight: "150", txHash: "t2" },
+            {
+              credential: "key:a1",
+              weight: "100",
+              txHash: "t1",
+              responseIndex: 0,
+            },
+            {
+              credential: "key:b2",
+              weight: "150",
+              txHash: "t2",
+              responseIndex: 0,
+            },
           ],
           questions: [
             {
@@ -133,7 +143,14 @@ describe("resultRoleViews", () => {
         {
           role: 4,
           total: null,
-          responders: [{ credential: "key:c3", weight: "1", txHash: "t3" }],
+          responders: [
+            {
+              credential: "key:c3",
+              weight: "1",
+              txHash: "t3",
+              responseIndex: 0,
+            },
+          ],
           questions: [
             {
               kind: "options",
@@ -170,8 +187,8 @@ describe("resultRoleViews", () => {
     },
   });
   const responses: CountedResponse[] = [
-    { txHash: "t1", response: response("a1", 0) },
-    { txHash: "t2", response: response("b2", 1) },
+    { txHash: "t1", responseIndex: 0, response: response("a1", 0) },
+    { txHash: "t2", responseIndex: 0, response: response("b2", 1) },
   ];
 
   it("chain weighting: sums voted weight and derives turnout only when a total exists", () => {
