@@ -270,6 +270,50 @@ describe("finalizeClosedSurveys", () => {
     expect(artifact.tally.perRole[0]!.responders[0]!.weight).toBe("5");
   });
 
+  it("persists weights per credential so a mid-role failure resumes (finding 5)", async () => {
+    const store = memBackendStore();
+    const dA = response("11".repeat(32), CRED_A, 0, 200, Role.DRep);
+    const dB = response("22".repeat(32), CRED_B, 1, 200, Role.DRep);
+    await seed(store, [validatedRow(dA), validatedRow(dB)]);
+
+    let failB = true;
+    const inputs: TallyInputSource = {
+      async stakeholderWeights() {
+        return new Map();
+      },
+      async drepWeights(_e, creds) {
+        const m = new Map<string, WeightInfo>();
+        for (const c of creds) {
+          const k = credentialKey(c);
+          if (k === KEY_B && failB) throw new Error("koios boom mid-role");
+          m.set(k, { weight: 10n, registered: true });
+        }
+        return m;
+      },
+      async stakeholderTotal() {
+        return 1_000n;
+      },
+      async drepTotal() {
+        return 2_000n;
+      },
+    };
+    const recs = records(survey(), [dA, dB]);
+
+    // First run dies fetching B; A's weight is already persisted (resume cursor).
+    await expect(
+      finalizeClosedSurveys(CONFIG, store, inputs, noProofs, recs, TIP),
+    ).rejects.toThrow(/mid-role/);
+    expect(store.weights.size).toBe(1);
+    expect([...store.weights.values()][0]!.credential).toBe(KEY_A);
+    expect(store.artifacts.size).toBe(0);
+
+    // Next cron: B now resolves, A comes from the cursor → artifact emitted.
+    failB = false;
+    await finalizeClosedSurveys(CONFIG, store, inputs, noProofs, recs, TIP);
+    expect(store.weights.size).toBe(2);
+    expect(store.artifacts.size).toBe(1);
+  });
+
   it("is idempotent: an emitted survey is never re-finalized", async () => {
     const store = memBackendStore();
     await seed(store, [validatedRow(rA)]);

@@ -336,6 +336,18 @@ async function countedRows(
   return { counted: [...best.values()], pending };
 }
 
+/**
+ * Credentials fetched-and-persisted per step, so a mid-role failure (rate
+ * limit, Worker subrequest cap) still advances the resume cursor instead of
+ * re-fetching the whole role from zero next cron (finding 5). Stakeholders
+ * resolve in one bulk pair of reads per ~50; DReps are one sequential GET each,
+ * so persist each as it lands.
+ */
+const WEIGHT_CHUNK_BY_ROLE: Record<number, number> = {
+  [Role.Stakeholder]: 50,
+  [Role.DRep]: 1,
+};
+
 /** Ensure a weight row exists for every credential; return the row map. */
 async function fillWeights(
   store: TallyStore,
@@ -351,10 +363,9 @@ async function fillWeights(
   const missing = [...credentials].filter((c) => !have.has(c));
   if (missing.length === 0) return have;
 
-  let fetched: WeightRow[];
   if (role === Role.Keyholder) {
     // Count-only role: one responder, one vote — no chain lookup.
-    fetched = missing.map((credential) => ({
+    const fetched: WeightRow[] = missing.map((credential) => ({
       epoch,
       role,
       credential,
@@ -362,13 +373,24 @@ async function fillWeights(
       registered: true,
       fetchedAt: nowSec,
     }));
-  } else {
-    const creds = missing.map(parseCredentialKey);
+    await store.upsertWeightRows(fetched);
+    for (const r of fetched) have.set(r.credential, r);
+    return have;
+  }
+
+  // Fetch + persist in chunks: each persisted chunk is a resume point, so if a
+  // later chunk throws the finished ones survive to next cron (they drop out of
+  // `missing` above). No extra Koios calls — the chunk matches the source's own
+  // batch granularity (one bulk read for stakeholders, one GET per DRep).
+  const chunkSize = WEIGHT_CHUNK_BY_ROLE[role] ?? 50;
+  for (let i = 0; i < missing.length; i += chunkSize) {
+    const slice = missing.slice(i, i + chunkSize);
+    const creds = slice.map(parseCredentialKey);
     const infos =
       role === Role.DRep
         ? await inputs.drepWeights(epoch, creds)
         : await inputs.stakeholderWeights(epoch, creds);
-    fetched = missing.map((credential) => {
+    const fetched: WeightRow[] = slice.map((credential) => {
       const info = infos.get(credential);
       if (!info) throw new Error(`no weight info for ${credential}`);
       return {
@@ -380,9 +402,9 @@ async function fillWeights(
         fetchedAt: nowSec,
       };
     });
+    await store.upsertWeightRows(fetched);
+    for (const r of fetched) have.set(r.credential, r);
   }
-  await store.upsertWeightRows(fetched);
-  for (const r of fetched) have.set(r.credential, r);
   return have;
 }
 
