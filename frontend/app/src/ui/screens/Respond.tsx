@@ -1212,7 +1212,12 @@ const NumericBody: Component<{
   const { min, max } = props.q.constraints;
   const step = props.q.constraints.step ?? 1n;
   const span = max - min;
-  const sliderOk = span > 0n && span <= 100000n;
+  // The range input works in JS numbers, so both bounds must be exactly
+  // representable — a huge min with a small span would otherwise render (and
+  // submit) rounded positions. Fall back to the bigint number input if not.
+  const safe = (n: bigint): boolean =>
+    n <= BigInt(Number.MAX_SAFE_INTEGER) && n >= BigInt(Number.MIN_SAFE_INTEGER);
+  const sliderOk = span > 0n && span <= 100000n && safe(min) && safe(max);
   const set = (value: bigint) => props.onChange({ type: "numeric", value });
   return (
     <>

@@ -31,7 +31,7 @@ the fix deviated from the report's suggested direction.
 | 11 | Survey screen state leaks across surveys (component not keyed on `:key`) | done cabbe81 |
 | 12 | Test-suite gaps: finalize pending-verdict behavior, koios pagination, verifier dedup-tie/mech-B, cip179 roundtrips, create/respond untested | todo |
 | 13 | cip179: empty answer arrays accepted against CDDL `[+ …]` | done 53ff9f9 — reject empty public answer array and empty points/rating pair lists at decode |
-| 14 | `addOptimisticSurvey` silently no-ops when list isn't loaded | done (pending) |
+| 14 | `addOptimisticSurvey` silently no-ops when list isn't loaded | done fa78542 |
 
 ## Low
 
@@ -43,7 +43,7 @@ the fix deviated from the report's suggested direction.
 | 18 | Presentation floats/types (`Bar.pct`, sample cap) inside `@tessera/core` tally.ts vs §4 claim | todo |
 | 19 | Post-close cancellations invisible outside the artifact (list shows "Ended", raw tally in direct mode) | todo |
 | 20 | Dead artifact error guard in Survey.tsx (fetcher `.catch(() => null)` makes it unreachable) | done cabbe81 |
-| 21 | Numeric slider precision above 2^53 (`sliderOk` doesn't bound min/max) | todo |
+| 21 | Numeric slider precision above 2^53 (`sliderOk` doesn't bound min/max) | done (pending) |
 | 22 | Delete stale `frontend/app/review-progress.md` / `review-report.md` | done cfde1b3 |
 | 23 | Doc drift ×3: Settings Pro-toggle persistence claim, "poll Koios" comments, hardcoded English role descriptions | todo |
 | 24 | cip179: `[0]` public submission mode accepts trailing elements | done 53ff9f9 — `expectLen(arr,1,1)` on public submission mode |
