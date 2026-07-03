@@ -12,6 +12,7 @@ import {
   type AnswerItem,
   type OptionsOrCount,
   type Question,
+  type RatingScale,
 } from "cip-179";
 
 import { metadatumToCbor } from "~/wallet/cbor";
@@ -23,6 +24,8 @@ const opts = (n: number): OptionsOrCount => ({
   type: "options",
   labels: Array.from({ length: n }, (_, i) => `option ${i}`),
 });
+/** Count-form options (external-content mode): a bare option count, no labels. */
+const optsCount = (n: number): OptionsOrCount => ({ type: "count", count: n });
 
 const singleChoice = (n: number): Question => ({
   type: "singleChoice",
@@ -63,6 +66,21 @@ const ratingNumeric = (n: number, min: number, max: number): Question => ({
     constraints: { min: BigInt(min), max: BigInt(max) },
   },
 });
+const ratingLabels = (n: number, levels: number): Question => ({
+  type: "rating",
+  prompt: "",
+  options: opts(n),
+  scale: {
+    type: "labels",
+    labels: Array.from({ length: levels }, (_, i) => `L${i}`),
+  },
+});
+const ratingCount = (n: number, levels: number): Question => ({
+  type: "rating",
+  prompt: "",
+  options: opts(n),
+  scale: { type: "count", count: levels },
+});
 const custom = (): Question => ({
   type: "custom",
   prompt: "",
@@ -73,6 +91,22 @@ const custom = (): Question => ({
 
 const optionCount = (o: OptionsOrCount): number =>
   o.type === "options" ? o.labels.length : o.count;
+
+/**
+ * The widest rating value a scale can carry — mirrors padding.ts's
+ * `ratingMaxValue`. Using it (not 0n for non-numeric scales) is what makes the
+ * labels/count branches actually exercise their real maximum (finding 25).
+ */
+const ratingTop = (scale: RatingScale): bigint => {
+  switch (scale.type) {
+    case "numeric":
+      return scale.constraints.max;
+    case "labels":
+      return BigInt(Math.max(0, scale.labels.length - 1));
+    case "count":
+      return BigInt(Math.max(0, scale.count - 1));
+  }
+};
 
 const cborLen = (m: bigint): number => metadatumToCbor(m).length;
 
@@ -126,7 +160,7 @@ function maximalAnswer(q: Question, i: number): AnswerItem {
     }
     case "rating": {
       const oc = optionCount(q.options);
-      const top = q.scale.type === "numeric" ? q.scale.constraints.max : 0n;
+      const top = ratingTop(q.scale);
       return {
         type: "rating",
         questionIndex: i,
@@ -164,6 +198,28 @@ describe("maxPlaintextSize", () => {
       custom(),
     ];
     expect(maxPlaintextSize(questions)).toBe(actualWidth(questions));
+  });
+
+  it("bounds labels/count rating scales and count-form options (finding 25)", () => {
+    // Non-numeric rating scales carry their top level (levels-1), not 0 — a
+    // wide one (100 levels → rating 99) is a 2-byte uint. Count-form options
+    // (external mode) push the top option index wide too (299 → 2 bytes).
+    const questions = [
+      ratingLabels(4, 8), // top rating 7
+      ratingCount(3, 100), // top rating 99 (2-byte)
+      { ...singleChoice(0), options: optsCount(300) } as Question, // wide index
+      {
+        type: "multiSelect",
+        prompt: "",
+        options: optsCount(300),
+        minSelections: 0,
+        maxSelections: 10,
+      } as Question,
+    ];
+    // Must never underestimate the real maximal response.
+    expect(actualWidth(questions)).toBeLessThanOrEqual(
+      maxPlaintextSize(questions),
+    );
   });
 
   it("counts negative and wide numerics at full width", () => {
