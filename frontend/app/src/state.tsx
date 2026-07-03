@@ -278,6 +278,11 @@ export const AppProvider: ParentComponent = (props) => {
   const [optimisticSurveys, setOptimisticSurveys] = createSignal<
     readonly SurveyAggregate[]
   >([]);
+  // Records published before the list (and its tip) has loaded — aggregation
+  // needs the tip, so hold them here and drain once it resolves (finding 14).
+  const [pendingOptimistic, setPendingOptimistic] = createSignal<
+    readonly SurveyRecord[]
+  >([]);
 
   const trackTx = (tx: NewPendingTx): void =>
     setPendingTxs((prev) => [
@@ -317,9 +322,10 @@ export const AppProvider: ParentComponent = (props) => {
     onCleanup(() => clearInterval(id));
   });
 
-  const addOptimisticSurvey = (record: SurveyRecord): void => {
-    const tip = list()?.tip;
-    if (!tip) return;
+  const recordKey = (r: SurveyRecord): string =>
+    `${bytesToHex(r.ref.txId)}:${r.ref.index}`;
+
+  const aggregateOptimistic = (record: SurveyRecord, tip: ChainTip): void => {
     const [agg] = aggregateSurveys(
       { surveys: [record], responses: [], cancellations: [] },
       tip,
@@ -330,6 +336,29 @@ export const AppProvider: ParentComponent = (props) => {
       ...prev.filter((p) => p.key !== agg.key),
     ]);
   };
+
+  const addOptimisticSurvey = (record: SurveyRecord): void => {
+    const tip = list()?.tip;
+    if (!tip) {
+      // No tip yet — queue so the success receipt's "View survey" link and
+      // Explore don't miss the just-published survey until the next refresh.
+      setPendingOptimistic((prev) => [
+        record,
+        ...prev.filter((r) => recordKey(r) !== recordKey(record)),
+      ]);
+      return;
+    }
+    aggregateOptimistic(record, tip);
+  };
+
+  // Drain queued optimistic records once the list (and its tip) resolves.
+  createEffect(() => {
+    const tip = list()?.tip;
+    if (!tip || pendingOptimistic().length === 0) return;
+    const queued = pendingOptimistic();
+    setPendingOptimistic([]);
+    for (const record of queued) aggregateOptimistic(record, tip);
+  });
 
   // Content-addressed document cache (survey presentation docs), in two tiers:
   // a reactive in-memory map for synchronous reads (list views can't await),
