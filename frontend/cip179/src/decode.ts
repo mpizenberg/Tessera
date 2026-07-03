@@ -12,6 +12,8 @@
 
 import {
   CredentialTag,
+  HASH28_BYTES,
+  HASH32_BYTES,
   METADATA_LABEL,
   PayloadTag,
   QuestionTag,
@@ -71,18 +73,32 @@ const asText = (m: Metadatum, path: string): string =>
 const asBytes = (m: Metadatum, path: string): Uint8Array =>
   isBytes(m) ? m : fail("expected byte string", path);
 
+/** A byte string of an exact CDDL `.size` (e.g. hash28, tx_id/blake2b_256). */
+const asBytesOfSize = (m: Metadatum, size: number, path: string): Uint8Array => {
+  const b = asBytes(m, path);
+  return b.length === size
+    ? b
+    : fail(`expected ${size}-byte value, got ${b.length}`, path);
+};
+
 const asInt = (m: Metadatum, path: string): bigint =>
   isInt(m) ? m : fail("expected integer", path);
 
-const asNumber = (m: Metadatum, path: string): number => {
-  const n = asInt(m, path);
-  if (
-    n > BigInt(Number.MAX_SAFE_INTEGER) ||
-    n < BigInt(Number.MIN_SAFE_INTEGER)
-  ) {
-    return fail(`integer out of safe range: ${n}`, path);
-  }
-  return Number(n);
+/** Narrow a bigint to a JS-safe integer, or fail with the path. */
+const safeNumber = (n: bigint, path: string): number =>
+  n > BigInt(Number.MAX_SAFE_INTEGER) || n < BigInt(Number.MIN_SAFE_INTEGER)
+    ? fail(`integer out of safe range: ${n}`, path)
+    : Number(n);
+
+const asNumber = (m: Metadatum, path: string): number =>
+  safeNumber(asInt(m, path), path);
+
+/** A CDDL `uint .size 2` (survey_ref index): 0..65535. */
+const asUint2 = (m: Metadatum, path: string): number => {
+  const n = asNumber(m, path);
+  return n >= 0 && n <= 0xffff
+    ? n
+    : fail(`expected uint .size 2 (0..65535), got ${n}`, path);
 };
 
 const text = (m: Metadatum, path: string): string => {
@@ -115,8 +131,8 @@ export const decodeSurveyRef = (
   const arr = asList(m, path);
   expectLen(arr, 2, 2, path);
   return {
-    txId: asBytes(arr[0], `${path}[0]`),
-    index: asNumber(arr[1], `${path}[1]`),
+    txId: asBytesOfSize(arr[0], HASH32_BYTES, `${path}[0]`),
+    index: asUint2(arr[1], `${path}[1]`),
   };
 };
 
@@ -128,7 +144,7 @@ export const decodeContentAnchor = (
   expectLen(arr, 2, 2, path);
   return {
     uri: text(arr[0], `${path}[0]`),
-    hash: asBytes(arr[1], `${path}[1]`),
+    hash: asBytesOfSize(arr[1], HASH32_BYTES, `${path}[1]`),
   };
 };
 
@@ -139,7 +155,7 @@ export const decodeCredential = (
   const arr = asList(m, path);
   expectLen(arr, 2, 2, path);
   const tag = asNumber(arr[0], `${path}[0]`);
-  const hash = asBytes(arr[1], `${path}[1]`);
+  const hash = asBytesOfSize(arr[1], HASH28_BYTES, `${path}[1]`);
   switch (tag) {
     case CredentialTag.Key:
       return { type: "key", keyHash: hash };
@@ -164,12 +180,13 @@ export const decodeSubmissionMode = (
   const tag = asNumber(arr[0], `${path}[0]`);
   switch (tag) {
     case SubmissionModeTag.Public:
+      expectLen(arr, 1, 1, path); // `[0]` — no trailing elements
       return { type: "public" };
     case SubmissionModeTag.Sealed:
       expectLen(arr, 4, 4, path);
       return {
         type: "sealed",
-        chainHash: asBytes(arr[1], `${path}[1]`),
+        chainHash: asBytesOfSize(arr[1], HASH32_BYTES, `${path}[1]`),
         round: asNumber(arr[2], `${path}[2]`),
         paddingSize: asNumber(arr[3], `${path}[3]`),
       };
@@ -347,16 +364,15 @@ export const decodeQuestion = (m: Metadatum, path = "question"): Question => {
 const decodeUintPairs = <T>(
   m: Metadatum,
   path: string,
-  make: (a: number, b: bigint) => T,
+  make: (a: number, b: bigint, bPath: string) => T,
 ): T[] => {
   const arr = asList(m, path);
+  if (arr.length === 0) fail("expected non-empty pair list", path); // CDDL [+ …]
   return arr.map((pair, i) => {
     const p = asList(pair, `${path}[${i}]`);
     expectLen(p, 2, 2, `${path}[${i}]`);
-    return make(
-      asNumber(p[0], `${path}[${i}][0]`),
-      asInt(p[1], `${path}[${i}][1]`),
-    );
+    const bPath = `${path}[${i}][1]`;
+    return make(asNumber(p[0], `${path}[${i}][0]`), asInt(p[1], bPath), bPath);
   });
 };
 
@@ -408,7 +424,10 @@ export const decodeAnswerItem = (m: Metadatum, path = "answer"): AnswerItem => {
         allocations: decodeUintPairs<PointsAllocation>(
           arr[2],
           `${path}[2]`,
-          (optionIndex, points) => ({ optionIndex, points: Number(points) }),
+          (optionIndex, points, p) => ({
+            optionIndex,
+            points: safeNumber(points, p), // checked, like every other integer
+          }),
         ),
       };
     case QuestionTag.Rating:
@@ -440,6 +459,8 @@ const decodeResponseAnswers = (
   if (arr.length > 0 && isBytes(arr[0])) {
     return { type: "sealed", ciphertext: decodeChunkedBytes(m) };
   }
+  // CDDL: response_answers = [+ answer_item] / chunked_bytes — never empty.
+  if (arr.length === 0) fail("expected non-empty answer list", path);
   return {
     type: "public",
     answers: arr.map((a, i) => decodeAnswerItem(a, `${path}[${i}]`)),

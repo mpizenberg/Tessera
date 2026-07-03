@@ -79,6 +79,10 @@ export const MAX_CHUNK_BYTES = 64;
 
 const utf8Encoder = new TextEncoder();
 
+/** UTF-8 byte length of a string — the unit Cardano's 64-byte text limit uses. */
+export const utf8ByteLength = (text: string): number =>
+  utf8Encoder.encode(text).length;
+
 /**
  * Split a string into UTF-8 chunks of at most 64 bytes, never splitting a
  * Unicode code point. Concatenating the chunks reconstructs the input.

@@ -20,6 +20,8 @@ import {
   encodeChunkedBytes,
   encodeChunkedText,
   intMap,
+  MAX_CHUNK_BYTES,
+  utf8ByteLength,
   type Metadatum,
 } from "./metadatum.js";
 import type {
@@ -40,6 +42,20 @@ import type {
 } from "./types.js";
 
 const big = (n: number): bigint => BigInt(n);
+
+/**
+ * Option / rating-scale labels are `bounded_text` (≤64 UTF-8 bytes,
+ * non-chunkable) per the CDDL. Reject over-long labels here rather than let them
+ * surface as an opaque serializer failure at tx-build time.
+ */
+const boundedLabel = (label: string, kind: string): string => {
+  if (utf8ByteLength(label) > MAX_CHUNK_BYTES) {
+    throw new Cip179EncodeError(
+      `${kind} label exceeds ${MAX_CHUNK_BYTES} UTF-8 bytes: ${JSON.stringify(label)}`,
+    );
+  }
+  return label;
+};
 
 // ----------------------------------------------------------------------------
 // Primitives
@@ -71,7 +87,9 @@ export const encodeSubmissionMode = (mode: SubmissionMode): Metadatum =>
       ];
 
 const encodeOptionsOrCount = (opts: OptionsOrCount): Metadatum =>
-  opts.type === "options" ? opts.labels.map((l) => l) : big(opts.count);
+  opts.type === "options"
+    ? opts.labels.map((l) => boundedLabel(l, "option"))
+    : big(opts.count);
 
 const encodeNumericConstraints = (c: NumericConstraints): Metadatum =>
   c.step === undefined ? [c.min, c.max] : [c.min, c.max, c.step];
@@ -81,7 +99,7 @@ const encodeRatingScale = (scale: RatingScale): Metadatum => {
     case "numeric":
       return encodeNumericConstraints(scale.constraints);
     case "labels":
-      return scale.labels.map((l) => l);
+      return scale.labels.map((l) => boundedLabel(l, "rating scale"));
     case "count":
       return big(scale.count);
   }

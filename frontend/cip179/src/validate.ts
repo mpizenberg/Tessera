@@ -12,6 +12,7 @@
  */
 
 import { SPEC_VERSION } from "./constants.js";
+import { MAX_CHUNK_BYTES, utf8ByteLength } from "./metadatum.js";
 import type {
   AnswerItem,
   NumericConstraints,
@@ -31,6 +32,14 @@ const hasDuplicates = (xs: readonly number[]): boolean =>
 
 const inRange = (x: number, n: number): boolean => x >= 0 && x < n;
 
+/** Flag any `bounded_text` label over the 64 UTF-8 byte CDDL limit. */
+const checkLabels = (labels: readonly string[], where: string, out: string[]) =>
+  labels.forEach((l, i) => {
+    if (utf8ByteLength(l) > MAX_CHUNK_BYTES) {
+      out.push(`${where}: label ${i} exceeds ${MAX_CHUNK_BYTES} UTF-8 bytes`);
+    }
+  });
+
 // ----------------------------------------------------------------------------
 // Definition validation
 // ----------------------------------------------------------------------------
@@ -43,6 +52,7 @@ const validateOptionsOrCount = (
 ): void => {
   if (opts.type === "options") {
     if (opts.labels.length < 2) out.push(`${where}: needs at least 2 options`);
+    checkLabels(opts.labels, where, out);
   } else {
     if (opts.count < 2) out.push(`${where}: option count must be >= 2`);
     if (!externalMode) {
@@ -77,6 +87,7 @@ const validateRatingScale = (
       if (scale.labels.length < 2) {
         out.push(`${where}: rating scale needs at least 2 labels`);
       }
+      checkLabels(scale.labels, `${where} scale`, out);
       break;
     case "count":
       if (scale.count < 2)
@@ -284,8 +295,10 @@ const validateAnswer = (
       if (answer.allocations.some((a) => a.points < 0)) {
         out.push(`${where}: points must be >= 0`);
       }
-      const sum = answer.allocations.reduce((s, a) => s + a.points, 0);
-      if (sum !== question.budget) {
+      // Exact integer arithmetic — a float sum can lose precision above 2^53
+      // and disagree with a bigint verifier on the hash-relevant verdict.
+      const sum = answer.allocations.reduce((s, a) => s + BigInt(a.points), 0n);
+      if (sum !== BigInt(question.budget)) {
         out.push(`${where}: points sum ${sum} != budget ${question.budget}`);
       }
       break;
