@@ -29,7 +29,7 @@ the fix deviated from the report's suggested direction.
 | 9 | ProposeInfoAction reads list resource unguarded → crashes to error screen | done 1598ec9 |
 | 10 | Wallet-connect failures silently swallowed by header menu | done f41167c |
 | 11 | Survey screen state leaks across surveys (component not keyed on `:key`) | done cabbe81 |
-| 12 | Test-suite gaps: finalize pending-verdict behavior, koios pagination, verifier dedup-tie/mech-B, cip179 roundtrips, create/respond untested | done (pending) — substantially addressed: finalize pending-verdict/postpone, missing-record, incomplete-snapshot, same-epoch credential-union; koios incomplete-on-batch-failure + scan pagination + cross-page dedup; verifier same-slot dedup-tie; cip179 decode/validate bounds (findings 6-8,13,24); tlock label/count scales. DEFERRED: verifier mechanism-B + Keyholder tests, create.ts/respond.ts builder tests, full cip179 per-type roundtrips |
+| 12 | Test-suite gaps: finalize pending-verdict behavior, koios pagination, verifier dedup-tie/mech-B, cip179 roundtrips, create/respond untested | done 3451f80 — substantially addressed: finalize pending-verdict/postpone, missing-record, incomplete-snapshot, same-epoch credential-union; koios incomplete-on-batch-failure + scan pagination + cross-page dedup; verifier same-slot dedup-tie; cip179 decode/validate bounds (findings 6-8,13,24); tlock label/count scales. DEFERRED: verifier mechanism-B + Keyholder tests, create.ts/respond.ts builder tests, full cip179 per-type roundtrips |
 | 13 | cip179: empty answer arrays accepted against CDDL `[+ …]` | done 53ff9f9 — reject empty public answer array and empty points/rating pair lists at decode |
 | 14 | `addOptimisticSurvey` silently no-ops when list isn't loaded | done fa78542 |
 
@@ -41,7 +41,7 @@ the fix deviated from the report's suggested direction.
 | 16 | `mechanismA` duplicates `cancellationVerified` | done f8ecb70 |
 | 17 | Can't-happen `?? {slot: 0, epochNo: 0}` fallback in `fetchAll` — throw instead | done 681fc09 |
 | 18 | Presentation floats/types (`Bar.pct`, sample cap) inside `@tessera/core` tally.ts vs §4 claim | done 5dff8e2 — doc-scoped (§4 clarified; tally.ts marked display-only). Kept display tally in core; not moved app-side |
-| 19 | Post-close cancellations invisible outside the artifact (list shows "Ended", raw tally in direct mode) | todo |
+| 19 | Post-close cancellations invisible outside the artifact (list shows "Ended", raw tally in direct mode) | won't-fix now — a correct fix needs the backend list payload to expose finalized-cancelled status. The frontend snapshot carries proof:null for closed-survey cancellations (the koios scan only verifies OPEN ones, by design), so cancellationStates cannot verify them locally, and marking a closed survey 'claimed' from an unverified cancellation would mislabel it. Aligning correctly = backend surveyList change + core aggregate; deferred as a follow-up rather than ship a speculative status change |
 | 20 | Dead artifact error guard in Survey.tsx (fetcher `.catch(() => null)` makes it unreachable) | done cabbe81 |
 | 21 | Numeric slider precision above 2^53 (`sliderOk` doesn't bound min/max) | done 45222db |
 | 22 | Delete stale `frontend/app/review-progress.md` / `review-report.md` | done cfde1b3 |
