@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { decodeCancellationProof, decodeTxProof } from "./txProof";
+import { decodeTxProof } from "./txProof";
 import { DREP_VOTE_TX_CBOR, SPO_VOTE_TX_CBOR } from "./fixtures/voteTxs";
 
 describe("decodeTxProof — voting_procedures (real preview vote txs)", () => {
@@ -46,9 +46,5 @@ describe("decodeTxProof — voting_procedures (real preview vote txs)", () => {
 
   it("returns null on undecodable CBOR (→ unproven, never a throw)", async () => {
     expect(await decodeTxProof("not-cbor")).toBeNull();
-  });
-
-  it("keeps decodeCancellationProof as an alias", () => {
-    expect(decodeCancellationProof).toBe(decodeTxProof);
   });
 });

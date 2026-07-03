@@ -225,9 +225,3 @@ export async function decodeTxProof(
     return null;
   }
 }
-
-/**
- * Cancellation owner-proof is the mechanism-A slice of {@link decodeTxProof};
- * kept as a named alias for the read path that only verifies cancellations.
- */
-export const decodeCancellationProof = decodeTxProof;

@@ -181,46 +181,9 @@ export const decodeChunkedBytes = (m: Metadatum): Uint8Array => {
 };
 
 // ----------------------------------------------------------------------------
-// Internal helpers
+// Map access
 // ----------------------------------------------------------------------------
-
-const { isSafeInteger } = Number;
-
-/** Coerce a metadatum integer to a JS number, asserting it is a safe integer. */
-export const toSafeNumber = (m: Metadatum, what: string): number => {
-  if (!isInt(m)) throw new TypeError(`expected integer for ${what}`);
-  if (
-    m > BigInt(Number.MAX_SAFE_INTEGER) ||
-    m < BigInt(Number.MIN_SAFE_INTEGER)
-  ) {
-    throw new RangeError(`${what} out of safe integer range: ${m}`);
-  }
-  return Number(m);
-};
-
-/** Coerce a metadatum integer to a bigint. */
-export const toBigInt = (m: Metadatum, what: string): bigint => {
-  if (!isInt(m)) throw new TypeError(`expected integer for ${what}`);
-  return m;
-};
-
-export const expectList = (m: Metadatum, what: string): MetadatumList => {
-  if (!isList(m)) throw new TypeError(`expected array for ${what}`);
-  return m;
-};
-
-export const expectMap = (m: Metadatum, what: string): MetadatumMap => {
-  if (!isMap(m)) throw new TypeError(`expected map for ${what}`);
-  return m;
-};
-
-export const expectBytes = (m: Metadatum, what: string): Uint8Array => {
-  if (!isBytes(m)) throw new TypeError(`expected byte string for ${what}`);
-  return m;
-};
 
 /** Read an integer key from a metadatum map. */
 export const getKey = (map: MetadatumMap, key: number): Metadatum | undefined =>
   map.get(BigInt(key));
-
-export { isSafeInteger };
