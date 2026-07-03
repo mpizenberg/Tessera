@@ -598,9 +598,11 @@ const QuestionResult: Component<{
   const join = (suffix: string): string =>
     t("survey.typeLabelJoined", { base: baseType(props.q.type), suffix });
   return (
-    <Show when={props.tally}>
-      {(tallyOf) => {
-        const tally = tallyOf();
+    // `keyed` matters: the tally is swapped for a new object on every role-
+    // filter change while staying truthy, and only a keyed Show re-renders
+    // its children on a value (not truthiness) change.
+    <Show when={props.tally} keyed>
+      {(tally) => {
         switch (tally.kind) {
           case "bars": {
             const typeLabel =
@@ -1367,9 +1369,10 @@ const WeightedQuestionResult: Component<{
       ? String(count)
       : t("survey.weightedBarMeta", { ada: formatAda(weight), n: n(count) });
   return (
-    <Show when={props.view}>
-      {(viewOf) => {
-        const v = viewOf();
+    // `keyed` for the same reason as QuestionResult: the view object is
+    // replaced (weighting switch) while staying truthy.
+    <Show when={props.view} keyed>
+      {(v) => {
         switch (v.kind) {
           case "bars":
             return (
