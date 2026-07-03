@@ -14,7 +14,7 @@
  * by design: a validation hiccup must never sink the snapshot refresh.
  */
 
-import { validateResponse } from "cip-179";
+import { Role, validateResponse } from "cip-179";
 
 import {
   credentialKey,
@@ -29,22 +29,36 @@ import type { TallyStore, ValidatedResponseRow } from "./store";
 import { validationKey } from "./store";
 
 /**
+ * Roles that carry a Conway voter tag and so *can* be proven via a governance
+ * vote binding (mechanism B) — the only roles whose verdict depends on the
+ * survey's gov links. Stakeholder/Keyholder can never bind, so their proof is
+ * link-independent and safe to freeze even when the gov-links fetch failed.
+ */
+const BINDABLE_ROLES: ReadonlySet<number> = new Set([
+  Role.CC,
+  Role.DRep,
+  Role.SPO,
+]);
+
+/**
  * Validate the snapshot's responses that were never (fully) validated before,
- * and persist the results. Responses referencing a survey outside the snapshot
- * are skipped entirely (no row) — they can't be tallied anyway.
+ * plus any whose survey's governance link changed since their last verdict, and
+ * persist the results. Responses referencing a survey outside the snapshot are
+ * skipped entirely (no row) — they can't be tallied anyway.
+ *
+ * `govLinksReliable` is false when this refresh's gov-links fetch failed (an
+ * empty list then means "unknown", not "none"). In that case a link-dependent
+ * verdict cannot be trusted — a hidden link would make mechanism A the wrong
+ * mechanism — so bindable-role verdicts are left null and retried, and no row
+ * is re-validated on an apparent link change.
  */
 export async function validateNewResponses(
   store: TallyStore,
   records: Cip179Records,
   govLinks: readonly GovLink[],
   source: Pick<KoiosDataSource, "txBlockIndices" | "txProofs">,
+  govLinksReliable = true,
 ): Promise<void> {
-  const completed = await store.completedValidationKeys();
-  const candidates = records.responses.filter(
-    (r) => !completed.has(validationKey(r.txHash, r.responseIndex)),
-  );
-  if (candidates.length === 0) return;
-
   const defByKey = new Map(
     records.surveys.map((s) => [refKey(s.ref), s.definition]),
   );
@@ -57,6 +71,19 @@ export async function validateNewResponses(
       linkByKey.set(link.surveyKey, link.actionId);
     }
   }
+
+  const completed = await store.completedValidations();
+  const candidates = records.responses.filter((r) => {
+    const key = validationKey(r.txHash, r.responseIndex);
+    if (!completed.has(key)) return true; // never validated / enrichment pending
+    if (!govLinksReliable) return false; // can't re-evaluate links this refresh
+    if (!BINDABLE_ROLES.has(r.response.role)) return false; // link-independent
+    // Re-validate when the survey's current link differs from the one this
+    // verdict was pinned to (a link appeared, changed, or was removed).
+    const currentLink = linkByKey.get(refKey(r.response.surveyRef)) ?? null;
+    return currentLink !== completed.get(key);
+  });
+  if (candidates.length === 0) return;
 
   const txHashes = [...new Set(candidates.map((r) => r.txHash))];
   const [blockIndices, proofs] = await Promise.all([
@@ -71,6 +98,15 @@ export async function validateNewResponses(
     const def = defByKey.get(surveyKey);
     if (!def) continue; // unknown survey — nothing to validate against
     const proof = proofs.get(r.txHash) ?? null;
+    const link = linkByKey.get(surveyKey) ?? null;
+    // With links unknown this refresh, a bindable role's verdict can't be
+    // trusted (a hidden binding might override mechanism A) — leave it to retry.
+    const proofOk =
+      !govLinksReliable && BINDABLE_ROLES.has(r.response.role)
+        ? null
+        : proof
+          ? responseCredentialProven(r.response, proof, link)
+          : null;
     rows.push({
       txHash: r.txHash,
       responseIndex: r.responseIndex,
@@ -80,13 +116,8 @@ export async function validateNewResponses(
       slot: r.slot,
       epochNo: r.epochNo,
       blockIndex: blockIndices.get(r.txHash) ?? null,
-      proofOk: proof
-        ? responseCredentialProven(
-            r.response,
-            proof,
-            linkByKey.get(surveyKey) ?? null,
-          )
-        : null,
+      proofOk,
+      linkedActionId: link,
       wellFormed: validateResponse(def, r.response).length === 0,
       checkedAt,
     });

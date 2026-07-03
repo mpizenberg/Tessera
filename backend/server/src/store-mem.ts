@@ -46,11 +46,14 @@ export function memBackendStore(
       snapshot = s;
     },
 
-    async completedValidationKeys() {
-      return new Set(
+    async completedValidations() {
+      return new Map(
         [...validated.values()]
           .filter((r) => r.blockIndex !== null && r.proofOk !== null)
-          .map((r) => validationKey(r.txHash, r.responseIndex)),
+          .map((r) => [
+            validationKey(r.txHash, r.responseIndex),
+            r.linkedActionId,
+          ]),
       );
     },
     async upsertValidatedResponses(rows) {

@@ -229,6 +229,67 @@ describe("validateNewResponses", () => {
     expect(store2.rows.get("t1:0")!.proofOk).toBe(false);
   });
 
+  it("leaves a bindable-role verdict pending when gov links are unreliable (finding 2)", async () => {
+    const store = memTallyStore();
+    // A DRep tx that only signs (mechanism A would pass) — but with links
+    // unknown this refresh, a hidden binding could still override it.
+    const source = fakeSource({ t1: signedProof(1), t2: signedProof(2) }, {
+      t1: 1,
+      t2: 1,
+    });
+    await validateNewResponses(
+      store,
+      records(response("t1", 1, Role.DRep), response("t2", 2, Role.Stakeholder)),
+      [], // empty because the fetch FAILED, not because there are no links
+      source,
+      false, // govLinksReliable = false
+    );
+    // Bindable role: verdict deferred (retry). Non-bindable: frozen safely.
+    expect(store.rows.get("t1:0")!.proofOk).toBe(null);
+    expect(store.rows.get("t2:0")!.proofOk).toBe(true);
+  });
+
+  it("re-validates a completed row when its survey's link appears later (finding 2)", async () => {
+    const ACTION = "gov_action1linked";
+    const store = memTallyStore();
+    // A DRep tx with no signature, only a vote binding the linked action.
+    const source = fakeSource(
+      {
+        t1: {
+          requiredSigners: [],
+          nativeScripts: [],
+          votes: [
+            { voterTag: 2, credentialHash: hexOf(1), actionIds: [ACTION] },
+          ],
+        },
+      },
+      { t1: 3 },
+    );
+    const recs = records(response("t1", 1, Role.DRep));
+
+    // First refresh: links resolved but this survey's link not yet indexed.
+    await validateNewResponses(store, recs, [], source, true);
+    expect(store.rows.get("t1:0")!.proofOk).toBe(false); // mechanism A fails
+    expect(store.rows.get("t1:0")!.linkedActionId).toBe(null);
+    expect(source.txProofs).toHaveBeenCalledTimes(1);
+
+    // Later refresh: the link now resolves → the completed verdict is redone.
+    const link: GovLink = {
+      surveyKey: SURVEY_KEY,
+      actionId: ACTION,
+      endEpoch: DEF.endEpoch,
+      title: null,
+    };
+    await validateNewResponses(store, recs, [link], source, true);
+    expect(source.txProofs).toHaveBeenCalledTimes(2); // re-fetched on link change
+    expect(store.rows.get("t1:0")!.proofOk).toBe(true); // mechanism B now proves it
+    expect(store.rows.get("t1:0")!.linkedActionId).toBe(ACTION);
+
+    // Steady state: link unchanged → no further re-fetch.
+    await validateNewResponses(store, recs, [link], source, true);
+    expect(source.txProofs).toHaveBeenCalledTimes(2);
+  });
+
   it("marks ill-formed responses (ineligible role) as not well-formed", async () => {
     const store = memTallyStore();
     const source = fakeSource({ t1: signedProof(1) }, { t1: 0 });

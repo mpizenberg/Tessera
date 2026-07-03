@@ -67,16 +67,24 @@ export function d1BackendStore(db: D1Like): BackendStore {
         .run();
     },
 
-    async completedValidationKeys(): Promise<Set<string>> {
+    async completedValidations(): Promise<Map<string, string | null>> {
       const { results } = await db
         .prepare(
-          `SELECT tx_hash AS txHash, response_index AS responseIndex
+          `SELECT tx_hash AS txHash, response_index AS responseIndex,
+                  linked_action_id AS linkedActionId
            FROM validated_response
            WHERE block_index IS NOT NULL AND proof_ok IS NOT NULL`,
         )
-        .all<{ txHash: string; responseIndex: number }>();
-      return new Set(
-        results.map((r) => validationKey(r.txHash, r.responseIndex)),
+        .all<{
+          txHash: string;
+          responseIndex: number;
+          linkedActionId: string | null;
+        }>();
+      return new Map(
+        results.map((r) => [
+          validationKey(r.txHash, r.responseIndex),
+          r.linkedActionId,
+        ]),
       );
     },
     async upsertValidatedResponses(
@@ -86,8 +94,9 @@ export function d1BackendStore(db: D1Like): BackendStore {
       const stmt = db.prepare(`
         INSERT INTO validated_response
           (tx_hash, response_index, survey_key, role, credential,
-           slot, epoch_no, block_index, proof_ok, well_formed, checked_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           slot, epoch_no, block_index, proof_ok, linked_action_id,
+           well_formed, checked_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(tx_hash, response_index) DO UPDATE SET
           survey_key = excluded.survey_key,
           role = excluded.role,
@@ -96,6 +105,7 @@ export function d1BackendStore(db: D1Like): BackendStore {
           epoch_no = excluded.epoch_no,
           block_index = excluded.block_index,
           proof_ok = excluded.proof_ok,
+          linked_action_id = excluded.linked_action_id,
           well_formed = excluded.well_formed,
           checked_at = excluded.checked_at
       `);
@@ -111,6 +121,7 @@ export function d1BackendStore(db: D1Like): BackendStore {
             r.epochNo,
             r.blockIndex,
             r.proofOk === null ? null : r.proofOk ? 1 : 0,
+            r.linkedActionId,
             r.wellFormed ? 1 : 0,
             r.checkedAt,
           ),
@@ -125,8 +136,8 @@ export function d1BackendStore(db: D1Like): BackendStore {
           `SELECT tx_hash AS txHash, response_index AS responseIndex,
                   survey_key AS surveyKey, role, credential, slot,
                   epoch_no AS epochNo, block_index AS blockIndex,
-                  proof_ok AS proofOk, well_formed AS wellFormed,
-                  checked_at AS checkedAt
+                  proof_ok AS proofOk, linked_action_id AS linkedActionId,
+                  well_formed AS wellFormed, checked_at AS checkedAt
            FROM validated_response WHERE survey_key = ?`,
         )
         .bind(surveyKey)

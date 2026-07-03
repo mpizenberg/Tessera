@@ -45,6 +45,14 @@ export interface ValidatedResponseRow {
   readonly blockIndex: number | null;
   /** Rule 2 (mechanism A/B credential proof), or null = retry. */
   readonly proofOk: boolean | null;
+  /**
+   * The governance action (bech32 CIP-129 `gov_action1…`) this row's `proofOk`
+   * was evaluated against — mechanism B's linking action, or null for a
+   * standalone survey. Persisted so the verdict can be re-evaluated when a
+   * survey's link set changes (Koios resolves anchors lazily; a link can appear
+   * after the first validation). Meaningful only when `proofOk` is non-null.
+   */
+  readonly linkedActionId: string | null;
   /** Full codec validation against the on-chain definition. */
   readonly wellFormed: boolean;
   /** Unix seconds of the (latest) validation attempt. */
@@ -84,10 +92,12 @@ export interface ArtifactRow {
 /** Phase-2 tally persistence (ARCHITECTURE.md §6.5), same database. */
 export interface TallyStore {
   /**
-   * Keys ({@link validationKey}) of rows needing no retry (both enrichments
-   * present) — the refresh's "skip these" set.
+   * Rows needing no enrichment retry (both `blockIndex` and `proofOk` present),
+   * as a map from {@link validationKey} to the `linkedActionId` the verdict was
+   * evaluated against. A refresh skips these unless the survey's current link
+   * differs from the stored one (then the verdict is re-evaluated).
    */
-  completedValidationKeys(): Promise<Set<string>>;
+  completedValidations(): Promise<Map<string, string | null>>;
   upsertValidatedResponses(
     rows: readonly ValidatedResponseRow[],
   ): Promise<void>;

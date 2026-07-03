@@ -121,6 +121,7 @@ function validatedRow(
     epochNo: r.epochNo,
     blockIndex: 0,
     proofOk: true,
+    linkedActionId: null,
     wellFormed: true,
     checkedAt: 1,
     ...overrides,

@@ -25,11 +25,15 @@ export async function refreshSnapshot(
     source.chainTip(),
   ]);
   // Governance links are best-effort enrichment; a failure must not sink the
-  // snapshot (mirrors the app's behaviour).
+  // snapshot (mirrors the app's behaviour). But an empty list on *failure* means
+  // "unknown", not "none" — validation must not freeze a link-dependent verdict
+  // against it, so the failure is signalled separately.
+  let govLinksReliable = true;
   const govLinks = await source
     .fetchGovernanceLinks(config.app.sinceUnix)
     .catch((err) => {
       console.warn(`gov links fetch failed: ${String(err)}`);
+      govLinksReliable = false;
       return [];
     });
 
@@ -46,7 +50,13 @@ export async function refreshSnapshot(
   // §6.3 validation rides the same refresh (Node loop + Worker cron alike):
   // incremental, so already-validated responses cost nothing. Best-effort —
   // the snapshot above is already stored either way.
-  await validateNewResponses(store, records, govLinks, source).catch((err) =>
+  await validateNewResponses(
+    store,
+    records,
+    govLinks,
+    source,
+    govLinksReliable,
+  ).catch((err) =>
     console.warn(`response validation failed (will retry): ${String(err)}`),
   );
 
