@@ -10,7 +10,10 @@
  *  - **Koios token**: optional. With the backend configured, reads and
  *    transaction-building both go through it — no token needed. A token is only
  *    for the direct-Koios path (no backend). Applies on save.
- *  - the Plain/Pro detail toggle (mirrors the header switch).
+ *
+ * The Plain/Pro detail toggle (mirroring the header switch) also lives here, but
+ * it is session-only in-memory state — unlike the tokens above, it is not
+ * persisted to localStorage.
  */
 
 import { For, Show, createSignal, type Component, type JSX } from "solid-js";

@@ -5,7 +5,7 @@ import type { Network } from "~/config";
 import { voteDeadlineUnix, type SurveyAggregate } from "~/domain/survey";
 import type { ChainTip } from "~/data/source";
 import { IPFS_GATEWAYS } from "~/enrichment/providers";
-import { t, n } from "~/i18n";
+import { t, n, type MsgKey } from "~/i18n";
 
 /**
  * Link to a transaction on the Cardano Explorer aggregator. Mainnet lives at
@@ -102,26 +102,22 @@ const ROLE_COLORS: Record<number, readonly [string, string]> = {
   [Role.Keyholder]: ["#9A6B1E", "#F6EDD9"],
 };
 
-/** One-line explanation of what each role is and how it's claimed. */
-const ROLE_DESCRIPTION: Record<number, string> = {
-  [Role.DRep]:
-    "A registered delegate representative — claimed in-browser via your wallet's CIP-95 DRep key.",
-  [Role.SPO]:
-    "A stake pool operator — proven with cold/hot pool keys a browser wallet can't hold.",
-  [Role.CC]:
-    "A Constitutional Committee member — proven with committee keys a browser wallet can't hold.",
-  [Role.Stakeholder]:
-    "Any ada holder with a stake key — claimed in-browser by your connected wallet.",
-  [Role.Keyholder]:
-    "Anyone with a wallet — claimed in-browser with your payment (spending) key; no registration or on-chain activity needed.",
-};
+/** i18n key (in the `roles` namespace) for each role's one-line explanation. */
+const ROLE_DESCRIPTION_KEY = {
+  [Role.DRep]: "roles.drep",
+  [Role.SPO]: "roles.spo",
+  [Role.CC]: "roles.cc",
+  [Role.Stakeholder]: "roles.stakeholder",
+  [Role.Keyholder]: "roles.keyholder",
+} as const satisfies Record<number, MsgKey>;
 
 export function roleLabel(role: number): string {
   return ROLE_LABEL[role] ?? `Role ${role}`;
 }
 
 export function roleDescription(role: number): string {
-  return ROLE_DESCRIPTION[role] ?? "";
+  const key = ROLE_DESCRIPTION_KEY[role as keyof typeof ROLE_DESCRIPTION_KEY];
+  return key ? t(key) : "";
 }
 
 /**

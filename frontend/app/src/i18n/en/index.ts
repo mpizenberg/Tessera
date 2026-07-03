@@ -29,6 +29,7 @@ import header from "./header";
 import onchainPreview from "./onchainPreview";
 import proposeInfoAction from "./proposeInfoAction";
 import respond from "./respond";
+import roles from "./roles";
 import settings from "./settings";
 import submitProgress from "./submitProgress";
 import survey from "./survey";
@@ -44,6 +45,7 @@ const en = {
   onchainPreview,
   proposeInfoAction,
   respond,
+  roles,
   settings,
   submitProgress,
   survey,

@@ -110,7 +110,11 @@ export type NewPendingTx = Pick<
   "txHash" | "kind" | "surveyKey" | "title"
 >;
 
-/** Poll Koios for inclusion at this cadence while anything is pending. */
+/**
+ * Poll the data source for inclusion at this cadence while anything is pending.
+ * (The `DataSource` seam — the indexer in the default deployment, Koios direct
+ * otherwise — not Koios unconditionally.)
+ */
 const POLL_INTERVAL_MS = 20_000;
 /** Keep a confirmed tx visible briefly before clearing it. */
 const CONFIRMED_LINGER_MS = 6_000;
@@ -272,8 +276,9 @@ export const AppProvider: ParentComponent = (props) => {
   };
 
   // Pending-tx tracking. A CIP-30-accepted tx will land (no input conflict), so
-  // we poll Koios only to flip the indicator pending → confirmed — never to
-  // refetch the snapshot (the optimistic copy we already show is on-chain).
+  // we poll the data source only to flip the indicator pending → confirmed —
+  // never to refetch the snapshot (the optimistic copy we already show is
+  // on-chain).
   const [pendingTxs, setPendingTxs] = createStore<PendingTx[]>([]);
   const [optimisticSurveys, setOptimisticSurveys] = createSignal<
     readonly SurveyAggregate[]
