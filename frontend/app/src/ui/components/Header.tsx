@@ -217,7 +217,12 @@ export const Header: Component = () => {
                 fallback={
                   <WalletPicker
                     onPick={(k) => {
-                      void app.connect(k).then(() => setMenuOpen(false));
+                      // connect() never rejects — it stashes failures in
+                      // connectError, which only renders inside this menu. Close
+                      // just on success, so a failure stays visible to the user.
+                      void app.connect(k).then(() => {
+                        if (app.wallet()) setMenuOpen(false);
+                      });
                     }}
                   />
                 }

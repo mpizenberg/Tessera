@@ -26,8 +26,8 @@ the fix deviated from the report's suggested direction.
 | 6 | cip179: no byte-length checks on hashes/tx ids (`HASH28_BYTES`/`HASH32_BYTES` unused) | done 53ff9f9 — enforce 28/32-byte hashes and `uint .size 2` index at decode |
 | 7 | cip179: points decoded via unchecked `Number()`, budget validated with float sum | done 53ff9f9 — points via checked `safeNumber`; budget summed with BigInt |
 | 8 | cip179: option/scale labels encoded without the 64-byte bound | done 53ff9f9 — `boundedLabel` (≤64 UTF-8 bytes) in encode + `checkLabels` in validateDefinition |
-| 9 | ProposeInfoAction reads list resource unguarded → crashes to error screen | done (pending) |
-| 10 | Wallet-connect failures silently swallowed by header menu | todo |
+| 9 | ProposeInfoAction reads list resource unguarded → crashes to error screen | done 1598ec9 |
+| 10 | Wallet-connect failures silently swallowed by header menu | done (pending) |
 | 11 | Survey screen state leaks across surveys (component not keyed on `:key`) | todo |
 | 12 | Test-suite gaps: finalize pending-verdict behavior, koios pagination, verifier dedup-tie/mech-B, cip179 roundtrips, create/respond untested | todo |
 | 13 | cip179: empty answer arrays accepted against CDDL `[+ …]` | done 53ff9f9 — reject empty public answer array and empty points/rating pair lists at decode |
