@@ -1461,7 +1461,11 @@ const ResultsBody: Component<{
   excludedRecords: readonly ExcludedRecord[];
 }> = (props) => {
   const app = useApp();
-  const [roleFilter, setRoleFilter] = createSignal<number | "all">("all");
+  // Roles are independent electorates, so there is no "all roles" tally — the
+  // view always shows exactly one role. `pickedRole` is the user's explicit
+  // choice; `roleFilter` falls back to the first responded role when nothing
+  // is picked yet (or the picked role no longer has responses after a refresh).
+  const [pickedRole, setPickedRole] = createSignal<number | null>(null);
   const [exclOpen, setExclOpen] = createSignal(false);
   const excludedTotal = (): number => props.excludedRecords.length;
   const exclusionSummary = (): ExclusionSummary[] =>
@@ -1475,20 +1479,21 @@ const ResultsBody: Component<{
   const roleCounts = createMemo(() =>
     roleBreakdown(props.records.map((r) => r.response)),
   );
-  const filtered = createMemo<SurveyResponse[]>(() => {
-    const f = roleFilter();
-    return f === "all"
-      ? publicResponses()
-      : publicResponses().filter((r) => r.role === f);
+  const roleFilter = createMemo<number | null>(() => {
+    const counts = roleCounts();
+    const picked = pickedRole();
+    if (picked !== null && counts.some((rc) => rc.role === picked))
+      return picked;
+    return counts[0]?.role ?? null;
   });
+  const filtered = createMemo<SurveyResponse[]>(() =>
+    publicResponses().filter((r) => r.role === roleFilter()),
+  );
   // Same role filter, but keeping the full record (tx hash) for the per-response
   // breakdown. Mirrors `filtered`, which drops down to bare responses for tallying.
-  const filteredRecords = createMemo<ResponseRecord[]>(() => {
-    const f = roleFilter();
-    return f === "all"
-      ? props.records
-      : props.records.filter((r) => r.response.role === f);
-  });
+  const filteredRecords = createMemo<ResponseRecord[]>(() =>
+    props.records.filter((r) => r.response.role === roleFilter()),
+  );
   const tallies = createMemo<QuestionTally[]>(() =>
     tallySurvey(props.def, filtered(), filtered().length),
   );
@@ -1594,28 +1599,24 @@ const ResultsBody: Component<{
       {/* informational note — these raw counts are indicative, not a verdict */}
       <InfoNote />
 
-      {/* role filter */}
-      <div class={css.roleFilterRow}>
-        <span class={css.roleFilterLabel}>{t("survey.roleFilterLabel")}</span>
-        <div class={css.roleFilterBtns}>
-          <RoleFilterBtn
-            label={t("survey.roleFilterAll")}
-            count={publicResponses().length}
-            on={roleFilter() === "all"}
-            onClick={() => setRoleFilter("all")}
-          />
-          <For each={roleCounts()}>
-            {(rc) => (
-              <RoleFilterBtn
-                label={roleLabel(rc.role)}
-                count={rc.count}
-                on={roleFilter() === rc.role}
-                onClick={() => setRoleFilter(rc.role)}
-              />
-            )}
-          </For>
+      {/* role picker — one role at a time, no combined tally across roles */}
+      <Show when={roleCounts().length > 0}>
+        <div class={css.roleFilterRow}>
+          <span class={css.roleFilterLabel}>{t("survey.roleFilterLabel")}</span>
+          <div class={css.roleFilterBtns}>
+            <For each={roleCounts()}>
+              {(rc) => (
+                <RoleFilterBtn
+                  label={roleLabel(rc.role)}
+                  count={rc.count}
+                  on={roleFilter() === rc.role}
+                  onClick={() => setPickedRole(rc.role)}
+                />
+              )}
+            </For>
+          </div>
         </div>
-      </div>
+      </Show>
 
       {/* per-question results */}
       <div class={css.questionResults}>

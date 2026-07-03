@@ -93,7 +93,6 @@ const survey: Messages = {
   customCountLabel: "réponses libres · comptabilisées selon le schéma externe",
 
   // Empty states
-  roleFilterAll: "Tous",
   noResponsesYet: "Aucune réponse pour l'instant.",
 
   // Exclusion meta

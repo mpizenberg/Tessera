@@ -108,7 +108,6 @@ const survey = {
   customCountLabel: "free-form answers · tallied per the external schema",
 
   // Empty states
-  roleFilterAll: "All",
   noResponsesYet: "No responses yet.",
 
   // Exclusion meta (exclusionMeta)
