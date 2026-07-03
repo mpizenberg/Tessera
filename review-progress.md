@@ -29,7 +29,7 @@ the fix deviated from the report's suggested direction.
 | 9 | ProposeInfoAction reads list resource unguarded → crashes to error screen | done 1598ec9 |
 | 10 | Wallet-connect failures silently swallowed by header menu | done f41167c |
 | 11 | Survey screen state leaks across surveys (component not keyed on `:key`) | done cabbe81 |
-| 12 | Test-suite gaps: finalize pending-verdict behavior, koios pagination, verifier dedup-tie/mech-B, cip179 roundtrips, create/respond untested | todo |
+| 12 | Test-suite gaps: finalize pending-verdict behavior, koios pagination, verifier dedup-tie/mech-B, cip179 roundtrips, create/respond untested | done (pending) — substantially addressed: finalize pending-verdict/postpone, missing-record, incomplete-snapshot, same-epoch credential-union; koios incomplete-on-batch-failure + scan pagination + cross-page dedup; verifier same-slot dedup-tie; cip179 decode/validate bounds (findings 6-8,13,24); tlock label/count scales. DEFERRED: verifier mechanism-B + Keyholder tests, create.ts/respond.ts builder tests, full cip179 per-type roundtrips |
 | 13 | cip179: empty answer arrays accepted against CDDL `[+ …]` | done 53ff9f9 — reject empty public answer array and empty points/rating pair lists at decode |
 | 14 | `addOptimisticSurvey` silently no-ops when list isn't loaded | done fa78542 |
 
@@ -47,4 +47,4 @@ the fix deviated from the report's suggested direction.
 | 22 | Delete stale `frontend/app/review-progress.md` / `review-report.md` | done cfde1b3 |
 | 23 | Doc drift ×3: Settings Pro-toggle persistence claim, "poll Koios" comments, hardcoded English role descriptions | done 73107a4 |
 | 24 | cip179: `[0]` public submission mode accepts trailing elements | done 53ff9f9 — `expectLen(arr,1,1)` on public submission mode |
-| 25 | tlock padding tests never exercise labels/count scales or count-form options | done (pending) |
+| 25 | tlock padding tests never exercise labels/count scales or count-form options | done 5173e3b |

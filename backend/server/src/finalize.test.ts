@@ -233,6 +233,66 @@ describe("finalizeClosedSurveys", () => {
     ]);
   });
 
+  it("fetches the shared-credential union once across same-epoch surveys (§6.5)", async () => {
+    const store = memBackendStore();
+    const SURVEY_TX2 = "dd".repeat(32);
+    const SURVEY_KEY2 = `${SURVEY_TX2}:0`;
+    const s2: SurveyRecord = {
+      txHash: SURVEY_TX2,
+      slot: 100,
+      epochNo: 495,
+      ref: { txId: hexToBytes(SURVEY_TX2), index: 0 },
+      definition: definition(), // same end epoch
+    };
+    const CRED_C = keyCred("c3".repeat(28));
+    const KEY_C = credentialKey(CRED_C);
+    // survey 1 ← {A, B}; survey 2 ← {A, C} — A responds to both.
+    const rA1 = response("11".repeat(32), CRED_A, 0);
+    const rB1 = response("22".repeat(32), CRED_B, 0);
+    const rA2 = response("33".repeat(32), CRED_A, 0);
+    const rC2 = response("44".repeat(32), CRED_C, 0);
+    await seed(store, [
+      validatedRow(rA1),
+      validatedRow(rB1),
+      validatedRow(rA2, { surveyKey: SURVEY_KEY2 }),
+      validatedRow(rC2, { surveyKey: SURVEY_KEY2 }),
+    ]);
+
+    const seen: string[][] = [];
+    const inputs: TallyInputSource = {
+      async stakeholderWeights(_e, creds) {
+        seen.push(creds.map(credentialKey));
+        return new Map(
+          creds.map((c) => [
+            credentialKey(c),
+            { weight: 1n, registered: true } as WeightInfo,
+          ]),
+        );
+      },
+      async drepWeights() {
+        return new Map();
+      },
+      async stakeholderTotal() {
+        return 1_000n;
+      },
+      async drepTotal() {
+        return 2_000n;
+      },
+    };
+    const recs: Cip179Records = {
+      surveys: [survey(), s2],
+      responses: [rA1, rB1, rA2, rC2],
+      cancellations: [],
+    };
+
+    await finalizeClosedSurveys(CONFIG, store, inputs, noProofs, recs, TIP);
+    // A single stakeholder fetch for the whole epoch — the union {A,B,C}, with
+    // the shared A requested once, not once per survey.
+    expect(seen).toHaveLength(1);
+    expect([...seen[0]!].sort()).toEqual([KEY_A, KEY_B, KEY_C].sort());
+    expect(store.artifacts.size).toBe(2); // both surveys emitted
+  });
+
   it("postpones when the electorate total is unavailable, resumes without refetching weights", async () => {
     const store = memBackendStore();
     await seed(store, [validatedRow(rA)]);

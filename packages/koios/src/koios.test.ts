@@ -186,4 +186,98 @@ describe("fetchAll — chain position", () => {
       undefined, // browser scan doesn't enrich block indices (server-side only)
     ]);
   });
+
+  it("flags the snapshot incomplete when a tx_metadata batch fails (findings 3, 12)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes("/tx_by_metalabel")) {
+          return new Response(
+            JSON.stringify([
+              { tx_hash: RESP_TX, absolute_slot: 5_000, epoch_no: 1_340 },
+            ]),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/tx_metadata")) {
+          return new Response("boom", { status: 500 }); // the only batch fails
+        }
+        if (url.includes("/tip")) {
+          return new Response(
+            JSON.stringify([
+              {
+                epoch_no: 1_346,
+                abs_slot: 10_000,
+                epoch_slot: 100,
+                block_time: 1_750_000_000,
+              },
+            ]),
+            { status: 200 },
+          );
+        }
+        return new Response("[]", { status: 200 });
+      }),
+    );
+    const records = await new KoiosDataSource(CONFIG).fetchAll();
+    // The dropped batch carried the only tx, so the snapshot shrank — and it is
+    // flagged so finalization postpones rather than hashing a short tally.
+    expect(records.incomplete).toBe(true);
+    expect(records.responses).toHaveLength(0);
+  });
+
+  it("offset-paginates the label scan and dedups a tx seen on two pages (finding 12)", async () => {
+    const PAGE_SIZE = 100;
+    const T2 = "ef".repeat(32);
+    const offsets: number[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes("/tx_by_metalabel")) {
+          const offset = Number(new URL(url).searchParams.get("offset"));
+          offsets.push(offset);
+          // Page 0: a full page (all RESP_TX) forces a second page. Page 1:
+          // RESP_TX again (cross-page dup) + a short page → scan stops.
+          const rows =
+            offset === 0
+              ? Array.from({ length: PAGE_SIZE }, () => ({
+                  tx_hash: RESP_TX,
+                  absolute_slot: 5_000,
+                  epoch_no: 1_340,
+                }))
+              : [
+                  { tx_hash: RESP_TX, absolute_slot: 5_000, epoch_no: 1_340 },
+                  { tx_hash: T2, absolute_slot: 6_000, epoch_no: 1_341 },
+                ];
+          return new Response(JSON.stringify(rows), { status: 200 });
+        }
+        if (url.includes("/tx_metadata")) {
+          return new Response(
+            JSON.stringify([{ tx_hash: RESP_TX, metadata: responsesMetadata() }]),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/tip")) {
+          return new Response(
+            JSON.stringify([
+              {
+                epoch_no: 1_346,
+                abs_slot: 10_000,
+                epoch_slot: 100,
+                block_time: 1_750_000_000,
+              },
+            ]),
+            { status: 200 },
+          );
+        }
+        return new Response("[]", { status: 200 });
+      }),
+    );
+    const records = await new KoiosDataSource(CONFIG).fetchAll();
+    expect(offsets).toEqual([0, PAGE_SIZE]); // followed the offset cursor
+    // RESP_TX was seen 101 times across two pages but classified once.
+    expect(records.responses).toHaveLength(2);
+    expect(records.incomplete).toBe(false);
+  });
 });

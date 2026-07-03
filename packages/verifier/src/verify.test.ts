@@ -288,6 +288,78 @@ describe("verifyArtifact", () => {
     expect(artifactHash(tally)).toBe(result.rebuiltHash);
   });
 
+  it("breaks a same-slot dedup tie by block index (finding 12)", async () => {
+    // A responds twice in the same slot; the later-in-chain one (higher block
+    // index) wins. rA2 has the higher index, so a correct artifact counts it.
+    const rA1 = response("11".repeat(32), CRED_A, 0, 200); // "yes"
+    const rA2 = response("33".repeat(32), CRED_A, 1, 200); // "no", same slot
+    const tieBundle: SurveyBundle = { ...bundle, responses: [rA1, rA2] };
+    const tieProofs = new Map<string, TxProof | null>([
+      [rA1.txHash, { requiredSigners: ["a1".repeat(28)], nativeScripts: [], votes: [] }],
+      [rA2.txHash, { requiredSigners: ["a1".repeat(28)], nativeScripts: [], votes: [] }],
+    ]);
+    const responders = [
+      {
+        credentialKey: credentialKey(CRED_A),
+        weight: 100n,
+        txHash: rA2.txHash,
+        responseIndex: rA2.responseIndex,
+        response: rA2.response,
+      },
+    ];
+    const tally: TallyBody = {
+      rulesetHash: rulesetHash(),
+      network: "preview",
+      survey: { txId: SURVEY_TX, index: 0, endEpoch: END_EPOCH },
+      sealed: false,
+      perRole: [
+        {
+          role: Role.Stakeholder,
+          total: "1000",
+          responders: toArtifactResponders(responders),
+          questions: toArtifactQuestions(weightedTallySurvey(DEF, responders)),
+        },
+      ],
+    };
+    const artifact: TallyArtifact = {
+      tally,
+      provenance: {
+        source: { provider: "koios", baseUrl: "x" },
+        fetchedAt: 1,
+        byRole: [{ role: 3, endpoint: "account_stake_history" }],
+      },
+    };
+
+    // rA2 later in chain → matches.
+    const ok = await verifyArtifact(
+      inputs({
+        bundle: tieBundle,
+        proofs: tieProofs,
+        blockIndices: new Map([
+          [rA1.txHash, 0],
+          [rA2.txHash, 1],
+        ]),
+        artifact,
+      }),
+    );
+    expect(ok.match).toBe(true);
+
+    // Flip the ordering → the tie resolves to rA1 ("yes") instead, so the same
+    // artifact must MISMATCH. This is exactly the divergence finding 1 warns of.
+    const bad = await verifyArtifact(
+      inputs({
+        bundle: tieBundle,
+        proofs: tieProofs,
+        blockIndices: new Map([
+          [rA1.txHash, 1],
+          [rA2.txHash, 0],
+        ]),
+        artifact,
+      }),
+    );
+    expect(bad.match).toBe(false);
+  });
+
   it("falls back to the artifact's total (with a note) when unfetchable", async () => {
     const flakyWeights: TallyInputSource = {
       ...weights,
