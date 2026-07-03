@@ -105,7 +105,9 @@ export const ProposeInfoAction: Component = () => {
   // optimistic twin, for a survey just published this session).
   const linkedSurvey = createMemo(() => {
     const ref = anchor()?.surveyRef;
-    const snap = app.list();
+    // Guard the resource read: a Solid resource throws on read in its error
+    // state, which would replace this whole page with the LoadError fallback.
+    const snap = app.list.error ? undefined : app.list();
     if (!ref || !snap) return undefined;
     const key = `${ref.txId}:${ref.index}`;
     return (
@@ -122,7 +124,7 @@ export const ProposeInfoAction: Component = () => {
   const alignment = createMemo<{ level: NoteKind; text: string } | null>(() => {
     const a = anchor();
     if (!a || !a.surveyRef) return null; // no link → nothing to align
-    const tip = app.list()?.tip;
+    const tip = (app.list.error ? undefined : app.list())?.tip;
     if (!tip)
       return {
         level: "warn",
