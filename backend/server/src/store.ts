@@ -65,7 +65,7 @@ export interface WeightRow {
   readonly role: number;
   /** "key:<hex>" | "script:<hex>". */
   readonly credential: string;
-  /** Lovelace as a decimal string ("1" per Owner responder). */
+  /** Lovelace as a decimal string ("1" per Keyholder responder). */
   readonly weight: string;
   readonly registered: boolean;
   readonly fetchedAt: number;

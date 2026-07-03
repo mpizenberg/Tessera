@@ -26,7 +26,7 @@ import type { WeightedQuestionTally, WeightedResponder } from "./weightedTally";
 export const RULESET_DESCRIPTOR = {
   rulesetVersion: 1,
   cip179SpecVersion: 4,
-  /** Roles artifacts cover: 0 DRep, 3 Stakeholder, 4 Owner (SPO/CC deferred). */
+  /** Roles artifacts cover: 0 DRep, 3 Stakeholder, 4 Keyholder (SPO/CC deferred). */
   coveredRoles: [0, 3, 4],
   /** What one unit of weight measures, per covered role. */
   roleMeasures: {
@@ -53,7 +53,7 @@ export function rulesetHash(): string {
 export interface ArtifactResponder {
   /** "key:<hex>" | "script:<hex>" — same identity the dedup rule uses. */
   readonly credential: string;
-  /** Decimal string; "1" per responder for the count-only Owner role. */
+  /** Decimal string; "1" per responder for the count-only Keyholder role. */
   readonly weight: string;
   /** Tx that carried the counted response. */
   readonly txHash: string;
@@ -100,11 +100,11 @@ export type ArtifactQuestion =
 
 /** One covered role's weighted result. */
 export interface ArtifactRoleTally {
-  /** CIP-179 role tag (0 DRep, 3 Stakeholder, 4 Owner). */
+  /** CIP-179 role tag (0 DRep, 3 Stakeholder, 4 Keyholder). */
   readonly role: number;
   /**
    * The role's electorate total at end_epoch (decimal lovelace) — turnout's
-   * denominator. `null` for count-only roles (Owner), where responder count
+   * denominator. `null` for count-only roles (Keyholder), where responder count
    * is the only meaningful total.
    */
   readonly total: string | null;

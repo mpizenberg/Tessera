@@ -58,7 +58,7 @@ function definition(
     owner: keyCred(OWNER_HASH),
     title: "t",
     description: "",
-    eligibleRoles: [Role.DRep, Role.Stakeholder, Role.Owner] as Role[],
+    eligibleRoles: [Role.DRep, Role.Stakeholder, Role.Keyholder] as Role[],
     endEpoch: END_EPOCH,
     submissionMode: { type: "public" },
     questions: [

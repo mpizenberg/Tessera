@@ -240,13 +240,13 @@ Tallies and weighting are **always per-role; never combined** (the same ada woul
 otherwise be double-counted across a holder's stakeholder stake, their DRep's
 voting power, and their pool's stake).
 
-| Role            | Weight measure                   | Membership gate                                   | Browser-producible?          |
-| --------------- | -------------------------------- | ------------------------------------------------- | ---------------------------- |
-| **Stakeholder** | active ada stake at `end_epoch`  | stake address **registered** at `end_epoch`       | yes                          |
-| **DRep**        | DRep voting power at `end_epoch` | DRep **registered** at `end_epoch`                | yes                          |
-| **SPO**         | pool active stake at `end_epoch` | pool registered at `end_epoch`                    | **no** (specified, deferred) |
-| **Owner**       | **count-only** (weight = 1)      | owner-proof (already on-chain, client-verifiable) | yes                          |
-| **CC**          | **TODO**                         | **TODO**                                          | no                           |
+| Role            | Weight measure                   | Membership gate                                        | Browser-producible?          |
+| --------------- | -------------------------------- | ------------------------------------------------------ | ---------------------------- |
+| **Stakeholder** | active ada stake at `end_epoch`  | stake address **registered** at `end_epoch`            | yes                          |
+| **DRep**        | DRep voting power at `end_epoch` | DRep **registered** at `end_epoch`                     | yes                          |
+| **SPO**         | pool active stake at `end_epoch` | pool registered at `end_epoch`                         | **no** (specified, deferred) |
+| **Keyholder**   | **count-only** (weight = 1)      | credential proof (already on-chain, client-verifiable) | yes                          |
+| **CC**          | **TODO**                         | **TODO**                                               | no                           |
 
 - **Membership = registration.** A Stakeholder/DRep response whose credential is
   **not registered** at `end_epoch` is **excluded as invalid** (it is not a
@@ -254,7 +254,7 @@ voting power, and their pool's stake).
   which **may legitimately be 0** (registered but empty). There is no separate
   "weight-0 vs excluded" ambiguity: registration is the gate, the snapshot value
   is the weight.
-- **Owner is count-only.** It is rendered as its own per-role result with each
+- **Keyholder is count-only.** It is rendered as its own per-role result with each
   response contributing weight 1 — i.e. the unweighted path. (Uniform with the
   weighted path by passing weight = 1; see §6.6.)
 - **SPO** is fully specified but not exercised: `roles.ts` establishes that
@@ -406,7 +406,7 @@ weight_snapshot(
   epoch      INTEGER NOT NULL,
   role       INTEGER NOT NULL,          -- CIP-179 Role
   credential TEXT    NOT NULL,          -- core credentialKey form ("key:<hex>" | "script:<hex>")
-  weight     TEXT    NOT NULL,          -- lovelace as decimal string ("1" per Owner)
+  weight     TEXT    NOT NULL,          -- lovelace as decimal string ("1" per Keyholder)
   registered INTEGER NOT NULL,          -- 0/1 membership at `epoch`
   fetched_at INTEGER NOT NULL,          -- fill time (debug only; endpoint = f(role))
   PRIMARY KEY (epoch, role, credential)
@@ -442,7 +442,7 @@ Weighting is the mechanical generalization of the existing tally: **replace
 "count 1 per responder" with "add the responder's weight."**
 
 - Input is the **validated, deduped** `counted` set (§6.3) — joined to each
-  responder's `weight` from the snapshot. Count-only roles (Owner) pass
+  responder's `weight` from the snapshot. Count-only roles (Keyholder) pass
   **weight = 1**, so a single uniform code path covers weighted and unweighted
   roles.
 - **All aggregates are BigInt.** Lovelace sums exceed 2^53.
@@ -640,7 +640,7 @@ Contents (sketch):
 ## 11. Open items / TODO
 
 - **CC (committee) role** — weighting + membership semantics. Deferred
-  (artifacts pin covered roles {DRep, Stakeholder, Owner} in their ruleset).
+  (artifacts pin covered roles {DRep, Stakeholder, Keyholder} in their ruleset).
 - **SPO role** — specified, not exercised until non-browser responders / Tier 2.
 - ~~**Exact Koios shapes**~~ — resolved empirically; see the §6.4 table (incl.
   the deprecated-variant and `_epoch_no` pitfalls and `/epoch_info` flakiness).

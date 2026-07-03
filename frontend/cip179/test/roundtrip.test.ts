@@ -310,7 +310,7 @@ describe("custom question/answer", () => {
         {
           specVersion: 4,
           surveyRef: { txId, index: 1 },
-          role: Role.Owner,
+          role: Role.Keyholder,
           credential: { type: "script", scriptHash: ownerHash },
           answers: {
             type: "public",

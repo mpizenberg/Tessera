@@ -64,7 +64,8 @@ export const Role = {
   SPO: 1,
   CC: 2,
   Stakeholder: 3,
-  Owner: 4,
+  /** Control of a payment/spending credential (CIP-179 role 4, "Owner"). */
+  Keyholder: 4,
 } as const;
 export type Role = (typeof Role)[keyof typeof Role];
 

@@ -82,7 +82,7 @@ const ROLE_LABEL: Record<number, string> = {
   [Role.SPO]: "SPO",
   [Role.CC]: "CC",
   [Role.Stakeholder]: "Stakeholder",
-  [Role.Owner]: "Owner",
+  [Role.Keyholder]: "Keyholder",
 };
 
 const ROLE_ABBR: Record<number, string> = {
@@ -90,7 +90,7 @@ const ROLE_ABBR: Record<number, string> = {
   [Role.SPO]: "SPO",
   [Role.CC]: "CC",
   [Role.Stakeholder]: "Stake",
-  [Role.Owner]: "Owner",
+  [Role.Keyholder]: "Key",
 };
 
 /** [text color, background] per role, mirroring the mockup palette. */
@@ -99,7 +99,7 @@ const ROLE_COLORS: Record<number, readonly [string, string]> = {
   [Role.SPO]: ["#2E6B5E", "#E4EFEB"],
   [Role.CC]: ["#6B4FA0", "#ECE7F4"],
   [Role.Stakeholder]: ["#4F7A3A", "#E8F1E0"],
-  [Role.Owner]: ["#9A6B1E", "#F6EDD9"],
+  [Role.Keyholder]: ["#9A6B1E", "#F6EDD9"],
 };
 
 /** One-line explanation of what each role is and how it's claimed. */
@@ -112,8 +112,8 @@ const ROLE_DESCRIPTION: Record<number, string> = {
     "A Constitutional Committee member — proven with committee keys a browser wallet can't hold.",
   [Role.Stakeholder]:
     "Any ada holder with a stake key — claimed in-browser by your connected wallet.",
-  [Role.Owner]:
-    "The survey's creator — claimable only by the wallet that published it.",
+  [Role.Keyholder]:
+    "Anyone with a wallet — claimed in-browser with your payment (spending) key; no registration or on-chain activity needed.",
 };
 
 export function roleLabel(role: number): string {

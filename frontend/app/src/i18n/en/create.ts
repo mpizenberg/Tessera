@@ -33,7 +33,7 @@ const create = {
   // --- Who can respond (roles) section ---
   sectionWhoCanRespond: "Who can respond",
   rolesHint:
-    "Eligibility is a claim, verified independently against ledger state. SPO and CC can be listed, but can't respond from a browser wallet (they need cold/hot keys).",
+    "Eligibility is a claim, verified independently against ledger state. Keyholder is open to anyone with a wallet (a plain payment key — no registration needed). SPO and CC can be listed, but can't respond from a browser wallet (they need cold/hot keys).",
 
   // --- Timing section ---
   sectionTiming: "Timing",

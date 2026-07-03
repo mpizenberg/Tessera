@@ -50,7 +50,7 @@ import type { TallyStore, ValidatedResponseRow, WeightRow } from "./store";
 const COVERED_ROLES: readonly number[] = [
   Role.DRep,
   Role.Stakeholder,
-  Role.Owner,
+  Role.Keyholder,
 ];
 
 /** Safety margin past the epoch boundary: Koios indexing lag + shallow reorgs. */
@@ -60,7 +60,7 @@ const FINALIZE_MARGIN_SECONDS = 600;
 const ROLE_ENDPOINTS: Record<number, string> = {
   [Role.DRep]: "drep_voting_power_history",
   [Role.Stakeholder]: "account_stake_history",
-  [Role.Owner]: "local-count",
+  [Role.Keyholder]: "local-count",
 };
 
 export async function finalizeClosedSurveys(
@@ -306,7 +306,7 @@ async function fillWeights(
   if (missing.length === 0) return have;
 
   let fetched: WeightRow[];
-  if (role === Role.Owner) {
+  if (role === Role.Keyholder) {
     // Count-only role: one responder, one vote — no chain lookup.
     fetched = missing.map((credential) => ({
       epoch,
@@ -348,7 +348,7 @@ async function fillTotal(
   role: number,
   nowSec: number,
 ): Promise<string | null> {
-  if (role === Role.Owner) return null; // count-only: no electorate total
+  if (role === Role.Keyholder) return null; // count-only: no electorate total
   const existing = await store.epochTotal(epoch, role);
   if (existing !== null) return existing;
   const total =
@@ -378,7 +378,7 @@ function incompleteReason(
     }
   }
   for (const role of new Set(rows.map((r) => r.role))) {
-    if (role !== Role.Owner && totalByRole.get(role) == null) {
+    if (role !== Role.Keyholder && totalByRole.get(role) == null) {
       return `role-${role} electorate total unavailable (retrying)`;
     }
   }

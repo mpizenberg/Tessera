@@ -67,7 +67,7 @@ export interface VerifyResult {
 
 const COVERED_ROLES: readonly number[] = [...RULESET_DESCRIPTOR.coveredRoles];
 const ROLE_DREP = 0;
-const ROLE_OWNER = 4;
+const ROLE_KEYHOLDER = 4;
 
 /** Rebuild the hashed tally body from chain data + the pinned ruleset. */
 export async function rebuildTally(
@@ -153,7 +153,7 @@ export async function rebuildTally(
     const creds = roleRecords.map((r) => r.response.credential);
 
     let responders: WeightedResponder[];
-    if (role === ROLE_OWNER) {
+    if (role === ROLE_KEYHOLDER) {
       responders = roleRecords.map((r) => ({
         credentialKey: credentialKey(r.response.credential),
         weight: 1n,
@@ -181,7 +181,7 @@ export async function rebuildTally(
     }
 
     let total: string | null = null;
-    if (role !== ROLE_OWNER) {
+    if (role !== ROLE_KEYHOLDER) {
       const fetched =
         role === ROLE_DREP
           ? await inputs.weights.drepTotal(endEpoch)

@@ -14,7 +14,7 @@
  *    4→SPO). A binding by the response credential that is *present but
  *    failing* (wrong action, wrong role) invalidates the response even if
  *    mechanism A would pass; an *absent* binding is not a failure — evaluation
- *    just falls back to mechanism A. Stakeholder/Owner roles have no voter tag
+ *    just falls back to mechanism A. Stakeholder/Keyholder roles have no voter tag
  *    and therefore can never bind.
  *
  * The transaction evidence ({@link TxProof}) is decoded by the data source;

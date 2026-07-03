@@ -134,12 +134,9 @@ export const Respond: Component = () => {
   });
 
   const credential = createMemo<Credential | null>(() => {
-    const def = definition();
     const id = identity();
     const r = role();
-    return def && id && r !== null
-      ? (roleCredential(id, r, def.owner) ?? null)
-      : null;
+    return id && r !== null ? (roleCredential(id, r) ?? null) : null;
   });
 
   // The wallet's prior public response for (this survey, role, credential).

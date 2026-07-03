@@ -3,7 +3,7 @@
  * a BigInt — no floats anywhere; presentation layers derive fractions/means
  * from the exact `{weightedSum, answeredWeight}` rationals. Mirrors `./tally.ts`
  * question-by-question, and with every weight `1n` it reproduces its counts
- * exactly (which is also how the count-only Owner role is tallied).
+ * exactly (which is also how the count-only Keyholder role is tallied).
  *
  * **Input contract:** like `tally.ts`, callers pass responses that already
  * passed validation and dedup — the *counted* set, at most one responder per
@@ -25,7 +25,7 @@ import { ratingScaleInfo } from "./tally";
 export interface WeightedResponder {
   /** Stable credential identity ("key:<hex>" | "script:<hex>"). */
   readonly credentialKey: string;
-  /** Snapshot weight (lovelace), or `1n` for count-only roles (Owner). */
+  /** Snapshot weight (lovelace), or `1n` for count-only roles (Keyholder). */
   readonly weight: bigint;
   /** Tx that carried the counted response (provenance). */
   readonly txHash: string;

@@ -2,9 +2,9 @@
  * Pure role + credential logic for a connected wallet.
  *
  * Scope (per product decision): a browser wallet can act as Stakeholder (holds
- * a stake credential), DRep (exposes a CIP-95 DRep key), and Owner (its
- * credential matches a survey's owner). SPO and CC require keys browser wallets
- * don't hold and are therefore never claimable here.
+ * a stake credential), DRep (exposes a CIP-95 DRep key), and Keyholder (its
+ * payment/spending credential — every wallet has one). SPO and CC require keys
+ * browser wallets don't hold and are therefore never claimable here.
  *
  * Eligibility is "claimed, then validated independently" per CIP-179 — this
  * decides what the wallet may *claim*; ledger-state validation is the indexer's.
@@ -15,11 +15,14 @@ import { Role, type Credential, type SurveyDefinition } from "cip-179";
 import { bytesToHex, hexToBytes } from "~/util/hex";
 import type { WalletCredential, WalletIdentity } from "~/wallet/types";
 
-/** Roles the wallet may claim globally (Owner is per-survey, see `walletOwns`). */
+/** Roles the wallet may claim globally. */
 export function claimableRoles(identity: WalletIdentity): Role[] {
   const roles: Role[] = [];
   if (identity.stake) roles.push(Role.Stakeholder);
   if (identity.drepKeyHex) roles.push(Role.DRep);
+  // Keyholder needs only a payment credential, which every wallet has. Listed
+  // last so a stake/DRep-capable wallet defaults to its most specific role.
+  roles.push(Role.Keyholder);
   return roles;
 }
 
@@ -60,9 +63,9 @@ export function walletCredToCip179(c: WalletCredential): Credential {
 }
 
 /**
- * The credential a response carries when the wallet responds as `role` to this
- * survey, or undefined if the wallet can't act in that role:
- * - Owner       → the survey's owner credential (which the wallet must control);
+ * The credential a response carries when the wallet responds as `role`, or
+ * undefined if the wallet can't act in that role:
+ * - Keyholder   → the wallet's payment (spending) credential;
  * - Stakeholder → the wallet's stake credential;
  * - DRep        → the wallet's DRep credential (hash of its CIP-95 key).
  *
@@ -71,11 +74,10 @@ export function walletCredToCip179(c: WalletCredential): Credential {
 export function roleCredential(
   identity: WalletIdentity,
   role: Role,
-  owner: Credential,
 ): Credential | undefined {
   switch (role) {
-    case Role.Owner:
-      return walletOwns(identity, owner) ? owner : undefined;
+    case Role.Keyholder:
+      return walletCredToCip179(identity.payment);
     case Role.Stakeholder:
       return identity.stake ? walletCredToCip179(identity.stake) : undefined;
     case Role.DRep:
@@ -97,6 +99,6 @@ export function respondableRoles(
   identity: WalletIdentity,
 ): Role[] {
   return definition.eligibleRoles.filter(
-    (role) => roleCredential(identity, role, definition.owner) !== undefined,
+    (role) => roleCredential(identity, role) !== undefined,
   );
 }

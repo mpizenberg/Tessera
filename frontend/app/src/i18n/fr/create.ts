@@ -37,7 +37,7 @@ const create: Messages = {
   // --- Who can respond (roles) section ---
   sectionWhoCanRespond: "Qui peut répondre",
   rolesHint:
-    "L'éligibilité est une revendication, vérifiée indépendamment par rapport à l'état du registre. Les SPO et les CC peuvent être listés, mais ne peuvent pas répondre depuis un wallet de navigateur (ils ont besoin de clés froides/chaudes).",
+    "L'éligibilité est une revendication, vérifiée indépendamment par rapport à l'état du registre. Keyholder est ouvert à quiconque possède un wallet (une simple clé de paiement — aucun enregistrement requis). Les SPO et les CC peuvent être listés, mais ne peuvent pas répondre depuis un wallet de navigateur (ils ont besoin de clés froides/chaudes).",
 
   // --- Timing section ---
   sectionTiming: "Calendrier",

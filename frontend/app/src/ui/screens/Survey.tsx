@@ -1145,7 +1145,7 @@ const InfoNote: Component<{ onShowRaw?: () => void }> = (props) => (
  * counted set (the proof-validated responders the artifact committed to):
  * `"chain"` shows each responder's snapshotted stake / voting power (with
  * turnout), `"one"` re-tallies the identical set with one vote per credential.
- * Only DRep/Stakeholder/Owner are covered here; the full, inclusive per-role
+ * Only DRep/Stakeholder/Keyholder are covered here; the full, inclusive per-role
  * breakdown (SPO/CC included) lives in the raw view, one toggle away.
  *
  * Every float is derived presentation-side in `~/domain/artifactView`.
@@ -1353,7 +1353,7 @@ const FinalResults: Component<{
  * option weights as bars, numeric values as a per-value bar list with the
  * weighted mean in the type label, per-option means as average bars. Bar meta
  * shows ada weight + responder count for stake-weighted roles, plain counts
- * for count-only roles (Owner).
+ * for count-only roles (Keyholder).
  */
 const WeightedQuestionResult: Component<{
   q: Question;
