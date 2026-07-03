@@ -13,13 +13,6 @@ const survey = {
   typePointsAllocation: "Points",
   typeRating: "Rating",
 
-  // Status pills (STATUS_PILL labels)
-  pillOpen: "Open",
-  pillSealed: "Sealed",
-  pillRevealed: "Revealed",
-  pillClosed: "Closed",
-  pillWithdrawn: "Withdrawn",
-
   // Unverified cancellation notice. The leading run is bold (its own <strong>),
   // the rest is plain — kept as two messages so each stays a whole phrase.
   claimedNoticeStrong: "Unverified cancellation claim.",
@@ -68,7 +61,6 @@ const survey = {
     "only Info Actions may link · linkage is discovery + epoch-alignment, never an eligibility gate",
 
   // Header
-  govPill: "Linked to governance",
   refTitle: "Full survey ref — defining transaction hash and output index",
   /** {ref} is the raw transaction-hash#index, shown untranslated. */
   refLead: "ref {ref}",

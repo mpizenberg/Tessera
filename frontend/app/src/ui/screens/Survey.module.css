@@ -275,51 +275,12 @@
   margin-top: 6px;
 }
 
+/* Pro-only ref row above the title; empty (unrendered) for non-pro users. */
 .headerTop {
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
 }
 
-/*
- * Status pill: the three enum-driven colors (`STATUS_PILL[pillKey]`) ride in as
- * CSS vars set inline so this stays one class for every status.
- */
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--pill-color);
-  background: var(--pill-bg);
-  border: 1px solid var(--pill-line);
-  border-radius: var(--r-pill);
-  padding: 5px 11px;
-}
-
-.govPill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--gov);
-  background: var(--gov-bg);
-  border: 1px solid var(--gov-line);
-  border-radius: var(--r-pill);
-  padding: 5px 11px;
-}
-
-.govPillDot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--gov);
-}
-
-/* Owns margin-left:auto, pushing the pro ref to the right — no spacer node. */
 .headerRefLead {
   margin-left: auto;
   font-family: var(--mono);

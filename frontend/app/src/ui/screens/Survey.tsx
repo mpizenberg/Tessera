@@ -81,45 +81,6 @@ const BASE_TYPE_KEY: Record<Question["type"], string> = {
 const baseType = (type: Question["type"]): string =>
   t(`survey.${BASE_TYPE_KEY[type]}` as Parameters<typeof t>[0]);
 
-type PillKey = ReturnType<typeof viewStatus> | "revealed";
-
-/** Pill styling per status; `labelKey` is resolved through `t()` at render. */
-const STATUS_PILL: Record<
-  PillKey,
-  { labelKey: string; color: string; bg: string; line: string }
-> = {
-  public: {
-    labelKey: "pillOpen",
-    color: "var(--ok)",
-    bg: "var(--ok-bg)",
-    line: "var(--ok-line)",
-  },
-  sealed: {
-    labelKey: "pillSealed",
-    color: "var(--warn)",
-    bg: "var(--warn-bg)",
-    line: "var(--warn-line)",
-  },
-  revealed: {
-    labelKey: "pillRevealed",
-    color: "var(--gov)",
-    bg: "var(--gov-bg)",
-    line: "var(--gov-line)",
-  },
-  ended: {
-    labelKey: "pillClosed",
-    color: "var(--muted)",
-    bg: "var(--surface3)",
-    line: "var(--line)",
-  },
-  cancelled: {
-    labelKey: "pillWithdrawn",
-    color: "var(--danger)",
-    bg: "var(--danger-bg)",
-    line: "var(--danger-line)",
-  },
-};
-
 export const Survey: Component = () => {
   const app = useApp();
   const params = useParams<{ key: string }>();
@@ -205,20 +166,6 @@ export const Survey: Component = () => {
   );
   onCleanup(() => clearInterval(clock));
 
-  // Header pill: a sealed survey flips to "Revealed" once its drand round has
-  // published (anyone can decrypt from then on).
-  const pillKey = (): PillKey => {
-    const s = survey();
-    if (!s) return "public";
-    if (s.sealed && !s.cancelled) {
-      const mode = s.record.definition.submissionMode;
-      return mode.type === "sealed" && roundIsAvailable(mode.round, now())
-        ? "revealed"
-        : "sealed";
-    }
-    return viewStatus(s);
-  };
-
   return (
     <main class={css.page}>
       <A href="/" class={css.back}>
@@ -247,7 +194,6 @@ export const Survey: Component = () => {
               tip={tip()}
               secondsPerEpoch={app.config.secondsPerEpoch}
               nowUnix={now()}
-              pillKey={pillKey()}
             />
 
             <Show when={sv().cancellationClaimed}>
@@ -538,38 +484,20 @@ const Header: Component<{
   tip: ChainTip | undefined;
   secondsPerEpoch: number;
   nowUnix: number;
-  pillKey: PillKey;
 }> = (props) => {
-  const pill = () => STATUS_PILL[props.pillKey];
   const ends = (): string =>
     props.tip
       ? endsText(props.s, props.tip, props.secondsPerEpoch, props.nowUnix)
       : "—";
   return (
     <div class={css.header}>
-      <div class={css.headerTop}>
-        <span
-          class={css.pill}
-          style={{
-            "--pill-color": pill().color,
-            "--pill-bg": pill().bg,
-            "--pill-line": pill().line,
-          }}
-        >
-          {t(`survey.${pill().labelKey}` as Parameters<typeof t>[0])}
-        </span>
-        <Show when={props.s.govLink}>
-          <span class={css.govPill}>
-            <span class={css.govPillDot} />
-            {t("survey.govPill")}
-          </span>
-        </Show>
-        <Show when={props.pro}>
+      <Show when={props.pro}>
+        <div class={css.headerTop}>
           <span title={t("survey.refTitle")} class={css.headerRefLead}>
             {t("survey.refLead", { ref: fullRef(props.keyStr) })}
           </span>
-        </Show>
-      </div>
+        </div>
+      </Show>
       <h1 class={css.headerTitle}>
         {props.def.title || t("survey.untitledSurvey")}
       </h1>

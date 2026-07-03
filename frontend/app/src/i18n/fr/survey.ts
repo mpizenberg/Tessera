@@ -17,13 +17,6 @@ const survey: Messages = {
   typePointsAllocation: "Points",
   typeRating: "Notation",
 
-  // Status pills
-  pillOpen: "Ouvert",
-  pillSealed: "Scellé",
-  pillRevealed: "Révélé",
-  pillClosed: "Clôturé",
-  pillWithdrawn: "Retiré",
-
   // Unverified cancellation notice
   claimedNoticeStrong: "Annulation revendiquée non vérifiée.",
   claimedNoticeRest:
@@ -62,7 +55,6 @@ const survey: Messages = {
     "seules les Info Actions peuvent établir un lien · le lien sert à la découverte + à l'alignement d'epoch, jamais de critère d'éligibilité",
 
   // Header
-  govPill: "Lié à la gouvernance",
   refTitle:
     "Référence complète du sondage — hash de la transaction de définition et index de sortie",
   refLead: "ref {ref}",
