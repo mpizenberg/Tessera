@@ -47,8 +47,9 @@ import type { ChainTip, DataSource, SurveyRecord } from "~/data/source";
 import {
   aggregateSurveyList,
   aggregateSurveys,
+  bytesToHex,
   type SurveyAggregate,
-} from "~/domain/survey";
+} from "@tessera/core";
 import { claimableRoles } from "~/domain/roles";
 import {
   connectWallet,
@@ -56,7 +57,6 @@ import {
   listInstalledWallets,
 } from "~/wallet/cip30";
 import type { ConnectedWallet, InstalledWallet } from "~/wallet/types";
-import { bytesToHex } from "~/util/hex";
 import {
   applyPresentation,
   parsePresentation,

@@ -1,8 +1,8 @@
 /** Small presentation helpers shared across screens. */
 
 import { Role } from "cip-179";
+import { voteDeadlineUnix, type SurveyAggregate } from "@tessera/core";
 import type { Network } from "~/config";
-import { voteDeadlineUnix, type SurveyAggregate } from "~/domain/survey";
 import type { ChainTip } from "~/data/source";
 import { IPFS_GATEWAYS } from "~/enrichment/providers";
 import { t, n, type MsgKey } from "~/i18n";

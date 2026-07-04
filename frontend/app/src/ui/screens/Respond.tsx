@@ -31,8 +31,9 @@ import { useApp } from "~/state";
 import {
   dedupeResponses,
   findSurvey,
+  hexToBytes,
   type SurveyAggregate,
-} from "~/domain/survey";
+} from "@tessera/core";
 import { respondableRoles, roleCredential } from "~/domain/roles";
 import {
   buildResponse,
@@ -56,7 +57,6 @@ import {
   SubmitProgressModal,
   type SubmitStep,
 } from "~/ui/components/SubmitProgress";
-import { hexToBytes } from "~/util/hex";
 import { formatRevealDate } from "~/tlock/drand";
 import {
   fullRef,

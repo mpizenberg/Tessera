@@ -11,7 +11,7 @@
  * only does the arithmetic the UI needs (which round, when it reveals).
  */
 
-import { hexToBytes } from "~/util/hex";
+import { hexToBytes } from "@tessera/core";
 
 /** Drand quicknet chain hash (hex) — matches the bundled tlock client. */
 export const QUICKNET_CHAIN_HASH_HEX =

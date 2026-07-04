@@ -13,10 +13,14 @@ import { For, Show, createMemo, createSignal, type Component } from "solid-js";
 import { A } from "@solidjs/router";
 import { blake2b } from "@noble/hashes/blake2.js";
 
+import {
+  bytesToHex,
+  findSurvey,
+  parseCip179Link,
+  type SurveyRefLite,
+} from "@tessera/core";
+
 import { useApp } from "~/state";
-import { findSurvey } from "~/domain/survey";
-import { parseCip179Link, type SurveyRefLite } from "~/domain/govLink";
-import { bytesToHex } from "~/util/hex";
 import { IPFS_PROVIDERS, type ProviderId } from "~/enrichment/providers";
 import { TxLink } from "~/ui/components/TxLink";
 import { Note, type NoteKind } from "~/ui/components/Note";

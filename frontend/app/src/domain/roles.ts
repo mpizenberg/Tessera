@@ -12,7 +12,7 @@
 
 import { Role, type Credential, type SurveyDefinition } from "cip-179";
 
-import { bytesToHex, hexToBytes } from "~/util/hex";
+import { bytesToHex, hexToBytes } from "@tessera/core";
 import type { WalletCredential, WalletIdentity } from "~/wallet/types";
 
 /** Roles the wallet may claim globally. */

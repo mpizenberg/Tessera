@@ -27,27 +27,30 @@ import {
 import {
   RULESET_DESCRIPTOR,
   artifactHash,
+  auditResponses,
+  bytesToHex,
+  findSurvey,
+  humanizeAnswer,
+  responseIsCountable,
+  roleBreakdown,
+  serializeAnswer,
+  tallySurvey,
+  type ExcludedRecord,
+  type ExclusionKey,
+  type QuestionTally,
+  type ResponseAudit,
+  type SurveyAggregate,
   type TallyArtifact,
 } from "@tessera/core";
 
 import { useApp } from "~/state";
-import { findSurvey, type SurveyAggregate } from "~/domain/survey";
-import { humanizeAnswer, serializeAnswer } from "~/domain/answer";
 import {
   formatAda,
   resultRoleViews,
   type Weighting,
   type WeightedQuestionView,
 } from "~/domain/artifactView";
-import {
-  auditResponses,
-  responseIsCountable,
-  type ExcludedRecord,
-  type ExclusionKey,
-  type ResponseAudit,
-} from "~/domain/audit";
 import { walletOwns } from "~/domain/roles";
-import { roleBreakdown, tallySurvey, type QuestionTally } from "~/domain/tally";
 import type { ChainTip, ResponseRecord } from "~/data/source";
 import { usePresentation } from "~/enrichment/usePresentation";
 import { formatRevealDate, isQuicknet, roundIsAvailable } from "~/tlock/drand";
@@ -64,7 +67,6 @@ import { RoleChips } from "~/ui/components/glyphs";
 import { ResultBarCard } from "~/ui/components/ResultBarCard";
 import { TxLink } from "~/ui/components/TxLink";
 import { toCsv, downloadCsv, downloadJson } from "~/util/csv";
-import { bytesToHex } from "~/util/hex";
 import { t, n } from "~/i18n";
 import css from "./Survey.module.css";
 

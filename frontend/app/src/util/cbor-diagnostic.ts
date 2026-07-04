@@ -11,7 +11,7 @@
 
 import type { Metadatum } from "cip-179";
 
-import { bytesToHex } from "./hex";
+import { bytesToHex } from "@tessera/core";
 
 export function metadatumToDiagnostic(m: Metadatum, indent = 0): string {
   const pad = "  ".repeat(indent);

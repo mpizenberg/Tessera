@@ -37,7 +37,7 @@ the fix deviated from the report's suggested direction.
 
 | # | Finding (short) | Status |
 | --- | --- | --- |
-| 15 | Dead code cluster: `domain/cancellation.ts` shim, `decodeCancellationProof` alias (+ alias test), dead `metadatum.ts` helpers; mixed shim/direct core imports | done f5a3f75 — deleted the three dead items; broader shim-vs-direct-import migration deferred |
+| 15 | Dead code cluster: `domain/cancellation.ts` shim, `decodeCancellationProof` alias (+ alias test), dead `metadatum.ts` helpers; mixed shim/direct core imports | done f5a3f75 — deleted the three dead items. Shim migration done (pending): all imports now go to `@tessera/core` directly; deleted the 6 re-export shims (domain/{survey,answer,audit,tally,govLink}.ts, util/hex.ts) |
 | 16 | `mechanismA` duplicates `cancellationVerified` | done f8ecb70 |
 | 17 | Can't-happen `?? {slot: 0, epochNo: 0}` fallback in `fetchAll` — throw instead | done 681fc09 |
 | 18 | Presentation floats/types (`Bar.pct`, sample cap) inside `@tessera/core` tally.ts vs §4 claim | done 5dff8e2 — doc-scoped (§4 clarified; tally.ts marked display-only). Kept display tally in core; not moved app-side |

@@ -7,7 +7,7 @@
 import { Address, Credential } from "@evolution-sdk/evolution";
 import { blake2b } from "@noble/hashes/blake2.js";
 
-import { bytesToHex, hexToBytes } from "~/util/hex";
+import { bytesToHex, hexToBytes } from "@tessera/core";
 import type {
   Cip30Api,
   ConnectedWallet,

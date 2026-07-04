@@ -11,8 +11,9 @@ import {
 } from "solid-js";
 import { A } from "@solidjs/router";
 
+import type { SurveyAggregate } from "@tessera/core";
+
 import { useApp, type ExploreFilter } from "~/state";
-import type { SurveyAggregate } from "~/domain/survey";
 import { walletOwns } from "~/domain/roles";
 import { endsText, fullRef, isClosed, viewStatus } from "~/ui/format";
 import { FormMosaic, RoleChips, VisGlyph } from "~/ui/components/glyphs";
