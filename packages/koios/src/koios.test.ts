@@ -131,7 +131,7 @@ function responsesMetadata(): unknown {
     "1": [`0x${SURVEY_TX}`, 0], // survey_ref
     "2": 3, // role: Stakeholder
     "3": [0, `0x${credByte.repeat(28)}`], // key credential
-    "4": [], // public, no answers
+    "4": [[1, 0, 0]], // public: one single-choice answer (Q0 → option 0)
   });
   return { "17": [1, [resp("11"), resp("22")]] };
 }
