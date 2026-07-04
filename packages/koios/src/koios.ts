@@ -124,6 +124,25 @@ export interface ProposalRow {
   meta_json: unknown;
 }
 
+/**
+ * Fetch-once persistence for label-17 tx metadata, keyed by tx hash. A tx's
+ * metadata is immutable — the hash content-addresses it — so once fetched it
+ * never needs re-fetching. This is what lets the snapshot scan *converge*
+ * across runs instead of re-paying every `/tx_metadata` batch per refresh: a
+ * run cut short (Worker subrequest cap, timeout) banks the batches it did
+ * fetch, and the next run fetches only the remainder. Snapshot membership
+ * still comes from the fresh label-index scan, so a rolled-back tx simply
+ * stops being requested — a stale cache entry is inert, never served.
+ *
+ * Values are the raw Koios `metadata` JSON per row (`unknown` here: stores
+ * just round-trip JSON). Entries are immutable — `put` is insert-or-ignore —
+ * and `get` returns only the cached subset of the requested hashes.
+ */
+export interface TxMetadataCache {
+  get(txHashes: readonly string[]): Promise<Map<string, unknown>>;
+  put(entries: ReadonlyMap<string, unknown>): Promise<void>;
+}
+
 export class KoiosDataSource implements DataSource {
   /**
    * The full scan (records + tip) for the current load. `surveyList()` starts a
@@ -139,11 +158,15 @@ export class KoiosDataSource implements DataSource {
   /**
    * `getToken` lets the active Koios token change at runtime (Settings override)
    * without rebuilding the source; defaults to the startup-resolved config token.
+   * `cache` is the optional {@link TxMetadataCache} — the serving tier passes a
+   * store-backed one so scans resume across crons; the browser passes none
+   * (each page load is a fresh context anyway).
    */
   constructor(
     private readonly config: AppConfig,
     private readonly getToken: () => string | undefined = () =>
       config.koiosToken,
+    private readonly cache?: TxMetadataCache,
   ) {}
 
   private headers(extra?: Record<string, string>): HeadersInit {
@@ -280,22 +303,58 @@ export class KoiosDataSource implements DataSource {
     if (hashes.length === 0)
       return { surveys, responses, cancellations, incomplete };
 
+    // Consult the fetch-once cache first (serving tier only): tx metadata is
+    // immutable, so anything fetched by an earlier run never hits Koios again.
+    // Best-effort — a cache read failure degrades to a full fetch, never sinks
+    // the scan.
+    const cached = this.cache
+      ? await this.cache.get(hashes).catch((err) => {
+          console.warn(`tx metadata cache read failed: ${String(err)}`);
+          return new Map<string, unknown>();
+        })
+      : new Map<string, unknown>();
+    const missing = hashes.filter((h) => !cached.has(h));
+
     // Koios caps the bulk POST body size, so request metadata in batches
     // (1000 hashes in one shot returns 413 Payload Too Large) and merge.
     const batches: string[][] = [];
-    for (let i = 0; i < hashes.length; i += TX_METADATA_BATCH) {
-      batches.push(hashes.slice(i, i + TX_METADATA_BATCH));
+    for (let i = 0; i < missing.length; i += TX_METADATA_BATCH) {
+      batches.push(missing.slice(i, i + TX_METADATA_BATCH));
     }
     // Resolve batches independently: a transient failure on one batch should
     // drop only that page, not blank the entire snapshot (see file header).
+    // Each fulfilled batch is banked into the cache *before* it resolves — a
+    // run that dies mid-scan (subrequest budget, timeout) keeps the progress it
+    // made, so repeated over-budget runs still converge instead of re-fetching
+    // the same batches forever. Hashes a fulfilled batch returned no row for
+    // are banked as null (answered authoritatively: no metadata) so they are
+    // not re-requested every run either.
     const metaPages = await Promise.allSettled(
-      batches.map((batch) =>
-        this.post<TxMetadata[]>("/tx_metadata?select=tx_hash,metadata", {
-          _tx_hashes: batch,
-        }),
-      ),
+      batches.map(async (batch) => {
+        const rows = await this.post<TxMetadata[]>(
+          "/tx_metadata?select=tx_hash,metadata",
+          { _tx_hashes: batch },
+        );
+        if (this.cache) {
+          const byHash = new Map<string, unknown>(batch.map((h) => [h, null]));
+          for (const r of rows) byHash.set(r.tx_hash, r.metadata);
+          await this.cache
+            .put(byHash)
+            .catch((err) =>
+              console.warn(`tx metadata cache write failed: ${String(err)}`),
+            );
+        }
+        return rows;
+      }),
     );
     const metas: TxMetadata[] = [];
+    for (const hash of hashes) {
+      if (!cached.has(hash)) continue;
+      metas.push({
+        tx_hash: hash,
+        metadata: cached.get(hash) as TxMetadata["metadata"],
+      });
+    }
     for (const page of metaPages) {
       if (page.status === "fulfilled") metas.push(...page.value);
       else {

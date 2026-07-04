@@ -69,6 +69,11 @@ export function openBackendStore(path: string): BackendStore {
     );
     CREATE INDEX IF NOT EXISTS tally_artifact_hash
       ON tally_artifact (artifact_hash);
+    -- Added by migration 0005: fetch-once label-17 metadata (scan resume).
+    CREATE TABLE IF NOT EXISTS tx_metadata_cache (
+      tx_hash  TEXT PRIMARY KEY,
+      metadata TEXT NOT NULL
+    );
   `);
 
   const selectStmt = db.prepare(
@@ -154,6 +159,12 @@ export function openBackendStore(path: string): BackendStore {
   `);
   const finalizedStmt = db.prepare(
     "SELECT survey_key AS surveyKey FROM tally_artifact",
+  );
+  const txMetaAllStmt = db.prepare(
+    "SELECT tx_hash AS txHash, metadata FROM tx_metadata_cache",
+  );
+  const putTxMetaStmt = db.prepare(
+    "INSERT OR IGNORE INTO tx_metadata_cache (tx_hash, metadata) VALUES (?, ?)",
   );
 
   interface DbValidatedRow extends Omit<
@@ -280,6 +291,29 @@ export function openBackendStore(path: string): BackendStore {
     async finalizedSurveyKeys(): Promise<Set<string>> {
       const rows = finalizedStmt.all() as { surveyKey: string }[];
       return new Set(rows.map((r) => r.surveyKey));
+    },
+
+    async cachedTxMetadata(
+      txHashes: readonly string[],
+    ): Promise<Map<string, unknown>> {
+      // One full-table read filtered in JS: the table is the same order of
+      // magnitude as the scan itself, and one query beats chunked `IN (…)`
+      // reads (which D1 would cap at 100 bound parameters each).
+      const wanted = new Set(txHashes);
+      const out = new Map<string, unknown>();
+      const rows = txMetaAllStmt.all() as {
+        txHash: string;
+        metadata: string;
+      }[];
+      for (const row of rows) {
+        if (wanted.has(row.txHash))
+          out.set(row.txHash, JSON.parse(row.metadata));
+      }
+      return out;
+    },
+    async putTxMetadata(entries: ReadonlyMap<string, unknown>): Promise<void> {
+      for (const [hash, metadata] of entries)
+        putTxMetaStmt.run(hash, JSON.stringify(metadata ?? null));
     },
 
     close() {

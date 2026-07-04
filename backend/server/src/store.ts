@@ -124,5 +124,21 @@ export interface TallyStore {
   finalizedSurveyKeys(): Promise<Set<string>>;
 }
 
-/** What the backend wires together: snapshot cache + tally persistence. */
-export type BackendStore = SnapshotStore & TallyStore;
+/**
+ * Fetch-once cache of label-17 tx metadata — the snapshot scan's resume state
+ * (backs `@tessera/koios`'s `TxMetadataCache`). A tx's metadata is immutable
+ * (content-addressed by its hash), so `put` is insert-or-ignore and the table
+ * only grows with new on-chain activity; membership in a snapshot is decided
+ * by each run's fresh label-index scan, never by this cache. What it buys:
+ * a refresh cut short (Worker subrequest cap) keeps the batches it fetched, so
+ * repeated over-budget runs converge instead of re-fetching forever.
+ */
+export interface ScanCacheStore {
+  /** Cached metadata JSON for the cached subset of the requested hashes. */
+  cachedTxMetadata(txHashes: readonly string[]): Promise<Map<string, unknown>>;
+  /** Persist fetched metadata (insert-or-ignore; values are JSON-safe). */
+  putTxMetadata(entries: ReadonlyMap<string, unknown>): Promise<void>;
+}
+
+/** What the backend wires together: snapshot cache + tally + scan persistence. */
+export type BackendStore = SnapshotStore & TallyStore & ScanCacheStore;

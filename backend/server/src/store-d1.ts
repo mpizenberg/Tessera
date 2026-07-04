@@ -246,6 +246,35 @@ export function d1BackendStore(db: D1Like): BackendStore {
       return new Set(results.map((r) => r.surveyKey));
     },
 
+    async cachedTxMetadata(
+      txHashes: readonly string[],
+    ): Promise<Map<string, unknown>> {
+      // One full-table read filtered in JS — same rationale as store-node: the
+      // table is scan-sized, and chunked `IN (…)` reads would cost one D1 query
+      // per 100 hashes (D1's bound-parameter cap) against the very request
+      // budget this cache exists to protect.
+      const wanted = new Set(txHashes);
+      const { results } = await db
+        .prepare("SELECT tx_hash AS txHash, metadata FROM tx_metadata_cache")
+        .all<{ txHash: string; metadata: string }>();
+      const out = new Map<string, unknown>();
+      for (const r of results) {
+        if (wanted.has(r.txHash)) out.set(r.txHash, JSON.parse(r.metadata));
+      }
+      return out;
+    },
+    async putTxMetadata(entries: ReadonlyMap<string, unknown>): Promise<void> {
+      if (entries.size === 0) return;
+      const stmt = db.prepare(
+        "INSERT OR IGNORE INTO tx_metadata_cache (tx_hash, metadata) VALUES (?, ?)",
+      );
+      await db.batch(
+        [...entries].map(([hash, metadata]) =>
+          stmt.bind(hash, JSON.stringify(metadata ?? null)),
+        ),
+      );
+    },
+
     close() {
       // Nothing to release: D1 connections are managed by the runtime.
     },

@@ -22,7 +22,7 @@ the fix deviated from the report's suggested direction.
 
 | # | Finding (short) | Status |
 | --- | --- | --- |
-| 5 | Weight-fetch resume cursor only resumes between roles, not within one; snapshot scan has no resume | done 03d9a03 — `fillWeights` now persists per chunk (per-credential DReps, per-50 stakeholders). NOTE: the related `fetchAll`-has-no-resume sub-point is *not* addressed (larger scan-cursor change) — left for a follow-up |
+| 5 | Weight-fetch resume cursor only resumes between roles, not within one; snapshot scan has no resume | done 03d9a03 — `fillWeights` now persists per chunk (per-credential DReps, per-50 stakeholders). Scan-resume sub-point done 45742cf: fetch-once `tx_metadata_cache` (migration 0005) banked per fulfilled batch; over-budget scans converge across crons |
 | 6 | cip179: no byte-length checks on hashes/tx ids (`HASH28_BYTES`/`HASH32_BYTES` unused) | done 53ff9f9 — enforce 28/32-byte hashes and `uint .size 2` index at decode |
 | 7 | cip179: points decoded via unchecked `Number()`, budget validated with float sum | done 53ff9f9 — points via checked `safeNumber`; budget summed with BigInt |
 | 8 | cip179: option/scale labels encoded without the 64-byte bound | done 53ff9f9 — `boundedLabel` (≤64 UTF-8 bytes) in encode + `checkLabels` in validateDefinition |

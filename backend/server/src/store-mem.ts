@@ -19,6 +19,7 @@ export interface MemBackendStore extends BackendStore {
   readonly weights: Map<string, WeightRow>;
   readonly totals: Map<string, { total: string; endpoint: string }>;
   readonly artifacts: Map<string, ArtifactRow>;
+  readonly txMetadata: Map<string, unknown>;
 }
 
 export function memBackendStore(
@@ -29,6 +30,7 @@ export function memBackendStore(
   const weights = new Map<string, WeightRow>();
   const totals = new Map<string, { total: string; endpoint: string }>();
   const artifacts = new Map<string, ArtifactRow>();
+  const txMetadata = new Map<string, unknown>();
 
   const weightKey = (epoch: number, role: number, credential: string) =>
     `${epoch}|${role}|${credential}`;
@@ -38,6 +40,7 @@ export function memBackendStore(
     weights,
     totals,
     artifacts,
+    txMetadata,
 
     async get() {
       return snapshot;
@@ -94,6 +97,15 @@ export function memBackendStore(
     },
     async finalizedSurveyKeys() {
       return new Set(artifacts.keys());
+    },
+
+    async cachedTxMetadata(txHashes) {
+      const out = new Map<string, unknown>();
+      for (const h of txHashes) if (txMetadata.has(h)) out.set(h, txMetadata.get(h));
+      return out;
+    },
+    async putTxMetadata(entries) {
+      for (const [h, m] of entries) if (!txMetadata.has(h)) txMetadata.set(h, m);
     },
 
     close() {},

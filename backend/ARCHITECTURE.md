@@ -440,6 +440,15 @@ the §6.3 rules 1–3 verdicts per `(tx_hash, response_index)`, filled
 `/tx_cbor` + `/tx_info` reads, so the steady state adds zero subrequests, and a
 failed enrichment leaves NULLs that are retried on the next refresh.
 
+And `tx_metadata_cache` (`migrations/0005_tx_metadata_cache.sql`): fetch-once
+label-17 metadata per tx hash, making the snapshot scan itself resumable the
+same way. A tx's metadata is immutable (content-addressed by its hash), so each
+fulfilled `/tx_metadata` batch is banked as it completes and never re-fetched;
+a refresh cut short by the Worker subrequest cap keeps the batches it fetched
+and converges over successive crons. Snapshot membership still comes from each
+run's fresh label-index scan, so rolled-back txs age out — their cache entries
+just stop being requested.
+
 ### 6.6 Weighted tally computation (`@tessera/core`)
 
 Weighting is the mechanical generalization of the existing tally: **replace

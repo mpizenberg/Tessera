@@ -281,3 +281,126 @@ describe("fetchAll — chain position", () => {
     expect(records.incomplete).toBe(false);
   });
 });
+
+// --- fetchAll: scan resume via the tx-metadata cache (finding 5) -------------
+
+/** In-memory TxMetadataCache with the stores' insert-or-ignore semantics. */
+function memCache() {
+  const map = new Map<string, unknown>();
+  return {
+    map,
+    async get(hashes: readonly string[]) {
+      const out = new Map<string, unknown>();
+      for (const h of hashes) if (map.has(h)) out.set(h, map.get(h));
+      return out;
+    },
+    async put(entries: ReadonlyMap<string, unknown>) {
+      for (const [h, m] of entries) if (!map.has(h)) map.set(h, m);
+    },
+  };
+}
+
+describe("fetchAll — tx metadata cache (finding 5)", () => {
+  it("serves a warm cache without any /tx_metadata request", async () => {
+    const cache = memCache();
+    stubKoios();
+    const first = await new KoiosDataSource(CONFIG, undefined, cache).fetchAll();
+    expect(first.responses).toHaveLength(2);
+    expect(cache.map.has(RESP_TX)).toBe(true); // banked
+
+    // Fresh mock (fresh call log): the rescan classifies identically from the
+    // cache and makes zero metadata requests.
+    const fetchMock = stubKoios();
+    const second = await new KoiosDataSource(CONFIG, undefined, cache).fetchAll();
+    expect(second.responses).toHaveLength(2);
+    expect(second.responses.map((r) => r.responseIndex)).toEqual([0, 1]);
+    const metadataCalls = fetchMock.mock.calls.filter((c) =>
+      String(c[0]).includes("/tx_metadata"),
+    );
+    expect(metadataCalls).toHaveLength(0);
+  });
+
+  it("banks fulfilled batches so an over-budget scan converges across runs", async () => {
+    // 51 label txs → two /tx_metadata batches (50 fillers + RESP_TX). The
+    // filler batch fails on run 1 — only its work may repeat on run 2.
+    const FILLERS = Array.from({ length: 50 }, (_, i) =>
+      (i + 1).toString(16).padStart(2, "0").repeat(32),
+    );
+    const cache = memCache();
+    let fillersFail = true;
+    const metadataBatches: string[][] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/tx_by_metalabel")) {
+          const rows = [...FILLERS, RESP_TX].map((tx_hash) => ({
+            tx_hash,
+            absolute_slot: 5_000,
+            epoch_no: 1_340,
+          }));
+          return new Response(JSON.stringify(rows), { status: 200 });
+        }
+        if (url.includes("/tx_metadata")) {
+          const { _tx_hashes } = JSON.parse(String(init?.body)) as {
+            _tx_hashes: string[];
+          };
+          metadataBatches.push(_tx_hashes);
+          if (_tx_hashes.includes(RESP_TX)) {
+            return new Response(
+              JSON.stringify([
+                { tx_hash: RESP_TX, metadata: responsesMetadata() },
+              ]),
+              { status: 200 },
+            );
+          }
+          // The filler batch: fails on run 1, fulfills empty (answered: these
+          // txs carry no label-17 payload) on run 2.
+          return fillersFail
+            ? new Response("boom", { status: 500 })
+            : new Response("[]", { status: 200 });
+        }
+        if (url.includes("/tip")) {
+          return new Response(
+            JSON.stringify([
+              {
+                epoch_no: 1_346,
+                abs_slot: 10_000,
+                epoch_slot: 100,
+                block_time: 1_750_000_000,
+              },
+            ]),
+            { status: 200 },
+          );
+        }
+        return new Response("[]", { status: 200 });
+      }),
+    );
+    const source = () => new KoiosDataSource(CONFIG, undefined, cache);
+
+    // Run 1: the filler batch drops (incomplete), RESP_TX's batch is banked.
+    const run1 = await source().fetchAll();
+    expect(run1.incomplete).toBe(true);
+    expect(run1.responses).toHaveLength(2);
+    expect(metadataBatches).toHaveLength(2);
+    expect(cache.map.has(RESP_TX)).toBe(true);
+    expect(cache.map.has(FILLERS[0]!)).toBe(false); // failed batch not banked
+
+    // Run 2: only the failed batch re-fetches (one request, the 50 fillers) —
+    // RESP_TX comes from the cache. No-row hashes are banked as null.
+    fillersFail = false;
+    metadataBatches.length = 0;
+    const run2 = await source().fetchAll();
+    expect(run2.incomplete).toBe(false);
+    expect(run2.responses).toHaveLength(2);
+    expect(metadataBatches).toEqual([FILLERS]);
+    expect(cache.map.get(FILLERS[0]!)).toBeNull();
+
+    // Run 3: everything cached → zero metadata requests. The scan has converged.
+    metadataBatches.length = 0;
+    const run3 = await source().fetchAll();
+    expect(run3.incomplete).toBe(false);
+    expect(run3.responses).toHaveLength(2);
+    expect(metadataBatches).toEqual([]);
+  });
+});

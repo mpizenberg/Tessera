@@ -19,7 +19,14 @@ export async function refreshSnapshot(
   config: ServerConfig,
   store: BackendStore,
 ): Promise<void> {
-  const source = new KoiosDataSource(config.app);
+  // The store-backed metadata cache makes the scan resumable: tx metadata is
+  // immutable, so each fulfilled /tx_metadata batch is banked and never
+  // re-fetched — a refresh cut short (Worker subrequest cap) converges over
+  // successive crons instead of failing identically forever.
+  const source = new KoiosDataSource(config.app, undefined, {
+    get: (hashes) => store.cachedTxMetadata(hashes),
+    put: (entries) => store.putTxMetadata(entries),
+  });
   const [records, tip] = await Promise.all([
     source.fetchAll(),
     source.chainTip(),
