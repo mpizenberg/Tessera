@@ -16,7 +16,7 @@ the fix deviated from the report's suggested direction.
 | 1 | Finalize emits artifacts while proof verdicts pending (`proofOk`/`blockIndex` null not an incompleteness reason) | done ac55932 |
 | 2 | Mechanism-B verdicts pinned to gov links known at first validation, never re-checked | done b2b13ca — persist `linked_action_id` (migration 0004), re-validate bindable rows on link change, defer verdicts when gov-links fetch unreliable |
 | 3 | Failed `tx_metadata` batch silently shrinks snapshot; finalize emits from it (`!record` not guarded) | done 2095600 — flag snapshot incomplete on batch failure, skip finalization when incomplete, postpone survey with a missing response record |
-| 4 | No pagination on bulk weight/membership reads — Koios 1000-row cap truncates silently | done ae226bc — offset-paginating `postAll` for both account reads, runaway guard |
+| 4 | No pagination on bulk weight/membership reads — Koios 1000-row cap truncates silently | done ae226bc — offset-paginating `postAll` for both account reads, runaway guard; follow-up: PAGE_LIMIT 100 / MAX_ACCOUNT_PAGES 50 and server-side `action_type=in.(registration,deregistration)` filter |
 
 ## Medium
 

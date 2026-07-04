@@ -3,13 +3,13 @@
  * survey's `end_epoch` (ARCHITECTURE.md §6.1/§6.5).
  *
  * Stakeholders (role 3) resolve in two bulk reads per 50-credential chunk:
- *  - `/account_update_history?epoch_no=lte.E` — registration state (offset-
- *    paginated: this returns *every* lifecycle event for the batch and can
- *    exceed Koios's ~1000-row cap). A credential is registered at E iff, walking
- *    its events (registration / deregistration / delegation…) in `absolute_slot`
- *    order up to E, the last state-changing event leaves it registered — any
- *    non-deregistration event (a delegation implies an active registration)
- *    after the last deregistration counts.
+ *  - `/account_update_history?epoch_no=lte.E&action_type=in.(registration,
+ *    deregistration)` — registration state. Only registration/deregistration
+ *    change it (delegations/withdrawals merely imply registration), so we filter
+ *    to those two server-side; a credential is registered at E iff, walking its
+ *    events in `absolute_slot` order up to E, the last one is a registration.
+ *    Still offset-paginated (a churny account can register/deregister many
+ *    times) so a long history is never silently truncated at Koios's ~1000 cap.
  *  - `/account_stake_history?epoch_no=eq.E` — active stake. One row per
  *    account *delegated to a pool* at E; a registered account with no row
  *    counts with weight 0 (§6.1 "registered but empty").
@@ -40,14 +40,14 @@ const ACCOUNT_BATCH = 50;
  * `account_update_history` over `lte.E`, which returns *every* lifecycle event
  * for the batch) must offset-paginate or it silently truncates.
  */
-const PAGE_LIMIT = 1000;
+const PAGE_LIMIT = 100;
 
 /**
  * Runaway guard for `postAll`: only trips if Koios ignores our `offset` (which
  * would loop forever). A million rows for 50 accounts is already absurd, so
  * hitting this means something is wrong — fail loudly rather than truncate.
  */
-const MAX_ACCOUNT_PAGES = 1000;
+const MAX_ACCOUNT_PAGES = 50;
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
@@ -156,6 +156,12 @@ export class KoiosTallyInputs implements TallyInputSource {
       const [updates, stakes] = await Promise.all([
         this.postAll<AccountUpdateRow>(
           `/account_update_history?epoch_no=lte.${epoch}` +
+            // Only registration/deregistration change the state we care about;
+            // delegations and withdrawals imply-but-don't-change registration.
+            // Filtering them server-side collapses a long-lived account's event
+            // history from thousands of rows to a handful, so pagination rarely
+            // trips at all (the walk below still tolerates any type defensively).
+            `&action_type=in.(registration,deregistration)` +
             `&select=stake_address,action_type,absolute_slot,epoch_no`,
           { _stake_addresses: batch },
         ),
@@ -177,9 +183,10 @@ export class KoiosTallyInputs implements TallyInputSource {
         events.sort((a, b) => a.absolute_slot - b.absolute_slot);
         let isRegistered = false;
         for (const e of events) {
-          // A deregistration closes the account; any other lifecycle event
-          // (registration, delegation_pool, delegation_drep, withdrawal…)
-          // implies an active registration.
+          // A deregistration closes the account; a registration (re)opens it.
+          // We only fetch those two types, but any other lifecycle event that
+          // slipped through implies an active registration, so treat anything
+          // that isn't a deregistration as registered.
           isRegistered = e.action_type !== "deregistration";
         }
         if (isRegistered) registered.add(address);

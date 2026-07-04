@@ -133,19 +133,21 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
 
   it("offset-paginates account_update_history past Koios's row cap (finding 4)", async () => {
     const addrA = await stakeAddress(cred(HASH_A), "preview");
-    const PAGE = 1000;
+    const PAGE = 100; // must match tallyInputs' PAGE_LIMIT
     const seenOffsets: number[] = [];
     stubFetch((url) => {
       if (url.includes("/account_stake_history")) return [];
       if (url.includes("/account_update_history")) {
+        // The query is filtered to the two state-changing event types.
+        expect(url).toContain("action_type=in.(registration,deregistration)");
         const offset = Number(new URL(url).searchParams.get("offset"));
         seenOffsets.push(offset);
         if (offset === 0) {
-          // A full page of registration/delegation events at low slots — every
-          // one implies "registered", so without page 2 the account looks live.
+          // A full page of registration events at low slots — each leaves the
+          // account "registered", so without page 2 it looks live.
           return Array.from({ length: PAGE }, (_, i) => ({
             stake_address: addrA,
-            action_type: "delegation_pool",
+            action_type: "registration",
             absolute_slot: i + 1,
             epoch_no: 1,
           }));
