@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { AnswerItem, Role, SurveyDefinition } from "cip-179";
 
+import type { SurveyResponse } from "cip-179";
+
 import type { ChainTip, ResponseRecord } from "./source";
-import { auditResponses, epochOfSlot, responseIsCountable } from "./audit";
+import {
+  auditResponses,
+  auditRevealedResponses,
+  epochOfSlot,
+  responseIsCountable,
+} from "./audit";
 
 // secondsPerEpoch = 100 → epochs are 100 slots; current epoch 10 starts at
 // slot 1000 (tip.slot − tip.epochSlot). Easy mental math for the cases below.
@@ -104,6 +111,73 @@ describe("responseIsCountable", () => {
     expect(responseIsCountable(DEF, rec("", 0, 4 as Role, 1).response)).toBe(
       false,
     );
+  });
+});
+
+const pub = (
+  role: Role,
+  cred: number,
+  answers: AnswerItem[],
+): SurveyResponse => ({
+  specVersion: 4,
+  surveyRef: REF,
+  role,
+  credential: keyCred(cred),
+  answers: { type: "public", answers },
+});
+
+describe("auditRevealedResponses", () => {
+  it("dedups only the valid decrypted set (latest-valid-wins)", () => {
+    // Two valid ballots for the same identity: the chain-later one wins, the
+    // earlier is superseded.
+    const inWindow = [
+      recWith("early", 940, 0, 1, [sc(0)]),
+      recWith("late", 950, 0, 1, [sc(1)]),
+    ];
+    const revealed = [pub(0, 1, [sc(0)]), pub(0, 1, [sc(1)])];
+    const r = auditRevealedResponses(inWindow, revealed, DEF_SC);
+    expect(r.counted.map((x) => x.txHash)).toEqual(["late"]);
+    expect(r.superseded.map((x) => x.txHash)).toEqual(["early"]);
+    expect(r.invalid).toEqual([]);
+    expect(r.failed).toEqual([]);
+  });
+
+  it("an invalid later ballot does NOT supersede a valid earlier one (finding 2)", () => {
+    // Same identity: the later ciphertext decodes to an out-of-constraint answer.
+    // It must be dropped as invalid, and the valid earlier one must be counted —
+    // never suppressed by a ballot that only looked structurally valid while sealed.
+    const inWindow = [
+      recWith("early", 940, 0, 1, [sc(0)]),
+      recWith("laterBad", 950, 0, 1, [sc(0)]),
+    ];
+    const revealed = [pub(0, 1, [sc(0)]), pub(0, 1, [sc(9)])]; // 9 is out of range
+    const r = auditRevealedResponses(inWindow, revealed, DEF_SC);
+    expect(r.counted.map((x) => x.txHash)).toEqual(["early"]);
+    expect(r.superseded).toEqual([]);
+    expect(r.invalid.map((x) => x.txHash)).toEqual(["laterBad"]);
+    expect(r.failed).toEqual([]);
+  });
+
+  it("an undecryptable later ballot does NOT supersede a valid earlier one (finding 2)", () => {
+    const inWindow = [
+      recWith("early", 940, 0, 1, [sc(0)]),
+      recWith("laterFail", 950, 0, 1, [sc(0)]),
+    ];
+    const revealed = [pub(0, 1, [sc(0)]), null]; // later decrypt/decode failed
+    const r = auditRevealedResponses(inWindow, revealed, DEF_SC);
+    expect(r.counted.map((x) => x.txHash)).toEqual(["early"]);
+    expect(r.superseded).toEqual([]);
+    expect(r.failed.map((x) => x.txHash)).toEqual(["laterFail"]);
+    expect(r.invalid).toEqual([]);
+  });
+
+  it("carries the decrypted answers onto the counted record", () => {
+    const inWindow = [recWith("a", 940, 0, 1, [])];
+    const r = auditRevealedResponses(inWindow, [pub(0, 1, [sc(1)])], DEF_SC);
+    expect(r.counted[0]!.response.answers).toEqual({
+      type: "public",
+      answers: [sc(1)],
+    });
   });
 });
 

@@ -117,3 +117,54 @@ export function auditResponses(
 
   return { counted, excludedRecords };
 }
+
+/** The classified outcome of revealing one survey's sealed responses. */
+export interface RevealedAudit {
+  /** Valid decrypted responses, after latest-valid-wins dedup — the tally set. */
+  readonly counted: ResponseRecord[];
+  /** Valid decrypted responses beaten by a later valid one (post-reveal dedup). */
+  readonly superseded: ResponseRecord[];
+  /** Decrypted cleanly but violate the survey's constraints. */
+  readonly invalid: ResponseRecord[];
+  /** Didn't decrypt or didn't decode (Tessera can't always tell which). */
+  readonly failed: ResponseRecord[];
+}
+
+/**
+ * The sealed-reveal counterpart to {@link auditResponses}. Given the in-window
+ * sealed responses (structurally valid, **pre-dedup**) and their decrypted
+ * public forms (`revealed[i]` aligns with `inWindow[i]`; `null` = decrypt/decode
+ * failed), classify each and dedup *only the valid decoded set*.
+ *
+ * Running dedup **after** reveal-time validation is essential for sealed surveys
+ * (finding 2): while sealed, a ciphertext can only be checked structurally, so
+ * dedup-before-reveal would let an invalid or undecryptable later ballot
+ * suppress a valid earlier one for the same (role, credential) — which would
+ * then never be revealed or counted, silently disenfranchising the responder.
+ * Here the superseded set is drawn only from responses proven valid at reveal.
+ * Decoded responses carry their decrypted public answers back onto the record.
+ */
+export function auditRevealedResponses(
+  inWindow: readonly ResponseRecord[],
+  revealed: readonly (SurveyResponse | null)[],
+  definition: SurveyDefinition,
+): RevealedAudit {
+  const decoded: ResponseRecord[] = [];
+  const invalid: ResponseRecord[] = [];
+  const failed: ResponseRecord[] = [];
+  inWindow.forEach((r, i) => {
+    const pub = revealed[i] ?? null;
+    if (pub === null) {
+      failed.push(r);
+    } else if (!responseIsCountable(definition, pub)) {
+      // Keep the decoded response so a per-response audit shows what it claimed.
+      invalid.push({ ...r, response: pub });
+    } else {
+      decoded.push({ ...r, response: pub });
+    }
+  });
+  const counted = dedupeResponses(decoded);
+  const countedSet = new Set(counted);
+  const superseded = decoded.filter((r) => !countedSet.has(r));
+  return { counted, superseded, invalid, failed };
+}

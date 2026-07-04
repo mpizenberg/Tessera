@@ -28,10 +28,11 @@ import {
   RULESET_DESCRIPTOR,
   artifactHash,
   auditResponses,
+  auditRevealedResponses,
   bytesToHex,
+  dedupeResponses,
   findSurvey,
   humanizeAnswer,
-  responseIsCountable,
   roleBreakdown,
   serializeAnswer,
   tallySurvey,
@@ -39,6 +40,7 @@ import {
   type ExclusionKey,
   type QuestionTally,
   type ResponseAudit,
+  type RevealedAudit,
   type SurveyAggregate,
   type TallyArtifact,
 } from "@tessera/core";
@@ -153,6 +155,25 @@ export const Survey: Component = () => {
   });
   const records = createMemo<ResponseRecord[]>(() => audit().counted);
 
+  // Sealed surveys defer dedup to *after* reveal-time validation: while sealed,
+  // `auditResponses` can only check a ciphertext structurally, so its latest-wins
+  // dedup would let an invalid later ballot suppress a valid earlier one, silently
+  // disenfranchising the responder (finding 2). So hand `SealedResults` the full
+  // pre-dedup in-window set (structurally valid = counted ∪ its superseded
+  // leftovers) plus only the reveal-independent exclusions; it decrypts every
+  // one, validates, and re-dedups over the *valid* set. Order is irrelevant —
+  // `dedupeResponses` picks the chain-latest regardless of input order.
+  const sealedInWindow = createMemo<ResponseRecord[]>(() => {
+    const a = audit();
+    const superseded = a.excludedRecords
+      .filter((e) => e.key === "superseded")
+      .map((e) => e.record);
+    return [...a.counted, ...superseded];
+  });
+  const sealedHardExcluded = createMemo<readonly ExcludedRecord[]>(() =>
+    audit().excludedRecords.filter((e) => e.key !== "superseded"),
+  );
+
   // Per-role response counts (plain integers, no cross-role percentages —
   // separate electorates aren't comparable as shares of one whole). Works even
   // while sealed: role + credential are plaintext; only the answers are sealed.
@@ -266,8 +287,8 @@ export const Survey: Component = () => {
                     s={sv()}
                     def={def() ?? sv().record.definition}
                     keyStr={key()}
-                    records={records()}
-                    excludedRecords={audit().excludedRecords}
+                    inWindow={sealedInWindow()}
+                    hardExcluded={sealedHardExcluded()}
                     nowUnix={now()}
                   />
                 }
@@ -1717,14 +1738,19 @@ const SealedResults: Component<{
   s: SurveyAggregate;
   def: SurveyDefinition;
   keyStr: string;
-  records: ResponseRecord[];
-  excludedRecords: readonly ExcludedRecord[];
+  /** Pre-dedup in-window structurally-valid responses (dedup happens post-reveal). */
+  inWindow: ResponseRecord[];
+  /** Reveal-independent exclusions only (after-deadline + structurally invalid). */
+  hardExcluded: readonly ExcludedRecord[];
   nowUnix: number;
 }> = (props) => {
   const mode = () => {
     const m = props.s.record.definition.submissionMode;
     return m.type === "sealed" ? m : null;
   };
+  // Pre-reveal responder count: role + credential are plaintext, so structural
+  // latest-wins dedup is knowable now; only the answers wait for the reveal.
+  const sealedCount = (): number => dedupeResponses(props.inWindow).length;
   const supported = () => {
     const m = mode();
     return m ? isQuicknet(m.chainHash) : false;
@@ -1758,38 +1784,26 @@ const SealedResults: Component<{
       !(revealRequested() && revealable() && supported() && !props.s.cancelled)
     )
       return null;
-    const hashes = props.records.map((r) => r.txHash).sort();
+    const hashes = props.inWindow.map((r) => r.txHash).sort();
     return `${mode()!.round}:${hashes.join(",")}`;
   };
 
   const [revealed] = createResource(revealKey, async () => {
     const { revealResponses } = await import("~/tlock/seal");
-    // Validate revealed answers against the *on-chain* definition (constraints
+    // Decrypt the *full* pre-dedup in-window set, then classify + dedup in core:
+    // dedup must run over the valid decrypted responses, never before them, or an
+    // invalid later ciphertext would suppress a valid earlier one that then never
+    // reveals (finding 2). Validate against the *on-chain* definition (constraints
     // and indices are on-chain; enrichment only relabels), not the display one.
-    const onChainDef = props.s.record.definition;
-    const records = props.records;
     const results = await revealResponses(
-      records.map((r) => r.response),
+      props.inWindow.map((r) => r.response),
       mode()!.round,
     );
-    const recs: ResponseRecord[] = [];
-    // Decrypt/decode failures (null result) vs. responses that decrypt+decode
-    // cleanly but break the survey's constraints — kept apart so the audit can
-    // name each correctly, and so a malformed sealed ballot can't inflate a tally.
-    const failedRecords: ResponseRecord[] = [];
-    const invalidRecords: ResponseRecord[] = [];
-    records.forEach((r, i) => {
-      const pub = results[i];
-      if (pub === null) {
-        failedRecords.push(r);
-      } else if (!responseIsCountable(onChainDef, pub)) {
-        // Keep the *decoded* response so the CSV/audit shows what it claimed.
-        invalidRecords.push({ ...r, response: pub });
-      } else {
-        recs.push({ ...r, response: pub });
-      }
-    });
-    return { records: recs, failedRecords, invalidRecords };
+    return auditRevealedResponses(
+      props.inWindow,
+      results,
+      props.s.record.definition,
+    );
   });
 
   // Post-reveal exclusions, folded into the on-chain categories from which the
@@ -1797,16 +1811,11 @@ const SealedResults: Component<{
   // didn't decode (Tessera can't always tell which, so the label stays neutral);
   // `invalid` = one that decoded but violated the survey's constraints. Both are
   // only knowable after reveal, so they're appended here, not in the pure audit.
-  const excludedRecordsWithFailures = (
-    failedRecords: readonly ResponseRecord[],
-    invalidRecords: readonly ResponseRecord[],
-  ): ExcludedRecord[] => [
-    ...props.excludedRecords,
-    ...invalidRecords.map((record) => ({ key: "invalid" as const, record })),
-    ...failedRecords.map((record) => ({
-      key: "undecryptable" as const,
-      record,
-    })),
+  const excludedRecordsWithFailures = (r: RevealedAudit): ExcludedRecord[] => [
+    ...props.hardExcluded,
+    ...r.superseded.map((record) => ({ key: "superseded" as const, record })),
+    ...r.invalid.map((record) => ({ key: "invalid" as const, record })),
+    ...r.failed.map((record) => ({ key: "undecryptable" as const, record })),
   ];
 
   return (
@@ -1830,9 +1839,9 @@ const SealedResults: Component<{
           tone="warn"
           title={t("survey.sealedTitle")}
           body={t("survey.sealedBody", {
-            n: n(props.records.length),
+            n: n(sealedCount()),
             responses:
-              props.records.length === 1
+              sealedCount() === 1
                 ? t("survey.responseSingular")
                 : t("survey.responsePlural"),
             date: formatRevealDate(mode()!.round),
@@ -1861,11 +1870,8 @@ const SealedResults: Component<{
         <ResultsBody
           def={props.def}
           keyStr={props.keyStr}
-          records={revealed()!.records}
-          excludedRecords={excludedRecordsWithFailures(
-            revealed()!.failedRecords,
-            revealed()!.invalidRecords,
-          )}
+          records={revealed()!.counted}
+          excludedRecords={excludedRecordsWithFailures(revealed()!)}
         />
       </Match>
       {/* Reached only when revealable, supported, not cancelled, and the viewer
@@ -1876,9 +1882,9 @@ const SealedResults: Component<{
           title={t("survey.sealedRevealableTitle")}
           body={t("survey.sealedRevealableBody", {
             date: formatRevealDate(mode()!.round),
-            n: n(props.records.length),
+            n: n(sealedCount()),
             responses:
-              props.records.length === 1
+              sealedCount() === 1
                 ? t("survey.responseSingular")
                 : t("survey.responsePlural"),
           })}
