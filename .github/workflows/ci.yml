@@ -11,12 +11,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  library:
-    name: cip-179 library
+  workspace:
+    name: workspace
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend/cip179
     steps:
       - uses: actions/checkout@v4
 
@@ -26,36 +23,17 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
-          cache-dependency-path: frontend/cip179/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
+      # One install for the whole workspace, then the recursive commands the
+      # README promises. This covers every package — @tessera/core,
+      # @tessera/koios, @tessera/verifier, and @tessera/backend carry the
+      # correctness-critical, hash-committed logic and previously never ran on
+      # a PR (only frontend/cip179 + frontend/app did).
       - run: pnpm install --frozen-lockfile
-      - run: pnpm type-check
-      - run: pnpm test
-      - run: pnpm build
-
-  app:
-    name: app
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend/app
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-          cache-dependency-path: frontend/app/pnpm-lock.yaml
-
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm format:check
-      - run: pnpm type-check
-      - run: pnpm test
-      - run: pnpm build
+      - run: pnpm -r type-check
+      - run: pnpm -r test
+      - run: pnpm --filter tessera-app format:check
+      - run: pnpm -r build
