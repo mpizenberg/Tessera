@@ -54,6 +54,7 @@ function response(
   cred: Credential,
   optionIndex: number,
   slot = 200,
+  role: Role = Role.Stakeholder,
 ): ResponseRecord {
   return {
     txHash,
@@ -63,7 +64,7 @@ function response(
     response: {
       specVersion: 4,
       surveyRef: { txId: hexToBytes(SURVEY_TX), index: 0 },
-      role: Role.Stakeholder,
+      role,
       credential: cred,
       answers: {
         type: "public",
@@ -370,5 +371,308 @@ describe("verifyArtifact", () => {
     const result = await verifyArtifact(inputs({ weights: flakyWeights }));
     expect(result.match).toBe(true); // everything else re-verified
     expect(result.notes.join("\n")).toContain("not independently re-fetchable");
+  });
+});
+
+// --- Keyholder: the count-only weight path (finding 12) ----------------------
+//
+// Keyholders have no on-chain electorate: no fetched weight (constant 1), no
+// registration/membership filter, no electorate total (null). Both the emitter
+// (finalize.ts) and this rebuild implement that fork independently and must
+// agree byte-for-byte — these tests pin the rebuild's side of the contract.
+
+describe("verifyArtifact — Keyholder role", () => {
+  const DEF_KH: SurveyDefinition = {
+    ...DEF,
+    eligibleRoles: [Role.Keyholder] as Role[],
+  };
+  const K_A = response("44".repeat(32), CRED_A, 0, 200, Role.Keyholder);
+  const K_B = response("55".repeat(32), CRED_B, 1, 200, Role.Keyholder);
+  const khBundle: SurveyBundle = {
+    ...bundle,
+    survey: { ...bundle.survey, definition: DEF_KH },
+    responses: [K_A, K_B],
+  };
+  const khProofs = new Map<string, TxProof | null>([
+    [
+      K_A.txHash,
+      { requiredSigners: ["a1".repeat(28)], nativeScripts: [], votes: [] },
+    ],
+    [
+      K_B.txHash,
+      { requiredSigners: ["b2".repeat(28)], nativeScripts: [], votes: [] },
+    ],
+  ]);
+  // If the rebuild consults ANY weight endpoint for a keyholder-only survey,
+  // that's a bug (e.g. a bare key routed through stakeholderWeights would come
+  // back unregistered and silently drop every responder) — so every method
+  // throws, proving the branch never fetches.
+  const noWeights: TallyInputSource = {
+    async stakeholderWeights() {
+      throw new Error("keyholders must not fetch weights");
+    },
+    async drepWeights() {
+      throw new Error("keyholders must not fetch weights");
+    },
+    async stakeholderTotal() {
+      throw new Error("keyholders have no electorate total");
+    },
+    async drepTotal() {
+      throw new Error("keyholders have no electorate total");
+    },
+  };
+
+  const khResponders = [
+    {
+      credentialKey: credentialKey(CRED_A),
+      weight: 1n,
+      txHash: K_A.txHash,
+      responseIndex: K_A.responseIndex,
+      response: K_A.response,
+    },
+    {
+      credentialKey: credentialKey(CRED_B),
+      weight: 1n,
+      txHash: K_B.txHash,
+      responseIndex: K_B.responseIndex,
+      response: K_B.response,
+    },
+  ];
+  const khArtifact: TallyArtifact = {
+    tally: {
+      rulesetHash: rulesetHash(),
+      network: "preview",
+      survey: { txId: SURVEY_TX, index: 0, endEpoch: END_EPOCH },
+      sealed: false,
+      perRole: [
+        {
+          role: Role.Keyholder,
+          total: null, // no on-chain electorate for keyholders
+          responders: toArtifactResponders(khResponders),
+          questions: toArtifactQuestions(
+            weightedTallySurvey(DEF_KH, khResponders),
+          ),
+        },
+      ],
+    },
+    provenance: {
+      source: { provider: "koios", baseUrl: "x" },
+      fetchedAt: 1,
+      byRole: [{ role: 4, endpoint: "local-count" }],
+    },
+  };
+
+  it("MATCHes with weight 1, no membership filter, and a null total — no fetches", async () => {
+    const result = await verifyArtifact(
+      inputs({
+        bundle: khBundle,
+        proofs: khProofs,
+        weights: noWeights,
+        artifact: khArtifact,
+      }),
+    );
+    // No total-fallback note either: a null total is the rule, not a caveat.
+    expect(result.notes).toEqual([]);
+    expect(result.diffs).toEqual([]);
+    expect(result.match).toBe(true);
+  });
+
+  it("MISMATCHes a keyholder counted with weight ≠ 1", async () => {
+    const role = khArtifact.tally.perRole[0]!;
+    const tampered: TallyArtifact = {
+      ...khArtifact,
+      tally: {
+        ...khArtifact.tally,
+        perRole: [
+          {
+            ...role,
+            responders: role.responders.map((r) =>
+              r.credential === credentialKey(CRED_A)
+                ? { ...r, weight: "3" }
+                : r,
+            ),
+          },
+        ],
+      },
+    };
+    const result = await verifyArtifact(
+      inputs({
+        bundle: khBundle,
+        proofs: khProofs,
+        weights: noWeights,
+        artifact: tampered,
+      }),
+    );
+    expect(result.match).toBe(false);
+    expect(result.diffs.join("\n")).toContain("weight 3→1");
+  });
+});
+
+// --- Mechanism B: vote-binding credential proof (finding 12) -----------------
+//
+// On a governance-linked survey, a tx can prove its credential by voting on the
+// linked action with that same credential (voter tag 2 = DRep key). Every test
+// above runs with linkedActionId null, so this block pins the three rules:
+// a vote alone proves; a failing binding invalidates even when mechanism A
+// passes; no link means votes prove nothing.
+
+describe("verifyArtifact — mechanism B (governance vote binding)", () => {
+  const ACTION = "gov_action1linked";
+  const DEF_DREP: SurveyDefinition = {
+    ...DEF,
+    eligibleRoles: [Role.DRep] as Role[],
+  };
+  const D_A = response("66".repeat(32), CRED_A, 0, 200, Role.DRep);
+  const drepBundle: SurveyBundle = {
+    ...bundle,
+    survey: { ...bundle.survey, definition: DEF_DREP },
+    responses: [D_A],
+  };
+  const drepSource: TallyInputSource = {
+    async stakeholderWeights() {
+      throw new Error("DRep surveys must not fetch stakeholder weights");
+    },
+    async drepWeights(_e, creds) {
+      return new Map(
+        creds.map((c) => [
+          credentialKey(c),
+          { weight: 500n, registered: true },
+        ]),
+      );
+    },
+    async stakeholderTotal() {
+      throw new Error("DRep surveys must not fetch the stakeholder total");
+    },
+    async drepTotal() {
+      return 10_000n;
+    },
+  };
+  const drepResponders = [
+    {
+      credentialKey: credentialKey(CRED_A),
+      weight: 500n,
+      txHash: D_A.txHash,
+      responseIndex: D_A.responseIndex,
+      response: D_A.response,
+    },
+  ];
+  const drepArtifact: TallyArtifact = {
+    tally: {
+      rulesetHash: rulesetHash(),
+      network: "preview",
+      survey: { txId: SURVEY_TX, index: 0, endEpoch: END_EPOCH },
+      sealed: false,
+      perRole: [
+        {
+          role: Role.DRep,
+          total: "10000",
+          responders: toArtifactResponders(drepResponders),
+          questions: toArtifactQuestions(
+            weightedTallySurvey(DEF_DREP, drepResponders),
+          ),
+        },
+      ],
+    },
+    provenance: {
+      source: { provider: "koios", baseUrl: "x" },
+      fetchedAt: 1,
+      byRole: [{ role: 0, endpoint: "drep_voting_power_history" }],
+    },
+  };
+  const drepInputs = (overrides: Partial<VerifyInputs>): VerifyInputs =>
+    inputs({
+      bundle: drepBundle,
+      weights: drepSource,
+      artifact: drepArtifact,
+      linkedActionId: ACTION,
+      ...overrides,
+    });
+
+  it("MATCHes when the credential is proven only by its vote on the linked action", async () => {
+    // No required_signers at all: the vote binding is the sole proof.
+    const proofs = new Map<string, TxProof | null>([
+      [
+        D_A.txHash,
+        {
+          requiredSigners: [],
+          nativeScripts: [],
+          votes: [
+            {
+              voterTag: 2, // DRep key
+              credentialHash: "a1".repeat(28),
+              actionIds: [ACTION],
+            },
+          ],
+        },
+      ],
+    ]);
+    const result = await verifyArtifact(drepInputs({ proofs }));
+    expect(result.notes).toEqual([]);
+    expect(result.diffs).toEqual([]);
+    expect(result.match).toBe(true);
+  });
+
+  it("a failing binding invalidates even when mechanism A passes", async () => {
+    // The credential IS in required_signers (mechanism A alone would pass),
+    // but it also cast a vote — on the WRONG action. A present-but-failing
+    // binding decides alone, so a correct rebuild drops the responder.
+    const proofs = new Map<string, TxProof | null>([
+      [
+        D_A.txHash,
+        {
+          requiredSigners: ["a1".repeat(28)],
+          nativeScripts: [],
+          votes: [
+            {
+              voterTag: 2,
+              credentialHash: "a1".repeat(28),
+              actionIds: ["gov_action1other"],
+            },
+          ],
+        },
+      ],
+    ]);
+    const result = await verifyArtifact(drepInputs({ proofs }));
+    expect(result.match).toBe(false);
+    // The dropped responder was the role's only one → the whole role vanishes.
+    expect(result.diffs.join("\n")).toContain("present only in received");
+  });
+
+  it("falls back to mechanism A when the credential cast no binding", async () => {
+    const proofs = new Map<string, TxProof | null>([
+      [
+        D_A.txHash,
+        { requiredSigners: ["a1".repeat(28)], nativeScripts: [], votes: [] },
+      ],
+    ]);
+    const result = await verifyArtifact(drepInputs({ proofs }));
+    expect(result.match).toBe(true);
+  });
+
+  it("votes prove nothing on a standalone survey (linkedActionId null)", async () => {
+    // Same vote-only proof as the MATCH case, but the survey has no linked
+    // action — mechanism B doesn't exist, so the response stays unproven and
+    // an artifact that counted it must MISMATCH.
+    const proofs = new Map<string, TxProof | null>([
+      [
+        D_A.txHash,
+        {
+          requiredSigners: [],
+          nativeScripts: [],
+          votes: [
+            {
+              voterTag: 2,
+              credentialHash: "a1".repeat(28),
+              actionIds: [ACTION],
+            },
+          ],
+        },
+      ],
+    ]);
+    const result = await verifyArtifact(
+      drepInputs({ proofs, linkedActionId: null }),
+    );
+    expect(result.match).toBe(false);
+    expect(result.diffs.join("\n")).toContain("present only in received");
   });
 });
