@@ -57,6 +57,7 @@ import { formatRevealDate, isQuicknet, roundIsAvailable } from "~/tlock/drand";
 import {
   endsText,
   fullRef,
+  networkMismatch,
   roleColors,
   roleLabel,
   safeExternalHref,
@@ -338,6 +339,11 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
   const [cancelling, setCancelling] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [hash, setHash] = createSignal<string | null>(null);
+  // Block cancelling while the wallet is on a different network than the app, so
+  // the cancellation isn't broadcast to the wrong chain (a paid no-op that leaves
+  // the real survey open). Mirrors the create/respond/propose submit gates.
+  const mismatch = (): boolean =>
+    networkMismatch(app.wallet()?.identity.networkId, app.config.network);
 
   const onCancel = async () => {
     const def = props.s.record.definition;
@@ -383,7 +389,11 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
         <Show
           when={confirming()}
           fallback={
-            <button onClick={() => setConfirming(true)} class={css.cancelBtn}>
+            <button
+              onClick={() => setConfirming(true)}
+              disabled={mismatch()}
+              class={css.cancelBtn}
+            >
               {t("survey.cancelSurvey")}
             </button>
           }
@@ -391,7 +401,7 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
           <div class={css.confirmRow}>
             <button
               onClick={() => void onCancel()}
-              disabled={cancelling()}
+              disabled={cancelling() || mismatch()}
               class={css.confirmBtn}
             >
               {cancelling()
@@ -405,6 +415,11 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
             >
               {t("survey.keep")}
             </button>
+          </div>
+        </Show>
+        <Show when={mismatch()}>
+          <div class={css.ownerError}>
+            {t("survey.switchNetwork", { network: app.config.network })}
           </div>
         </Show>
         <Show when={error()}>

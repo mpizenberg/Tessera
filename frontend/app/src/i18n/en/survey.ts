@@ -34,6 +34,7 @@ const survey = {
   cancelling: "Cancelling…",
   confirmCancel: "Confirm cancel",
   keep: "Keep",
+  switchNetwork: "Switch your wallet to {network} to cancel",
 
   // Link survey to a governance Info Action
   linkOptional: "Optional",

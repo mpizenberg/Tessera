@@ -36,6 +36,7 @@ const survey: Messages = {
   cancelling: "Annulation…",
   confirmCancel: "Confirmer l'annulation",
   keep: "Conserver",
+  switchNetwork: "Basculez votre portefeuille sur {network} pour annuler",
 
   // Link survey to a governance Info Action
   linkOptional: "Optionnel",
