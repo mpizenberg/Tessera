@@ -66,6 +66,10 @@ export function memBackendStore(
     async validatedForSurvey(surveyKey) {
       return [...validated.values()].filter((r) => r.surveyKey === surveyKey);
     },
+    async deleteValidatedResponses(keys) {
+      for (const k of keys)
+        validated.delete(validationKey(k.txHash, k.responseIndex));
+    },
 
     async weightRows(epoch, role) {
       return [...weights.values()].filter(

@@ -156,6 +156,9 @@ export function openBackendStore(path: string): BackendStore {
             well_formed AS wellFormed, checked_at AS checkedAt
      FROM validated_response WHERE survey_key = ?`,
   );
+  const deleteValidatedStmt = db.prepare(
+    "DELETE FROM validated_response WHERE tx_hash = ? AND response_index = ?",
+  );
 
   const weightRowsStmt = db.prepare(
     `SELECT epoch, role, credential, weight, registered,
@@ -275,6 +278,11 @@ export function openBackendStore(path: string): BackendStore {
       return (forSurveyStmt.all(surveyKey) as unknown as DbValidatedRow[]).map(
         fromDb,
       );
+    },
+    async deleteValidatedResponses(
+      keys: readonly { txHash: string; responseIndex: number }[],
+    ): Promise<void> {
+      for (const k of keys) deleteValidatedStmt.run(k.txHash, k.responseIndex);
     },
 
     async weightRows(epoch: number, role: number): Promise<WeightRow[]> {

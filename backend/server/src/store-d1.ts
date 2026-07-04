@@ -144,6 +144,15 @@ export function d1BackendStore(db: D1Like): BackendStore {
         .all<DbValidatedRow>();
       return results.map(fromDb);
     },
+    async deleteValidatedResponses(
+      keys: readonly { txHash: string; responseIndex: number }[],
+    ): Promise<void> {
+      if (keys.length === 0) return;
+      const stmt = db.prepare(
+        "DELETE FROM validated_response WHERE tx_hash = ? AND response_index = ?",
+      );
+      await db.batch(keys.map((k) => stmt.bind(k.txHash, k.responseIndex)));
+    },
 
     async weightRows(epoch: number, role: number): Promise<WeightRow[]> {
       const { results } = await db

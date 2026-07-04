@@ -573,12 +573,46 @@ describe("finalizeClosedSurveys", () => {
     expect(inputs.stakeholderCalls).toBe(0);
   });
 
-  it("postpones a survey whose counted response fell out of the snapshot (finding 3)", async () => {
+  it("prunes a counted response that fell out of the snapshot, then finalizes (finding 3)", async () => {
     const store = memBackendStore();
     await seed(store, [validatedRow(rA)]); // validated earlier…
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
 
-    // …but the response tx is no longer in the snapshot's records.
+    // …but the response tx is no longer in the (complete) snapshot: it was
+    // reorged out and, with a fixed scan floor, can never age back in. This
+    // refresh prunes the stale row and postpones (the one-refresh reorg buffer);
+    // it must NOT postpone forever the way it once did.
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      inputs,
+      noProofs,
+      records(survey(), []),
+      TIP,
+    );
+    expect(store.artifacts.size).toBe(0);
+    expect(store.validated.has("11".repeat(32) + ":0")).toBe(false); // pruned
+
+    // The tx stays gone. Because the stale row was pruned, the survey now
+    // finalizes (no longer blocked by the vanished response) instead of
+    // livelocking on it.
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      inputs,
+      noProofs,
+      records(survey(), []),
+      TIP,
+    );
+    expect(store.artifacts.size).toBe(1);
+  });
+
+  it("re-counts a reorged-out response if it returns before the next finalize (finding 3)", async () => {
+    const store = memBackendStore();
+    await seed(store, [validatedRow(rA)]);
+    const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
+
+    // Refresh 1: absent → pruned, postponed.
     await finalizeClosedSurveys(
       CONFIG,
       store,
@@ -589,7 +623,9 @@ describe("finalizeClosedSurveys", () => {
     );
     expect(store.artifacts.size).toBe(0);
 
-    // It finalizes once the response is back in the snapshot.
+    // The tx re-appears in the next scan, so validation re-runs and re-writes
+    // the row (modelled here by re-seeding). Finalization then counts it.
+    await seed(store, [validatedRow(rA)]);
     await finalizeClosedSurveys(
       CONFIG,
       store,

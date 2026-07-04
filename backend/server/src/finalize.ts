@@ -172,14 +172,34 @@ export async function finalizeClosedSurveys(
         continue;
       }
       const { counted, pending } = countedBySurvey.get(key)!;
-      const absent = counted.find(
+      // A counted row whose tx is no longer in this (complete — see the
+      // `records.incomplete` guard above) snapshot was reorged out: the fixed
+      // scan floor means it can't age back in, and validated_response rows are
+      // never otherwise pruned, so leaving it would postpone this survey on
+      // *every* future refresh, forever (finding 3). Treat snapshot membership
+      // as authoritative: prune the stale row(s) and postpone one more refresh.
+      // That one refresh is the reorg buffer — if the tx re-appears next scan
+      // it's re-validated (the row is uncompleted again) and counted; if it
+      // stays gone the row is now absent from `counted`, so the survey emits.
+      const absent = counted.filter(
         (r) => !presentResponses.has(`${r.txHash}:${r.responseIndex}`),
       );
+      if (absent.length > 0) {
+        await store.deleteValidatedResponses(
+          absent.map((r) => ({
+            txHash: r.txHash,
+            responseIndex: r.responseIndex,
+          })),
+        );
+        for (const r of absent) {
+          console.warn(
+            `finalize: ${key} pruned reorged-out response ${r.txHash}:${r.responseIndex}`,
+          );
+        }
+        continue;
+      }
       const missing =
-        pending ??
-        (absent
-          ? `response ${absent.txHash}:${absent.responseIndex} missing from snapshot`
-          : incompleteReason(counted, weightByRole, totalByRole));
+        pending ?? incompleteReason(counted, weightByRole, totalByRole);
       if (missing) {
         console.warn(`finalize: ${key} postponed — ${missing}`);
         continue;

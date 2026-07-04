@@ -102,6 +102,16 @@ export interface TallyStore {
     rows: readonly ValidatedResponseRow[],
   ): Promise<void>;
   validatedForSurvey(surveyKey: string): Promise<ValidatedResponseRow[]>;
+  /**
+   * Prune validated rows by (txHash, responseIndex). Used at finalization when a
+   * counted response has vanished from a *complete* snapshot (reorged out): the
+   * scan floor means it can't age back in and the row is never otherwise pruned,
+   * so leaving it would postpone the survey forever. If the tx later re-appears
+   * it is simply re-validated (the row is uncompleted again).
+   */
+  deleteValidatedResponses(
+    keys: readonly { txHash: string; responseIndex: number }[],
+  ): Promise<void>;
 
   /** All snapshotted weights for one (epoch, role). */
   weightRows(epoch: number, role: number): Promise<WeightRow[]>;
