@@ -6,7 +6,7 @@ Commit after each fix.
 | # | Title | Severity | Status |
 |---|-------|----------|--------|
 | 1 | Verifier trusts backend for response set / answer contents | High | ☐ todo |
-| 2 | Sealed-survey reveal dedups before reveal-time validation | Medium | ☐ todo |
+| 2 | Sealed-survey reveal dedups before reveal-time validation | Medium | ✅ done |
 | 3 | Validated-then-rolled-back response postpones finalization forever | Medium | ✅ done |
 | 4 | Unknown-survey responses re-fetched from Koios forever | Medium | ✅ done |
 | 5 | CI never runs core/koios/verifier/backend tests; stale lockfiles | Medium | ✅ done |
@@ -43,3 +43,6 @@ Commit after each fix.
 - Note: `finalize.test.ts` names some tests "(finding 1)" / "(finding 5)" — these
   refer to an *earlier* review's numbering (pending-verdict postpone, weight
   resume cursor), not this report's. Left as-is.
+- **2** (commit): added core `auditRevealedResponses` (decrypt full pre-dedup
+  in-window set → classify → dedup only valid decoded); `SealedResults` now gets
+  `inWindow` + `hardExcluded` and defers dedup to it. Unit-tested in core.
