@@ -14,7 +14,7 @@ the example consumers `cdnsd` (Adder) and `administration-data/indexer` (Yaci St
 
 ## 1. What the indexer actually needs
 
-Re-reading `../minimal/cip-179.md`, an implementation that goes beyond "store the raw blob"
+Re-reading `../frontend/cip-179.md`, an implementation that goes beyond "store the raw blob"
 must touch four layers. This is the yardstick for the candidates.
 
 | # | Requirement | Where in CIP-179 | Difficulty |
