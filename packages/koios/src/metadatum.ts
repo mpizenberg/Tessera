@@ -11,8 +11,12 @@
  *   CBOR map   → JSON object (keys stringified)
  *
  * Known lossiness of this JSON form (not of CIP-179 itself):
- *   - JSON numbers lose precision above 2^53; CIP-179 integer *keys* are tiny
- *     (0–8) so they are safe, but large numeric *values* could be affected.
+ *   - JSON numbers lose precision above 2^53. Rather than silently truncate to
+ *     a wrong bigint (which would flow into the *hashed* artifact and diverge
+ *     from a CBOR-native implementation of the same ruleset), any numeric value
+ *     that isn't a safe integer is rejected as malformed — see
+ *     `koiosJsonToMetadatum`. CIP-179 integer *keys* are parsed exactly from
+ *     their string form, so they are unaffected regardless of magnitude.
  *   - A text value that genuinely starts with "0x" is indistinguishable from
  *     bytes. CIP-179 titles/prompts realistically never do.
  *
@@ -63,7 +67,16 @@ const MAX_DEPTH = 64;
 /** Convert one Koios JSON metadata value into a `Metadatum` tree. */
 export function koiosJsonToMetadatum(json: KoiosJson, depth = 0): Metadatum {
   if (depth > MAX_DEPTH) throw new Error("metadata nesting too deep");
-  if (typeof json === "number") return BigInt(Math.trunc(json));
+  if (typeof json === "number") {
+    // Koios already lost precision if the on-chain int exceeded 2^53, and
+    // `Math.trunc` would hand back a plausible-but-wrong bigint. Reject instead:
+    // a wrong value silently entering the hashed artifact is worse than dropping
+    // the tx as unreadable (matching every other unsafe-integer path here).
+    if (!Number.isSafeInteger(json)) {
+      throw new Error(`metadata number is not a safe integer: ${json}`);
+    }
+    return BigInt(json);
+  }
   if (typeof json === "string") return stringToMetadatum(json);
   if (Array.isArray(json))
     return json.map((v) => koiosJsonToMetadatum(v, depth + 1));
