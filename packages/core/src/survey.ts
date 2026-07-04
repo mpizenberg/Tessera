@@ -104,18 +104,23 @@ export function voteDeadlineUnix(
 export type CancellationState = "verified" | "claimed";
 
 /**
- * Per-survey cancellation state, keyed by survey ref. A cancellation is only
- * considered while its target survey is **still open** (tip at/before the
- * survey's `end_epoch`): the scan only fetches owner-proofs for those (closed
- * ones ride with `proof: null`), so nothing here could verify a closed survey's
- * cancellation anyway — that case is covered by the serving tier's
+ * Per-survey cancellation state, keyed by survey ref. A cancellation counts
+ * only when it lands within the survey's window (`epochNo ≤ end_epoch`); a
+ * later one is invalid per CIP-179 §6.3 and ignored.
+ *
+ * `verified` (owner-proven, CIP-179 mechanism A) is only ever assigned while
+ * the survey is **still open** (tip at/before `end_epoch`): the scan fetches
+ * owner-proofs only for open surveys — closed ones ride with `proof: null` — so
+ * a closed survey's cancellation can never verify here. A closed survey's
+ * *verified* cancellation is instead carried by the serving tier's
  * finalized-cancelled overlay in {@link SurveyListPayload.finalizedCancelled},
- * derived from the emitted artifact. (The open-only rule also subsumes the
- * CIP-179 rule that a cancellation after `end_epoch` is invalid — for a
- * still-open survey, any cancellation already on chain is necessarily within
- * the window.) Among the considered cancellations an owner-proven one wins
- * (`verified`), otherwise the survey is `claimed` (unverified). Surveys with no
- * such cancellation are absent from the map.
+ * derived from the emitted artifact.
+ *
+ * An in-window cancellation that isn't (or can't be) verified surfaces as a
+ * `claimed` state — **including for closed surveys**, so the "unverified
+ * cancellation claim" warning stays visible after close (finding 6) instead of
+ * silently vanishing. `verified` always wins over `claimed`. Surveys with no
+ * in-window cancellation are absent from the map.
  */
 export function cancellationStates(
   records: Cip179Records,
@@ -129,8 +134,11 @@ export function cancellationStates(
     const key = refKey(c.target);
     const def = defByKey.get(key);
     if (!def) continue; // references an unknown survey — ignore
-    if (tip.epoch > def.endEpoch) continue; // survey already closed — moot
-    if (cancellationVerified(def.owner, c.proof)) {
+    if (c.epochNo > def.endEpoch) continue; // after the window — invalid (§6.3)
+    // Verification is attempted only while the survey is open; a closed
+    // survey's cancellation ships with `proof: null` (see above), so it can
+    // only ever reach the `claimed` branch here, never `verified`.
+    if (tip.epoch <= def.endEpoch && cancellationVerified(def.owner, c.proof)) {
       states.set(key, "verified");
     } else if (states.get(key) !== "verified") {
       states.set(key, "claimed");
@@ -210,7 +218,10 @@ function aggregate(
       key,
       record,
       cancelled,
-      cancellationClaimed: cancelState === "claimed",
+      // A cancellation carried by the finalized-cancelled overlay (or verified
+      // while open) is already reflected in `cancelled`; only surface the
+      // "unverified claim" warning when the survey isn't otherwise cancelled.
+      cancellationClaimed: !cancelled && cancelState === "claimed",
       sealed: record.definition.submissionMode.type === "sealed",
       external: record.definition.contentAnchor !== undefined,
       govLink,

@@ -20,7 +20,7 @@ const survey: Messages = {
   // Unverified cancellation notice
   claimedNoticeStrong: "Annulation revendiquée non vérifiée.",
   claimedNoticeRest:
-    "Une annulation référençant ce sondage a été publiée, mais ce client n'a pas pu vérifier qu'elle provenait du propriétaire du sondage — elle est donc ignorée et le sondage reste ouvert. Seule une annulation signée par le propriétaire clôt un sondage.",
+    "Une annulation référençant ce sondage a été publiée, mais ce client n'a pas pu vérifier qu'elle provenait du propriétaire du sondage — elle n'est donc pas prise en compte. Seule une annulation signée par le propriétaire invalide un sondage.",
 
   // Respond CTA
   respondCta: "Répondre à ce sondage",

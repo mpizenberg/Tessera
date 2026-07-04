@@ -332,10 +332,12 @@ export const Survey: Component = () => {
 };
 
 /**
- * Shown when a cancellation referencing this survey exists but couldn't be
- * verified as the owner's (forgery, unsupported owner type, or unfetchable
- * proof). The survey stays open — an unverified claim never closes it — so this
- * is informational, making the attempted suppression visible without acting on it.
+ * Shown when an in-window cancellation referencing this survey exists but
+ * couldn't be verified as the owner's (forgery, unsupported owner type, or —
+ * for a closed survey in direct-Koios mode — a proof the scan never fetches).
+ * An unverified claim never closes a survey, so this is informational: it keeps
+ * the attempted suppression visible (finding 6) without acting on it, whether
+ * the survey is still open or already ended.
  */
 const ClaimedCancellationNotice: Component = () => (
   <div class={css.claimedNotice}>

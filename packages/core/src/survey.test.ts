@@ -127,9 +127,25 @@ describe("aggregateSurveys — cancellation tri-state", () => {
     expect(a.cancellationClaimed).toBe(false);
   });
 
-  it("a cancellation for an already-closed survey is ignored", () => {
-    // endEpoch 8 < tip epoch 10 → the survey is already closed, so its
-    // cancellation is moot (nothing to suppress) regardless of proof.
+  it("keeps an in-window cancellation on a closed survey visible as a claim (finding 6)", () => {
+    // endEpoch 8 < tip epoch 10 → closed. The cancellation lands in-window
+    // (epoch 8), but a closed survey's proof is never fetched/verified here, so
+    // it surfaces as an unverified *claim* (the warning stays visible) while
+    // `cancelled` stays false — only the finalized-cancelled overlay closes it.
+    const a = agg1(
+      recs(
+        [survey(0, def(keyOwner(1), 8))],
+        [cancel(0, 800, proof([ownerHex(1)]))],
+      ),
+    );
+    expect(a.cancelled).toBe(false);
+    expect(a.cancellationClaimed).toBe(true);
+    expect(a.status).toBe("ended");
+  });
+
+  it("ignores a cancellation published after the survey's window closed", () => {
+    // endEpoch 8, cancellation in epoch 9 (slot 950) → after the window, so
+    // invalid per §6.3 and not even a claim.
     const a = agg1(
       recs(
         [survey(0, def(keyOwner(1), 8))],
@@ -152,8 +168,9 @@ describe("aggregateSurveys — cancellation tri-state", () => {
 describe("aggregateSurveyList — finalized-cancelled overlay (finding 19)", () => {
   // A cancelled-then-closed survey: the scan ships its cancellation with
   // proof: null (it only verifies proofs for open surveys), so client-side
-  // verification alone would show it as plain "Ended". The serving tier's
-  // finalizedCancelled keys carry the artifact's verdict past close.
+  // verification alone would show it as "Ended" with only an unverified-claim
+  // warning. The serving tier's finalizedCancelled keys carry the artifact's
+  // verdict past close, which also supersedes that claim warning.
   const closed = survey(0, def(keyOwner(1), 8)); // endEpoch 8 < tip epoch 10
   const list = (
     finalizedCancelled?: readonly string[],
@@ -173,9 +190,10 @@ describe("aggregateSurveyList — finalized-cancelled overlay (finding 19)", () 
     expect(a.status).toBe("cancelled");
   });
 
-  it("without the overlay the closed survey stays 'ended'", () => {
+  it("without the overlay the closed survey stays 'ended' but keeps the claim warning", () => {
     const a = aggregateSurveyList(list())[0]!;
     expect(a.cancelled).toBe(false);
+    expect(a.cancellationClaimed).toBe(true);
     expect(a.status).toBe("ended");
   });
 });

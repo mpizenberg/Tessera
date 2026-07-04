@@ -17,7 +17,7 @@ const survey = {
   // the rest is plain — kept as two messages so each stays a whole phrase.
   claimedNoticeStrong: "Unverified cancellation claim.",
   claimedNoticeRest:
-    "A cancellation referencing this survey was published, but this client couldn't verify it came from the survey owner — so it's ignored and the survey remains open. Only an owner-signed cancellation closes a survey.",
+    "A cancellation referencing this survey was published, but this client couldn't verify it came from the survey owner — so it isn't acted on. Only an owner-signed cancellation invalidates a survey.",
 
   // Respond CTA
   respondCta: "Respond to this survey",
