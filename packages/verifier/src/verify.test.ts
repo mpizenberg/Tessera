@@ -18,7 +18,11 @@ import {
   type ResponseRecord,
 } from "@tessera/core";
 
-import { verifyArtifact, type VerifyInputs } from "./verify";
+import {
+  diffResponseSets,
+  verifyArtifact,
+  type VerifyInputs,
+} from "./verify";
 
 // --- fixtures ------------------------------------------------------------------
 
@@ -200,6 +204,31 @@ function inputs(overrides: Partial<VerifyInputs> = {}): VerifyInputs {
 }
 
 // --- tests -----------------------------------------------------------------------
+
+describe("diffResponseSets", () => {
+  const r = (txHash: string, responseIndex = 0) => ({ txHash, responseIndex });
+
+  it("is silent when the backend bundle matches the chain scan", () => {
+    const set = [r("a"), r("b", 1)];
+    expect(diffResponseSets(set, [...set].reverse())).toEqual([]);
+  });
+
+  it("flags a response the backend omitted from what the chain has (finding 1)", () => {
+    const chain = [r("a"), r("b")];
+    const backend = [r("a")];
+    const notes = diffResponseSets(chain, backend);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toContain("OMITS");
+    expect(notes[0]).toContain("b:0");
+  });
+
+  it("flags a response the backend has but the chain scan does not", () => {
+    const notes = diffResponseSets([r("a")], [r("a"), r("ghost")]);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toContain("not seen in the chain scan");
+    expect(notes[0]).toContain("ghost:0");
+  });
+});
 
 describe("verifyArtifact", () => {
   it("MATCHes a correctly emitted artifact", async () => {

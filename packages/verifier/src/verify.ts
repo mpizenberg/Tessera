@@ -2,13 +2,16 @@
  * Artifact re-verification (`backend/ARCHITECTURE.md` §7/§8): rebuild a
  * survey's final tally from first principles and compare content hashes.
  *
- * Trust model: the inputs are the survey bundle (raw on-chain records — every
- * claim in it is re-checkable), Koios (proofs, block indices, weights,
- * totals), and the pure `@tessera/core` rules. The backend's own
- * `validated_response`/`weight_snapshot` tables are **never** consulted; this
- * module re-derives all of it. `MATCH` therefore means: an independent
- * implementation of the pinned ruleset, fed the same chain data, produces
- * byte-identical results.
+ * Trust model: the ONLY thing taken from the backend is the artifact under
+ * test, whose hash this module recomputes. Every input the rebuild consumes —
+ * the survey definition, the response *set*, each response's *answers*
+ * (`bundle`), plus proofs, block indices, weights, totals — is (re)derived
+ * independently from Koios by the caller (see `cli.ts`, which builds `bundle`
+ * from its own label-17 scan, NOT from the backend). The backend's
+ * `validated_response`/`weight_snapshot` tables are never consulted either.
+ * `MATCH` therefore means: an independent implementation of the pinned ruleset,
+ * fed independently-fetched chain data, produces byte-identical results — so a
+ * backend that omits or alters responses cannot reproduce the hash.
  */
 
 import { validateResponse } from "cip-179";
@@ -276,6 +279,38 @@ export async function verifyArtifact(
     notes,
     diffs: match ? [] : diffTallies(inputs.artifact.tally, rebuilt),
   };
+}
+
+/**
+ * Diagnostic diff of two response sets by (txHash, responseIndex) identity: the
+ * independent chain scan vs. whatever bundle the backend served. A backend that
+ * omits on-chain responses (or fabricates ones the chain doesn't have) is named
+ * explicitly here; the same divergence would otherwise only surface as an opaque
+ * hash MISMATCH, since the rebuild always uses the chain set. Pure and
+ * order-independent, so it's unit-testable without a network.
+ */
+export function diffResponseSets(
+  chain: readonly { txHash: string; responseIndex: number }[],
+  backend: readonly { txHash: string; responseIndex: number }[],
+): string[] {
+  const keyOf = (r: { txHash: string; responseIndex: number }) =>
+    `${r.txHash}:${r.responseIndex}`;
+  const chainKeys = new Set(chain.map(keyOf));
+  const backendKeys = new Set(backend.map(keyOf));
+  const notes: string[] = [];
+  const omitted = [...chainKeys].filter((k) => !backendKeys.has(k));
+  const extra = [...backendKeys].filter((k) => !chainKeys.has(k));
+  if (omitted.length > 0) {
+    notes.push(
+      `backend bundle OMITS ${omitted.length} on-chain response(s): ${omitted.join(", ")}`,
+    );
+  }
+  if (extra.length > 0) {
+    notes.push(
+      `backend bundle lists ${extra.length} response(s) not seen in the chain scan (scan gap or fabrication): ${extra.join(", ")}`,
+    );
+  }
+  return notes;
 }
 
 /**
