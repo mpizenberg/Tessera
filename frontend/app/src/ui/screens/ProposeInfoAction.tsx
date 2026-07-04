@@ -14,6 +14,7 @@ import { A } from "@solidjs/router";
 import { blake2b } from "@noble/hashes/blake2.js";
 
 import {
+  anchorContextMapsCip179Terms,
   bytesToHex,
   findSurvey,
   parseCip179Link,
@@ -74,16 +75,34 @@ function validateAnchorShape(text: string): {
   // The survey-link shape itself is validated by the shared parser (single
   // source of truth with the discovery layer).
   const result = parseCip179Link(parsed);
-  // UI-only nicety the discovery layer doesn't require: flag a missing JSON-LD
-  // `@context`. It doesn't affect the extracted ref, so it's purely advisory.
-  if (
-    typeof parsed === "object" &&
-    parsed !== null &&
-    !Array.isArray(parsed) &&
-    (typeof (parsed as Record<string, unknown>)["@context"] !== "object" ||
-      (parsed as Record<string, unknown>)["@context"] === null)
-  ) {
+  const obj =
+    typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  const hasContext =
+    obj !== null &&
+    typeof obj["@context"] === "object" &&
+    obj["@context"] !== null;
+  if (!hasContext) {
+    // The discovery layer doesn't require a `@context`, but a linking anchor is
+    // a JSON-LD document and needs one — flag its absence.
     result.problems.unshift(t("proposeInfoAction.problemMissingContext"));
+  } else {
+    // CIP-179 linkage Change 3: when the doc carries a `body.cip179` link, its
+    // `@context` MUST map the CIP-179 terms, or the link is dropped during RDF
+    // canonicalization and falls outside the author witness — readable in raw
+    // JSON yet unwitnessed. Block that, since the reader side won't catch it.
+    const body = obj?.["body"];
+    const hasLink =
+      typeof body === "object" &&
+      body !== null &&
+      typeof (body as Record<string, unknown>)["cip179"] === "object" &&
+      (body as Record<string, unknown>)["cip179"] !== null;
+    if (hasLink && !anchorContextMapsCip179Terms(parsed)) {
+      result.problems.unshift(
+        t("proposeInfoAction.problemContextMissingCip179Terms"),
+      );
+    }
   }
   return result;
 }

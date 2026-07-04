@@ -20,6 +20,8 @@ const proposeInfoAction: Messages = {
   problemNotJson: "JSON invalide : {message}",
   problemMissingContext:
     "Champ JSON-LD « @context » manquant (termes CIP-100/108).",
+  problemContextMissingCip179Terms:
+    "Le « @context » doit définir l'espace de noms CIP179 et déclarer « cip179 » (avec ses sous-termes specVersion, kind, surveyTxId et surveyIndex) dans le contexte du corps, sinon le lien est supprimé lors de la canonicalisation JSON-LD et sort du témoin d'auteur. Voir l'exemple complet du CIP-179.",
 
   // Notes d'alignement d'époque
   alignTipNotLoaded:

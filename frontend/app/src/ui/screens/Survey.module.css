@@ -238,6 +238,13 @@
   margin-top: 12px;
 }
 
+.linkContextHint {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 14px 0 0;
+}
+
 .linkCopy {
   position: absolute;
   top: 10px;

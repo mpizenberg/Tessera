@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { GOV_LINK_KIND, parseCip179Link } from "./govLink";
+import {
+  GOV_LINK_KIND,
+  anchorContextMapsCip179Terms,
+  parseCip179Link,
+} from "./govLink";
 
 const TXID = "a".repeat(64);
 
@@ -63,5 +67,68 @@ describe("parseCip179Link", () => {
     const r = parseCip179Link(wellFormed({ surveyIndex: 0 }));
     expect(r.surveyRef).toEqual({ txId: TXID, index: 0 });
     expect(r.problems).toEqual([]);
+  });
+});
+
+describe("anchorContextMapsCip179Terms", () => {
+  const fullContext = () => ({
+    "@context": {
+      CIP179:
+        "https://github.com/cardano-foundation/CIPs/blob/master/CIP-0179/README.md#",
+      body: {
+        "@id": "CIP108:body",
+        "@context": {
+          title: "CIP108:title",
+          cip179: {
+            "@id": "CIP179:link",
+            "@context": {
+              specVersion: "CIP179:specVersion",
+              kind: "CIP179:kind",
+              surveyTxId: "CIP179:surveyTxId",
+              surveyIndex: "CIP179:surveyIndex",
+            },
+          },
+        },
+      },
+    },
+  });
+
+  it("accepts a context that maps the namespace and every sub-term", () => {
+    expect(anchorContextMapsCip179Terms(fullContext())).toBe(true);
+  });
+
+  it("rejects a missing CIP179 namespace at the root", () => {
+    const doc = fullContext();
+    delete (doc["@context"] as Record<string, unknown>)["CIP179"];
+    expect(anchorContextMapsCip179Terms(doc)).toBe(false);
+  });
+
+  it("rejects a missing cip179 term in the body context", () => {
+    const doc = fullContext();
+    delete (
+      (doc["@context"].body as Record<string, unknown>)["@context"] as Record<
+        string,
+        unknown
+      >
+    )["cip179"];
+    expect(anchorContextMapsCip179Terms(doc)).toBe(false);
+  });
+
+  it("rejects when any sub-term is unmapped", () => {
+    const doc = fullContext();
+    const cipCtx = (
+      (doc["@context"].body as Record<string, unknown>)["@context"] as Record<
+        string,
+        Record<string, unknown>
+      >
+    )["cip179"]["@context"] as Record<string, unknown>;
+    delete cipCtx["surveyIndex"];
+    expect(anchorContextMapsCip179Terms(doc)).toBe(false);
+  });
+
+  it("rejects a bare or absent @context", () => {
+    expect(anchorContextMapsCip179Terms({ "@context": {} })).toBe(false);
+    expect(anchorContextMapsCip179Terms({})).toBe(false);
+    expect(anchorContextMapsCip179Terms(null)).toBe(false);
   });
 });

@@ -58,6 +58,10 @@ const survey = {
   linkBody6: ", or tooling won't attach it.",
   copied: "Copied ✓",
   copyJson: "Copy JSON",
+  /** Intro for the ready-made `@context` additions offered below the link JSON. */
+  linkContextHint:
+    "Merge these terms into your anchor's @context (the CIP179 namespace at the root, the cip179 term inside the body context) so the link is canonicalized and covered by the author witness:",
+  copyContext: "Copy @context terms",
   linkFootnote:
     "only Info Actions may link · linkage is discovery + epoch-alignment, never an eligibility gate",
 

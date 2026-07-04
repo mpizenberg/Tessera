@@ -13,6 +13,53 @@
 /** Anchor's declared `body.cip179.kind` for a survey link. */
 export const GOV_LINK_KIND = "survey-link";
 
+/** The four `body.cip179` sub-fields the `@context` MUST map (CIP-179 Change 3). */
+const CIP179_SUBTERMS = [
+  "specVersion",
+  "kind",
+  "surveyTxId",
+  "surveyIndex",
+] as const;
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/**
+ * Whether a CIP-108 anchor's `@context` maps the CIP-179 terms so that a
+ * `body.cip179` link survives JSON-LD/RDF canonicalization and is covered by the
+ * author witness (CIP-179 linkage Change 3). The CIP-108 context sets no
+ * `@vocab`, so an unmapped field is silently dropped during canonicalization —
+ * readable in raw JSON yet outside the witness, the exact inconsistency the
+ * spec's MUST forbids. This is an *authoring-side* check only: readers
+ * (`parseCip179Link`) intentionally accept the raw-JSON link regardless.
+ *
+ * Requires: the `CIP179` namespace at the context root, a nested `body`
+ * `@context`, and a `cip179` term there whose own `@context` maps every one of
+ * the four sub-fields. Values need only be non-empty strings (the exact IRIs are
+ * the author's to choose); presence is what canonicalization needs.
+ */
+export function anchorContextMapsCip179Terms(parsed: unknown): boolean {
+  if (!isObject(parsed)) return false;
+  const ctx = parsed["@context"];
+  if (!isObject(ctx)) return false;
+  // CIP179 namespace at the context root.
+  if (typeof ctx["CIP179"] !== "string" || ctx["CIP179"].length === 0) {
+    return false;
+  }
+  // `cip179` term (with its sub-context) inside the body context.
+  if (!isObject(ctx["body"])) return false;
+  const bodyCtx = (ctx["body"] as Record<string, unknown>)["@context"];
+  if (!isObject(bodyCtx)) return false;
+  const cipTerm = bodyCtx["cip179"];
+  if (!isObject(cipTerm)) return false;
+  const cipCtx = cipTerm["@context"];
+  if (!isObject(cipCtx)) return false;
+  return CIP179_SUBTERMS.every(
+    (k) => typeof cipCtx[k] === "string" && (cipCtx[k] as string).length > 0,
+  );
+}
+
 /** The survey a well-formed anchor links to (tx id lower-cased, output index). */
 export interface SurveyRefLite {
   readonly txId: string;

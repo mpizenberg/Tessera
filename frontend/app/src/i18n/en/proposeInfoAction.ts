@@ -20,6 +20,8 @@ const proposeInfoAction = {
   /** {message} is the raw JSON parse error (not translated). */
   problemNotJson: "Not valid JSON: {message}",
   problemMissingContext: 'Missing JSON-LD "@context" (CIP-100/108 terms).',
+  problemContextMissingCip179Terms:
+    'The "@context" must define the CIP179 namespace and map "cip179" (with its specVersion, kind, surveyTxId and surveyIndex sub-terms) inside the body context, or the link is dropped during JSON-LD canonicalization and falls outside the author witness. See the CIP-179 worked example.',
 
   // Epoch-alignment notes
   alignTipNotLoaded: "Chain tip not loaded yet — can't verify epoch alignment.",

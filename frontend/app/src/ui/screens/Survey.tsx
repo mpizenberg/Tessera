@@ -445,8 +445,7 @@ const LinkActionPanel: Component<{ surveyRef: SurveyRef; endEpoch: number }> = (
   props,
 ) => {
   // The `cip179` object to nest inside the action's CIP-108 `body` (so it is
-  // part of the canonicalized, author-witnessed body). See CIP-179 for the
-  // matching `@context` terms that keep the anchor a valid JSON-LD document.
+  // part of the canonicalized, author-witnessed body).
   const json = () =>
     JSON.stringify(
       {
@@ -458,16 +457,45 @@ const LinkActionPanel: Component<{ surveyRef: SurveyRef; endEpoch: number }> = (
       null,
       2,
     );
+  // The matching `@context` additions (CIP-179 linkage Change 3): without them
+  // the link is dropped during JSON-LD canonicalization and falls outside the
+  // author witness. Handing the author the ready-made snippet — rather than
+  // pointing at the spec — is the fix for review finding 7.
+  const contextJson = () =>
+    JSON.stringify(
+      {
+        CIP179:
+          "https://github.com/cardano-foundation/CIPs/blob/master/CIP-0179/README.md#",
+        body: {
+          "@context": {
+            cip179: {
+              "@id": "CIP179:link",
+              "@context": {
+                specVersion: "CIP179:specVersion",
+                kind: "CIP179:kind",
+                surveyTxId: "CIP179:surveyTxId",
+                surveyIndex: "CIP179:surveyIndex",
+              },
+            },
+          },
+        },
+      },
+      null,
+      2,
+    );
   const [copied, setCopied] = createSignal(false);
-  const copy = async () => {
+  const [contextCopied, setContextCopied] = createSignal(false);
+  const copyText = async (text: string, mark: (v: boolean) => void) => {
     try {
-      await navigator.clipboard.writeText(json());
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
+      await navigator.clipboard.writeText(text);
+      mark(true);
+      setTimeout(() => mark(false), 1600);
     } catch {
       /* clipboard unavailable — the JSON is on screen to copy manually */
     }
   };
+  const copy = () => copyText(json(), setCopied);
+  const copyContext = () => copyText(contextJson(), setContextCopied);
   return (
     <div class={css.linkPanel}>
       <div class={css.linkHead}>
@@ -488,6 +516,13 @@ const LinkActionPanel: Component<{ surveyRef: SurveyRef; endEpoch: number }> = (
           {copied() ? t("survey.copied") : t("survey.copyJson")}
         </button>
         <pre class={css.linkCode}>{json()}</pre>
+      </div>
+      <p class={css.linkContextHint}>{t("survey.linkContextHint")}</p>
+      <div class={css.linkCodeBox}>
+        <button onClick={() => void copyContext()} class={css.linkCopy}>
+          {contextCopied() ? t("survey.copied") : t("survey.copyContext")}
+        </button>
+        <pre class={css.linkCode}>{contextJson()}</pre>
       </div>
       <div class={css.linkFootnote}>{t("survey.linkFootnote")}</div>
     </div>

@@ -52,6 +52,9 @@ const survey: Messages = {
   linkBody6: " de ce sondage, sinon l'outillage ne l'attachera pas.",
   copied: "Copié ✓",
   copyJson: "Copier le JSON",
+  linkContextHint:
+    "Fusionnez ces termes dans le « @context » de votre ancre (l'espace de noms CIP179 à la racine, le terme cip179 dans le contexte du corps) afin que le lien soit canonicalisé et couvert par le témoin d'auteur :",
+  copyContext: "Copier les termes @context",
   linkFootnote:
     "seules les Info Actions peuvent établir un lien · le lien sert à la découverte + à l'alignement d'epoch, jamais de critère d'éligibilité",
 
