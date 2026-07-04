@@ -43,8 +43,10 @@ export interface SurveyAggregate {
   readonly responseCount: number;
   /**
    * Owner-verified, in-window cancellation: the cancelling tx proved the survey's
-   * `owner` credential (CIP-179 mechanism A). Only this makes a survey
-   * effectively cancelled (`status: "cancelled"`, responding blocked).
+   * `owner` credential (CIP-179 mechanism A) — verified client-side while the
+   * survey is open, or attested by the serving tier's finalized-cancelled
+   * artifact after close. Only this makes a survey effectively cancelled
+   * (`status: "cancelled"`, responding blocked).
    */
   readonly cancelled: boolean;
   /**
@@ -104,11 +106,14 @@ export type CancellationState = "verified" | "claimed";
 /**
  * Per-survey cancellation state, keyed by survey ref. A cancellation is only
  * considered while its target survey is **still open** (tip at/before the
- * survey's `end_epoch`): once a survey has ended it's closed regardless, so there
- * is nothing to suppress and no point distinguishing verified from claimed. (This
- * also subsumes the CIP-179 rule that a cancellation after `end_epoch` is invalid
- * — for a still-open survey, any cancellation already on chain is necessarily
- * within the window.) Among the considered cancellations an owner-proven one wins
+ * survey's `end_epoch`): the scan only fetches owner-proofs for those (closed
+ * ones ride with `proof: null`), so nothing here could verify a closed survey's
+ * cancellation anyway — that case is covered by the serving tier's
+ * finalized-cancelled overlay in {@link SurveyListPayload.finalizedCancelled},
+ * derived from the emitted artifact. (The open-only rule also subsumes the
+ * CIP-179 rule that a cancellation after `end_epoch` is invalid — for a
+ * still-open survey, any cancellation already on chain is necessarily within
+ * the window.) Among the considered cancellations an owner-proven one wins
  * (`verified`), otherwise the survey is `claimed` (unverified). Surveys with no
  * such cancellation are absent from the map.
  */
@@ -163,6 +168,7 @@ export function aggregateSurveyList(
     list.responseCounts,
     list.tip,
     list.govLinks,
+    new Set(list.finalizedCancelled ?? []),
   );
 }
 
@@ -172,6 +178,7 @@ function aggregate(
   countByKey: Record<string, number>,
   tip: ChainTip,
   govLinks: readonly GovLink[],
+  finalizedCancelled: ReadonlySet<string> = new Set(),
 ): SurveyAggregate[] {
   // A cancellation only takes effect when the cancelling tx proves the survey's
   // owner credential (CIP-179 mechanism A); unproven ones are surfaced as
@@ -190,7 +197,12 @@ function aggregate(
   return surveys.map((record) => {
     const key = refKey(record.ref);
     const cancelState = cancelStates.get(key);
-    const cancelled = cancelState === "verified";
+    // Two ways to be cancelled: a client-verified in-window cancellation (only
+    // reachable while the survey is open — see `cancellationStates`), or the
+    // serving tier's finalized-cancelled overlay, which carries that state past
+    // close (the artifact records the cancellation; finding 19).
+    const cancelled =
+      cancelState === "verified" || finalizedCancelled.has(key);
     const link = linkByKey.get(key);
     const govLink =
       link && link.endEpoch === record.definition.endEpoch ? link : null;

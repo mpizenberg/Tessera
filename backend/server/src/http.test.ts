@@ -153,6 +153,36 @@ describe("GET /api/surveys", () => {
     });
     expect(again.status).toBe(304);
   });
+
+  it("lists finalized-cancelled survey keys, not normally-finalized ones", async () => {
+    const store = memStore(snapshot);
+    void store.putArtifact({
+      surveyKey: `${TX_A}:0`,
+      endEpoch: 510,
+      artifactHash: "a1".repeat(32),
+      artifact: `{"tally":{"perRole":[{"role":3}]},"provenance":{}}`,
+      createdAt: 1,
+    });
+    void store.putArtifact({
+      surveyKey: `${TX_B}:1`,
+      endEpoch: 510,
+      artifactHash: "b2".repeat(32),
+      artifact:
+        `{"tally":{"cancelled":{"txHash":"${"99".repeat(32)}",` +
+        `"slot":970000,"epoch":500},"perRole":[]},"provenance":{}}`,
+      createdAt: 1,
+    });
+    const res = await appWith(store).request("/api/surveys");
+    const body = fromJsonSafe(await res.json()) as Record<string, unknown>;
+    expect(body["finalizedCancelled"]).toEqual([`${TX_B}:1`]);
+  });
+
+  it("finalizedCancelled is empty with no artifacts", async () => {
+    const body = fromJsonSafe(
+      await (await app.request("/api/surveys")).json(),
+    ) as Record<string, unknown>;
+    expect(body["finalizedCancelled"]).toEqual([]);
+  });
 });
 
 describe("GET /api/surveys/{txHash}/{index}", () => {

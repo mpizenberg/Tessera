@@ -245,6 +245,17 @@ export function d1BackendStore(db: D1Like): BackendStore {
         .all<{ surveyKey: string }>();
       return new Set(results.map((r) => r.surveyKey));
     },
+    async finalizedCancelledKeys(): Promise<Set<string>> {
+      // Same `IS NOT NULL` note as store-node: json_extract yields SQL NULL
+      // for both an absent path and a JSON null.
+      const { results } = await db
+        .prepare(
+          `SELECT survey_key AS surveyKey FROM tally_artifact
+           WHERE json_extract(artifact, '$.tally.cancelled') IS NOT NULL`,
+        )
+        .all<{ surveyKey: string }>();
+      return new Set(results.map((r) => r.surveyKey));
+    },
 
     async cachedTxMetadata(
       txHashes: readonly string[],

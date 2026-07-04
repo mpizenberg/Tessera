@@ -189,6 +189,17 @@ export interface SurveyListPayload {
   readonly tip: ChainTip;
   /** Distinct responders per survey key ("<txHex>:<index>"), latest-valid-wins. */
   readonly responseCounts: Record<string, number>;
+  /**
+   * Survey keys the serving tier finalized as **cancelled** (their tally
+   * artifact records an owner-proven, in-window cancellation and no per-role
+   * tally). Client-side proof verification can't reach this state: the scan
+   * keeps `proof: null` for cancellations of closed surveys, so without this
+   * overlay a cancelled-then-closed survey would display as plain "Ended".
+   * Trusting it adds nothing new — the same server already supplies the whole
+   * record set, and the claim stays auditable against the served artifact.
+   * Absent in direct-Koios mode (no artifacts exist there).
+   */
+  readonly finalizedCancelled?: readonly string[];
   /** Mirrors {@link Cip179Records.incomplete} for the scan behind this list. */
   readonly incomplete?: boolean;
 }

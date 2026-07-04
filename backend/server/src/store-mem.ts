@@ -98,6 +98,18 @@ export function memBackendStore(
     async finalizedSurveyKeys() {
       return new Set(artifacts.keys());
     },
+    async finalizedCancelledKeys() {
+      return new Set(
+        [...artifacts.values()]
+          .filter((a) => {
+            const body = JSON.parse(a.artifact) as {
+              tally?: { cancelled?: unknown };
+            };
+            return body.tally?.cancelled != null;
+          })
+          .map((a) => a.surveyKey),
+      );
+    },
 
     async cachedTxMetadata(txHashes) {
       const out = new Map<string, unknown>();

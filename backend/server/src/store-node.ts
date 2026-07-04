@@ -160,6 +160,12 @@ export function openBackendStore(path: string): BackendStore {
   const finalizedStmt = db.prepare(
     "SELECT survey_key AS surveyKey FROM tally_artifact",
   );
+  // `json_extract` returns SQL NULL both when the path is absent and when the
+  // value is JSON null, so `IS NOT NULL` is exactly "finalized as cancelled".
+  const finalizedCancelledStmt = db.prepare(
+    `SELECT survey_key AS surveyKey FROM tally_artifact
+     WHERE json_extract(artifact, '$.tally.cancelled') IS NOT NULL`,
+  );
   const txMetaAllStmt = db.prepare(
     "SELECT tx_hash AS txHash, metadata FROM tx_metadata_cache",
   );
@@ -290,6 +296,10 @@ export function openBackendStore(path: string): BackendStore {
     },
     async finalizedSurveyKeys(): Promise<Set<string>> {
       const rows = finalizedStmt.all() as { surveyKey: string }[];
+      return new Set(rows.map((r) => r.surveyKey));
+    },
+    async finalizedCancelledKeys(): Promise<Set<string>> {
+      const rows = finalizedCancelledStmt.all() as { surveyKey: string }[];
       return new Set(rows.map((r) => r.surveyKey));
     },
 

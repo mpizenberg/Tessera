@@ -197,7 +197,13 @@ serve what each page actually reads:
   gov links + raw cancellations (tiny, and shipping them raw keeps cancellation
   proofs client-verifiable) + a server-computed **deduped** `responseCount` per
   survey, and the `fetchedAt`/`ageSeconds` stamp. Bounded regardless of
-  participation.
+  participation. Also carries `finalizedCancelled` — the survey keys whose
+  artifact finalized them as cancelled: the scan keeps `proof: null` for
+  cancellations of closed surveys, so without this overlay the list would show
+  a cancelled-then-closed survey as plain "Ended" while the artifact says
+  cancelled. Derived from the stored artifact JSON at query time
+  (`json_extract`), so no extra schema; the claim stays auditable against the
+  served artifact itself.
 - **`GET /api/surveys/{txHash}/{index}`** — the self-contained per-survey
   bundle: the definition record, **all** its `ResponseRecord`s (including sealed
   ciphertexts), the cancellations targeting it, and the tip. One request serves

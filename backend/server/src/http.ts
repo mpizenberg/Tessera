@@ -3,7 +3,8 @@
  * §2, §5.1, §8). Routes mirror the `DataSource` seam one-to-one:
  *   - GET /api/surveys                    Explore-list payload: surveys + tip +
  *                                         gov links + raw cancellations +
- *                                         deduped per-survey response counts
+ *                                         deduped per-survey response counts +
+ *                                         finalized-cancelled survey keys
  *   - GET /api/surveys/{txHash}/{index}   one survey's self-contained bundle:
  *                                         definition, ALL its responses (sealed
  *                                         ciphertexts included), cancellations
@@ -146,6 +147,10 @@ export function createApp(
   app.get("/api/surveys", async (c) => {
     const cached = await store.get();
     if (!cached) return c.json({ error: "snapshot not ready" }, 503);
+    // The finalized-cancelled overlay is not part of the ETag version: a
+    // cancelled artifact emitted mid-refresh shows up at most one refresh
+    // interval late (the next cron bumps `fetchedAt`), and keeping the ETag
+    // snapshot-only keeps the 304 path free of store queries.
     if (notModified(c, `W/"surveys-${cached.fetchedAt}"`))
       return c.body(null, 304);
     const { records, tip, govLinks } = fromJsonSafe(
@@ -161,6 +166,11 @@ export function createApp(
         // Counted with the same core dedupe rule the client audit runs, so the
         // list's numbers and a survey page's tally agree by construction.
         responseCounts: responseCounts(records.responses),
+        // Surveys finalized as cancelled: the scan can't verify a closed
+        // survey's cancellation (proof: null), so the artifact's verdict rides
+        // along or Explore would show a cancelled-then-closed survey as
+        // "Ended" (finding 19). Sorted for a deterministic body.
+        finalizedCancelled: [...(await store.finalizedCancelledKeys())].sort(),
         ...(records.incomplete !== undefined && {
           incomplete: records.incomplete,
         }),

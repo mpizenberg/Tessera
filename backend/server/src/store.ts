@@ -122,6 +122,15 @@ export interface TallyStore {
   putArtifact(row: ArtifactRow): Promise<void>;
   /** Survey keys that already have an artifact. */
   finalizedSurveyKeys(): Promise<Set<string>>;
+  /**
+   * Survey keys whose artifact finalized the survey as **cancelled** (its
+   * `tally.cancelled` is set — no per-role tally). Feeds the list payload's
+   * `finalizedCancelled` overlay so Explore keeps showing "Cancelled" after a
+   * cancelled survey closes. Derived from the stored artifact JSON at query
+   * time (`json_extract`) rather than a denormalized column: artifacts are
+   * immutable and few, and the JSON stays the single source of truth.
+   */
+  finalizedCancelledKeys(): Promise<Set<string>>;
 }
 
 /**
