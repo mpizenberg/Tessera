@@ -7,8 +7,8 @@ Commit after each fix.
 |---|-------|----------|--------|
 | 1 | Verifier trusts backend for response set / answer contents | High | ☐ todo |
 | 2 | Sealed-survey reveal dedups before reveal-time validation | Medium | ☐ todo |
-| 3 | Validated-then-rolled-back response postpones finalization forever | Medium | ☐ todo |
-| 4 | Unknown-survey responses re-fetched from Koios forever | Medium | ☐ todo |
+| 3 | Validated-then-rolled-back response postpones finalization forever | Medium | ✅ done |
+| 4 | Unknown-survey responses re-fetched from Koios forever | Medium | ✅ done |
 | 5 | CI never runs core/koios/verifier/backend tests; stale lockfiles | Medium | ✅ done |
 | 6 | Direct-Koios tallies cancelled-then-closed surveys | Low | — SKIP |
 | 7 | Authoring doesn't enforce `@context` maps CIP-179 terms | Low | ☐ todo |
@@ -29,5 +29,17 @@ Commit after each fix.
 - **5** (commit): single root workspace CI job (`pnpm -r type-check/test/build` +
   app `format:check`), Node 22, deleted nested lockfiles, formatted pre-existing
   Respond.tsx violation.
-- Observed while running tests: `finalize.test.ts` already has tests literally
-  named "(finding 3)" and "(finding 1)" — inspect before touching those paths.
+- **7** (commit): core `anchorContextMapsCip179Terms` predicate (tested);
+  `validateAnchorShape` blocks a `body.cip179` link whose `@context` doesn't map
+  the CIP-179 terms; `LinkActionPanel` now offers the ready-made `@context`
+  snippet with a copy button.
+- **4** (commit): `validateNewResponses` resolves the survey definition in the
+  candidate filter so unknown-survey responses never enter the Koios fetch set;
+  test now asserts no fetch.
+- **3** (commit): added `deleteValidatedResponses` to the store seam (node/D1/mem);
+  `finalizeClosedSurveys` prunes counted rows absent from a complete snapshot and
+  postpones one refresh (reorg buffer) instead of livelocking. Rewrote the
+  finding-3 test + added a re-count-on-return test.
+- Note: `finalize.test.ts` names some tests "(finding 1)" / "(finding 5)" — these
+  refer to an *earlier* review's numbering (pending-verdict postpone, weight
+  resume cursor), not this report's. Left as-is.
