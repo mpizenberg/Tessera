@@ -5,6 +5,11 @@
  * `finalizedCancelledKeys` (D1 shares the same SQLite JSON1 dialect).
  */
 
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { BackendStore } from "./store";
@@ -49,5 +54,63 @@ describe("store-node finalizedCancelledKeys (json_extract)", () => {
   it("is empty with no artifacts", async () => {
     store = openBackendStore(":memory:");
     expect(await store.finalizedCancelledKeys()).toEqual(new Set());
+  });
+});
+
+describe("store-node in-place upgrade of a pre-0004 database", () => {
+  it("adds linked_action_id to an existing validated_response table", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tessera-store-"));
+    const path = join(dir, "cache.sqlite");
+    // Seed a file with the pre-migration-0004 table shape (no
+    // linked_action_id), as an old deployment would have left behind.
+    const old = new DatabaseSync(path);
+    old.exec(`
+      CREATE TABLE validated_response (
+        tx_hash        TEXT    NOT NULL,
+        response_index INTEGER NOT NULL,
+        survey_key     TEXT    NOT NULL,
+        role           INTEGER NOT NULL,
+        credential     TEXT    NOT NULL,
+        slot           INTEGER NOT NULL,
+        epoch_no       INTEGER NOT NULL,
+        block_index    INTEGER,
+        proof_ok       INTEGER,
+        well_formed    INTEGER NOT NULL,
+        checked_at     INTEGER NOT NULL,
+        PRIMARY KEY (tx_hash, response_index)
+      );
+      INSERT INTO validated_response VALUES
+        ('aa', 0, 'aa:0', 3, 'cred', 10, 500, 1, 1, 1, 1);
+    `);
+    old.close();
+
+    const store = openBackendStore(path);
+    try {
+      // The pre-existing row survives, with a NULL linked action.
+      expect(await store.completedValidations()).toEqual(
+        new Map([["aa:0", null]]),
+      );
+      // And writes touching the new column work.
+      await store.upsertValidatedResponses([
+        {
+          txHash: "bb",
+          responseIndex: 1,
+          surveyKey: "bb:1",
+          role: 0,
+          credential: "cred2",
+          slot: 11,
+          epochNo: 500,
+          blockIndex: 2,
+          proofOk: true,
+          linkedActionId: "gov#0",
+          wellFormed: true,
+          checkedAt: 2,
+        },
+      ]);
+      expect((await store.completedValidations()).get("bb:1")).toBe("gov#0");
+    } finally {
+      store.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

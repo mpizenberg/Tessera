@@ -2,8 +2,9 @@
  * {@link BackendStore} over `node:sqlite` for the local Node process. Kept in
  * its own module so the Cloudflare Worker bundle (which uses `store-d1.ts`)
  * never imports `node:sqlite` — Workers' nodejs_compat does not provide it.
- * Creates the schema itself; the D1 twin gets it from `migrations/` instead
- * (keep both in sync).
+ * Creates the schema itself and upgrades pre-existing database files in
+ * place; the D1 twin gets both from `migrations/` instead (keep them in
+ * sync).
  */
 
 import { DatabaseSync } from "node:sqlite";
@@ -75,6 +76,18 @@ export function openBackendStore(path: string): BackendStore {
       metadata TEXT NOT NULL
     );
   `);
+
+  // `CREATE TABLE IF NOT EXISTS` never alters a table that already exists, so
+  // a database created before migration 0004 lacks `linked_action_id`. Mirror
+  // that migration's ALTER here to upgrade stale files in place. (0005 only
+  // adds a table, which IF NOT EXISTS covers; future column additions need the
+  // same treatment.)
+  const responseColumns = db
+    .prepare("SELECT name FROM pragma_table_info('validated_response')")
+    .all() as { name: string }[];
+  if (!responseColumns.some((c) => c.name === "linked_action_id")) {
+    db.exec("ALTER TABLE validated_response ADD COLUMN linked_action_id TEXT");
+  }
 
   const selectStmt = db.prepare(
     "SELECT payload, fetched_at AS fetchedAt FROM snapshot_cache WHERE id = 1",
