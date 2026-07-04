@@ -185,6 +185,10 @@ describe("validateNewResponses", () => {
       source,
     );
     expect(store.rows.size).toBe(0);
+    // And it costs no Koios subrequests — an unknown-survey response must not
+    // enter the fetch set, or it taxes every refresh forever (finding 4).
+    expect(source.txProofs).not.toHaveBeenCalled();
+    expect(source.txBlockIndices).not.toHaveBeenCalled();
   });
 
   it("applies mechanism B for epoch-aligned governance links", async () => {

@@ -74,6 +74,15 @@ export async function validateNewResponses(
 
   const completed = await store.completedValidations();
   const candidates = records.responses.filter((r) => {
+    // Resolve the survey first: a response whose ref isn't in this snapshot
+    // (nonexistent survey, or one older than the scan floor) can never be
+    // validated or tallied, so it must not contribute to the `/tx_cbor` +
+    // `/tx_info` fetch set below. Filtering it *after* building `txHashes`
+    // would tax every future refresh with its Koios subrequests forever — a
+    // cheap griefing vector, since one tx fee buys a permanent per-refresh
+    // cost (finding 4). If its survey later enters the snapshot, the response
+    // is still uncompleted and re-enters here, so nothing is lost by dropping.
+    if (!defByKey.has(refKey(r.response.surveyRef))) return false;
     const key = validationKey(r.txHash, r.responseIndex);
     if (!completed.has(key)) return true; // never validated / enrichment pending
     if (!govLinksReliable) return false; // can't re-evaluate links this refresh
