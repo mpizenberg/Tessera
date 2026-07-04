@@ -5,7 +5,7 @@ Commit after each fix.
 
 | # | Title | Severity | Status |
 |---|-------|----------|--------|
-| 1 | Verifier trusts backend for response set / answer contents | High | ☐ todo |
+| 1 | Verifier trusts backend for response set / answer contents | High | ✅ done |
 | 2 | Sealed-survey reveal dedups before reveal-time validation | Medium | ✅ done |
 | 3 | Validated-then-rolled-back response postpones finalization forever | Medium | ✅ done |
 | 4 | Unknown-survey responses re-fetched from Koios forever | Medium | ✅ done |
@@ -46,3 +46,17 @@ Commit after each fix.
 - **2** (commit): added core `auditRevealedResponses` (decrypt full pre-dedup
   in-window set → classify → dedup only valid decoded); `SealedResults` now gets
   `inWindow` + `hardExcluded` and defers dedup to it. Unit-tested in core.
+- **1** (commit): verifier CLI now sources the survey definition + response set +
+  answers from an independent `KoiosDataSource.fetchAll` scan (filtered to the
+  ref), not the backend; only the artifact-under-test comes from the backend.
+  Added `diffResponseSets` cross-check + incomplete-scan note + not-found error.
+  Updated trust-model docs. A lying backend now gets MISMATCH.
+- Extra: fixing finding 1 required running `pnpm -r build` (fresh `cip-179` dist),
+  which surfaced a **stale koios test fixture** (empty answer list rejected by the
+  current codec, commit 53ff9f9). Fixed the fixture — committed separately; it's
+  the silent drift finding 5 was about (koios tests never ran in CI).
+
+## Result
+All 9 targeted findings fixed (1–5, 7, 8, 9, 12); 6/10/11 skipped per request.
+Whole workspace green: `pnpm -r type-check`, `pnpm -r test` (267 tests),
+`pnpm -r build`, app `format:check` all pass.
