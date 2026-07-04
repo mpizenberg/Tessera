@@ -406,8 +406,10 @@ registered, provenance}`, plus per-`(epoch, role)` totals. This table is shared
   closes never becomes a finalization candidate — acceptable at PoC scale;
   Tier 2's full index removes the window.
 
-Store (SQLite/D1 — `migrations/0003_tally.sql`, mirrored inline by
-`store-node.ts`):
+Store (SQLite/D1 — `migrations/0003_tally.sql`; the `migrations/` files are
+the single schema source for both backends: D1 applies them via `wrangler d1
+migrations apply`, the local node:sqlite database via `store-node.ts`'s
+runner, which tracks applied files in a `schema_migration` table):
 
 ```sql
 -- shared across all surveys ending at the same epoch; a row is written only

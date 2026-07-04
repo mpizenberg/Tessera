@@ -1,13 +1,20 @@
 /**
- * {@link BackendStore} over `node:sqlite` for the local Node process. Kept in
- * its own module so the Cloudflare Worker bundle (which uses `store-d1.ts`)
- * never imports `node:sqlite` — Workers' nodejs_compat does not provide it.
- * Creates the schema itself and upgrades pre-existing database files in
- * place; the D1 twin gets both from `migrations/` instead (keep them in
- * sync).
+ * {@link BackendStore} over `node:sqlite` for the local Node process — both
+ * dev and self-hosting without Cloudflare. Kept in its own module so the
+ * Cloudflare Worker bundle (which uses `store-d1.ts`) never imports
+ * `node:sqlite` — Workers' nodejs_compat does not provide it.
+ *
+ * The schema is NOT defined here: both backends share the `migrations/*.sql`
+ * files as the single source of truth. D1 applies them via `wrangler d1
+ * migrations apply`; this store applies them itself at open, tracking applied
+ * files in a `schema_migration` table (the node twin of wrangler's
+ * `d1_migrations`).
  */
 
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { fileURLToPath } from "node:url";
 
 import type {
   ArtifactRow,
@@ -18,76 +25,94 @@ import type {
 } from "./store";
 import { validationKey } from "./store";
 
-export function openBackendStore(path: string): BackendStore {
-  const db = new DatabaseSync(path);
+const MIGRATIONS_DIR = fileURLToPath(
+  new URL("../migrations", import.meta.url),
+);
+
+/**
+ * Databases created before the migration runner existed were built from an
+ * inline schema (deleted when the runner landed) with no record of what had
+ * been applied. When `schema_migration` is empty, infer that record by
+ * probing for each early migration's objects, so the runner doesn't re-run
+ * CREATE TABLEs against tables that already exist — while a genuinely missing
+ * piece (e.g. 0004's column, which the inline schema never ALTERed into old
+ * files) stays unmarked and gets applied. Frozen list: migrations after the
+ * runner are recorded when applied and must never be added here.
+ */
+const LEGACY_PROBES: readonly (readonly [migration: string, probe: string])[] =
+  [
+    [
+      "0001_snapshot_cache.sql",
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'snapshot_cache'",
+    ],
+    [
+      "0002_validated_responses.sql",
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'validated_response'",
+    ],
+    [
+      "0003_tally.sql",
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tally_artifact'",
+    ],
+    [
+      "0004_validated_response_linked_action.sql",
+      "SELECT 1 FROM pragma_table_info('validated_response') WHERE name = 'linked_action_id'",
+    ],
+    [
+      "0005_tx_metadata_cache.sql",
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tx_metadata_cache'",
+    ],
+  ];
+
+/**
+ * Bring `db` to the latest schema: apply the `migrations/*.sql` files (in
+ * name order, each in its own transaction) that `schema_migration` doesn't
+ * list yet — the node:sqlite equivalent of `wrangler d1 migrations apply`.
+ */
+function applyMigrations(db: DatabaseSync): void {
   db.exec(`
-    CREATE TABLE IF NOT EXISTS snapshot_cache (
-      id         INTEGER PRIMARY KEY CHECK (id = 1),
-      payload    TEXT    NOT NULL,
-      fetched_at INTEGER NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS validated_response (
-      tx_hash        TEXT    NOT NULL,
-      response_index INTEGER NOT NULL,
-      survey_key     TEXT    NOT NULL,
-      role           INTEGER NOT NULL,
-      credential     TEXT    NOT NULL,
-      slot           INTEGER NOT NULL,
-      epoch_no       INTEGER NOT NULL,
-      block_index    INTEGER,
-      proof_ok       INTEGER,
-      well_formed    INTEGER NOT NULL,
-      checked_at     INTEGER NOT NULL,
-      -- Added by migration 0004 (appended, matching D1's ALTER TABLE).
-      linked_action_id TEXT,
-      PRIMARY KEY (tx_hash, response_index)
-    );
-    CREATE INDEX IF NOT EXISTS validated_response_survey
-      ON validated_response (survey_key);
-    CREATE TABLE IF NOT EXISTS weight_snapshot (
-      epoch      INTEGER NOT NULL,
-      role       INTEGER NOT NULL,
-      credential TEXT    NOT NULL,
-      weight     TEXT    NOT NULL,
-      registered INTEGER NOT NULL,
-      fetched_at INTEGER NOT NULL,
-      PRIMARY KEY (epoch, role, credential)
-    );
-    CREATE TABLE IF NOT EXISTS epoch_totals (
-      epoch      INTEGER NOT NULL,
-      role       INTEGER NOT NULL,
-      total      TEXT    NOT NULL,
-      endpoint   TEXT    NOT NULL,
-      fetched_at INTEGER NOT NULL,
-      PRIMARY KEY (epoch, role)
-    );
-    CREATE TABLE IF NOT EXISTS tally_artifact (
-      survey_key    TEXT PRIMARY KEY,
-      end_epoch     INTEGER NOT NULL,
-      artifact_hash TEXT    NOT NULL,
-      artifact      TEXT    NOT NULL,
-      created_at    INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS tally_artifact_hash
-      ON tally_artifact (artifact_hash);
-    -- Added by migration 0005: fetch-once label-17 metadata (scan resume).
-    CREATE TABLE IF NOT EXISTS tx_metadata_cache (
-      tx_hash  TEXT PRIMARY KEY,
-      metadata TEXT NOT NULL
+    CREATE TABLE IF NOT EXISTS schema_migration (
+      name       TEXT PRIMARY KEY,
+      applied_at INTEGER NOT NULL
     );
   `);
-
-  // `CREATE TABLE IF NOT EXISTS` never alters a table that already exists, so
-  // a database created before migration 0004 lacks `linked_action_id`. Mirror
-  // that migration's ALTER here to upgrade stale files in place. (0005 only
-  // adds a table, which IF NOT EXISTS covers; future column additions need the
-  // same treatment.)
-  const responseColumns = db
-    .prepare("SELECT name FROM pragma_table_info('validated_response')")
-    .all() as { name: string }[];
-  if (!responseColumns.some((c) => c.name === "linked_action_id")) {
-    db.exec("ALTER TABLE validated_response ADD COLUMN linked_action_id TEXT");
+  const applied = new Set(
+    (
+      db.prepare("SELECT name FROM schema_migration").all() as {
+        name: string;
+      }[]
+    ).map((r) => r.name),
+  );
+  const record = db.prepare(
+    "INSERT INTO schema_migration (name, applied_at) VALUES (?, ?)",
+  );
+  if (applied.size === 0) {
+    for (const [migration, probe] of LEGACY_PROBES) {
+      if (db.prepare(probe).get() !== undefined) {
+        record.run(migration, Date.now());
+        applied.add(migration);
+      }
+    }
   }
+  const files = readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith(".sql"))
+    .sort();
+  for (const file of files) {
+    if (applied.has(file)) continue;
+    db.exec("BEGIN");
+    try {
+      db.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
+      record.run(file, Date.now());
+      db.exec("COMMIT");
+    } catch (err) {
+      db.exec("ROLLBACK");
+      throw err;
+    }
+  }
+}
+
+export function openBackendStore(path: string): BackendStore {
+  const db = new DatabaseSync(path);
+  applyMigrations(db);
 
   const selectStmt = db.prepare(
     "SELECT payload, fetched_at AS fetchedAt FROM snapshot_cache WHERE id = 1",
