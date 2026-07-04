@@ -390,13 +390,22 @@ export class KoiosDataSource implements DataSource {
       });
     }
 
-    // A cancellation only matters while its target survey is still open: once a
-    // survey has ended (tip past its end_epoch) it's closed regardless, so
-    // there's nothing to suppress — and fetching + decoding its cancelling tx's
-    // CBOR (the owner proof) would be wasted work. So verify proofs only for
-    // cancellations of still-open surveys; the rest (closed, or referencing an
-    // unknown survey) keep `proof: null`, which the domain treats as unverified —
-    // moot for a closed survey. Mirrors `cancellationStates` in domain/survey.ts.
+    // Verify owner-proofs only for cancellations of still-open surveys; the
+    // rest (closed, or referencing an unknown survey) keep `proof: null`, which
+    // the domain treats as unverified. This leaves a cancelled-then-closed
+    // survey looking merely "ended" HERE — the serving tier covers that case
+    // from its finalized artifact instead (`finalizedCancelled` in the list
+    // payload; direct-Koios mode has no artifacts and accepts the gap).
+    //
+    // Deliberately NOT extended to closed surveys (considered, rejected): every
+    // in-window cancellation ever posted would then need its tx CBOR fetched on
+    // every scan, forever. That cost is permanent and cumulative — and
+    // adversarial: anyone can post cancellation txs against open surveys for
+    // ~one tx fee each, buying ⌈N/25⌉ extra Koios requests per scan for the
+    // rest of the deployment's life (against the Worker's subrequest cap, and
+    // per visitor in direct mode). The open-only rule keeps griefing cost
+    // transient: it evaporates when the targeted surveys close.
+    // Mirrors `cancellationStates` in @tessera/core's survey.ts.
     const refKeyOf = (ref: SurveyRef): string =>
       `${bytesToHex(ref.txId)}:${ref.index}`;
     const openSurveyKeys = new Set(
