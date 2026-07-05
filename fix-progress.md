@@ -10,12 +10,12 @@ Commit after each fix.
 | 3 | Validated-then-rolled-back response postpones finalization forever | Medium | ✅ done |
 | 4 | Unknown-survey responses re-fetched from Koios forever | Medium | ✅ done |
 | 5 | CI never runs core/koios/verifier/backend tests; stale lockfiles | Medium | ✅ done |
-| 6 | Direct-Koios tallies cancelled-then-closed surveys | Low | — SKIP |
+| 6 | Direct-Koios tallies cancelled-then-closed surveys | Low | ◑ partial (claim warning kept) |
 | 7 | Authoring doesn't enforce `@context` maps CIP-179 terms | Low | ☐ todo |
 | 8 | Cancel-survey flow lacks wallet-network gate | Low | ✅ done |
 | 9 | Koios JSON metadata adapter corrupts ints >2^53 / misreads "0x" | Low | ✅ done |
 | 10 | Respond UI can't express partial rating answer | Low | — SKIP |
-| 11 | Pinned ruleset hash doesn't pin validator code | Low | — SKIP |
+| 11 | Pinned ruleset hash doesn't pin validator code | Low | ✅ done |
 | 12 | Stale doc references to nonexistent spec path | Low | ✅ done |
 
 ## Notes
@@ -55,6 +55,24 @@ Commit after each fix.
   which surfaced a **stale koios test fixture** (empty answer list rejected by the
   current codec, commit 53ff9f9). Fixed the fixture — committed separately; it's
   the silent drift finding 5 was about (koios tests never ran in CI).
+
+- **6** (partial, commit): took only the "keep the claim warning" half of the
+  suggested fix (not the lazy closed-survey proof fetch). `cancellationStates`
+  now surfaces an in-window unverified cancellation as `claimed` for *closed*
+  surveys too (gated on `epochNo ≤ endEpoch`), so the "unverified cancellation
+  claim" notice no longer vanishes at close; `cancellationClaimed` is suppressed
+  when the survey is already `cancelled` (verified/overlay). Reworded the notice
+  (en/fr) to drop the now-inaccurate "survey remains open". Direct mode still
+  does NOT verify closed-survey cancellations or suppress their tally — the
+  conformance gap on tallying itself remains, by design (anti-griefing).
+
+- **11** (commit): golden test in `artifact.test.ts` pins `rulesetHash()` to a
+  literal, so any descriptor change (or forgotten `rulesetVersion` bump) fails
+  CI. Added RULESET-PINNED-BEHAVIOR notes at the two behavior sites the hash
+  only *describes* — `cip179/src/validate.ts` (validity) and
+  `core/src/dedupe.ts` (dedup order) — and cross-referenced them from
+  `RULESET_DESCRIPTOR`. Didn't hash the code itself (refactors would churn it);
+  the process hazard is now caught by CI instead of relying on memory.
 
 ## Result
 All 9 targeted findings fixed (1–5, 7, 8, 9, 12); 6/10/11 skipped per request.
