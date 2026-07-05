@@ -22,6 +22,7 @@
 
 import { bytesToHex, fromJsonSafe } from "@tessera/core";
 import type {
+  BackendHealth,
   DataSource,
   Network,
   SurveyBundle,
@@ -107,6 +108,15 @@ export class IndexerDataSource implements DataSource {
     if (res.status === 404) return null;
     if (!res.ok) throw new Error(`Indexer ${url} → ${res.status}`);
     return (await res.json()) as TallyArtifact;
+  }
+
+  /**
+   * Backend operational health (the Explore footer). Wire-plain JSON — no
+   * `fromJsonSafe` decode — and no network assertion: the footer is display-
+   * only chrome and must not gate on the snapshot handshake.
+   */
+  async health(): Promise<BackendHealth> {
+    return this.getJson<BackendHealth>(`${this.baseUrl}/api/health`);
   }
 
   async txStatus(

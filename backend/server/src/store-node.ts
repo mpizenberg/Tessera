@@ -20,10 +20,12 @@ import type {
   ArtifactRow,
   BackendStore,
   CachedSnapshot,
+  RefreshRunRow,
+  RefreshTotals,
   ValidatedResponseRow,
   WeightRow,
 } from "./store";
-import { validationKey } from "./store";
+import { REFRESH_RUN_RETENTION_SECONDS, validationKey } from "./store";
 
 const MIGRATIONS_DIR = fileURLToPath(
   new URL("../migrations", import.meta.url),
@@ -123,6 +125,9 @@ export function openBackendStore(path: string): BackendStore {
       payload = excluded.payload,
       fetched_at = excluded.fetched_at
   `);
+  const fetchedAtStmt = db.prepare(
+    "SELECT fetched_at AS fetchedAt FROM snapshot_cache WHERE id = 1",
+  );
 
   const completedStmt = db.prepare(
     `SELECT tx_hash AS txHash, response_index AS responseIndex,
@@ -214,6 +219,33 @@ export function openBackendStore(path: string): BackendStore {
     "INSERT OR IGNORE INTO tx_metadata_cache (tx_hash, metadata) VALUES (?, ?)",
   );
 
+  const refreshRunColumns = `started_at AS startedAt, duration_ms AS durationMs,
+            koios_calls AS koiosCalls, ok, error, incomplete, surveys,
+            responses, payload_bytes AS payloadBytes`;
+  const putRefreshRunStmt = db.prepare(`
+    INSERT OR REPLACE INTO refresh_run
+      (started_at, duration_ms, koios_calls, ok, error, incomplete,
+       surveys, responses, payload_bytes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const pruneRefreshRunStmt = db.prepare(
+    "DELETE FROM refresh_run WHERE started_at < ?",
+  );
+  const lastRefreshRunStmt = db.prepare(
+    `SELECT ${refreshRunColumns} FROM refresh_run
+     ORDER BY started_at DESC LIMIT 1`,
+  );
+  const refreshTotalsStmt = db.prepare(
+    `SELECT COUNT(*) AS runs,
+            COALESCE(SUM(ok = 0), 0) AS failures,
+            COALESCE(SUM(koios_calls), 0) AS koiosCalls
+     FROM refresh_run WHERE started_at >= ?`,
+  );
+  const incompleteValidationStmt = db.prepare(
+    `SELECT COUNT(*) AS n FROM validated_response
+     WHERE block_index IS NULL OR proof_ok IS NULL`,
+  );
+
   interface DbValidatedRow extends Omit<
     ValidatedResponseRow,
     "proofOk" | "wellFormed"
@@ -237,6 +269,10 @@ export function openBackendStore(path: string): BackendStore {
     },
     async put(snapshot: CachedSnapshot): Promise<void> {
       upsertStmt.run(JSON.stringify(snapshot.payload), snapshot.fetchedAt);
+    },
+    async snapshotFetchedAt(): Promise<number | null> {
+      const row = fetchedAtStmt.get() as { fetchedAt: number } | undefined;
+      return row?.fetchedAt ?? null;
     },
 
     async completedValidations(): Promise<Map<string, string | null>> {
@@ -370,6 +406,37 @@ export function openBackendStore(path: string): BackendStore {
     async putTxMetadata(entries: ReadonlyMap<string, unknown>): Promise<void> {
       for (const [hash, metadata] of entries)
         putTxMetaStmt.run(hash, JSON.stringify(metadata ?? null));
+    },
+
+    async putRefreshRun(row: RefreshRunRow): Promise<void> {
+      putRefreshRunStmt.run(
+        row.startedAt,
+        row.durationMs,
+        row.koiosCalls,
+        row.ok ? 1 : 0,
+        row.error,
+        row.incomplete ? 1 : 0,
+        row.surveys,
+        row.responses,
+        row.payloadBytes,
+      );
+      pruneRefreshRunStmt.run(row.startedAt - REFRESH_RUN_RETENTION_SECONDS);
+    },
+    async lastRefreshRun(): Promise<RefreshRunRow | null> {
+      const row = lastRefreshRunStmt.get() as
+        | (Omit<RefreshRunRow, "ok" | "incomplete"> & {
+            ok: number;
+            incomplete: number;
+          })
+        | undefined;
+      if (!row) return null;
+      return { ...row, ok: row.ok !== 0, incomplete: row.incomplete !== 0 };
+    },
+    async refreshTotalsSince(sinceUnix: number): Promise<RefreshTotals> {
+      return refreshTotalsStmt.get(sinceUnix) as unknown as RefreshTotals;
+    },
+    async incompleteValidationCount(): Promise<number> {
+      return (incompleteValidationStmt.get() as { n: number }).n;
     },
 
     close() {

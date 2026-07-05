@@ -24,6 +24,8 @@ interface Env {
   readonly KOIOS_URL?: string;
   readonly KOIOS_TOKEN?: string;
   readonly SINCE?: string;
+  readonly SUBREQUEST_LIMIT?: string;
+  readonly KOIOS_DAILY_LIMIT?: string;
 }
 
 interface Wiring {
@@ -46,36 +48,6 @@ function init(env: Env): Wiring {
   return wiring;
 }
 
-/**
- * One refresh, with the upstream Koios calls counted. The count matters on
- * Workers: subrequests are capped per invocation (50 on the free plan, 1000
- * paid), and the refresh is the chatty path (label pages + metadata + cbor
- * batches). Logging it on every cron run keeps headroom visible in
- * `wrangler tail`.
- */
-async function countedRefresh(
-  config: ServerConfig,
-  store: BackendStore,
-): Promise<void> {
-  const realFetch = globalThis.fetch;
-  let subrequests = 0;
-  globalThis.fetch = ((input, init) => {
-    subrequests += 1;
-    return realFetch(input, init);
-  }) as typeof fetch;
-  try {
-    await refreshSnapshot(config, store);
-    console.log(`cron refresh ok: ${subrequests} Koios subrequests`);
-  } catch (err) {
-    console.error(
-      `cron refresh failed after ${subrequests} subrequests ` +
-        `(keeping last snapshot): ${String(err)}`,
-    );
-  } finally {
-    globalThis.fetch = realFetch;
-  }
-}
-
 export default {
   fetch(
     request: Request,
@@ -86,6 +58,10 @@ export default {
   },
   scheduled(_event: unknown, env: Env, ctx: ExecutionContext): void {
     const { config, store } = init(env);
-    ctx.waitUntil(countedRefresh(config, store));
+    // Koios calls are counted (and per-run stats persisted) inside
+    // refreshSnapshot itself; the count tracks headroom against the Worker
+    // subrequest cap (50 on the free plan, 1000 paid) via `wrangler tail`
+    // and the /api/health route. Failures are logged there too.
+    ctx.waitUntil(refreshSnapshot(config, store).catch(() => {}));
   },
 };

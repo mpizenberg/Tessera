@@ -49,7 +49,12 @@ import {
   responseCounts,
   toJsonSafe,
 } from "@tessera/core";
-import type { ChainTip, Cip179Records, GovLink } from "@tessera/core";
+import type {
+  BackendHealth,
+  ChainTip,
+  Cip179Records,
+  GovLink,
+} from "@tessera/core";
 import { KoiosDataSource } from "@tessera/koios";
 
 import type { ServerConfig } from "./config";
@@ -141,6 +146,37 @@ export function createApp(
   );
 
   app.get("/health", (c) => c.json({ ok: true, network: config.app.network }));
+
+  // Operational metrics for the app's health footer ({@link BackendHealth}).
+  // Tiny body, no ETag games: refresh outcomes must be visible even when the
+  // snapshot (and so the /api/surveys ETag) hasn't moved — e.g. a string of
+  // failed refreshes — so this is always served fresh.
+  app.get("/api/health", async (c) => {
+    const now = Math.floor(Date.now() / 1000);
+    const [fetchedAt, lastRefresh, last24h, validationBacklog] =
+      await Promise.all([
+        store.snapshotFetchedAt(),
+        store.lastRefreshRun(),
+        store.refreshTotalsSince(now - 86_400),
+        store.incompleteValidationCount(),
+      ]);
+    const body: BackendHealth = {
+      network: config.app.network,
+      snapshot:
+        fetchedAt !== null
+          ? { fetchedAt, ageSeconds: now - fetchedAt }
+          : null,
+      lastRefresh,
+      last24h,
+      validationBacklog,
+      limits: {
+        koiosCallsPerRefresh: config.koiosCallsPerRefreshLimit,
+        koiosCallsPerDay: config.koiosDailyLimit ?? null,
+      },
+    };
+    c.header("Cache-Control", "no-store");
+    return c.json(body as unknown as Record<string, unknown>);
+  });
 
   // The per-page routes decode the cached wire blob per request and slice
   // it — the simplest correct thing at today's snapshot size (see file header).

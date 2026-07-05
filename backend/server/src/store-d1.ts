@@ -12,10 +12,12 @@ import type {
   ArtifactRow,
   BackendStore,
   CachedSnapshot,
+  RefreshRunRow,
+  RefreshTotals,
   ValidatedResponseRow,
   WeightRow,
 } from "./store";
-import { validationKey } from "./store";
+import { REFRESH_RUN_RETENTION_SECONDS, validationKey } from "./store";
 
 interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
@@ -65,6 +67,12 @@ export function d1BackendStore(db: D1Like): BackendStore {
         )
         .bind(JSON.stringify(snapshot.payload), snapshot.fetchedAt)
         .run();
+    },
+    async snapshotFetchedAt(): Promise<number | null> {
+      const row = await db
+        .prepare("SELECT fetched_at AS fetchedAt FROM snapshot_cache WHERE id = 1")
+        .first<{ fetchedAt: number }>();
+      return row?.fetchedAt ?? null;
     },
 
     async completedValidations(): Promise<Map<string, string | null>> {
@@ -295,6 +303,68 @@ export function d1BackendStore(db: D1Like): BackendStore {
       );
     },
 
+    async putRefreshRun(row: RefreshRunRow): Promise<void> {
+      await db.batch([
+        db
+          .prepare(
+            `INSERT OR REPLACE INTO refresh_run
+               (started_at, duration_ms, koios_calls, ok, error, incomplete,
+                surveys, responses, payload_bytes)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .bind(
+            row.startedAt,
+            row.durationMs,
+            row.koiosCalls,
+            row.ok ? 1 : 0,
+            row.error,
+            row.incomplete ? 1 : 0,
+            row.surveys,
+            row.responses,
+            row.payloadBytes,
+          ),
+        db
+          .prepare("DELETE FROM refresh_run WHERE started_at < ?")
+          .bind(row.startedAt - REFRESH_RUN_RETENTION_SECONDS),
+      ]);
+    },
+    async lastRefreshRun(): Promise<RefreshRunRow | null> {
+      const row = await db
+        .prepare(
+          `SELECT ${REFRESH_RUN_COLUMNS} FROM refresh_run
+           ORDER BY started_at DESC LIMIT 1`,
+        )
+        .first<
+          Omit<RefreshRunRow, "ok" | "incomplete"> & {
+            ok: number;
+            incomplete: number;
+          }
+        >();
+      if (!row) return null;
+      return { ...row, ok: row.ok !== 0, incomplete: row.incomplete !== 0 };
+    },
+    async refreshTotalsSince(sinceUnix: number): Promise<RefreshTotals> {
+      const row = await db
+        .prepare(
+          `SELECT COUNT(*) AS runs,
+                  COALESCE(SUM(ok = 0), 0) AS failures,
+                  COALESCE(SUM(koios_calls), 0) AS koiosCalls
+           FROM refresh_run WHERE started_at >= ?`,
+        )
+        .bind(sinceUnix)
+        .first<RefreshTotals>();
+      return row ?? { runs: 0, failures: 0, koiosCalls: 0 };
+    },
+    async incompleteValidationCount(): Promise<number> {
+      const row = await db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM validated_response
+           WHERE block_index IS NULL OR proof_ok IS NULL`,
+        )
+        .first<{ n: number }>();
+      return row?.n ?? 0;
+    },
+
     close() {
       // Nothing to release: D1 connections are managed by the runtime.
     },
@@ -303,3 +373,7 @@ export function d1BackendStore(db: D1Like): BackendStore {
 
 const ARTIFACT_COLUMNS = `survey_key AS surveyKey, end_epoch AS endEpoch,
        artifact_hash AS artifactHash, artifact, created_at AS createdAt`;
+
+const REFRESH_RUN_COLUMNS = `started_at AS startedAt, duration_ms AS durationMs,
+       koios_calls AS koiosCalls, ok, error, incomplete, surveys,
+       responses, payload_bytes AS payloadBytes`;

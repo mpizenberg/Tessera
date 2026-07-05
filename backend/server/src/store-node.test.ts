@@ -12,7 +12,8 @@ import { DatabaseSync } from "node:sqlite";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { BackendStore } from "./store";
+import type { BackendStore, RefreshRunRow } from "./store";
+import { REFRESH_RUN_RETENTION_SECONDS } from "./store";
 import { openBackendStore } from "./store-node";
 
 const artifact = (surveyKey: string, tally: string, hash: string) => ({
@@ -134,6 +135,96 @@ describe("store-node migration of a pre-runner database", () => {
       "0003_tally.sql",
       "0004_validated_response_linked_action.sql",
       "0005_tx_metadata_cache.sql",
+      "0006_refresh_run.sql",
     ]);
+  });
+});
+
+describe("store-node refresh_run health metrics", () => {
+  let store: BackendStore;
+  afterEach(() => store.close());
+
+  const run = (startedAt: number, over: Partial<RefreshRunRow> = {}) => ({
+    startedAt,
+    durationMs: 1200,
+    koiosCalls: 7,
+    ok: true,
+    error: null,
+    incomplete: false,
+    surveys: 3,
+    responses: 5,
+    payloadBytes: 10_000,
+    ...over,
+  });
+
+  it("round-trips the latest run and aggregates a window", async () => {
+    store = openBackendStore(":memory:");
+    expect(await store.lastRefreshRun()).toBeNull();
+
+    await store.putRefreshRun(run(1000));
+    await store.putRefreshRun(
+      run(1180, { ok: false, error: "Koios GET /tip → 502", koiosCalls: 2 }),
+    );
+    await store.putRefreshRun(run(1360, { koiosCalls: 11, incomplete: true }));
+
+    const last = await store.lastRefreshRun();
+    expect(last).toMatchObject({
+      startedAt: 1360,
+      koiosCalls: 11,
+      ok: true,
+      error: null,
+      incomplete: true,
+    });
+
+    // Window covering the two most recent runs only.
+    expect(await store.refreshTotalsSince(1180)).toEqual({
+      runs: 2,
+      failures: 1,
+      koiosCalls: 13,
+    });
+    // Empty window aggregates to zeros, not NULLs.
+    expect(await store.refreshTotalsSince(9999)).toEqual({
+      runs: 0,
+      failures: 0,
+      koiosCalls: 0,
+    });
+  });
+
+  it("prunes rows older than the retention window on insert", async () => {
+    store = openBackendStore(":memory:");
+    const now = 10_000_000;
+    await store.putRefreshRun(run(now - REFRESH_RUN_RETENTION_SECONDS - 1));
+    await store.putRefreshRun(run(now - REFRESH_RUN_RETENTION_SECONDS + 1));
+    await store.putRefreshRun(run(now));
+
+    expect(await store.refreshTotalsSince(0)).toMatchObject({ runs: 2 });
+  });
+
+  it("counts validated rows still awaiting enrichment", async () => {
+    store = openBackendStore(":memory:");
+    const row = (
+      txHash: string,
+      blockIndex: number | null,
+      proofOk: boolean | null,
+    ) => ({
+      txHash,
+      responseIndex: 0,
+      surveyKey: "aa:0",
+      role: 3,
+      credential: "cred",
+      slot: 10,
+      epochNo: 500,
+      blockIndex,
+      proofOk,
+      linkedActionId: null,
+      wellFormed: true,
+      checkedAt: 1,
+    });
+    await store.upsertValidatedResponses([
+      row("aa", 1, true), // complete
+      row("bb", null, true), // missing block index
+      row("cc", 2, null), // missing proof verdict
+    ]);
+    expect(await store.incompleteValidationCount()).toBe(2);
   });
 });

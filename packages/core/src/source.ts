@@ -205,6 +205,52 @@ export interface SurveyListPayload {
 }
 
 /**
+ * Operational health of a serving-tier backend (`GET /api/health`) — what the
+ * app's thin health footer renders. Wire-plain by design (no bytes/bigints),
+ * so it round-trips as ordinary JSON. Only the indexer path produces it; the
+ * direct-Koios path has no refresh loop to report on.
+ */
+export interface BackendHealth {
+  readonly network: string;
+  /** Freshness of the served snapshot, or null before the first refresh. */
+  readonly snapshot: {
+    readonly fetchedAt: number;
+    readonly ageSeconds: number;
+  } | null;
+  /** The most recent refresh run's stats, or null before the first run. */
+  readonly lastRefresh: {
+    readonly startedAt: number;
+    readonly durationMs: number;
+    /** Koios HTTP requests the run issued (scan + validation + finalization). */
+    readonly koiosCalls: number;
+    readonly ok: boolean;
+    /** Failure message when `ok` is false, else null. */
+    readonly error: string | null;
+    /** The scan hit its paging cap — the snapshot is a prefix, not the whole. */
+    readonly incomplete: boolean;
+    readonly surveys: number;
+    readonly responses: number;
+    /** Serialized snapshot size — the single-blob storage row's growth metric. */
+    readonly payloadBytes: number;
+  } | null;
+  /** Rolling totals over the last 24 hours of refresh runs. */
+  readonly last24h: {
+    readonly runs: number;
+    readonly failures: number;
+    readonly koiosCalls: number;
+  };
+  /** Validated responses still awaiting an enrichment retry. */
+  readonly validationBacklog: number;
+  /** Configured budgets the counts above are compared against. */
+  readonly limits: {
+    /** Per-refresh Koios call budget (Worker subrequest cap by default). */
+    readonly koiosCallsPerRefresh: number;
+    /** Daily Koios quota when the operator configured one, else null. */
+    readonly koiosCallsPerDay: number | null;
+  };
+}
+
+/**
  * The self-contained slice for one survey: its definition record, ALL of its
  * responses (sealed ciphertexts included — client-side audit/tally/reveal need
  * the raw set), the cancellations targeting it, and the tip that anchors
@@ -259,4 +305,11 @@ export interface DataSource {
    * then falls back to the raw client-side tally).
    */
   artifact(ref: SurveyRef): Promise<TallyArtifact | null>;
+  /**
+   * Operational health of the backing service ({@link BackendHealth}), for the
+   * app's health footer. Optional: only the serving-tier implementation has a
+   * refresh loop to report on — the direct Koios path leaves it undefined and
+   * the footer simply doesn't render.
+   */
+  health?(): Promise<BackendHealth>;
 }

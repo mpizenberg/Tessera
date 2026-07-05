@@ -43,7 +43,12 @@ import {
 } from "~/enrichment/providers";
 import { KoiosDataSource } from "@tessera/koios";
 import { IndexerDataSource } from "~/data/indexer";
-import type { ChainTip, DataSource, SurveyRecord } from "~/data/source";
+import type {
+  BackendHealth,
+  ChainTip,
+  DataSource,
+  SurveyRecord,
+} from "~/data/source";
 import {
   aggregateSurveyList,
   aggregateSurveys,
@@ -125,6 +130,11 @@ interface AppState {
   readonly config: AppConfig;
   readonly source: DataSource;
   readonly list: Resource<SurveyList>;
+  /**
+   * Backend operational health (the Explore footer), or null when the active
+   * source has none to report (direct-Koios mode). Refetched by `reload()`.
+   */
+  readonly health: Resource<BackendHealth | null>;
   reload(): void;
   readonly ui: UiState;
   setFilter(f: ExploreFilter): void;
@@ -253,12 +263,20 @@ export const AppProvider: ParentComponent = (props) => {
     };
   });
 
+  // Health is footer chrome, never load-bearing: absent in direct-Koios mode
+  // (the seam method is undefined there) and a failed fetch just hides the
+  // footer via `health.error`.
+  const [health, { refetch: refetchHealth }] = createResource<
+    BackendHealth | null
+  >(async () => (source.health ? source.health() : null));
+
   // Refetch but swallow the returned promise's rejection: a failed load is
   // already captured in `snapshot.error` (and surfaced by the UI / the app-wide
   // ErrorBoundary), so the bare promise must not also bubble as an unhandled
   // rejection. `refetch()` may return a value or a promise, hence Promise.resolve.
   const safeRefetch = (): void => {
     void Promise.resolve(refetch()).catch(() => {});
+    void Promise.resolve(refetchHealth()).catch(() => {});
   };
 
   const [ui, setUi] = createStore<UiState>({
@@ -491,6 +509,7 @@ export const AppProvider: ParentComponent = (props) => {
     config,
     source,
     list,
+    health,
     reload: safeRefetch,
     ui,
     setFilter: (f) => setUi("filter", f),

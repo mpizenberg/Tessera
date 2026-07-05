@@ -20,6 +20,11 @@ export interface CachedSnapshot {
 export interface SnapshotStore {
   get(): Promise<CachedSnapshot | null>;
   put(snapshot: CachedSnapshot): Promise<void>;
+  /**
+   * The stored snapshot's `fetchedAt` alone, without deserializing the payload
+   * blob — for freshness probes (`/api/health`) that don't need the body.
+   */
+  snapshotFetchedAt(): Promise<number | null>;
   close(): void;
 }
 
@@ -159,5 +164,59 @@ export interface ScanCacheStore {
   putTxMetadata(entries: ReadonlyMap<string, unknown>): Promise<void>;
 }
 
-/** What the backend wires together: snapshot cache + tally + scan persistence. */
-export type BackendStore = SnapshotStore & TallyStore & ScanCacheStore;
+/**
+ * One refresh run's operational stats (`refresh_run`) — what the health
+ * endpoint reports. Failed runs carry `ok: false` plus the error text; their
+ * `incomplete`/`surveys`/`responses`/`payloadBytes` are 0 (nothing was stored).
+ */
+export interface RefreshRunRow {
+  /** Unix seconds when the run started (primary key; latest-wins on collision). */
+  readonly startedAt: number;
+  readonly durationMs: number;
+  /** Koios HTTP requests issued by this run (scan + validation + finalization). */
+  readonly koiosCalls: number;
+  readonly ok: boolean;
+  /** Failure message when `ok` is false, else null. */
+  readonly error: string | null;
+  /** The stored snapshot's `incomplete` flag (scan paging cap hit). */
+  readonly incomplete: boolean;
+  readonly surveys: number;
+  readonly responses: number;
+  /** Serialized snapshot payload size — the single-blob row's growth metric. */
+  readonly payloadBytes: number;
+}
+
+/** Keep refresh-run rows this long; older ones are pruned on each insert. */
+export const REFRESH_RUN_RETENTION_SECONDS = 7 * 86_400;
+
+/** Aggregates over a window of refresh runs (the daily-quota view). */
+export interface RefreshTotals {
+  readonly runs: number;
+  readonly failures: number;
+  readonly koiosCalls: number;
+}
+
+/** Operational-metrics persistence behind `/api/health` (health footer). */
+export interface HealthStore {
+  /**
+   * Record one run (latest-wins on a same-second collision) and prune rows
+   * older than {@link REFRESH_RUN_RETENTION_SECONDS} before it.
+   */
+  putRefreshRun(row: RefreshRunRow): Promise<void>;
+  /** The most recent run, or null before the first one. */
+  lastRefreshRun(): Promise<RefreshRunRow | null>;
+  /** Aggregates over runs with `startedAt >= sinceUnix`. */
+  refreshTotalsSince(sinceUnix: number): Promise<RefreshTotals>;
+  /**
+   * Validated-response rows still awaiting an enrichment retry (`blockIndex`
+   * or `proofOk` null) — a persistently nonzero backlog means something is
+   * wedged upstream.
+   */
+  incompleteValidationCount(): Promise<number>;
+}
+
+/** What the backend wires together: snapshot cache + tally + scan + health. */
+export type BackendStore = SnapshotStore &
+  TallyStore &
+  ScanCacheStore &
+  HealthStore;

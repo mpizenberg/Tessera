@@ -73,10 +73,15 @@ interface DrepPowerRow {
 }
 
 export class KoiosTallyInputs implements TallyInputSource {
+  /**
+   * `onRequest` fires once per Koios HTTP request (each `postAll` page counts
+   * individually) — the serving tier counts calls per refresh.
+   */
   constructor(
     private readonly config: AppConfig,
     private readonly getToken: () => string | undefined = () =>
       config.koiosToken,
+    private readonly onRequest?: () => void,
   ) {}
 
   private headers(extra?: Record<string, string>): HeadersInit {
@@ -87,6 +92,7 @@ export class KoiosTallyInputs implements TallyInputSource {
   }
 
   private async get<T>(path: string): Promise<T> {
+    this.onRequest?.();
     const res = await fetch(this.config.koiosUrl + path, {
       headers: this.headers(),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -96,6 +102,7 @@ export class KoiosTallyInputs implements TallyInputSource {
   }
 
   private async post<T>(path: string, body: unknown): Promise<T> {
+    this.onRequest?.();
     const res = await fetch(this.config.koiosUrl + path, {
       method: "POST",
       headers: this.headers({ "Content-Type": "application/json" }),

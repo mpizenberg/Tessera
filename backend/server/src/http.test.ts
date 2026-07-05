@@ -322,3 +322,73 @@ describe("GET /api/responded", () => {
     );
   });
 });
+
+describe("GET /api/health", () => {
+  // The route's 24 h window is anchored to the real clock, so run rows must
+  // be too (unlike the fixture snapshot, whose fetchedAt only feeds age).
+  const NOW = Math.floor(Date.now() / 1000);
+  const runRow = {
+    startedAt: NOW - 20,
+    durationMs: 900,
+    koiosCalls: 12,
+    ok: true,
+    error: null,
+    incomplete: false,
+    surveys: 2,
+    responses: 4,
+    payloadBytes: 5_000,
+  };
+
+  it("reports snapshot freshness, last run, totals, and limits", async () => {
+    const store = memStore(snapshot);
+    await store.putRefreshRun({ ...runRow, startedAt: NOW - 200 });
+    await store.putRefreshRun({
+      ...runRow,
+      startedAt: NOW - 100,
+      ok: false,
+      error: "Koios GET /tip → 502",
+    });
+    await store.putRefreshRun(runRow);
+    const app = createApp(
+      loadConfig({ SUBREQUEST_LIMIT: "40", KOIOS_DAILY_LIMIT: "5000" }),
+      store,
+      { compress: false },
+    );
+
+    const res = await app.request("/api/health");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body["network"]).toBe("preview");
+    expect(body["snapshot"]).toMatchObject({ fetchedAt: FETCHED_AT });
+    expect(body["lastRefresh"]).toMatchObject({
+      startedAt: NOW - 20,
+      koiosCalls: 12,
+      ok: true,
+    });
+    expect(body["last24h"]).toEqual({
+      runs: 3,
+      failures: 1,
+      koiosCalls: 36,
+    });
+    expect(body["validationBacklog"]).toBe(0);
+    expect(body["limits"]).toEqual({
+      koiosCallsPerRefresh: 40,
+      koiosCallsPerDay: 5000,
+    });
+  });
+
+  it("serves nulls before any refresh, with a default per-refresh limit", async () => {
+    const app = appWith(memStore(null));
+    const res = await app.request("/api/health");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body["snapshot"]).toBeNull();
+    expect(body["lastRefresh"]).toBeNull();
+    expect(body["last24h"]).toEqual({ runs: 0, failures: 0, koiosCalls: 0 });
+    expect(body["limits"]).toEqual({
+      koiosCallsPerRefresh: 50,
+      koiosCallsPerDay: null,
+    });
+  });
+});

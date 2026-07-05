@@ -161,12 +161,17 @@ export class KoiosDataSource implements DataSource {
    * `cache` is the optional {@link TxMetadataCache} — the serving tier passes a
    * store-backed one so scans resume across crons; the browser passes none
    * (each page load is a fresh context anyway).
+   * `onRequest` fires once per Koios HTTP request issued through this source —
+   * the serving tier counts calls per refresh against its subrequest budget.
+   * (Exception: {@link protocolParameters} delegates to the evolution-sdk
+   * provider, whose internal fetch is not observed here.)
    */
   constructor(
     private readonly config: AppConfig,
     private readonly getToken: () => string | undefined = () =>
       config.koiosToken,
     private readonly cache?: TxMetadataCache,
+    private readonly onRequest?: () => void,
   ) {}
 
   private headers(extra?: Record<string, string>): HeadersInit {
@@ -177,6 +182,7 @@ export class KoiosDataSource implements DataSource {
   }
 
   private async get<T>(path: string): Promise<T> {
+    this.onRequest?.();
     const res = await fetch(this.config.koiosUrl + path, {
       headers: this.headers(),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -186,6 +192,7 @@ export class KoiosDataSource implements DataSource {
   }
 
   private async post<T>(path: string, body: unknown): Promise<T> {
+    this.onRequest?.();
     const res = await fetch(this.config.koiosUrl + path, {
       method: "POST",
       headers: this.headers({ "Content-Type": "application/json" }),

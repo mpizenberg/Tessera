@@ -17,6 +17,7 @@ import { useApp, type ExploreFilter } from "~/state";
 import { walletOwns } from "~/domain/roles";
 import { endsText, fullRef, isClosed, viewStatus } from "~/ui/format";
 import { FormMosaic, RoleChips, VisGlyph } from "~/ui/components/glyphs";
+import { HealthFooter } from "~/ui/components/HealthFooter";
 import type { ChainTip, GovLink } from "~/data/source";
 import type { WalletCredential, WalletIdentity } from "~/wallet/types";
 import type { Question, SurveyDefinition } from "cip-179";
@@ -386,6 +387,7 @@ export const Explore: Component = () => {
       </div>
 
       <Legend />
+      <HealthFooter />
     </main>
   );
 };

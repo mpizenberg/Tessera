@@ -13,6 +13,7 @@ import create from "./create";
 import explore from "./explore";
 import feedback from "./feedback";
 import header from "./header";
+import healthFooter from "./healthFooter";
 import onchainPreview from "./onchainPreview";
 import proposeInfoAction from "./proposeInfoAction";
 import respond from "./respond";
@@ -29,6 +30,7 @@ const fr: Dict = {
   explore,
   feedback,
   header,
+  healthFooter,
   onchainPreview,
   proposeInfoAction,
   respond,

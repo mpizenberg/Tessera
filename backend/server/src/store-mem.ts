@@ -8,10 +8,11 @@ import type {
   ArtifactRow,
   BackendStore,
   CachedSnapshot,
+  RefreshRunRow,
   ValidatedResponseRow,
   WeightRow,
 } from "./store";
-import { validationKey } from "./store";
+import { REFRESH_RUN_RETENTION_SECONDS, validationKey } from "./store";
 
 export interface MemBackendStore extends BackendStore {
   /** Direct row access for assertions. */
@@ -20,6 +21,7 @@ export interface MemBackendStore extends BackendStore {
   readonly totals: Map<string, { total: string; endpoint: string }>;
   readonly artifacts: Map<string, ArtifactRow>;
   readonly txMetadata: Map<string, unknown>;
+  readonly refreshRuns: Map<number, RefreshRunRow>;
 }
 
 export function memBackendStore(
@@ -31,6 +33,7 @@ export function memBackendStore(
   const totals = new Map<string, { total: string; endpoint: string }>();
   const artifacts = new Map<string, ArtifactRow>();
   const txMetadata = new Map<string, unknown>();
+  const refreshRuns = new Map<number, RefreshRunRow>();
 
   const weightKey = (epoch: number, role: number, credential: string) =>
     `${epoch}|${role}|${credential}`;
@@ -41,12 +44,16 @@ export function memBackendStore(
     totals,
     artifacts,
     txMetadata,
+    refreshRuns,
 
     async get() {
       return snapshot;
     },
     async put(s) {
       snapshot = s;
+    },
+    async snapshotFetchedAt() {
+      return snapshot?.fetchedAt ?? null;
     },
 
     async completedValidations() {
@@ -122,6 +129,34 @@ export function memBackendStore(
     },
     async putTxMetadata(entries) {
       for (const [h, m] of entries) if (!txMetadata.has(h)) txMetadata.set(h, m);
+    },
+
+    async putRefreshRun(row) {
+      refreshRuns.set(row.startedAt, row);
+      const cutoff = row.startedAt - REFRESH_RUN_RETENTION_SECONDS;
+      for (const at of refreshRuns.keys())
+        if (at < cutoff) refreshRuns.delete(at);
+    },
+    async lastRefreshRun() {
+      let last: RefreshRunRow | null = null;
+      for (const r of refreshRuns.values())
+        if (!last || r.startedAt > last.startedAt) last = r;
+      return last;
+    },
+    async refreshTotalsSince(sinceUnix) {
+      const rows = [...refreshRuns.values()].filter(
+        (r) => r.startedAt >= sinceUnix,
+      );
+      return {
+        runs: rows.length,
+        failures: rows.filter((r) => !r.ok).length,
+        koiosCalls: rows.reduce((sum, r) => sum + r.koiosCalls, 0),
+      };
+    },
+    async incompleteValidationCount() {
+      return [...validated.values()].filter(
+        (r) => r.blockIndex === null || r.proofOk === null,
+      ).length;
     },
 
     close() {},
