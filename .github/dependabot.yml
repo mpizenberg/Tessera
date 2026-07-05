@@ -1,0 +1,9 @@
+# Monthly PRs for stale GitHub Actions (the pnpm/action-setup incident class).
+# npm dependencies are deliberately not covered yet — add an `npm` ecosystem
+# entry here if lockfile bumps as PRs become worth the noise.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
