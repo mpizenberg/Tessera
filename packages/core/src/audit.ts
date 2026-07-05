@@ -158,6 +158,15 @@ export function auditRevealedResponses(
   revealed: readonly (SurveyResponse | null)[],
   definition: SurveyDefinition,
 ): RevealedAudit {
+  // The decrypted responses are plaintext (`public`) now, so validate them
+  // against the survey's answer constraints but NOT its sealed submission-mode
+  // gate — `validateResponse` would otherwise reject every revealed answer for a
+  // sealed survey with "requires a sealed response". Everything else (roles,
+  // indices, required questions) is unchanged.
+  const answerDef: SurveyDefinition =
+    definition.submissionMode.type === "sealed"
+      ? { ...definition, submissionMode: { type: "public" } }
+      : definition;
   const decoded: ResponseRecord[] = [];
   const invalid: ResponseRecord[] = [];
   const failed: ResponseRecord[] = [];
@@ -165,7 +174,7 @@ export function auditRevealedResponses(
     const pub = revealed[i] ?? null;
     if (pub === null) {
       failed.push(r);
-    } else if (!responseIsCountable(definition, pub)) {
+    } else if (!responseIsCountable(answerDef, pub)) {
       // Keep the decoded response so a per-response audit shows what it claimed.
       invalid.push({ ...r, response: pub });
     } else {

@@ -1,10 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { Role, type Credential, type SurveyDefinition } from "cip-179";
+import {
+  Role,
+  type AnswerItem,
+  type Credential,
+  type SurveyDefinition,
+} from "cip-179";
 import {
   artifactHash,
   credentialKey,
   hexToBytes,
+  responderAnswers,
   type CancellationRecord,
   type ChainTip,
   type Cip179Records,
@@ -19,6 +25,7 @@ import {
 
 import { loadConfig } from "./config";
 import { finalizeClosedSurveys } from "./finalize";
+import type { SealedRevealFn } from "./sealedReveal";
 import type { ValidatedResponseRow } from "./store";
 import { memBackendStore, type MemBackendStore } from "./store-mem";
 
@@ -106,6 +113,61 @@ function response(
     },
   };
 }
+
+const QUICKNET_CHAIN_HASH_HEX =
+  "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971";
+
+/** A sealed submission mode on quicknet whose round has already published. */
+const SEALED_MODE = {
+  type: "sealed" as const,
+  chainHash: hexToBytes(QUICKNET_CHAIN_HASH_HEX),
+  round: 100, // publishes ~2023 (genesis + 99·3s) — available under the real clock
+  paddingSize: 64,
+};
+
+/** A sealed response record; the dummy ciphertext is decrypted by the stub reveal. */
+function sealedResponse(
+  txHash: string,
+  cred: Credential,
+  slot = 200,
+  role: Role = Role.Stakeholder,
+): ResponseRecord {
+  return {
+    txHash,
+    slot,
+    epochNo: 499,
+    responseIndex: 0,
+    response: {
+      specVersion: 4,
+      surveyRef: { txId: hexToBytes(SURVEY_TX), index: 0 },
+      role,
+      credential: cred,
+      answers: { type: "sealed", ciphertext: hexToBytes("ab".repeat(16)) },
+    },
+  };
+}
+
+/**
+ * A stub {@link SealedRevealFn} (no crypto/network): decrypts each record to the
+ * answers keyed by its txHash — `null` = undecryptable (reveal returns null).
+ */
+function stubReveal(answersByTx: Record<string, AnswerItem[] | null>) {
+  const fn: SealedRevealFn = async (recs, { round }) => ({
+    revealed: recs.map((r) => {
+      const a = answersByTx[r.txHash];
+      return a == null
+        ? null
+        : { ...r.response, answers: { type: "public" as const, answers: a } };
+    }),
+    beacon: { round, randomness: "be".repeat(16), signature: "51".repeat(48) },
+  });
+  return vi.fn(fn);
+}
+
+/** The one-answer singleChoice reply used by the sealed tests ("no" = option 1). */
+const SEALED_ANSWER: AnswerItem[] = [
+  { type: "singleChoice", questionIndex: 0, optionIndex: 1 },
+];
 
 function validatedRow(
   r: ResponseRecord,
@@ -451,10 +513,91 @@ describe("finalizeClosedSurveys", () => {
     expect(inputs.stakeholderCalls).toBe(0); // no weight work for cancelled
   });
 
-  it("freezes weights for a sealed survey but emits no artifact", async () => {
+  it("emits a sealed artifact with revealed answers and a provenance beacon", async () => {
     const store = memBackendStore();
-    await seed(store, [validatedRow(rA)]);
+    const rSealed = sealedResponse("11".repeat(32), CRED_A);
+    await seed(store, [validatedRow(rSealed)]);
+    const inputs = fakeInputs({ [KEY_A]: { weight: 100n, registered: true } });
+    const reveal = stubReveal({ [rSealed.txHash]: SEALED_ANSWER });
+
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      inputs,
+      noProofs,
+      records(survey(definition({ submissionMode: SEALED_MODE })), [rSealed]),
+      TIP,
+      reveal,
+    );
+
+    const artifact = JSON.parse(
+      store.artifacts.get(SURVEY_KEY)!.artifact,
+    ) as TallyArtifact;
+    expect(artifact.tally.sealed).toBe(true);
+    expect(artifactHash(artifact.tally as TallyBody)).toBe(
+      store.artifacts.get(SURVEY_KEY)!.artifactHash,
+    );
+    const role3 = artifact.tally.perRole.find((r) => r.role === 3)!;
+    expect(role3.responders).toHaveLength(1);
+    // The revealed answers are committed in the artifact (the sealed-artifact rule).
+    expect(responderAnswers(role3.responders[0]!)).toEqual(SEALED_ANSWER);
+    // And they drove the tally: option 1 ("no") carries A's weight.
+    expect(role3.questions[0]).toMatchObject({ optionWeights: ["0", "100"] });
+    // The beacon is recorded in (unhashed) provenance for offline audit.
+    expect(artifact.provenance.sealedReveal).toEqual({
+      chainHash: QUICKNET_CHAIN_HASH_HEX,
+      round: SEALED_MODE.round,
+      beacon: {
+        round: SEALED_MODE.round,
+        randomness: "be".repeat(16),
+        signature: "51".repeat(48),
+      },
+    });
+    expect(reveal).toHaveBeenCalledTimes(1);
+  });
+
+  it("dedups sealed responses AFTER reveal: a later undecryptable ballot never supersedes an earlier valid one (finding 2)", async () => {
+    const store = memBackendStore();
+    const early = sealedResponse("11".repeat(32), CRED_A, 200);
+    const late = sealedResponse("33".repeat(32), CRED_A, 250); // later in chain
+    await seed(store, [validatedRow(early), validatedRow(late)]);
+    const inputs = fakeInputs({ [KEY_A]: { weight: 100n, registered: true } });
+    // The later ballot fails to decrypt; on-chain dedup would have let it
+    // suppress the earlier valid one, disenfranchising A.
+    const reveal = stubReveal({
+      [early.txHash]: SEALED_ANSWER,
+      [late.txHash]: null,
+    });
+
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      inputs,
+      noProofs,
+      records(survey(definition({ submissionMode: SEALED_MODE })), [
+        early,
+        late,
+      ]),
+      TIP,
+      reveal,
+    );
+
+    const artifact = JSON.parse(
+      store.artifacts.get(SURVEY_KEY)!.artifact,
+    ) as TallyArtifact;
+    const role3 = artifact.tally.perRole.find((r) => r.role === 3)!;
+    expect(role3.responders).toHaveLength(1);
+    // The earlier VALID response is the one counted — not the later null.
+    expect(role3.responders[0]!.txHash).toBe(early.txHash);
+    expect(role3.questions[0]).toMatchObject({ optionWeights: ["0", "100"] });
+  });
+
+  it("postpones a sealed reveal while the round is unavailable (weights frozen, reveal not called)", async () => {
+    const store = memBackendStore();
+    const rSealed = sealedResponse("11".repeat(32), CRED_A);
+    await seed(store, [validatedRow(rSealed)]);
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
+    const reveal = stubReveal({ [rSealed.txHash]: SEALED_ANSWER });
 
     await finalizeClosedSurveys(
       CONFIG,
@@ -464,25 +607,125 @@ describe("finalizeClosedSurveys", () => {
       records(
         survey(
           definition({
-            submissionMode: {
-              type: "sealed",
-              // Real quicknet chain hash so the survey isn't skipped as
-              // unsupported; a far-future round so its beacon hasn't published
-              // (Phase 4 turns this into the "reveal postponed" assertion).
-              chainHash: hexToBytes(
-                "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971",
-              ),
-              round: 999_999_999,
-              paddingSize: 64,
-            },
+            submissionMode: { ...SEALED_MODE, round: 999_999_999 },
           }),
         ),
-        [rA],
+        [rSealed],
       ),
       TIP,
+      reveal,
     );
-    expect(store.weights.size).toBe(1); // frozen
-    expect(store.artifacts.size).toBe(0); // TODO(sealed-artifact)
+
+    expect(store.weights.size).toBe(1); // frozen this pass
+    expect(store.artifacts.size).toBe(0); // no artifact until the round publishes
+    expect(reveal).not.toHaveBeenCalled();
+  });
+
+  it("postpones (does not escape) when the reveal throws", async () => {
+    const store = memBackendStore();
+    const rSealed = sealedResponse("11".repeat(32), CRED_A);
+    await seed(store, [validatedRow(rSealed)]);
+    const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
+    const throwingReveal: SealedRevealFn = async () => {
+      throw new Error("beacon fetch failed");
+    };
+    const reveal = vi.fn(throwingReveal);
+
+    // Must resolve, not reject — one bad reveal can't abort the whole pass.
+    await expect(
+      finalizeClosedSurveys(
+        CONFIG,
+        store,
+        inputs,
+        noProofs,
+        records(survey(definition({ submissionMode: SEALED_MODE })), [rSealed]),
+        TIP,
+        reveal,
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(reveal).toHaveBeenCalledTimes(1);
+    expect(store.artifacts.size).toBe(0); // retried next refresh
+  });
+
+  it("skips a sealed survey on an unsupported (non-quicknet) chain — no reveal, no weight work", async () => {
+    const store = memBackendStore();
+    const rSealed = sealedResponse("11".repeat(32), CRED_A);
+    await seed(store, [validatedRow(rSealed)]);
+    const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
+    const reveal = stubReveal({ [rSealed.txHash]: SEALED_ANSWER });
+
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      inputs,
+      noProofs,
+      records(
+        survey(
+          definition({
+            submissionMode: { ...SEALED_MODE, chainHash: new Uint8Array(32) },
+          }),
+        ),
+        [rSealed],
+      ),
+      TIP,
+      reveal,
+    );
+
+    expect(store.artifacts.size).toBe(0);
+    expect(store.weights.size).toBe(0); // excluded before any weight work
+    expect(inputs.stakeholderCalls).toBe(0);
+    expect(reveal).not.toHaveBeenCalled();
+  });
+
+  it("marks a sealed survey's cancellation artifact as sealed", async () => {
+    const store = memBackendStore();
+    const rSealed = sealedResponse("11".repeat(32), CRED_A);
+    await seed(store, [validatedRow(rSealed)]);
+    const cancellation: CancellationRecord = {
+      txHash: "cc".repeat(32),
+      slot: 300,
+      epochNo: 499,
+      target: { txId: hexToBytes(SURVEY_TX), index: 0 },
+      proof: null,
+    };
+    const proofs = {
+      txProofs: vi.fn(
+        async () =>
+          new Map<string, TxProof | null>([
+            [
+              cancellation.txHash,
+              { requiredSigners: [OWNER_HASH], nativeScripts: [], votes: [] },
+            ],
+          ]),
+      ),
+    };
+    const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
+    const reveal = stubReveal({ [rSealed.txHash]: SEALED_ANSWER });
+
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      inputs,
+      proofs,
+      records(
+        survey(definition({ submissionMode: SEALED_MODE })),
+        [rSealed],
+        [cancellation],
+      ),
+      TIP,
+      reveal,
+    );
+
+    const artifact = JSON.parse(
+      store.artifacts.get(SURVEY_KEY)!.artifact,
+    ) as TallyArtifact;
+    expect(artifact.tally.sealed).toBe(true);
+    expect(artifact.tally.cancelled).toMatchObject({
+      txHash: cancellation.txHash,
+    });
+    expect(artifact.tally.perRole).toEqual([]);
+    expect(reveal).not.toHaveBeenCalled(); // cancelled → no reveal
   });
 
   it("applies the counted-set rules: dedupe latest-wins, unproven excluded, unregistered dropped", async () => {

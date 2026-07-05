@@ -23,6 +23,9 @@ importers:
       '@tessera/koios':
         specifier: workspace:*
         version: link:../../packages/koios
+      '@tessera/tlock':
+        specifier: workspace:*
+        version: link:../../packages/tlock
       cip-179:
         specifier: workspace:*
         version: link:../../frontend/cip179

@@ -17,14 +17,16 @@
  * weight row, and every covered role has its electorate total. Any of these
  * still pending postpones emission to a later cron (artifacts are immutable, so
  * emitting early would freeze a legitimately valid response out forever).
- * Sealed surveys get their weights frozen the same way but no artifact yet
- * (TODO(sealed-artifact): emission awaits the reveal-aware tally).
+ * Sealed surveys additionally wait for their drand round to publish, then
+ * decrypt every in-window response and tally the revealed answers (§6.5); a
+ * sealed survey on an unsupported (non-quicknet) drand chain is skipped forever.
  */
 
-import { Role } from "cip-179";
+import { Role, type SurveyResponse } from "cip-179";
 
 import {
   artifactHash,
+  auditRevealedResponses,
   bytesToHex,
   cancellationVerified,
   laterInChain,
@@ -38,6 +40,7 @@ import {
   type ArtifactRoleTally,
   type ChainTip,
   type Cip179Records,
+  type ResponseRecord,
   type SurveyRecord,
   type TallyArtifact,
   type TallyBody,
@@ -45,9 +48,19 @@ import {
   type TxProof,
   type WeightedResponder,
 } from "@tessera/core";
+import { isQuicknet, roundIsAvailable } from "@tessera/tlock";
 
 import type { ServerConfig } from "./config";
+import { tlockSealedReveal, type SealedRevealFn } from "./sealedReveal";
 import type { TallyStore, ValidatedResponseRow, WeightRow } from "./store";
+
+/**
+ * Per-pass cap on sealed decryptions across all surveys — bounds Worker CPU per
+ * cron. A survey needing more than the *full* budget still runs (alone, when the
+ * budget is otherwise untouched) so an oversized sealed survey always makes
+ * progress; smaller ones that don't fit the remaining budget wait for next pass.
+ */
+const MAX_SEALED_DECRYPTS_PER_PASS = 500;
 
 /** Roles artifacts cover (must match core's RULESET_DESCRIPTOR). */
 const COVERED_ROLES: readonly number[] = [
@@ -73,6 +86,7 @@ export async function finalizeClosedSurveys(
   source: Pick<import("@tessera/koios").KoiosDataSource, "txProofs">,
   records: Cip179Records,
   tip: ChainTip,
+  reveal: SealedRevealFn = tlockSealedReveal,
 ): Promise<void> {
   // An incomplete snapshot (a dropped metadata batch or the page cap) may be
   // missing a responder tx or a cancellation for *any* survey, and we can't tell
@@ -99,7 +113,7 @@ export async function finalizeClosedSurveys(
   // --- cancelled surveys: a cancellation artifact, no weight work ------------
   // The snapshot keeps `proof: null` for cancellations of closed surveys (the
   // scan only verifies open ones), so re-fetch the proofs here.
-  const open = await withCancellations(
+  const notCancelled = await withCancellations(
     config,
     store,
     source,
@@ -108,12 +122,29 @@ export async function finalizeClosedSurveys(
     nowSec,
   );
 
+  // A sealed survey on a drand chain the bundled tlock can't decrypt is
+  // permanently unrevealable — its votes are undecryptable forever (vote-time
+  // guard aside, an old survey may predate it). Drop it entirely: no weight
+  // work, no artifact. Warned every pass (accepted; a persisted "skipped"
+  // marker is a possible follow-up).
+  const open = notCancelled.filter((s) => {
+    const mode = s.definition.submissionMode;
+    if (mode.type === "sealed" && !isQuicknet(mode.chainHash)) {
+      console.warn(
+        `finalize: ${refKey(s.ref)} sealed on unsupported drand chain — skipped (no artifact)`,
+      );
+      return false;
+    }
+    return true;
+  });
+
   // A counted row joins back to its full response payload at emit time; if the
   // snapshot no longer carries that response (it aged out or a batch dropped it)
   // the artifact would silently omit a counted responder — so postpone instead.
-  const presentResponses = new Set(
-    records.responses.map((r) => `${r.txHash}:${r.responseIndex}`),
+  const responseByKey = new Map(
+    records.responses.map((r) => [`${r.txHash}:${r.responseIndex}`, r]),
   );
+  const presentResponses = new Set(responseByKey.keys());
 
   // --- weight snapshotting, per end epoch ------------------------------------
   const byEpoch = new Map<number, SurveyRecord[]>();
@@ -122,6 +153,10 @@ export async function finalizeClosedSurveys(
     if (list) list.push(s);
     else byEpoch.set(s.definition.endEpoch, [s]);
   }
+
+  // Sealed decrypt budget is pass-wide (across every end epoch), so one cron
+  // never decrypts more than the cap in total.
+  let sealedDecryptBudget = MAX_SEALED_DECRYPTS_PER_PASS;
 
   for (const [epoch, surveys] of byEpoch) {
     // Counted rows per survey (rules 1–3 verdicts joined at tally time), plus
@@ -135,6 +170,12 @@ export async function finalizeClosedSurveys(
     }
 
     // Union of counted credentials per role across all surveys ending at E.
+    // R1 invariant: using the *deduped* `counted` (not `eligible`) is safe even
+    // for sealed surveys, which tally the pre-dedup set. Dedup only collapses
+    // rows sharing a (role, credential); it never removes a credential from the
+    // union, so the set of credentials to snapshot weights for is identical
+    // pre- and post-dedup. Sealed weights frozen here are therefore correct for
+    // the post-reveal counted set (a subset of these credentials).
     const credsByRole = new Map<number, Set<string>>();
     for (const { counted } of countedBySurvey.values()) {
       for (const r of counted) {
@@ -163,55 +204,175 @@ export async function finalizeClosedSurveys(
     }
 
     // --- emit, one survey at a time, only when complete -----------------------
-    for (const s of surveys) {
-      const key = refKey(s.ref);
-      if (s.definition.submissionMode.type === "sealed") {
-        // Weights are frozen above; emission awaits the reveal-aware tally.
-        // TODO(sealed-artifact)
-        console.log(`finalize: ${key} is sealed — weights frozen, no artifact`);
-        continue;
-      }
-      const { counted, pending } = countedBySurvey.get(key)!;
-      // A counted row whose tx is no longer in this (complete — see the
-      // `records.incomplete` guard above) snapshot was reorged out: the fixed
-      // scan floor means it can't age back in, and validated_response rows are
-      // never otherwise pruned, so leaving it would postpone this survey on
-      // *every* future refresh, forever (finding 3). Treat snapshot membership
-      // as authoritative: prune the stale row(s) and postpone one more refresh.
-      // That one refresh is the reorg buffer — if the tx re-appears next scan
-      // it's re-validated (the row is uncompleted again) and counted; if it
-      // stays gone the row is now absent from `counted`, so the survey emits.
-      const absent = counted.filter(
+    // A counted/eligible row whose tx is no longer in this (complete — see the
+    // `records.incomplete` guard above) snapshot was reorged out: the fixed scan
+    // floor means it can't age back in, and validated_response rows are never
+    // otherwise pruned, so leaving it would postpone this survey on *every*
+    // future refresh, forever (finding 3). Treat snapshot membership as
+    // authoritative: prune the stale row(s) and postpone one more refresh. That
+    // one refresh is the reorg buffer — if the tx re-appears next scan it's
+    // re-validated (the row is uncompleted again) and counted; if it stays gone
+    // the row is now absent, so the survey emits. Returns true = pruned/postpone.
+    const pruneReorgedOut = async (
+      key: string,
+      rows: readonly ValidatedResponseRow[],
+    ): Promise<boolean> => {
+      const absent = rows.filter(
         (r) => !presentResponses.has(`${r.txHash}:${r.responseIndex}`),
       );
-      if (absent.length > 0) {
-        await store.deleteValidatedResponses(
-          absent.map((r) => ({
-            txHash: r.txHash,
-            responseIndex: r.responseIndex,
-          })),
+      if (absent.length === 0) return false;
+      await store.deleteValidatedResponses(
+        absent.map((r) => ({
+          txHash: r.txHash,
+          responseIndex: r.responseIndex,
+        })),
+      );
+      for (const r of absent) {
+        console.warn(
+          `finalize: ${key} pruned reorged-out response ${r.txHash}:${r.responseIndex}`,
         );
-        for (const r of absent) {
-          console.warn(
-            `finalize: ${key} pruned reorged-out response ${r.txHash}:${r.responseIndex}`,
+      }
+      return true;
+    };
+
+    for (const s of surveys) {
+      const key = refKey(s.ref);
+      const mode = s.definition.submissionMode;
+      const { counted, eligible, pending } = countedBySurvey.get(key)!;
+
+      if (mode.type === "sealed") {
+        // Weights are frozen above (R1). Wait for the drand round to publish,
+        // then reveal + tally the PRE-dedup set (finding 2: dedup runs after
+        // reveal-time validation, in auditRevealedResponses).
+        if (!roundIsAvailable(mode.round, nowSec)) {
+          console.log(
+            `finalize: ${key} sealed reveal postponed — round ${mode.round} not yet available`,
           );
+          continue;
         }
+        if (await pruneReorgedOut(key, eligible)) continue;
+        if (pending) {
+          console.warn(`finalize: ${key} postponed — ${pending}`);
+          continue;
+        }
+        // Decrypt budget: a survey larger than the whole budget still runs when
+        // the budget is untouched (progress guaranteed); otherwise a survey that
+        // doesn't fit the remainder waits for next pass.
+        const need = eligible.length;
+        if (
+          need > sealedDecryptBudget &&
+          sealedDecryptBudget < MAX_SEALED_DECRYPTS_PER_PASS
+        ) {
+          console.log(
+            `finalize: ${key} sealed reveal postponed — decrypt budget exhausted this pass`,
+          );
+          continue;
+        }
+        // Join each eligible row to its on-chain response (carrying the sealed
+        // ciphertext). A miss means the snapshot dropped it — postpone.
+        const inWindow: ResponseRecord[] = [];
+        let missingRecord: string | null = null;
+        for (const r of eligible) {
+          const rec = responseByKey.get(`${r.txHash}:${r.responseIndex}`);
+          if (!rec) {
+            missingRecord = `${r.txHash}:${r.responseIndex}`;
+            break;
+          }
+          inWindow.push(rec);
+        }
+        if (missingRecord) {
+          console.warn(
+            `finalize: ${key} postponed — response ${missingRecord} missing from snapshot`,
+          );
+          continue;
+        }
+        sealedDecryptBudget -= need;
+        let result;
+        try {
+          result = await reveal(inWindow, { round: mode.round });
+        } catch (err) {
+          // Transient (beacon fetch, verification) — retry next refresh. Never
+          // let it escape and abort the whole finalize pass.
+          console.warn(
+            `finalize: ${key} sealed reveal failed (${String(err)}) — retry next refresh`,
+          );
+          continue;
+        }
+        // Reveal → validate → dedup (§6.5). counted carry decrypted answers.
+        const audit = auditRevealedResponses(
+          inWindow,
+          result.revealed,
+          s.definition,
+        );
+        const rowByKey = new Map(
+          eligible.map((r) => [`${r.txHash}:${r.responseIndex}`, r]),
+        );
+        const entries = audit.counted.map((rec) => ({
+          row: rowByKey.get(`${rec.txHash}:${rec.responseIndex}`)!,
+          response: rec.response,
+        }));
+        const missing = incompleteReason(
+          entries.map((e) => e.row),
+          weightByRole,
+          totalByRole,
+        );
+        if (missing) {
+          console.warn(`finalize: ${key} postponed — ${missing}`);
+          continue;
+        }
+        const artifact = buildArtifact(
+          config,
+          s,
+          entries,
+          weightByRole,
+          totalByRole,
+          nowSec,
+          {
+            sealed: true,
+            sealedReveal: {
+              chainHash: bytesToHex(mode.chainHash),
+              round: mode.round,
+              beacon: result.beacon,
+            },
+          },
+        );
+        await store.putArtifact({
+          surveyKey: key,
+          endEpoch: s.definition.endEpoch,
+          artifactHash: artifact.hash,
+          artifact: artifact.json,
+          createdAt: nowSec,
+        });
+        console.log(
+          `finalize: ${key} → sealed artifact ${artifact.hash} ` +
+            `(counted ${audit.counted.length}, superseded ${audit.superseded.length}, ` +
+            `invalid ${audit.invalid.length}, undecryptable ${audit.failed.length})`,
+        );
         continue;
       }
+
+      // --- public survey -------------------------------------------------------
+      if (await pruneReorgedOut(key, counted)) continue;
       const missing =
         pending ?? incompleteReason(counted, weightByRole, totalByRole);
       if (missing) {
         console.warn(`finalize: ${key} postponed — ${missing}`);
         continue;
       }
+      // Rejoin each counted row to its on-chain response (guaranteed present by
+      // the reorg-prune above and the `records.incomplete` guard).
+      const entries = counted.map((r) => ({
+        row: r,
+        response: responseByKey.get(`${r.txHash}:${r.responseIndex}`)!.response,
+      }));
       const artifact = buildArtifact(
         config,
         s,
-        counted,
-        records,
+        entries,
         weightByRole,
         totalByRole,
         nowSec,
+        { sealed: false },
       );
       await store.putArtifact({
         surveyKey: key,
@@ -272,7 +433,7 @@ async function withCancellations(
       rulesetHash: rulesetHash(),
       network: config.app.network,
       survey: surveyIdOf(s),
-      sealed: false,
+      sealed: s.definition.submissionMode.type === "sealed",
       cancelled: {
         txHash: winning.txHash,
         slot: winning.slot,
@@ -303,6 +464,12 @@ async function withCancellations(
 /** The counted set for one survey, plus why (if at all) emission must wait. */
 interface CountedRows {
   counted: ValidatedResponseRow[];
+  /**
+   * The pre-dedup eligible rows (valid, proven, in-window, covered role). Public
+   * tallies use `counted`; sealed tallies use this — reveal-time validation must
+   * run *before* dedup (finding 2), so a sealed survey can't dedup on-chain.
+   */
+  eligible: ValidatedResponseRow[];
   /** A pending-enrichment reason that forces postponement, or null. */
   pending: string | null;
 }
@@ -353,7 +520,7 @@ async function countedRows(
     const prev = best.get(id);
     if (!prev || laterInChain(r, prev)) best.set(id, r);
   }
-  return { counted: [...best.values()], pending };
+  return { counted: [...best.values()], eligible, pending };
 }
 
 /**
@@ -481,35 +648,44 @@ function surveyIdOf(s: SurveyRecord): TallyBody["survey"] {
   };
 }
 
-/** Assemble the weighted-tally artifact for one complete survey. */
+/** A counted row paired with its (public, or reveal-decrypted) response. */
+interface TallyEntry {
+  readonly row: ValidatedResponseRow;
+  readonly response: SurveyResponse;
+}
+
+/** Sealed-only artifact extras, folded into the body + provenance. */
+interface SealedArtifactOpts {
+  readonly sealed: boolean;
+  readonly sealedReveal?: TallyArtifact["provenance"]["sealedReveal"];
+}
+
+/**
+ * Assemble the weighted-tally artifact for one complete survey. `entries` pair
+ * each counted row with its response — the on-chain public answers, or (sealed)
+ * the reveal-decrypted answers. Sealed tallies set `sealed=true`, commit each
+ * responder's revealed answers, and record the reveal beacon in provenance.
+ */
 function buildArtifact(
   config: ServerConfig,
   s: SurveyRecord,
-  rows: readonly ValidatedResponseRow[],
-  records: Cip179Records,
+  entries: readonly TallyEntry[],
   weightByRole: ReadonlyMap<number, ReadonlyMap<string, WeightRow>>,
   totalByRole: ReadonlyMap<number, string | null>,
   nowSec: number,
+  opts: SealedArtifactOpts,
 ): { json: string; hash: string } {
-  // Join each counted row back to its full response payload (the validation
-  // table stores verdicts, not answers).
-  const responseByKey = new Map(
-    records.responses.map((r) => [`${r.txHash}:${r.responseIndex}`, r]),
-  );
-
-  const rolesPresent = [...new Set(rows.map((r) => r.role))].sort(
+  const rolesPresent = [...new Set(entries.map((e) => e.row.role))].sort(
     (a, b) => a - b,
   );
   const perRole: ArtifactRoleTally[] = [];
   for (const role of rolesPresent) {
     const responders: WeightedResponder[] = [];
-    for (const r of rows) {
+    for (const { row: r, response } of entries) {
       if (r.role !== role) continue;
       const weight = weightByRole.get(role)?.get(r.credential);
-      const record = responseByKey.get(`${r.txHash}:${r.responseIndex}`);
-      // Both are guaranteed present by the emit-time completeness check
-      // (incompleteReason for the weight, presentResponses for the record).
-      if (!weight || !record) continue;
+      // Guaranteed present by the emit-time completeness check (incompleteReason).
+      if (!weight) continue;
       if (!weight.registered) {
         // §6.1: membership at end_epoch is a hard filter (weight-0 registered
         // credentials stay counted; unregistered ones don't).
@@ -523,13 +699,16 @@ function buildArtifact(
         weight: BigInt(weight.weight),
         txHash: r.txHash,
         responseIndex: r.responseIndex,
-        response: record.response,
+        response,
       });
     }
     perRole.push({
       role,
       total: totalByRole.get(role) ?? null,
-      responders: toArtifactResponders(responders),
+      responders: toArtifactResponders(
+        responders,
+        opts.sealed ? { revealedAnswers: true } : undefined,
+      ),
       questions: toArtifactQuestions(
         weightedTallySurvey(s.definition, responders),
       ),
@@ -540,7 +719,7 @@ function buildArtifact(
     rulesetHash: rulesetHash(),
     network: config.app.network,
     survey: surveyIdOf(s),
-    sealed: false,
+    sealed: opts.sealed,
     perRole,
   };
   const artifact: TallyArtifact = {
@@ -552,6 +731,7 @@ function buildArtifact(
         role,
         endpoint: ROLE_ENDPOINTS[role] ?? "unknown",
       })),
+      ...(opts.sealedReveal && { sealedReveal: opts.sealedReveal }),
     },
   };
   return { json: JSON.stringify(artifact), hash: artifactHash(tally) };
