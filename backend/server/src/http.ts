@@ -170,9 +170,7 @@ export function createApp(
     const body: BackendHealth = {
       network: config.app.network,
       snapshot:
-        fetchedAt !== null
-          ? { fetchedAt, ageSeconds: now - fetchedAt }
-          : null,
+        fetchedAt !== null ? { fetchedAt, ageSeconds: now - fetchedAt } : null,
       lastRefresh,
       last24h,
       validationBacklog,
@@ -205,8 +203,7 @@ export function createApp(
       return c.json({ error: "unknown filter" }, 400);
     const cursorRaw = c.req.query("cursor");
     const cursor = cursorRaw ? parseSurveyCursor(cursorRaw) : null;
-    if (cursorRaw && !cursor)
-      return c.json({ error: "malformed cursor" }, 400);
+    if (cursorRaw && !cursor) return c.json({ error: "malformed cursor" }, 400);
     const credentials = (c.req.query("credentials") ?? "")
       .split(",")
       .map((s) => s.trim())

@@ -375,9 +375,10 @@ export const AppProvider: ParentComponent = (props) => {
   // Health is footer chrome, never load-bearing: absent in direct-Koios mode
   // (the seam method is undefined there) and a failed fetch just hides the
   // footer via `health.error`.
-  const [health, { refetch: refetchHealth }] = createResource<
-    BackendHealth | null
-  >(async () => (source.health ? source.health() : null));
+  const [health, { refetch: refetchHealth }] =
+    createResource<BackendHealth | null>(async () =>
+      source.health ? source.health() : null,
+    );
 
   // Refetch but swallow the returned promise's rejection: a failed load is
   // already captured in `snapshot.error` (and surfaced by the UI / the app-wide
