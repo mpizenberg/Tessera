@@ -10,7 +10,7 @@ import {
   toArtifactResponders,
   type TallyBody,
 } from "./artifact";
-import type { AnswerItem } from "cip-179";
+import type { AnswerItem, Metadatum } from "cip-179";
 import { canonicalJson } from "./canonical";
 import type { WeightedQuestionTally, WeightedResponder } from "./weightedTally";
 
@@ -228,7 +228,7 @@ describe("toArtifactResponders", () => {
       {
         type: "custom",
         questionIndex: 1,
-        value: new Map<unknown, unknown>([[1n, Uint8Array.of(0xab, 0xcd)]]),
+        value: new Map<Metadatum, Metadatum>([[1n, Uint8Array.of(0xab, 0xcd)]]),
       },
     ];
     const rs: WeightedResponder[] = [
