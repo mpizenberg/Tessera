@@ -33,6 +33,7 @@ import {
   dedupeResponses,
   findSurvey,
   humanizeAnswer,
+  responderAnswers,
   roleBreakdown,
   serializeAnswer,
   tallySurvey,
@@ -53,6 +54,7 @@ import {
   type WeightedQuestionView,
 } from "~/domain/artifactView";
 import { walletOwns } from "~/domain/roles";
+import { resultsView } from "~/domain/resultsRouting";
 import type { ChainTip, ResponseRecord } from "~/data/source";
 import { usePresentation } from "~/enrichment/usePresentation";
 import { formatRevealDate, isQuicknet, roundIsAvailable } from "~/tlock/drand";
@@ -280,38 +282,14 @@ export const Survey: Component = () => {
                 />
               }
             >
-              <Show
-                when={!sv().sealed}
-                fallback={
-                  <SealedResults
-                    s={sv()}
-                    def={def() ?? sv().record.definition}
-                    keyStr={key()}
-                    inWindow={sealedInWindow()}
-                    hardExcluded={sealedHardExcluded()}
-                    nowUnix={now()}
-                  />
-                }
-              >
-                <Show
-                  when={artifact() && !showRaw()}
-                  fallback={
-                    <>
-                      <Show when={artifact()}>
-                        <button
-                          class={css.excludedToggle}
-                          onClick={() => setShowRaw(false)}
-                        >
-                          {t("survey.weightedShowFinal")}
-                        </button>
-                      </Show>
-                      <ResultsBody
-                        def={def() ?? sv().record.definition}
-                        keyStr={key()}
-                        records={records()}
-                        excludedRecords={audit().excludedRecords}
-                      />
-                    </>
+              <Switch>
+                {/* Server-emitted, hash-verifiable tally — public and sealed
+                    alike route here once an artifact exists (unless toggled
+                    off). For a sealed survey, "raw" is the client reveal. */}
+                <Match
+                  when={
+                    resultsView(sv().sealed, Boolean(artifact()), showRaw()) ===
+                    "final"
                   }
                 >
                   <FinalResults
@@ -321,8 +299,55 @@ export const Survey: Component = () => {
                     responses={bundle()?.responses ?? []}
                     onShowRaw={() => setShowRaw(true)}
                   />
-                </Show>
-              </Show>
+                </Match>
+                {/* Sealed client reveal — the trust-minimized path, one click
+                    away whenever an artifact also exists. */}
+                <Match
+                  when={
+                    resultsView(sv().sealed, Boolean(artifact()), showRaw()) ===
+                    "sealed"
+                  }
+                >
+                  <Show when={artifact()}>
+                    <button
+                      class={css.excludedToggle}
+                      onClick={() => setShowRaw(false)}
+                    >
+                      {t("survey.weightedShowFinal")}
+                    </button>
+                  </Show>
+                  <SealedResults
+                    s={sv()}
+                    def={def() ?? sv().record.definition}
+                    keyStr={key()}
+                    inWindow={sealedInWindow()}
+                    hardExcluded={sealedHardExcluded()}
+                    nowUnix={now()}
+                  />
+                </Match>
+                {/* Live on-chain tally of a public survey. */}
+                <Match
+                  when={
+                    resultsView(sv().sealed, Boolean(artifact()), showRaw()) ===
+                    "raw"
+                  }
+                >
+                  <Show when={artifact()}>
+                    <button
+                      class={css.excludedToggle}
+                      onClick={() => setShowRaw(false)}
+                    >
+                      {t("survey.weightedShowFinal")}
+                    </button>
+                  </Show>
+                  <ResultsBody
+                    def={def() ?? sv().record.definition}
+                    keyStr={key()}
+                    records={records()}
+                    excludedRecords={audit().excludedRecords}
+                  />
+                </Match>
+              </Switch>
             </Show>
           </>
         )}
@@ -1288,8 +1313,15 @@ const FinalResults: Component<{
       const unit = w === "one" ? "count" : (measures[String(role.role)] ?? "");
       return role.responders.flatMap((r) => {
         const weight = w === "one" ? "1" : r.weight;
+        // Sealed artifacts commit each responder's revealed answers; public and
+        // legacy artifacts rejoin them from the on-chain response instead.
         const resp = byKey.get(`${r.txHash}|${r.responseIndex}`);
-        if (!resp || resp.answers.type !== "public") {
+        const answers =
+          responderAnswers(r) ??
+          (resp && resp.answers.type === "public"
+            ? resp.answers.answers
+            : null);
+        if (!answers) {
           const type = resp ? "sealed" : "";
           return [
             [
@@ -1305,7 +1337,7 @@ const FinalResults: Component<{
             ],
           ];
         }
-        return resp.answers.answers.map((a) => [
+        return answers.map((a) => [
           roleLabel(role.role),
           r.credential,
           weight,

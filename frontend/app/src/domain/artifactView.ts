@@ -6,14 +6,17 @@
  * framework, no I/O; unit-testable in isolation.
  */
 
-import type { Question, SurveyDefinition, SurveyResponse } from "cip-179";
+import type { Question, Role, SurveyDefinition, SurveyResponse } from "cip-179";
 
 import {
   optionLabelOf,
+  parseCredentialKey,
+  responderAnswers,
   toArtifactQuestions,
   weightedTallySurvey,
 } from "@tessera/core";
 import type {
+  ArtifactResponder,
   ArtifactQuestion,
   ArtifactRoleTally,
   TallyArtifact,
@@ -211,12 +214,40 @@ function chainRoleView(
 }
 
 /**
+ * Resolve a counted responder's answers for the one-vote re-tally. Sealed
+ * artifacts commit each responder's revealed answers (`responder.answers`),
+ * which we synthesize back into a public `SurveyResponse` — the on-chain
+ * response is only a ciphertext, so a chain rejoin would tally nothing. Public
+ * (and legacy) artifacts commit no answers, so fall back to the on-chain
+ * response by `(txHash, responseIndex)`.
+ */
+function responderResponse(
+  r: ArtifactResponder,
+  role: number,
+  def: SurveyDefinition,
+  byKey: ReadonlyMap<string, SurveyResponse>,
+): SurveyResponse | undefined {
+  const committed = responderAnswers(r);
+  if (committed) {
+    return {
+      specVersion: def.specVersion,
+      // The tally reads only role + answers; a placeholder ref is fine and never
+      // rendered. Credential is parsed back from its committed identity.
+      surveyRef: { txId: new Uint8Array(), index: 0 },
+      role: role as Role,
+      credential: parseCredentialKey(r.credential),
+      answers: { type: "public", answers: committed },
+    };
+  }
+  return byKey.get(`${r.txHash}|${r.responseIndex}`);
+}
+
+/**
  * One-vote view of one role: the same counted responders re-tallied with every
- * weight set to 1. The artifact commits only aggregates + responder identities
- * (not answers), so the answers are rejoined from the on-chain responses by
- * `(txHash, responseIndex)` — the exact response dedup counted; a responder
- * whose response isn't in `byKey` is dropped from the aggregate (can't happen
- * for a finalized on-chain survey).
+ * weight set to 1. Answers come from the responder's committed revealed answers
+ * (sealed) or a rejoin from the on-chain responses (public/legacy) — see
+ * {@link responderResponse}; a responder with neither is dropped from the
+ * aggregate (can't happen for a finalized on-chain survey).
  */
 function oneVoteRoleView(
   role: ArtifactRoleTally,
@@ -225,7 +256,7 @@ function oneVoteRoleView(
 ): RoleResultView {
   const responders: WeightedResponder[] = [];
   for (const r of role.responders) {
-    const response = byKey.get(`${r.txHash}|${r.responseIndex}`);
+    const response = responderResponse(r, role.role, def, byKey);
     if (response)
       responders.push({
         credentialKey: r.credential,

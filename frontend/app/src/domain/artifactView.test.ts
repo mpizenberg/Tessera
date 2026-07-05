@@ -225,4 +225,48 @@ describe("resultRoleViews", () => {
     expect(q.bars.map((b) => b.count)).toEqual([1, 1]);
     expect(q.bars.map((b) => b.frac)).toEqual([1, 1]);
   });
+
+  it("one-vote weighting over a SEALED artifact uses the committed answers (no chain rejoin)", () => {
+    // A sealed survey's on-chain responses are ciphertexts, so `responses` is
+    // empty here — the answers come from each responder's committed `answers`.
+    const sealedArtifact: TallyArtifact = {
+      ...artifact,
+      tally: {
+        ...artifact.tally,
+        sealed: true,
+        perRole: [
+          {
+            ...artifact.tally.perRole[0]!,
+            responders: [
+              {
+                credential: "key:a1",
+                weight: "100",
+                txHash: "t1",
+                responseIndex: 0,
+                answers: [
+                  { type: "singleChoice", questionIndex: 0, optionIndex: 0 },
+                ],
+              },
+              {
+                credential: "key:b2",
+                weight: "150",
+                txHash: "t2",
+                responseIndex: 0,
+                answers: [
+                  { type: "singleChoice", questionIndex: 0, optionIndex: 1 },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+    // Note the empty `responses` — a chain rejoin would tally nothing.
+    const [stakeholder] = resultRoleViews(sealedArtifact, def, [], "one");
+    const q = stakeholder!.questions[0]!;
+    if (q.kind !== "bars") throw new Error("expected bars");
+    expect(q.bars.map((b) => b.weight)).toEqual([1n, 1n]);
+    expect(q.bars.map((b) => b.count)).toEqual([1, 1]);
+    expect(q.bars.map((b) => b.frac)).toEqual([1, 1]);
+  });
 });
