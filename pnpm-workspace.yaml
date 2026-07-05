@@ -3,6 +3,7 @@ packages:
   - frontend/cip179
   - packages/core
   - packages/koios
+  - packages/tlock
   - packages/verifier
   - backend/server
 

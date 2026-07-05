@@ -15,7 +15,7 @@ import {
   type RatingScale,
 } from "cip-179";
 
-import { metadatumToCbor } from "~/wallet/cbor";
+import { metadatumToCbor } from "./cbor";
 import { maxPlaintextSize } from "./padding";
 
 // --- question constructors --------------------------------------------------
