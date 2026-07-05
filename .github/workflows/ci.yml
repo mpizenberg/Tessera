@@ -37,3 +37,11 @@ jobs:
       - run: pnpm -r test
       - run: pnpm --filter tessera-app format:check
       - run: pnpm -r build
+
+      # Bundle both Cloudflare Workers without deploying (no credentials
+      # needed). `pnpm -r build` never touches the backend — it has no build
+      # script — so this is the only pre-deploy check of its worker.ts bundle
+      # and of both wrangler.toml files. The app's dry-run needs dist/ from
+      # the build step above.
+      - run: pnpm --filter @tessera/backend exec wrangler deploy --dry-run
+      - run: pnpm --filter tessera-app exec wrangler deploy --dry-run
