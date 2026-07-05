@@ -395,6 +395,14 @@ registered, provenance}`, plus per-`(epoch, role)` totals. This table is shared
   artifact once complete: every counted responder has a weight row **and**
   every covered role has its electorate total (a flaky `/epoch_info` postpones
   emission to a later cron, never fails it).
+- **Sealed surveys** freeze weights the same way (the credential union is
+  identical pre- and post-dedup, so the deadline snapshot is correct), then add
+  a reveal step: emission waits until the definition's drand round has published
+  (`roundIsAvailable`), decrypts the **pre-dedup** in-window set (a pass-wide
+  `MAX_SEALED_DECRYPTS_PER_PASS` budget bounds Worker CPU; one BLS-verified
+  `fetchBeacon` per survey), runs reveal→validate→dedup, and emits a
+  `sealed=true` artifact. A transient reveal failure postpones (never aborts)
+  the pass; a non-quicknet sealed survey is skipped forever (no artifact).
 - **Execution.** At PoC scale (stakeholders bulk; DReps small-N single-GET) this
   fits a single Worker invocation. The `(epoch, role, credential)` table **is**
   the resume cursor if it ever doesn't: rows are written only once known, so a
@@ -505,13 +513,18 @@ structural (not a field denylist). Ledger-determined facts that any correct
 re-derivation must reproduce go in `tally`; whatever records who read the ledger,
 how, and when goes in `provenance`.
 
-- **`tally` (hashed):** `rulesetHash`, `network`, `survey`, `sealed` +
-  deterministic reveal context, and per role: `role`, `total`, `responders`
-  (`credential`, `weight`, and the counted answer's full on-chain coordinate
-  `txHash` + `responseIndex` — unregistered responders are excluded rather
-  than flagged, so no `registered` field), integer `questions` aggregates.
+- **`tally` (hashed):** `rulesetHash`, `network`, `survey`, `sealed` (true iff
+  the definition's submission mode is sealed — set on cancellation artifacts
+  too), and per role: `role`, `total`, `responders` (`credential`, `weight`, and
+  the counted answer's full on-chain coordinate `txHash` + `responseIndex` —
+  unregistered responders are excluded rather than flagged, so no `registered`
+  field; **sealed** responders additionally carry `answers`, their revealed
+  answers in JSON-safe wire form, since the on-chain response is only a
+  ciphertext and can't be rejoined), integer `questions` aggregates.
 - **`provenance` (not hashed):** `source`, snapshot `fetchedAt`, per-role
-  `endpoint`.
+  `endpoint`, and — for a sealed survey — `sealedReveal` (`chainHash`, `round`,
+  and the drand `beacon` used), unhashed because the definition already pins
+  `(chainHash, round)` and the beacon is independently fetchable + BLS-verifiable.
 
 Excluding provenance is what lets Koios- and node-produced artifacts share one
 hash when results are identical — keeping the Tier 1 → Tier 2 swap invisible to
@@ -526,7 +539,7 @@ Contents (sketch):
     "rulesetHash": "...", // binds §6.3 validation ruleset + epoch semantics + role→measure + pinned cip-179 validator
     "network": "mainnet",
     "survey": { "txId": "...", "index": 0, "endEpoch": 642 },
-    "sealed": false, // if true, also records deterministic reveal context
+    "sealed": false, // true iff sealed submission mode; reveal context in provenance
     "perRole": [
       {
         "role": 1, // CIP-179 Role
@@ -537,6 +550,9 @@ Contents (sketch):
             "weight": "1000000000",
             "txHash": "…",
             "responseIndex": 0, // position in the tx's label-17 payload
+            // sealed surveys only: the revealed answers in JSON-safe wire form
+            // (bytes→hex, bigint→decimal string, Map→tagged pairs), e.g.
+            // "answers": [{ "type": "singleChoice", "questionIndex": 0, "optionIndex": 1 }]
           },
           // unregistered responders are excluded, not listed here
         ],
@@ -557,6 +573,12 @@ Contents (sketch):
       { "role": 1, "endpoint": "/account_stake_history" },
       // fallback-estimated weights, if any: "estimated": [ "<cred>", … ]
     ],
+    // sealed surveys only: the reveal context an offline auditor re-checks.
+    // "sealedReveal": {
+    //   "chainHash": "52db9ba7…c84e971", // quicknet
+    //   "round": 19000000,
+    //   "beacon": { "round": 19000000, "randomness": "…", "signature": "…" },
+    // },
   },
 }
 ```
@@ -675,9 +697,13 @@ Contents (sketch):
   verifier (§7).
 - ~~**Finalization safety margin**~~ — chosen: 600 s past the `end_epoch`
   boundary (§6.5).
-- **Sealed-survey artifact emission** — deferred: finalization freezes a sealed
-  survey's weights at `end_epoch` but emits no artifact until the reveal-aware
-  tally lands (`TODO(sealed-artifact)` in `finalize.ts`).
+- ~~**Sealed-survey artifact emission**~~ — **done**: once the definition's
+  drand round publishes, finalization decrypts every in-window response
+  (server-side, one BLS-verified `fetchBeacon` per survey per pass), runs
+  reveal→validate→dedup (`auditRevealedResponses`), and emits a `sealed=true`
+  artifact committing each responder's revealed answers plus the reveal beacon
+  in provenance (§6.5, §7). The verifier re-reveals with its own beacon.
+  Non-quicknet sealed surveys are unsupported and skipped (no artifact).
 - **On-chain anchor** of the artifact hash — future, closes the CIP-179 loop.
 - **Two-network split** (mainnet/preview) — resolved: wrangler environments
   (`backend/server/wrangler.toml` — top-level is preview, `[env.mainnet]` its
