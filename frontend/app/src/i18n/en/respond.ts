@@ -66,6 +66,12 @@ const respond = {
   sealedTextAfter:
     " until the drand round publishes ({reveal}). Aggregate results appear only after the reveal.",
 
+  // --- Sealed on an unsupported drand chain (submission blocked) -----------
+  sealedUnsupportedTitle: "This sealed survey can't be answered",
+  sealedUnsupportedBody:
+    "It's pinned to a drand chain Tessera can't decrypt, so a submitted answer could never be revealed. Submission is disabled.",
+  sealedUnsupportedNote: "Unsupported drand chain — cannot reveal",
+
   // --- Labels-absent banner -----------------------------------------------
   labelsAbsentTitle: "Presentation labels unavailable",
   /** Wraps an inline short-ref span and a bold "You can still respond" clause. */

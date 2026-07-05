@@ -71,6 +71,13 @@ const respond: Messages = {
   sealedTextAfter:
     " jusqu'à la publication du tour drand ({reveal}). Les résultats agrégés n'apparaissent qu'après la révélation.",
 
+  // --- Scellé sur une chaîne drand non prise en charge (envoi bloqué) ------
+  sealedUnsupportedTitle: "Impossible de répondre à ce sondage scellé",
+  sealedUnsupportedBody:
+    "Il est rattaché à une chaîne drand que Tessera ne peut pas déchiffrer : une réponse envoyée ne pourrait jamais être révélée. L'envoi est désactivé.",
+  sealedUnsupportedNote:
+    "Chaîne drand non prise en charge — révélation impossible",
+
   // --- Labels-absent banner -----------------------------------------------
   labelsAbsentTitle: "Libellés de présentation indisponibles",
   labelsAbsentTextBefore: "Le document off-chain (",

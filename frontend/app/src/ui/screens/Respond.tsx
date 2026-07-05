@@ -57,7 +57,7 @@ import {
   SubmitProgressModal,
   type SubmitStep,
 } from "~/ui/components/SubmitProgress";
-import { formatRevealDate } from "~/tlock/drand";
+import { formatRevealDate, isQuicknet } from "~/tlock/drand";
 import {
   fullRef,
   networkMismatch,
@@ -198,6 +198,15 @@ export const Respond: Component = () => {
   const sealedMode = createMemo(() => {
     const mode = definition()?.submissionMode;
     return mode?.type === "sealed" ? mode : null;
+  });
+
+  // A sealed survey pinned to a drand chain the bundled tlock can't decrypt:
+  // such a vote would be permanently undecryptable, so we block submission
+  // outright rather than warn. (Every survey Tessera creates uses quicknet; this
+  // only fires for an externally-built definition on another chain.)
+  const sealedUnsupported = createMemo(() => {
+    const m = sealedMode();
+    return m !== null && !isQuicknet(m.chainHash);
   });
 
   const [submitting, setSubmitting] = createSignal(false);
@@ -498,6 +507,13 @@ export const Respond: Component = () => {
               <Show when={sealedMode()}>
                 {(m) => <SealedBanner round={m().round} />}
               </Show>
+              <Show when={sealedUnsupported()}>
+                <Notice
+                  tone="warn"
+                  title={t("respond.sealedUnsupportedTitle")}
+                  body={t("respond.sealedUnsupportedBody")}
+                />
+              </Show>
               <Show when={pres.external() && pres.unavailable()}>
                 <LabelsAbsentBanner keyStr={key()} />
               </Show>
@@ -570,6 +586,7 @@ export const Respond: Component = () => {
           replacing={existing() !== undefined}
           submitting={submitting()}
           mismatch={mismatch()}
+          blocked={sealedUnsupported()}
           network={app.config.network}
           idleText={
             sealedMode()
@@ -1450,13 +1467,18 @@ const SubmitBar: Component<{
   replacing: boolean;
   submitting: boolean;
   mismatch: boolean;
+  /** Submission is impossible (e.g. a sealed survey on an unsupported chain). */
+  blocked?: boolean;
   network: string;
   idleText: string;
   busyText: string;
   onSubmit: () => void;
 }> = (props) => {
   const ready = () =>
-    props.decided >= props.total && props.total > 0 && !props.mismatch;
+    props.decided >= props.total &&
+    props.total > 0 &&
+    !props.mismatch &&
+    !props.blocked;
   return (
     <div class={css.submitBar}>
       <div class={css.submitInner}>
@@ -1483,6 +1505,11 @@ const SubmitBar: Component<{
           <Show when={props.mismatch}>
             <span class={css.mismatchNote}>
               {t("respond.switchNetwork", { network: props.network })}
+            </span>
+          </Show>
+          <Show when={props.blocked}>
+            <span class={css.mismatchNote}>
+              {t("respond.sealedUnsupportedNote")}
             </span>
           </Show>
         </div>
