@@ -46,10 +46,15 @@ function survey(id: number, slot: number, opts: Opts = {}): SurveyRecord {
     eligibleRoles: [],
     endEpoch: opts.endEpoch ?? 12,
     submissionMode: opts.sealed
-      ? { type: "sealed", unsealSlot: 1, scheme: { type: "tlock" } }
+      ? {
+          type: "sealed",
+          chainHash: new Uint8Array(32),
+          round: 1,
+          paddingSize: 64,
+        }
       : { type: "public" },
     questions: [],
-  } as unknown as SurveyDefinition;
+  };
   return {
     txHash: bytesToHex(Uint8Array.of(id)),
     slot,

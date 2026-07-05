@@ -464,7 +464,17 @@ describe("finalizeClosedSurveys", () => {
       records(
         survey(
           definition({
-            submissionMode: { type: "sealed", drandRound: 1 } as never,
+            submissionMode: {
+              type: "sealed",
+              // Real quicknet chain hash so the survey isn't skipped as
+              // unsupported; a far-future round so its beacon hasn't published
+              // (Phase 4 turns this into the "reveal postponed" assertion).
+              chainHash: hexToBytes(
+                "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971",
+              ),
+              round: 999_999_999,
+              paddingSize: 64,
+            },
           }),
         ),
         [rA],
