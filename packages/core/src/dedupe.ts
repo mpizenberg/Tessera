@@ -13,6 +13,10 @@
  * discipline — is a semantic ruleset change: bump `rulesetVersion` and update
  * the golden hash in `artifact.test.ts` in the same commit, or historical
  * artifacts silently become unreproducible (MISMATCH, read as tampering).
+ *
+ * Sealed surveys run this same dedupe, but only *after* reveal-time validation
+ * (the `sealed-dedup` rule, in `audit.ts`'s `auditRevealedResponses`): an
+ * undecryptable/invalid later ballot must never supersede a valid earlier one.
  */
 
 import type { Credential, SurveyRef } from "cip-179";

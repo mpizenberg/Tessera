@@ -4,11 +4,13 @@ import type { Role, SurveyResponse } from "cip-179";
 import {
   RULESET_DESCRIPTOR,
   artifactHash,
+  responderAnswers,
   rulesetHash,
   toArtifactQuestions,
   toArtifactResponders,
   type TallyBody,
 } from "./artifact";
+import type { AnswerItem } from "cip-179";
 import { canonicalJson } from "./canonical";
 import type { WeightedQuestionTally, WeightedResponder } from "./weightedTally";
 
@@ -67,7 +69,7 @@ describe("rulesetHash", () => {
   // rules", which is the exact failure mode the hash exists to prevent.
   it("matches its pinned golden hash (bump rulesetVersion on any change)", () => {
     expect(rulesetHash()).toBe(
-      "7ff892d5d2c38990875798ad47371c3f057961f4bb732d50a99965224a102f22",
+      "c5b2b4284db26af358ed084373cc0786b15e4f58bc27c4f82e769d16ba878eee",
     );
   });
 
@@ -202,5 +204,48 @@ describe("toArtifactResponders", () => {
       { credential: "key:aa", weight: "1", txHash: "t1", responseIndex: 0 },
       { credential: "script:ff", weight: "2", txHash: "t2", responseIndex: 1 },
     ]);
+  });
+
+  it("omits answers for public tallies (no revealedAnswers)", () => {
+    const rs: WeightedResponder[] = [
+      {
+        credentialKey: "key:aa",
+        weight: 1n,
+        txHash: "t1",
+        responseIndex: 0,
+        response: RESPONSE,
+      },
+    ];
+    expect("answers" in toArtifactResponders(rs)[0]!).toBe(false);
+    expect(responderAnswers(toArtifactResponders(rs)[0]!)).toBeNull();
+  });
+
+  it("commits revealed answers as canonicalizable wire form and round-trips them", () => {
+    // Answers with a bigint (numeric) and a custom Metadatum carrying Map + bytes
+    // — exactly the values JSON can't hold, so the wire tags must survive.
+    const answers: AnswerItem[] = [
+      { type: "numeric", questionIndex: 0, value: 42n },
+      {
+        type: "custom",
+        questionIndex: 1,
+        value: new Map<unknown, unknown>([[1n, Uint8Array.of(0xab, 0xcd)]]),
+      },
+    ];
+    const rs: WeightedResponder[] = [
+      {
+        credentialKey: "key:aa",
+        weight: 3n,
+        txHash: "t1",
+        responseIndex: 0,
+        response: { ...RESPONSE, answers: { type: "public", answers } },
+      },
+    ];
+    const [committed] = toArtifactResponders(rs, { revealedAnswers: true });
+    // No bigints/bytes slipped through — the artifact hash must be computable.
+    expect(() => canonicalJson([committed])).not.toThrow();
+    // Survives the JSON round-trip an artifact makes over HTTP + SQLite, and
+    // `responderAnswers` is the exact inverse.
+    const wire = JSON.parse(JSON.stringify(committed));
+    expect(responderAnswers(wire)).toEqual(answers);
   });
 });

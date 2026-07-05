@@ -19,6 +19,10 @@
  * `artifact.test.ts` in the same commit, or old artifacts silently stop
  * reproducing (a MISMATCH that reads as tampering, not as a rules upgrade).
  *
+ * For sealed surveys this runs twice against the `sealed-reveal` rule: once
+ * structurally on the sealed response at submit/scan time, then again on the
+ * decrypted answers after the drand reveal — the same `validateResponse`.
+ *
  * @module
  */
 

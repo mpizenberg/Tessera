@@ -143,6 +143,15 @@ export interface RevealedAudit {
  * then never be revealed or counted, silently disenfranchising the responder.
  * Here the superseded set is drawn only from responses proven valid at reveal.
  * Decoded responses carry their decrypted public answers back onto the record.
+ *
+ * RULESET-PINNED BEHAVIOR: this is exactly the `sealed-reveal` + `sealed-dedup`
+ * rules in `RULESET_DESCRIPTOR` (see `artifact.ts`) — reveal-then-validate, then
+ * dedup only the valid decoded set. The emitter and any independent verifier both
+ * count a sealed survey through this function, so a change to *which* revealed
+ * responses are counted (the validate-before-dedup discipline, the exclusion of
+ * undecryptable/invalid ballots) is a semantic ruleset change: bump
+ * `rulesetVersion` and update the golden hash in `artifact.test.ts` in the same
+ * commit, or sealed artifacts silently stop reproducing (MISMATCH read as tampering).
  */
 export function auditRevealedResponses(
   inWindow: readonly ResponseRecord[],

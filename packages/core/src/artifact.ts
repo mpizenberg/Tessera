@@ -15,7 +15,10 @@
  * compare equal.
  */
 
+import type { AnswerItem } from "cip-179";
+
 import { blake2b256Hex, canonicalJson } from "./canonical";
+import { fromJsonSafe, toJsonSafe } from "./wire";
 import type { WeightedQuestionTally, WeightedResponder } from "./weightedTally";
 
 /**
@@ -32,7 +35,10 @@ import type { WeightedQuestionTally, WeightedResponder } from "./weightedTally";
 export const RULESET_DESCRIPTOR = {
   // v2: responders record (txHash, responseIndex) — the artifact body schema
   // changed, so hashes are incomparable with v1 artifacts.
-  rulesetVersion: 2,
+  // v3: sealed surveys now emit artifacts (the three sealed-* rules below); the
+  // body gains `sealed=true`, counted responders commit their revealed answers,
+  // and the schema change makes v3 hashes incomparable with v2.
+  rulesetVersion: 3,
   cip179SpecVersion: 4,
   /** Roles artifacts cover: 0 DRep, 3 Stakeholder, 4 Keyholder (SPO/CC deferred). */
   coveredRoles: [0, 3, 4],
@@ -49,6 +55,9 @@ export const RULESET_DESCRIPTOR = {
     "dedup: at most one counted response per (survey, role, credential) — the latest in chain order wins, ordered by (slot, tx_block_index, response_index)",
     "membership+weight: role membership and weights are snapshotted at the survey's end_epoch; a credential registered at end_epoch but without stake counts with weight 0; unregistered credentials are excluded",
     "cancellation: a survey is cancelled iff a cancelling transaction at epoch_no <= end_epoch proves the definition's owner credential via mechanism A; the earliest such transaction in chain order (slot, then tx hash) is the one recorded; a cancelled survey's artifact carries no per-role tallies",
+    "sealed-reveal: for a sealed survey, decrypt every in-window (rule 1), structurally-valid (rule 2), credential-proven (rule 3) response with the definition-pinned round's BLS-verified drand beacon, then decode the plaintext as the CBOR answers array (trailing zero padding to padding_size is ignored) and re-validate those answers against the definition; a response that fails to decrypt, decode, or re-validate is excluded",
+    "sealed-dedup: latest-in-chain dedup (rule 4) runs only over sealed responses whose decrypted answers re-validated; undecryptable/invalid responses are excluded and never supersede an earlier valid one; excluded responses are not committed to the artifact",
+    "sealed-artifact: a sealed survey's tally carries sealed=true (cancellations included); each counted responder commits its revealed answers in JSON-safe wire form (bytes→hex, bigint→decimal string, Map→tagged pairs); only drand quicknet (chain hash 52db9ba7...c84e971) is supported — a non-quicknet sealed survey gets no artifact",
   ],
 } as const;
 
@@ -71,6 +80,14 @@ export interface ArtifactResponder {
    * can carry several responses, so the hash alone is ambiguous.
    */
   readonly responseIndex: number;
+  /**
+   * The responder's revealed answers, present **iff** the survey is sealed — a
+   * `toJsonSafe`-encoded `AnswerItem[]` (the `sealed-artifact` rule's wire form).
+   * Sealed answers live only in the ciphertext, so a verifier cannot rejoin them
+   * from the on-chain response the way public tallies do; committing them here
+   * makes a sealed tally reproducible. Decode with {@link responderAnswers}.
+   */
+  readonly answers?: unknown;
 }
 
 /** JSON-plain mirror of {@link WeightedQuestionTally} (bigints → strings). */
@@ -139,7 +156,12 @@ export interface TallyBody {
     readonly index: number;
     readonly endEpoch: number;
   };
-  /** Sealed surveys get no artifact yet (emission deferred) — always false. */
+  /**
+   * True iff the survey's definition submission mode is `sealed` — i.e. answers
+   * were timelock-encrypted and revealed after the drand round (the
+   * `sealed-artifact` rule). Set on cancellation artifacts too. A hash-committed
+   * value, so it is the same on the emitter and any re-verifier.
+   */
   readonly sealed: boolean;
   /** Present iff the survey was cancelled in-window; `perRole` is then empty. */
   readonly cancelled?: {
@@ -167,6 +189,25 @@ export interface TallyArtifact {
       readonly role: number;
       readonly endpoint: string;
     }[];
+    /**
+     * Present iff the survey is sealed: the drand chain + round the answers were
+     * revealed with, and the beacon itself. Deliberately **outside** the hash —
+     * the tally's on-chain definition already pins `(chainHash, round)`, and the
+     * beacon is independently fetchable and BLS-verifiable, so an offline auditor
+     * can re-derive the reveal without trusting this record.
+     */
+    readonly sealedReveal?: {
+      /** Drand chain hash (hex) the round belongs to (quicknet). */
+      readonly chainHash: string;
+      /** Drand round whose beacon decrypts the responses. */
+      readonly round: number;
+      /** The beacon used, as returned by drand (re-verifiable against `round`). */
+      readonly beacon: {
+        readonly round: number;
+        readonly randomness: string;
+        readonly signature: string;
+      };
+    };
   };
 }
 
@@ -230,18 +271,43 @@ export function toArtifactQuestions(
 /**
  * Convert counted responders to their committed artifact form — sorted by
  * credential identity, the determinism rule the hash depends on.
+ *
+ * For sealed surveys pass `{ revealedAnswers: true }`: each responder then also
+ * commits its decrypted answers (`toJsonSafe(AnswerItem[])`, the `sealed-artifact`
+ * wire form), taken from the already-revealed public response. Public tallies
+ * omit `answers` — a verifier rejoins those from the on-chain response instead.
  */
 export function toArtifactResponders(
   responders: readonly WeightedResponder[],
+  opts?: { revealedAnswers?: boolean },
 ): ArtifactResponder[] {
   return responders
-    .map((r) => ({
-      credential: r.credentialKey,
-      weight: String(r.weight),
-      txHash: r.txHash,
-      responseIndex: r.responseIndex,
-    }))
+    .map((r): ArtifactResponder => {
+      const base = {
+        credential: r.credentialKey,
+        weight: String(r.weight),
+        txHash: r.txHash,
+        responseIndex: r.responseIndex,
+      };
+      if (!opts?.revealedAnswers) return base;
+      // By contract the response is already revealed to its public form here;
+      // commit the answers array in JSON-safe wire form.
+      const answers =
+        r.response.answers.type === "public" ? r.response.answers.answers : [];
+      return { ...base, answers: toJsonSafe(answers) };
+    })
     .sort((a, b) =>
       a.credential < b.credential ? -1 : a.credential > b.credential ? 1 : 0,
     );
+}
+
+/**
+ * Decode a sealed responder's committed answers back to `AnswerItem[]` — the
+ * inverse of the `toJsonSafe` encoding {@link toArtifactResponders} writes under
+ * `{ revealedAnswers: true }`. Returns `null` for a public/legacy responder that
+ * committed no answers.
+ */
+export function responderAnswers(r: ArtifactResponder): AnswerItem[] | null {
+  if (r.answers === undefined) return null;
+  return fromJsonSafe(r.answers) as AnswerItem[];
 }
