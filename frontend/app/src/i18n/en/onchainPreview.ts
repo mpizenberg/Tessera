@@ -18,7 +18,7 @@ const onchainPreview = {
   notePublic:
     "Estimated min fee for a simple transaction — the real fee depends on coin selection and witnesses. Payload is {size} of {max} max tx bytes.",
   noteSealed:
-    "These are the answers as they'll be timelock-encrypted when you submit — nothing is encrypted yet. The on-chain payload will be the resulting ciphertext, zero-padded{padding} so its size never reveals how much you answered. The fee is computed at submit time.",
+    "The preview below is your plaintext answers — nothing is encrypted yet. On submit they're timelock-encrypted to a fixed-size ciphertext, zero-padded{padding} so its size never reveals how much you answered. The size and fee above are that on-chain ciphertext payload: {size} of {max} max tx bytes.",
   /** Spliced into {padding} of noteSealed only when the padding size is known. */
   noteSealedPadding: " to {size} B",
 };

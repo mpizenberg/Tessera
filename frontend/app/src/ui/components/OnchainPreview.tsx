@@ -41,6 +41,12 @@ export const OnchainPreview: Component<{
   sealed?: boolean;
   /** Sealed: the byte size the ciphertext is zero-padded to (for the note). */
   paddingSize?: number | undefined;
+  /**
+   * Sealed: the real on-chain byte size of the response envelope (measured with
+   * a placeholder ciphertext), since `payload` here is the smaller plaintext.
+   * Undefined for public, where the payload size is already authoritative.
+   */
+  onchainSize?: number | undefined;
 }> = (props) => {
   // The CBOR encoder is in the wallet seam; load it once, lazily.
   const [cborMod] = createResource(() => import("~/wallet/cbor"));
@@ -65,6 +71,9 @@ export const OnchainPreview: Component<{
     return p ? metadatumToDiagnostic(p) : "";
   });
   const size = () => bytes()?.length ?? 0;
+  // The size that goes on-chain: for a sealed survey the ciphertext envelope
+  // (measured upstream), otherwise the payload itself. Drives the fee + fit.
+  const chainSize = () => props.onchainSize ?? size();
 
   const [view, setView] = createSignal<View>("diag");
   const text = () => (view() === "hex" ? hex() : diag());
@@ -94,14 +103,16 @@ export const OnchainPreview: Component<{
           <span class={css.encBadge}>{t("onchainPreview.encBadge")}</span>
         </Show>
         <Show when={ready()}>
-          {/* statLead carries margin-left:auto, so no spacer node is needed. */}
+          {/* statLead carries margin-left:auto, so no spacer node is needed.
+              For sealed, the byte size + fee are the ciphertext envelope's, not
+              the plaintext previewed below. */}
           <span class={css.statLead}>
-            {t("onchainPreview.bytes", { size: n(size()) })}
+            {t("onchainPreview.bytes", { size: n(chainSize()) })}
           </span>
-          <Show when={!props.sealed}>
+          <Show when={chainSize() > 0}>
             <span class={css.stat}>
               {t("onchainPreview.feeApprox", {
-                ada: lovelaceToAda(estimateMinFee(size())),
+                ada: lovelaceToAda(estimateMinFee(chainSize())),
               })}
             </span>
           </Show>
@@ -154,6 +165,8 @@ export const OnchainPreview: Component<{
                       size: n(props.paddingSize),
                     })
                   : "",
+              size: n(chainSize()),
+              max: n(MAX_TX_BYTES),
             })}
           </p>
         </Show>

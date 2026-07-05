@@ -21,7 +21,7 @@ const onchainPreview: Messages = {
   notePublic:
     "Frais minimum estimés pour une transaction simple — le coût réel dépend de la sélection des UTxO et des témoins. La charge utile fait {size} sur {max} octets de transaction maximum.",
   noteSealed:
-    "Ce sont les réponses telles qu'elles seront chiffrées par verrou temporel au moment de l'envoi — rien n'est encore chiffré. La charge utile on-chain sera le chiffré obtenu, complété par des zéros{padding} afin que sa taille ne révèle jamais l'étendue de vos réponses. Les frais sont calculés au moment de l'envoi.",
+    "L'aperçu ci-dessous montre vos réponses en clair — rien n'est encore chiffré. À l'envoi, elles sont chiffrées par verrou temporel en un chiffré de taille fixe, complété par des zéros{padding} afin que sa taille ne révèle jamais l'étendue de vos réponses. La taille et les frais ci-dessus concernent cette charge utile chiffrée on-chain : {size} sur {max} octets de transaction maximum.",
   noteSealedPadding: " jusqu'à {size} o",
 };
 

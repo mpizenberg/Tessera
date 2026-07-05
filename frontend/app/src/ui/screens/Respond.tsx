@@ -57,7 +57,11 @@ import {
   SubmitProgressModal,
   type SubmitStep,
 } from "~/ui/components/SubmitProgress";
-import { formatRevealDate, isQuicknet } from "~/tlock/drand";
+import {
+  formatRevealDate,
+  isQuicknet,
+  sealedCiphertextSize,
+} from "~/tlock/drand";
 import {
   fullRef,
   networkMismatch,
@@ -342,6 +346,50 @@ export const Respond: Component = () => {
   // Padding the sealed ciphertext is zero-padded to, for the preview note.
   const sealedPadding = (): number | undefined => sealedMode()?.paddingSize;
 
+  // The CBOR encoder is in the wallet seam (lazy) — load it once to measure the
+  // real on-chain size of a sealed response without encrypting anything.
+  const [cborMod] = createResource(() => import("~/wallet/cbor"));
+
+  // The true on-chain byte size of a sealed submission: the plaintext is padded
+  // to `padding_size` (or its own CBOR length if larger), encrypted to a
+  // ciphertext of the analytically-known size, and wrapped in the label-17
+  // response envelope. We measure that envelope with a zero-filled placeholder
+  // ciphertext — same length as the real one — so the Pro preview can show the
+  // real size + fee before submit, with no tlock load. undefined for public.
+  const sealedOnchainSize = createMemo<number | undefined>(() => {
+    const mod = cborMod();
+    const sealed = sealedMode();
+    const s = survey();
+    const r = role();
+    const cred = credential();
+    const answersMeta = sealedPreview();
+    if (!mod || !sealed || !s || r === null || !cred || !answersMeta)
+      return undefined;
+    try {
+      const plaintextLen = Math.max(
+        mod.metadatumToCbor(answersMeta).length,
+        sealed.paddingSize,
+      );
+      const ciphertext = new Uint8Array(
+        sealedCiphertextSize(plaintextLen, sealed.round),
+      );
+      const response = buildSealedResponse(
+        s.record.ref,
+        r,
+        cred,
+        ciphertext,
+        previewRationale(),
+      );
+      const payload = encodePayload({
+        type: "responses",
+        responses: [response],
+      });
+      return mod.metadatumToCbor(payload).length;
+    } catch {
+      return undefined;
+    }
+  });
+
   // A written (not pasted) rationale gets pinned at submit — an extra step.
   const willPinRationale = () =>
     app.ui.pro &&
@@ -563,6 +611,7 @@ export const Respond: Component = () => {
                   payload={previewPayload()}
                   sealed={sealedMode() !== null}
                   paddingSize={sealedPadding()}
+                  onchainSize={sealedOnchainSize()}
                 />
               </Show>
             </Switch3>
