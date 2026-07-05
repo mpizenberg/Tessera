@@ -42,9 +42,7 @@ import {
   type DbSurveyIndexRow,
 } from "./surveyIndexSql";
 
-const MIGRATIONS_DIR = fileURLToPath(
-  new URL("../migrations", import.meta.url),
-);
+const MIGRATIONS_DIR = fileURLToPath(new URL("../migrations", import.meta.url));
 
 /** What node:sqlite accepts as a bound parameter (its SupportedValueType). */
 type SqlValue = string | number | bigint | null | Uint8Array;
@@ -466,8 +464,9 @@ export function openBackendStore(path: string): BackendStore {
     ): Promise<(SurveyIndexRow & { bucket: number })[]> {
       const { sql, params } = surveyPageSql(q);
       return (
-        db.prepare(sql).all(...(params as SqlValue[])) as unknown as
-          DbSurveyIndexRow[]
+        db
+          .prepare(sql)
+          .all(...(params as SqlValue[])) as unknown as DbSurveyIndexRow[]
       ).map(surveyIndexRowFromDb);
     },
     async surveyIndexCounts(

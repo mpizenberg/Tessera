@@ -169,9 +169,10 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
       throw new Error(`unexpected ${url}`);
     });
 
-    const weights = await new KoiosTallyInputs(CONFIG).stakeholderWeights(1345, [
-      cred(HASH_A),
-    ]);
+    const weights = await new KoiosTallyInputs(CONFIG).stakeholderWeights(
+      1345,
+      [cred(HASH_A)],
+    );
     expect(seenOffsets).toEqual([0, PAGE]); // followed the offset cursor
     expect(weights.get(`key:${HASH_A}`)).toEqual({
       registered: false, // the page-2 deregistration wins

@@ -74,7 +74,11 @@ const asBytes = (m: Metadatum, path: string): Uint8Array =>
   isBytes(m) ? m : fail("expected byte string", path);
 
 /** A byte string of an exact CDDL `.size` (e.g. hash28, tx_id/blake2b_256). */
-const asBytesOfSize = (m: Metadatum, size: number, path: string): Uint8Array => {
+const asBytesOfSize = (
+  m: Metadatum,
+  size: number,
+  path: string,
+): Uint8Array => {
   const b = asBytes(m, path);
   return b.length === size
     ? b

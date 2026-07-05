@@ -114,16 +114,16 @@ describe("bounded_text label limit (finding 8)", () => {
   });
 
   it("validateDefinition flags an over-long label; a 64-byte one is fine", () => {
-    expect(validateDefinition(withLabel("x".repeat(65))).length).toBeGreaterThan(
-      0,
-    );
+    expect(
+      validateDefinition(withLabel("x".repeat(65))).length,
+    ).toBeGreaterThan(0);
     expect(validateDefinition(withLabel("x".repeat(64)))).toEqual([]);
   });
 
   it("counts UTF-8 bytes, not code points (multi-byte label)", () => {
     // 33 × "é" (2 bytes each) = 66 UTF-8 bytes > 64, though only 33 chars.
-    expect(validateDefinition(withLabel("é".repeat(33))).length).toBeGreaterThan(
-      0,
-    );
+    expect(
+      validateDefinition(withLabel("é".repeat(33))).length,
+    ).toBeGreaterThan(0);
   });
 });

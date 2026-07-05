@@ -237,13 +237,19 @@ describe("validateNewResponses", () => {
     const store = memTallyStore();
     // A DRep tx that only signs (mechanism A would pass) — but with links
     // unknown this refresh, a hidden binding could still override it.
-    const source = fakeSource({ t1: signedProof(1), t2: signedProof(2) }, {
-      t1: 1,
-      t2: 1,
-    });
+    const source = fakeSource(
+      { t1: signedProof(1), t2: signedProof(2) },
+      {
+        t1: 1,
+        t2: 1,
+      },
+    );
     await validateNewResponses(
       store,
-      records(response("t1", 1, Role.DRep), response("t2", 2, Role.Stakeholder)),
+      records(
+        response("t1", 1, Role.DRep),
+        response("t2", 2, Role.Stakeholder),
+      ),
       [], // empty because the fetch FAILED, not because there are no links
       source,
       false, // govLinksReliable = false

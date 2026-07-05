@@ -254,7 +254,9 @@ describe("fetchAll — chain position", () => {
         }
         if (url.includes("/tx_metadata")) {
           return new Response(
-            JSON.stringify([{ tx_hash: RESP_TX, metadata: responsesMetadata() }]),
+            JSON.stringify([
+              { tx_hash: RESP_TX, metadata: responsesMetadata() },
+            ]),
             { status: 200 },
           );
         }
@@ -304,14 +306,22 @@ describe("fetchAll — tx metadata cache (finding 5)", () => {
   it("serves a warm cache without any /tx_metadata request", async () => {
     const cache = memCache();
     stubKoios();
-    const first = await new KoiosDataSource(CONFIG, undefined, cache).fetchAll();
+    const first = await new KoiosDataSource(
+      CONFIG,
+      undefined,
+      cache,
+    ).fetchAll();
     expect(first.responses).toHaveLength(2);
     expect(cache.map.has(RESP_TX)).toBe(true); // banked
 
     // Fresh mock (fresh call log): the rescan classifies identically from the
     // cache and makes zero metadata requests.
     const fetchMock = stubKoios();
-    const second = await new KoiosDataSource(CONFIG, undefined, cache).fetchAll();
+    const second = await new KoiosDataSource(
+      CONFIG,
+      undefined,
+      cache,
+    ).fetchAll();
     expect(second.responses).toHaveLength(2);
     expect(second.responses.map((r) => r.responseIndex)).toEqual([0, 1]);
     const metadataCalls = fetchMock.mock.calls.filter((c) =>

@@ -1,0 +1,6 @@
+dist
+node_modules
+coverage
+pnpm-lock.yaml
+frontend/app/src/tlock/vendor/tlock.js
+backend/deps

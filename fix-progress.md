@@ -3,22 +3,23 @@
 Fixing findings from `review-report.md`, **excluding 6, 10, 11** (per instructions).
 Commit after each fix.
 
-| # | Title | Severity | Status |
-|---|-------|----------|--------|
-| 1 | Verifier trusts backend for response set / answer contents | High | ✅ done |
-| 2 | Sealed-survey reveal dedups before reveal-time validation | Medium | ✅ done |
-| 3 | Validated-then-rolled-back response postpones finalization forever | Medium | ✅ done |
-| 4 | Unknown-survey responses re-fetched from Koios forever | Medium | ✅ done |
-| 5 | CI never runs core/koios/verifier/backend tests; stale lockfiles | Medium | ✅ done |
-| 6 | Direct-Koios tallies cancelled-then-closed surveys | Low | ◑ partial (claim warning kept) |
-| 7 | Authoring doesn't enforce `@context` maps CIP-179 terms | Low | ☐ todo |
-| 8 | Cancel-survey flow lacks wallet-network gate | Low | ✅ done |
-| 9 | Koios JSON metadata adapter corrupts ints >2^53 / misreads "0x" | Low | ✅ done |
-| 10 | Respond UI can't express partial rating answer | Low | — SKIP |
-| 11 | Pinned ruleset hash doesn't pin validator code | Low | ✅ done |
-| 12 | Stale doc references to nonexistent spec path | Low | ✅ done |
+| #   | Title                                                              | Severity | Status                         |
+| --- | ------------------------------------------------------------------ | -------- | ------------------------------ |
+| 1   | Verifier trusts backend for response set / answer contents         | High     | ✅ done                        |
+| 2   | Sealed-survey reveal dedups before reveal-time validation          | Medium   | ✅ done                        |
+| 3   | Validated-then-rolled-back response postpones finalization forever | Medium   | ✅ done                        |
+| 4   | Unknown-survey responses re-fetched from Koios forever             | Medium   | ✅ done                        |
+| 5   | CI never runs core/koios/verifier/backend tests; stale lockfiles   | Medium   | ✅ done                        |
+| 6   | Direct-Koios tallies cancelled-then-closed surveys                 | Low      | ◑ partial (claim warning kept) |
+| 7   | Authoring doesn't enforce `@context` maps CIP-179 terms            | Low      | ☐ todo                         |
+| 8   | Cancel-survey flow lacks wallet-network gate                       | Low      | ✅ done                        |
+| 9   | Koios JSON metadata adapter corrupts ints >2^53 / misreads "0x"    | Low      | ✅ done                        |
+| 10  | Respond UI can't express partial rating answer                     | Low      | — SKIP                         |
+| 11  | Pinned ruleset hash doesn't pin validator code                     | Low      | ✅ done                        |
+| 12  | Stale doc references to nonexistent spec path                      | Low      | ✅ done                        |
 
 ## Notes
+
 - **12** (commit): pointed `backend/GOAL.md` + `backend/RESEARCH.md` at
   `../frontend/cip-179.md`.
 - **8** (commit): `OwnerControls` now computes `networkMismatch` and disables the
@@ -41,7 +42,7 @@ Commit after each fix.
   postpones one refresh (reorg buffer) instead of livelocking. Rewrote the
   finding-3 test + added a re-count-on-return test.
 - Note: `finalize.test.ts` names some tests "(finding 1)" / "(finding 5)" — these
-  refer to an *earlier* review's numbering (pending-verdict postpone, weight
+  refer to an _earlier_ review's numbering (pending-verdict postpone, weight
   resume cursor), not this report's. Left as-is.
 - **2** (commit): added core `auditRevealedResponses` (decrypt full pre-dedup
   in-window set → classify → dedup only valid decoded); `SealedResults` now gets
@@ -58,7 +59,7 @@ Commit after each fix.
 
 - **6** (partial, commit): took only the "keep the claim warning" half of the
   suggested fix (not the lazy closed-survey proof fetch). `cancellationStates`
-  now surfaces an in-window unverified cancellation as `claimed` for *closed*
+  now surfaces an in-window unverified cancellation as `claimed` for _closed_
   surveys too (gated on `epochNo ≤ endEpoch`), so the "unverified cancellation
   claim" notice no longer vanishes at close; `cancellationClaimed` is suppressed
   when the survey is already `cancelled` (verified/overlay). Reworded the notice
@@ -69,12 +70,13 @@ Commit after each fix.
 - **11** (commit): golden test in `artifact.test.ts` pins `rulesetHash()` to a
   literal, so any descriptor change (or forgotten `rulesetVersion` bump) fails
   CI. Added RULESET-PINNED-BEHAVIOR notes at the two behavior sites the hash
-  only *describes* — `cip179/src/validate.ts` (validity) and
+  only _describes_ — `cip179/src/validate.ts` (validity) and
   `core/src/dedupe.ts` (dedup order) — and cross-referenced them from
   `RULESET_DESCRIPTOR`. Didn't hash the code itself (refactors would churn it);
   the process hazard is now caught by CI instead of relying on memory.
 
 ## Result
+
 All 9 targeted findings fixed (1–5, 7, 8, 9, 12); 6/10/11 skipped per request.
 Whole workspace green: `pnpm -r type-check`, `pnpm -r test` (267 tests),
 `pnpm -r build`, app `format:check` all pass.

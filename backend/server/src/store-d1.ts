@@ -85,7 +85,9 @@ export function d1BackendStore(db: D1Like): BackendStore {
     },
     async snapshotFetchedAt(): Promise<number | null> {
       const row = await db
-        .prepare("SELECT fetched_at AS fetchedAt FROM snapshot_cache WHERE id = 1")
+        .prepare(
+          "SELECT fetched_at AS fetchedAt FROM snapshot_cache WHERE id = 1",
+        )
         .first<{ fetchedAt: number }>();
       return row?.fetchedAt ?? null;
     },

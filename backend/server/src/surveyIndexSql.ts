@@ -132,11 +132,10 @@ export function surveyCountsSql(
 }
 
 /** As stored: booleans are 0/1 integers. */
-export interface DbSurveyIndexRow
-  extends Omit<
-    SurveyIndexRow,
-    "sealed" | "cancelled" | "govLinked" | "finalizedCancelled"
-  > {
+export interface DbSurveyIndexRow extends Omit<
+  SurveyIndexRow,
+  "sealed" | "cancelled" | "govLinked" | "finalizedCancelled"
+> {
   readonly sealed: number;
   readonly cancelled: number;
   readonly govLinked: number;

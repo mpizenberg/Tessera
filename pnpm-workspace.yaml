@@ -10,4 +10,4 @@ packages:
 # newer than the global `minimumReleaseAge` supply-chain delay, so allow it
 # explicitly instead of relaxing the delay for every dependency.
 minimumReleaseAgeExclude:
-  - '@mattpiz/tlock-js'
+  - "@mattpiz/tlock-js"

@@ -6,7 +6,11 @@ settings:
 
 importers:
 
-  .: {}
+  .:
+    devDependencies:
+      prettier:
+        specifier: ^3.4.2
+        version: 3.8.4
 
   backend/server:
     dependencies:
@@ -72,9 +76,6 @@ importers:
       '@types/node':
         specifier: ^25.9.3
         version: 25.9.4
-      prettier:
-        specifier: ^3.4.2
-        version: 3.8.4
       typescript:
         specifier: ^5.6.0
         version: 5.9.3

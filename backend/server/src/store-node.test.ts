@@ -128,7 +128,9 @@ describe("store-node migration of a pre-runner database", () => {
     // whose objects pre-existed, the runner for the rest.
     const check = new DatabaseSync(path);
     const tracked = (
-      check.prepare("SELECT name FROM schema_migration ORDER BY name").all() as {
+      check
+        .prepare("SELECT name FROM schema_migration ORDER BY name")
+        .all() as {
         name: string;
       }[]
     ).map((r) => r.name);
@@ -171,7 +173,11 @@ describe("store-node survey_index paging SQL", () => {
     finalizedCancelled: false,
     ...over,
   });
-  const meta = { tip: `{"epoch":${TIP_EPOCH}}`, incomplete: false, fetchedAt: 7 };
+  const meta = {
+    tip: `{"epoch":${TIP_EPOCH}}`,
+    incomplete: false,
+    fetchedAt: 7,
+  };
 
   // linked (bucket 0), two open (bucket 1, newest slot first), one closed.
   const rows = [
@@ -219,20 +225,20 @@ describe("store-node survey_index paging SQL", () => {
 
     // Active = not cancelled and deadline not passed; the linked row is
     // active too and still sorts first by bucket.
-    expect((await page({ filter: "active" })).map((r) => r.surveyKey)).toEqual(
-      ["aa:0", "cc:0", "bb:0"],
-    );
+    expect((await page({ filter: "active" })).map((r) => r.surveyKey)).toEqual([
+      "aa:0",
+      "cc:0",
+      "bb:0",
+    ]);
+    expect((await page({ filter: "sealed" })).map((r) => r.surveyKey)).toEqual([
+      "cc:0",
+    ]);
     expect(
-      (await page({ filter: "sealed" })).map((r) => r.surveyKey),
-    ).toEqual(["cc:0"]);
-    expect(
-      (
-        await page({ filter: "mine", credentials: ["key:11"] })
-      ).map((r) => r.surveyKey),
+      (await page({ filter: "mine", credentials: ["key:11"] })).map(
+        (r) => r.surveyKey,
+      ),
     ).toHaveLength(4);
-    expect(await page({ filter: "mine", credentials: ["key:99"] })).toEqual(
-      [],
-    );
+    expect(await page({ filter: "mine", credentials: ["key:99"] })).toEqual([]);
     expect(
       (await page({ searchTerms: ["title", "bb"] })).map((r) => r.surveyKey),
     ).toEqual(["bb:0"]);
@@ -243,9 +249,14 @@ describe("store-node survey_index paging SQL", () => {
   it("computes global counts over the search-matching set", async () => {
     store = openBackendStore(":memory:");
     await store.replaceSurveyIndex(rows, meta);
-    expect(
-      await store.surveyIndexCounts(TIP_EPOCH, ["key:11"], []),
-    ).toEqual({ all: 4, linked: 1, active: 3, sealed: 1, public: 2, mine: 4 });
+    expect(await store.surveyIndexCounts(TIP_EPOCH, ["key:11"], [])).toEqual({
+      all: 4,
+      linked: 1,
+      active: 3,
+      sealed: 1,
+      public: 2,
+      mine: 4,
+    });
     expect(await store.surveyIndexCounts(TIP_EPOCH, [], ["bb"])).toEqual({
       all: 1,
       linked: 0,

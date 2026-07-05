@@ -162,11 +162,13 @@ export function memBackendStore(
 
     async cachedTxMetadata(txHashes) {
       const out = new Map<string, unknown>();
-      for (const h of txHashes) if (txMetadata.has(h)) out.set(h, txMetadata.get(h));
+      for (const h of txHashes)
+        if (txMetadata.has(h)) out.set(h, txMetadata.get(h));
       return out;
     },
     async putTxMetadata(entries) {
-      for (const [h, m] of entries) if (!txMetadata.has(h)) txMetadata.set(h, m);
+      for (const [h, m] of entries)
+        if (!txMetadata.has(h)) txMetadata.set(h, m);
     },
 
     async replaceSurveyIndex(rows, meta) {
@@ -189,7 +191,11 @@ export function memBackendStore(
           (x, y) =>
             x.bucket - y.bucket ||
             y.slot - x.slot ||
-            (x.surveyKey < y.surveyKey ? -1 : x.surveyKey > y.surveyKey ? 1 : 0),
+            (x.surveyKey < y.surveyKey
+              ? -1
+              : x.surveyKey > y.surveyKey
+                ? 1
+                : 0),
         )
         .filter((r) => {
           const c = q.cursor;

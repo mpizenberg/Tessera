@@ -17,13 +17,13 @@ the example consumers `cdnsd` (Adder) and `administration-data/indexer` (Yaci St
 Re-reading `../frontend/cip-179.md`, an implementation that goes beyond "store the raw blob"
 must touch four layers. This is the yardstick for the candidates.
 
-| # | Requirement | Where in CIP-179 | Difficulty |
-|:--|:------------|:-----------------|:-----------|
-| **R1** | Filter tx metadata by **label 17**, decode the CBOR payload (tag 0 defs / 1 responses / 2 cancellations) | §Overview, §CBOR examples | Easy |
-| **R2** | Access **tx body fields beyond metadata**: `required_signers` (field 14), `voting_procedures`, governance `proposal_procedures` + anchors (Info Actions) | §Credential proof (mech. A/B), §Governance Action Linkage | Medium — needs full-tx access |
-| **R3** | Query **ledger state** for validation: registered DReps, SPO cold creds, active CC hot creds, stake delegation, **native-script resolution** | §Role validation, §Credential proof | **Hard** — this is real ledger state |
-| **R4** | Track **chain order** `(slot, tx_index, response_index)` and handle **rollbacks/reorgs** | §Deduplication, §Epoch Semantics | Medium |
-| **B1** | *(Bonus)* Decode + semantically index label-17 payloads **at ingestion** | `GOAL.md` | Easy–Medium given a good hook |
+| #      | Requirement                                                                                                                                              | Where in CIP-179                                          | Difficulty                           |
+| :----- | :------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------- | :----------------------------------- |
+| **R1** | Filter tx metadata by **label 17**, decode the CBOR payload (tag 0 defs / 1 responses / 2 cancellations)                                                 | §Overview, §CBOR examples                                 | Easy                                 |
+| **R2** | Access **tx body fields beyond metadata**: `required_signers` (field 14), `voting_procedures`, governance `proposal_procedures` + anchors (Info Actions) | §Credential proof (mech. A/B), §Governance Action Linkage | Medium — needs full-tx access        |
+| **R3** | Query **ledger state** for validation: registered DReps, SPO cold creds, active CC hot creds, stake delegation, **native-script resolution**             | §Role validation, §Credential proof                       | **Hard** — this is real ledger state |
+| **R4** | Track **chain order** `(slot, tx_index, response_index)` and handle **rollbacks/reorgs**                                                                 | §Deduplication, §Epoch Semantics                          | Medium                               |
+| **B1** | _(Bonus)_ Decode + semantically index label-17 payloads **at ingestion**                                                                                 | `GOAL.md`                                                 | Easy–Medium given a good hook        |
 
 Two observations that shape the whole evaluation:
 
@@ -32,13 +32,13 @@ Two observations that shape the whole evaluation:
   `voting_procedures`) and in governance proposals/anchors. A tool that only surfaces
   metadata, or that drops these fields from its parsed model, forces you down to raw CBOR.
 - **R3 is the discriminator overall, and no streaming tool fully solves it.** Role
-  validation needs *current* ledger state ("is this credential a registered DRep / active
+  validation needs _current_ ledger state ("is this credential a registered DRep / active
   CC hot key / SPO at slot S?"). This is genuine ledger state, obtainable only via the
   node's LocalStateQuery, a state indexer (db-sync/Kupo/Koios/Blockfrost), or by
   materializing it yourself from the certificate stream. **Yaci Store is the only candidate
   that ships any of this; Adder and Oura provide none.**
 
-  R3 is partly **deferrable**: the CIP separates *response-time* validation from *tally-time*
+  R3 is partly **deferrable**: the CIP separates _response-time_ validation from _tally-time_
   re-verification, and `GOAL.md` explicitly allows post-processing. The indexer's hard job
   is to **capture everything R1+R2+R4** faithfully; role validation can be a later stage
   that reads ledger state. So the streaming-layer choice should be judged primarily on
@@ -62,12 +62,12 @@ inside your own binary** — `cdnsd` is the canonical example (imports `pipeline
 - **R2 (full tx):** ✅ **Best-in-class.** Each `input.transaction` event carries the full
   `ledger.Transaction`: `RequiredSigners()` (field 14), `VotingProcedures()`,
   `ProposalProcedures()` (Info Actions), `Certificates()`, anchors, raw `Cbor()`. Adder
-  *also* emits a pre-parsed `input.governance` event with typed votes/proposals/cert data —
+  _also_ emits a pre-parsed `input.governance` event with typed votes/proposals/cert data —
   a real shortcut for the Info-Action profile.
 - **R3 (ledger state):** ❌ **None.** Pure stateless stream. You'd add a sidecar — but Adder
   helps two ways: (a) `gouroboros` already implements the `localstatequery` mini-protocol, so
   you can open a second n2c query connection against the same node; (b) Adder emits DRep/CC
-  registration certs as events, so you can *materialize* the DRep/CC/SPO sets yourself.
+  registration certs as events, so you can _materialize_ the DRep/CC/SPO sets yourself.
   Optional Kupo integration resolves spent UTxOs (helps native-script/address resolution).
 - **R4 (order + rollback):** ✅ Rollbacks are first-class `input.rollback` events;
   resumable cursor via `WithIntersectPoints` + `WithStatusUpdateFunc` (cdnsd persists
@@ -78,7 +78,7 @@ inside your own binary** — `cdnsd` is the canonical example (imports `pipeline
   decode/validate/persist label-17 in-process, with backpressure via the returned error.
 - **Storage:** BYO (cdnsd uses BadgerDB; SQLite/Postgres equally fine).
 - **Footprint / maturity:** Lean when imported as a library (the heavy `go.mod` entries are
-  the optional Fyne GUI tray, *not* pulled by library users). Single static binary, very
+  the optional Fyne GUI tray, _not_ pulled by library users). Single static binary, very
   active (v0.41.0, 2026-06-09). Needs a reachable node (or `utxorpc`/Dolos).
 
 ### Yaci Store (Bloxbean) — Java/Spring Boot · modular indexer · batteries included
@@ -88,7 +88,7 @@ Yaci chainsync lib. Composable Spring Boot **starters** — enable only the stor
 (`store.<x>.enabled`). Used in production by CF Ballot (a voting platform), Rosetta-Java, etc.
 
 - **R1 (label 17):** ✅ Dedicated **metadata store**. Splits metadata **per label**, storing
-  *both* decoded JSON **and** per-label raw CBOR in `transaction_metadata` (`label`, `body`,
+  _both_ decoded JSON **and** per-label raw CBOR in `transaction_metadata` (`label`, `body`,
   `cbor`). Publishes a derived `TxMetadataEvent` — your label-17 hook. (Caveat: `label` is a
   `varchar` string `"17"`.)
 - **R2 (full tx):** ✅ `transaction` store persists `required_signers` (dedicated `jsonb`
@@ -121,19 +121,19 @@ pushes records to a sink. Excellent transport — but it is **not a stateful ind
 has two hard problems for this use case.
 
 - **R1 (label 17):** ✅ A `select` filter matches `metadata.label = 17` (`split_block →
-  parse_cbor → select`). Metadatum is CBOR-decoded by Pallas; for arbitrary CIP-179 payloads
+parse_cbor → select`). Metadatum is CBOR-decoded by Pallas; for arbitrary CIP-179 payloads
   you'll re-decode raw bytes anyway.
 - **R2 (full tx):** ❌ **Blocker.** Oura's parsed record is the UtxoRPC `Tx`, and the Pallas
   mapper **does not populate `required_signers` or `voting_procedures` (absent from the
   schema entirely) and leaves `proposals`/Info-Actions empty**. Certificates and metadata
-  *are* mapped. So the three governance fields R2 needs are **unreachable from the parsed
+  _are_ mapped. So the three governance fields R2 needs are **unreachable from the parsed
   record** — you must consume **raw CBOR** (`CborTx`) and decode with Pallas
   (`MultiEraTx::required_signers()`, votes, gov-actions) yourself.
 - **R3 (ledger state):** ❌ **None** — confirmed (`NoOpContext`, even UTxO resolution
   disabled). Pure pipe.
 - **R4 (order + rollback):** ⚠️ Sources emit `Reset(point)` on rollback; a `rollback_buffer`
   filter gives delayed finality. **But the webhook sink hard-codes the action header to
-  `"apply"` and silently drops `Reset`** — so the easy "webhook → my service" path does *not*
+  `"apply"` and silently drops `Reset`** — so the easy "webhook → my service" path does _not_
   reliably propagate rollbacks. The `sql_db` sink and a custom Rust sink do handle
   Apply/Undo/Reset correctly.
 - **B1 (semantic at ingestion):** Three options: webhook + external service (weak rollback
@@ -142,25 +142,25 @@ has two hard problems for this use case.
   gives full `Apply/Undo/Reset` + raw CBOR).
 - **Storage:** Persists nothing but its cursor; storage is the sink's job.
 - **Footprint / maturity:** Genuinely lightweight (single static Rust binary), very active
-  (v2.0.1, Conway-ready). But for *our* needs it requires the most custom Rust (raw-CBOR
+  (v2.0.1, Conway-ready). But for _our_ needs it requires the most custom Rust (raw-CBOR
   decode + custom sink + a separate state component) for the least payoff.
 
 ---
 
 ## 3. Scorecard
 
-| Requirement | Adder (Go) | Yaci Store (Java) | Oura (Rust) |
-|:------------|:----------:|:-----------------:|:-----------:|
-| R1 metadata label 17 (decoded + raw CBOR) | ✅ (DIY filter, 1-liner) | ✅✅ (JSON **and** CBOR, stored) | ✅ (`select` filter) |
-| R2 `required_signers` / votes / Info-Action proposals | ✅✅ (full tx + pre-parsed gov event) | ✅✅ (column + full tx event) | ❌ **dropped from parsed record → raw CBOR only** |
-| R3 ledger state (DRep/SPO/CC/stake/native-script) | ❌ build sidecar | ✅✅ **mostly free** (gov+staking+script+LSQ) | ❌ build everything |
-| R4 chain order + rollback handling | ✅ rollback events + cursor + delay buffer | ✅✅ auto DB rollback per store + cursor | ⚠️ Reset emitted, but webhook sink drops it |
-| B1 semantic indexing at ingestion | ✅ embedded callback | ✅✅ Spring event (atomic) or plugins | ⚠️ custom Rust sink really required |
-| Lightweight / footprint | ✅✅ lean Go binary | ❌ JVM, multi-GB | ✅✅ lean Rust binary |
-| Embeddable as a library | ✅✅ (intended pattern) | ✅ (starters) or standalone | ✅ (crate) but custom sink needed |
-| Out-of-box REST API | ➖ minimal | ✅✅ full + Blockfrost-compat | ❌ (pipe only) |
-| Maturity / activity | ✅ active | ✅✅ CF-backed, prod (incl. voting) | ✅ active |
-| Custom-code burden for CIP-179 | Low–Medium | **Lowest** (config + listeners) | **Highest** (raw CBOR + sink + state) |
+| Requirement                                           |                 Adder (Go)                 |               Yaci Store (Java)               |                    Oura (Rust)                    |
+| :---------------------------------------------------- | :----------------------------------------: | :-------------------------------------------: | :-----------------------------------------------: |
+| R1 metadata label 17 (decoded + raw CBOR)             |          ✅ (DIY filter, 1-liner)          |       ✅✅ (JSON **and** CBOR, stored)        |               ✅ (`select` filter)                |
+| R2 `required_signers` / votes / Info-Action proposals |   ✅✅ (full tx + pre-parsed gov event)    |         ✅✅ (column + full tx event)         | ❌ **dropped from parsed record → raw CBOR only** |
+| R3 ledger state (DRep/SPO/CC/stake/native-script)     |              ❌ build sidecar              | ✅✅ **mostly free** (gov+staking+script+LSQ) |                ❌ build everything                |
+| R4 chain order + rollback handling                    | ✅ rollback events + cursor + delay buffer |   ✅✅ auto DB rollback per store + cursor    |    ⚠️ Reset emitted, but webhook sink drops it    |
+| B1 semantic indexing at ingestion                     |            ✅ embedded callback            |     ✅✅ Spring event (atomic) or plugins     |        ⚠️ custom Rust sink really required        |
+| Lightweight / footprint                               |            ✅✅ lean Go binary             |               ❌ JVM, multi-GB                |               ✅✅ lean Rust binary               |
+| Embeddable as a library                               |          ✅✅ (intended pattern)           |          ✅ (starters) or standalone          |         ✅ (crate) but custom sink needed         |
+| Out-of-box REST API                                   |                 ➖ minimal                 |         ✅✅ full + Blockfrost-compat         |                  ❌ (pipe only)                   |
+| Maturity / activity                                   |                 ✅ active                  |      ✅✅ CF-backed, prod (incl. voting)      |                     ✅ active                     |
+| Custom-code burden for CIP-179                        |                 Low–Medium                 |        **Lowest** (config + listeners)        |       **Highest** (raw CBOR + sink + state)       |
 
 ---
 
@@ -177,7 +177,7 @@ has two hard problems for this use case.
 - **Adder — recommended for a lightweight, embedded indexer.** Best balance against the
   stated priorities (lightweight/reliable/fast + semantic-at-ingestion). It nails R1, R2, R4
   and B1 cleanly as a Go library, and even pre-parses governance events. Its gap is R3
-  (ledger state), which is *deferrable* per the CIP/GOAL and addressable via a gouroboros
+  (ledger state), which is _deferrable_ per the CIP/GOAL and addressable via a gouroboros
   LocalStateQuery sidecar on the same node connection (or by materializing DRep/CC/SPO sets
   from the cert stream Adder already emits). **Candidate confirmed**, with R3 as a known
   follow-on component.
@@ -191,7 +191,7 @@ has two hard problems for this use case.
 
 The honest tension: **`GOAL.md` asks for "lightweight" (→ Adder) but CIP-179 validation needs
 heavy ledger state (→ Yaci Store).** The two best candidates sit on opposite sides of that
-trade-off, so the decision is really about how much of R3 you want the *indexer* to own
+trade-off, so the decision is really about how much of R3 you want the _indexer_ to own
 versus a downstream stage.
 
 ---
@@ -244,7 +244,7 @@ also serve an API from. The choice is **footprint (Adder) vs completeness-withou
 
 If a small proof-of-concept is wanted before committing, the cheapest decisive test is to
 stand up **Adder Option A** against preprod and confirm we can, in one callback, read label 17
-*and* the same tx's `required_signers` + `voting_procedures` — this validates the R1+R2 core
+_and_ the same tx's `required_signers` + `voting_procedures` — this validates the R1+R2 core
 on the lightweight path. In parallel, a **Yaci Store** instance on Yaci DevKit with
 `governance`+`staking` enabled would confirm how much of R3 truly lands for free. The two
 spikes together would settle the footprint-vs-completeness decision with real data rather than
@@ -266,7 +266,7 @@ source-cited from the local clones plus Pallas v0.35.0 and gouroboros v0.182.0.
 - **Full raw tx — yes.** `Record::CborBlock`/`CborTx` (`oura/src/framework/mod.rs:104`) carry
   the node's bytes verbatim; n2n/n2c sources emit `CborBlock` (`sources/n2n.rs:120`). **Omit
   the `parse_cbor` filter** and lossless raw CBOR flows to the sink (`split_block` re-encodes
-  per-tx, still raw). The governance fields the *parsed* record drops are all present in the
+  per-tx, still raw). The governance fields the _parsed_ record drops are all present in the
   raw bytes.
 - **Pallas extraction — easy-to-moderate (~40–60 LOC).** `MultiEraBlock::decode()`, then per
   tx: `tx.metadata().find(17)`, `tx.required_signers()`, `tx.certs()` are **era-agnostic**
@@ -275,7 +275,7 @@ source-cited from the local clones plus Pallas v0.35.0 and gouroboros v0.182.0.
   `tx.as_conway()?.transaction_body` (`pallas-primitives/src/conway/model.rs:684-704`). Info
   Actions = `GovAction::Information`; anchors sit on each procedure. No manual `minicbor`.
 - **The rollback mechanics, precisely.** Node sources signal rollback **only** as
-  `ChainEvent::Reset(point)` — *no record*, no per-block `Undo` (`sources/n2n.rs:143`):
+  `ChainEvent::Reset(point)` — _no record_, no per-block `Undo` (`sources/n2n.rs:143`):
   "chain is back at `point`; discard everything after." `rollback_buffer{min_depth=N}` absorbs
   reorgs shallower than N and forwards `Reset` for deeper ones. **The webhook sink is unsafe:**
   it early-returns on record-less events (drops every `Reset`, `sinks/webhook.rs:46`) and
@@ -289,42 +289,43 @@ source-cited from the local clones plus Pallas v0.35.0 and gouroboros v0.182.0.
 
 ### 7.2 The past-epoch ledger-state limitation (applies to all node-backed tools)
 
-**LocalStateQuery cannot answer "what was true 3 epochs ago."** gouroboros's LSQ *API* allows
+**LocalStateQuery cannot answer "what was true 3 epochs ago."** gouroboros's LSQ _API_ allows
 `Acquire(point)` at any `(slot,hash)` and has the cheap **filtered** queries you'd want — pass
 only participant credentials: `GetDRepState([]Credential)`,
 `GetCommitteeMembersState(cold,hot,statuses)`, `GetSPOStakeDistr`, `GetFilteredVoteDelegatees`,
 `GetFilteredDelegationsAndRewardAccounts`, `GetStakeSnapshots` (all `client.go`, Conway-gated).
 **But cardano-node only retains rollback-able ledger states within ~k=2160 blocks (well under
 one 5-day epoch).** Acquiring an older point is rejected with `AcquireFailurePointTooOld`
-(`error.go:19`). LSQ answers "now / recent tip," never the deep past. This is a *node*
+(`error.go:19`). LSQ answers "now / recent tip," never the deep past. This is a _node_
 limitation, not a library one — there is no gouroboros workaround.
 
 Consequence: to validate a survey that closed several epochs ago, the authoritative state must
 come from **your own persisted history**, not a live query. That means either:
-- **(a)** validate *at close* (live at the tip = the snapshot) and persist the verdict, or
+
+- **(a)** validate _at close_ (live at the tip = the snapshot) and persist the verdict, or
 - **(b)** materialize/re-compute historical state yourself and store it, or
 - **(c)** an external db-sync-backed API (Koios/Blockfrost) that keeps history.
 
 ### 7.3 Yaci Store: past-epoch from its own DB, and selective storage
 
-- **Past-epoch *membership* — yes, from its own tables.** The governance and staking stores are
+- **Past-epoch _membership_ — yes, from its own tables.** The governance and staking stores are
   **append-only logs, every row keyed by `slot`+`epoch`**: `drep_registration` (REG/DEREG/UPDATE),
   `committee_registration`/`committee_deregistration` + `committee_member(start_epoch,
-  expired_epoch)`, `delegation_vote`, `delegation`, `pool_registration`/`pool_retirement`,
+expired_epoch)`, `delegation_vote`, `delegation`, `pool_registration`/`pool_retirement`,
   `stake_registration` (schemas `stores/governance/.../V0_1100_1__init.sql`,
-  `stores/staking/.../V0_800_1__init.sql`). Reconstruct "as-of epoch N" via *latest event where
-  `slot ≤ end-of-epoch-N`*. This is the historical cert log Adder/Oura would make you build.
-- **Per-epoch stake *amounts* — only via the heavy path.** `epoch_stake`/`drep_dist`
+  `stores/staking/.../V0_800_1__init.sql`). Reconstruct "as-of epoch N" via _latest event where
+  `slot ≤ end-of-epoch-N`_. This is the historical cert log Adder/Oura would make you build.
+- **Per-epoch stake _amounts_ — only via the heavy path.** `epoch_stake`/`drep_dist`
   (`aggregates/adapot`, `governance-aggr`) need `account`+`adapot` from genesis;
   `local_drep_dist` is LSQ-fed at the tip only (no backfill). See §8 — this is the crux.
 - **Selective storage — real levers.** Disable stores (`store.utxo|assets|epoch|mir|script|
-  epoch-nonce.enabled=false`); `store.transaction.save-cbor=false`/`save-witness=false`
+epoch-nonce.enabled=false`); `store.transaction.save-cbor=false`/`save-witness=false`
   (defaults) + `pruning-enabled=true`; a `metadata.save` plugin filter keeping only label 17 +
   a cron `DELETE FROM transaction_metadata WHERE label <> '17'` (the admin-data pattern). Net
   storage ≈ (governance + staking cert history) + (label-17 metadata), independent of UTxO size.
 - **Participants-only state is not achievable at ingestion** (participation is discovered later
   from responses; save-time filters have no foreknowledge) — but it doesn't matter for
-  *membership*, which is small enough to keep in full.
+  _membership_, which is small enough to keep in full.
 
 ---
 
@@ -332,28 +333,29 @@ come from **your own persisted history**, not a live query. That means either:
 
 Two facts surfaced above collide with `GOAL.md`'s "lightweight" goal.
 
-### 8.1 Validation needs membership; the *authority* needs weights — and weights need a full ledger
+### 8.1 Validation needs membership; the _authority_ needs weights — and weights need a full ledger
 
-CIP-179 *validation* only checks membership/existence (registered DRep, active CC, SPO,
+CIP-179 _validation_ only checks membership/existence (registered DRep, active CC, SPO,
 delegated-stake existence) — all cert-derivable. But the body computing a survey's **result**
 needs **weighting** (DRep voting power, user active stake), and that is categorically different:
 
 > A credential's stake = Σ(ada in every UTxO under that stake credential) + reward balance,
 > **snapshotted at an epoch boundary**. There is **no certificate-only shortcut** — certs give
-> the delegation *graph*, never the *weights*. Computing weights requires full UTxO accounting
-> + the reward calculation, i.e. ledger replay.
+> the delegation _graph_, never the _weights_. Computing weights requires full UTxO accounting
+>
+> - the reward calculation, i.e. ledger replay.
 
-### 8.2 Even *membership* isn't strictly a function of the local cert sequence
+### 8.2 Even _membership_ isn't strictly a function of the local cert sequence
 
 Naive register/deregister-chain following is ~99.99%, not 100%, because several states are
 **ledger-enacted/computed at epoch boundaries**:
 
-- **DRep registered ≠ active:** a DRep goes *inactive* after `drepActivity` epochs without
+- **DRep registered ≠ active:** a DRep goes _inactive_ after `drepActivity` epochs without
   voting and drops out of the active voting stake.
 - **CC membership:** the committee's cold creds are set/removed by **enacted `UpdateCommittee`
   governance actions** (with term epochs), and no-confidence can dissolve it — only the hot-key
   auth is a cert.
-- **Pool retirement** is epoch-*scheduled* and cancellable by re-registration.
+- **Pool retirement** is epoch-_scheduled_ and cancellable by re-registration.
 - **Conway bootstrap** predefined DReps and transitional rules.
 
 So strictly-correct results require consulting **authoritative ledger state** — which, given
@@ -368,37 +370,37 @@ You can have at most **two** of these three at once:
 3. **Self-contained** — no third-party service.
 
 And the **node is the elephant**: every self-contained option chainsyncs from a cardano-node,
-and LSQ *requires* a local one. Once you accept running a node, "authoritative" is much cheaper
+and LSQ _requires_ a local one. Once you accept running a node, "authoritative" is much cheaper
 — which is what makes the pragmatic middle path (Solution A below) work.
 
 ### 8.4 Pragmatic solutions (pick your two)
 
-- **A — Node + lean indexer + snapshot-at-close** *(recommended for an authority that runs
-  continuously)*. Light label-17 indexer; the instant each survey's `end_epoch` passes (live at
-  the tip), use LSQ's *filtered* queries to pull authoritative role **and stake** for exactly
+- **A — Node + lean indexer + snapshot-at-close** _(recommended for an authority that runs
+  continuously)_. Light label-17 indexer; the instant each survey's `end_epoch` passes (live at
+  the tip), use LSQ's _filtered_ queries to pull authoritative role **and stake** for exactly
   the participant credentials, and persist an **immutable result snapshot + raw inputs**.
-  → relaxes (2): sacrifices *deep-past re-derivability* only (must be live at close).
+  → relaxes (2): sacrifices _deep-past re-derivability_ only (must be live at close).
 - **B — Truly light, external state.** Light indexer vs public relays + Koios/Blockfrost
-  (db-sync-backed; they *do* serve per-epoch history) for participant state.
-  → relaxes (3): not self-contained. Fine for *non-binding sentiment*; mitigate by snapshotting
+  (db-sync-backed; they _do_ serve per-epoch history) for participant state.
+  → relaxes (3): not self-contained. Fine for _non-binding sentiment_; mitigate by snapshotting
   inputs for independent re-verification and cross-checking two providers.
 - **C — Self-contained + historical, heavy.** Full state indexer: db-sync, or Yaci Store
   `account`+`adapot`+`governance-aggr` from genesis, or Amaru/Dolos.
   → relaxes (1): heavy. Run once to build snapshots, then it's queries.
-- **Hybrid** *(best for a serious authority)* — a **light serving layer** for real-time UX +
+- **Hybrid** _(best for a serious authority)_ — a **light serving layer** for real-time UX +
   a **heavy/authoritative finalization stage** for official tallies. This is exactly the CIP's
-  *response-time vs tally-time* split and `GOAL.md`'s "post-process by another stage": decouple
+  _response-time vs tally-time_ split and `GOAL.md`'s "post-process by another stage": decouple
   fast/light from heavy/correct and the incompatibility dissolves.
 
 ### 8.5 Infra-tooling improvement opportunities
 
 1. **Point-in-time / historical LSQ (compact epoch-snapshot service)** — the #1 gap; the node
    discards past state, forcing everyone to re-derive or trust a third party.
-2. **Snapshot-only "tally-inputs" indexer** — persist per-epoch *aggregates* (stake-per-cred,
+2. **Snapshot-only "tally-inputs" indexer** — persist per-epoch _aggregates_ (stake-per-cred,
    DRep power, pool stake, committee set, DRep active/inactive) instead of the full UTxO
    history; compute is sync-once-from-genesis but storage stays compact and bounded.
 3. **Mithril-certified state snapshots** — extend Mithril's certified stake-distribution
-   artifacts to per-epoch governance/stake tally-inputs → *trustless* historical state, removing
+   artifacts to per-epoch governance/stake tally-inputs → _trustless_ historical state, removing
    the trust objection to the external-service path (light **and** authoritative **and**
    not-trusting-anyone).
 4. **Amaru / Dolos** — a lighter Rust node / pruned data-node lowers the "run a node" cost and
@@ -414,9 +416,9 @@ and LSQ *requires* a local one. Once you accept running a node, "authoritative" 
 
 - **The hard requirement is no longer "decode the metadata" but "obtain authoritative,
   point-in-time stake + governance state."** Validation is cert-derivable and light; the
-  *authority's weighted result* needs full ledger state, which the live node can't serve for
+  _authority's weighted result_ needs full ledger state, which the live node can't serve for
   past epochs (§7.2, §8.1–8.2). So the indexer choice is secondary to the **state strategy**.
-- **A truly lightweight, self-contained, *and* historically-accurate stack is not achievable —
+- **A truly lightweight, self-contained, _and_ historically-accurate stack is not achievable —
   it's a genuine trilemma (§8.3).** Yes, this confirms the user's assessment. The way out is to
   **decouple** a light serving layer from a heavier/authoritative finalization stage (Hybrid),
   or to **snapshot authoritative state at each survey's close** while live (Solution A).

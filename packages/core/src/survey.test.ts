@@ -172,9 +172,7 @@ describe("aggregateSurveyList — finalized-cancelled overlay (finding 19)", () 
   // warning. The serving tier's finalizedCancelled keys carry the artifact's
   // verdict past close, which also supersedes that claim warning.
   const closed = survey(0, def(keyOwner(1), 8)); // endEpoch 8 < tip epoch 10
-  const list = (
-    finalizedCancelled?: readonly string[],
-  ): SurveyListPayload => ({
+  const list = (finalizedCancelled?: readonly string[]): SurveyListPayload => ({
     surveys: [closed],
     cancellations: [cancel(0, 850, null)],
     govLinks: [],

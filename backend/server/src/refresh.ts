@@ -35,7 +35,13 @@ export async function refreshSnapshot(
   const startedMs = Date.now();
   const recordRun = (
     outcome:
-      | { ok: true; incomplete: boolean; surveys: number; responses: number; payloadBytes: number }
+      | {
+          ok: true;
+          incomplete: boolean;
+          surveys: number;
+          responses: number;
+          payloadBytes: number;
+        }
       | { ok: false; error: string },
   ): Promise<void> =>
     store
@@ -55,7 +61,9 @@ export async function refreshSnapshot(
             }),
       })
       // Stats are best-effort: recording must never mask the run's own outcome.
-      .catch((err) => console.warn(`refresh stats write failed: ${String(err)}`));
+      .catch((err) =>
+        console.warn(`refresh stats write failed: ${String(err)}`),
+      );
 
   // The store-backed metadata cache makes the scan resumable: tx metadata is
   // immutable, so each fulfilled /tx_metadata batch is banked and never

@@ -3,7 +3,7 @@
 Status: proposal for review (not yet applied to `cip-179.md`).
 
 This change adds **one** authoring option to the rating question type (tag 6): a
-flag that says whether a respondent may rate a *subset* of the options (today's
+flag that says whether a respondent may rate a _subset_ of the options (today's
 behavior) or **must rate every option** to submit a valid answer. Nothing else
 changes — not the rating scale, not the answer encoding, not any other question
 type.
@@ -29,24 +29,24 @@ rating type carries an option list at all, and bloats both the definition and
 every response.
 
 Note this is deliberately **not** the `min_rated`/`max_rated` pair that
-multi-select and ranking carry. There, the *count of chosen options* is the
+multi-select and ranking carry. There, the _count of chosen options_ is the
 answer, so bounding it bounds the answer's shape. For rating, the answer is the
-per-option *score*; whether an option is rated is a separate coverage axis. The
+per-option _score_; whether an option is rated is a separate coverage axis. The
 only point on that axis with clear author intent is the binary "all or a subset",
 so this proposal adds exactly that and nothing more. A `max_rated` (a cap on how
 many options you may rate) has no polling use and is intentionally omitted.
 
 ## Summary of changes
 
-| # | Change |
-|:--|:-------|
-| 1 | `rating_question` gains a **mandatory** `require_all` bool, placed **before** the optional `required` flag. |
-| 2 | New validation rule: when `require_all` is true, a present rating answer MUST rate **every** option (rated-option count = option count); otherwise a subset is still valid. |
-| 3 | Prose in §Rating (tag 6) updated to describe the flag and its interaction with abstain / `required`. |
+| #   | Change                                                                                                                                                                      |
+| :-- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `rating_question` gains a **mandatory** `require_all` bool, placed **before** the optional `required` flag.                                                                 |
+| 2   | New validation rule: when `require_all` is true, a present rating answer MUST rate **every** option (rated-option count = option count); otherwise a subset is still valid. |
+| 3   | Prose in §Rating (tag 6) updated to describe the flag and its interaction with abstain / `required`.                                                                        |
 
 The **answer encoding is unchanged** — `rating_answer = [6, uint, [+ [uint, int]]]`
 already carries whatever `(option_index, rating)` pairs are present; `require_all`
-only changes whether a given set of pairs is *valid*, not how it is written.
+only changes whether a given set of pairs is _valid_, not how it is written.
 
 ---
 
@@ -75,7 +75,7 @@ convention).
 
 ### Why `require_all` is mandatory, not another `? flag`
 
-The trailing `required` flag is decoded **positionally** as the *optional last*
+The trailing `required` flag is decoded **positionally** as the _optional last_
 array element. A second trailing `? flag` would be ambiguous: given
 `[6, prompt, opts, scale, 1]`, a decoder cannot tell whether that `1` is
 `require_all` or `required`. Making `require_all` a **fixed, always-present**
@@ -103,12 +103,12 @@ Add to §Rating (tag 6):
 
 This composes with the existing `required` flag as two orthogonal axes:
 
-| `required` | `require_all` | Respondent must… |
-|:--|:--|:--|
-| false | false | *(today)* optionally answer; if answering, rate any non-empty subset |
-| false | true  | either skip the question, **or** rate every option — no half-filled grid |
-| true  | false | answer; at least one option rated (the answer CDDL's `+`) |
-| true  | true  | answer, and rate every option |
+| `required` | `require_all` | Respondent must…                                                         |
+| :--------- | :------------ | :----------------------------------------------------------------------- |
+| false      | false         | _(today)_ optionally answer; if answering, rate any non-empty subset     |
+| false      | true          | either skip the question, **or** rate every option — no half-filled grid |
+| true       | false         | answer; at least one option rated (the answer CDDL's `+`)                |
+| true       | true          | answer, and rate every option                                            |
 
 ## Change 3 — prose for §Rating (tag 6)
 
@@ -122,7 +122,7 @@ with:
 > - Response: `(option_index, rating)` pairs, each rating valid for the scale,
 >   option indices unique and valid. Whether a **subset** of options may be
 >   rated is controlled by the question's `require_all` flag: with `require_all
->   = 0` a respondent MAY rate any non-empty subset; with `require_all = 1` a
+= 0` a respondent MAY rate any non-empty subset; with `require_all = 1` a
 >   present answer MUST rate every option (see the validation rule above).
 >   Omitting the whole question is an abstain either way (subject to `required`).
 
@@ -130,13 +130,13 @@ with:
 
 - **Abstain model is unchanged.** `require_all` never forces a respondent to
   answer — omission is still an abstain (that is `required`'s job). It only
-  rejects a *partially filled* present answer. This is consistent with how
+  rejects a _partially filled_ present answer. This is consistent with how
   `required` already invalidates a whole response that omits a required question
   (§Abstain semantics).
 - **Tally shape is unchanged.** Per-option rating aggregates already record, for
   each option, how much weight/how many responders rated it. So `require_all`
   adds no new tally field; it only affects which responses are counted at all.
-  An author who merely wants to *observe* partial coverage does **not** need this
+  An author who merely wants to _observe_ partial coverage does **not** need this
   flag — partial mode already surfaces that. `require_all` is specifically for
   authors who want to **reject** incomplete grids.
 
@@ -153,8 +153,8 @@ wire format, doing this now — before any artifacts exist — costs nothing.
 - **No `min_rated` / `max_rated`.** Arbitrary count thresholds on rating have no
   clear author intent and collide with the per-option abstain model; only the
   all-vs-subset binary is added.
-- **No change to `rating_scale`.** The scale still bounds each option's *value*
-  (numeric grid or ordered labels); `require_all` bounds *coverage*, an
+- **No change to `rating_scale`.** The scale still bounds each option's _value_
+  (numeric grid or ordered labels); `require_all` bounds _coverage_, an
   orthogonal concern.
 - **No change to the answer encoding or to any other question type.**
 

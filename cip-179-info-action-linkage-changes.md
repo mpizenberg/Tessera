@@ -4,7 +4,7 @@ Status: proposal for review (not yet applied to `cip-179.md`).
 
 These changes refine **only** how a governance action's anchor advertises a survey.
 The on-chain label-17 format, the Action → Survey direction, the `end_epoch` rule,
-and every validation rule about *who may respond* are unchanged.
+and every validation rule about _who may respond_ are unchanged.
 
 ## Why
 
@@ -25,7 +25,7 @@ Two problems:
 
 1. **Placement is underspecified.** A governance action anchor is a **CIP-108**
    JSON-LD document (`@context`, `hashAlgorithm`, `body`, `authors`). "In the
-   anchor metadata" doesn't say *where*. A bare top-level object sits outside
+   anchor metadata" doesn't say _where_. A bare top-level object sits outside
    `body`, so it is **not** part of the canonicalized body the author witness
    signs, and a JSON-LD processor that re-serializes from the expanded form can
    drop it (it has no `@context` term, so it expands to nothing).
@@ -42,11 +42,11 @@ of the canonicalized, author-witnessed body.
 
 ## Summary of changes
 
-| # | Change |
-|:--|:-------|
-| 1 | The link object moves to **`body.cip179`** (inside the CIP-108 body). |
-| 2 | `kind` value shortens from `"cardano-governance-survey-link"` to **`"survey-link"`** (the `cip179` key already namespaces it). |
-| 3 | The anchor's **`@context` MUST define the CIP-179 terms** (new requirement). |
+| #   | Change                                                                                                                         |
+| :-- | :----------------------------------------------------------------------------------------------------------------------------- |
+| 1   | The link object moves to **`body.cip179`** (inside the CIP-108 body).                                                          |
+| 2   | `kind` value shortens from `"cardano-governance-survey-link"` to **`"survey-link"`** (the `cip179` key already namespaces it). |
+| 3   | The anchor's **`@context` MUST define the CIP-179 terms** (new requirement).                                                   |
 
 ---
 
@@ -82,6 +82,7 @@ JSON block (in `### Governance Action Linkage`) with:
 > covered by the author witness, rather than being silently dropped.
 >
 > Field notes:
+>
 > - `specVersion` — the CIP-179 revision the link conforms to (integer); a
 >   reader MAY use it to gate how it interprets later revisions.
 > - `kind` — discriminator; MUST be `"survey-link"` for a survey link.

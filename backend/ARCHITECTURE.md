@@ -157,7 +157,7 @@ load-bearing for the verifiability story, not just hygiene.
   (§6.6): the **weighted, content-addressed** tally (`weightedTally*` → the
   hashed artifact) uses BigInt aggregates and returns ratios as integer
   `{numerator, denominator}` pairs, never floats. Note this applies to the
-  *hashed* path only: `tally.ts` is the unweighted, count-based **display**
+  _hashed_ path only: `tally.ts` is the unweighted, count-based **display**
   tally (bar fill fractions, mean/median), which uses floats and is never
   hashed — a presentation helper that happens to live in the package.
 

@@ -1,12 +1,12 @@
 # cip-179
 
 A pure, side-effect-free TypeScript library for the
-[CIP-179](../cip-179.md) *On-Chain Surveys and Polls* metadata format
+[CIP-179](../cip-179.md) _On-Chain Surveys and Polls_ metadata format
 (metadata label `17`, spec version 4).
 
 It does three things, all without any I/O:
 
-1. **Encode** ergonomic domain types into a generic Cardano *metadatum* tree.
+1. **Encode** ergonomic domain types into a generic Cardano _metadatum_ tree.
 2. **Decode** a metadatum tree back into domain types (total; throws
    `Cip179DecodeError` with a path on malformed input).
 3. **Validate** the cross-field invariants the CDDL can't express (option
@@ -22,11 +22,11 @@ universal on-the-wire shape of `transaction_metadatum`:
 
 ```ts
 type Metadatum =
-  | bigint                              // int
-  | string                             // text
-  | Uint8Array                         // bytes
-  | ReadonlyArray<Metadatum>           // array
-  | ReadonlyMap<Metadatum, Metadatum>  // map
+  | bigint // int
+  | string // text
+  | Uint8Array // bytes
+  | ReadonlyArray<Metadatum> // array
+  | ReadonlyMap<Metadatum, Metadatum>; // map
 ```
 
 `encodePayload` / `encodeMetadata` produce this tree; hand it to whatever
@@ -50,7 +50,7 @@ Long titles, descriptions, prompts and tlock ciphertext are exposed as plain
 only at encode time; decoding rejoins. Text is split on code-point boundaries so
 chunks are always valid UTF-8.
 
-### What validation does *not* cover
+### What validation does _not_ cover
 
 `validateDefinition` / `validateResponse` are pure and check only what's
 determinable from the data itself. Everything requiring ledger state is left to
@@ -67,7 +67,7 @@ import {
   validateDefinition,
   Role,
   type Cip179Payload,
-} from "cip-179"
+} from "cip-179";
 
 const payload: Cip179Payload = {
   type: "definitions",
@@ -91,16 +91,16 @@ const payload: Cip179Payload = {
       ],
     },
   ],
-}
+};
 
-const problems = validateDefinition(payload.definitions[0])
-if (problems.length) throw new Error(problems.join("; "))
+const problems = validateDefinition(payload.definitions[0]);
+if (problems.length) throw new Error(problems.join("; "));
 
 // Generic metadatum map { 17 => payload }; serialize with any Cardano library.
-const metadatum = encodeMetadata(payload)
+const metadatum = encodeMetadata(payload);
 
 // …later, after some library parses the CBOR back into a Metadatum:
-const decoded = decodeMetadata(metadatum)
+const decoded = decodeMetadata(metadatum);
 ```
 
 ## CBOR (not included, by design)
@@ -126,12 +126,12 @@ pnpm build
 
 ## Layout
 
-| File | Purpose |
-|:-----|:--------|
+| File               | Purpose                                              |
+| :----------------- | :--------------------------------------------------- |
 | `src/metadatum.ts` | Generic metadatum model + chunked text/bytes helpers |
-| `src/constants.ts` | Label, spec version, tags, roles, method URNs |
-| `src/types.ts` | Domain types |
-| `src/encode.ts` | Domain → metadatum |
-| `src/decode.ts` | Metadatum → domain |
-| `src/validate.ts` | Pure semantic validation |
-| `src/errors.ts` | `Cip179DecodeError` / `Cip179EncodeError` |
+| `src/constants.ts` | Label, spec version, tags, roles, method URNs        |
+| `src/types.ts`     | Domain types                                         |
+| `src/encode.ts`    | Domain → metadatum                                   |
+| `src/decode.ts`    | Metadatum → domain                                   |
+| `src/validate.ts`  | Pure semantic validation                             |
+| `src/errors.ts`    | `Cip179DecodeError` / `Cip179EncodeError`            |

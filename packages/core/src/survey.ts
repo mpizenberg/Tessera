@@ -209,8 +209,7 @@ function aggregate(
     // reachable while the survey is open — see `cancellationStates`), or the
     // serving tier's finalized-cancelled overlay, which carries that state past
     // close (the artifact records the cancellation; finding 19).
-    const cancelled =
-      cancelState === "verified" || finalizedCancelled.has(key);
+    const cancelled = cancelState === "verified" || finalizedCancelled.has(key);
     const link = linkByKey.get(key);
     const govLink =
       link && link.endEpoch === record.definition.endEpoch ? link : null;

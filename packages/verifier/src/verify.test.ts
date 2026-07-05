@@ -18,11 +18,7 @@ import {
   type ResponseRecord,
 } from "@tessera/core";
 
-import {
-  diffResponseSets,
-  verifyArtifact,
-  type VerifyInputs,
-} from "./verify";
+import { diffResponseSets, verifyArtifact, type VerifyInputs } from "./verify";
 
 // --- fixtures ------------------------------------------------------------------
 
@@ -325,8 +321,14 @@ describe("verifyArtifact", () => {
     const rA2 = response("33".repeat(32), CRED_A, 1, 200); // "no", same slot
     const tieBundle: SurveyBundle = { ...bundle, responses: [rA1, rA2] };
     const tieProofs = new Map<string, TxProof | null>([
-      [rA1.txHash, { requiredSigners: ["a1".repeat(28)], nativeScripts: [], votes: [] }],
-      [rA2.txHash, { requiredSigners: ["a1".repeat(28)], nativeScripts: [], votes: [] }],
+      [
+        rA1.txHash,
+        { requiredSigners: ["a1".repeat(28)], nativeScripts: [], votes: [] },
+      ],
+      [
+        rA2.txHash,
+        { requiredSigners: ["a1".repeat(28)], nativeScripts: [], votes: [] },
+      ],
     ]);
     const responders = [
       {
