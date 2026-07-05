@@ -32,6 +32,7 @@ import {
   type TallyArtifact,
 } from "@tessera/core";
 import { KoiosDataSource, KoiosTallyInputs } from "@tessera/koios";
+import { fetchBeacon, revealWithBeacon } from "@tessera/tlock";
 
 import { diffResponseSets, linkedActionIdFor, verifyArtifact } from "./verify";
 
@@ -182,6 +183,16 @@ async function main(): Promise<void> {
     blockIndices,
     proofs,
     weights: new KoiosTallyInputs(config),
+    // Sealed reveal, wired independently of the backend: fetch (and BLS-verify)
+    // the drand beacon ourselves, then decrypt offline. Unused for public
+    // artifacts.
+    reveal: async (records, { round }) => {
+      const beacon = await fetchBeacon(round);
+      return revealWithBeacon(
+        records.map((r) => r.response),
+        beacon,
+      );
+    },
   });
 
   for (const note of preNotes) console.warn(`note: ${note}`);

@@ -21,6 +21,7 @@
   "dependencies": {
     "@tessera/core": "workspace:*",
     "@tessera/koios": "workspace:*",
+    "@tessera/tlock": "workspace:*",
     "cip-179": "workspace:*"
   },
   "devDependencies": {

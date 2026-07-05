@@ -233,6 +233,8 @@ describe("verifyArtifact", () => {
     expect(result.diffs).toEqual([]);
     expect(result.match).toBe(true);
     expect(result.rebuiltHash).toBe(result.receivedHash);
+    // Public regression: a public survey still rebuilds as sealed:false.
+    expect(result.rebuilt.sealed).toBe(false);
   });
 
   it("MISMATCHes a tampered aggregate, naming the difference", async () => {
@@ -402,6 +404,190 @@ describe("verifyArtifact", () => {
     const result = await verifyArtifact(inputs({ weights: flakyWeights }));
     expect(result.match).toBe(true); // everything else re-verified
     expect(result.notes.join("\n")).toContain("not independently re-fetchable");
+  });
+});
+
+// --- Sealed surveys: reveal with an independently fetched beacon -------------
+//
+// A sealed artifact commits each responder's REVEALED answers; the verifier
+// rebuilds them by decrypting the on-chain ciphertexts with its own beacon
+// (stubbed here — no crypto). MATCH means the committed answers reproduce; a
+// tampered answer MISMATCHes even when weight/tx are untouched.
+
+describe("verifyArtifact — sealed survey", () => {
+  const QUICKNET_HEX =
+    "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971";
+  const DEF_SEALED: SurveyDefinition = {
+    ...DEF,
+    submissionMode: {
+      type: "sealed",
+      chainHash: hexToBytes(QUICKNET_HEX),
+      round: 100,
+      paddingSize: 64,
+    },
+  };
+
+  /** A sealed response record (opaque ciphertext; the stub reveal decrypts it). */
+  function sealedRecord(txHash: string, cred: Credential): ResponseRecord {
+    return {
+      txHash,
+      slot: 200,
+      epochNo: 499,
+      responseIndex: 0,
+      response: {
+        specVersion: 4,
+        surveyRef: { txId: hexToBytes(SURVEY_TX), index: 0 },
+        role: Role.Stakeholder,
+        credential: cred,
+        answers: { type: "sealed", ciphertext: hexToBytes("ab".repeat(16)) },
+      },
+    };
+  }
+  const publicAnswers = (optionIndex: number) => ({
+    type: "public" as const,
+    answers: [{ type: "singleChoice" as const, questionIndex: 0, optionIndex }],
+  });
+
+  const sA = sealedRecord("77".repeat(32), CRED_A);
+  const sB = sealedRecord("88".repeat(32), CRED_B);
+  const revealed = new Map([
+    [sA.txHash, { ...sA.response, answers: publicAnswers(0) }],
+    [sB.txHash, { ...sB.response, answers: publicAnswers(1) }],
+  ]);
+  const reveal: VerifyInputs["reveal"] = async (records) =>
+    records.map((r) => revealed.get(r.txHash) ?? null);
+
+  const sealedBundle: SurveyBundle = {
+    ...bundle,
+    survey: { ...bundle.survey, definition: DEF_SEALED },
+    responses: [sA, sB],
+  };
+  const sealedProofs = new Map<string, TxProof | null>([
+    [
+      sA.txHash,
+      { requiredSigners: ["a1".repeat(28)], nativeScripts: [], votes: [] },
+    ],
+    [
+      sB.txHash,
+      { requiredSigners: ["b2".repeat(28)], nativeScripts: [], votes: [] },
+    ],
+  ]);
+  const sealedBlockIndices = new Map([
+    [sA.txHash, 0],
+    [sB.txHash, 1],
+  ]);
+
+  // The artifact a correct emitter produces: responders carry the REVEALED
+  // (public) responses and commit their answers.
+  const sealedResponders = [
+    {
+      credentialKey: credentialKey(CRED_A),
+      weight: 100n,
+      txHash: sA.txHash,
+      responseIndex: 0,
+      response: revealed.get(sA.txHash)!,
+    },
+    {
+      credentialKey: credentialKey(CRED_B),
+      weight: 7n,
+      txHash: sB.txHash,
+      responseIndex: 0,
+      response: revealed.get(sB.txHash)!,
+    },
+  ];
+  function sealedArtifact(): TallyArtifact {
+    return {
+      tally: {
+        rulesetHash: rulesetHash(),
+        network: "preview",
+        survey: { txId: SURVEY_TX, index: 0, endEpoch: END_EPOCH },
+        sealed: true,
+        perRole: [
+          {
+            role: Role.Stakeholder,
+            total: "1000",
+            responders: toArtifactResponders(sealedResponders, {
+              revealedAnswers: true,
+            }),
+            questions: toArtifactQuestions(
+              weightedTallySurvey(DEF_SEALED, sealedResponders),
+            ),
+          },
+        ],
+      },
+      provenance: {
+        source: { provider: "koios", baseUrl: "x" },
+        fetchedAt: 1,
+        byRole: [{ role: 3, endpoint: "account_stake_history" }],
+        sealedReveal: {
+          chainHash: QUICKNET_HEX,
+          round: 100,
+          beacon: {
+            round: 100,
+            randomness: "be".repeat(16),
+            signature: "51".repeat(48),
+          },
+        },
+      },
+    };
+  }
+  const sealedInputs = (overrides: Partial<VerifyInputs> = {}): VerifyInputs =>
+    inputs({
+      bundle: sealedBundle,
+      proofs: sealedProofs,
+      blockIndices: sealedBlockIndices,
+      artifact: sealedArtifact(),
+      reveal,
+      ...overrides,
+    });
+
+  it("MATCHes a sealed artifact by revealing with the stubbed beacon", async () => {
+    const result = await verifyArtifact(sealedInputs());
+    expect(result.notes).toEqual([]);
+    expect(result.diffs).toEqual([]);
+    expect(result.match).toBe(true);
+    expect(result.rebuilt.sealed).toBe(true);
+  });
+
+  it("MISMATCHes a tampered committed answer even when weight and tx match", async () => {
+    const artifact = sealedArtifact();
+    const role = artifact.tally.perRole[0]!;
+    const tampered: TallyArtifact = {
+      ...artifact,
+      tally: {
+        ...artifact.tally,
+        perRole: [
+          {
+            ...role,
+            responders: role.responders.map((r) =>
+              r.credential === credentialKey(CRED_A)
+                ? // Claim A answered option 1 ("no") — but the ciphertext reveals 0.
+                  {
+                    ...r,
+                    answers: toArtifactResponders(
+                      [
+                        {
+                          ...sealedResponders[0]!,
+                          response: revealed.get(sB.txHash)!,
+                        },
+                      ],
+                      { revealedAnswers: true },
+                    )[0]!.answers,
+                  }
+                : r,
+            ),
+          },
+        ],
+      },
+    };
+    const result = await verifyArtifact(sealedInputs({ artifact: tampered }));
+    expect(result.match).toBe(false);
+    expect(result.diffs.join("\n")).toContain("committed answers differ");
+  });
+
+  it("throws when a sealed artifact is verified without a reveal function", async () => {
+    const { reveal: _omit, ...noReveal } = sealedInputs();
+    await expect(verifyArtifact(noReveal)).rejects.toThrow(/reveal/);
   });
 });
 

@@ -14,11 +14,12 @@
  * backend that omits or alters responses cannot reproduce the hash.
  */
 
-import { validateResponse } from "cip-179";
+import { validateResponse, type SurveyResponse } from "cip-179";
 
 import {
   RULESET_DESCRIPTOR,
   artifactHash,
+  auditRevealedResponses,
   bytesToHex,
   cancellationVerified,
   credentialKey,
@@ -38,6 +39,7 @@ import {
   type TxProof,
   type WeightedResponder,
 } from "@tessera/core";
+import { isQuicknet } from "@tessera/tlock";
 
 /** Everything the rebuild needs — all independently (re)fetched by the CLI. */
 export interface VerifyInputs {
@@ -53,6 +55,16 @@ export interface VerifyInputs {
   readonly proofs: ReadonlyMap<string, TxProof | null>;
   /** Membership + weights at `end_epoch` (Koios-backed in the CLI). */
   readonly weights: TallyInputSource;
+  /**
+   * Sealed reveal: decrypt the in-window sealed responses with an independently
+   * fetched, BLS-verified beacon (`revealed[i]` aligns with the input record;
+   * null = decrypt/decode failed). Required to verify a sealed artifact — the
+   * CLI wires `@tessera/tlock`; omitted for public artifacts.
+   */
+  readonly reveal?: (
+    records: readonly ResponseRecord[],
+    params: { readonly chainHash: string; readonly round: number },
+  ) => Promise<(SurveyResponse | null)[]>;
 }
 
 export interface VerifyResult {
@@ -85,11 +97,12 @@ export async function rebuildTally(
     index: bundle.survey.ref.index,
     endEpoch,
   };
+  const sealed = def.submissionMode.type === "sealed";
   const base = {
     rulesetHash: rulesetHash(),
     network: inputs.network,
     survey: surveyId,
-    sealed: false,
+    sealed,
   };
 
   // Cancellation first: the earliest owner-proven, in-window cancellation (in
@@ -134,13 +147,56 @@ export async function rebuildTally(
     const blockIndex = inputs.blockIndices.get(r.txHash);
     eligible.push(blockIndex === undefined ? r : { ...r, blockIndex });
   }
-  const best = new Map<string, ResponseRecord>();
-  for (const r of eligible) {
-    const id = `${r.response.role}|${credentialKey(r.response.credential)}`;
-    const prev = best.get(id);
-    if (!prev || laterInChain(r, prev)) best.set(id, r);
+  let counted: ResponseRecord[];
+  if (sealed) {
+    const mode = def.submissionMode;
+    if (mode.type !== "sealed") throw new Error("unreachable");
+    if (!isQuicknet(mode.chainHash)) {
+      // The emitter can't reveal a non-quicknet sealed survey either, so it
+      // emits no artifact. Rebuild an empty tally: a served artifact for one is
+      // spurious, and the loud MISMATCH that follows is the correct verdict.
+      notes.push(
+        "sealed survey on an unsupported (non-quicknet) drand chain — no reveal, empty tally",
+      );
+      return { tally: { ...base, perRole: [] }, notes };
+    }
+    if (!inputs.reveal) {
+      throw new Error(
+        "sealed artifact requires a reveal function (independently fetch the drand beacon)",
+      );
+    }
+    // Reveal → validate → dedup: decrypt the pre-dedup in-window set with an
+    // independently fetched beacon, then dedup only the valid decoded set (the
+    // sealed-reveal + sealed-dedup rules; finding 2). Counted records carry
+    // their decrypted public answers, so the weight/tally code below is shared.
+    const revealed = await inputs.reveal(eligible, {
+      chainHash: bytesToHex(mode.chainHash),
+      round: mode.round,
+    });
+    const audit = auditRevealedResponses(eligible, revealed, def);
+    counted = audit.counted;
+    if (audit.failed.length > 0) {
+      notes.push(`${audit.failed.length} sealed response(s) failed to reveal`);
+    }
+    if (audit.invalid.length > 0) {
+      notes.push(
+        `${audit.invalid.length} revealed response(s) invalid against the definition`,
+      );
+    }
+    if (audit.superseded.length > 0) {
+      notes.push(
+        `${audit.superseded.length} revealed response(s) superseded (latest-wins)`,
+      );
+    }
+  } else {
+    const best = new Map<string, ResponseRecord>();
+    for (const r of eligible) {
+      const id = `${r.response.role}|${credentialKey(r.response.credential)}`;
+      const prev = best.get(id);
+      if (!prev || laterInChain(r, prev)) best.set(id, r);
+    }
+    counted = [...best.values()];
   }
-  const counted = [...best.values()];
 
   // Per role ascending: weights + membership at end_epoch, then the pure
   // weighted tally.
@@ -207,7 +263,10 @@ export async function rebuildTally(
     perRole.push({
       role,
       total,
-      responders: toArtifactResponders(responders),
+      responders: toArtifactResponders(
+        responders,
+        sealed ? { revealedAnswers: true } : undefined,
+      ),
       questions: toArtifactQuestions(weightedTallySurvey(def, responders)),
     });
   }
@@ -251,6 +310,10 @@ function diffTallies(received: TallyBody, rebuilt: TallyBody): string[] {
         diffs.push(
           `role ${role}: ${cred} differs (weight ${r.weight}→${local.weight}, tx ${r.txHash}→${local.txHash})`,
         );
+      } else if (JSON.stringify(local.answers) !== JSON.stringify(r.answers)) {
+        // Sealed responders commit their revealed answers; a tampered ciphertext
+        // or a substituted reveal shows up here even when weight/tx match.
+        diffs.push(`role ${role}: ${cred} committed answers differ`);
       }
     }
     for (const cred of bResp.keys()) {
