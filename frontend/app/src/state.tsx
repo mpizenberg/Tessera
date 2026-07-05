@@ -14,6 +14,7 @@
 import {
   createContext,
   createEffect,
+  createMemo,
   createResource,
   createSignal,
   onCleanup,
@@ -53,7 +54,12 @@ import {
   aggregateSurveyList,
   aggregateSurveys,
   bytesToHex,
+  pageSurveyList,
   type SurveyAggregate,
+  type SurveyListCounts,
+  type SurveyListFilter,
+  type SurveyListParams,
+  type SurveyListPayload,
 } from "@tessera/core";
 import { claimableRoles } from "~/domain/roles";
 import {
@@ -69,21 +75,23 @@ import {
 import { loadAllDocs, putDoc } from "~/enrichment/docStore";
 import type { Credential, Metadatum, SurveyDefinition } from "cip-179";
 
-/** What the eager list resource holds — everything Explore renders from. */
+/** What the eager list resource holds — the first page Explore renders from. */
 export interface SurveyList {
   readonly tip: ChainTip;
   readonly surveys: readonly SurveyAggregate[];
   /** True when the source's scan may have missed records (paging cap hit). */
   readonly incomplete?: boolean;
+  /** Global per-chip totals over the search-matching set. */
+  readonly counts: SurveyListCounts;
+  /** Continuation for the next page, or null when this page is the last. */
+  readonly nextCursor: string | null;
 }
 
-export type ExploreFilter =
-  | "all"
-  | "linked"
-  | "active"
-  | "sealed"
-  | "public"
-  | "mine";
+/** The Explore filter chips — exactly the shared paged-list filters. */
+export type ExploreFilter = SurveyListFilter;
+
+/** Page size for the Explore list (first page and each "show more"). */
+const PAGE_SIZE = 50;
 
 export interface UiState {
   filter: ExploreFilter;
@@ -129,7 +137,18 @@ const SLOW_AFTER_MS = 150_000;
 interface AppState {
   readonly config: AppConfig;
   readonly source: DataSource;
+  /**
+   * The first Explore page for the active filter/search (re-fetched whenever
+   * either changes); later pages accumulate in {@link moreSurveys}.
+   */
   readonly list: Resource<SurveyList>;
+  /** Pages 2+ for the current filter/search, appended by {@link loadMore}. */
+  readonly moreSurveys: Accessor<readonly SurveyAggregate[]>;
+  /** The live continuation cursor, advanced by loads; null = all loaded. */
+  readonly nextCursor: Accessor<string | null>;
+  readonly loadingMore: Accessor<boolean>;
+  /** Fetch the next page and append it (no-op while loading or exhausted). */
+  loadMore(): void;
   /**
    * Backend operational health (the Explore footer), or null when the active
    * source has none to report (direct-Koios mode). Refetched by `reload()`.
@@ -249,19 +268,109 @@ export const AppProvider: ParentComponent = (props) => {
     ? new IndexerDataSource(indexerUrl, config.network)
     : new KoiosDataSource(config, () => koiosToken());
 
-  const [list, { refetch }] = createResource<SurveyList>(async () => {
-    // One bounded read regardless of participation volume: responses arrive
-    // pre-deduped as per-survey counts, and governance-link failures are
-    // already absorbed source-side (best-effort enrichment).
-    const payload = await source.surveyList();
-    return {
-      tip: payload.tip,
-      surveys: aggregateSurveyList(payload),
-      ...(payload.incomplete !== undefined && {
-        incomplete: payload.incomplete,
-      }),
-    };
+  // Wallet identity is declared before the list resource because the paged
+  // list's `mine` filter/count matches survey owners against its credentials.
+  const [wallet, setWallet] = createSignal<ConnectedWallet | null>(null);
+  const walletCredentialKeys = createMemo<readonly string[]>(() => {
+    const id = wallet()?.identity;
+    if (!id) return [];
+    return [id.payment, id.stake]
+      .filter((c) => c !== undefined)
+      .map((c) => `${c.kind}:${c.hashHex}`);
   });
+
+  const [ui, setUi] = createStore<UiState>({
+    filter: "all",
+    search: "",
+    pro: false,
+  });
+
+  // One page through the seam: server-side when the source implements the
+  // paged contract (the indexer), otherwise page the full one-shot payload in
+  // memory with the same core semantics (direct-Koios mode). The full payload
+  // is cached across filter/search/page changes — one Koios scan per reload,
+  // not one per chip click.
+  let fullListCache: Promise<SurveyListPayload> | null = null;
+  const fetchPage = (params: SurveyListParams): Promise<SurveyListPayload> => {
+    if (source.surveyListPage) return source.surveyListPage(params);
+    fullListCache ??= source.surveyList();
+    // A failed scan must not be cached as "the list" forever.
+    fullListCache.catch(() => {
+      fullListCache = null;
+    });
+    return fullListCache.then((full) => pageSurveyList(full, params));
+  };
+
+  const pageParams = createMemo(
+    (): Omit<SurveyListParams, "cursor" | "limit"> => ({
+      filter: ui.filter,
+      search: ui.search,
+      credentials: walletCredentialKeys(),
+    }),
+  );
+
+  const [list, { refetch }] = createResource<SurveyList, string>(
+    () => JSON.stringify(pageParams()),
+    async () => {
+      // One bounded read regardless of participation volume: responses arrive
+      // pre-deduped as per-survey counts, governance-link failures are
+      // absorbed source-side, and pagination bounds the survey rows too.
+      const payload = await fetchPage({ ...pageParams(), limit: PAGE_SIZE });
+      return {
+        tip: payload.tip,
+        surveys: aggregateSurveyList(payload),
+        counts: payload.counts ?? {
+          all: 0,
+          linked: 0,
+          active: 0,
+          sealed: 0,
+          public: 0,
+          mine: 0,
+        },
+        nextCursor: payload.nextCursor ?? null,
+        ...(payload.incomplete !== undefined && {
+          incomplete: payload.incomplete,
+        }),
+      };
+    },
+  );
+
+  // Pages 2+ accumulate here and reset whenever the first page changes (a
+  // filter/search change or a reload re-keys the resource above).
+  const [moreSurveys, setMoreSurveys] = createSignal<
+    readonly SurveyAggregate[]
+  >([]);
+  const [nextCursor, setNextCursor] = createSignal<string | null>(null);
+  const [loadingMore, setLoadingMore] = createSignal(false);
+  createEffect(() => {
+    const l = list.error ? undefined : list();
+    setMoreSurveys([]);
+    setNextCursor(l?.nextCursor ?? null);
+  });
+  const loadMore = (): void => {
+    const cursor = nextCursor();
+    if (!cursor || loadingMore()) return;
+    const key = JSON.stringify(pageParams());
+    setLoadingMore(true);
+    void (async () => {
+      try {
+        const payload = await fetchPage({
+          ...pageParams(),
+          limit: PAGE_SIZE,
+          cursor,
+        });
+        // Params changed mid-flight: the reset effect owns the state now.
+        if (JSON.stringify(pageParams()) !== key) return;
+        setMoreSurveys((prev) => [...prev, ...aggregateSurveyList(payload)]);
+        setNextCursor(payload.nextCursor ?? null);
+      } catch (err) {
+        // Keep the cursor so the button retries; the first page still shows.
+        console.warn(`load more failed: ${String(err)}`);
+      } finally {
+        setLoadingMore(false);
+      }
+    })();
+  };
 
   // Health is footer chrome, never load-bearing: absent in direct-Koios mode
   // (the seam method is undefined there) and a failed fetch just hides the
@@ -275,15 +384,10 @@ export const AppProvider: ParentComponent = (props) => {
   // ErrorBoundary), so the bare promise must not also bubble as an unhandled
   // rejection. `refetch()` may return a value or a promise, hence Promise.resolve.
   const safeRefetch = (): void => {
+    fullListCache = null; // direct-Koios mode: a reload means a fresh scan
     void Promise.resolve(refetch()).catch(() => {});
     void Promise.resolve(refetchHealth()).catch(() => {});
   };
-
-  const [ui, setUi] = createStore<UiState>({
-    filter: "all",
-    search: "",
-    pro: false,
-  });
 
   const [ipfsTokens, setIpfsTokensStore] =
     createStore<ProviderTokens>(loadProviderTokens());
@@ -425,7 +529,7 @@ export const AppProvider: ParentComponent = (props) => {
     setOptimisticSurveys((prev) => prev.filter((a) => !realKeys.has(a.key)));
   });
 
-  const [wallet, setWallet] = createSignal<ConnectedWallet | null>(null);
+  // (wallet signal is declared above the list resource — see there.)
   const [connecting, setConnecting] = createSignal(false);
   const [connectError, setConnectError] = createSignal<string | null>(null);
   const [activeRole, setActiveRole] = createSignal<number | null>(null);
@@ -509,6 +613,10 @@ export const AppProvider: ParentComponent = (props) => {
     config,
     source,
     list,
+    moreSurveys,
+    nextCursor,
+    loadingMore,
+    loadMore,
     health,
     reload: safeRefetch,
     ui,

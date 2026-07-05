@@ -12,6 +12,7 @@ import { KoiosDataSource, KoiosTallyInputs } from "@tessera/koios";
 
 import type { ServerConfig } from "./config";
 import { finalizeClosedSurveys } from "./finalize";
+import { buildSurveyIndex } from "./listIndex";
 import type { BackendStore } from "./store";
 import { validateNewResponses } from "./validate";
 
@@ -89,7 +90,8 @@ export async function refreshSnapshot(
 
     const payload = toJsonSafe({ records, tip, govLinks });
     const payloadBytes = JSON.stringify(payload).length;
-    await store.put({ payload, fetchedAt: Math.floor(Date.now() / 1000) });
+    const fetchedAt = Math.floor(Date.now() / 1000);
+    await store.put({ payload, fetchedAt });
 
     console.log(
       `snapshot refreshed: ${records.surveys.length} surveys, ` +
@@ -123,6 +125,25 @@ export async function refreshSnapshot(
       tip,
     ).catch((err) =>
       console.warn(`finalization failed (will retry): ${String(err)}`),
+    );
+
+    // Materialize the paged Explore-list rows LAST, so the index reflects
+    // this run's validation/finalization (a survey finalized as cancelled
+    // above flips its row's overlay flag in the same refresh). Sharing the
+    // snapshot's fetchedAt keeps the list route's ETag in step with the
+    // per-survey routes serving the blob.
+    await store.replaceSurveyIndex(
+      buildSurveyIndex(
+        records,
+        tip,
+        govLinks,
+        await store.finalizedCancelledKeys(),
+      ),
+      {
+        tip: JSON.stringify(toJsonSafe(tip)),
+        incomplete: records.incomplete === true,
+        fetchedAt,
+      },
     );
 
     await recordRun({

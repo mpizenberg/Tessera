@@ -18,6 +18,7 @@ import type {
 
 import { loadConfig } from "./config";
 import { createApp } from "./http";
+import { buildSurveyIndex } from "./listIndex";
 import type { CachedSnapshot } from "./store";
 import { memBackendStore, type MemBackendStore } from "./store-mem";
 
@@ -26,6 +27,36 @@ const memStore = (initial: CachedSnapshot | null): MemBackendStore =>
 
 function appWith(store: MemBackendStore) {
   return createApp(loadConfig({}), store, { compress: false });
+}
+
+/**
+ * Materialize the paged-list index from the fixture snapshot, as the refresh
+ * does — the list route reads only these rows and the meta envelope.
+ */
+async function seedIndex(store: MemBackendStore): Promise<void> {
+  await store.replaceSurveyIndex(
+    buildSurveyIndex(
+      {
+        surveys: [surveyA, surveyB],
+        responses,
+        cancellations: [cancellation],
+      },
+      tip,
+      [],
+      await store.finalizedCancelledKeys(),
+    ),
+    {
+      tip: JSON.stringify(toJsonSafe(tip)),
+      incomplete: false,
+      fetchedAt: FETCHED_AT,
+    },
+  );
+}
+
+async function indexedStore(): Promise<MemBackendStore> {
+  const store = memStore(snapshot);
+  await seedIndex(store);
+  return store;
 }
 
 // --- fixture snapshot --------------------------------------------------------
@@ -41,27 +72,45 @@ const tip: ChainTip = {
   govActionLifetime: 6,
 };
 
-// Routes never look inside a definition — a minimal stand-in keeps the fixture
-// readable without hand-building every CIP-179 field.
-const def = { endEpoch: 510 } as unknown as SurveyDefinition;
+const cred1: Credential = { type: "key", keyHash: hexToBytes("11") };
+const cred2: Credential = { type: "script", scriptHash: hexToBytes("22") };
 
+// The per-survey routes never look inside a definition, but the list index
+// builder aggregates real fields (owner, submission mode, searchable text) —
+// so the stand-in carries the minimum honest set.
+const defFor = (
+  endEpoch: number,
+  owner: Credential,
+  title: string,
+): SurveyDefinition =>
+  ({
+    specVersion: 4,
+    owner,
+    title,
+    description: "",
+    eligibleRoles: [],
+    endEpoch,
+    submissionMode: { type: "public" },
+    questions: [],
+  }) as unknown as SurveyDefinition;
+
+// A is open at the fixture tip (epoch 500 ≤ 510) and owned by cred1;
+// B closed (499 < 500) and owned by cred2 — so buckets, the `active`/`mine`
+// filters, and search all have something to distinguish.
 const surveyA: SurveyRecord = {
   txHash: TX_A,
   slot: 900_000,
   epochNo: 499,
   ref: { txId: hexToBytes(TX_A), index: 0 },
-  definition: def,
+  definition: defFor(510, cred1, "alpha budget"),
 };
 const surveyB: SurveyRecord = {
   txHash: TX_B,
   slot: 910_000,
   epochNo: 499,
   ref: { txId: hexToBytes(TX_B), index: 1 },
-  definition: def,
+  definition: defFor(499, cred2, "beta poll"),
 };
-
-const cred1: Credential = { type: "key", keyHash: hexToBytes("11") };
-const cred2: Credential = { type: "script", scriptHash: hexToBytes("22") };
 
 function response(
   survey: SurveyRecord,
@@ -126,9 +175,8 @@ describe("before the first refresh", () => {
 });
 
 describe("GET /api/surveys", () => {
-  const app = appWith(memStore(snapshot));
-
   it("serves the list payload with deduped response counts", async () => {
+    const app = appWith(await indexedStore());
     const res = await app.request("/api/surveys");
     expect(res.status).toBe(200);
     const body = fromJsonSafe(await res.json()) as Record<string, unknown>;
@@ -141,9 +189,19 @@ describe("GET /api/surveys", () => {
     });
     expect((body["tip"] as ChainTip).epoch).toBe(tip.epoch);
     expect(body["fetchedAt"]).toBe(FETCHED_AT);
+    expect(body["nextCursor"]).toBeNull();
+    expect(body["counts"]).toEqual({
+      all: 2,
+      linked: 0,
+      active: 1,
+      sealed: 0,
+      public: 1,
+      mine: 0,
+    });
   });
 
   it("revalidates by fetchedAt: 304 on matching If-None-Match", async () => {
+    const app = appWith(await indexedStore());
     const first = await app.request("/api/surveys");
     const etag = first.headers.get("ETag");
     expect(etag).toBe(`W/"surveys-${FETCHED_AT}"`);
@@ -156,14 +214,14 @@ describe("GET /api/surveys", () => {
 
   it("lists finalized-cancelled survey keys, not normally-finalized ones", async () => {
     const store = memStore(snapshot);
-    void store.putArtifact({
+    await store.putArtifact({
       surveyKey: `${TX_A}:0`,
       endEpoch: 510,
       artifactHash: "a1".repeat(32),
       artifact: `{"tally":{"perRole":[{"role":3}]},"provenance":{}}`,
       createdAt: 1,
     });
-    void store.putArtifact({
+    await store.putArtifact({
       surveyKey: `${TX_B}:1`,
       endEpoch: 510,
       artifactHash: "b2".repeat(32),
@@ -172,16 +230,85 @@ describe("GET /api/surveys", () => {
         `"slot":970000,"epoch":500},"perRole":[]},"provenance":{}}`,
       createdAt: 1,
     });
+    // The overlay is baked into the rows at refresh time.
+    await seedIndex(store);
     const res = await appWith(store).request("/api/surveys");
     const body = fromJsonSafe(await res.json()) as Record<string, unknown>;
     expect(body["finalizedCancelled"]).toEqual([`${TX_B}:1`]);
   });
 
   it("finalizedCancelled is empty with no artifacts", async () => {
+    const app = appWith(await indexedStore());
     const body = fromJsonSafe(
       await (await app.request("/api/surveys")).json(),
     ) as Record<string, unknown>;
     expect(body["finalizedCancelled"]).toEqual([]);
+  });
+});
+
+describe("GET /api/surveys pagination, filters, search", () => {
+  const keysOf = (body: Record<string, unknown>): string[] =>
+    (body["surveys"] as { txHash: string }[]).map(
+      (s) => `${s.txHash}:${s.txHash === TX_A ? 0 : 1}`,
+    );
+  const getBody = async (
+    app: ReturnType<typeof appWith>,
+    qs: string,
+  ): Promise<Record<string, unknown>> => {
+    const res = await app.request(`/api/surveys${qs}`);
+    expect(res.status).toBe(200);
+    return fromJsonSafe(await res.json()) as Record<string, unknown>;
+  };
+
+  it("walks pages by cursor: open bucket first, then closed", async () => {
+    const app = appWith(await indexedStore());
+    const page1 = await getBody(app, "?limit=1");
+    expect(keysOf(page1)).toEqual([`${TX_A}:0`]); // open bucket sorts first
+    expect(page1["nextCursor"]).toBeTypeOf("string");
+    // Page slices ride restricted to their page's surveys.
+    expect(page1["responseCounts"]).toEqual({ [`${TX_A}:0`]: 2 });
+    expect((page1["cancellations"] as unknown[]).length).toBe(0);
+
+    const page2 = await getBody(
+      app,
+      `?limit=1&cursor=${encodeURIComponent(page1["nextCursor"] as string)}`,
+    );
+    expect(keysOf(page2)).toEqual([`${TX_B}:1`]);
+    expect((page2["cancellations"] as unknown[]).length).toBe(1);
+    expect(page2["nextCursor"]).toBeNull();
+  });
+
+  it("filters: active excludes the closed survey", async () => {
+    const app = appWith(await indexedStore());
+    const body = await getBody(app, "?filter=active");
+    expect(keysOf(body)).toEqual([`${TX_A}:0`]);
+  });
+
+  it("filters: mine matches owners against the given credentials", async () => {
+    const app = appWith(await indexedStore());
+    const body = await getBody(app, "?filter=mine&credentials=key:11");
+    expect(keysOf(body)).toEqual([`${TX_A}:0`]);
+    expect((body["counts"] as { mine: number }).mine).toBe(1);
+    const none = await getBody(app, "?filter=mine");
+    expect(none["surveys"]).toEqual([]);
+  });
+
+  it("search ANDs terms and scopes counts to matches", async () => {
+    const app = appWith(await indexedStore());
+    const body = await getBody(app, "?q=beta");
+    expect(keysOf(body)).toEqual([`${TX_B}:1`]);
+    expect((body["counts"] as { all: number }).all).toBe(1);
+    const both = await getBody(app, "?q=alpha%20budget");
+    expect(keysOf(both)).toEqual([`${TX_A}:0`]);
+  });
+
+  it("rejects malformed paging params", async () => {
+    const app = appWith(await indexedStore());
+    expect((await app.request("/api/surveys?limit=0")).status).toBe(400);
+    expect((await app.request("/api/surveys?limit=9999")).status).toBe(400);
+    expect((await app.request("/api/surveys?limit=abc")).status).toBe(400);
+    expect((await app.request("/api/surveys?filter=bogus")).status).toBe(400);
+    expect((await app.request("/api/surveys?cursor=junk")).status).toBe(400);
   });
 });
 

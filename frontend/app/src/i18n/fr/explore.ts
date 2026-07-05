@@ -46,6 +46,10 @@ const explore: Messages = {
 
   noMatch: "Aucun sondage correspondant.",
 
+  loadMore: "Afficher plus",
+  loadingMore: "Chargement…",
+  shownOfTotal: "{shown} sur {total}",
+
   answeredTitle: "Vous avez répondu à ce sondage",
   answeredAria: "répondu",
   badgeYours: "À vous",

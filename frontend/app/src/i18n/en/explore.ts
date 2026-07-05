@@ -50,6 +50,12 @@ const explore = {
 
   noMatch: "No surveys match.",
 
+  // Pagination.
+  loadMore: "Show more",
+  loadingMore: "Loading…",
+  /** {shown} rows loaded out of {total} matching the active filter. */
+  shownOfTotal: "{shown} of {total}",
+
   // Per-row badges and fallbacks.
   answeredTitle: "You answered this survey",
   answeredAria: "answered",

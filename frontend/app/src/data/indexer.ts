@@ -26,6 +26,7 @@ import type {
   DataSource,
   Network,
   SurveyBundle,
+  SurveyListParams,
   SurveyListPayload,
   TallyArtifact,
 } from "@tessera/core";
@@ -65,6 +66,22 @@ export class IndexerDataSource implements DataSource {
   async surveyList(): Promise<SurveyListPayload> {
     const [raw] = await Promise.all([
       this.getJson<unknown>(`${this.baseUrl}/api/surveys`),
+      this.assertNetwork(),
+    ]);
+    return fromJsonSafe(raw) as SurveyListPayload;
+  }
+
+  /** One server-paged Explore page (`?limit&cursor&filter&credentials&q`). */
+  async surveyListPage(params: SurveyListParams): Promise<SurveyListPayload> {
+    const qs = new URLSearchParams({ limit: String(params.limit) });
+    if (params.cursor) qs.set("cursor", params.cursor);
+    if (params.filter && params.filter !== "all")
+      qs.set("filter", params.filter);
+    if (params.credentials?.length)
+      qs.set("credentials", params.credentials.join(","));
+    if (params.search?.trim()) qs.set("q", params.search.trim());
+    const [raw] = await Promise.all([
+      this.getJson<unknown>(`${this.baseUrl}/api/surveys?${qs.toString()}`),
       this.assertNetwork(),
     ]);
     return fromJsonSafe(raw) as SurveyListPayload;

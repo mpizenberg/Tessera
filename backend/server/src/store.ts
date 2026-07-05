@@ -215,8 +215,89 @@ export interface HealthStore {
   incompleteValidationCount(): Promise<number>;
 }
 
-/** What the backend wires together: snapshot cache + tally + scan + health. */
+/**
+ * One materialized row of the paged Explore list (`survey_index`), written by
+ * the refresh from the aggregated snapshot. The `record`/`cancellations`/
+ * `govLinks` columns hold each survey's slice of the wire payload as JSON
+ * text, so a page body is assembled by parse-and-concatenate. The flag
+ * columns mirror the shared pagination semantics in `@tessera/core`'s
+ * `page.ts` (`pageSurveyList` is the executable spec the SQL follows).
+ */
+export interface SurveyIndexRow {
+  /** "<txHex>:<index>". */
+  readonly surveyKey: string;
+  readonly slot: number;
+  readonly endEpoch: number;
+  readonly sealed: boolean;
+  /** Owner-verified cancellation, including the finalized-artifact overlay. */
+  readonly cancelled: boolean;
+  /** Has an epoch-aligned (verified) governance link. */
+  readonly govLinked: boolean;
+  /** `credentialKey` of the definition's owner (the `mine` filter's key). */
+  readonly owner: string;
+  /** Lowercased searchable on-chain text. */
+  readonly haystack: string;
+  /** Wire JSON of the `SurveyRecord`. */
+  readonly record: string;
+  /** Wire JSON of the `CancellationRecord[]` targeting this survey. */
+  readonly cancellations: string;
+  /** Wire JSON of the `GovLink[]` naming this survey (aligned or not). */
+  readonly govLinks: string;
+  readonly responseCount: number;
+  /** The tally artifact finalized this survey as cancelled (overlay flag). */
+  readonly finalizedCancelled: boolean;
+}
+
+/** The page-independent envelope stored alongside the index rows. */
+export interface SurveyIndexMeta {
+  /** Wire JSON of the snapshot's `ChainTip`. */
+  readonly tip: string;
+  readonly incomplete: boolean;
+  /** Versions the list route's ETag; equals the snapshot's `fetchedAt`. */
+  readonly fetchedAt: number;
+}
+
+/** A page query against the survey index (see `@tessera/core` `page.ts`). */
+export interface SurveyPageQuery {
+  /** The snapshot tip's epoch — the open/closed boundary. */
+  readonly tipEpoch: number;
+  readonly filter: import("@tessera/core").SurveyListFilter;
+  /** `credentialKey` strings the `mine` filter matches owners against. */
+  readonly credentials: readonly string[];
+  /** Lowercased AND search terms. */
+  readonly searchTerms: readonly string[];
+  readonly cursor: import("@tessera/core").SurveyCursor | null;
+  /** Rows to return; callers pass limit+1 to detect a next page. */
+  readonly limit: number;
+}
+
+/** Paged Explore-list persistence (the `survey_index` tables). */
+export interface SurveyIndexStore {
+  /** Atomically replace all index rows and the meta envelope. */
+  replaceSurveyIndex(
+    rows: readonly SurveyIndexRow[],
+    meta: SurveyIndexMeta,
+  ): Promise<void>;
+  surveyIndexMeta(): Promise<SurveyIndexMeta | null>;
+  /**
+   * One page in (bucket ASC, slot DESC, key ASC) order, where bucket is
+   * 0 gov-linked / 1 open / 2 closed computed against `tipEpoch`. Each row
+   * carries its computed bucket (the cursor needs it).
+   */
+  surveyIndexPage(
+    q: SurveyPageQuery,
+  ): Promise<(SurveyIndexRow & { bucket: number })[]>;
+  /** Global chip counts over the search-matching set. */
+  surveyIndexCounts(
+    tipEpoch: number,
+    credentials: readonly string[],
+    searchTerms: readonly string[],
+  ): Promise<import("@tessera/core").SurveyListCounts>;
+}
+
+/** What the backend wires together: snapshot + tally + scan + health + list. */
 export type BackendStore = SnapshotStore &
   TallyStore &
   ScanCacheStore &
-  HealthStore;
+  HealthStore &
+  SurveyIndexStore;

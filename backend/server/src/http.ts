@@ -44,9 +44,12 @@ import { cors } from "hono/cors";
 
 import {
   credentialKey,
+  encodeSurveyCursor,
   fromJsonSafe,
+  isSurveyListFilter,
+  parseSurveyCursor,
   refKey,
-  responseCounts,
+  searchTermsOf,
   toJsonSafe,
 } from "@tessera/core";
 import type {
@@ -62,6 +65,10 @@ import type { BackendStore } from "./store";
 
 /** How long `/api/tip` and `/api/pparams` reuse one upstream Koios call. */
 const UPSTREAM_TTL_MS = 20_000;
+
+/** Default and ceiling page sizes for the paged `/api/surveys` list. */
+const DEFAULT_PAGE_LIMIT = 50;
+const MAX_PAGE_LIMIT = 200;
 
 /**
  * Memoize an async producer for `ttlMs`. The in-flight promise is shared, so a
@@ -178,42 +185,79 @@ export function createApp(
     return c.json(body as unknown as Record<string, unknown>);
   });
 
-  // The per-page routes decode the cached wire blob per request and slice
-  // it — the simplest correct thing at today's snapshot size (see file header).
+  // The paged Explore list, answered from the refresh-materialized
+  // `survey_index` rows (no snapshot-blob decode). Query params mirror
+  // `@tessera/core`'s `SurveyListParams`; semantics (ordering, filters,
+  // counts, cursor) are the core `pageSurveyList` spec, implemented in SQL
+  // (`surveyIndexSql.ts`). The finalized-cancelled overlay is baked into the
+  // rows at refresh time, consistent with the snapshot the ETag versions.
   app.get("/api/surveys", async (c) => {
-    const cached = await store.get();
-    if (!cached) return c.json({ error: "snapshot not ready" }, 503);
-    // The finalized-cancelled overlay is not part of the ETag version: a
-    // cancelled artifact emitted mid-refresh shows up at most one refresh
-    // interval late (the next cron bumps `fetchedAt`), and keeping the ETag
-    // snapshot-only keeps the 304 path free of store queries.
-    if (notModified(c, `W/"surveys-${cached.fetchedAt}"`))
+    const meta = await store.surveyIndexMeta();
+    if (!meta) return c.json({ error: "snapshot not ready" }, 503);
+    if (notModified(c, `W/"surveys-${meta.fetchedAt}"`))
       return c.body(null, 304);
-    const { records, tip, govLinks } = fromJsonSafe(
-      cached.payload,
-    ) as SnapshotBody;
+
+    const limit = Number(c.req.query("limit") ?? DEFAULT_PAGE_LIMIT);
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_PAGE_LIMIT)
+      return c.json({ error: "malformed limit" }, 400);
+    const filter = c.req.query("filter") ?? "all";
+    if (!isSurveyListFilter(filter))
+      return c.json({ error: "unknown filter" }, 400);
+    const cursorRaw = c.req.query("cursor");
+    const cursor = cursorRaw ? parseSurveyCursor(cursorRaw) : null;
+    if (cursorRaw && !cursor)
+      return c.json({ error: "malformed cursor" }, 400);
+    const credentials = (c.req.query("credentials") ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const searchTerms = searchTermsOf(c.req.query("q"));
+
+    // Stored values are already wire-form JSON text — the body is assembled
+    // by parse-and-concatenate, never re-encoded through toJsonSafe.
+    const tip = JSON.parse(meta.tip) as { epoch: number };
+    const [rows, counts] = await Promise.all([
+      store.surveyIndexPage({
+        tipEpoch: tip.epoch,
+        filter,
+        credentials,
+        searchTerms,
+        cursor,
+        // One extra row decides `nextCursor` without a second query.
+        limit: limit + 1,
+      }),
+      store.surveyIndexCounts(tip.epoch, credentials, searchTerms),
+    ]);
+    const page = rows.slice(0, limit);
+    const last = page[page.length - 1];
     const now = Math.floor(Date.now() / 1000);
-    return c.json(
-      toJsonSafe({
-        surveys: records.surveys,
-        cancellations: records.cancellations,
-        govLinks,
-        tip,
-        // Counted with the same core dedupe rule the client audit runs, so the
-        // list's numbers and a survey page's tally agree by construction.
-        responseCounts: responseCounts(records.responses),
-        // Surveys finalized as cancelled: the scan can't verify a closed
-        // survey's cancellation (proof: null), so the artifact's verdict rides
-        // along or Explore would show a cancelled-then-closed survey as
-        // "Ended" (finding 19). Sorted for a deterministic body.
-        finalizedCancelled: [...(await store.finalizedCancelledKeys())].sort(),
-        ...(records.incomplete !== undefined && {
-          incomplete: records.incomplete,
-        }),
-        fetchedAt: cached.fetchedAt,
-        ageSeconds: now - cached.fetchedAt,
-      }) as Record<string, unknown>,
-    );
+    return c.json({
+      surveys: page.map((r) => JSON.parse(r.record) as unknown),
+      cancellations: page.flatMap(
+        (r) => JSON.parse(r.cancellations) as unknown[],
+      ),
+      govLinks: page.flatMap((r) => JSON.parse(r.govLinks) as unknown[]),
+      tip,
+      responseCounts: Object.fromEntries(
+        page.map((r) => [r.surveyKey, r.responseCount]),
+      ),
+      finalizedCancelled: page
+        .filter((r) => r.finalizedCancelled)
+        .map((r) => r.surveyKey)
+        .sort(),
+      ...(meta.incomplete && { incomplete: true }),
+      counts,
+      nextCursor:
+        rows.length > limit && last
+          ? encodeSurveyCursor({
+              bucket: last.bucket,
+              slot: last.slot,
+              key: last.surveyKey,
+            })
+          : null,
+      fetchedAt: meta.fetchedAt,
+      ageSeconds: now - meta.fetchedAt,
+    });
   });
 
   app.get("/api/surveys/:txHash/:index", async (c) => {

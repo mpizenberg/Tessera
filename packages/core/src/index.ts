@@ -13,6 +13,7 @@
  */
 
 export * from "./source";
+export * from "./page";
 export * from "./dedupe";
 export * from "./hex";
 export * from "./govLink";

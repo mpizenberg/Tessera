@@ -8,16 +8,31 @@
  * declarations clash with `@types/node` in this package's single tsconfig.
  */
 
+import type { SurveyListCounts } from "@tessera/core";
+
 import type {
   ArtifactRow,
   BackendStore,
   CachedSnapshot,
   RefreshRunRow,
   RefreshTotals,
+  SurveyIndexMeta,
+  SurveyIndexRow,
+  SurveyPageQuery,
   ValidatedResponseRow,
   WeightRow,
 } from "./store";
 import { REFRESH_RUN_RETENTION_SECONDS, validationKey } from "./store";
+import {
+  SURVEY_INDEX_INSERT,
+  SURVEY_INDEX_META_UPSERT,
+  countsFromDb,
+  surveyCountsSql,
+  surveyIndexInsertParams,
+  surveyIndexRowFromDb,
+  surveyPageSql,
+  type DbSurveyIndexRow,
+} from "./surveyIndexSql";
 
 interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
@@ -301,6 +316,58 @@ export function d1BackendStore(db: D1Like): BackendStore {
           stmt.bind(hash, JSON.stringify(metadata ?? null)),
         ),
       );
+    },
+
+    async replaceSurveyIndex(
+      rows: readonly SurveyIndexRow[],
+      meta: SurveyIndexMeta,
+    ): Promise<void> {
+      // db.batch runs as one transaction, so readers never observe rows from
+      // one refresh with the other's meta.
+      const insert = db.prepare(SURVEY_INDEX_INSERT);
+      await db.batch([
+        db.prepare("DELETE FROM survey_index"),
+        ...rows.map((r) => insert.bind(...surveyIndexInsertParams(r))),
+        db
+          .prepare(SURVEY_INDEX_META_UPSERT)
+          .bind(meta.tip, meta.incomplete ? 1 : 0, meta.fetchedAt),
+      ]);
+    },
+    async surveyIndexMeta(): Promise<SurveyIndexMeta | null> {
+      const row = await db
+        .prepare(
+          `SELECT tip, incomplete, fetched_at AS fetchedAt
+           FROM survey_index_meta WHERE id = 1`,
+        )
+        .first<{ tip: string; incomplete: number; fetchedAt: number }>();
+      if (!row) return null;
+      return { ...row, incomplete: row.incomplete !== 0 };
+    },
+    async surveyIndexPage(
+      q: SurveyPageQuery,
+    ): Promise<(SurveyIndexRow & { bucket: number })[]> {
+      const { sql, params } = surveyPageSql(q);
+      const { results } = await db
+        .prepare(sql)
+        .bind(...params)
+        .all<DbSurveyIndexRow>();
+      return results.map(surveyIndexRowFromDb);
+    },
+    async surveyIndexCounts(
+      tipEpoch: number,
+      credentials: readonly string[],
+      searchTerms: readonly string[],
+    ): Promise<SurveyListCounts> {
+      const { sql, params } = surveyCountsSql(
+        tipEpoch,
+        credentials,
+        searchTerms,
+      );
+      const row = await db
+        .prepare(sql)
+        .bind(...params)
+        .first<Record<string, number>>();
+      return countsFromDb(row ?? {});
     },
 
     async putRefreshRun(row: RefreshRunRow): Promise<void> {

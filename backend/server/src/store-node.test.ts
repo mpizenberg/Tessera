@@ -12,7 +12,12 @@ import { DatabaseSync } from "node:sqlite";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { BackendStore, RefreshRunRow } from "./store";
+import type {
+  BackendStore,
+  RefreshRunRow,
+  SurveyIndexRow,
+  SurveyPageQuery,
+} from "./store";
 import { REFRESH_RUN_RETENTION_SECONDS } from "./store";
 import { openBackendStore } from "./store-node";
 
@@ -136,7 +141,130 @@ describe("store-node migration of a pre-runner database", () => {
       "0004_validated_response_linked_action.sql",
       "0005_tx_metadata_cache.sql",
       "0006_refresh_run.sql",
+      "0007_survey_index.sql",
     ]);
+  });
+});
+
+describe("store-node survey_index paging SQL", () => {
+  let store: BackendStore;
+  afterEach(() => store.close());
+
+  const TIP_EPOCH = 500;
+  const row = (
+    key: string,
+    slot: number,
+    over: Partial<SurveyIndexRow> = {},
+  ): SurveyIndexRow => ({
+    surveyKey: key,
+    slot,
+    endEpoch: 510,
+    sealed: false,
+    cancelled: false,
+    govLinked: false,
+    owner: "key:11",
+    haystack: `title of ${key}`,
+    record: `{"k":"${key}"}`,
+    cancellations: "[]",
+    govLinks: "[]",
+    responseCount: 1,
+    finalizedCancelled: false,
+    ...over,
+  });
+  const meta = { tip: `{"epoch":${TIP_EPOCH}}`, incomplete: false, fetchedAt: 7 };
+
+  // linked (bucket 0), two open (bucket 1, newest slot first), one closed.
+  const rows = [
+    row("aa:0", 100, { govLinked: true }),
+    row("bb:0", 300),
+    row("cc:0", 500, { sealed: true }),
+    row("dd:0", 900, { endEpoch: 499 }),
+  ];
+
+  const page = (q: Partial<SurveyPageQuery>) =>
+    store.surveyIndexPage({
+      tipEpoch: TIP_EPOCH,
+      filter: "all",
+      credentials: [],
+      searchTerms: [],
+      cursor: null,
+      limit: 10,
+      ...q,
+    });
+
+  it("orders by bucket, slot desc, key — and follows the keyset cursor", async () => {
+    store = openBackendStore(":memory:");
+    await store.replaceSurveyIndex(rows, meta);
+    expect(await store.surveyIndexMeta()).toEqual(meta);
+
+    const all = await page({});
+    expect(all.map((r) => r.surveyKey)).toEqual([
+      "aa:0",
+      "cc:0",
+      "bb:0",
+      "dd:0",
+    ]);
+    expect(all.map((r) => r.bucket)).toEqual([0, 1, 1, 2]);
+
+    const second = await page({
+      cursor: { bucket: 1, slot: 500, key: "cc:0" },
+      limit: 2,
+    });
+    expect(second.map((r) => r.surveyKey)).toEqual(["bb:0", "dd:0"]);
+  });
+
+  it("applies filters and search terms", async () => {
+    store = openBackendStore(":memory:");
+    await store.replaceSurveyIndex(rows, meta);
+
+    // Active = not cancelled and deadline not passed; the linked row is
+    // active too and still sorts first by bucket.
+    expect((await page({ filter: "active" })).map((r) => r.surveyKey)).toEqual(
+      ["aa:0", "cc:0", "bb:0"],
+    );
+    expect(
+      (await page({ filter: "sealed" })).map((r) => r.surveyKey),
+    ).toEqual(["cc:0"]);
+    expect(
+      (
+        await page({ filter: "mine", credentials: ["key:11"] })
+      ).map((r) => r.surveyKey),
+    ).toHaveLength(4);
+    expect(await page({ filter: "mine", credentials: ["key:99"] })).toEqual(
+      [],
+    );
+    expect(
+      (await page({ searchTerms: ["title", "bb"] })).map((r) => r.surveyKey),
+    ).toEqual(["bb:0"]);
+    // LIKE wildcards in a term must not act as wildcards.
+    expect(await page({ searchTerms: ["%"] })).toEqual([]);
+  });
+
+  it("computes global counts over the search-matching set", async () => {
+    store = openBackendStore(":memory:");
+    await store.replaceSurveyIndex(rows, meta);
+    expect(
+      await store.surveyIndexCounts(TIP_EPOCH, ["key:11"], []),
+    ).toEqual({ all: 4, linked: 1, active: 3, sealed: 1, public: 2, mine: 4 });
+    expect(await store.surveyIndexCounts(TIP_EPOCH, [], ["bb"])).toEqual({
+      all: 1,
+      linked: 0,
+      active: 1,
+      sealed: 0,
+      public: 1,
+      mine: 0,
+    });
+  });
+
+  it("replace is a full swap", async () => {
+    store = openBackendStore(":memory:");
+    await store.replaceSurveyIndex(rows, meta);
+    await store.replaceSurveyIndex([row("ee:0", 50)], {
+      ...meta,
+      fetchedAt: 8,
+    });
+    expect((await page({})).map((r) => r.surveyKey)).toEqual(["ee:0"]);
+    expect((await store.surveyIndexMeta())?.fetchedAt).toBe(8);
   });
 });
 

@@ -16,20 +16,38 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
+import type { SurveyListCounts } from "@tessera/core";
+
 import type {
   ArtifactRow,
   BackendStore,
   CachedSnapshot,
   RefreshRunRow,
   RefreshTotals,
+  SurveyIndexMeta,
+  SurveyIndexRow,
+  SurveyPageQuery,
   ValidatedResponseRow,
   WeightRow,
 } from "./store";
 import { REFRESH_RUN_RETENTION_SECONDS, validationKey } from "./store";
+import {
+  SURVEY_INDEX_INSERT,
+  SURVEY_INDEX_META_UPSERT,
+  countsFromDb,
+  surveyCountsSql,
+  surveyIndexInsertParams,
+  surveyIndexRowFromDb,
+  surveyPageSql,
+  type DbSurveyIndexRow,
+} from "./surveyIndexSql";
 
 const MIGRATIONS_DIR = fileURLToPath(
   new URL("../migrations", import.meta.url),
 );
+
+/** What node:sqlite accepts as a bound parameter (its SupportedValueType). */
+type SqlValue = string | number | bigint | null | Uint8Array;
 
 /**
  * Databases created before the migration runner existed were built from an
@@ -406,6 +424,68 @@ export function openBackendStore(path: string): BackendStore {
     async putTxMetadata(entries: ReadonlyMap<string, unknown>): Promise<void> {
       for (const [hash, metadata] of entries)
         putTxMetaStmt.run(hash, JSON.stringify(metadata ?? null));
+    },
+
+    async replaceSurveyIndex(
+      rows: readonly SurveyIndexRow[],
+      meta: SurveyIndexMeta,
+    ): Promise<void> {
+      // Full replace in one transaction: the set is scan-sized, and readers
+      // must never observe rows from one refresh with the other's meta.
+      db.exec("BEGIN");
+      try {
+        db.exec("DELETE FROM survey_index");
+        const insert = db.prepare(SURVEY_INDEX_INSERT);
+        for (const r of rows)
+          insert.run(...(surveyIndexInsertParams(r) as SqlValue[]));
+        db.prepare(SURVEY_INDEX_META_UPSERT).run(
+          meta.tip,
+          meta.incomplete ? 1 : 0,
+          meta.fetchedAt,
+        );
+        db.exec("COMMIT");
+      } catch (err) {
+        db.exec("ROLLBACK");
+        throw err;
+      }
+    },
+    async surveyIndexMeta(): Promise<SurveyIndexMeta | null> {
+      const row = db
+        .prepare(
+          `SELECT tip, incomplete, fetched_at AS fetchedAt
+           FROM survey_index_meta WHERE id = 1`,
+        )
+        .get() as
+        | { tip: string; incomplete: number; fetchedAt: number }
+        | undefined;
+      if (!row) return null;
+      return { ...row, incomplete: row.incomplete !== 0 };
+    },
+    async surveyIndexPage(
+      q: SurveyPageQuery,
+    ): Promise<(SurveyIndexRow & { bucket: number })[]> {
+      const { sql, params } = surveyPageSql(q);
+      return (
+        db.prepare(sql).all(...(params as SqlValue[])) as unknown as
+          DbSurveyIndexRow[]
+      ).map(surveyIndexRowFromDb);
+    },
+    async surveyIndexCounts(
+      tipEpoch: number,
+      credentials: readonly string[],
+      searchTerms: readonly string[],
+    ): Promise<SurveyListCounts> {
+      const { sql, params } = surveyCountsSql(
+        tipEpoch,
+        credentials,
+        searchTerms,
+      );
+      return countsFromDb(
+        db.prepare(sql).get(...(params as SqlValue[])) as Record<
+          string,
+          number
+        >,
+      );
     },
 
     async putRefreshRun(row: RefreshRunRow): Promise<void> {

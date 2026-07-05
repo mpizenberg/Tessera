@@ -4,11 +4,15 @@
  * semantics as the real stores. Not part of any runtime wiring.
  */
 
+import type { SurveyListFilter } from "@tessera/core";
+
 import type {
   ArtifactRow,
   BackendStore,
   CachedSnapshot,
   RefreshRunRow,
+  SurveyIndexMeta,
+  SurveyIndexRow,
   ValidatedResponseRow,
   WeightRow,
 } from "./store";
@@ -22,6 +26,7 @@ export interface MemBackendStore extends BackendStore {
   readonly artifacts: Map<string, ArtifactRow>;
   readonly txMetadata: Map<string, unknown>;
   readonly refreshRuns: Map<number, RefreshRunRow>;
+  surveyIndex: readonly SurveyIndexRow[];
 }
 
 export function memBackendStore(
@@ -34,6 +39,36 @@ export function memBackendStore(
   const artifacts = new Map<string, ArtifactRow>();
   const txMetadata = new Map<string, unknown>();
   const refreshRuns = new Map<number, RefreshRunRow>();
+  let surveyIndexRows: readonly SurveyIndexRow[] = [];
+  let surveyIndexMeta: SurveyIndexMeta | null = null;
+
+  // Same semantics as the SQL in surveyIndexSql.ts (and core's pageSurveyList).
+  const bucketOf = (r: SurveyIndexRow, tipEpoch: number): number =>
+    r.govLinked ? 0 : r.cancelled || r.endEpoch < tipEpoch ? 2 : 1;
+  const matchesTerms = (r: SurveyIndexRow, terms: readonly string[]) =>
+    terms.every((t) => r.haystack.includes(t));
+  const matchesFilter = (
+    r: SurveyIndexRow,
+    filter: SurveyListFilter,
+    tipEpoch: number,
+    credentials: ReadonlySet<string>,
+  ): boolean => {
+    const active = !r.cancelled && r.endEpoch >= tipEpoch;
+    switch (filter) {
+      case "all":
+        return true;
+      case "linked":
+        return r.govLinked;
+      case "active":
+        return active;
+      case "sealed":
+        return r.sealed && active;
+      case "public":
+        return !r.sealed && active;
+      case "mine":
+        return credentials.has(r.owner);
+    }
+  };
 
   const weightKey = (epoch: number, role: number, credential: string) =>
     `${epoch}|${role}|${credential}`;
@@ -45,6 +80,9 @@ export function memBackendStore(
     artifacts,
     txMetadata,
     refreshRuns,
+    get surveyIndex() {
+      return surveyIndexRows;
+    },
 
     async get() {
       return snapshot;
@@ -129,6 +167,52 @@ export function memBackendStore(
     },
     async putTxMetadata(entries) {
       for (const [h, m] of entries) if (!txMetadata.has(h)) txMetadata.set(h, m);
+    },
+
+    async replaceSurveyIndex(rows, meta) {
+      surveyIndexRows = [...rows];
+      surveyIndexMeta = meta;
+    },
+    async surveyIndexMeta() {
+      return surveyIndexMeta;
+    },
+    async surveyIndexPage(q) {
+      const credentials = new Set(q.credentials);
+      return surveyIndexRows
+        .filter(
+          (r) =>
+            matchesTerms(r, q.searchTerms) &&
+            matchesFilter(r, q.filter, q.tipEpoch, credentials),
+        )
+        .map((r) => ({ ...r, bucket: bucketOf(r, q.tipEpoch) }))
+        .sort(
+          (x, y) =>
+            x.bucket - y.bucket ||
+            y.slot - x.slot ||
+            (x.surveyKey < y.surveyKey ? -1 : x.surveyKey > y.surveyKey ? 1 : 0),
+        )
+        .filter((r) => {
+          const c = q.cursor;
+          if (!c) return true;
+          if (r.bucket !== c.bucket) return r.bucket > c.bucket;
+          if (r.slot !== c.slot) return r.slot < c.slot;
+          return r.surveyKey > c.key;
+        })
+        .slice(0, q.limit);
+    },
+    async surveyIndexCounts(tipEpoch, credentials, searchTerms) {
+      const creds = new Set(credentials);
+      const rows = surveyIndexRows.filter((r) => matchesTerms(r, searchTerms));
+      const by = (f: SurveyListFilter) =>
+        rows.filter((r) => matchesFilter(r, f, tipEpoch, creds)).length;
+      return {
+        all: rows.length,
+        linked: by("linked"),
+        active: by("active"),
+        sealed: by("sealed"),
+        public: by("public"),
+        mine: by("mine"),
+      };
     },
 
     async putRefreshRun(row) {

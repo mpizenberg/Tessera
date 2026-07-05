@@ -18,9 +18,8 @@ import { walletOwns } from "~/domain/roles";
 import { endsText, fullRef, isClosed, viewStatus } from "~/ui/format";
 import { FormMosaic, RoleChips, VisGlyph } from "~/ui/components/glyphs";
 import { HealthFooter } from "~/ui/components/HealthFooter";
-import type { ChainTip, GovLink } from "~/data/source";
+import type { ChainTip } from "~/data/source";
 import type { WalletCredential, WalletIdentity } from "~/wallet/types";
-import type { Question, SurveyDefinition } from "cip-179";
 import { t, n, type MsgKey } from "~/i18n";
 import css from "./Explore.module.css";
 
@@ -59,54 +58,6 @@ const FILTERS: ReadonlyArray<{ value: ExploreFilter; labelKey: MsgKey }> = [
   { value: "mine", labelKey: "explore.filterMine" },
 ];
 
-function matchesFilter(
-  a: SurveyAggregate,
-  f: ExploreFilter,
-  flags: Flags,
-): boolean {
-  const v = viewStatus(a);
-  switch (f) {
-    case "all":
-      return true;
-    case "linked":
-      return a.govLink !== null;
-    case "active":
-      return !isClosed(v);
-    case "sealed":
-      return v === "sealed";
-    case "public":
-      return v === "public";
-    case "mine":
-      return flags.mine;
-  }
-}
-
-/** Text fragments from one question: its prompt plus any inline option or
- *  rating-scale labels (external-content questions carry only a count). */
-function questionText(q: Question): string[] {
-  const out = [q.prompt];
-  if ("options" in q && q.options.type === "options")
-    out.push(...q.options.labels);
-  if (q.type === "rating" && q.scale.type === "labels")
-    out.push(...q.scale.labels);
-  return out;
-}
-
-/**
- * The lowercased text a survey is searched against: title + description, every
- * question prompt and inline label, and any linked governance action (id +
- * title). Built from the cache-enriched definition, so off-chain labels we hold
- * are matchable; off-chain labels we don't hold simply aren't here to match.
- */
-function searchHaystack(d: SurveyDefinition, govLink: GovLink | null): string {
-  const parts = [d.title, d.description, ...d.questions.flatMap(questionText)];
-  if (govLink) {
-    parts.push(govLink.actionId);
-    if (govLink.title) parts.push(govLink.title);
-  }
-  return parts.join(" ").toLowerCase();
-}
-
 export const Explore: Component = () => {
   const app = useApp();
 
@@ -116,10 +67,14 @@ export const Explore: Component = () => {
   // than throwing — the `.error`/`.loading` reads are always safe.
   const snapData = () => (app.list.error ? undefined : app.list());
 
+  // Filtering, search, chip counts, ordering, and pagination all happen at
+  // the source (server-side in indexer mode, the same core semantics in
+  // memory in direct-Koios mode) — this screen renders what arrives: the
+  // first page plus any "show more" pages, with the session's optimistic
+  // surveys on top until the indexer catches up.
   const all = createMemo(() => {
-    const real = snapData()?.surveys ?? [];
+    const real = [...(snapData()?.surveys ?? []), ...app.moreSurveys()];
     const realKeys = new Set(real.map((s) => s.key));
-    // Surveys just created this session, shown until the indexer catches up.
     const opt = app.optimisticSurveys().filter((a) => !realKeys.has(a.key));
     return opt.length ? [...opt, ...real] : real;
   });
@@ -188,49 +143,22 @@ export const Explore: Component = () => {
     };
   };
 
-  // Search is a case-insensitive AND of whitespace-separated terms: every term
-  // must appear (as a substring) somewhere in a survey's haystack.
-  const searchTerms = createMemo(() =>
-    app.ui.search.trim().toLowerCase().split(/\s+/).filter(Boolean),
+  // Global chip counts come with the page (they cover the whole matching set,
+  // not just loaded rows); zeros while the first page is in flight.
+  const counts = createMemo<Record<ExploreFilter, number>>(
+    () =>
+      snapData()?.counts ?? {
+        all: 0,
+        linked: 0,
+        active: 0,
+        sealed: 0,
+        public: 0,
+        mine: 0,
+      },
   );
-  // One haystack per survey, rebuilt only when the survey set or cached labels
-  // change — reused by both the row filter and the chip counts.
-  const haystacks = createMemo(() => {
-    const m = new Map<string, string>();
-    for (const a of all())
-      m.set(
-        a.key,
-        searchHaystack(app.displayDefinition(a.record.definition), a.govLink),
-      );
-    return m;
-  });
-  const matchesSearch = (a: SurveyAggregate): boolean => {
-    const terms = searchTerms();
-    if (terms.length === 0) return true;
-    const hay = haystacks().get(a.key) ?? "";
-    return terms.every((t) => hay.includes(t));
-  };
 
-  // Counts reflect the active search, so each chip reads "N matching & <filter>".
-  const counts = createMemo(() => {
-    const xs = all().filter(matchesSearch);
-    const by = (f: ExploreFilter) =>
-      xs.filter((a) => matchesFilter(a, f, flagsOf(a))).length;
-    return {
-      all: xs.length,
-      linked: by("linked"),
-      active: by("active"),
-      sealed: by("sealed"),
-      public: by("public"),
-      mine: by("mine"),
-    } satisfies Record<ExploreFilter, number>;
-  });
-
-  const visible = createMemo(() =>
-    all()
-      .filter((a) => matchesFilter(a, app.ui.filter, flagsOf(a)))
-      .filter(matchesSearch),
-  );
+  // Rows arrive already filtered and searched; optimistic ones ride on top.
+  const visible = all;
 
   // Linked (governance) surveys get their own section, shown first; the rest
   // split into open / closed so a linked survey never appears twice.
@@ -264,7 +192,7 @@ export const Explore: Component = () => {
         <div class={css.summary}>
           <span class={css.entries}>
             {t("explore.summary", {
-              count: n(all().length),
+              count: n(counts().all),
               epoch: tipEpoch(),
             })}
           </span>
@@ -380,6 +308,26 @@ export const Explore: Component = () => {
 
               <Show when={visible().length === 0}>
                 <Notice text={t("explore.noMatch")} />
+              </Show>
+
+              <Show when={app.nextCursor()}>
+                <div class={css.loadMoreRow}>
+                  <button
+                    onClick={() => app.loadMore()}
+                    disabled={app.loadingMore()}
+                    class={css.loadMore}
+                  >
+                    {app.loadingMore()
+                      ? t("explore.loadingMore")
+                      : t("explore.loadMore")}
+                  </button>
+                  <span class={css.loadMoreCount}>
+                    {t("explore.shownOfTotal", {
+                      shown: n(visible().length),
+                      total: n(counts()[app.ui.filter]),
+                    })}
+                  </span>
+                </div>
               </Show>
             </Show>
           </div>

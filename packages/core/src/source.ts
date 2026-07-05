@@ -202,6 +202,17 @@ export interface SurveyListPayload {
   readonly finalizedCancelled?: readonly string[];
   /** Mirrors {@link Cip179Records.incomplete} for the scan behind this list. */
   readonly incomplete?: boolean;
+  /**
+   * Global per-filter totals over the search-matching set — present on paged
+   * responses ({@link import("./page").pageSurveyList} / the serving tier's
+   * paged route), absent on a full unpaged payload.
+   */
+  readonly counts?: import("./page").SurveyListCounts;
+  /**
+   * Continuation for the next page (opaque keyset cursor), `null` when this
+   * page is the last. Absent on a full unpaged payload.
+   */
+  readonly nextCursor?: string | null;
 }
 
 /**
@@ -278,6 +289,17 @@ export interface DataSource {
    * plus tip / governance links / raw cancellations. See {@link SurveyListPayload}.
    */
   surveyList(): Promise<SurveyListPayload>;
+  /**
+   * One page of the Explore list ({@link import("./page").SurveyListParams}):
+   * filtered, searched, and keyset-paginated server-side, with global chip
+   * counts and a `nextCursor` continuation. Optional: the serving-tier
+   * implementation answers from its materialized survey index; the direct
+   * Koios path leaves it undefined and the app pages the full `surveyList()`
+   * payload in memory with {@link import("./page").pageSurveyList} instead.
+   */
+  surveyListPage?(
+    params: import("./page").SurveyListParams,
+  ): Promise<SurveyListPayload>;
   /**
    * The self-contained per-survey slice (detail/respond pages, verifiers).
    * Rejects when the ref matches no known survey.
