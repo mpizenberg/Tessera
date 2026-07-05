@@ -8,6 +8,17 @@
  * proofs, role membership, epochs, cancellation, dedup) — that is the
  * responsibility of an indexer with chain access.
  *
+ * RULESET-PINNED BEHAVIOR: the "validity" rule in `@tessera/core`'s
+ * `RULESET_DESCRIPTOR` is exactly "the response passes this validation against
+ * the on-chain definition", and that descriptor's hash is baked into every
+ * tally artifact. The emitter freezes a response's `wellFormed` verdict at
+ * validation time; an independent verifier re-runs whatever `validateResponse`
+ * ships when it runs. So any change that flips a response from valid to invalid
+ * (or back) is a semantic ruleset change: bump `rulesetVersion` in
+ * `packages/core/src/artifact.ts` and update the golden hash in
+ * `artifact.test.ts` in the same commit, or old artifacts silently stop
+ * reproducing (a MISMATCH that reads as tampering, not as a rules upgrade).
+ *
  * @module
  */
 

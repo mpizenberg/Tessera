@@ -20,8 +20,14 @@ import type { WeightedQuestionTally, WeightedResponder } from "./weightedTally";
 
 /**
  * The counting rules this implementation applies, as data. Change any rule and
- * `rulesetHash()` changes with it — bump `rulesetVersion` whenever that
- * happens. Mirrors §6.2/§6.3 and the CIP-179 credential-proof mechanisms.
+ * `rulesetHash()` changes with it — bump `rulesetVersion` whenever that happens
+ * (a golden test in `artifact.test.ts` pins the hash, so an unbumped change
+ * fails CI). Note the hash commits to this *description*, not to the code it
+ * describes: the load-bearing behaviors live in `cip-179`'s `validateResponse`
+ * ("validity") and core's `dedupeResponses` ("dedup"), whose files carry a
+ * matching RULESET-PINNED-BEHAVIOR note — a semantic change there needs the same
+ * version bump even if this descriptor's text is untouched. Mirrors §6.2/§6.3
+ * and the CIP-179 credential-proof mechanisms.
  */
 export const RULESET_DESCRIPTOR = {
   // v2: responders record (txHash, responseIndex) — the artifact body schema

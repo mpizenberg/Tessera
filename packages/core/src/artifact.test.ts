@@ -56,6 +56,21 @@ describe("rulesetHash", () => {
     expect(rulesetHash()).toBe(rulesetHash());
   });
 
+  // Golden value: the hash a verifier reproduces to confirm it counts under the
+  // SAME ruleset as the emitter. It is embedded in every historical artifact, so
+  // it MUST NOT drift silently. If this fails, a counting rule changed — decide
+  // deliberately: a real semantic change (to RULESET_DESCRIPTOR, or to the
+  // behavior of `validateResponse` / `dedupeResponses` it describes) requires
+  // bumping `rulesetVersion` and updating this literal in the same commit; an
+  // accidental change must be reverted. Never just paste the new value to make
+  // CI green — that re-labels old artifacts as MISMATCH instead of "different
+  // rules", which is the exact failure mode the hash exists to prevent.
+  it("matches its pinned golden hash (bump rulesetVersion on any change)", () => {
+    expect(rulesetHash()).toBe(
+      "7ff892d5d2c38990875798ad47371c3f057961f4bb732d50a99965224a102f22",
+    );
+  });
+
   it("pins every counting dimension in the descriptor", () => {
     // The hash only protects what the descriptor *says* — make sure the
     // load-bearing rules are actually in there.

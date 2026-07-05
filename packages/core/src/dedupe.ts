@@ -5,6 +5,14 @@
  * (survey, role, credential), latest wins). It lives in core so the serving
  * tier's per-survey `responseCount` and the client's audit/tally agree by
  * construction — both sides call exactly this code.
+ *
+ * RULESET-PINNED BEHAVIOR: the dedup rule and its chain-order tie-break are part
+ * of `RULESET_DESCRIPTOR` (see `artifact.ts`), which is hashed into every tally
+ * artifact. Any change to *which* response wins — the identity key, the
+ * (slot, tx_block_index, response_index) ordering, or the "valid before latest"
+ * discipline — is a semantic ruleset change: bump `rulesetVersion` and update
+ * the golden hash in `artifact.test.ts` in the same commit, or historical
+ * artifacts silently become unreproducible (MISMATCH, read as tampering).
  */
 
 import type { Credential, SurveyRef } from "cip-179";
