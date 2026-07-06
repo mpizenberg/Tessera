@@ -102,10 +102,12 @@ pnpm --filter @tessera/backend dev:cf        # wrangler dev --test-scheduled
 curl "http://localhost:8787/__scheduled"     # trigger one refresh by hand
 ```
 
-To deploy: `wrangler d1 create tessera-cache-preview`, paste the database id
-into `wrangler.toml`, apply migrations with `--remote`, then
-`pnpm --filter @tessera/backend deploy:cf`. Mainnet is a wrangler environment —
-same steps with `--env mainnet` and its own database.
+To deploy preview: `wrangler d1 create tessera-cache-preview`, paste the
+database id into `wrangler.toml`, apply migrations with `--remote`, then
+`pnpm --filter @tessera/backend deploy:preview`. Mainnet is a wrangler
+environment — same one-time D1 setup with its own database
+(`tessera-cache-mainnet`) and `--env mainnet` on the migration, then
+`pnpm --filter @tessera/backend deploy:mainnet`.
 
 Subrequests (logged on every cron run in `wrangler tail`): a steady-state
 refresh costs ~6 Koios calls; validating new responses and finalizing closing
