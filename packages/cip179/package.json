@@ -11,6 +11,22 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./domain": {
+      "types": "./dist/domain/index.d.ts",
+      "import": "./dist/domain/index.js"
+    },
+    "./tally": {
+      "types": "./dist/tally/index.d.ts",
+      "import": "./dist/tally/index.js"
+    },
+    "./txproof": {
+      "types": "./dist/txproof/index.d.ts",
+      "import": "./dist/txproof/index.js"
+    },
+    "./tlock": {
+      "types": "./dist/tlock/index.d.ts",
+      "import": "./dist/tlock/index.js"
     }
   },
   "files": [
@@ -38,7 +54,24 @@
     "metadata",
     "governance"
   ],
+  "dependencies": {
+    "@noble/hashes": "^2.2.0"
+  },
+  "peerDependencies": {
+    "@evolution-sdk/evolution": "^0.5.9",
+    "@mattpiz/tlock-js": "0.10.0"
+  },
+  "peerDependenciesMeta": {
+    "@evolution-sdk/evolution": {
+      "optional": true
+    },
+    "@mattpiz/tlock-js": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@evolution-sdk/evolution": "^0.5.9",
+    "@mattpiz/tlock-js": "0.10.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   }
