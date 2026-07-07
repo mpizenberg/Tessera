@@ -16,14 +16,9 @@
 // lives in the `cip-179` package; re-exported here so existing `@tessera/core`
 // importers keep resolving these names unchanged.
 export * from "cip-179/domain";
+export * from "cip-179/tally";
 
 export * from "./source";
 export * from "./surveyList";
 export * from "./page";
 export * from "./config";
-export * from "./wire";
-export * from "./tally";
-export * from "./weightedTally";
-export * from "./tallyInput";
-export * from "./canonical";
-export * from "./artifact";

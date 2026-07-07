@@ -15,7 +15,7 @@
  * above), so the tags are unambiguous.
  */
 
-import { bytesToHex, hexToBytes } from "cip-179/domain";
+import { bytesToHex, hexToBytes } from "../domain/index.js";
 
 /** Recursively replace bytes/bigint/Map with tagged JSON-safe equivalents. */
 export function toJsonSafe(value: unknown): unknown {

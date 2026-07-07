@@ -15,11 +15,11 @@
  * compare equal.
  */
 
-import type { AnswerItem } from "cip-179";
+import type { AnswerItem } from "../index.js";
 
-import { blake2b256Hex, canonicalJson } from "./canonical";
-import { fromJsonSafe, toJsonSafe } from "./wire";
-import type { WeightedQuestionTally, WeightedResponder } from "./weightedTally";
+import { blake2b256Hex, canonicalJson } from "./canonical.js";
+import { fromJsonSafe, toJsonSafe } from "./wire.js";
+import type { WeightedQuestionTally, WeightedResponder } from "./weightedTally.js";
 
 /**
  * The counting rules this implementation applies, as data. Change any rule and

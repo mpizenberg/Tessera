@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { fromJsonSafe, toJsonSafe } from "./wire";
+import { fromJsonSafe, toJsonSafe } from "./wire.js";
 
 /** Round-trip through JSON.stringify/parse, the way the wire path actually uses it. */
 function roundTrip(value: unknown): unknown {

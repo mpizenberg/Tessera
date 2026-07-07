@@ -8,7 +8,7 @@
  * epoch** — never "current" values.
  */
 
-import type { Credential } from "cip-179";
+import type { Credential } from "../index.js";
 
 /** One credential's membership + weight at the snapshot epoch. */
 export interface WeightInfo {

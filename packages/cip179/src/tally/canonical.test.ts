@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { blake2b256Hex, canonicalJson } from "./canonical";
+import { blake2b256Hex, canonicalJson } from "./canonical.js";
 
 describe("canonicalJson", () => {
   it("sorts object keys and emits no whitespace", () => {

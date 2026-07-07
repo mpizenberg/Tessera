@@ -5,15 +5,15 @@ import type {
   Role,
   SurveyDefinition,
   SurveyResponse,
-} from "cip-179";
+} from "../index.js";
 
-import { tallySurvey } from "./tally";
+import { tallySurvey } from "./tally.js";
 import {
   weightedTallyQuestion,
   weightedTallySurvey,
   type WeightedQuestionTally,
   type WeightedResponder,
-} from "./weightedTally";
+} from "./weightedTally.js";
 
 // --- fixtures ----------------------------------------------------------------
 

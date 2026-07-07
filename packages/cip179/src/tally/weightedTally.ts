@@ -17,9 +17,9 @@ import type {
   Question,
   SurveyDefinition,
   SurveyResponse,
-} from "cip-179";
+} from "../index.js";
 
-import { ratingScaleInfo } from "./tally";
+import { ratingScaleInfo } from "./tally.js";
 
 /** One counted responder with the weight it carries into the tally. */
 export interface WeightedResponder {

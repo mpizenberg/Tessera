@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Role, SurveyResponse } from "cip-179";
+import type { Role, SurveyResponse } from "../index.js";
 
 import {
   RULESET_DESCRIPTOR,
@@ -9,10 +9,10 @@ import {
   toArtifactQuestions,
   toArtifactResponders,
   type TallyBody,
-} from "./artifact";
-import type { AnswerItem, Metadatum } from "cip-179";
-import { canonicalJson } from "./canonical";
-import type { WeightedQuestionTally, WeightedResponder } from "./weightedTally";
+} from "./artifact.js";
+import type { AnswerItem, Metadatum } from "../index.js";
+import { canonicalJson } from "./canonical.js";
+import type { WeightedQuestionTally, WeightedResponder } from "./weightedTally.js";
 
 const RESPONSE: SurveyResponse = {
   specVersion: 4,

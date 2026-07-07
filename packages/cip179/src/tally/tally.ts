@@ -32,7 +32,7 @@ import type {
   RatingScale,
   SurveyDefinition,
   SurveyResponse,
-} from "cip-179";
+} from "../index.js";
 
 export interface Bar {
   readonly label: string;
