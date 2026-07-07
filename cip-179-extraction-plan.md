@@ -1,6 +1,8 @@
 # Extraction plan — a reusable `cip-179` package
 
-Status: agreed plan, not yet executed.
+Status: executed. The package now lives at `packages/cip179` with the
+`cip-179` / `/domain` / `/tally` / `/txproof` / `/tlock` subpath surface
+described below; `@tessera/tlock` has been folded in and removed.
 
 Goal: separate what is Tessera-specific from what any CIP-179 application could
 reuse, and grow the existing `cip-179` package (today: codec only, ~1.9k lines,

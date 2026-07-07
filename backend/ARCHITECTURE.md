@@ -137,10 +137,10 @@ Running the _same_ validation + tally code in the browser, the serving tier, and
 a standalone verifier requires factoring the shared code out of the app. This is
 load-bearing for the verifiability story, not just hygiene.
 
-- **`cip-179`** — already a directory with its own `package.json`
-  (`frontend/cip179`), today consumed via a Vite/tsconfig path alias
-  (`../cip179/src/index.ts`). Promote it to a real pnpm-workspace package imported
-  by name. Low risk.
+- **`cip-179`** — a pnpm-workspace package at `packages/cip179`, imported by
+  name. It has since grown beyond the codec into the reusable, cross-implementation
+  surface (subpath exports `cip-179/domain`, `cip-179/tally`, `cip-179/txproof`,
+  `cip-179/tlock`); see `packages/cip179/README.md`.
 - **`@tessera/core`** — extract the **pure** domain from `frontend/app/src`:
   - **Move:** the data-model **types** from `data/source.ts` (`ChainPos`,
     `ChainTip`, `SurveyRecord`, `ResponseRecord`, `CancellationRecord`,

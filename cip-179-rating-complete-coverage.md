@@ -162,7 +162,7 @@ wire format, doing this now — before any artifacts exist — costs nothing.
 
 For reference, adopting this would touch: the CDDL + prose in `frontend/cip-179.md`;
 the `RatingQuestion` type, decoder (a new mandatory element at index 4 in
-`decodeQuestion`), encoder, and `validateResponse` rating branch in `frontend/cip179`;
+`decodeQuestion`), encoder, and `validateResponse` rating branch in `packages/cip179`;
 `RULESET_DESCRIPTOR.rulesetVersion` + the golden hash in `packages/core`; the
 authoring UI (a "require every option to be rated" toggle) and the responding UI
 (finding 10 — enforce all-rows vs. allow a subset based on the flag), plus i18n
