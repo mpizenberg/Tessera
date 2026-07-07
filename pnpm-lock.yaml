@@ -14,18 +14,21 @@ importers:
 
   backend/server:
     dependencies:
+      '@evolution-sdk/evolution':
+        specifier: ^0.5.9
+        version: 0.5.9(@effect/cluster@0.58.2(@effect/platform@0.96.2(effect@3.21.4))(@effect/rpc@0.75.1(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))(@effect/workflow@0.18.2(@effect/experimental@0.60.0(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))(@effect/platform@0.96.2(effect@3.21.4))(@effect/rpc@0.75.1(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))(effect@3.21.4))(effect@3.21.4))(@effect/rpc@0.75.1(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))
       '@hono/node-server':
         specifier: ^1.13.0
         version: 1.19.14(hono@4.12.27)
+      '@mattpiz/tlock-js':
+        specifier: 0.10.0
+        version: 0.10.0
       '@tessera/core':
         specifier: workspace:*
         version: link:../../packages/core
       '@tessera/koios':
         specifier: workspace:*
         version: link:../../packages/koios
-      '@tessera/tlock':
-        specifier: workspace:*
-        version: link:../../packages/tlock
       cip-179:
         specifier: workspace:*
         version: link:../../packages/cip179
@@ -54,6 +57,9 @@ importers:
       '@evolution-sdk/evolution':
         specifier: ^0.5.9
         version: 0.5.9(@effect/cluster@0.58.2(@effect/platform@0.96.2(effect@3.21.4))(@effect/rpc@0.75.1(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))(@effect/workflow@0.18.2(@effect/experimental@0.60.0(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))(@effect/platform@0.96.2(effect@3.21.4))(@effect/rpc@0.75.1(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))(effect@3.21.4))(effect@3.21.4))(@effect/rpc@0.75.1(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))
+      '@mattpiz/tlock-js':
+        specifier: 0.10.0
+        version: 0.10.0
       '@noble/hashes':
         specifier: ^2.2.0
         version: 2.2.0
@@ -66,9 +72,6 @@ importers:
       '@tessera/koios':
         specifier: workspace:*
         version: link:../../packages/koios
-      '@tessera/tlock':
-        specifier: workspace:*
-        version: link:../../packages/tlock
       cip-179:
         specifier: workspace:*
         version: link:../../packages/cip179
@@ -152,7 +155,7 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@25.9.4)
 
-  packages/tlock:
+  packages/verifier:
     dependencies:
       '@evolution-sdk/evolution':
         specifier: ^0.5.9
@@ -163,28 +166,9 @@ importers:
       '@tessera/core':
         specifier: workspace:*
         version: link:../core
-      cip-179:
-        specifier: workspace:*
-        version: link:../cip179
-    devDependencies:
-      typescript:
-        specifier: ^5.6.0
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.0
-        version: 2.1.9(@types/node@25.9.4)
-
-  packages/verifier:
-    dependencies:
-      '@tessera/core':
-        specifier: workspace:*
-        version: link:../core
       '@tessera/koios':
         specifier: workspace:*
         version: link:../koios
-      '@tessera/tlock':
-        specifier: workspace:*
-        version: link:../tlock
       cip-179:
         specifier: workspace:*
         version: link:../cip179

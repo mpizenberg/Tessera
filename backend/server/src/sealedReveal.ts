@@ -8,7 +8,7 @@
  * offline `revealWithBeacon` loop — while tests inject a stub that returns
  * decrypted answers with no network or crypto.
  *
- * `@tessera/tlock` is **lazy-imported** inside the default so a finalize pass with
+ * `cip-179/tlock` is **lazy-imported** inside the default so a finalize pass with
  * no revealable sealed survey never pulls in the tlock/evolution bundle, and the
  * tlock-js crypto chunk loads only when a reveal actually runs.
  */
@@ -45,11 +45,11 @@ export type SealedRevealFn = (
 
 /**
  * Default reveal: fetch (and BLS-verify) the round's beacon once, then decrypt
- * every record offline. Lazy-imports `@tessera/tlock` so the crypto stack is
+ * every record offline. Lazy-imports `cip-179/tlock` so the crypto stack is
  * pulled only when a sealed survey is actually revealed.
  */
 export const tlockSealedReveal: SealedRevealFn = async (records, { round }) => {
-  const { fetchBeacon, revealWithBeacon } = await import("@tessera/tlock");
+  const { fetchBeacon, revealWithBeacon } = await import("cip-179/tlock");
   const beacon = await fetchBeacon(round);
   const revealed = await revealWithBeacon(
     records.map((r) => r.response),

@@ -13,7 +13,7 @@
  * frontend — they are presentation, not domain math, and pull in locale APIs.
  */
 
-import { hexToBytes } from "@tessera/core";
+import { hexToBytes } from "../domain/index.js";
 
 /** Drand quicknet chain hash (hex) — matches the bundled tlock client. */
 export const QUICKNET_CHAIN_HASH_HEX =

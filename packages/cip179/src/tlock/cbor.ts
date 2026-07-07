@@ -13,7 +13,7 @@
  */
 
 import { CBOR, TransactionMetadatum } from "@evolution-sdk/evolution";
-import type { Metadatum } from "cip-179";
+import type { Metadatum } from "../index.js";
 
 /**
  * The single type-level adapter between cip-179's `Metadatum` and evolution-sdk's

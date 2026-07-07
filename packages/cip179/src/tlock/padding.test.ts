@@ -13,10 +13,10 @@ import {
   type OptionsOrCount,
   type Question,
   type RatingScale,
-} from "cip-179";
+} from "../index.js";
 
-import { metadatumToCbor } from "./cbor";
-import { maxPlaintextSize } from "./padding";
+import { metadatumToCbor } from "./cbor.js";
+import { maxPlaintextSize } from "./padding.js";
 
 // --- question constructors --------------------------------------------------
 

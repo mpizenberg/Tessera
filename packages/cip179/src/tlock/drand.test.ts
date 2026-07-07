@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { roundForUnixTime, unixTimeForRound } from "./drand";
+import { roundForUnixTime, unixTimeForRound } from "./drand.js";
 
 // Quicknet genesis (mirrors the module constant) and period.
 const GENESIS = 1692803367;

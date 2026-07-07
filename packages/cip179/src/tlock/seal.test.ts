@@ -12,11 +12,11 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { Role, type AnswerItem, type SurveyResponse } from "cip-179";
+import { Role, type AnswerItem, type SurveyResponse } from "../index.js";
 
-import type { RandomnessBeacon } from "./client";
-import { sealAnswers, revealWithBeacon } from "./seal";
-import beaconFixture from "./quicknet-beacon-1000000.json";
+import type { RandomnessBeacon } from "./client.js";
+import { sealAnswers, revealWithBeacon } from "./seal.js";
+import beaconFixture from "./quicknet-beacon-1000000.json" with { type: "json" };
 
 const ROUND = beaconFixture.round;
 const BEACON: RandomnessBeacon = {

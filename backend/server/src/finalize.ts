@@ -48,7 +48,7 @@ import {
   type TxProof,
   type WeightedResponder,
 } from "@tessera/core";
-import { isQuicknet, roundIsAvailable } from "@tessera/tlock";
+import { isQuicknet, roundIsAvailable } from "cip-179/tlock";
 
 import type { ServerConfig } from "./config";
 import { tlockSealedReveal, type SealedRevealFn } from "./sealedReveal";

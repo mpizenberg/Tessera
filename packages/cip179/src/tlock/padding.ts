@@ -20,7 +20,7 @@
  * estimate and so yield a longer (size-leaking) ciphertext. Pure, no I/O.
  */
 
-import type { OptionsOrCount, Question, RatingScale } from "cip-179";
+import type { OptionsOrCount, Question, RatingScale } from "../index.js";
 
 // ----------------------------------------------------------------------------
 // CBOR width helpers (how many bytes a value occupies, without encoding it)

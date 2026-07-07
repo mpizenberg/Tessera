@@ -39,7 +39,7 @@ import {
   type TxProof,
   type WeightedResponder,
 } from "@tessera/core";
-import { isQuicknet } from "@tessera/tlock";
+import { isQuicknet } from "cip-179/tlock";
 
 /** Everything the rebuild needs — all independently (re)fetched by the CLI. */
 export interface VerifyInputs {
@@ -59,7 +59,7 @@ export interface VerifyInputs {
    * Sealed reveal: decrypt the in-window sealed responses with an independently
    * fetched, BLS-verified beacon (`revealed[i]` aligns with the input record;
    * null = decrypt/decode failed). Required to verify a sealed artifact — the
-   * CLI wires `@tessera/tlock`; omitted for public artifacts.
+   * CLI wires `cip-179/tlock`; omitted for public artifacts.
    */
   readonly reveal?: (
     records: readonly ResponseRecord[],

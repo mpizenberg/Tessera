@@ -19,8 +19,9 @@
   "dependencies": {
     "@tessera/core": "workspace:*",
     "@tessera/koios": "workspace:*",
-    "@tessera/tlock": "workspace:*",
     "cip-179": "workspace:*",
+    "@evolution-sdk/evolution": "^0.5.9",
+    "@mattpiz/tlock-js": "0.10.0",
     "@hono/node-server": "^1.13.0",
     "hono": "^4.6.0"
   },

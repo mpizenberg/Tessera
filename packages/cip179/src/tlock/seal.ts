@@ -18,11 +18,11 @@ import {
   type AnswerItem,
   type Metadatum,
   type SurveyResponse,
-} from "cip-179";
+} from "../index.js";
 
-import type { RandomnessBeacon } from "./client";
-import { decryptWithBeacon, encryptToRound, fetchBeacon } from "./client";
-import { cborToMetadatum, metadatumToCbor } from "./cbor";
+import type { RandomnessBeacon } from "./client.js";
+import { decryptWithBeacon, encryptToRound, fetchBeacon } from "./client.js";
+import { cborToMetadatum, metadatumToCbor } from "./cbor.js";
 
 /** Right-pad bytes with zeros to at least `size` (no-op if already longer). */
 function padTo(bytes: Uint8Array, size: number): Uint8Array {

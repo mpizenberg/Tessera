@@ -11,8 +11,8 @@
 
 import { describe, expect, it } from "vitest";
 
-import { encryptToRound } from "./client";
-import { sealedCiphertextSize } from "./size";
+import { encryptToRound } from "./client.js";
+import { sealedCiphertextSize } from "./size.js";
 
 describe("sealedCiphertextSize", () => {
   const cases: readonly [len: number, round: number][] = [

@@ -21,8 +21,9 @@
   "dependencies": {
     "@tessera/core": "workspace:*",
     "@tessera/koios": "workspace:*",
-    "@tessera/tlock": "workspace:*",
-    "cip-179": "workspace:*"
+    "cip-179": "workspace:*",
+    "@evolution-sdk/evolution": "^0.5.9",
+    "@mattpiz/tlock-js": "0.10.0"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",
