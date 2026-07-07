@@ -18,10 +18,10 @@
  * returns `null`, so the credential is treated as unproven — the safe side.
  */
 
-import { bytesToHex } from "@tessera/core";
-import type { NativeScriptInfo, TxProof, VoteBinding } from "@tessera/core";
+import { bytesToHex } from "../domain/index.js";
+import type { NativeScriptInfo, TxProof, VoteBinding } from "../domain/index.js";
 
-import { govActionId } from "./bech32";
+import { govActionId } from "./bech32.js";
 
 /**
  * Minimal structural view of an evolution-sdk native script that tolerates both

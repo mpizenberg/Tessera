@@ -29,7 +29,7 @@ import type { Credential } from "cip-179";
 import type { AppConfig, TallyInputSource, WeightInfo } from "@tessera/core";
 import { credentialKey } from "@tessera/core";
 
-import { drepId, stakeAddress } from "./bech32";
+import { drepId, stakeAddress } from "cip-179/txproof";
 
 /** Max stake addresses per bulk POST (matches the other Koios batch sizes). */
 const ACCOUNT_BATCH = 50;

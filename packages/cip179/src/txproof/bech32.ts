@@ -13,9 +13,9 @@
  * `txProof.ts`) — these run on the server/verifier path only.
  */
 
-import type { Credential } from "cip-179";
+import type { Credential } from "../index.js";
 
-import { hexToBytes } from "@tessera/core";
+import { hexToBytes } from "../domain/index.js";
 
 type Sdk = typeof import("@evolution-sdk/evolution");
 

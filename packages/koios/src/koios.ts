@@ -42,7 +42,7 @@ import type {
 import { Koios } from "@evolution-sdk/evolution/sdk/provider/Koios";
 import type { ProtocolParameters } from "@evolution-sdk/evolution/sdk/provider/Provider";
 import { koiosJsonToMetadatum, type KoiosJson } from "./metadatum";
-import { decodeTxProof } from "./txProof";
+import { decodeTxProof } from "cip-179/txproof";
 
 /** Max tx hashes per /tx_metadata POST (larger bodies return HTTP 413). */
 const TX_METADATA_BATCH = 50;

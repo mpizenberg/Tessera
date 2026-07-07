@@ -3,7 +3,7 @@ import type { Credential } from "cip-179";
 
 import { hexToBytes, type AppConfig } from "@tessera/core";
 
-import { stakeAddress } from "./bech32";
+import { stakeAddress } from "cip-179/txproof";
 import { KoiosTallyInputs } from "./tallyInputs";
 
 const CONFIG: AppConfig = {

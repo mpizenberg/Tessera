@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { decodeTxProof } from "./txProof";
-import { DREP_VOTE_TX_CBOR, SPO_VOTE_TX_CBOR } from "./fixtures/voteTxs";
+import { decodeTxProof } from "./txProof.js";
+import { DREP_VOTE_TX_CBOR, SPO_VOTE_TX_CBOR } from "./fixtures/voteTxs.js";
 
 describe("decodeTxProof — voting_procedures (real preview vote txs)", () => {
   it("decodes a DRep key vote into a (tag 2) binding with the CIP-129 action id", async () => {

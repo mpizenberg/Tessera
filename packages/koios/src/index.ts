@@ -11,6 +11,4 @@
 
 export * from "./koios";
 export * from "./metadatum";
-export * from "./bech32";
-export * from "./txProof";
 export * from "./tallyInputs";

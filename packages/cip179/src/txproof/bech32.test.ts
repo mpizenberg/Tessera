@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { Credential } from "cip-179";
+import type { Credential } from "../index.js";
 
-import { hexToBytes } from "@tessera/core";
+import { hexToBytes } from "../domain/index.js";
 
-import { drepId, govActionId, stakeAddress } from "./bech32";
+import { drepId, govActionId, stakeAddress } from "./bech32.js";
 
 // A real preview DRep: Koios /vote_list reports voter_id
 // drep1ytgkj79hlqzj45ec80h9jvxn0mq9leyrlaz804gd7dv9c4ck89389 (CIP-129) for
