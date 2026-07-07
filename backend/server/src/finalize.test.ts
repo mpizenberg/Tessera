@@ -7,21 +7,23 @@ import {
   type SurveyDefinition,
 } from "cip-179";
 import {
-  artifactHash,
   credentialKey,
   hexToBytes,
-  responderAnswers,
   type CancellationRecord,
   type ChainTip,
   type Cip179Records,
   type ResponseRecord,
   type SurveyRecord,
+  type TxProof,
+} from "cip-179/domain";
+import {
+  artifactHash,
+  responderAnswers,
   type TallyArtifact,
   type TallyBody,
   type TallyInputSource,
-  type TxProof,
   type WeightInfo,
-} from "@tessera/core";
+} from "cip-179/tally";
 
 import { loadConfig } from "./config";
 import { finalizeClosedSurveys } from "./finalize";

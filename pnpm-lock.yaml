@@ -119,9 +119,6 @@ importers:
 
   packages/core:
     dependencies:
-      '@noble/hashes':
-        specifier: ^2.2.0
-        version: 2.2.0
       cip-179:
         specifier: workspace:*
         version: link:../cip179

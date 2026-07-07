@@ -25,29 +25,31 @@
 import { Role, type SurveyResponse } from "cip-179";
 
 import {
-  artifactHash,
   auditRevealedResponses,
   bytesToHex,
   cancellationVerified,
   laterInChain,
   parseCredentialKey,
   refKey,
-  rulesetHash,
-  toArtifactQuestions,
-  toArtifactResponders,
   voteDeadlineUnix,
-  weightedTallySurvey,
-  type ArtifactRoleTally,
   type ChainTip,
   type Cip179Records,
   type ResponseRecord,
   type SurveyRecord,
+  type TxProof,
+} from "cip-179/domain";
+import {
+  artifactHash,
+  rulesetHash,
+  toArtifactQuestions,
+  toArtifactResponders,
+  weightedTallySurvey,
+  type ArtifactRoleTally,
   type TallyArtifact,
   type TallyBody,
   type TallyInputSource,
-  type TxProof,
   type WeightedResponder,
-} from "@tessera/core";
+} from "cip-179/tally";
 import { isQuicknet, roundIsAvailable } from "cip-179/tlock";
 
 import type { ServerConfig } from "./config";

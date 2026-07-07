@@ -24,21 +24,19 @@ import {
   parseCip179Link,
   refKey,
   responseCounts,
-} from "@tessera/core";
+} from "cip-179/domain";
 import type {
-  AppConfig,
   CancellationRecord,
   ChainTip,
   Cip179Records,
-  DataSource,
   GovLink,
   ResponseRecord,
   SurveyBundle,
-  SurveyListPayload,
   SurveyRecord,
-  TallyArtifact,
   TxProof,
-} from "@tessera/core";
+} from "cip-179/domain";
+import type { TallyArtifact } from "cip-179/tally";
+import type { AppConfig, DataSource, SurveyListPayload } from "@tessera/core";
 import { Koios } from "@evolution-sdk/evolution/sdk/provider/Koios";
 import type { ProtocolParameters } from "@evolution-sdk/evolution/sdk/provider/Provider";
 import { koiosJsonToMetadatum, type KoiosJson } from "./metadatum";

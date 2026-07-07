@@ -1,20 +1,22 @@
 /**
- * `@tessera/core` — the pure, portable heart shared by the browser app, the
- * serving tier, and any standalone verifier. Types + pure logic only; no I/O,
- * no wallet/CIP-30, no runtime coupling.
+ * `@tessera/core` — the Tessera-specific application core shared by the browser
+ * app, the serving tier, and the standalone verifier. Types + pure logic only;
+ * no I/O, no wallet/CIP-30, no runtime coupling.
  *
- * Carries the data-model types + the `DataSource` seam, portable config,
- * gov-link parsing, hex, the wire codec, and the pure domain layer: survey
- * aggregation, response audit, count-based and stake-weighted tallies, and the
- * canonical, content-addressed tally artifact (see `backend/ARCHITECTURE.md`
- * §4/§6/§7).
+ * Owns the Tessera seam: the `DataSource` read interface, the Explore
+ * list/health payloads (`source.ts`), keyset paging (`page.ts`), the
+ * survey-list aggregation adapter (`surveyList.ts`), and portable config. The
+ * reusable, cross-implementation surface — on-chain record shapes + pure
+ * domain semantics, and the count/stake-weighted tally with its canonical,
+ * content-addressed artifact — lives in the `cip-179` package (see
+ * `backend/ARCHITECTURE.md` §4/§6/§7).
  *
  * @module
  */
 
-// The reusable CIP-179 domain (on-chain record shapes + pure semantics) now
-// lives in the `cip-179` package; re-exported here so existing `@tessera/core`
-// importers keep resolving these names unchanged.
+// Re-export the reusable cip-179 domain + tally surface so existing
+// `@tessera/core` importers (notably the app) keep resolving these names
+// unchanged. The serving tier and verifier import the cip-179 subpaths directly.
 export * from "cip-179/domain";
 export * from "cip-179/tally";
 

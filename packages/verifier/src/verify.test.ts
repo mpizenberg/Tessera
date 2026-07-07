@@ -2,21 +2,23 @@ import { describe, expect, it } from "vitest";
 
 import { Role, type Credential, type SurveyDefinition } from "cip-179";
 import {
-  artifactHash,
   credentialKey,
   hexToBytes,
+  type ResponseRecord,
+  type SurveyBundle,
+  type TxProof,
+} from "cip-179/domain";
+import {
+  artifactHash,
   rulesetHash,
   toArtifactQuestions,
   toArtifactResponders,
   weightedTallySurvey,
-  type SurveyBundle,
   type TallyArtifact,
   type TallyBody,
   type TallyInputSource,
-  type TxProof,
   type WeightInfo,
-  type ResponseRecord,
-} from "@tessera/core";
+} from "cip-179/tally";
 
 import { diffResponseSets, verifyArtifact, type VerifyInputs } from "./verify";
 

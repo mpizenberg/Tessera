@@ -22,7 +22,7 @@ import {
   responseCredentialProven,
   type Cip179Records,
   type GovLink,
-} from "@tessera/core";
+} from "cip-179/domain";
 import type { KoiosDataSource } from "@tessera/koios";
 
 import type { TallyStore, ValidatedResponseRow } from "./store";

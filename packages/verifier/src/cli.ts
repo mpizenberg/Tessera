@@ -20,16 +20,13 @@ import { exit } from "node:process";
 
 import type { SurveyRef } from "cip-179";
 
+import { hexToBytes, refKey, type SurveyBundle } from "cip-179/domain";
+import { fromJsonSafe, type TallyArtifact } from "cip-179/tally";
 import {
   KOIOS_URL,
   SECONDS_PER_EPOCH,
-  fromJsonSafe,
-  hexToBytes,
-  refKey,
   type AppConfig,
   type Network,
-  type SurveyBundle,
-  type TallyArtifact,
 } from "@tessera/core";
 import { KoiosDataSource, KoiosTallyInputs } from "@tessera/koios";
 import { fetchBeacon, revealWithBeacon } from "cip-179/tlock";

@@ -7,14 +7,15 @@
 import { describe, expect, it } from "vitest";
 
 import { Role, type Credential, type SurveyDefinition } from "cip-179";
-import { fromJsonSafe, hexToBytes, toJsonSafe } from "@tessera/core";
+import { hexToBytes } from "cip-179/domain";
+import { fromJsonSafe, toJsonSafe } from "cip-179/tally";
 import type {
   CancellationRecord,
   ChainTip,
   ResponseRecord,
   SurveyBundle,
   SurveyRecord,
-} from "@tessera/core";
+} from "cip-179/domain";
 
 import { loadConfig } from "./config";
 import { createApp } from "./http";

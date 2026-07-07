@@ -1,7 +1,7 @@
 {
   "name": "@tessera/core",
   "version": "0.1.0",
-  "description": "Tessera pure domain: CIP-179 data-model types, the DataSource seam, portable config, the JSON-safe wire codec, survey aggregation/audit/tally, and the content-addressed tally artifact. No I/O, no runtime coupling.",
+  "description": "Tessera application core: the DataSource read seam, the Explore list/health payloads, keyset paging, and portable config. Re-exports the reusable cip-179 domain + tally surface for downstream convenience. No I/O, no runtime coupling.",
   "type": "module",
   "private": true,
   "exports": {
@@ -18,7 +18,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@noble/hashes": "^2.2.0",
     "cip-179": "workspace:*"
   },
   "devDependencies": {

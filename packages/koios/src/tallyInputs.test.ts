@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Credential } from "cip-179";
 
-import { hexToBytes, type AppConfig } from "@tessera/core";
+import { hexToBytes } from "cip-179/domain";
+import type { AppConfig } from "@tessera/core";
 
 import { stakeAddress } from "cip-179/txproof";
 import { KoiosTallyInputs } from "./tallyInputs";

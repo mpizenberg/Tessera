@@ -13,7 +13,7 @@
  * tlock-js crypto chunk loads only when a reveal actually runs.
  */
 
-import type { ResponseRecord } from "@tessera/core";
+import type { ResponseRecord } from "cip-179/domain";
 import type { SurveyResponse } from "cip-179";
 
 /** The drand beacon a reveal used — committed to the artifact's provenance. */

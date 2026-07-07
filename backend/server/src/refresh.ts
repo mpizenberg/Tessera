@@ -7,7 +7,7 @@
  * serves a half-built or blank snapshot because one fetch hiccuped.
  */
 
-import { toJsonSafe } from "@tessera/core";
+import { toJsonSafe } from "cip-179/tally";
 import { KoiosDataSource, KoiosTallyInputs } from "@tessera/koios";
 
 import type { ServerConfig } from "./config";

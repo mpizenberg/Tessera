@@ -1,14 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { Role, type Credential, type SurveyDefinition } from "cip-179";
-import { bytesToHex, hexToBytes } from "@tessera/core";
-import type {
-  Cip179Records,
-  GovLink,
-  ResponseRecord,
-  SurveyRecord,
-  TxProof,
-} from "@tessera/core";
+import {
+  bytesToHex,
+  hexToBytes,
+  type Cip179Records,
+  type GovLink,
+  type ResponseRecord,
+  type SurveyRecord,
+  type TxProof,
+} from "cip-179/domain";
 
 import type { ValidatedResponseRow } from "./store";
 import { memBackendStore, type MemBackendStore } from "./store-mem";

@@ -26,8 +26,9 @@
 
 import type { Credential } from "cip-179";
 
-import type { AppConfig, TallyInputSource, WeightInfo } from "@tessera/core";
-import { credentialKey } from "@tessera/core";
+import { credentialKey } from "cip-179/domain";
+import type { TallyInputSource, WeightInfo } from "cip-179/tally";
+import type { AppConfig } from "@tessera/core";
 
 import { drepId, stakeAddress } from "cip-179/txproof";
 

@@ -7,19 +7,16 @@
  */
 
 import {
-  aggregateSurveyList,
   credentialKey,
   refKey,
   responseCounts,
-  surveyHaystack,
-  toJsonSafe,
-} from "@tessera/core";
-import type {
-  CancellationRecord,
-  ChainTip,
-  Cip179Records,
-  GovLink,
-} from "@tessera/core";
+  type CancellationRecord,
+  type ChainTip,
+  type Cip179Records,
+  type GovLink,
+} from "cip-179/domain";
+import { toJsonSafe } from "cip-179/tally";
+import { aggregateSurveyList, surveyHaystack } from "@tessera/core";
 
 import type { SurveyIndexRow } from "./store";
 

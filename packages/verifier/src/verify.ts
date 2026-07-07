@@ -17,8 +17,6 @@
 import { validateResponse, type SurveyResponse } from "cip-179";
 
 import {
-  RULESET_DESCRIPTOR,
-  artifactHash,
   auditRevealedResponses,
   bytesToHex,
   cancellationVerified,
@@ -26,19 +24,23 @@ import {
   laterInChain,
   refKey,
   responseCredentialProven,
+  type ResponseRecord,
+  type SurveyBundle,
+  type TxProof,
+} from "cip-179/domain";
+import {
+  RULESET_DESCRIPTOR,
+  artifactHash,
   rulesetHash,
   toArtifactQuestions,
   toArtifactResponders,
   weightedTallySurvey,
   type ArtifactRoleTally,
-  type ResponseRecord,
-  type SurveyBundle,
   type TallyArtifact,
   type TallyBody,
   type TallyInputSource,
-  type TxProof,
   type WeightedResponder,
-} from "@tessera/core";
+} from "cip-179/tally";
 import { isQuicknet } from "cip-179/tlock";
 
 /** Everything the rebuild needs — all independently (re)fetched by the CLI. */
