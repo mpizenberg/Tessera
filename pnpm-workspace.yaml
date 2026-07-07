@@ -1,6 +1,6 @@
 packages:
   - frontend/app
-  - frontend/cip179
+  - packages/cip179
   - packages/core
   - packages/koios
   - packages/tlock

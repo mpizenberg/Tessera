@@ -10,7 +10,7 @@ export default defineConfig({
     alias: {
       // Resolve the workspace libraries straight from their TypeScript source
       // so edits are live with no separate build step.
-      "cip-179": r("../cip179/src/index.ts"),
+      "cip-179": r("../../packages/cip179/src/index.ts"),
       "@tessera/core": r("../../packages/core/src/index.ts"),
       "@tessera/koios": r("../../packages/koios/src/index.ts"),
       "~": r("./src"),

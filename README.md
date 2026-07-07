@@ -39,7 +39,7 @@ served document matches the on-chain hash.
 | Path                | What it is                                                                                                               |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `frontend/app`      | The browser app — [SolidJS][solid] + [Vite][vite] + TypeScript.                                                          |
-| `frontend/cip179`   | A pure, dependency-free TypeScript library to encode / decode / validate the label-17 format.                            |
+| `packages/cip179`   | The reusable `cip-179` package: label-17 codec plus the cross-implementation domain / tally / txproof / tlock surface.    |
 | `packages/core`     | Shared pure domain (`@tessera/core`): types, wire codec, audit/tally rules, weighted tally, canonical artifact + hashes. |
 | `packages/koios`    | The Koios read path (`KoiosDataSource`, tally inputs, tx-proof decoding), shared by direct mode, backend, and verifier.  |
 | `packages/verifier` | Standalone CLI that re-derives a survey's result artifact from chain data and checks its content hash.                   |
@@ -85,7 +85,7 @@ entered in Settings, stored only in the browser.
 
 ## Development
 
-The repo is a pnpm workspace (`frontend/app`, `frontend/cip179`,
+The repo is a pnpm workspace (`frontend/app`, `packages/cip179`,
 `packages/core`, `packages/koios`, `packages/verifier`, `backend/server`).
 Packages are consumed from TypeScript source (Vite aliases / `exports` pointing
 at `src`), so cross-package edits are live with no build step.

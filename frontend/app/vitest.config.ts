@@ -9,7 +9,7 @@ const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 export default defineConfig({
   resolve: {
     alias: {
-      "cip-179": r("../cip179/src/index.ts"),
+      "cip-179": r("../../packages/cip179/src/index.ts"),
       "@tessera/core": r("../../packages/core/src/index.ts"),
       "@tessera/koios": r("../../packages/koios/src/index.ts"),
       "~": r("./src"),
