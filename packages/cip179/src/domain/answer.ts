@@ -4,7 +4,7 @@
  * results screen. No framework, no I/O; unit-testable in isolation.
  */
 
-import type { AnswerItem, Question } from "cip-179";
+import type { AnswerItem, Question } from "../index.js";
 
 /**
  * Stable, machine-readable serialization of one answer item for CSV export.

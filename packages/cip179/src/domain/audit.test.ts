@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { AnswerItem, Role, SurveyDefinition } from "cip-179";
+import type { AnswerItem, Role, SurveyDefinition } from "../index.js";
 
-import type { SurveyResponse } from "cip-179";
+import type { SurveyResponse } from "../index.js";
 
-import type { ChainTip, ResponseRecord } from "./source";
+import type { ChainTip, ResponseRecord } from "./records.js";
 import {
   auditResponses,
   auditRevealedResponses,
   epochOfSlot,
   responseIsCountable,
-} from "./audit";
+} from "./audit.js";
 
 // secondsPerEpoch = 100 → epochs are 100 slots; current epoch 10 starts at
 // slot 1000 (tip.slot − tip.epochSlot). Easy mental math for the cases below.

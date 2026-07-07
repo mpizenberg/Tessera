@@ -25,10 +25,10 @@ import {
   validateResponse,
   type SurveyDefinition,
   type SurveyResponse,
-} from "cip-179";
+} from "../index.js";
 
-import type { ResponseRecord } from "./source";
-import { dedupeResponses, epochOfSlot } from "./survey";
+import type { ResponseRecord } from "./records.js";
+import { dedupeResponses, epochOfSlot } from "./survey.js";
 
 // `epochOfSlot` lives in ./survey (shared with cancellation-deadline logic and
 // UI countdowns); re-exported here so existing importers (and tests) keep

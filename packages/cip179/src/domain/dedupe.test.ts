@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Role, type Credential, type SurveyRef } from "cip-179";
+import { Role, type Credential, type SurveyRef } from "../index.js";
 
 import {
   credentialKey,
@@ -8,8 +8,8 @@ import {
   laterInChain,
   refKey,
   responseCounts,
-} from "./dedupe";
-import type { ResponseRecord } from "./source";
+} from "./dedupe.js";
+import type { ResponseRecord } from "./records.js";
 
 const refA: SurveyRef = { txId: new Uint8Array([0xaa, 0x01]), index: 0 };
 const refB: SurveyRef = { txId: new Uint8Array([0xbb, 0x02]), index: 1 };

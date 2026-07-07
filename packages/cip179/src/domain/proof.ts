@@ -21,12 +21,12 @@
  * this module stays pure and unit-tested.
  */
 
-import type { Credential, SurveyResponse } from "cip-179";
-import { Role } from "cip-179";
+import type { Credential, SurveyResponse } from "../index.js";
+import { Role } from "../index.js";
 
-import { bytesToHex } from "./hex";
-import { cancellationVerified } from "./cancellation";
-import type { TxProof, VoteBinding } from "./source";
+import { bytesToHex } from "./hex.js";
+import { cancellationVerified } from "./cancellation.js";
+import type { TxProof, VoteBinding } from "./records.js";
 
 /** The CIP-179 role a Conway voter tag proves, or null for an unknown tag. */
 export function roleOfVoterTag(voterTag: number): Role | null {

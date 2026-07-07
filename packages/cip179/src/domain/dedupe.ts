@@ -19,10 +19,10 @@
  * undecryptable/invalid later ballot must never supersede a valid earlier one.
  */
 
-import type { Credential, SurveyRef } from "cip-179";
+import type { Credential, SurveyRef } from "../index.js";
 
-import { bytesToHex, hexToBytes } from "./hex";
-import type { ResponseRecord } from "./source";
+import { bytesToHex, hexToBytes } from "./hex.js";
+import type { ResponseRecord } from "./records.js";
 
 /** Stable string identity for a survey reference: "<txHex>:<index>". */
 export function refKey(ref: SurveyRef): string {

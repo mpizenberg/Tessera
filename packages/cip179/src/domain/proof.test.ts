@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { Role, type Credential, type SurveyResponse } from "cip-179";
+import { Role, type Credential, type SurveyResponse } from "../index.js";
 
-import { responseCredentialProven, roleOfVoterTag } from "./proof";
-import type { TxProof, VoteBinding } from "./source";
+import { responseCredentialProven, roleOfVoterTag } from "./proof.js";
+import type { TxProof, VoteBinding } from "./records.js";
 
 const keyCred = (b: number): Credential => ({
   type: "key",

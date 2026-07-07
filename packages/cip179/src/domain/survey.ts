@@ -9,23 +9,22 @@
  * the indexer will later confirm it proved the owner credential.
  */
 
-import type { SurveyDefinition } from "cip-179";
+import type { SurveyDefinition } from "../index.js";
 
-import { refKey, responseCounts } from "./dedupe";
+import { refKey, responseCounts } from "./dedupe.js";
 import type {
   CancellationRecord,
   ChainTip,
   Cip179Records,
   GovLink,
-  SurveyListPayload,
   SurveyRecord,
-} from "./source";
-import { cancellationVerified } from "./cancellation";
+} from "./records.js";
+import { cancellationVerified } from "./cancellation.js";
 
 // The dedupe rule and its identity keys live in `./dedupe` (the server's
 // per-survey `responseCount` calls the same code); re-exported here so
 // importers of this module keep working.
-export { refKey, credentialKey, dedupeResponses } from "./dedupe";
+export { refKey, credentialKey, dedupeResponses } from "./dedupe.js";
 
 export type SurveyStatus = "active" | "ended" | "cancelled";
 
@@ -112,9 +111,9 @@ export type CancellationState = "verified" | "claimed";
  * the survey is **still open** (tip at/before `end_epoch`): the scan fetches
  * owner-proofs only for open surveys — closed ones ride with `proof: null` — so
  * a closed survey's cancellation can never verify here. A closed survey's
- * *verified* cancellation is instead carried by the serving tier's
- * finalized-cancelled overlay in {@link SurveyListPayload.finalizedCancelled},
- * derived from the emitted artifact.
+ * *verified* cancellation is instead carried by an application's
+ * finalized-cancelled overlay (derived from the emitted tally artifact), fed
+ * through {@link aggregate}'s `finalizedCancelled` argument.
  *
  * An in-window cancellation that isn't (or can't be) verified surfaces as a
  * `claimed` state — **including for closed surveys**, so the "unverified
@@ -163,24 +162,17 @@ export function aggregateSurveys(
 }
 
 /**
- * Build per-survey aggregates from a `surveyList()` payload, whose response
- * counts the source already deduped — with the same core rule, so the numbers
- * match what {@link aggregateSurveys} computes from raw responses.
+ * Build per-survey aggregates from already-deduped response counts (keyed by
+ * survey ref) rather than raw responses — the shape a paged/served survey list
+ * provides. Uses the same cancellation and lifecycle rules as
+ * {@link aggregateSurveys}, so both agree on the numbers.
+ *
+ * `finalizedCancelled` carries owner-verified cancellations of *closed* surveys
+ * that client-side proof-checking can no longer confirm (see
+ * {@link cancellationStates}); pass the survey keys an application finalized as
+ * cancelled, or omit for pure client-side aggregation.
  */
-export function aggregateSurveyList(
-  list: SurveyListPayload,
-): SurveyAggregate[] {
-  return aggregate(
-    list.surveys,
-    list.cancellations,
-    list.responseCounts,
-    list.tip,
-    list.govLinks,
-    new Set(list.finalizedCancelled ?? []),
-  );
-}
-
-function aggregate(
+export function aggregate(
   surveys: readonly SurveyRecord[],
   cancellations: readonly CancellationRecord[],
   countByKey: Record<string, number>,

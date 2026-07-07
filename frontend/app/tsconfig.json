@@ -19,6 +19,10 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
+      "cip-179/domain": ["../../packages/cip179/src/domain/index.ts"],
+      "cip-179/tally": ["../../packages/cip179/src/tally/index.ts"],
+      "cip-179/txproof": ["../../packages/cip179/src/txproof/index.ts"],
+      "cip-179/tlock": ["../../packages/cip179/src/tlock/index.ts"],
       "cip-179": ["../../packages/cip179/src/index.ts"],
       "@tessera/core": ["../../packages/core/src/index.ts"],
       "@tessera/koios": ["../../packages/koios/src/index.ts"],

@@ -10,6 +10,13 @@ export default defineConfig({
     alias: {
       // Resolve the workspace libraries straight from their TypeScript source
       // so edits are live with no separate build step.
+      // Subpath entries must precede the bare `cip-179` alias: the alias
+      // resolver matches in order and would otherwise rewrite `cip-179/domain`
+      // to `.../index.ts/domain`.
+      "cip-179/domain": r("../../packages/cip179/src/domain/index.ts"),
+      "cip-179/tally": r("../../packages/cip179/src/tally/index.ts"),
+      "cip-179/txproof": r("../../packages/cip179/src/txproof/index.ts"),
+      "cip-179/tlock": r("../../packages/cip179/src/tlock/index.ts"),
       "cip-179": r("../../packages/cip179/src/index.ts"),
       "@tessera/core": r("../../packages/core/src/index.ts"),
       "@tessera/koios": r("../../packages/koios/src/index.ts"),

@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { Credential, SurveyDefinition } from "cip-179";
 
-import { bytesToHex } from "./hex";
+import {
+  bytesToHex,
+  type ChainTip,
+  type GovLink,
+  type SurveyRecord,
+} from "cip-179/domain";
 import {
   encodeSurveyCursor,
   pageSurveyList,
   parseSurveyCursor,
   searchTermsOf,
 } from "./page";
-import type {
-  ChainTip,
-  GovLink,
-  SurveyListPayload,
-  SurveyRecord,
-} from "./source";
+import type { SurveyListPayload } from "./source";
 
 const TIP: ChainTip = {
   epoch: 10,

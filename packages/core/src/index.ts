@@ -12,20 +12,18 @@
  * @module
  */
 
+// The reusable CIP-179 domain (on-chain record shapes + pure semantics) now
+// lives in the `cip-179` package; re-exported here so existing `@tessera/core`
+// importers keep resolving these names unchanged.
+export * from "cip-179/domain";
+
 export * from "./source";
+export * from "./surveyList";
 export * from "./page";
-export * from "./dedupe";
-export * from "./hex";
-export * from "./govLink";
 export * from "./config";
 export * from "./wire";
-export * from "./cancellation";
-export * from "./proof";
-export * from "./survey";
-export * from "./audit";
 export * from "./tally";
 export * from "./weightedTally";
 export * from "./tallyInput";
-export * from "./answer";
 export * from "./canonical";
 export * from "./artifact";

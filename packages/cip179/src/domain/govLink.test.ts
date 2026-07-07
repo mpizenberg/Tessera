@@ -4,7 +4,7 @@ import {
   GOV_LINK_KIND,
   anchorContextMapsCip179Terms,
   parseCip179Link,
-} from "./govLink";
+} from "./govLink.js";
 
 const TXID = "a".repeat(64);
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { Question } from "cip-179";
+import type { Question } from "../index.js";
 
-import { humanizeAnswer, optionLabelOf, serializeAnswer } from "./answer";
+import { humanizeAnswer, optionLabelOf, serializeAnswer } from "./answer.js";
 
 const Q: Question = {
   type: "singleChoice",

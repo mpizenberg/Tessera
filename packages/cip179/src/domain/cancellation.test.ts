@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { Credential } from "cip-179";
+import type { Credential } from "../index.js";
 
-import { bytesToHex } from "./hex";
-import type { CancellationProof, NativeScriptInfo } from "./source";
-import { cancellationVerified, nativeScriptSatisfied } from "./cancellation";
+import { bytesToHex } from "./hex.js";
+import type { CancellationProof, NativeScriptInfo } from "./records.js";
+import { cancellationVerified, nativeScriptSatisfied } from "./cancellation.js";
 
 const keyHash = (b: number) => Uint8Array.of(b);
 const keyOwner = (b: number): Credential => ({

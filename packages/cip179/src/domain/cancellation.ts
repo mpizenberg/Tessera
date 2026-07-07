@@ -18,10 +18,10 @@
  * pure and unit-tested.
  */
 
-import type { Credential } from "cip-179";
+import type { Credential } from "../index.js";
 
-import { bytesToHex } from "./hex";
-import type { CancellationProof, NativeScriptInfo } from "./source";
+import { bytesToHex } from "./hex.js";
+import type { CancellationProof, NativeScriptInfo } from "./records.js";
 
 /**
  * Whether a set of signer key hashes (hex) satisfies a native script's signature

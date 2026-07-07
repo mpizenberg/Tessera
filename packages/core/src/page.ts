@@ -16,9 +16,16 @@
 
 import type { Question } from "cip-179";
 
-import { credentialKey, refKey } from "./dedupe";
-import type { GovLink, SurveyListPayload, SurveyRecord } from "./source";
-import { aggregateSurveyList, type SurveyAggregate } from "./survey";
+import {
+  credentialKey,
+  refKey,
+  type GovLink,
+  type SurveyAggregate,
+  type SurveyRecord,
+} from "cip-179/domain";
+
+import type { SurveyListPayload } from "./source";
+import { aggregateSurveyList } from "./surveyList";
 
 /** The Explore filter chips; `mine` matches on the caller's credentials. */
 export type SurveyListFilter =

@@ -1,21 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { Credential, SurveyDefinition } from "cip-179";
+import type { Credential, SurveyDefinition } from "../index.js";
 
-import { bytesToHex } from "./hex";
+import { bytesToHex } from "./hex.js";
 import type {
   CancellationProof,
   CancellationRecord,
   ChainTip,
   Cip179Records,
-  SurveyListPayload,
   SurveyRecord,
-} from "./source";
-import {
-  aggregateSurveyList,
-  aggregateSurveys,
-  refKey,
-  voteDeadlineUnix,
-} from "./survey";
+} from "./records.js";
+import { aggregateSurveys, voteDeadlineUnix } from "./survey.js";
 
 // Cancellation tri-state keys off tip.epoch vs the survey's end_epoch: a survey
 // is "open" (its cancellations are considered) while tip.epoch ≤ end_epoch, and
@@ -162,37 +156,6 @@ describe("aggregateSurveys — cancellation tri-state", () => {
     expect(a.cancelled).toBe(false);
     expect(a.cancellationClaimed).toBe(false);
     expect(a.status).toBe("active");
-  });
-});
-
-describe("aggregateSurveyList — finalized-cancelled overlay (finding 19)", () => {
-  // A cancelled-then-closed survey: the scan ships its cancellation with
-  // proof: null (it only verifies proofs for open surveys), so client-side
-  // verification alone would show it as "Ended" with only an unverified-claim
-  // warning. The serving tier's finalizedCancelled keys carry the artifact's
-  // verdict past close, which also supersedes that claim warning.
-  const closed = survey(0, def(keyOwner(1), 8)); // endEpoch 8 < tip epoch 10
-  const list = (finalizedCancelled?: readonly string[]): SurveyListPayload => ({
-    surveys: [closed],
-    cancellations: [cancel(0, 850, null)],
-    govLinks: [],
-    tip: TIP,
-    responseCounts: {},
-    ...(finalizedCancelled && { finalizedCancelled }),
-  });
-
-  it("a finalized-cancelled key marks the closed survey cancelled", () => {
-    const a = aggregateSurveyList(list([refKey(closed.ref)]))[0]!;
-    expect(a.cancelled).toBe(true);
-    expect(a.cancellationClaimed).toBe(false);
-    expect(a.status).toBe("cancelled");
-  });
-
-  it("without the overlay the closed survey stays 'ended' but keeps the claim warning", () => {
-    const a = aggregateSurveyList(list())[0]!;
-    expect(a.cancelled).toBe(false);
-    expect(a.cancellationClaimed).toBe(true);
-    expect(a.status).toBe("ended");
   });
 });
 

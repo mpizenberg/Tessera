@@ -13,7 +13,7 @@
 
 import { blake2b } from "@noble/hashes/blake2.js";
 
-import { bytesToHex } from "./hex";
+import { bytesToHex } from "cip-179/domain";
 
 /**
  * Serialize a JSON-plain value canonically. Throws on anything without a
