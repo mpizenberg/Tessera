@@ -57,7 +57,8 @@ import { walletOwns } from "~/domain/roles";
 import { resultsView } from "~/domain/resultsRouting";
 import type { ChainTip, ResponseRecord } from "~/data/source";
 import { usePresentation } from "~/enrichment/usePresentation";
-import { formatRevealDate, isQuicknet, roundIsAvailable } from "~/tlock/drand";
+import { isQuicknet, roundIsAvailable } from "cip-179/tlock";
+import { formatRevealDate } from "~/tlock/drand";
 import {
   endsText,
   fullRef,
@@ -1823,7 +1824,7 @@ const SealedResults: Component<{
   };
 
   const [revealed] = createResource(revealKey, async () => {
-    const { revealResponses } = await import("~/tlock/seal");
+    const { revealResponses } = await import("cip-179/tlock");
     // Decrypt the *full* pre-dedup in-window set, then classify + dedup in core:
     // dedup must run over the valid decrypted responses, never before them, or an
     // invalid later ciphertext would suppress a valid earlier one that then never

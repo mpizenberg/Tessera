@@ -1,11 +1,9 @@
 /**
- * Drand quicknet round/time math now lives in `cip-179/tlock` (shared with the
- * serving tier and the verifier) and is re-exported here so existing
- * `~/tlock/drand` importers keep their path. Only the `Date`-formatting helpers
- * — presentation, not domain math — stay in the frontend.
+ * Frontend-only `Date`-formatting helpers over drand rounds and Cardano epochs.
+ * The underlying round/time math lives in `cip-179/tlock` (shared with the
+ * serving tier and the verifier) and is imported directly by call sites; only
+ * this presentation layer stays in the frontend.
  */
-
-export * from "cip-179/tlock";
 
 import { epochEndUnix, unixTimeForRound } from "cip-179/tlock";
 

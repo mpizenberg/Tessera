@@ -43,12 +43,8 @@ import { VisGlyph } from "~/ui/components/glyphs";
 import { OnchainPreview } from "~/ui/components/OnchainPreview";
 import { ErrorBox, ProblemList } from "~/ui/components/Feedback";
 import { TxLink } from "~/ui/components/TxLink";
-import {
-  QUICKNET_CHAIN_HASH_HEX,
-  autoRevealRound,
-  formatEpochEndDate,
-  formatRevealDate,
-} from "~/tlock/drand";
+import { QUICKNET_CHAIN_HASH_HEX, autoRevealRound } from "cip-179/tlock";
+import { formatEpochEndDate, formatRevealDate } from "~/tlock/drand";
 import { networkMismatch, roleColors, roleLabel, shortRef } from "~/ui/format";
 import type { WalletIdentity } from "~/wallet/types";
 import { t, n } from "~/i18n";

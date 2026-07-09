@@ -29,8 +29,7 @@ import {
 
 import { hexToBytes } from "@tessera/core";
 import { PRESENTATION_KIND } from "~/enrichment/presentation";
-import { QUICKNET_CHAIN_HASH } from "~/tlock/drand";
-import { maxPlaintextSize } from "~/tlock/padding";
+import { QUICKNET_CHAIN_HASH, maxPlaintextSize } from "cip-179/tlock";
 
 /** The question types the builder can author (all of them). */
 export type QuestionType = Question["type"];

@@ -57,11 +57,8 @@ import {
   SubmitProgressModal,
   type SubmitStep,
 } from "~/ui/components/SubmitProgress";
-import {
-  formatRevealDate,
-  isQuicknet,
-  sealedCiphertextSize,
-} from "~/tlock/drand";
+import { isQuicknet, sealedCiphertextSize } from "cip-179/tlock";
+import { formatRevealDate } from "~/tlock/drand";
 import {
   fullRef,
   networkMismatch,
@@ -456,7 +453,7 @@ export const Respond: Component = () => {
         // the ciphertext instead of the plaintext answers.
         setStepKey("encrypt");
         setBusyText(t("respond.encrypting"));
-        const { sealAnswers } = await import("~/tlock/seal");
+        const { sealAnswers } = await import("cip-179/tlock");
         const answers = collectAnswers(def.questions, drafts);
         const ciphertext = await sealAnswers(
           answers,

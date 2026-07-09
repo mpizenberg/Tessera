@@ -37,7 +37,7 @@ jobs:
       # README promises. This covers every package — @tessera/core,
       # @tessera/koios, @tessera/verifier, and @tessera/backend carry the
       # correctness-critical, hash-committed logic and previously never ran on
-      # a PR (only frontend/cip179 + frontend/app did).
+      # a PR (only cip-179 + frontend/app did).
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r type-check
       - run: pnpm -r test
