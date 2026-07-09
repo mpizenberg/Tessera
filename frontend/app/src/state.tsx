@@ -44,15 +44,11 @@ import {
 } from "~/enrichment/providers";
 import { KoiosDataSource } from "@tessera/koios";
 import { IndexerDataSource } from "~/data/indexer";
-import type {
-  BackendHealth,
-  ChainTip,
-  DataSource,
-  SurveyRecord,
-} from "~/data/source";
 import {
   aggregateSurveyList,
   pageSurveyList,
+  type BackendHealth,
+  type DataSource,
   type SurveyListCounts,
   type SurveyListFilter,
   type SurveyListParams,
@@ -61,7 +57,9 @@ import {
 import {
   aggregateSurveys,
   bytesToHex,
+  type ChainTip,
   type SurveyAggregate,
+  type SurveyRecord,
 } from "cip-179/domain";
 import { claimableRoles } from "~/domain/roles";
 import {

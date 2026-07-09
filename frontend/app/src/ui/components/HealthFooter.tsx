@@ -15,7 +15,7 @@ import {
 } from "solid-js";
 
 import { useApp } from "~/state";
-import type { BackendHealth } from "~/data/source";
+import type { BackendHealth } from "@tessera/core";
 import { t, n } from "~/i18n";
 import css from "./HealthFooter.module.css";
 

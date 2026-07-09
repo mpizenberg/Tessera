@@ -20,7 +20,6 @@ import {
 
 import { useApp } from "~/state";
 import type { Network } from "~/config";
-import type { ChainTip } from "~/data/source";
 import { walletCredToCip179 } from "~/domain/roles";
 import {
   QUESTION_TYPES,
@@ -34,7 +33,7 @@ import {
   type QuestionType,
 } from "~/domain/create";
 import { IPFS_PROVIDERS } from "~/enrichment/providers";
-import { hexToBytes } from "cip-179/domain";
+import { hexToBytes, type ChainTip } from "cip-179/domain";
 import {
   SubmitProgressModal,
   type SubmitStep,

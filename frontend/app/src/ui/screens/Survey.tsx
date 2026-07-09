@@ -32,9 +32,11 @@ import {
   findSurvey,
   humanizeAnswer,
   serializeAnswer,
+  type ChainTip,
   type ExcludedRecord,
   type ExclusionKey,
   type ResponseAudit,
+  type ResponseRecord,
   type RevealedAudit,
   type SurveyAggregate,
 } from "cip-179/domain";
@@ -57,7 +59,6 @@ import {
 } from "~/domain/artifactView";
 import { walletOwns } from "~/domain/roles";
 import { resultsView } from "~/domain/resultsRouting";
-import type { ChainTip, ResponseRecord } from "~/data/source";
 import { usePresentation } from "~/enrichment/usePresentation";
 import { isQuicknet, roundIsAvailable } from "cip-179/tlock";
 import { formatRevealDate } from "~/tlock/drand";

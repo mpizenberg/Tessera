@@ -53,7 +53,7 @@ proofs, `/proposal_list` for governance links, `/tip`, and polled `/tx_status`.
    shared cache — cost grows for every user as surveys accumulate, and the
    `MAX_PAGES` cap (`incomplete` flag) is a real ceiling.
 
-The `DataSource` seam (`src/data/source.ts`) was built for exactly this swap:
+The `DataSource` seam (`@tessera/core`'s `source.ts`) was built for exactly this swap:
 _"a future semantic indexer backend can implement the same interface and drop in
 with no change to the domain or UI layers."_
 

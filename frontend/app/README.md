@@ -18,8 +18,8 @@ are signed and submitted by the user's CIP-30 wallet.
 
 ## Data modes
 
-The app reads chain data through one seam (`src/data/source.ts`), with two
-implementations:
+The app reads chain data through one seam (the `DataSource` interface from
+`@tessera/core`), with two implementations in `src/data/`:
 
 - **Indexer mode** (default in deployments): `VITE_INDEXER_URL` points at the
   Tier-1 backend (`backend/server`), which serves cached reads, protocol

@@ -11,14 +11,13 @@ import {
 } from "solid-js";
 import { A } from "@solidjs/router";
 
-import type { SurveyAggregate } from "cip-179/domain";
+import type { ChainTip, SurveyAggregate } from "cip-179/domain";
 
 import { useApp, type ExploreFilter } from "~/state";
 import { walletOwns } from "~/domain/roles";
 import { endsText, fullRef, isClosed, viewStatus } from "~/ui/format";
 import { FormMosaic, RoleChips, VisGlyph } from "~/ui/components/glyphs";
 import { HealthFooter } from "~/ui/components/HealthFooter";
-import type { ChainTip } from "~/data/source";
 import type { WalletCredential, WalletIdentity } from "~/wallet/types";
 import { t, n, type MsgKey } from "~/i18n";
 import css from "./Explore.module.css";
