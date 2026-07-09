@@ -106,12 +106,12 @@ The two constraints — "anyone can re-run on their own Cloudflare account" **an
 "self-hostable without much effort" — are reconciled by **layering**: a portable
 core, a thin swappable runtime/storage adapter, and a portable HTTP contract.
 
-| Layer                                                                                            | Portable? | Notes                                                                                                                                                    |
-| ------------------------------------------------------------------------------------------------ | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Core** (TS): chain-follow/decode + pure `@tessera/core` (audit, tally) + tally-input gathering | yes       | No Cloudflare APIs. Runs in Worker, Node/Bun, or a CLI.                                                                                                  |
-| **Storage**: repository interface over **SQL (SQLite dialect)**                                  | yes       | D1 _is_ SQLite. Self-host → libsql/better-sqlite3 (or Postgres). KV/Cache used **only** as an optional edge cache, never as the source of truth.         |
-| **Runtime adapter**                                                                              | thin      | CF: `wrangler.toml` + fetch handler + `[triggers] crons` + D1 binding. Self-host: tiny HTTP server + `node-cron`/loop + SQLite file. Both call **Core**. |
-| **HTTP `/api` contract**                                                                         | yes       | What `IndexerDataSource` speaks. Identical whether served by a Worker or a process.                                                                      |
+| Layer                                                                                                   | Portable? | Notes                                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Core** (TS): chain-follow/decode + pure `cip-179` domain/tally (audit, tally) + tally-input gathering | yes       | No Cloudflare APIs. Runs in Worker, Node/Bun, or a CLI.                                                                                                  |
+| **Storage**: repository interface over **SQL (SQLite dialect)**                                         | yes       | D1 _is_ SQLite. Self-host → libsql/better-sqlite3 (or Postgres). KV/Cache used **only** as an optional edge cache, never as the source of truth.         |
+| **Runtime adapter**                                                                                     | thin      | CF: `wrangler.toml` + fetch handler + `[triggers] crons` + D1 binding. Self-host: tiny HTTP server + `node-cron`/loop + SQLite file. Both call **Core**. |
+| **HTTP `/api` contract**                                                                                | yes       | What `IndexerDataSource` speaks. Identical whether served by a Worker or a process.                                                                      |
 
 **Consequences**
 
@@ -465,7 +465,7 @@ and converges over successive crons. Snapshot membership still comes from each
 run's fresh label-index scan, so rolled-back txs age out — their cache entries
 just stop being requested.
 
-### 6.6 Weighted tally computation (`@tessera/core`)
+### 6.6 Weighted tally computation (`cip-179/tally`)
 
 Weighting is the mechanical generalization of the existing tally: **replace
 "count 1 per responder" with "add the responder's weight."**
@@ -595,8 +595,8 @@ Contents (sketch):
 - **Future:** the `tally` hash is the natural handle for an **on-chain anchor**,
   closing the loop with CIP-179 itself.
 - **Verifiability.** The `tally` embeds the counted responders, their answers (or
-  refs), weights, and totals, so any third party re-runs the pure `@tessera/core`
-  tally and reproduces both the results and the hash; every weight is re-fetchable
+  refs), weights, and totals, so any third party re-runs the pure `cip-179/tally`
+  computation and reproduces both the results and the hash; every weight is re-fetchable
   from Koios at `end_epoch`. Trust reduces to Koios's stake numbers for epoch E,
   which the node tier later removes — without changing this format.
 
@@ -664,7 +664,7 @@ Contents (sketch):
 2. **Phase 2 — Koios tally inputs + artifacts.**
    - ~~`TallyInputSource` (Koios impl): per-epoch shared snapshot (§6.5).~~
      **Done** — `packages/koios/src/tallyInputs.ts` + `finalize.ts`.
-   - ~~Weighted per-role tally in `@tessera/core` (§6.6).~~ **Done** —
+   - ~~Weighted per-role tally in `cip-179/tally` (§6.6).~~ **Done** —
      `weightedTally.ts` (+ §6.3 rules 1–3 in `proof.ts`/`audit.ts`/`dedupe.ts`,
      persisted incrementally in `validated_response`).
    - Content-addressed artifacts (§7 — in D1, not R2; **done**); optional IPFS
