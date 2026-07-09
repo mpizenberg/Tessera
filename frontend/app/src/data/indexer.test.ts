@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { toJsonSafe } from "@tessera/core";
+import { toJsonSafe } from "cip-179/tally";
 
 import { IndexerDataSource } from "~/data/indexer";
 

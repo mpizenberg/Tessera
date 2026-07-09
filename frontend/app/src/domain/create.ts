@@ -27,7 +27,7 @@ import {
   type SurveyDefinition,
 } from "cip-179";
 
-import { hexToBytes } from "@tessera/core";
+import { hexToBytes } from "cip-179/domain";
 import { PRESENTATION_KIND } from "~/enrichment/presentation";
 import { QUICKNET_CHAIN_HASH, maxPlaintextSize } from "cip-179/tlock";
 

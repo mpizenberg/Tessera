@@ -16,7 +16,7 @@
 import { blake2b } from "@noble/hashes/blake2.js";
 import type { ContentAnchor } from "cip-179";
 
-import { bytesToHex } from "@tessera/core";
+import { bytesToHex } from "cip-179/domain";
 import { GATEWAY_STAGGER_MS, IPFS_GATEWAYS } from "./providers";
 
 /** blake2b-256 (32-byte) digest of raw bytes. */

@@ -52,15 +52,17 @@ import type {
 } from "~/data/source";
 import {
   aggregateSurveyList,
-  aggregateSurveys,
-  bytesToHex,
   pageSurveyList,
-  type SurveyAggregate,
   type SurveyListCounts,
   type SurveyListFilter,
   type SurveyListParams,
   type SurveyListPayload,
 } from "@tessera/core";
+import {
+  aggregateSurveys,
+  bytesToHex,
+  type SurveyAggregate,
+} from "cip-179/domain";
 import { claimableRoles } from "~/domain/roles";
 import {
   connectWallet,

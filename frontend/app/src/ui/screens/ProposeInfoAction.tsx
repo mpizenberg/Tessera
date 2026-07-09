@@ -19,7 +19,7 @@ import {
   findSurvey,
   parseCip179Link,
   type SurveyRefLite,
-} from "@tessera/core";
+} from "cip-179/domain";
 
 import { useApp } from "~/state";
 import { IPFS_PROVIDERS, type ProviderId } from "~/enrichment/providers";

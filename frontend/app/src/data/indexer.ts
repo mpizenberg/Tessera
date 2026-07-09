@@ -20,16 +20,15 @@
  * offline path (when no indexer URL is configured); this is an addition.
  */
 
-import { bytesToHex, fromJsonSafe } from "@tessera/core";
 import type {
   BackendHealth,
   DataSource,
   Network,
-  SurveyBundle,
   SurveyListParams,
   SurveyListPayload,
-  TallyArtifact,
 } from "@tessera/core";
+import { bytesToHex, type SurveyBundle } from "cip-179/domain";
+import { fromJsonSafe, type TallyArtifact } from "cip-179/tally";
 import type { SurveyRef } from "cip-179";
 
 /** Abort a serving-tier request that hangs (all routes are cache-served, fast). */

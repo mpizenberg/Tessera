@@ -26,7 +26,7 @@ import {
   type SurveyResponse,
 } from "cip-179";
 
-import { credentialKey, refKey } from "@tessera/core";
+import { credentialKey, refKey } from "cip-179/domain";
 
 /** Options a question offers (inline labels or an external count). */
 export function optionCount(opts: OptionsOrCount): number {

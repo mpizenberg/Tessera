@@ -38,7 +38,7 @@ import {
 import type { ProtocolParameters } from "@evolution-sdk/evolution/sdk/provider/Provider";
 import { METADATA_LABEL, type Credential, type Metadatum } from "cip-179";
 
-import { fromJsonSafe } from "@tessera/core";
+import { fromJsonSafe } from "cip-179/tally";
 
 import type { AppConfig } from "~/config";
 import { toTxMetadatum } from "./cbor";

@@ -25,26 +25,28 @@ import {
 } from "cip-179";
 
 import {
-  RULESET_DESCRIPTOR,
-  artifactHash,
   auditResponses,
   auditRevealedResponses,
   bytesToHex,
   dedupeResponses,
   findSurvey,
   humanizeAnswer,
-  responderAnswers,
-  roleBreakdown,
   serializeAnswer,
-  tallySurvey,
   type ExcludedRecord,
   type ExclusionKey,
-  type QuestionTally,
   type ResponseAudit,
   type RevealedAudit,
   type SurveyAggregate,
+} from "cip-179/domain";
+import {
+  RULESET_DESCRIPTOR,
+  artifactHash,
+  responderAnswers,
+  roleBreakdown,
+  tallySurvey,
+  type QuestionTally,
   type TallyArtifact,
-} from "@tessera/core";
+} from "cip-179/tally";
 
 import { useApp } from "~/state";
 import {

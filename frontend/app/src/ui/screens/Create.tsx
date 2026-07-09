@@ -34,7 +34,7 @@ import {
   type QuestionType,
 } from "~/domain/create";
 import { IPFS_PROVIDERS } from "~/enrichment/providers";
-import { hexToBytes } from "@tessera/core";
+import { hexToBytes } from "cip-179/domain";
 import {
   SubmitProgressModal,
   type SubmitStep,

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Question, Role, SurveyDefinition, SurveyResponse } from "cip-179";
 
-import { hexToBytes, type TallyArtifact } from "@tessera/core";
+import { hexToBytes } from "cip-179/domain";
+import type { TallyArtifact } from "cip-179/tally";
 
 import {
   formatAda,

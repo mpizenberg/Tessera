@@ -11,7 +11,7 @@ import {
 } from "solid-js";
 import { A } from "@solidjs/router";
 
-import type { SurveyAggregate } from "@tessera/core";
+import type { SurveyAggregate } from "cip-179/domain";
 
 import { useApp, type ExploreFilter } from "~/state";
 import { walletOwns } from "~/domain/roles";

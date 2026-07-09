@@ -8,20 +8,17 @@
 
 import type { Question, Role, SurveyDefinition, SurveyResponse } from "cip-179";
 
+import { optionLabelOf, parseCredentialKey } from "cip-179/domain";
 import {
-  optionLabelOf,
-  parseCredentialKey,
   responderAnswers,
   toArtifactQuestions,
   weightedTallySurvey,
-} from "@tessera/core";
-import type {
-  ArtifactResponder,
-  ArtifactQuestion,
-  ArtifactRoleTally,
-  TallyArtifact,
-  WeightedResponder,
-} from "@tessera/core";
+  type ArtifactResponder,
+  type ArtifactQuestion,
+  type ArtifactRoleTally,
+  type TallyArtifact,
+  type WeightedResponder,
+} from "cip-179/tally";
 
 /** Fill fraction 0–1 of `part` relative to `max` (4 decimal places). */
 export function fracOf(part: bigint, max: bigint): number {

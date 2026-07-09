@@ -21,7 +21,7 @@ import {
 } from "solid-js";
 import type { Metadatum } from "cip-179";
 
-import { bytesToHex } from "@tessera/core";
+import { bytesToHex } from "cip-179/domain";
 import { metadatumToDiagnostic } from "~/util/cbor-diagnostic";
 import { MAX_TX_BYTES, estimateMinFee, lovelaceToAda } from "~/domain/fee";
 import { SegmentedToggle } from "~/ui/components/SegmentedToggle";

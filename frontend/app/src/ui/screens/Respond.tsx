@@ -33,7 +33,7 @@ import {
   findSurvey,
   hexToBytes,
   type SurveyAggregate,
-} from "@tessera/core";
+} from "cip-179/domain";
 import { respondableRoles, roleCredential } from "~/domain/roles";
 import {
   buildResponse,
