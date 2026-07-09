@@ -20,8 +20,7 @@
   "dependencies": {
     "@tessera/core": "workspace:*",
     "cip-179": "workspace:*",
-    "@evolution-sdk/evolution": "^0.5.9",
-    "@noble/hashes": "^2.2.0"
+    "@evolution-sdk/evolution": "^0.5.9"
   },
   "devDependencies": {
     "typescript": "^5.6.0",

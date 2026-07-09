@@ -36,15 +36,15 @@ served document matches the on-chain hash.
 
 ## Repository layout
 
-| Path                | What it is                                                                                                               |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `frontend/app`      | The browser app — [SolidJS][solid] + [Vite][vite] + TypeScript.                                                          |
-| `packages/cip179`   | The reusable `cip-179` package: label-17 codec plus the cross-implementation domain / tally / txproof / tlock surface.   |
-| `packages/core`     | Shared pure domain (`@tessera/core`): types, wire codec, audit/tally rules, weighted tally, canonical artifact + hashes. |
-| `packages/koios`    | The Koios read path (`KoiosDataSource`, tally inputs, tx-proof decoding), shared by direct mode, backend, and verifier.  |
-| `packages/verifier` | Standalone CLI that re-derives a survey's result artifact from chain data and checks its content hash.                   |
-| `backend/server`    | Tier-1 serving backend: cached chain reads, response validation, weight snapshots, artifact finalization. Node or CF+D1. |
-| `backend/deps`      | Indexer submodules (Adder / Yaci Store / Oura) for a future Tier-2; design notes in `backend/*.md`.                      |
+| Path                | What it is                                                                                                                                                                                                            |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `frontend/app`      | The browser app — [SolidJS][solid] + [Vite][vite] + TypeScript.                                                                                                                                                       |
+| `packages/cip179`   | The reusable `cip-179` package: label-17 codec plus the cross-implementation domain / tally / txproof / tlock surface.                                                                                                |
+| `packages/core`     | Tessera app core (`@tessera/core`): the `DataSource` seam, Explore list/health payloads, keyset paging, the survey-list aggregation adapter, and config. Re-exports the reusable domain/tally surface from `cip-179`. |
+| `packages/koios`    | The Koios read path (`KoiosDataSource`, tally inputs), shared by direct mode, backend, and verifier.                                                                                                                  |
+| `packages/verifier` | Standalone CLI that re-derives a survey's result artifact from chain data and checks its content hash.                                                                                                                |
+| `backend/server`    | Tier-1 serving backend: cached chain reads, response validation, weight snapshots, artifact finalization. Node or CF+D1.                                                                                              |
+| `backend/deps`      | Indexer submodules (Adder / Yaci Store / Oura) for a future Tier-2; design notes in `backend/*.md`.                                                                                                                   |
 
 ## Quick start
 

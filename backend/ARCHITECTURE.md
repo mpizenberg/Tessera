@@ -371,7 +371,7 @@ emits an artifact whose hashed body is a single **cancellation record** (cancell
   `TX_METADATA_BATCH = 50` in `koios.ts`); chunk accordingly. At PoC scale this
   is a handful of batches in one invocation.
 - **Encodings** — resolved: thin wrappers over evolution-sdk in
-  `packages/koios/src/bech32.ts` (no hand-rolled bech32): `stakeAddress`
+  `packages/cip179/src/txproof/bech32.ts` (no hand-rolled bech32): `stakeAddress`
   (CIP-19 headers, key **and** script credentials, both networks), `drepId`
   (CIP-129 `drep1…`), `govActionId` (CIP-129 `gov_action1…`) — each verified
   against ids Koios itself emits.
@@ -491,7 +491,7 @@ Weighting is the mechanical generalization of the existing tally: **replace
 The unit of result publication and the Koios→node seam.
 
 - **Canonical JSON**, content-addressed by hash. Pinned (implemented in
-  `@tessera/core`'s `canonical.ts`, shared by emitter and verifier):
+  `cip-179/tally`'s `canonical.ts`, shared by emitter and verifier):
   `canonicalJson()` is a strict JCS-lite — keys sorted by UTF-16 code units, no
   whitespace, **safe integers only** (throws on floats/bigints/non-plain
   objects) — and the hash is **blake2b-256** of its UTF-8 bytes (the hash
@@ -688,11 +688,11 @@ Contents (sketch):
 - ~~**Exact Koios shapes**~~ — resolved empirically; see the §6.4 table (incl.
   the deprecated-variant and `_epoch_no` pitfalls and `/epoch_info` flakiness).
 - ~~**Credential-proof verification** (§6.3 rule 2)~~ — **done**: mechanism A/B
-  evaluated in `@tessera/core`'s `proof.ts` over `TxProof` evidence decoded by
-  `packages/koios/src/txProof.ts` (voting_procedures shape pinned by real
+  evaluated in `cip-179/domain`'s `proof.ts` over `TxProof` evidence decoded by
+  `packages/cip179/src/txproof/txProof.ts` (voting_procedures shape pinned by real
   preview vote-tx fixtures); verdicts persisted per response (§6.5).
-- ~~**Credential encodings**~~ — **done**: `packages/koios/src/bech32.ts` (§6.4).
-- ~~**Canonicalization profile**~~ — **done**: `@tessera/core` `canonical.ts`
+- ~~**Credential encodings**~~ — **done**: `packages/cip179/src/txproof/bech32.ts` (§6.4).
+- ~~**Canonicalization profile**~~ — **done**: `cip-179/tally` `canonical.ts`
   (JCS-lite + decimal-string bigints + blake2b-256), used by emitter and
   verifier (§7).
 - ~~**Finalization safety margin**~~ — chosen: 600 s past the `end_epoch`
