@@ -12,7 +12,10 @@ import {
 } from "./artifact.js";
 import type { AnswerItem, Metadatum } from "../index.js";
 import { canonicalJson } from "./canonical.js";
-import type { WeightedQuestionTally, WeightedResponder } from "./weightedTally.js";
+import type {
+  WeightedQuestionTally,
+  WeightedResponder,
+} from "./weightedTally.js";
 
 const RESPONSE: SurveyResponse = {
   specVersion: 4,

@@ -13,14 +13,14 @@ for now; extract to a dedicated repository once the CIP stabilizes.
 
 The monorepo already has a gradient from "pure spec" to "Tessera app":
 
-| Layer           | Package                          | Contents                                                                                                                                                                | Deps                   |
-| --------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------| ---------------------- |
-| Spec codec      | `cip-179` (in `frontend/cip179`) | types, encode/decode metadatum, validate, constants                                                                                                                     | none                   |
-| Domain          | `@tessera/core`                  | survey aggregation, audit, dedupe, cancellation, credential proof, count + stake-weighted tally, canonical JSON, tally artifact, gov-link parsing, `DataSource` seam, `wire.ts`, `config.ts`, `page.ts` | @noble/hashes          |
-| Sealed          | `@tessera/tlock`                 | drand round math, lazy tlock client, padding, seal/reveal, CBOR envelope                                                                                                | tlock-js, evolution-sdk |
-| Data access     | `@tessera/koios`                 | `KoiosDataSource`, Koios-JSON/tx-CBOR adapters, stake inputs, tx proofs, bech32 ids                                                                                     | evolution-sdk          |
-| Tooling         | `@tessera/verifier`              | standalone artifact re-verifier CLI                                                                                                                                     | all of the above       |
-| App             | `frontend/app`, `backend/server` | SolidJS UI/wallet/i18n; Cloudflare serving tier + stores                                                                                                                | —                      |
+| Layer       | Package                          | Contents                                                                                                                                                                                                | Deps                    |
+| ----------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| Spec codec  | `cip-179` (in `frontend/cip179`) | types, encode/decode metadatum, validate, constants                                                                                                                                                     | none                    |
+| Domain      | `@tessera/core`                  | survey aggregation, audit, dedupe, cancellation, credential proof, count + stake-weighted tally, canonical JSON, tally artifact, gov-link parsing, `DataSource` seam, `wire.ts`, `config.ts`, `page.ts` | @noble/hashes           |
+| Sealed      | `@tessera/tlock`                 | drand round math, lazy tlock client, padding, seal/reveal, CBOR envelope                                                                                                                                | tlock-js, evolution-sdk |
+| Data access | `@tessera/koios`                 | `KoiosDataSource`, Koios-JSON/tx-CBOR adapters, stake inputs, tx proofs, bech32 ids                                                                                                                     | evolution-sdk           |
+| Tooling     | `@tessera/verifier`              | standalone artifact re-verifier CLI                                                                                                                                                                     | all of the above        |
+| App         | `frontend/app`, `backend/server` | SolidJS UI/wallet/i18n; Cloudflare serving tier + stores                                                                                                                                                | —                       |
 
 Observations that shaped the plan:
 
@@ -53,8 +53,8 @@ Settled in discussion (2026-07-07):
    heavy deps become optional peers so codec-only consumers stay light.
 3. **No fetching seam is published.** `DataSource` is shaped by how Tessera's
    pages organize their reads ("one method per page-shaped read"); another app
-   would organize requests differently. The published surface is *pure
-   functions over already-fetched data*. The on-chain **record shapes**
+   would organize requests differently. The published surface is _pure
+   functions over already-fetched data_. The on-chain **record shapes**
    (`SurveyRecord`, `ResponseRecord`, `CancellationRecord`, `TxProof`,
    `ChainTip`, `SurveyBundle`, …) ARE published — the pure functions are
    defined over them. `source.ts` splits accordingly. `SurveyBundle` is
@@ -84,13 +84,13 @@ Settled in discussion (2026-07-07):
 
 `packages/cip179`, package name `cip-179`, five subpath entries:
 
-| Subpath           | Contents                                          | Runtime deps                                |
-| ----------------- | ------------------------------------------------- | ------------------------------------------- |
-| `cip-179`         | existing codec, unchanged                         | none                                        |
-| `cip-179/domain`  | pure semantics over on-chain records              | none                                        |
-| `cip-179/tally`   | reference ruleset + content-addressed artifact    | `@noble/hashes`                             |
-| `cip-179/txproof` | tx CBOR → `TxProof`, bech32/CIP-129 ids           | evolution-sdk (optional peer, lazy import)  |
-| `cip-179/tlock`   | sealed-response stack                             | tlock-js + evolution-sdk (optional peers, lazy import) |
+| Subpath           | Contents                                       | Runtime deps                                           |
+| ----------------- | ---------------------------------------------- | ------------------------------------------------------ |
+| `cip-179`         | existing codec, unchanged                      | none                                                   |
+| `cip-179/domain`  | pure semantics over on-chain records           | none                                                   |
+| `cip-179/tally`   | reference ruleset + content-addressed artifact | `@noble/hashes`                                        |
+| `cip-179/txproof` | tx CBOR → `TxProof`, bech32/CIP-129 ids        | evolution-sdk (optional peer, lazy import)             |
+| `cip-179/tlock`   | sealed-response stack                          | tlock-js + evolution-sdk (optional peers, lazy import) |
 
 ### File moves
 

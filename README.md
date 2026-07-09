@@ -39,7 +39,7 @@ served document matches the on-chain hash.
 | Path                | What it is                                                                                                               |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `frontend/app`      | The browser app — [SolidJS][solid] + [Vite][vite] + TypeScript.                                                          |
-| `packages/cip179`   | The reusable `cip-179` package: label-17 codec plus the cross-implementation domain / tally / txproof / tlock surface.    |
+| `packages/cip179`   | The reusable `cip-179` package: label-17 codec plus the cross-implementation domain / tally / txproof / tlock surface.   |
 | `packages/core`     | Shared pure domain (`@tessera/core`): types, wire codec, audit/tally rules, weighted tally, canonical artifact + hashes. |
 | `packages/koios`    | The Koios read path (`KoiosDataSource`, tally inputs, tx-proof decoding), shared by direct mode, backend, and verifier.  |
 | `packages/verifier` | Standalone CLI that re-derives a survey's result artifact from chain data and checks its content hash.                   |

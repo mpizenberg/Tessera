@@ -13,13 +13,13 @@ same chain data, and produce hash-identical tally artifacts.
 
 ## Entry points
 
-| Import            | What it is                                                            | Required peer deps                          |
-| :---------------- | :------------------------------------------------------------------- | :------------------------------------------ |
-| `cip-179`         | The label-17 codec: encode / decode / validate the metadatum format. | none                                        |
-| `cip-179/domain`  | Pure semantics over on-chain records: dedupe, cancellation, credential proof, audit, answer rendering, survey aggregation. | none |
-| `cip-179/tally`   | The reference count / stake-weighted ruleset and the canonical, content-addressed tally artifact. | none |
-| `cip-179/txproof` | Transaction CBOR → `TxProof`, plus bech32 / CIP-129 id helpers.      | `@evolution-sdk/evolution`                  |
-| `cip-179/tlock`   | The sealed-submission stack for `sealed_submission_mode`: drand round math, timelock encrypt/decrypt, seal/reveal. | `@mattpiz/tlock-js`, `@evolution-sdk/evolution` |
+| Import            | What it is                                                                                                                 | Required peer deps                              |
+| :---------------- | :------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------- |
+| `cip-179`         | The label-17 codec: encode / decode / validate the metadatum format.                                                       | none                                            |
+| `cip-179/domain`  | Pure semantics over on-chain records: dedupe, cancellation, credential proof, audit, answer rendering, survey aggregation. | none                                            |
+| `cip-179/tally`   | The reference count / stake-weighted ruleset and the canonical, content-addressed tally artifact.                          | none                                            |
+| `cip-179/txproof` | Transaction CBOR → `TxProof`, plus bech32 / CIP-129 id helpers.                                                            | `@evolution-sdk/evolution`                      |
+| `cip-179/tlock`   | The sealed-submission stack for `sealed_submission_mode`: drand round math, timelock encrypt/decrypt, seal/reveal.         | `@mattpiz/tlock-js`, `@evolution-sdk/evolution` |
 
 `@noble/hashes` is a regular (small) dependency, so `cip-179/tally` and
 `cip-179/txproof` pull it in automatically. The Cardano and timelock stacks are
@@ -188,7 +188,7 @@ installing the `cip-179` version whose `rulesetHash` matches the artifact's
 recorded hash:
 
 | `cip-179` version | CIP-179 spec version | ruleset version | `rulesetHash()`                                                    |
-| :---------------- | :------------------- | :-------------- | :---------------------------------------------------------------- |
+| :---------------- | :------------------- | :-------------- | :----------------------------------------------------------------- |
 | 0.1.0             | 4                    | 3               | `c5b2b4284db26af358ed084373cc0786b15e4f58bc27c4f82e769d16ba878eee` |
 
 When the rules change, the ruleset version and hash change; add a new row rather
@@ -222,10 +222,10 @@ pnpm build   # emits dist/ (.js + .d.ts + maps) for every subpath
 
 ## Layout
 
-| Path             | Subpath           | Purpose                                                    |
-| :--------------- | :---------------- | :-------------------------------------------------------- |
-| `src/*.ts`       | `cip-179`         | Codec: metadatum model, constants, types, encode/decode/validate. |
-| `src/domain/`    | `cip-179/domain`  | On-chain record shapes + pure domain semantics.           |
-| `src/tally/`     | `cip-179/tally`   | Reference ruleset, wire/canonical codecs, content-addressed artifact. |
-| `src/txproof/`   | `cip-179/txproof` | Transaction CBOR → `TxProof`, bech32 / CIP-129 ids.       |
-| `src/tlock/`     | `cip-179/tlock`   | Sealed-submission (drand tlock) stack.                    |
+| Path           | Subpath           | Purpose                                                               |
+| :------------- | :---------------- | :-------------------------------------------------------------------- |
+| `src/*.ts`     | `cip-179`         | Codec: metadatum model, constants, types, encode/decode/validate.     |
+| `src/domain/`  | `cip-179/domain`  | On-chain record shapes + pure domain semantics.                       |
+| `src/tally/`   | `cip-179/tally`   | Reference ruleset, wire/canonical codecs, content-addressed artifact. |
+| `src/txproof/` | `cip-179/txproof` | Transaction CBOR → `TxProof`, bech32 / CIP-129 ids.                   |
+| `src/tlock/`   | `cip-179/tlock`   | Sealed-submission (drand tlock) stack.                                |

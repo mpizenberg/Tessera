@@ -19,7 +19,11 @@
  */
 
 import { bytesToHex } from "../domain/index.js";
-import type { NativeScriptInfo, TxProof, VoteBinding } from "../domain/index.js";
+import type {
+  NativeScriptInfo,
+  TxProof,
+  VoteBinding,
+} from "../domain/index.js";
 
 import { govActionId } from "./bech32.js";
 

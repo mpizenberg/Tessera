@@ -19,7 +19,10 @@ import type { AnswerItem } from "../index.js";
 
 import { blake2b256Hex, canonicalJson } from "./canonical.js";
 import { fromJsonSafe, toJsonSafe } from "./wire.js";
-import type { WeightedQuestionTally, WeightedResponder } from "./weightedTally.js";
+import type {
+  WeightedQuestionTally,
+  WeightedResponder,
+} from "./weightedTally.js";
 
 /**
  * The counting rules this implementation applies, as data. Change any rule and
