@@ -1086,16 +1086,25 @@ const TypeFields: Component<{
           </Show>
           <button
             type="button"
-            aria-pressed={props.draft.requireAll}
+            role="switch"
+            aria-checked={props.draft.requireAll}
             onClick={() =>
               props.set(i(), "requireAll", !props.draft.requireAll)
             }
-            class={css.requiredBtn}
-            classList={{ [css.requiredBtnOn]: props.draft.requireAll }}
+            class={css.requireAllRow}
           >
-            {props.draft.requireAll
-              ? t("create.ratingRequireAll")
-              : t("create.ratingAllowSubset")}
+            <span
+              class={css.requireAllTrack}
+              classList={{ [css.requireAllTrackOn]: props.draft.requireAll }}
+            >
+              <span
+                class={css.requireAllKnob}
+                classList={{ [css.requireAllKnobOn]: props.draft.requireAll }}
+              />
+            </span>
+            <span class={css.requireAllLabel}>
+              {t("create.ratingRequireAllLabel")}
+            </span>
           </button>
           <p class={css.hint}>{t("create.ratingRequireAllHint")}</p>
         </div>

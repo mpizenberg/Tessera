@@ -148,8 +148,7 @@ const create = {
   // --- Rating ---
   ratingNumericScale: "Numeric scale",
   ratingLabelledScale: "Labelled scale",
-  ratingRequireAll: "Rate every option",
-  ratingAllowSubset: "Allow rating a subset",
+  ratingRequireAllLabel: "Require every option to be rated",
   ratingRequireAllHint:
     "When on, a response must rate every option. Turn it off to let responders rate only some.",
 

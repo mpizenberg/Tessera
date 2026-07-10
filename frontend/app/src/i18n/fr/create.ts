@@ -142,8 +142,7 @@ const create: Messages = {
   // --- Rating ---
   ratingNumericScale: "Échelle numérique",
   ratingLabelledScale: "Échelle avec libellés",
-  ratingRequireAll: "Noter chaque option",
-  ratingAllowSubset: "Autoriser une notation partielle",
+  ratingRequireAllLabel: "Exiger la notation de chaque option",
   ratingRequireAllHint:
     "Activé, une réponse doit noter chaque option. Désactivez-le pour laisser les répondants n'en noter qu'une partie.",
 
