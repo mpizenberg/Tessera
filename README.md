@@ -7,7 +7,7 @@ polls on Cardano, implementing [CIP-179][cip179] (transaction metadata **label
 Surveys live entirely in transaction metadata — no smart contracts, no custom
 backend required to read them. Responses can be **public** or **sealed**
 (timelock-encrypted with [drand][drand] for delayed reveal), eligibility is
-scoped by on-chain **role** (DRep, SPO, CC, Stakeholder, Owner), and tallies are
+scoped by on-chain **role** (DRep, SPO, CC, Stakeholder, Keyholder), and tallies are
 computed client-side directly from chain data.
 
 > **Status:** active development. The frontend (explore, results, wallet,
