@@ -1,5 +1,5 @@
 /**
- * Decode credential-proof evidence from a transaction's CBOR.
+ * Interpret a transaction's credential-proof evidence into a {@link TxProof}.
  *
  * CIP-179 credential proof lives in the transaction, not the metadata:
  *  - **Mechanism A** — the tx body's `required_signers` (key-based) or a native
@@ -10,13 +10,16 @@
  *    governance action in the same transaction. Surfaced as
  *    {@link TxProof.votes}, evaluated in core's `responseCredentialProven`.
  *
- * evolution-sdk is heavy and otherwise confined to the write path, so it (and
- * the blake2b hasher) are dynamically imported here — the module's static
- * footprint on the read path is negligible, and the SDK chunk loads only when a
- * proof actually needs decoding. `Transaction.fromCBORHex` decodes every
- * post-Alonzo transaction (all CIP-179 txs are recent); any decode failure
- * returns `null`, so the credential is treated as unproven — the safe side.
+ * The transaction itself is decoded by an injected {@link TxProofCodec} (the
+ * `@evolution-sdk/evolution` adapter or any other Cardano stack — see
+ * `cip-179/evolution`); this module imports no serialization library. It owns
+ * only the CIP-179 interpretation of the neutral {@link DecodedTx}: native-script
+ * hashing + render model, and the Conway voter-tag semantics. Any decode or
+ * interpretation failure yields `null`, so the credential is treated as unproven
+ * — the safe side.
  */
+
+import { blake2b } from "@noble/hashes/blake2.js";
 
 import { bytesToHex } from "../domain/index.js";
 import type {
@@ -25,42 +28,18 @@ import type {
   VoteBinding,
 } from "../domain/index.js";
 
-import { govActionId } from "./bech32.js";
-
-/**
- * Minimal structural view of an evolution-sdk native script that tolerates both
- * runtime shapes: the `{_tag:"NativeScript", script}` wrapper and a bare variant
- * (nested children have been observed in either form). Narrowed locally so the
- * recursion is typed without depending on the SDK's effect-schema types.
- */
-type RawNativeScript =
-  | { readonly _tag: "NativeScript"; readonly script: RawNativeScript }
-  | { readonly _tag: "ScriptPubKey"; readonly keyHash: Uint8Array }
-  | { readonly _tag: "ScriptAll"; readonly scripts: readonly RawNativeScript[] }
-  | { readonly _tag: "ScriptAny"; readonly scripts: readonly RawNativeScript[] }
-  | {
-      readonly _tag: "ScriptNOfK";
-      readonly required: bigint;
-      readonly scripts: readonly RawNativeScript[];
-    }
-  | {
-      readonly _tag: "InvalidBefore" | "InvalidHereafter";
-      readonly slot: bigint;
-    };
+import type { NativeScriptNode, TxProofCodec, VoterNode } from "./codec.js";
 
 /** blake2b-224 over `0x00 ‖ scriptCbor` — the Cardano native-script hash. */
-function nativeScriptHash(
-  blake2b: (msg: Uint8Array, opts: { dkLen: number }) => Uint8Array,
-  scriptCbor: Uint8Array,
-): string {
+function nativeScriptHash(scriptCbor: Uint8Array): string {
   const tagged = new Uint8Array(scriptCbor.length + 1);
   tagged[0] = 0x00; // native script language tag
   tagged.set(scriptCbor, 1);
   return bytesToHex(blake2b(tagged, { dkLen: 28 }));
 }
 
-/** Convert an SDK native script (wrapper or bare variant) to {@link NativeScriptInfo}. */
-function toInfo(node: RawNativeScript): NativeScriptInfo {
+/** Convert a native-script node (wrapper or bare variant) to {@link NativeScriptInfo}. */
+function toInfo(node: NativeScriptNode): NativeScriptInfo {
   const v = node._tag === "NativeScript" ? node.script : node;
   switch (v._tag) {
     case "ScriptPubKey":
@@ -87,53 +66,9 @@ function toInfo(node: RawNativeScript): NativeScriptInfo {
   }
 }
 
-/**
- * Minimal structural view of a decoded `voting_procedures` entry — the SDK's
- * runtime shape (verified against real preview vote transactions), narrowed
- * locally like {@link RawNativeScript}. `procedures` is a
- * `Map<voter, Map<govActionId, procedure>>` at runtime; typed as iterables of
- * pairs so both Maps and plain pair-arrays satisfy it.
- */
-interface RawVotingProcedures {
-  readonly procedures: Iterable<
-    readonly [RawVoter, Iterable<readonly [RawGovActionId, unknown]>]
-  >;
-}
-
-type RawVoter =
-  | {
-      readonly _tag: "ConstitutionalCommitteeVoter";
-      readonly credential:
-        | { readonly _tag: "KeyHash"; readonly hash: Uint8Array }
-        | { readonly _tag: "ScriptHash"; readonly hash: Uint8Array };
-    }
-  | {
-      readonly _tag: "DRepVoter";
-      readonly drep:
-        | {
-            readonly _tag: "KeyHashDRep";
-            readonly keyHash: { readonly hash: Uint8Array };
-          }
-        | {
-            readonly _tag: "ScriptHashDRep";
-            readonly scriptHash: { readonly hash: Uint8Array };
-          }
-        | { readonly _tag: "AlwaysAbstainDRep" }
-        | { readonly _tag: "AlwaysNoConfidenceDRep" };
-    }
-  | {
-      readonly _tag: "StakePoolVoter";
-      readonly poolKeyHash: { readonly hash: Uint8Array };
-    };
-
-interface RawGovActionId {
-  readonly transactionId: { readonly hash: Uint8Array | string };
-  readonly govActionIndex: bigint | number;
-}
-
 /** Conway voter tag + credential hash of a voter, or null (Abstain/NoConf). */
 function voterCredential(
-  voter: RawVoter,
+  voter: VoterNode,
 ): { voterTag: number; credentialHash: string } | null {
   switch (voter._tag) {
     case "ConstitutionalCommitteeVoter":
@@ -165,67 +100,33 @@ function voterCredential(
   }
 }
 
-/** The tx's vote bindings, as (voter tag, credential, voted action ids). */
-async function decodeVotes(
-  votingProcedures: RawVotingProcedures | undefined | null,
-): Promise<VoteBinding[]> {
-  if (!votingProcedures?.procedures) return [];
-  const votes: VoteBinding[] = [];
-  for (const [voter, entries] of votingProcedures.procedures) {
-    const cred = voterCredential(voter);
-    if (!cred) continue;
-    const actionIds = await Promise.all(
-      [...entries].map(([ga]) => {
-        const hash = ga.transactionId.hash;
-        const txIdHex = typeof hash === "string" ? hash : bytesToHex(hash);
-        return govActionId(txIdHex, Number(ga.govActionIndex));
-      }),
-    );
-    votes.push({ ...cred, actionIds });
-  }
-  return votes;
-}
-
 /**
- * Decode a transaction's credential-proof evidence — `required_signers`,
+ * Interpret a transaction's credential-proof evidence — `required_signers`,
  * witness-set native scripts (mechanism A) and vote bindings (mechanism B) —
- * from its CBOR hex, or `null` if it can't be decoded (→ unproven).
+ * decoding its CBOR through `codec`, or `null` if it can't be decoded or
+ * interpreted (→ unproven).
  */
-export async function decodeTxProof(
+export function decodeTxProof(
+  codec: TxProofCodec,
   txCborHex: string,
-): Promise<TxProof | null> {
+): TxProof | null {
+  const decoded = codec.decodeTx(txCborHex);
+  if (!decoded) return null;
   try {
-    const [{ Transaction, KeyHash, NativeScripts }, { blake2b }] =
-      await Promise.all([
-        import("@evolution-sdk/evolution"),
-        import("@noble/hashes/blake2.js"),
-      ]);
+    const nativeScripts = decoded.nativeScripts.map((ns) => ({
+      scriptHash: nativeScriptHash(ns.scriptCbor),
+      script: toInfo(ns.script),
+    }));
 
-    const tx = Transaction.fromCBORHex(txCborHex);
+    const votes: VoteBinding[] = [];
+    for (const vote of decoded.votes) {
+      const cred = voterCredential(vote.voter);
+      if (cred) votes.push({ ...cred, actionIds: vote.actionIds });
+    }
 
-    const requiredSigners = (tx.body.requiredSigners ?? []).map((k) =>
-      KeyHash.toHex(k),
-    );
-
-    const raw = tx.witnessSet?.nativeScripts;
-    const nativeScripts =
-      Array.isArray(raw) && raw.length > 0
-        ? raw.map((ns) => ({
-            scriptHash: nativeScriptHash(
-              blake2b,
-              NativeScripts.toCBORBytes(ns),
-            ),
-            script: toInfo(ns as unknown as RawNativeScript),
-          }))
-        : [];
-
-    const votes = await decodeVotes(
-      tx.body.votingProcedures as unknown as RawVotingProcedures | undefined,
-    );
-
-    return { requiredSigners, nativeScripts, votes };
+    return { requiredSigners: decoded.requiredSigners, nativeScripts, votes };
   } catch (err) {
-    console.warn(`could not decode tx proof: ${String(err)}`);
+    console.warn(`could not interpret tx proof: ${String(err)}`);
     return null;
   }
 }

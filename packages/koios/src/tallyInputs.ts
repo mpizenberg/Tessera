@@ -30,7 +30,7 @@ import { credentialKey } from "cip-179/domain";
 import type { TallyInputSource, WeightInfo } from "cip-179/tally";
 import type { AppConfig } from "@tessera/core";
 
-import { drepId, stakeAddress } from "cip-179/txproof";
+import { evolutionCodec } from "cip-179/evolution";
 
 /** Max stake addresses per bulk POST (matches the other Koios batch sizes). */
 const ACCOUNT_BATCH = 50;
@@ -147,7 +147,7 @@ export class KoiosTallyInputs implements TallyInputSource {
     const byAddress = new Map<string, string>(); // address → credentialKey
     for (const cred of credentials) {
       byAddress.set(
-        await stakeAddress(cred, this.config.network),
+        evolutionCodec.stakeAddress(cred, this.config.network),
         credentialKey(cred),
       );
     }
@@ -223,7 +223,7 @@ export class KoiosTallyInputs implements TallyInputSource {
   ): Promise<Map<string, WeightInfo>> {
     const out = new Map<string, WeightInfo>();
     for (const cred of credentials) {
-      const id = await drepId(cred);
+      const id = evolutionCodec.drepId(cred);
       const rows = await this.get<DrepPowerRow[]>(
         `/drep_voting_power_history?_drep_id=${id}&epoch_no=eq.${epoch}`,
       );

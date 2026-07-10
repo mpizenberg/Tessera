@@ -1,10 +1,12 @@
 /**
  * Seal / reveal orchestration for sealed (commit-reveal) surveys.
  *
- * Ties three layers together — the `cip-179` codec (answer ↔ metadatum), the
- * `./cbor` seam (metadatum ↔ bytes), and the `./client` tlock seam (timelock
- * encrypt/decrypt) — so it pulls in evolution-sdk and the tlock bundle; import
- * it lazily (it is reached only from the submit and reveal paths).
+ * Ties three layers together — the `cip-179` codec (answer ↔ metadatum), an
+ * injected {@link MetadatumCodec} (metadatum ↔ bytes), and the `./client` tlock
+ * seam (timelock encrypt/decrypt) — so it pulls in the tlock bundle; import it
+ * lazily (it is reached only from the submit and reveal paths). The metadatum
+ * CBOR is injected, not imported, so no serialization library is pulled in here
+ * (see `cip-179/evolution`).
  *
  * Wire format (interoperable with the spec and the Elm reference): the timelock
  * **plaintext is the CBOR of the answers array, zero-padded to `padding_size`**
@@ -22,7 +24,7 @@ import {
 
 import type { RandomnessBeacon } from "./client.js";
 import { decryptWithBeacon, encryptToRound, fetchBeacon } from "./client.js";
-import { cborToMetadatum, metadatumToCbor } from "./cbor.js";
+import type { MetadatumCodec } from "./codec.js";
 
 /** Right-pad bytes with zeros to at least `size` (no-op if already longer). */
 function padTo(bytes: Uint8Array, size: number): Uint8Array {
@@ -37,12 +39,13 @@ function padTo(bytes: Uint8Array, size: number): Uint8Array {
  * ciphertext bytes to place in a sealed {@link SurveyResponse}.
  */
 export async function sealAnswers(
+  codec: MetadatumCodec,
   answers: readonly AnswerItem[],
   round: number,
   paddingSize: number,
 ): Promise<Uint8Array> {
   const metadatum: Metadatum = answers.map(encodeAnswerItem);
-  const plaintext = padTo(metadatumToCbor(metadatum), paddingSize);
+  const plaintext = padTo(codec.metadatumToCbor(metadatum), paddingSize);
   return encryptToRound(plaintext, round);
 }
 
@@ -59,6 +62,7 @@ export async function sealAnswers(
  * commit the same beacon to the artifact's provenance.
  */
 export async function revealWithBeacon(
+  codec: MetadatumCodec,
   sealed: readonly SurveyResponse[],
   beacon: RandomnessBeacon,
 ): Promise<(SurveyResponse | null)[]> {
@@ -71,7 +75,7 @@ export async function revealWithBeacon(
     }
     try {
       const plaintext = await decryptWithBeacon(r.answers.ciphertext, beacon);
-      const m = cborToMetadatum(plaintext);
+      const m = codec.cborToMetadatum(plaintext);
       if (!Array.isArray(m)) throw new Error("decrypted payload is not a list");
       const answers: AnswerItem[] = m.map((item, i) =>
         decodeAnswerItem(item, `answer[${i}]`),
@@ -91,9 +95,10 @@ export async function revealWithBeacon(
  * browser reveal path; the fetch is the only networked step.
  */
 export async function revealResponses(
+  codec: MetadatumCodec,
   sealed: readonly SurveyResponse[],
   round: number,
 ): Promise<(SurveyResponse | null)[]> {
   const beacon = await fetchBeacon(round);
-  return revealWithBeacon(sealed, beacon);
+  return revealWithBeacon(codec, sealed, beacon);
 }

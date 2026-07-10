@@ -17,6 +17,7 @@ export default defineConfig({
       "cip-179/tally": r("../../packages/cip179/src/tally/index.ts"),
       "cip-179/txproof": r("../../packages/cip179/src/txproof/index.ts"),
       "cip-179/tlock": r("../../packages/cip179/src/tlock/index.ts"),
+      "cip-179/evolution": r("../../packages/cip179/src/evolution/index.ts"),
       "cip-179": r("../../packages/cip179/src/index.ts"),
       "@tessera/core": r("../../packages/core/src/index.ts"),
       "@tessera/koios": r("../../packages/koios/src/index.ts"),

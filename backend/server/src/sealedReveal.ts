@@ -49,9 +49,11 @@ export type SealedRevealFn = (
  * pulled only when a sealed survey is actually revealed.
  */
 export const tlockSealedReveal: SealedRevealFn = async (records, { round }) => {
-  const { fetchBeacon, revealWithBeacon } = await import("cip-179/tlock");
+  const [{ fetchBeacon, revealWithBeacon }, { evolutionCodec }] =
+    await Promise.all([import("cip-179/tlock"), import("cip-179/evolution")]);
   const beacon = await fetchBeacon(round);
   const revealed = await revealWithBeacon(
+    evolutionCodec,
     records.map((r) => r.response),
     beacon,
   );

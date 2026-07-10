@@ -14,6 +14,7 @@
 import { describe, expect, it } from "vitest";
 import { Role, type AnswerItem, type SurveyResponse } from "../index.js";
 
+import { evolutionCodec } from "../evolution/index.js";
 import type { RandomnessBeacon } from "./client.js";
 import { sealAnswers, revealWithBeacon } from "./seal.js";
 import beaconFixture from "./quicknet-beacon-1000000.json" with { type: "json" };
@@ -43,8 +44,9 @@ function sealedResponse(ciphertext: Uint8Array): SurveyResponse {
 
 describe("sealAnswers → revealWithBeacon", () => {
   it("round-trips answers through timelock encrypt/decrypt (offline)", async () => {
-    const ciphertext = await sealAnswers(ANSWERS, ROUND, 0);
+    const ciphertext = await sealAnswers(evolutionCodec, ANSWERS, ROUND, 0);
     const [revealed] = await revealWithBeacon(
+      evolutionCodec,
       [sealedResponse(ciphertext)],
       BEACON,
     );
@@ -61,9 +63,10 @@ describe("sealAnswers → revealWithBeacon", () => {
   it("strips the zero padding when decoding (self-delimiting CBOR)", async () => {
     // A padding far larger than the answers' CBOR: the trailing zeros must be
     // ignored, not decoded as extra items.
-    const ciphertext = await sealAnswers(ANSWERS, ROUND, 512);
+    const ciphertext = await sealAnswers(evolutionCodec, ANSWERS, ROUND, 512);
     expect(ciphertext.length).toBeGreaterThan(0);
     const [revealed] = await revealWithBeacon(
+      evolutionCodec,
       [sealedResponse(ciphertext)],
       BEACON,
     );
@@ -71,10 +74,11 @@ describe("sealAnswers → revealWithBeacon", () => {
   });
 
   it("reveals a corrupted ciphertext as null (never sinks the batch)", async () => {
-    const good = await sealAnswers(ANSWERS, ROUND, 0);
+    const good = await sealAnswers(evolutionCodec, ANSWERS, ROUND, 0);
     const corrupted = new Uint8Array(good);
     corrupted[corrupted.length - 1] ^= 0xff; // flip a payload byte
     const [a, b] = await revealWithBeacon(
+      evolutionCodec,
       [sealedResponse(corrupted), sealedResponse(good)],
       BEACON,
     );
@@ -87,7 +91,7 @@ describe("sealAnswers → revealWithBeacon", () => {
       ...sealedResponse(new Uint8Array()),
       answers: { type: "public", answers: ANSWERS },
     };
-    const [revealed] = await revealWithBeacon([pub], BEACON);
+    const [revealed] = await revealWithBeacon(evolutionCodec, [pub], BEACON);
     expect(revealed).toBe(pub);
   });
 });

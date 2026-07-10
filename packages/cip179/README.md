@@ -7,40 +7,67 @@ Reusable TypeScript building blocks for the
 The package is organized as **subpath entry points**, layered by dependency
 weight. The root is a pure, side-effect-free codec with zero dependencies; the
 heavier layers add pure domain semantics, the reproducible tally, and the
-Cardano/crypto-backed transaction-proof and sealed-submission stacks. Any
-CIP-179 implementation — not just Tessera — can build on these and interpret the
-same chain data, and produce hash-identical tally artifacts.
+transaction-proof and sealed-submission stacks. The Cardano-serialization work
+those last two need is **injected** (a small port + an adapter), so no Cardano
+library is baked in: the evolution-sdk footprint is a swappable dependency, not a
+requirement. Any CIP-179 implementation — not just Tessera, on any Cardano stack
+— can build on these, interpret the same chain data, and produce hash-identical
+tally artifacts.
 
 ## Entry points
 
-| Import            | What it is                                                                                                                 | Required peer deps                              |
-| :---------------- | :------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------- |
-| `cip-179`         | The label-17 codec: encode / decode / validate the metadatum format.                                                       | none                                            |
-| `cip-179/domain`  | Pure semantics over on-chain records: dedupe, cancellation, credential proof, audit, answer rendering, survey aggregation. | none                                            |
-| `cip-179/tally`   | The reference count / stake-weighted ruleset and the canonical, content-addressed tally artifact.                          | none                                            |
-| `cip-179/txproof` | Transaction CBOR → `TxProof`, plus bech32 / CIP-129 id helpers.                                                            | `@evolution-sdk/evolution`                      |
-| `cip-179/tlock`   | The sealed-submission stack for `sealed_submission_mode`: drand round math, timelock encrypt/decrypt, seal/reveal.         | `@mattpiz/tlock-js`, `@evolution-sdk/evolution` |
+| Import              | What it is                                                                                                                                            | Required peer deps         |
+| :------------------ | :---------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------- |
+| `cip-179`           | The label-17 codec: encode / decode / validate the metadatum format.                                                                                  | none                       |
+| `cip-179/domain`    | Pure semantics over on-chain records: dedupe, cancellation, credential proof, audit, answer rendering, survey aggregation.                            | none                       |
+| `cip-179/tally`     | The reference count / stake-weighted ruleset and the canonical, content-addressed tally artifact.                                                     | none                       |
+| `cip-179/txproof`   | Transaction CBOR → `TxProof` (mechanism-A/B evidence), over an injected `TxProofCodec`. **Imports no Cardano library itself.**                        | none¹                      |
+| `cip-179/tlock`     | The sealed-submission stack for `sealed_submission_mode`: drand round math, timelock encrypt/decrypt, seal/reveal, over an injected `MetadatumCodec`. | `@mattpiz/tlock-js`        |
+| `cip-179/evolution` | An `@evolution-sdk/evolution`-backed implementation of the `TxProofCodec` and `MetadatumCodec` ports — inject it, or write your own.                  | `@evolution-sdk/evolution` |
+
+¹ `cip-179/txproof` needs a `TxProofCodec` supplied at call time (see below); the
+default one lives in `cip-179/evolution`.
 
 `@noble/hashes` is a regular (small) dependency, so `cip-179/tally` and
-`cip-179/txproof` pull it in automatically. The Cardano and timelock stacks are
-**optional peer dependencies** (see below).
+`cip-179/txproof` pull it in automatically.
 
-### Optional peer dependencies
+### The Cardano-serialization seam (dependency injection)
+
+The reusable layers (`cip-179`, `/domain`, `/tally`, and the interpretation in
+`/txproof` and `/tlock`) contain **no Cardano-serialization library**. Everything
+that needs one — decoding a transaction, canonical CBOR of a metadatum tree, the
+bech32/CIP-129 id encodings — is expressed as a small **port** that the caller
+injects an implementation of:
+
+- **`MetadatumCodec`** (`cip-179/tlock`) — `metadatumToCbor` / `cborToMetadatum`.
+- **`TxProofCodec`** (`cip-179/txproof`) — `stakeAddress` / `drepId` / `decodeTx`
+  (the last returns a library-neutral `DecodedTx`; `cip-179` keeps the CIP-179
+  interpretation — mechanism A/B, the Conway voter-tag semantics, native-script
+  hashing).
+
+`cip-179/evolution` is the **only** module that imports evolution-sdk; it ships a
+ready `evolutionCodec` satisfying both ports. Consumers on the evolution stack
+inject it:
+
+```ts
+import { decodeTxProof } from "cip-179/txproof";
+import { sealAnswers, revealWithBeacon } from "cip-179/tlock";
+import { evolutionCodec } from "cip-179/evolution";
+
+const proof = decodeTxProof(evolutionCodec, txCborHex);
+const sealed = await sealAnswers(evolutionCodec, answers, round, paddingSize);
+```
+
+A downstream implementer on **any other stack** (Lucid, Mesh, CSL, …) provides
+their own object satisfying `MetadatumCodec` / `TxProofCodec`, never imports
+`cip-179/evolution`, and never installs evolution-sdk — while reusing all of the
+CIP-179 interpretation logic unchanged.
 
 `@evolution-sdk/evolution` and `@mattpiz/tlock-js` are declared as _optional_
-peers, so codec / domain / tally consumers never install them:
-
-- **`cip-179/txproof`** needs `@evolution-sdk/evolution` (CBOR decoding + Cardano
-  address/id primitives). It is loaded via **dynamic import**, per call.
-- **`cip-179/tlock`** needs both `@mattpiz/tlock-js` and
-  `@evolution-sdk/evolution`. `@mattpiz/tlock-js` is **lazy-imported** inside the
-  client (a finalize/verify pass touches it only when a sealed survey is
-  present); `@evolution-sdk/evolution` is used **eagerly** by the CBOR envelope,
-  so importing `cip-179/tlock` loads it immediately.
-
-Dropping the evolution-sdk dependency would mean re-implementing a substantial
-amount of Cardano primitives (CBOR, address/credential encodings); it may be
-revisited later.
+peers, so codec / domain / tally consumers (and anyone bringing their own codec)
+never install them. `@mattpiz/tlock-js` is **lazy-imported** inside the tlock
+client, so a finalize/verify pass touches it only when a sealed survey is
+actually present.
 
 ## The codec (`cip-179`)
 
@@ -197,19 +224,24 @@ matching release.
 
 ## The txproof stack (`cip-179/txproof`)
 
-`decodeTxProof` turns an already-fetched transaction's CBOR into a `TxProof`:
-the mechanism-A evidence (required signers + witnessed native scripts) and
-mechanism-B evidence (governance vote bindings) that a credential proof is
-checked against. The bech32 helpers render stake / DRep / governance-action
-(CIP-129) ids. Requires `@evolution-sdk/evolution` (see peer deps above).
+`decodeTxProof(codec, txCborHex)` turns an already-fetched transaction's CBOR
+into a `TxProof`: the mechanism-A evidence (required signers + witnessed native
+scripts) and mechanism-B evidence (governance vote bindings) that a credential
+proof is checked against. It imports no Cardano library — the transaction is
+decoded to a neutral `DecodedTx` by the injected `TxProofCodec`, and this module
+owns only the CIP-179 interpretation. The same port carries the bech32
+`stakeAddress` / `drepId` id encoders. Inject `cip-179/evolution` or your own
+codec (see the seam above).
 
 ## The tlock stack (`cip-179/tlock`)
 
 The sealed-submission (`sealed_submission_mode`) stack: drand quicknet
 round/time math, the timelock encrypt/decrypt client, response padding, the CBOR
 envelope, and seal/reveal orchestration. Only drand **quicknet** is supported.
-Requires `@mattpiz/tlock-js` and `@evolution-sdk/evolution` (see peer deps
-above).
+`sealAnswers` / `revealWithBeacon` / `revealResponses` take a `MetadatumCodec`
+(the metadatum ↔ CBOR seam is injected, not imported). Requires
+`@mattpiz/tlock-js` for the timelock crypto; inject `cip-179/evolution` or your
+own codec for the CBOR.
 
 ## Development
 
@@ -222,10 +254,11 @@ pnpm build   # emits dist/ (.js + .d.ts + maps) for every subpath
 
 ## Layout
 
-| Path           | Subpath           | Purpose                                                               |
-| :------------- | :---------------- | :-------------------------------------------------------------------- |
-| `src/*.ts`     | `cip-179`         | Codec: metadatum model, constants, types, encode/decode/validate.     |
-| `src/domain/`  | `cip-179/domain`  | On-chain record shapes + pure domain semantics.                       |
-| `src/tally/`   | `cip-179/tally`   | Reference ruleset, wire/canonical codecs, content-addressed artifact. |
-| `src/txproof/` | `cip-179/txproof` | Transaction CBOR → `TxProof`, bech32 / CIP-129 ids.                   |
-| `src/tlock/`   | `cip-179/tlock`   | Sealed-submission (drand tlock) stack.                                |
+| Path             | Subpath             | Purpose                                                               |
+| :--------------- | :------------------ | :-------------------------------------------------------------------- |
+| `src/*.ts`       | `cip-179`           | Codec: metadatum model, constants, types, encode/decode/validate.     |
+| `src/domain/`    | `cip-179/domain`    | On-chain record shapes + pure domain semantics.                       |
+| `src/tally/`     | `cip-179/tally`     | Reference ruleset, wire/canonical codecs, content-addressed artifact. |
+| `src/txproof/`   | `cip-179/txproof`   | `TxProof` interpretation + the `TxProofCodec` port.                   |
+| `src/tlock/`     | `cip-179/tlock`     | Sealed-submission (drand tlock) stack + the `MetadatumCodec` port.    |
+| `src/evolution/` | `cip-179/evolution` | evolution-sdk adapter: `evolutionCodec` implementing both ports.      |

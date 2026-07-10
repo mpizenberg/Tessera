@@ -453,9 +453,13 @@ export const Respond: Component = () => {
         // the ciphertext instead of the plaintext answers.
         setStepKey("encrypt");
         setBusyText(t("respond.encrypting"));
-        const { sealAnswers } = await import("cip-179/tlock");
+        const [{ sealAnswers }, { evolutionCodec }] = await Promise.all([
+          import("cip-179/tlock"),
+          import("~/wallet/cbor"),
+        ]);
         const answers = collectAnswers(def.questions, drafts);
         const ciphertext = await sealAnswers(
+          evolutionCodec,
           answers,
           sealed.round,
           sealed.paddingSize,

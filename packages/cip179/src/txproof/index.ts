@@ -1,17 +1,15 @@
 /**
- * CIP-179 txproof — transaction CBOR to `TxProof`, plus bech32 / CIP-129 ids.
+ * CIP-179 txproof — interpret transaction CBOR into a `TxProof`.
  *
- * Pure functions over already-fetched transaction bytes: `decodeTxProof`
- * extracts the mechanism-A (required signers + native scripts) and mechanism-B
- * (governance vote bindings) evidence a credential proof is checked against,
- * and the bech32 helpers render stake / DRep / governance-action ids.
- *
- * Depends on `@evolution-sdk/evolution` for CBOR decoding and Cardano
- * address/id primitives — an optional peer, loaded via dynamic import so
- * codec-only consumers never pull it in.
+ * `decodeTxProof` extracts the mechanism-A (required signers + native scripts)
+ * and mechanism-B (governance vote bindings) evidence a credential proof is
+ * checked against, from the library-neutral {@link DecodedTx} an injected
+ * {@link TxProofCodec} produces — no Cardano-serialization library is imported
+ * here. Wire `cip-179/evolution` (or your own stack's adapter) into it and into
+ * the bech32 `stakeAddress` / `drepId` id encoders.
  *
  * @module
  */
 
-export * from "./bech32.js";
+export * from "./codec.js";
 export * from "./txProof.js";

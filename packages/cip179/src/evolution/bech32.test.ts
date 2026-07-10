@@ -3,7 +3,7 @@ import type { Credential } from "../index.js";
 
 import { hexToBytes } from "../domain/index.js";
 
-import { drepId, govActionId, stakeAddress } from "./bech32.js";
+import { drepId, govActionId, stakeAddress } from "./index.js";
 
 // A real preview DRep: Koios /vote_list reports voter_id
 // drep1ytgkj79hlqzj45ec80h9jvxn0mq9leyrlaz804gd7dv9c4ck89389 (CIP-129) for
@@ -29,14 +29,14 @@ const scriptCred = (hex: string): Credential => ({
 
 describe("drepId", () => {
   it("encodes a key-hash DRep to its CIP-129 id (Koios voter_id vector)", async () => {
-    expect(await drepId(keyCred(DREP_KEY_HASH))).toBe(
+    expect(drepId(keyCred(DREP_KEY_HASH))).toBe(
       "drep1ytgkj79hlqzj45ec80h9jvxn0mq9leyrlaz804gd7dv9c4ck89389",
     );
   });
 
   it("distinguishes script DReps (different CIP-129 header)", async () => {
-    const key = await drepId(keyCred(DREP_KEY_HASH));
-    const script = await drepId(scriptCred(DREP_KEY_HASH));
+    const key = drepId(keyCred(DREP_KEY_HASH));
+    const script = drepId(scriptCred(DREP_KEY_HASH));
     expect(script).toMatch(/^drep1/);
     expect(script).not.toBe(key);
   });
@@ -44,11 +44,11 @@ describe("drepId", () => {
 
 describe("govActionId", () => {
   it("encodes (txId, index) to the CIP-129 id (Koios proposal_id vector)", async () => {
-    expect(await govActionId(ACTION_TX, 0)).toBe(ACTION_ID);
+    expect(govActionId(ACTION_TX, 0)).toBe(ACTION_ID);
   });
 
   it("the action index changes the id", async () => {
-    expect(await govActionId(ACTION_TX, 1)).not.toBe(ACTION_ID);
+    expect(govActionId(ACTION_TX, 1)).not.toBe(ACTION_ID);
   });
 });
 
@@ -56,19 +56,15 @@ describe("stakeAddress", () => {
   const HASH = "32c728d3861e164cab28cb8f006448139c8f1740ffb8e7aa9e5232dc";
 
   it("uses the CIP-19 header nibbles (key/script × network prefixes)", async () => {
-    expect(await stakeAddress(keyCred(HASH), "preview")).toMatch(
-      /^stake_test1u/,
-    );
-    expect(await stakeAddress(keyCred(HASH), "mainnet")).toMatch(/^stake1u/);
-    expect(await stakeAddress(scriptCred(HASH), "preview")).toMatch(
-      /^stake_test17/,
-    );
-    expect(await stakeAddress(scriptCred(HASH), "mainnet")).toMatch(/^stake17/);
+    expect(stakeAddress(keyCred(HASH), "preview")).toMatch(/^stake_test1u/);
+    expect(stakeAddress(keyCred(HASH), "mainnet")).toMatch(/^stake1u/);
+    expect(stakeAddress(scriptCred(HASH), "preview")).toMatch(/^stake_test17/);
+    expect(stakeAddress(scriptCred(HASH), "mainnet")).toMatch(/^stake17/);
   });
 
   it("is deterministic per credential", async () => {
-    expect(await stakeAddress(keyCred(HASH), "preview")).toBe(
-      await stakeAddress(keyCred(HASH), "preview"),
+    expect(stakeAddress(keyCred(HASH), "preview")).toBe(
+      stakeAddress(keyCred(HASH), "preview"),
     );
   });
 });

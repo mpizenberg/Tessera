@@ -15,7 +15,7 @@ import {
   type RatingScale,
 } from "../index.js";
 
-import { metadatumToCbor } from "./cbor.js";
+import { metadatumToCbor } from "../evolution/index.js";
 import { maxPlaintextSize } from "./padding.js";
 
 // --- question constructors --------------------------------------------------

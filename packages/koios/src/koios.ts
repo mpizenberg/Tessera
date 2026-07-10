@@ -41,6 +41,7 @@ import { Koios } from "@evolution-sdk/evolution/sdk/provider/Koios";
 import type { ProtocolParameters } from "@evolution-sdk/evolution/sdk/provider/Provider";
 import { koiosJsonToMetadatum, type KoiosJson } from "./metadatum";
 import { decodeTxProof } from "cip-179/txproof";
+import { evolutionCodec } from "cip-179/evolution";
 
 /** Max tx hashes per /tx_metadata POST (larger bodies return HTTP 413). */
 const TX_METADATA_BATCH = 50;
@@ -552,11 +553,9 @@ export class KoiosDataSource implements DataSource {
         );
       }
     }
-    await Promise.all(
-      [...cborByHash.entries()].map(async ([hash, cbor]) => {
-        proofByHash.set(hash, await decodeTxProof(cbor));
-      }),
-    );
+    for (const [hash, cbor] of cborByHash) {
+      proofByHash.set(hash, decodeTxProof(evolutionCodec, cbor));
+    }
     return proofByHash;
   }
 

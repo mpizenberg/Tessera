@@ -4,8 +4,10 @@ import type { Credential } from "cip-179";
 import { hexToBytes } from "cip-179/domain";
 import type { AppConfig } from "@tessera/core";
 
-import { stakeAddress } from "cip-179/txproof";
+import { evolutionCodec } from "cip-179/evolution";
 import { KoiosTallyInputs } from "./tallyInputs";
+
+const stakeAddress = evolutionCodec.stakeAddress;
 
 const CONFIG: AppConfig = {
   network: "preview",

@@ -27,6 +27,10 @@
     "./tlock": {
       "types": "./dist/tlock/index.d.ts",
       "import": "./dist/tlock/index.js"
+    },
+    "./evolution": {
+      "types": "./dist/evolution/index.d.ts",
+      "import": "./dist/evolution/index.js"
     }
   },
   "files": [

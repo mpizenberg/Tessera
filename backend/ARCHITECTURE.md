@@ -140,7 +140,10 @@ load-bearing for the verifiability story, not just hygiene.
 - **`cip-179`** — a pnpm-workspace package at `packages/cip179`, imported by
   name. It has since grown beyond the codec into the reusable, cross-implementation
   surface (subpath exports `cip-179/domain`, `cip-179/tally`, `cip-179/txproof`,
-  `cip-179/tlock`); see `packages/cip179/README.md`.
+  `cip-179/tlock`, and the `cip-179/evolution` serialization adapter). The
+  txproof/tlock stacks inject their Cardano-serialization primitives through
+  `TxProofCodec` / `MetadatumCodec` ports, so evolution-sdk is confined to the
+  adapter; see `packages/cip179/README.md`.
 - **`@tessera/core`** — extract the **pure** domain from `frontend/app/src`:
   - **Move:** the data-model **types** from `data/source.ts` (`ChainPos`,
     `ChainTip`, `SurveyRecord`, `ResponseRecord`, `CancellationRecord`,
@@ -370,8 +373,9 @@ emits an artifact whose hashed body is a single **cancellation record** (cancell
 - **Batch caps:** bulk POSTs have per-request element limits (cf. the existing
   `TX_METADATA_BATCH = 50` in `koios.ts`); chunk accordingly. At PoC scale this
   is a handful of batches in one invocation.
-- **Encodings** — resolved: thin wrappers over evolution-sdk in
-  `packages/cip179/src/txproof/bech32.ts` (no hand-rolled bech32): `stakeAddress`
+- **Encodings** — resolved: thin wrappers over evolution-sdk in the
+  `cip-179/evolution` adapter (`packages/cip179/src/evolution/index.ts`, no
+  hand-rolled bech32), exposed through the `TxProofCodec` port: `stakeAddress`
   (CIP-19 headers, key **and** script credentials, both networks), `drepId`
   (CIP-129 `drep1…`), `govActionId` (CIP-129 `gov_action1…`) — each verified
   against ids Koios itself emits.

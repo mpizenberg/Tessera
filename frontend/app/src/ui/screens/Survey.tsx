@@ -1827,13 +1827,17 @@ const SealedResults: Component<{
   };
 
   const [revealed] = createResource(revealKey, async () => {
-    const { revealResponses } = await import("cip-179/tlock");
+    const [{ revealResponses }, { evolutionCodec }] = await Promise.all([
+      import("cip-179/tlock"),
+      import("~/wallet/cbor"),
+    ]);
     // Decrypt the *full* pre-dedup in-window set, then classify + dedup in core:
     // dedup must run over the valid decrypted responses, never before them, or an
     // invalid later ciphertext would suppress a valid earlier one that then never
     // reveals (finding 2). Validate against the *on-chain* definition (constraints
     // and indices are on-chain; enrichment only relabels), not the display one.
     const results = await revealResponses(
+      evolutionCodec,
       props.inWindow.map((r) => r.response),
       mode()!.round,
     );

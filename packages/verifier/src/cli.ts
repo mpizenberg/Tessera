@@ -30,6 +30,7 @@ import {
 } from "@tessera/core";
 import { KoiosDataSource, KoiosTallyInputs } from "@tessera/koios";
 import { fetchBeacon, revealWithBeacon } from "cip-179/tlock";
+import { evolutionCodec } from "cip-179/evolution";
 
 import { diffResponseSets, linkedActionIdFor, verifyArtifact } from "./verify";
 
@@ -186,6 +187,7 @@ async function main(): Promise<void> {
     reveal: async (records, { round }) => {
       const beacon = await fetchBeacon(round);
       return revealWithBeacon(
+        evolutionCodec,
         records.map((r) => r.response),
         beacon,
       );
