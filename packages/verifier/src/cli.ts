@@ -32,7 +32,7 @@ import { KoiosDataSource, KoiosTallyInputs } from "@tessera/koios";
 import { revealResponses } from "cip-179/tlock";
 import { evolutionCodec } from "cip-179/evolution";
 
-import { diffResponseSets, linkedActionIdFor, verifyArtifact } from "./verify";
+import { diffResponseSets, linkedActionsFor, verifyArtifact } from "./verify";
 
 /**
  * Compare the backend's served bundle against the independent chain scan, purely
@@ -177,7 +177,7 @@ async function main(): Promise<void> {
     bundle,
     artifact,
     network,
-    linkedActionId: linkedActionIdFor(bundle, govLinks),
+    linkedActions: linkedActionsFor(bundle, govLinks),
     blockIndices,
     proofs,
     weights: new KoiosTallyInputs(config),

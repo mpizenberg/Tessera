@@ -213,6 +213,7 @@ describe("validateNewResponses", () => {
       surveyKey: SURVEY_KEY,
       actionId: ACTION,
       endEpoch: DEF.endEpoch, // aligned → the survey counts as linked
+      votableThroughEpoch: DEF.endEpoch, // response epoch is within the window
       title: null,
     };
     await validateNewResponses(
@@ -289,6 +290,7 @@ describe("validateNewResponses", () => {
       surveyKey: SURVEY_KEY,
       actionId: ACTION,
       endEpoch: DEF.endEpoch,
+      votableThroughEpoch: DEF.endEpoch,
       title: null,
     };
     await validateNewResponses(store, recs, [link], source, true);

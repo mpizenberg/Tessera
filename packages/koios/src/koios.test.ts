@@ -17,19 +17,24 @@ function anchor(opts: {
   return { hashAlgorithm: "blake2b-256", body, authors: [] };
 }
 
-function row(meta_json: unknown, expiration: number | null = 42): ProposalRow {
+function row(
+  meta_json: unknown,
+  expiration: number | null = 42,
+  extra: Partial<ProposalRow> = {},
+): ProposalRow {
   return {
     proposal_id: "gov_action1abc",
     proposal_type: "InfoAction",
     expiration,
     meta_json,
+    ...extra,
   };
 }
 
 // 64-char hex tx id, upper-case on purpose: surveyKey must lower-case it.
 const TXID = "9A1C".repeat(16);
 const LINK = {
-  specVersion: 4,
+  specVersion: 5,
   kind: "survey-link",
   surveyTxId: TXID,
   surveyIndex: 2,
@@ -43,10 +48,31 @@ describe("parseGovLink", () => {
     expect(link).toEqual({
       surveyKey: `${TXID.toLowerCase()}:2`, // tx id lower-cased, joined with the index
       actionId: "gov_action1abc",
-      // Koios expiration 42 → voting-end epoch 41 (one before the drop-out epoch).
+      // Koios expiration 42 → expiry epoch 41 (one before the drop-out epoch).
       endEpoch: 41,
+      // Ran its full course: votable through its expiry epoch.
+      votableThroughEpoch: 41,
       title: "Ratify the budget",
     });
+  });
+
+  it("links from a non-Info action kind (any kind may link in v5)", () => {
+    const link = parseGovLink(
+      row(anchor({ title: "Treasury withdrawal", cip179: LINK }), 42, {
+        proposal_type: "TreasuryWithdrawals",
+      }),
+    );
+    expect(link?.surveyKey).toBe(`${TXID.toLowerCase()}:2`);
+    expect(link?.endEpoch).toBe(41);
+  });
+
+  it("shrinks the votable window when the action resolved early", () => {
+    const link = parseGovLink(
+      row(anchor({ cip179: LINK }), 42, { ratified_epoch: 38 }),
+    );
+    // endEpoch stays the expiry epoch, but voting stopped at ratification.
+    expect(link?.endEpoch).toBe(41);
+    expect(link?.votableThroughEpoch).toBe(38);
   });
 
   it("returns null when surveyIndex is missing (it is mandatory)", () => {
@@ -127,7 +153,7 @@ const SURVEY_TX = "cd".repeat(32);
 /** Koios-JSON CIP-179 responses payload: two responses in one tx. */
 function responsesMetadata(): unknown {
   const resp = (credByte: string) => ({
-    "0": 4, // spec_version
+    "0": 5, // spec_version
     "1": [`0x${SURVEY_TX}`, 0], // survey_ref
     "2": 3, // role: Stakeholder
     "3": [0, `0x${credByte.repeat(28)}`], // key credential

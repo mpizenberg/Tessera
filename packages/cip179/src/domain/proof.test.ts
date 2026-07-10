@@ -17,6 +17,14 @@ const hx = (b: number) => b.toString(16).padStart(2, "0");
 const ACTION = "gov_action1linked";
 const OTHER_ACTION = "gov_action1other";
 
+// Response epoch used across the proof tests, and a linked-action set whose
+// window comfortably covers it (so mechanism B is in-window unless a test
+// deliberately narrows the window).
+const RESP_EPOCH = 100;
+const linked = (votableThroughEpoch = 1_000, actionId = ACTION) => [
+  { actionId, votableThroughEpoch },
+];
+
 function resp(role: Role, credential: Credential): SurveyResponse {
   return {
     specVersion: 5,
@@ -52,14 +60,14 @@ describe("mechanism A (standalone survey, or no binding)", () => {
   it("passes a key credential listed in required_signers", () => {
     const p = proof({ requiredSigners: [hx(1)] });
     expect(
-      responseCredentialProven(resp(Role.Stakeholder, keyCred(1)), p, null),
+      responseCredentialProven(resp(Role.Stakeholder, keyCred(1)), p, [], RESP_EPOCH),
     ).toBe(true);
   });
 
   it("fails a key credential absent from required_signers", () => {
     const p = proof({ requiredSigners: [hx(2)] });
     expect(
-      responseCredentialProven(resp(Role.Stakeholder, keyCred(1)), p, null),
+      responseCredentialProven(resp(Role.Stakeholder, keyCred(1)), p, [], RESP_EPOCH),
     ).toBe(false);
   });
 
@@ -71,7 +79,7 @@ describe("mechanism A (standalone survey, or no binding)", () => {
       ],
     });
     expect(
-      responseCredentialProven(resp(Role.Stakeholder, scriptCred(7)), p, null),
+      responseCredentialProven(resp(Role.Stakeholder, scriptCred(7)), p, [], RESP_EPOCH),
     ).toBe(true);
   });
 
@@ -86,21 +94,23 @@ describe("mechanism A (standalone survey, or no binding)", () => {
       responseCredentialProven(
         resp(Role.Stakeholder, scriptCred(7)),
         unsatisfied,
-        null,
+        [],
+        RESP_EPOCH,
       ),
     ).toBe(false);
     expect(
       responseCredentialProven(
         resp(Role.Stakeholder, scriptCred(7)),
         proof(),
-        null,
+        [],
+        RESP_EPOCH,
       ),
     ).toBe(false);
   });
 
   it("fails with no proof at all (unfetchable tx)", () => {
     expect(
-      responseCredentialProven(resp(Role.Stakeholder, keyCred(1)), null, null),
+      responseCredentialProven(resp(Role.Stakeholder, keyCred(1)), null, [], RESP_EPOCH),
     ).toBe(false);
   });
 });
@@ -110,7 +120,7 @@ describe("mechanism B (governance-linked survey)", () => {
     // DRep key voter voting the linked action; no required_signers at all.
     const p = proof({ votes: [vote(2, 1)] });
     expect(
-      responseCredentialProven(resp(Role.DRep, keyCred(1)), p, ACTION),
+      responseCredentialProven(resp(Role.DRep, keyCred(1)), p, linked(), RESP_EPOCH),
     ).toBe(true);
   });
 
@@ -119,28 +129,32 @@ describe("mechanism B (governance-linked survey)", () => {
       responseCredentialProven(
         resp(Role.DRep, scriptCred(1)),
         proof({ votes: [vote(3, 1)] }),
-        ACTION,
+        linked(),
+        RESP_EPOCH,
       ),
     ).toBe(true);
     expect(
       responseCredentialProven(
         resp(Role.CC, keyCred(1)),
         proof({ votes: [vote(0, 1)] }),
-        ACTION,
+        linked(),
+        RESP_EPOCH,
       ),
     ).toBe(true);
     expect(
       responseCredentialProven(
         resp(Role.CC, scriptCred(1)),
         proof({ votes: [vote(1, 1)] }),
-        ACTION,
+        linked(),
+        RESP_EPOCH,
       ),
     ).toBe(true);
     expect(
       responseCredentialProven(
         resp(Role.SPO, keyCred(1)),
         proof({ votes: [vote(4, 1)] }),
-        ACTION,
+        linked(),
+        RESP_EPOCH,
       ),
     ).toBe(true);
   });
@@ -155,7 +169,8 @@ describe("mechanism B (governance-linked survey)", () => {
       responseCredentialProven(
         resp(Role.DRep, keyCred(1)),
         wrongAction,
-        ACTION,
+        linked(),
+        RESP_EPOCH,
       ),
     ).toBe(false);
 
@@ -165,14 +180,19 @@ describe("mechanism B (governance-linked survey)", () => {
       votes: [vote(4, 1)], // SPO voter, response claims DRep
     });
     expect(
-      responseCredentialProven(resp(Role.DRep, keyCred(1)), wrongRole, ACTION),
+      responseCredentialProven(
+        resp(Role.DRep, keyCred(1)),
+        wrongRole,
+        linked(),
+        RESP_EPOCH,
+      ),
     ).toBe(false);
   });
 
   it("a Stakeholder with a binding is invalidated (no voter tag maps to 3)", () => {
     const p = proof({ requiredSigners: [hx(1)], votes: [vote(2, 1)] });
     expect(
-      responseCredentialProven(resp(Role.Stakeholder, keyCred(1)), p, ACTION),
+      responseCredentialProven(resp(Role.Stakeholder, keyCred(1)), p, linked(), RESP_EPOCH),
     ).toBe(false);
   });
 
@@ -180,7 +200,7 @@ describe("mechanism B (governance-linked survey)", () => {
     // The tx votes, but with a different credential — not a binding for ours.
     const p = proof({ requiredSigners: [hx(1)], votes: [vote(2, 9)] });
     expect(
-      responseCredentialProven(resp(Role.DRep, keyCred(1)), p, ACTION),
+      responseCredentialProven(resp(Role.DRep, keyCred(1)), p, linked(), RESP_EPOCH),
     ).toBe(true);
   });
 
@@ -189,7 +209,7 @@ describe("mechanism B (governance-linked survey)", () => {
     // credential is a key — not the same credential, so mechanism A decides.
     const p = proof({ votes: [vote(3, 1)] });
     expect(
-      responseCredentialProven(resp(Role.DRep, keyCred(1)), p, ACTION),
+      responseCredentialProven(resp(Role.DRep, keyCred(1)), p, linked(), RESP_EPOCH),
     ).toBe(false);
   });
 
@@ -200,9 +220,21 @@ describe("mechanism B (governance-linked survey)", () => {
       requiredSigners: [hx(1)],
       votes: [vote(2, 1, [OTHER_ACTION])],
     });
-    expect(responseCredentialProven(resp(Role.DRep, keyCred(1)), p, null)).toBe(
-      true,
-    );
+    expect(
+      responseCredentialProven(resp(Role.DRep, keyCred(1)), p, [], RESP_EPOCH),
+    ).toBe(true);
+  });
+
+  it("any one of several linked actions may satisfy the binding", () => {
+    // Two actions link the survey; the credential votes only on the second.
+    const p = proof({ votes: [vote(2, 1, [ACTION])] });
+    const twoLinks = [
+      { actionId: OTHER_ACTION, votableThroughEpoch: 1_000 },
+      { actionId: ACTION, votableThroughEpoch: 1_000 },
+    ];
+    expect(
+      responseCredentialProven(resp(Role.DRep, keyCred(1)), p, twoLinks, RESP_EPOCH),
+    ).toBe(true);
   });
 
   it("any one of several bindings by the credential may satisfy", () => {
@@ -210,7 +242,29 @@ describe("mechanism B (governance-linked survey)", () => {
       votes: [vote(2, 1, [OTHER_ACTION]), vote(2, 1, [ACTION])],
     });
     expect(
-      responseCredentialProven(resp(Role.DRep, keyCred(1)), p, ACTION),
+      responseCredentialProven(resp(Role.DRep, keyCred(1)), p, linked(), RESP_EPOCH),
     ).toBe(true);
+  });
+
+  it("a binding past the votable window falls back to mechanism A", () => {
+    // Response at epoch 100, but the linked action was votable only through 90:
+    // its (would-be failing) vote on OTHER_ACTION no longer invalidates, and the
+    // required-signers proof carries it instead.
+    const p = proof({
+      requiredSigners: [hx(1)],
+      votes: [vote(2, 1, [OTHER_ACTION])],
+    });
+    expect(
+      responseCredentialProven(resp(Role.DRep, keyCred(1)), p, linked(90), RESP_EPOCH),
+    ).toBe(true);
+  });
+
+  it("a matching binding past the votable window does not prove on its own", () => {
+    // In-window this would pass on the binding alone; past the window mechanism
+    // B is inert, and with no required_signers mechanism A fails too.
+    const p = proof({ votes: [vote(2, 1)] });
+    expect(
+      responseCredentialProven(resp(Role.DRep, keyCred(1)), p, linked(90), RESP_EPOCH),
+    ).toBe(false);
   });
 });

@@ -58,9 +58,9 @@ export function buildSurveyIndex(
     endEpoch: a.record.definition.endEpoch,
     sealed: a.sealed,
     cancelled: a.cancelled,
-    govLinked: a.govLink !== null,
+    govLinked: a.govLinks.length > 0,
     owner: credentialKey(a.record.definition.owner),
-    haystack: surveyHaystack(a.record, a.govLink),
+    haystack: surveyHaystack(a.record, a.govLinks),
     record: JSON.stringify(toJsonSafe(a.record)),
     cancellations: JSON.stringify(
       toJsonSafe(cancellationsByKey.get(a.key) ?? []),

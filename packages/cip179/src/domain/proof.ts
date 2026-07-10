@@ -9,13 +9,18 @@
  *    in the witness set and satisfied by those signers. Same evidence, same
  *    evaluation as cancellation owner-proof ({@link cancellationVerified}).
  *  - **Mechanism B** (governance-linked surveys only) — the transaction also
- *    votes on the survey's linked action with the very same credential, and
- *    the Conway voter tag's role matches the claimed role (0/1→CC, 2/3→DRep,
- *    4→SPO). A binding by the response credential that is *present but
- *    failing* (wrong action, wrong role) invalidates the response even if
- *    mechanism A would pass; an *absent* binding is not a failure — evaluation
- *    just falls back to mechanism A. Stakeholder/Keyholder roles have no voter tag
- *    and therefore can never bind.
+ *    votes on one of the survey's linked actions with the very same credential,
+ *    and the Conway voter tag's role matches the claimed role (0/1→CC, 2/3→DRep,
+ *    4→SPO). A survey may be linked by several actions (CIP-179 v5); a vote on
+ *    *any one* of them satisfies. The binding only counts while the action is
+ *    still votable: an action whose votable window closed before the response's
+ *    epoch is not considered, so a response cast after every linked action
+ *    expired falls back to mechanism A exactly like a standalone one. When at
+ *    least one linked action is still in-window, a binding by the response
+ *    credential that is *present but failing* (wrong action, wrong role)
+ *    invalidates the response even if mechanism A would pass; an *absent*
+ *    binding is not a failure — evaluation just falls back to mechanism A.
+ *    Stakeholder/Keyholder roles have no voter tag and therefore can never bind.
  *
  * The transaction evidence ({@link TxProof}) is decoded by the data source;
  * this module stays pure and unit-tested.
@@ -78,27 +83,51 @@ function mechanismA(credential: Credential, proof: TxProof): boolean {
 }
 
 /**
+ * A survey-linking governance action and the last epoch it was votable —
+ * the mechanism-B window a response's epoch must fall within (CIP-179 v5).
+ * {@link GovLink} is structurally assignable, so linked links can be passed
+ * straight through.
+ */
+export interface LinkedActionWindow {
+  /** Bech32 CIP-129 `gov_action1…` id. */
+  readonly actionId: string;
+  /** Last epoch the action was votable (see {@link GovLink.votableThroughEpoch}). */
+  readonly votableThroughEpoch: number;
+}
+
+/**
  * Whether `response`'s carrying transaction proves its claimed credential.
  * `proof` is the tx's decoded evidence (`null` = unfetchable → unproven);
- * `linkedActionId` is the survey's linking governance action (bech32
- * CIP-129 `gov_action1…`), or `null` for a standalone survey — mechanism B
- * only exists for linked surveys.
+ * `linkedActions` are the survey's linking governance actions (empty for a
+ * standalone survey — mechanism B only exists for linked surveys);
+ * `responseEpoch` is the epoch of the response's carrying transaction, used to
+ * gate the mechanism-B votable window.
  */
 export function responseCredentialProven(
   response: SurveyResponse,
   proof: TxProof | null,
-  linkedActionId: string | null,
+  linkedActions: readonly LinkedActionWindow[],
+  responseEpoch: number,
 ): boolean {
   if (!proof) return false;
 
-  if (linkedActionId !== null) {
+  // Only actions still votable at the response's epoch can bind it; if none
+  // are, mechanism B does not apply and evaluation falls back to mechanism A.
+  const inWindowActionIds = new Set(
+    linkedActions
+      .filter((a) => responseEpoch <= a.votableThroughEpoch)
+      .map((a) => a.actionId),
+  );
+
+  if (inWindowActionIds.size > 0) {
     const bindings = bindingsByCredential(response.credential, proof.votes);
     if (bindings.length > 0) {
       // A binding by this credential exists — it alone decides (a failing
-      // binding invalidates even when mechanism A would pass).
+      // binding invalidates even when mechanism A would pass). Any one in-window
+      // linked action satisfies.
       return bindings.some(
         (b) =>
-          b.actionIds.includes(linkedActionId) &&
+          b.actionIds.some((id) => inWindowActionIds.has(id)) &&
           roleOfVoterTag(b.voterTag) === response.role,
       );
     }

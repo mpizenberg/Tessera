@@ -51,11 +51,13 @@ export interface ValidatedResponseRow {
   /** Rule 2 (mechanism A/B credential proof), or null = retry. */
   readonly proofOk: boolean | null;
   /**
-   * The governance action (bech32 CIP-129 `gov_action1…`) this row's `proofOk`
-   * was evaluated against — mechanism B's linking action, or null for a
-   * standalone survey. Persisted so the verdict can be re-evaluated when a
-   * survey's link set changes (Koios resolves anchors lazily; a link can appear
-   * after the first validation). Meaningful only when `proofOk` is non-null.
+   * Canonical cursor for the epoch-aligned governance-action set this row's
+   * `proofOk` was evaluated against: the sorted, comma-joined action ids (bech32
+   * CIP-129 `gov_action1…`), or null for a standalone survey. A single linking
+   * action stores just that id (the common case). Persisted so the verdict can
+   * be re-evaluated when a survey's link set changes (Koios resolves anchors
+   * lazily; a link can appear, change, or be removed after the first
+   * validation). Meaningful only when `proofOk` is non-null.
    */
   readonly linkedActionId: string | null;
   /** Full codec validation against the on-chain definition. */
@@ -98,9 +100,10 @@ export interface ArtifactRow {
 export interface TallyStore {
   /**
    * Rows needing no enrichment retry (both `blockIndex` and `proofOk` present),
-   * as a map from {@link validationKey} to the `linkedActionId` the verdict was
-   * evaluated against. A refresh skips these unless the survey's current link
-   * differs from the stored one (then the verdict is re-evaluated).
+   * as a map from {@link validationKey} to the `linkedActionId` cursor (the
+   * canonical epoch-aligned link set) the verdict was evaluated against. A
+   * refresh skips these unless the survey's current link set differs from the
+   * stored one (then the verdict is re-evaluated).
    */
   completedValidations(): Promise<Map<string, string | null>>;
   upsertValidatedResponses(

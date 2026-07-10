@@ -35,7 +35,7 @@ const CRED_A = keyCred("a1".repeat(28));
 const CRED_B = keyCred("b2".repeat(28));
 
 const DEF: SurveyDefinition = {
-  specVersion: 4,
+  specVersion: 5,
   owner: keyCred("0f".repeat(28)),
   title: "t",
   description: "",
@@ -64,7 +64,7 @@ function response(
     epochNo: 499,
     responseIndex: 0,
     response: {
-      specVersion: 4,
+      specVersion: 5,
       surveyRef: { txId: hexToBytes(SURVEY_TX), index: 0 },
       role,
       credential: cred,
@@ -190,7 +190,7 @@ function inputs(overrides: Partial<VerifyInputs> = {}): VerifyInputs {
     bundle,
     artifact: emittedArtifact(),
     network: "preview",
-    linkedActionId: null,
+    linkedActions: [],
     blockIndices: new Map([
       [R_A.txHash, 0],
       [R_B.txHash, 1],
@@ -437,7 +437,7 @@ describe("verifyArtifact — sealed survey", () => {
       epochNo: 499,
       responseIndex: 0,
       response: {
-        specVersion: 4,
+        specVersion: 5,
         surveyRef: { txId: hexToBytes(SURVEY_TX), index: 0 },
         role: Role.Stakeholder,
         credential: cred,
@@ -731,7 +731,7 @@ describe("verifyArtifact — Keyholder role", () => {
 //
 // On a governance-linked survey, a tx can prove its credential by voting on the
 // linked action with that same credential (voter tag 2 = DRep key). Every test
-// above runs with linkedActionId null, so this block pins the three rules:
+// above runs with no linked actions, so this block pins the three rules:
 // a vote alone proves; a failing binding invalidates even when mechanism A
 // passes; no link means votes prove nothing.
 
@@ -803,7 +803,7 @@ describe("verifyArtifact — mechanism B (governance vote binding)", () => {
       bundle: drepBundle,
       weights: drepSource,
       artifact: drepArtifact,
-      linkedActionId: ACTION,
+      linkedActions: [{ actionId: ACTION, votableThroughEpoch: END_EPOCH }],
       ...overrides,
     });
 
@@ -868,7 +868,7 @@ describe("verifyArtifact — mechanism B (governance vote binding)", () => {
     expect(result.match).toBe(true);
   });
 
-  it("votes prove nothing on a standalone survey (linkedActionId null)", async () => {
+  it("votes prove nothing on a standalone survey (no linked actions)", async () => {
     // Same vote-only proof as the MATCH case, but the survey has no linked
     // action — mechanism B doesn't exist, so the response stays unproven and
     // an artifact that counted it must MISMATCH.
@@ -889,7 +889,7 @@ describe("verifyArtifact — mechanism B (governance vote binding)", () => {
       ],
     ]);
     const result = await verifyArtifact(
-      drepInputs({ proofs, linkedActionId: null }),
+      drepInputs({ proofs, linkedActions: [] }),
     );
     expect(result.match).toBe(false);
     expect(result.diffs.join("\n")).toContain("present only in received");

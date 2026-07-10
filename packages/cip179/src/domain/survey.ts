@@ -36,8 +36,12 @@ export interface SurveyAggregate {
   readonly sealed: boolean;
   /** External-content survey — presentation text lives off-chain (key 8). */
   readonly external: boolean;
-  /** Linking Info Action (epoch-aligned), or null if standalone. */
-  readonly govLink: GovLink | null;
+  /**
+   * Epoch-aligned governance actions linking this survey (any action kind —
+   * CIP-179 v5). Empty when standalone; a survey MAY be linked by several
+   * actions, each independently able to bind a mechanism-B vote.
+   */
+  readonly govLinks: readonly GovLink[];
   /** Distinct responders, after latest-valid-wins dedup. */
   readonly responseCount: number;
   /**
@@ -189,10 +193,15 @@ export function aggregate(
     tip,
   );
 
-  // Index links by survey key; a survey is "linked" only when the action's
-  // voting end epoch exactly equals the survey's end_epoch (the CIP invariant).
-  const linkByKey = new Map<string, GovLink>();
-  for (const link of govLinks) linkByKey.set(link.surveyKey, link);
+  // Index links by survey key; a survey is "linked" only by actions whose
+  // expiry epoch exactly equals the survey's end_epoch (the CIP invariant).
+  // Several actions may satisfy that for the same survey (CIP-179 v5).
+  const linksByKey = new Map<string, GovLink[]>();
+  for (const link of govLinks) {
+    const list = linksByKey.get(link.surveyKey);
+    if (list) list.push(link);
+    else linksByKey.set(link.surveyKey, [link]);
+  }
 
   return surveys.map((record) => {
     const key = refKey(record.ref);
@@ -202,9 +211,9 @@ export function aggregate(
     // serving tier's finalized-cancelled overlay, which carries that state past
     // close (the artifact records the cancellation; finding 19).
     const cancelled = cancelState === "verified" || finalizedCancelled.has(key);
-    const link = linkByKey.get(key);
-    const govLink =
-      link && link.endEpoch === record.definition.endEpoch ? link : null;
+    const govLinks = (linksByKey.get(key) ?? []).filter(
+      (link) => link.endEpoch === record.definition.endEpoch,
+    );
     return {
       key,
       record,
@@ -215,7 +224,7 @@ export function aggregate(
       cancellationClaimed: !cancelled && cancelState === "claimed",
       sealed: record.definition.submissionMode.type === "sealed",
       external: record.definition.contentAnchor !== undefined,
-      govLink,
+      govLinks,
       responseCount: countByKey[key] ?? 0,
       status: statusOf(record.definition.endEpoch, cancelled, tip.epoch),
     };

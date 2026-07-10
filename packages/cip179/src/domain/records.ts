@@ -157,17 +157,27 @@ export interface Cip179Records {
 }
 
 /**
- * A governance Info Action that advertises a survey (CIP-179 linkage,
- * canonicalized Action → Survey). Discovered from the action's anchor metadata;
- * epoch-alignment with the survey is checked in the domain layer.
+ * A governance action that advertises a survey (CIP-179 linkage, canonicalized
+ * Action → Survey). Any governance action kind may carry the link (CIP-179 v5);
+ * discovered from the action's anchor metadata, and a single survey MAY be
+ * linked by several actions. Epoch-alignment with the survey is checked in the
+ * domain layer.
  */
 export interface GovLink {
   /** Survey ref the action links to ("<txHex>:<index>"). */
   readonly surveyKey: string;
-  /** Bech32 governance action id of the linking Info Action. */
+  /** Bech32 governance action id of the linking action. */
   readonly actionId: string;
-  /** The action's voting end epoch (must equal the survey's `end_epoch`). */
+  /** The action's expiry epoch (must equal the survey's `end_epoch`). */
   readonly endEpoch: number;
+  /**
+   * Last epoch the action was votable — the bound the mechanism-B vote binding
+   * must fall within (CIP-179 v5: a binding by a response transaction past this
+   * epoch does not count and the response falls back to mechanism A). Equals
+   * `endEpoch` for an action that ran its full course, or an earlier epoch when
+   * the action resolved early (ratified / enacted / dropped).
+   */
+  readonly votableThroughEpoch: number;
   /** Action title from CIP-108 governance metadata, if present. */
   readonly title: string | null;
 }

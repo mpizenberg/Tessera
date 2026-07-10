@@ -123,13 +123,13 @@ function questionText(q: Question): string[] {
  */
 export function surveyHaystack(
   record: SurveyRecord,
-  govLink: GovLink | null,
+  govLinks: readonly GovLink[],
 ): string {
   const d = record.definition;
   const parts = [d.title, d.description, ...d.questions.flatMap(questionText)];
-  if (govLink) {
-    parts.push(govLink.actionId);
-    if (govLink.title) parts.push(govLink.title);
+  for (const link of govLinks) {
+    parts.push(link.actionId);
+    if (link.title) parts.push(link.title);
   }
   return parts.join(" ").toLowerCase();
 }
@@ -140,7 +140,7 @@ export function surveyHaystack(
  * Explore screen renders.
  */
 export function surveyListBucket(a: SurveyAggregate): number {
-  if (a.govLink !== null) return 0;
+  if (a.govLinks.length > 0) return 0;
   return a.status === "active" ? 1 : 2;
 }
 
@@ -154,7 +154,7 @@ function matchesFilter(
     case "all":
       return true;
     case "linked":
-      return a.govLink !== null;
+      return a.govLinks.length > 0;
     case "active":
       return a.status === "active";
     case "sealed":
@@ -200,13 +200,13 @@ export function pageSurveyList(
       a,
       bucket: surveyListBucket(a),
       ownerKey: credentialKey(a.record.definition.owner),
-      haystack: surveyHaystack(a.record, a.govLink),
+      haystack: surveyHaystack(a.record, a.govLinks),
     }))
     .filter((r) => terms.every((t) => r.haystack.includes(t)));
 
   const counts: SurveyListCounts = {
     all: rows.length,
-    linked: rows.filter((r) => r.a.govLink !== null).length,
+    linked: rows.filter((r) => r.a.govLinks.length > 0).length,
     active: rows.filter((r) => r.a.status === "active").length,
     sealed: rows.filter((r) => r.a.status === "active" && r.a.sealed).length,
     public: rows.filter((r) => r.a.status === "active" && !r.a.sealed).length,

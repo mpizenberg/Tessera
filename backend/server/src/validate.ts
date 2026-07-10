@@ -62,15 +62,30 @@ export async function validateNewResponses(
   const defByKey = new Map(
     records.surveys.map((s) => [refKey(s.ref), s.definition]),
   );
-  // A survey is governance-linked only when the action's voting end epoch
-  // equals its end_epoch (the CIP invariant, same rule the app applies).
-  const linkByKey = new Map<string, string>();
+  // A survey is governance-linked only by actions whose expiry epoch equals its
+  // end_epoch (the CIP invariant, same rule the app applies). A survey MAY be
+  // linked by several actions (CIP-179 v5), so index a list per key.
+  const linksByKey = new Map<string, GovLink[]>();
   for (const link of govLinks) {
     const def = defByKey.get(link.surveyKey);
     if (def && link.endEpoch === def.endEpoch) {
-      linkByKey.set(link.surveyKey, link.actionId);
+      const list = linksByKey.get(link.surveyKey);
+      if (list) list.push(link);
+      else linksByKey.set(link.surveyKey, [link]);
     }
   }
+  // Canonical cursor for a survey's epoch-aligned link set (order-insensitive):
+  // the stored value a completed verdict is pinned to. Any change to the set —
+  // a link appearing, changing, or being removed — changes this string and so
+  // triggers re-evaluation of the bindable-role verdicts pinned to it.
+  const linkSetKey = (key: string): string | null => {
+    const list = linksByKey.get(key);
+    if (!list || list.length === 0) return null;
+    return list
+      .map((l) => l.actionId)
+      .sort()
+      .join(",");
+  };
 
   const completed = await store.completedValidations();
   const candidates = records.responses.filter((r) => {
@@ -87,10 +102,10 @@ export async function validateNewResponses(
     if (!completed.has(key)) return true; // never validated / enrichment pending
     if (!govLinksReliable) return false; // can't re-evaluate links this refresh
     if (!BINDABLE_ROLES.has(r.response.role)) return false; // link-independent
-    // Re-validate when the survey's current link differs from the one this
+    // Re-validate when the survey's current link set differs from the one this
     // verdict was pinned to (a link appeared, changed, or was removed).
-    const currentLink = linkByKey.get(refKey(r.response.surveyRef)) ?? null;
-    return currentLink !== completed.get(key);
+    const currentLinks = linkSetKey(refKey(r.response.surveyRef));
+    return currentLinks !== completed.get(key);
   });
   if (candidates.length === 0) return;
 
@@ -107,14 +122,14 @@ export async function validateNewResponses(
     const def = defByKey.get(surveyKey);
     if (!def) continue; // unknown survey — nothing to validate against
     const proof = proofs.get(r.txHash) ?? null;
-    const link = linkByKey.get(surveyKey) ?? null;
+    const links = linksByKey.get(surveyKey) ?? [];
     // With links unknown this refresh, a bindable role's verdict can't be
     // trusted (a hidden binding might override mechanism A) — leave it to retry.
     const proofOk =
       !govLinksReliable && BINDABLE_ROLES.has(r.response.role)
         ? null
         : proof
-          ? responseCredentialProven(r.response, proof, link)
+          ? responseCredentialProven(r.response, proof, links, r.epochNo)
           : null;
     rows.push({
       txHash: r.txHash,
@@ -126,7 +141,7 @@ export async function validateNewResponses(
       epochNo: r.epochNo,
       blockIndex: blockIndices.get(r.txHash) ?? null,
       proofOk,
-      linkedActionId: link,
+      linkedActionId: linkSetKey(surveyKey),
       wellFormed: validateResponse(def, r.response).length === 0,
       checkedAt,
     });
