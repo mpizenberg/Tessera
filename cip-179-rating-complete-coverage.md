@@ -1,6 +1,8 @@
 # CIP-179 change suggestions — Rating question "complete coverage" flag
 
-Status: proposal for review (not yet applied to `cip-179.md`).
+Status: **landed in CIP-179 v5** (spec_version 5) as the mandatory `require_all`
+rating flag. Accepted and implemented across Tessera. Kept for history;
+superseded by the spec itself.
 
 This change adds **one** authoring option to the rating question type (tag 6): a
 flag that says whether a respondent may rate a _subset_ of the options (today's

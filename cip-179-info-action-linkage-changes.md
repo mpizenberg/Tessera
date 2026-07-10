@@ -1,6 +1,8 @@
 # CIP-179 change suggestions — Governance Action Linkage anchor metadata
 
-Status: proposal for review (not yet applied to `cip-179.md`).
+Status: **landed in CIP-179 v5** (spec_version 5). This proposal was accepted and
+its changes are now in `cip-179.md` and implemented across Tessera. Kept for
+history; superseded by the spec itself.
 
 These changes refine **only** how a governance action's anchor advertises a survey.
 The on-chain label-17 format, the Action → Survey direction, the `end_epoch` rule,
