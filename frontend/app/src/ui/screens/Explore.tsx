@@ -170,9 +170,7 @@ export const Explore: Component = () => {
     ),
   );
   const closedRows = createMemo(() =>
-    visible().filter(
-      (a) => a.govLinks.length === 0 && isClosed(viewStatus(a)),
-    ),
+    visible().filter((a) => a.govLinks.length === 0 && isClosed(viewStatus(a))),
   );
 
   const rowProps = (a: SurveyAggregate): EntryProps => ({

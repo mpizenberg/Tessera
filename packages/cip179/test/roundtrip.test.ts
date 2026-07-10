@@ -359,7 +359,11 @@ describe("rating require_all (v5)", () => {
     answers: { type: "public", answers },
   });
   const subset = respond([
-    { type: "rating", questionIndex: 0, ratings: [{ optionIndex: 0, rating: 3n }] },
+    {
+      type: "rating",
+      questionIndex: 0,
+      ratings: [{ optionIndex: 0, rating: 3n }],
+    },
   ]);
   const full = respond([
     {
@@ -376,7 +380,9 @@ describe("rating require_all (v5)", () => {
   ]);
 
   it("rejects a subset answer when require_all is true", () => {
-    expect(validateResponse(definition(true), subset).length).toBeGreaterThan(0);
+    expect(validateResponse(definition(true), subset).length).toBeGreaterThan(
+      0,
+    );
   });
 
   it("accepts a full answer when require_all is true", () => {

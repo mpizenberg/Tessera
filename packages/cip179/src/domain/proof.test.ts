@@ -60,14 +60,24 @@ describe("mechanism A (standalone survey, or no binding)", () => {
   it("passes a key credential listed in required_signers", () => {
     const p = proof({ requiredSigners: [hx(1)] });
     expect(
-      responseCredentialProven(resp(Role.Stakeholder, keyCred(1)), p, [], RESP_EPOCH),
+      responseCredentialProven(
+        resp(Role.Stakeholder, keyCred(1)),
+        p,
+        [],
+        RESP_EPOCH,
+      ),
     ).toBe(true);
   });
 
   it("fails a key credential absent from required_signers", () => {
     const p = proof({ requiredSigners: [hx(2)] });
     expect(
-      responseCredentialProven(resp(Role.Stakeholder, keyCred(1)), p, [], RESP_EPOCH),
+      responseCredentialProven(
+        resp(Role.Stakeholder, keyCred(1)),
+        p,
+        [],
+        RESP_EPOCH,
+      ),
     ).toBe(false);
   });
 
@@ -79,7 +89,12 @@ describe("mechanism A (standalone survey, or no binding)", () => {
       ],
     });
     expect(
-      responseCredentialProven(resp(Role.Stakeholder, scriptCred(7)), p, [], RESP_EPOCH),
+      responseCredentialProven(
+        resp(Role.Stakeholder, scriptCred(7)),
+        p,
+        [],
+        RESP_EPOCH,
+      ),
     ).toBe(true);
   });
 
@@ -110,7 +125,12 @@ describe("mechanism A (standalone survey, or no binding)", () => {
 
   it("fails with no proof at all (unfetchable tx)", () => {
     expect(
-      responseCredentialProven(resp(Role.Stakeholder, keyCred(1)), null, [], RESP_EPOCH),
+      responseCredentialProven(
+        resp(Role.Stakeholder, keyCred(1)),
+        null,
+        [],
+        RESP_EPOCH,
+      ),
     ).toBe(false);
   });
 });
@@ -120,7 +140,12 @@ describe("mechanism B (governance-linked survey)", () => {
     // DRep key voter voting the linked action; no required_signers at all.
     const p = proof({ votes: [vote(2, 1)] });
     expect(
-      responseCredentialProven(resp(Role.DRep, keyCred(1)), p, linked(), RESP_EPOCH),
+      responseCredentialProven(
+        resp(Role.DRep, keyCred(1)),
+        p,
+        linked(),
+        RESP_EPOCH,
+      ),
     ).toBe(true);
   });
 
@@ -192,7 +217,12 @@ describe("mechanism B (governance-linked survey)", () => {
   it("a Stakeholder with a binding is invalidated (no voter tag maps to 3)", () => {
     const p = proof({ requiredSigners: [hx(1)], votes: [vote(2, 1)] });
     expect(
-      responseCredentialProven(resp(Role.Stakeholder, keyCred(1)), p, linked(), RESP_EPOCH),
+      responseCredentialProven(
+        resp(Role.Stakeholder, keyCred(1)),
+        p,
+        linked(),
+        RESP_EPOCH,
+      ),
     ).toBe(false);
   });
 
@@ -200,7 +230,12 @@ describe("mechanism B (governance-linked survey)", () => {
     // The tx votes, but with a different credential — not a binding for ours.
     const p = proof({ requiredSigners: [hx(1)], votes: [vote(2, 9)] });
     expect(
-      responseCredentialProven(resp(Role.DRep, keyCred(1)), p, linked(), RESP_EPOCH),
+      responseCredentialProven(
+        resp(Role.DRep, keyCred(1)),
+        p,
+        linked(),
+        RESP_EPOCH,
+      ),
     ).toBe(true);
   });
 
@@ -209,7 +244,12 @@ describe("mechanism B (governance-linked survey)", () => {
     // credential is a key — not the same credential, so mechanism A decides.
     const p = proof({ votes: [vote(3, 1)] });
     expect(
-      responseCredentialProven(resp(Role.DRep, keyCred(1)), p, linked(), RESP_EPOCH),
+      responseCredentialProven(
+        resp(Role.DRep, keyCred(1)),
+        p,
+        linked(),
+        RESP_EPOCH,
+      ),
     ).toBe(false);
   });
 
@@ -233,7 +273,12 @@ describe("mechanism B (governance-linked survey)", () => {
       { actionId: ACTION, votableThroughEpoch: 1_000 },
     ];
     expect(
-      responseCredentialProven(resp(Role.DRep, keyCred(1)), p, twoLinks, RESP_EPOCH),
+      responseCredentialProven(
+        resp(Role.DRep, keyCred(1)),
+        p,
+        twoLinks,
+        RESP_EPOCH,
+      ),
     ).toBe(true);
   });
 
@@ -242,7 +287,12 @@ describe("mechanism B (governance-linked survey)", () => {
       votes: [vote(2, 1, [OTHER_ACTION]), vote(2, 1, [ACTION])],
     });
     expect(
-      responseCredentialProven(resp(Role.DRep, keyCred(1)), p, linked(), RESP_EPOCH),
+      responseCredentialProven(
+        resp(Role.DRep, keyCred(1)),
+        p,
+        linked(),
+        RESP_EPOCH,
+      ),
     ).toBe(true);
   });
 
@@ -255,7 +305,12 @@ describe("mechanism B (governance-linked survey)", () => {
       votes: [vote(2, 1, [OTHER_ACTION])],
     });
     expect(
-      responseCredentialProven(resp(Role.DRep, keyCred(1)), p, linked(90), RESP_EPOCH),
+      responseCredentialProven(
+        resp(Role.DRep, keyCred(1)),
+        p,
+        linked(90),
+        RESP_EPOCH,
+      ),
     ).toBe(true);
   });
 
@@ -264,7 +319,12 @@ describe("mechanism B (governance-linked survey)", () => {
     // B is inert, and with no required_signers mechanism A fails too.
     const p = proof({ votes: [vote(2, 1)] });
     expect(
-      responseCredentialProven(resp(Role.DRep, keyCred(1)), p, linked(90), RESP_EPOCH),
+      responseCredentialProven(
+        resp(Role.DRep, keyCred(1)),
+        p,
+        linked(90),
+        RESP_EPOCH,
+      ),
     ).toBe(false);
   });
 });
