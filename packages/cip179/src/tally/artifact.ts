@@ -42,9 +42,10 @@ export const RULESET_DESCRIPTOR = {
   // body gains `sealed=true`, counted responders commit their revealed answers,
   // and the schema change makes v3 hashes incomparable with v2.
   // v4: CIP-179 v5 — rating `require_all` tightens answer validity (the
-  // validity rule) and mechanism B binds only while the action is votable (the
-  // credential-proof rule); both change the counted set, so hashes are
-  // incomparable with v3.
+  // validity rule), and mechanism B becomes purely additive: a qualifying vote
+  // on any linked action proves on its own, a non-qualifying vote never
+  // invalidates (mechanism A decides). Both change the counted set, so hashes
+  // are incomparable with v3.
   rulesetVersion: 4,
   cip179SpecVersion: 5,
   /** Roles artifacts cover: 0 DRep, 3 Stakeholder, 4 Keyholder (SPO/CC deferred). */
@@ -58,7 +59,7 @@ export const RULESET_DESCRIPTOR = {
   rules: [
     "window: a response is countable iff its transaction's epoch_no <= the survey's end_epoch (inclusive)",
     "validity: a response must pass full CIP-179 codec validation against the on-chain definition (eligible role, in-constraint answers including require_all rating coverage, required questions answered)",
-    "credential-proof: mechanism A (credential key in required_signers, or its native script witnessed and satisfied) or mechanism B (a voting_procedures binding by the same credential voting on any governance action linked to the survey, with the voter tag's role equal to the claimed role); a present-but-failing binding invalidates the response; mechanism B applies only to governance-linked surveys and only while the action is still votable (a binding whose response tx epoch is past the action's expiry epoch does not count and the response falls back to mechanism A)",
+    "credential-proof: mechanism A (credential key in required_signers, or its native script witnessed and satisfied) or mechanism B (a voting_procedures vote in the response transaction by the same credential on any governance action linked to the survey, with the voter tag's role equal to the claimed role — sufficient on its own); a response with no qualifying vote falls back to mechanism A (a non-qualifying vote never invalidates); mechanism B applies only to governance-linked surveys, and votability needs no separate check — the ledger only accepts votes on actions still in the proposal set",
     "dedup: at most one counted response per (survey, role, credential) — the latest in chain order wins, ordered by (slot, tx_block_index, response_index)",
     "membership+weight: role membership and weights are snapshotted at the survey's end_epoch; a credential registered at end_epoch but without stake counts with weight 0; unregistered credentials are excluded",
     "cancellation: a survey is cancelled iff a cancelling transaction at epoch_no <= end_epoch proves the definition's owner credential via mechanism A; the earliest such transaction in chain order (slot, then tx hash) is the one recorded; a cancelled survey's artifact carries no per-role tallies",

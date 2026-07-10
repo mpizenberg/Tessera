@@ -213,7 +213,6 @@ describe("validateNewResponses", () => {
       surveyKey: SURVEY_KEY,
       actionId: ACTION,
       endEpoch: DEF.endEpoch, // aligned → the survey counts as linked
-      votableThroughEpoch: DEF.endEpoch, // response epoch is within the window
       title: null,
     };
     await validateNewResponses(
@@ -235,30 +234,33 @@ describe("validateNewResponses", () => {
     expect(store2.rows.get("t1:0")!.proofOk).toBe(false);
   });
 
-  it("leaves a bindable-role verdict pending when gov links are unreliable (finding 2)", async () => {
+  it("defers only bindable-role FAILING verdicts when gov links are unreliable (finding 2)", async () => {
     const store = memTallyStore();
-    // A DRep tx that only signs (mechanism A would pass) — but with links
-    // unknown this refresh, a hidden binding could still override it.
+    // t1 signs (mechanism A passes) — final even with links unknown, since a
+    // hidden link could only ADD a mechanism-B proof, never invalidate. t3
+    // neither signs nor binds — a hidden link could flip that false, so defer.
     const source = fakeSource(
-      { t1: signedProof(1), t2: signedProof(2) },
       {
-        t1: 1,
-        t2: 1,
+        t1: signedProof(1),
+        t2: signedProof(2),
+        t3: { requiredSigners: [], nativeScripts: [], votes: [] },
       },
+      { t1: 1, t2: 1, t3: 1 },
     );
     await validateNewResponses(
       store,
       records(
         response("t1", 1, Role.DRep),
         response("t2", 2, Role.Stakeholder),
+        response("t3", 3, Role.DRep),
       ),
       [], // empty because the fetch FAILED, not because there are no links
       source,
       false, // govLinksReliable = false
     );
-    // Bindable role: verdict deferred (retry). Non-bindable: frozen safely.
-    expect(store.rows.get("t1:0")!.proofOk).toBe(null);
-    expect(store.rows.get("t2:0")!.proofOk).toBe(true);
+    expect(store.rows.get("t1:0")!.proofOk).toBe(true); // A pass is final
+    expect(store.rows.get("t2:0")!.proofOk).toBe(true); // non-bindable: frozen
+    expect(store.rows.get("t3:0")!.proofOk).toBe(null); // failing DRep: retry
   });
 
   it("re-validates a completed row when its survey's link appears later (finding 2)", async () => {
@@ -290,7 +292,6 @@ describe("validateNewResponses", () => {
       surveyKey: SURVEY_KEY,
       actionId: ACTION,
       endEpoch: DEF.endEpoch,
-      votableThroughEpoch: DEF.endEpoch,
       title: null,
     };
     await validateNewResponses(store, recs, [link], source, true);

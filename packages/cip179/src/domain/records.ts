@@ -170,14 +170,6 @@ export interface GovLink {
   readonly actionId: string;
   /** The action's expiry epoch (must equal the survey's `end_epoch`). */
   readonly endEpoch: number;
-  /**
-   * Last epoch the action was votable — the bound the mechanism-B vote binding
-   * must fall within (CIP-179 v5: a binding by a response transaction past this
-   * epoch does not count and the response falls back to mechanism A). Equals
-   * `endEpoch` for an action that ran its full course, or an earlier epoch when
-   * the action resolved early (ratified / enacted / dropped).
-   */
-  readonly votableThroughEpoch: number;
   /** Action title from CIP-108 governance metadata, if present. */
   readonly title: string | null;
 }

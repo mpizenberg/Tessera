@@ -33,7 +33,6 @@ function surveyListBody(): unknown {
         surveyKey: "aa:0",
         actionId: "gov_action1abc",
         endEpoch: 1345,
-        votableThroughEpoch: 1345,
         title: "Linked",
       },
     ],

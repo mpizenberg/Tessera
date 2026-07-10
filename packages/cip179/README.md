@@ -225,7 +225,7 @@ recorded hash:
 | `cip-179` version | CIP-179 spec version | ruleset version | `rulesetHash()`                                                    |
 | :---------------- | :------------------- | :-------------- | :----------------------------------------------------------------- |
 | 0.1.0             | 4                    | 3               | `c5b2b4284db26af358ed084373cc0786b15e4f58bc27c4f82e769d16ba878eee` |
-| 0.2.0             | 5                    | 4               | `9b5210228bbfdd525308698f9427368b1cf228b8f7e8ae931833d29f023e562e` |
+| 0.2.0             | 5                    | 4               | `64efbd0fb3614348e5c2620275baa9f9eb3e274e4ae9fa46d7fb9f8643fd24bc` |
 
 When the rules change, the ruleset version and hash change; add a new row rather
 than editing an existing one, so old artifacts stay re-verifiable against the

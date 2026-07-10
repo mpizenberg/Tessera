@@ -47,9 +47,10 @@ const BINDABLE_ROLES: ReadonlySet<number> = new Set([
  * skipped entirely (no row) — they can't be tallied anyway.
  *
  * `govLinksReliable` is false when this refresh's gov-links fetch failed (an
- * empty list then means "unknown", not "none"). In that case a link-dependent
- * verdict cannot be trusted — a hidden link would make mechanism A the wrong
- * mechanism — so bindable-role verdicts are left null and retried, and no row
+ * empty list then means "unknown", not "none"). Mechanism B only ever *adds*
+ * proof (a non-qualifying vote never invalidates), so a mechanism-A pass is
+ * final even with links unknown; only a bindable role's *negative* verdict
+ * could flip on a hidden link, so those are left null and retried, and no row
  * is re-validated on an apparent link change.
  */
 export async function validateNewResponses(
@@ -122,15 +123,21 @@ export async function validateNewResponses(
     const def = defByKey.get(surveyKey);
     if (!def) continue; // unknown survey — nothing to validate against
     const proof = proofs.get(r.txHash) ?? null;
-    const links = linksByKey.get(surveyKey) ?? [];
-    // With links unknown this refresh, a bindable role's verdict can't be
-    // trusted (a hidden binding might override mechanism A) — leave it to retry.
+    const linkedActionIds = (linksByKey.get(surveyKey) ?? []).map(
+      (l) => l.actionId,
+    );
+    // Mechanism B only ever adds proof, so a pass is final regardless of the
+    // link set. With links unknown this refresh, only a bindable role's
+    // *negative* verdict could flip on a hidden link — leave those to retry.
+    const proven = proof
+      ? responseCredentialProven(r.response, proof, linkedActionIds)
+      : null;
     const proofOk =
-      !govLinksReliable && BINDABLE_ROLES.has(r.response.role)
+      proven === false &&
+      !govLinksReliable &&
+      BINDABLE_ROLES.has(r.response.role)
         ? null
-        : proof
-          ? responseCredentialProven(r.response, proof, links, r.epochNo)
-          : null;
+        : proven;
     rows.push({
       txHash: r.txHash,
       responseIndex: r.responseIndex,

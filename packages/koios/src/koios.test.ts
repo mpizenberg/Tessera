@@ -50,8 +50,6 @@ describe("parseGovLink", () => {
       actionId: "gov_action1abc",
       // Koios expiration 42 → expiry epoch 41 (one before the drop-out epoch).
       endEpoch: 41,
-      // Ran its full course: votable through its expiry epoch.
-      votableThroughEpoch: 41,
       title: "Ratify the budget",
     });
   });
@@ -64,15 +62,6 @@ describe("parseGovLink", () => {
     );
     expect(link?.surveyKey).toBe(`${TXID.toLowerCase()}:2`);
     expect(link?.endEpoch).toBe(41);
-  });
-
-  it("shrinks the votable window when the action resolved early", () => {
-    const link = parseGovLink(
-      row(anchor({ cip179: LINK }), 42, { ratified_epoch: 38 }),
-    );
-    // endEpoch stays the expiry epoch, but voting stopped at ratification.
-    expect(link?.endEpoch).toBe(41);
-    expect(link?.votableThroughEpoch).toBe(38);
   });
 
   it("returns null when surveyIndex is missing (it is mandatory)", () => {

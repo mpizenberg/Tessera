@@ -84,7 +84,6 @@ const link = (s: SurveyRecord): GovLink => ({
   surveyKey: keyOf(s),
   actionId: "gov_action1xyz",
   endEpoch: s.definition.endEpoch,
-  votableThroughEpoch: s.definition.endEpoch,
   title: "linked action",
 });
 

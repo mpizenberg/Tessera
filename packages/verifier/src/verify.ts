@@ -24,7 +24,6 @@ import {
   laterInChain,
   refKey,
   responseCredentialProven,
-  type LinkedActionWindow,
   type ResponseRecord,
   type SurveyBundle,
   type TxProof,
@@ -50,8 +49,8 @@ export interface VerifyInputs {
   /** The artifact under verification, exactly as served. */
   readonly artifact: TallyArtifact;
   readonly network: string;
-  /** Epoch-aligned linking governance actions and their votable windows (empty = standalone). */
-  readonly linkedActions: readonly LinkedActionWindow[];
+  /** Epoch-aligned linking governance action ids (empty = standalone). */
+  readonly linkedActionIds: readonly string[];
   /** `tx_block_index` per tx of the bundle (from Koios `/tx_info`). */
   readonly blockIndices: ReadonlyMap<string, number>;
   /** Decoded proof evidence per tx of the bundle (from Koios `/tx_cbor`). */
@@ -144,14 +143,7 @@ export async function rebuildTally(
       notes.push(`no proof evidence for tx ${r.txHash} — response excluded`);
       continue;
     }
-    if (
-      !responseCredentialProven(
-        r.response,
-        proof,
-        inputs.linkedActions,
-        r.epochNo,
-      )
-    )
+    if (!responseCredentialProven(r.response, proof, inputs.linkedActionIds))
       continue;
     if (!COVERED_ROLES.includes(r.response.role)) continue;
     const blockIndex = inputs.blockIndices.get(r.txHash);
@@ -388,26 +380,22 @@ export function diffResponseSets(
 
 /**
  * Convenience for callers holding a survey key: the epoch-aligned linking
- * actions among `govLinks` (any action kind, possibly several — CIP-179 v5),
- * with the votable window mechanism B gates on. Empty for a standalone survey.
+ * action ids among `govLinks` (any action kind, possibly several — CIP-179
+ * v5). Empty for a standalone survey.
  */
-export function linkedActionsFor(
+export function linkedActionIdsFor(
   bundle: SurveyBundle,
   govLinks: readonly {
     surveyKey: string;
     actionId: string;
     endEpoch: number;
-    votableThroughEpoch: number;
   }[],
-): LinkedActionWindow[] {
-  const key = refKey(bundle.survey.ref);
+): string[] {
   return govLinks
     .filter(
       (l) =>
-        l.surveyKey === key && l.endEpoch === bundle.survey.definition.endEpoch,
+        l.surveyKey === refKey(bundle.survey.ref) &&
+        l.endEpoch === bundle.survey.definition.endEpoch,
     )
-    .map((l) => ({
-      actionId: l.actionId,
-      votableThroughEpoch: l.votableThroughEpoch,
-    }));
+    .map((l) => l.actionId);
 }

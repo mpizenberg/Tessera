@@ -190,7 +190,7 @@ function inputs(overrides: Partial<VerifyInputs> = {}): VerifyInputs {
     bundle,
     artifact: emittedArtifact(),
     network: "preview",
-    linkedActions: [],
+    linkedActionIds: [],
     blockIndices: new Map([
       [R_A.txHash, 0],
       [R_B.txHash, 1],
@@ -732,8 +732,8 @@ describe("verifyArtifact — Keyholder role", () => {
 // On a governance-linked survey, a tx can prove its credential by voting on the
 // linked action with that same credential (voter tag 2 = DRep key). Every test
 // above runs with no linked actions, so this block pins the three rules:
-// a vote alone proves; a failing binding invalidates even when mechanism A
-// passes; no link means votes prove nothing.
+// a qualifying vote alone proves; a non-qualifying vote never invalidates
+// (mechanism A still decides); no link means votes prove nothing.
 
 describe("verifyArtifact — mechanism B (governance vote binding)", () => {
   const ACTION = "gov_action1linked";
@@ -803,7 +803,7 @@ describe("verifyArtifact — mechanism B (governance vote binding)", () => {
       bundle: drepBundle,
       weights: drepSource,
       artifact: drepArtifact,
-      linkedActions: [{ actionId: ACTION, votableThroughEpoch: END_EPOCH }],
+      linkedActionIds: [ACTION],
       ...overrides,
     });
 
@@ -831,15 +831,38 @@ describe("verifyArtifact — mechanism B (governance vote binding)", () => {
     expect(result.match).toBe(true);
   });
 
-  it("a failing binding invalidates even when mechanism A passes", async () => {
-    // The credential IS in required_signers (mechanism A alone would pass),
-    // but it also cast a vote — on the WRONG action. A present-but-failing
-    // binding decides alone, so a correct rebuild drops the responder.
+  it("a vote on an unrelated action never invalidates — mechanism A decides", async () => {
+    // The credential IS in required_signers (mechanism A passes) and also cast
+    // a vote on an UNRELATED action. That vote is not a binding — it neither
+    // proves nor invalidates — so the responder stays counted via mechanism A.
     const proofs = new Map<string, TxProof | null>([
       [
         D_A.txHash,
         {
           requiredSigners: ["a1".repeat(28)],
+          nativeScripts: [],
+          votes: [
+            {
+              voterTag: 2,
+              credentialHash: "a1".repeat(28),
+              actionIds: ["gov_action1other"],
+            },
+          ],
+        },
+      ],
+    ]);
+    const result = await verifyArtifact(drepInputs({ proofs }));
+    expect(result.match).toBe(true);
+  });
+
+  it("an unrelated vote with no other proof leaves the response unproven", async () => {
+    // Same unrelated vote, but no required_signers: mechanism B doesn't apply
+    // (wrong action) and mechanism A fails, so a counted responder MISMATCHes.
+    const proofs = new Map<string, TxProof | null>([
+      [
+        D_A.txHash,
+        {
+          requiredSigners: [],
           nativeScripts: [],
           votes: [
             {
@@ -889,7 +912,7 @@ describe("verifyArtifact — mechanism B (governance vote binding)", () => {
       ],
     ]);
     const result = await verifyArtifact(
-      drepInputs({ proofs, linkedActions: [] }),
+      drepInputs({ proofs, linkedActionIds: [] }),
     );
     expect(result.match).toBe(false);
     expect(result.diffs.join("\n")).toContain("present only in received");

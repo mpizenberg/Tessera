@@ -12,14 +12,12 @@
  *    votes on one of the survey's linked actions with the very same credential,
  *    and the Conway voter tag's role matches the claimed role (0/1→CC, 2/3→DRep,
  *    4→SPO). A survey may be linked by several actions (CIP-179 v5); a vote on
- *    *any one* of them satisfies. The binding only counts while the action is
- *    still votable: an action whose votable window closed before the response's
- *    epoch is not considered, so a response cast after every linked action
- *    expired falls back to mechanism A exactly like a standalone one. When at
- *    least one linked action is still in-window, a binding by the response
- *    credential that is *present but failing* (wrong action, wrong role)
- *    invalidates the response even if mechanism A would pass; an *absent*
- *    binding is not a failure — evaluation just falls back to mechanism A.
+ *    *any one* of them satisfies. A qualifying vote proves on its own; anything
+ *    else — no vote, a vote on an unrelated action, a mismatched role — is
+ *    simply not a binding, and evaluation falls back to mechanism A (a
+ *    non-qualifying vote never invalidates). No votable-window check is needed:
+ *    the ledger only accepts votes on actions still in the proposal set, so an
+ *    on-chain binding was necessarily cast while the action was votable.
  *    Stakeholder/Keyholder roles have no voter tag and therefore can never bind.
  *
  * The transaction evidence ({@link TxProof}) is decoded by the data source;
@@ -83,54 +81,34 @@ function mechanismA(credential: Credential, proof: TxProof): boolean {
 }
 
 /**
- * A survey-linking governance action and the last epoch it was votable —
- * the mechanism-B window a response's epoch must fall within (CIP-179 v5).
- * {@link GovLink} is structurally assignable, so linked links can be passed
- * straight through.
- */
-export interface LinkedActionWindow {
-  /** Bech32 CIP-129 `gov_action1…` id. */
-  readonly actionId: string;
-  /** Last epoch the action was votable (see {@link GovLink.votableThroughEpoch}). */
-  readonly votableThroughEpoch: number;
-}
-
-/**
  * Whether `response`'s carrying transaction proves its claimed credential.
  * `proof` is the tx's decoded evidence (`null` = unfetchable → unproven);
- * `linkedActions` are the survey's linking governance actions (empty for a
- * standalone survey — mechanism B only exists for linked surveys);
- * `responseEpoch` is the epoch of the response's carrying transaction, used to
- * gate the mechanism-B votable window.
+ * `linkedActionIds` are the survey's linking governance actions (bech32
+ * CIP-129 `gov_action1…`, empty for a standalone survey — mechanism B only
+ * exists for linked surveys).
  */
 export function responseCredentialProven(
   response: SurveyResponse,
   proof: TxProof | null,
-  linkedActions: readonly LinkedActionWindow[],
-  responseEpoch: number,
+  linkedActionIds: readonly string[],
 ): boolean {
   if (!proof) return false;
 
-  // Only actions still votable at the response's epoch can bind it; if none
-  // are, mechanism B does not apply and evaluation falls back to mechanism A.
-  const inWindowActionIds = new Set(
-    linkedActions
-      .filter((a) => responseEpoch <= a.votableThroughEpoch)
-      .map((a) => a.actionId),
-  );
-
-  if (inWindowActionIds.size > 0) {
-    const bindings = bindingsByCredential(response.credential, proof.votes);
-    if (bindings.length > 0) {
-      // A binding by this credential exists — it alone decides (a failing
-      // binding invalidates even when mechanism A would pass). Any one in-window
-      // linked action satisfies.
-      return bindings.some(
-        (b) =>
-          b.actionIds.some((id) => inWindowActionIds.has(id)) &&
-          roleOfVoterTag(b.voterTag) === response.role,
-      );
-    }
+  if (linkedActionIds.length > 0) {
+    // Mechanism B: a vote by the response credential on any linked action,
+    // with the voter tag's role matching the claimed role, proves on its own.
+    // Non-qualifying votes are not bindings — they never invalidate; mechanism
+    // A below still decides. Votability needs no separate check: the ledger
+    // only accepts votes on active actions.
+    const qualifies = bindingsByCredential(
+      response.credential,
+      proof.votes,
+    ).some(
+      (b) =>
+        b.actionIds.some((id) => linkedActionIds.includes(id)) &&
+        roleOfVoterTag(b.voterTag) === response.role,
+    );
+    if (qualifies) return true;
   }
 
   return mechanismA(response.credential, proof);

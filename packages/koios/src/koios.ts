@@ -119,12 +119,6 @@ export interface ProposalRow {
    * is `expiration - 1`, applied in {@link parseGovLink}.
    */
   expiration: number | null;
-  /** Epoch the action was ratified, or null if it never was. */
-  ratified_epoch?: number | null;
-  /** Epoch the action was enacted, or null if it never was. */
-  enacted_epoch?: number | null;
-  /** Epoch the action was dropped (expired unenacted), or null. */
-  dropped_epoch?: number | null;
   /** Anchor JSON, resolved by Koios when reachable (may be null). */
   meta_json: unknown;
 }
@@ -616,12 +610,10 @@ export class KoiosDataSource implements DataSource {
     // proposal_type filter — only those created at/after `sinceUnix`, since
     // older actions can't link to a still-active survey, which bounds the scan.
     // Koios requires the filtered column be selected, hence `block_time` in
-    // select. `ratified_epoch`/`enacted_epoch`/`dropped_epoch` narrow the
-    // votable window for actions that resolved early. Koios resolves the anchor
-    // JSON into `meta_json` when reachable; we read the link fields from it.
+    // select. Koios resolves the anchor JSON into `meta_json` when reachable;
+    // we read the CIP-179 link fields straight from it.
     const rows = await this.get<ProposalRow[]>(
-      `/proposal_list?select=proposal_id,proposal_type,expiration,` +
-        `ratified_epoch,enacted_epoch,dropped_epoch,meta_json,block_time` +
+      `/proposal_list?select=proposal_id,proposal_type,expiration,meta_json,block_time` +
         `&block_time=gte.${Math.floor(sinceUnix)}`,
     );
     const links: GovLink[] = [];
@@ -713,24 +705,13 @@ export function parseGovLink(row: ProposalRow): GovLink | null {
   const body = meta["body"] as Record<string, unknown>;
   const title = typeof body["title"] === "string" ? body["title"] : null;
 
-  // Koios's `expiration` is the epoch the action drops out (one past its last
-  // active epoch); the action's expiry epoch — what a linked survey's
-  // `end_epoch` must equal — is `expiration - 1`. See ProposalRow.expiration.
-  const endEpoch = row.expiration - 1;
-  // The votable window ends at `endEpoch` unless the action resolved earlier
-  // (ratified / enacted / dropped); take the earliest applicable bound.
-  const votableThroughEpoch = Math.min(
-    endEpoch,
-    ...[row.ratified_epoch, row.enacted_epoch, row.dropped_epoch].filter(
-      (e): e is number => typeof e === "number",
-    ),
-  );
-
   return {
     surveyKey: `${surveyRef.txId}:${surveyRef.index}`,
     actionId: row.proposal_id,
-    endEpoch,
-    votableThroughEpoch,
+    // Koios's `expiration` is the epoch the action drops out (one past its last
+    // active epoch); the action's expiry epoch — what a linked survey's
+    // `end_epoch` must equal — is `expiration - 1`. See ProposalRow.expiration.
+    endEpoch: row.expiration - 1,
     title,
   };
 }
