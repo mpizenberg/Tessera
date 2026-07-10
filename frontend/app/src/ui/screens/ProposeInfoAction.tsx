@@ -22,6 +22,7 @@ import {
   LinkAnchorSection,
   type PreparedAnchor,
 } from "~/ui/components/LinkAnchorSection";
+import linkCss from "~/ui/components/LinkAnchorSection.module.css";
 import { TxLink } from "~/ui/components/TxLink";
 import { Note } from "~/ui/components/Note";
 import { networkMismatch } from "~/ui/format";
@@ -34,6 +35,16 @@ export const ProposeInfoAction: Component = () => {
   const [busy, setBusy] = createSignal(false);
   const [txHash, setTxHash] = createSignal<string | null>(null);
   const [error, setError] = createSignal<string | null>(null);
+
+  // A different anchor document invalidates a previous submission's outcome —
+  // clear the stale success/error notes (url/pin edits keep the same document).
+  const onPrepared = (p: PreparedAnchor | null) => {
+    if (p?.anchor.hashHex !== prepared()?.anchor.hashHex) {
+      setTxHash(null);
+      setError(null);
+    }
+    setPrepared(p);
+  };
 
   const mismatch = () =>
     networkMismatch(app.wallet()?.identity.networkId, app.config.network);
@@ -83,18 +94,18 @@ export const ProposeInfoAction: Component = () => {
         {t("proposeInfoAction.leadPre")}
         <b>Info Action</b>
         {t("proposeInfoAction.leadMid")}
-        <span class={css.mono}>gov_action_deposit</span>
+        <span class={linkCss.mono}>gov_action_deposit</span>
         {t("proposeInfoAction.leadPost")}
       </p>
 
       {/* Generic, action-kind-independent: prepare and validate the anchor. */}
       <p class={css.sectionNote}>{t("proposeInfoAction.genericSectionNote")}</p>
-      <LinkAnchorSection onChange={setPrepared} />
+      <LinkAnchorSection onChange={onPrepared} />
 
       {/* Info-Action-specific: sign & submit the one kind Tessera builds. */}
-      <div class={css.stepHead}>{t("proposeInfoAction.step3Head")}</div>
+      <div class={linkCss.stepHead}>{t("proposeInfoAction.step3Head")}</div>
       <p class={css.sectionNote}>{t("proposeInfoAction.submitSectionNote")}</p>
-      <div class={css.card}>
+      <div class={linkCss.card}>
         <Show
           when={app.wallet()}
           fallback={

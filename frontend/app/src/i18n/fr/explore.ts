@@ -54,8 +54,8 @@ const explore: Messages = {
   answeredAria: "répondu",
   badgeYours: "À vous",
   badgeOffChain: "⚠ libellés off-chain",
-  govInfoAction: "Action liée {id}",
-  govInfoActionTitle: " · {title}",
+  govLinkedAction: "Action liée {id}",
+  govLinkedActionTitle: " · {title}",
   untitled: "Sans titre · contenu externe",
   noPresentation:
     "Texte de présentation indisponible — structure on-chain intacte.",

@@ -1428,7 +1428,9 @@ const RatingBody: Component<{
   onChange: (v: DraftValue) => void;
 }> = (props) => {
   const levels = ratingLevels(props.q.scale);
-  const setRating = (optIdx: number, rating: bigint) => {
+  // `null` clears the option back to unrated — meaningful now that a subset
+  // answer is valid (require_all = false), and harmless otherwise.
+  const setRating = (optIdx: number, rating: bigint | null) => {
     const next = [...props.v.ratings];
     next[optIdx] = rating;
     props.onChange({ type: "rating", ratings: next });
@@ -1449,7 +1451,10 @@ const RatingBody: Component<{
                   value={props.v.ratings[optIdx]?.toString() ?? ""}
                   onInput={(e) => {
                     const n = e.currentTarget.value.trim();
-                    if (n === "") return;
+                    if (n === "") {
+                      setRating(optIdx, null); // emptied → unrated
+                      return;
+                    }
                     try {
                       setRating(optIdx, BigInt(n));
                     } catch {
@@ -1466,7 +1471,11 @@ const RatingBody: Component<{
                     const on = () => props.v.ratings[optIdx] === lvl.value;
                     return (
                       <button
-                        onClick={() => setRating(optIdx, lvl.value)}
+                        // Clicking the active level clears it (back to unrated).
+                        onClick={() =>
+                          setRating(optIdx, on() ? null : lvl.value)
+                        }
+                        aria-pressed={on()}
                         class={css.ratingBtn}
                         classList={{ [css.ratingBtnOn]: on() }}
                       >

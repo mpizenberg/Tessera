@@ -34,7 +34,7 @@ import { IPFS_PROVIDERS, type ProviderId } from "~/enrichment/providers";
 import { Note } from "~/ui/components/Note";
 import { isSafeAnchorUri } from "~/ui/format";
 import { t } from "~/i18n";
-import css from "~/ui/screens/ProposeInfoAction.module.css";
+import css from "./LinkAnchorSection.module.css";
 
 /** The prepared anchor a parent needs to submit it (or `null` until ready). */
 export interface PreparedAnchor {

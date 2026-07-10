@@ -62,9 +62,9 @@ const explore = {
   badgeYours: "Yours",
   badgeOffChain: "⚠ labels off-chain",
   /** {id} is the shortened governance action id. */
-  govInfoAction: "Linked action {id}",
-  /** Spliced after govInfoAction when a linked-action title is known; {title} is user content. */
-  govInfoActionTitle: " · {title}",
+  govLinkedAction: "Linked action {id}",
+  /** Spliced after govLinkedAction when a linked-action title is known; {title} is user content. */
+  govLinkedActionTitle: " · {title}",
   untitled: "Untitled · external content",
   noPresentation: "Presentation text unavailable — on-chain structure intact.",
   refTitle: "Full survey ref — defining transaction hash and output index",

@@ -430,8 +430,10 @@ const GovLine: Component<{ actionId: string; title: string | null }> = (
 ) => (
   <div class={css.govLine}>
     {"◇ "}
-    {t("explore.govInfoAction", { id: shortGovId(props.actionId) })}
-    {props.title ? t("explore.govInfoActionTitle", { title: props.title }) : ""}
+    {t("explore.govLinkedAction", { id: shortGovId(props.actionId) })}
+    {props.title
+      ? t("explore.govLinkedActionTitle", { title: props.title })
+      : ""}
   </div>
 );
 
