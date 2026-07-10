@@ -57,7 +57,7 @@ describe("public submission mode arity (finding 24)", () => {
 describe("non-empty answer lists (finding 13)", () => {
   it("rejects a response with an empty public answer array", () => {
     const resp = new Map<Metadatum, Metadatum>([
-      [0n, 4n], // specVersion
+      [0n, 5n], // specVersion
       [1n, [bytes(32), 0n]], // surveyRef
       [2n, BigInt(Role.DRep)], // role
       [3n, [0n, bytes(28)]], // credential
@@ -89,7 +89,7 @@ describe("points allocation safe-integer decode (finding 7)", () => {
 // Finding 8 — option / scale labels are bounded_text (≤64 UTF-8 bytes).
 describe("bounded_text label limit (finding 8)", () => {
   const withLabel = (label: string): SurveyDefinition => ({
-    specVersion: 4,
+    specVersion: 5,
     owner: { type: "key", keyHash: bytes(28, 1) },
     title: "",
     description: "",

@@ -8,8 +8,8 @@
 /** Reserved transaction metadata label for CIP-179 payloads. */
 export const METADATA_LABEL = 17;
 
-/** Schema version defined by CIP-179 v4. */
-export const SPEC_VERSION = 4;
+/** Schema version defined by CIP-179 v5. */
+export const SPEC_VERSION = 5;
 
 /** Length of `tx_id`, `blake2b_256` and `drand_chain_hash`, in bytes. */
 export const HASH32_BYTES = 32;

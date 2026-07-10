@@ -1,6 +1,6 @@
 {
   "name": "cip-179",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Reusable TypeScript building blocks for CIP-179 on-chain surveys and polls (label 17): the metadatum codec, pure domain semantics, the reproducible tally artifact, transaction-proof decoding, and the sealed-submission tlock stack.",
   "type": "module",
   "license": "Apache-2.0",

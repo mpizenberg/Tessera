@@ -31,7 +31,7 @@ const REF = { txId: Uint8Array.of(9), index: 0 };
 /** Base definition: end_epoch 9, roles 0–3 eligible, no questions (so the
  *  empty-answer responses the deadline/dedup cases use validate cleanly). */
 const DEF: SurveyDefinition = {
-  specVersion: 4,
+  specVersion: 5,
   owner: keyCred(0),
   title: "t",
   description: "",
@@ -74,7 +74,7 @@ function recWith(
     epochNo: Math.floor(slot / 100),
     responseIndex: 0,
     response: {
-      specVersion: 4,
+      specVersion: 5,
       surveyRef: REF,
       role,
       credential: keyCred(cred),
@@ -119,7 +119,7 @@ const pub = (
   cred: number,
   answers: AnswerItem[],
 ): SurveyResponse => ({
-  specVersion: 4,
+  specVersion: 5,
   surveyRef: REF,
   role,
   credential: keyCred(cred),

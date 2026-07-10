@@ -34,7 +34,7 @@ const ANSWERS: AnswerItem[] = [
 
 function sealedResponse(ciphertext: Uint8Array): SurveyResponse {
   return {
-    specVersion: 4,
+    specVersion: 5,
     surveyRef: { txId: Uint8Array.of(9), index: 0 },
     role: Role.Stakeholder,
     credential: { type: "key", keyHash: Uint8Array.of(1, 2, 3) },

@@ -36,6 +36,7 @@ const QUESTIONS: Question[] = [
     prompt: "",
     options: OPTS,
     scale: { type: "numeric", constraints: { min: 1n, max: 5n } },
+    requireAll: false,
   },
   {
     type: "custom",
@@ -45,7 +46,7 @@ const QUESTIONS: Question[] = [
 ];
 
 const DEF: SurveyDefinition = {
-  specVersion: 4,
+  specVersion: 5,
   owner: { type: "key", keyHash: Uint8Array.of(0) },
   title: "t",
   description: "",
@@ -57,7 +58,7 @@ const DEF: SurveyDefinition = {
 
 function respWith(cred: number, answers: AnswerItem[]): SurveyResponse {
   return {
-    specVersion: 4,
+    specVersion: 5,
     surveyRef: { txId: Uint8Array.of(9), index: 0 },
     role: 3 as Role,
     credential: { type: "key", keyHash: Uint8Array.of(cred) },

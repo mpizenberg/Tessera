@@ -18,7 +18,7 @@ import type {
 } from "./weightedTally.js";
 
 const RESPONSE: SurveyResponse = {
-  specVersion: 4,
+  specVersion: 5,
   surveyRef: { txId: Uint8Array.of(9), index: 0 },
   role: 3 as Role,
   credential: { type: "key", keyHash: Uint8Array.of(1) },
@@ -72,7 +72,7 @@ describe("rulesetHash", () => {
   // rules", which is the exact failure mode the hash exists to prevent.
   it("matches its pinned golden hash (bump rulesetVersion on any change)", () => {
     expect(rulesetHash()).toBe(
-      "c5b2b4284db26af358ed084373cc0786b15e4f58bc27c4f82e769d16ba878eee",
+      "9b5210228bbfdd525308698f9427368b1cf228b8f7e8ae931833d29f023e562e",
     );
   });
 

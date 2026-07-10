@@ -265,6 +265,14 @@ const readRequired = (
   );
 };
 
+/** Read a mandatory fixed-position bool, encoded as int 0 or 1. */
+const readBool = (m: Metadatum, path: string): boolean => {
+  const flag = asNumber(m, path);
+  if (flag === 0) return false;
+  if (flag === 1) return true;
+  return fail(`invalid boolean flag ${flag} (expected 0 or 1)`, path);
+};
+
 const withRequired = <Q extends Question>(q: Q, required?: boolean): Q =>
   required ? { ...q, required: true } : q;
 
@@ -345,13 +353,18 @@ export const decodeQuestion = (m: Metadatum, path = "question"): Question => {
       );
     }
     case QuestionTag.Rating: {
-      const required = readRequired(arr, 4, path);
+      // v5: `require_all` is a mandatory bool at fixed index 4; the optional
+      // trailing `required` follows it (base length 5, so old 4-element rating
+      // arrays are rejected by readRequired's length check).
+      const required = readRequired(arr, 5, path);
+      const requireAll = readBool(arr[4], `${path}[4]`);
       return withRequired(
         {
           type: "rating",
           prompt,
           options: decodeOptionsOrCount(arr[2], `${path}[2]`),
           scale: decodeRatingScale(arr[3], `${path}[3]`),
+          requireAll,
         },
         required,
       );

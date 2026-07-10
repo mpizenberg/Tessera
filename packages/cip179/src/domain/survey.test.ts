@@ -32,7 +32,7 @@ const keyOwner = (b: number): Credential => ({
 const ownerHex = (b: number) => bytesToHex(Uint8Array.of(b));
 
 const def = (owner: Credential, endEpoch: number): SurveyDefinition => ({
-  specVersion: 4,
+  specVersion: 5,
   owner,
   title: "t",
   description: "",

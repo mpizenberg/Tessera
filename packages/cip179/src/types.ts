@@ -161,6 +161,13 @@ export interface RatingQuestion extends QuestionBase {
   readonly type: "rating";
   readonly options: OptionsOrCount;
   readonly scale: RatingScale;
+  /**
+   * When true, a *present* rating answer must rate every option; when false a
+   * subset is allowed. Mandatory on the wire (CIP-179 v5, fixed index 4, before
+   * the optional trailing `required`). Omitting the question is an abstain
+   * either way.
+   */
+  readonly requireAll: boolean;
 }
 
 export type Question =

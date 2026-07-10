@@ -244,8 +244,10 @@ export function weightedTallyQuestion(
     }
 
     case "rating": {
-      // Unlike points, rating an option is opt-in per option: only responders
-      // who rated it enter that option's numerator AND denominator.
+      // Unlike points, rating an option is per option: only responders who
+      // rated it enter that option's numerator AND denominator. A require_all
+      // question forces every option rated, so its denominators converge on the
+      // responder count; a subset question (require_all=false) leaves them opt-in.
       const n = optionCountOf(question.options);
       const info = ratingScaleInfo(question.scale);
       const sums = new Array<bigint>(n).fill(0n);

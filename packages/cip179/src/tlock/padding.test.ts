@@ -65,6 +65,7 @@ const ratingNumeric = (n: number, min: number, max: number): Question => ({
     type: "numeric",
     constraints: { min: BigInt(min), max: BigInt(max) },
   },
+  requireAll: false,
 });
 const ratingLabels = (n: number, levels: number): Question => ({
   type: "rating",
@@ -74,12 +75,14 @@ const ratingLabels = (n: number, levels: number): Question => ({
     type: "labels",
     labels: Array.from({ length: levels }, (_, i) => `L${i}`),
   },
+  requireAll: false,
 });
 const ratingCount = (n: number, levels: number): Question => ({
   type: "rating",
   prompt: "",
   options: opts(n),
   scale: { type: "count", count: levels },
+  requireAll: false,
 });
 const custom = (): Question => ({
   type: "custom",

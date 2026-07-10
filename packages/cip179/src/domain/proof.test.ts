@@ -19,7 +19,7 @@ const OTHER_ACTION = "gov_action1other";
 
 function resp(role: Role, credential: Credential): SurveyResponse {
   return {
-    specVersion: 4,
+    specVersion: 5,
     surveyRef: { txId: Uint8Array.of(9), index: 0 },
     role,
     credential,

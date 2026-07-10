@@ -333,6 +333,14 @@ const validateAnswer = (
           );
         }
       });
+      // v5 require_all: a *present* answer must rate every option. Omitting the
+      // question stays an abstain (handled by the required-questions check),
+      // which this rule does not touch.
+      if (question.requireAll && answer.ratings.length !== n) {
+        out.push(
+          `${where}: require_all rating must cover all ${n} options, got ${answer.ratings.length}`,
+        );
+      }
       break;
     }
   }

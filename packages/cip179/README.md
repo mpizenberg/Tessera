@@ -147,7 +147,7 @@ const payload: Cip179Payload = {
   type: "definitions",
   definitions: [
     {
-      specVersion: 4,
+      specVersion: 5,
       owner: { type: "key", keyHash: ownerKeyHash /* Uint8Array(28) */ },
       title: "Dijkstra hard-fork CIP shortlist",
       description: "Select candidate CIPs for the Dijkstra hard fork.",
@@ -225,6 +225,7 @@ recorded hash:
 | `cip-179` version | CIP-179 spec version | ruleset version | `rulesetHash()`                                                    |
 | :---------------- | :------------------- | :-------------- | :----------------------------------------------------------------- |
 | 0.1.0             | 4                    | 3               | `c5b2b4284db26af358ed084373cc0786b15e4f58bc27c4f82e769d16ba878eee` |
+| 0.2.0             | 5                    | 4               | `9b5210228bbfdd525308698f9427368b1cf228b8f7e8ae931833d29f023e562e` |
 
 When the rules change, the ruleset version and hash change; add a new row rather
 than editing an existing one, so old artifacts stay re-verifiable against the

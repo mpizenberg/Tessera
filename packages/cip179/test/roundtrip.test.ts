@@ -1,18 +1,23 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  Cip179DecodeError,
   decodeMetadata,
   decodePayload,
+  decodeQuestion,
   encodeMetadata,
   encodePayload,
+  encodeQuestion,
   isMap,
   METADATA_LABEL,
   QuestionTag,
   Role,
   validateDefinition,
   validateResponse,
+  type AnswerItem,
   type Cip179Payload,
   type Metadatum,
+  type RatingQuestion,
   type SurveyDefinition,
   type SurveyResponse,
 } from "../src/index.js";
@@ -29,7 +34,7 @@ const roundtripPayload = (p: Cip179Payload): Cip179Payload =>
 
 describe("definition round-trip (multi-select + ranking)", () => {
   const definition: SurveyDefinition = {
-    specVersion: 4,
+    specVersion: 5,
     owner: { type: "key", keyHash: ownerHash },
     title: "Dijkstra hard-fork CIP shortlist",
     description:
@@ -93,7 +98,7 @@ describe("definition round-trip (multi-select + ranking)", () => {
 
 describe("external-content mode with points-allocation", () => {
   const definition: SurveyDefinition = {
-    specVersion: 4,
+    specVersion: 5,
     owner: { type: "key", keyHash: ownerHash },
     title: "",
     description: "",
@@ -134,7 +139,7 @@ describe("external-content mode with points-allocation", () => {
 
 describe("response round-trip", () => {
   const response: SurveyResponse = {
-    specVersion: 4,
+    specVersion: 5,
     surveyRef: { txId, index: 0 },
     role: Role.DRep,
     credential: { type: "key", keyHash: responderHash },
@@ -166,7 +171,7 @@ describe("cancellation round-trip", () => {
 
 describe("sealed submission round-trip", () => {
   const definition: SurveyDefinition = {
-    specVersion: 4,
+    specVersion: 5,
     owner: { type: "script", scriptHash: ownerHash },
     title: "Sealed poll",
     description: "Answers revealed at a future drand round.",
@@ -188,7 +193,7 @@ describe("sealed submission round-trip", () => {
     ],
   };
   const response: SurveyResponse = {
-    specVersion: 4,
+    specVersion: 5,
     surveyRef: { txId, index: 0 },
     role: Role.DRep,
     credential: { type: "key", keyHash: responderHash },
@@ -228,7 +233,7 @@ describe("sealed submission round-trip", () => {
 
 describe("response validation against a definition", () => {
   const definition: SurveyDefinition = {
-    specVersion: 4,
+    specVersion: 5,
     owner: { type: "key", keyHash: ownerHash },
     title: "Numbers",
     description: "",
@@ -247,13 +252,14 @@ describe("response validation against a definition", () => {
         prompt: "Rate these",
         options: { type: "options", labels: ["A", "B"] },
         scale: { type: "labels", labels: ["bad", "ok", "good"] },
+        requireAll: false,
       },
     ],
   };
 
   it("accepts a valid response", () => {
     const res: SurveyResponse = {
-      specVersion: 4,
+      specVersion: 5,
       surveyRef: { txId, index: 0 },
       role: Role.Stakeholder,
       credential: { type: "key", keyHash: responderHash },
@@ -277,7 +283,7 @@ describe("response validation against a definition", () => {
 
   it("flags an out-of-step numeric value, a bad rating, and a missing required question", () => {
     const res: SurveyResponse = {
-      specVersion: 4,
+      specVersion: 5,
       surveyRef: { txId, index: 0 },
       role: Role.DRep, // not eligible
       credential: { type: "key", keyHash: responderHash },
@@ -298,6 +304,95 @@ describe("response validation against a definition", () => {
   });
 });
 
+describe("rating require_all (v5)", () => {
+  const ratingQ = (requireAll: boolean): RatingQuestion => ({
+    type: "rating",
+    prompt: "Rate these",
+    options: { type: "options", labels: ["A", "B"] },
+    scale: { type: "count", count: 5 },
+    requireAll,
+  });
+
+  it("round-trips both require_all values", () => {
+    for (const requireAll of [true, false]) {
+      const q = ratingQ(requireAll);
+      expect(decodeQuestion(encodeQuestion(q))).toEqual(q);
+    }
+  });
+
+  it("rejects a 4-element rating array (pre-v5 arity, no require_all)", () => {
+    expect(() => decodeQuestion([6n, "Rate these", 2n, 5n])).toThrow(
+      Cip179DecodeError,
+    );
+  });
+
+  it("rejects a non-0/1 require_all flag", () => {
+    expect(() => decodeQuestion([6n, "Rate these", 2n, 5n, 2n])).toThrow(
+      Cip179DecodeError,
+    );
+  });
+
+  const definition = (requireAll: boolean): SurveyDefinition => ({
+    specVersion: 5,
+    owner: { type: "key", keyHash: ownerHash },
+    title: "Rate",
+    description: "",
+    eligibleRoles: [Role.DRep],
+    endEpoch: 100,
+    submissionMode: { type: "public" },
+    // Rating is q0 and optional; the single-choice q1 lets a response answer
+    // something else while abstaining on the rating.
+    questions: [
+      ratingQ(requireAll),
+      {
+        type: "singleChoice",
+        prompt: "Y or N?",
+        options: { type: "options", labels: ["Y", "N"] },
+      },
+    ],
+  });
+  const respond = (answers: readonly AnswerItem[]): SurveyResponse => ({
+    specVersion: 5,
+    surveyRef: { txId, index: 0 },
+    role: Role.DRep,
+    credential: { type: "key", keyHash: responderHash },
+    answers: { type: "public", answers },
+  });
+  const subset = respond([
+    { type: "rating", questionIndex: 0, ratings: [{ optionIndex: 0, rating: 3n }] },
+  ]);
+  const full = respond([
+    {
+      type: "rating",
+      questionIndex: 0,
+      ratings: [
+        { optionIndex: 0, rating: 3n },
+        { optionIndex: 1, rating: 4n },
+      ],
+    },
+  ]);
+  const abstain = respond([
+    { type: "singleChoice", questionIndex: 1, optionIndex: 0 },
+  ]);
+
+  it("rejects a subset answer when require_all is true", () => {
+    expect(validateResponse(definition(true), subset).length).toBeGreaterThan(0);
+  });
+
+  it("accepts a full answer when require_all is true", () => {
+    expect(validateResponse(definition(true), full)).toEqual([]);
+  });
+
+  it("accepts a subset answer when require_all is false", () => {
+    expect(validateResponse(definition(false), subset)).toEqual([]);
+  });
+
+  it("treats omission as an abstain regardless of require_all", () => {
+    expect(validateResponse(definition(true), abstain)).toEqual([]);
+    expect(validateResponse(definition(false), abstain)).toEqual([]);
+  });
+});
+
 describe("custom question/answer", () => {
   it("passes a transaction_metadatum value through unchanged", () => {
     const value: Metadatum = new Map<Metadatum, Metadatum>([
@@ -308,7 +403,7 @@ describe("custom question/answer", () => {
       type: "responses",
       responses: [
         {
-          specVersion: 4,
+          specVersion: 5,
           surveyRef: { txId, index: 1 },
           role: Role.Keyholder,
           credential: { type: "script", scriptHash: ownerHash },

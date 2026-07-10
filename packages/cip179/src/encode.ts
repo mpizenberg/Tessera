@@ -179,12 +179,16 @@ export const encodeQuestion = (q: Question): Metadatum => {
         q.required,
       );
     case "rating":
+      // `require_all` is a mandatory fixed-position bool (index 4), so it is a
+      // plain uint 0/1 — not the optional `withRequired` idiom, which the
+      // trailing `required` flag still uses.
       return withRequired(
         [
           big(QuestionTag.Rating),
           encodeChunkedText(q.prompt),
           encodeOptionsOrCount(q.options),
           encodeRatingScale(q.scale),
+          big(q.requireAll ? 1 : 0),
         ],
         q.required,
       );
