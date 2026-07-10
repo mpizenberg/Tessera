@@ -1084,6 +1084,20 @@ const TypeFields: Component<{
               onStep={(v) => props.set(i(), "ratingStep", v)}
             />
           </Show>
+          <button
+            type="button"
+            aria-pressed={props.draft.requireAll}
+            onClick={() =>
+              props.set(i(), "requireAll", !props.draft.requireAll)
+            }
+            class={css.requiredBtn}
+            classList={{ [css.requiredBtnOn]: props.draft.requireAll }}
+          >
+            {props.draft.requireAll
+              ? t("create.ratingRequireAll")
+              : t("create.ratingAllowSubset")}
+          </button>
+          <p class={css.hint}>{t("create.ratingRequireAllHint")}</p>
         </div>
       </Show>
 

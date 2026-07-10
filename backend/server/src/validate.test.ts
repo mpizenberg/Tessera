@@ -55,7 +55,7 @@ const keyCred = (b: number): Credential => ({
 const hexOf = (b: number) => bytesToHex(Uint8Array.of(b));
 
 const DEF: SurveyDefinition = {
-  specVersion: 4,
+  specVersion: 5,
   owner: keyCred(0),
   title: "t",
   description: "",
@@ -85,7 +85,7 @@ function response(
     epochNo: 1341,
     responseIndex,
     response: {
-      specVersion: 4,
+      specVersion: 5,
       surveyRef: survey.ref,
       role,
       credential: keyCred(cred),

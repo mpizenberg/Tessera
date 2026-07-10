@@ -39,7 +39,7 @@ const explore: Messages = {
     "Affichage des sondages et réponses les plus récents — il en existe davantage on-chain que ce qui a pu être chargé, donc certaines listes et certains décomptes peuvent être incomplets.",
 
   sectionGov: "Gouvernance on-chain",
-  sectionGovNote: "Liés à une Info Action — affichés en premier.",
+  sectionGovNote: "Liés à une action de gouvernance — affichés en premier.",
   sectionOpen: "Ouverts · réponses acceptées",
   sectionClosed: "Terminés",
   sectionClosedNote: "Terminés ou retirés — lecture seule.",
@@ -54,7 +54,7 @@ const explore: Messages = {
   answeredAria: "répondu",
   badgeYours: "À vous",
   badgeOffChain: "⚠ libellés off-chain",
-  govInfoAction: "Info Action {id}",
+  govInfoAction: "Action liée {id}",
   govInfoActionTitle: " · {title}",
   untitled: "Sans titre · contenu externe",
   noPresentation:

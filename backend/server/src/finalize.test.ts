@@ -63,7 +63,7 @@ function definition(
   overrides: Partial<SurveyDefinition> = {},
 ): SurveyDefinition {
   return {
-    specVersion: 4,
+    specVersion: 5,
     owner: keyCred(OWNER_HASH),
     title: "t",
     description: "",
@@ -104,7 +104,7 @@ function response(
     epochNo: 499,
     responseIndex: 0,
     response: {
-      specVersion: 4,
+      specVersion: 5,
       surveyRef: { txId: hexToBytes(SURVEY_TX), index: 0 },
       role,
       credential: cred,
@@ -140,7 +140,7 @@ function sealedResponse(
     epochNo: 499,
     responseIndex: 0,
     response: {
-      specVersion: 4,
+      specVersion: 5,
       surveyRef: { txId: hexToBytes(SURVEY_TX), index: 0 },
       role,
       credential: cred,

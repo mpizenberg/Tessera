@@ -39,7 +39,7 @@ interface Opts {
 /** One survey per txId byte; slot varies so ordering is observable. */
 function survey(id: number, slot: number, opts: Opts = {}): SurveyRecord {
   const definition: SurveyDefinition = {
-    specVersion: 4,
+    specVersion: 5,
     owner: owner(opts.ownerByte ?? 1),
     title: opts.title ?? `survey ${id}`,
     description: "",

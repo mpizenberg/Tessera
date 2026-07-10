@@ -104,6 +104,10 @@ const respond = {
   ratWriteHint:
     "On submit, this is pinned to your IPFS providers and anchored (URI + blake2b-256 hash) on your response. Informational only — never affects validation or tallies.",
 
+  // --- Rating coverage hint -----------------------------------------------
+  ratingRequireAll: "Rate every option for your answer to count.",
+  ratingAllowSubset: "Rate as many options as you like; leave the rest blank.",
+
   // --- Question type labels -----------------------------------------------
   typeCustom: "Custom · external schema",
   typeSingleChoice: "Single choice",

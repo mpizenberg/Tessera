@@ -263,14 +263,13 @@ export const Survey: Component = () => {
               }
             >
               <OwnerControls s={sv()} />
-              {/* Once an Info Action already advertises this survey, the
-                  copy-paste linking helper is redundant — hide it. */}
-              <Show when={!sv().govLink}>
-                <LinkActionPanel
-                  surveyRef={sv().record.ref}
-                  endEpoch={sv().record.definition.endEpoch}
-                />
-              </Show>
+              {/* A survey may be advertised by several governance actions
+                  (CIP-179 v5), so the copy-paste linking helper stays available
+                  even after one link exists. */}
+              <LinkActionPanel
+                surveyRef={sv().record.ref}
+                endEpoch={sv().record.definition.endEpoch}
+              />
             </Show>
 
             {/* Results render from the survey's own bundle; until it lands (or
@@ -616,28 +615,28 @@ const Header: Component<{
         <p class={css.headerDesc}>{props.def.description}</p>
       </Show>
 
-      <Show when={props.s.govLink}>
+      <For each={props.s.govLinks}>
         {(link) => (
           <div class={css.govLinkCard}>
             <span class={css.govLinkBadge}>{t("survey.govLinkBadge")}</span>
             <div class={css.govLinkMain}>
               <div class={css.govLinkText}>
                 <Show
-                  when={link().title}
+                  when={link.title}
                   fallback={<>{t("survey.govLinkAdvertisedFallback")}</>}
                 >
                   {t("survey.govLinkAdvertisedBy")}{" "}
-                  <b class={css.govLinkTextStrong}>{link().title}</b>
+                  <b class={css.govLinkTextStrong}>{link.title}</b>
                 </Show>{" "}
-                <span class={css.govLinkActionId}>{link().actionId}</span>
+                <span class={css.govLinkActionId}>{link.actionId}</span>
               </div>
               <div class={css.govLinkMeta}>
-                {t("survey.govLinkMeta", { epoch: link().endEpoch })}
+                {t("survey.govLinkMeta", { epoch: link.endEpoch })}
               </div>
             </div>
           </div>
         )}
-      </Show>
+      </For>
 
       <div class={css.summary}>
         <div class={css.summaryMeta}>

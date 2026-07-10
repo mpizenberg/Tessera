@@ -43,7 +43,7 @@ const explore = {
 
   // Section labels splitting the register.
   sectionGov: "On-chain governance",
-  sectionGovNote: "Tied to an Info Action — shown first.",
+  sectionGovNote: "Tied to a governance action — shown first.",
   sectionOpen: "Open · accepting responses",
   sectionClosed: "Closed",
   sectionClosedNote: "Ended or withdrawn — read-only.",
@@ -62,7 +62,7 @@ const explore = {
   badgeYours: "Yours",
   badgeOffChain: "⚠ labels off-chain",
   /** {id} is the shortened governance action id. */
-  govInfoAction: "Info Action {id}",
+  govInfoAction: "Linked action {id}",
   /** Spliced after govInfoAction when a linked-action title is known; {title} is user content. */
   govInfoActionTitle: " · {title}",
   untitled: "Untitled · external content",

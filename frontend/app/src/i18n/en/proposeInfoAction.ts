@@ -37,6 +37,12 @@ const proposeInfoAction = {
   alignWindowPassed:
     "Window passed — the survey ends at epoch {end}, so this action had to be submitted in epoch {submitEpoch}. Submitted now (epoch {epoch}) it would expire at {deadline} and can no longer link to that survey.",
 
+  // Section notes framing the generic vs Info-Action-specific halves.
+  genericSectionNote:
+    "These steps prepare the anchor and are the same for any governance action kind. Building a different action with your own tooling? Follow them to get a validated document, its hash, and a hosted URL to reference from your action.",
+  submitSectionNote:
+    "This last step is specific to Info Actions — the one action kind Tessera builds and submits for you.",
+
   // Step 1 · Load the anchor
   step1Head: "1 · Load the anchor document",
   /**

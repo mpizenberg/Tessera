@@ -1480,6 +1480,11 @@ const RatingBody: Component<{
           </div>
         )}
       </For>
+      <p class={css.ratHint}>
+        {props.q.requireAll
+          ? t("respond.ratingRequireAll")
+          : t("respond.ratingAllowSubset")}
+      </p>
     </div>
   );
 };

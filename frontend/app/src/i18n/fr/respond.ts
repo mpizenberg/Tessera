@@ -109,6 +109,11 @@ const respond: Messages = {
   ratWriteHint:
     "À l'envoi, ceci est épinglé sur vos fournisseurs IPFS et ancré (URI + hash blake2b-256) sur votre réponse. Informatif uniquement — n'affecte jamais la validation ni les décomptes.",
 
+  // --- Indication de couverture de notation -------------------------------
+  ratingRequireAll: "Notez chaque option pour que votre réponse compte.",
+  ratingAllowSubset:
+    "Notez autant d'options que vous le souhaitez ; laissez le reste vide.",
+
   // --- Question type labels -----------------------------------------------
   typeCustom: "Personnalisé · schéma externe",
   typeSingleChoice: "Choix unique",

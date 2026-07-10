@@ -20,7 +20,7 @@ const keyOwner = (b: number): Credential => ({
 });
 
 const def = (owner: Credential, endEpoch: number): SurveyDefinition => ({
-  specVersion: 4,
+  specVersion: 5,
   owner,
   title: "t",
   description: "",

@@ -97,7 +97,7 @@ describe("weightedQuestionView", () => {
 
 describe("resultRoleViews", () => {
   const def: SurveyDefinition = {
-    specVersion: 4,
+    specVersion: 5,
     owner: { type: "key", keyHash: Uint8Array.of(0) },
     title: "t",
     description: "",
@@ -178,7 +178,7 @@ describe("resultRoleViews", () => {
     keyHashHex: string,
     optionIndex: number,
   ): SurveyResponse => ({
-    specVersion: 4,
+    specVersion: 5,
     surveyRef: { txId: hexToBytes("aa".repeat(32)), index: 0 },
     role: 3 as Role,
     credential: { type: "key", keyHash: hexToBytes(keyHashHex) },

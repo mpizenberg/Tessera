@@ -38,17 +38,17 @@ const survey: Messages = {
   keep: "Conserver",
   switchNetwork: "Basculez votre portefeuille sur {network} pour annuler",
 
-  // Link survey to a governance Info Action
+  // Link survey to a governance action (tout type — CIP-179 v5)
   linkOptional: "Optionnel",
-  linkTitle: "Lier ce sondage à une Info Action de gouvernance",
+  linkTitle: "Lier ce sondage à une action de gouvernance",
   linkBody1: "Le lien va",
   linkBodyDirection: "Action → Sondage",
   linkBody2:
-    " : votre sondage existe déjà, l'Info Action ne fait donc que le désigner. Imbriquez cet objet en tant que",
+    " : votre sondage existe déjà, l'action de gouvernance ne fait donc que le désigner. Imbriquez cet objet en tant que",
   linkBody3: "dans le",
-  linkBody4: "CIP-108 de l'Info Action (et ajoutez les termes",
+  linkBody4: "CIP-108 de l'action (et ajoutez les termes",
   linkBody5:
-    "de CIP-179, conformément à la spécification, pour que l'ancre reste un document JSON-LD valide). L'epoch de fin de vote de l'action doit être égale au",
+    "de CIP-179, conformément à la spécification, pour que l'ancre reste un document JSON-LD valide). L'epoch d'expiration de l'action doit être égale au",
   linkBody6: " de ce sondage, sinon l'outillage ne l'attachera pas.",
   copied: "Copié ✓",
   copyJson: "Copier le JSON",
@@ -56,15 +56,15 @@ const survey: Messages = {
     "Fusionnez ces termes dans le « @context » de votre ancre (l'espace de noms CIP179 à la racine, le terme cip179 dans le contexte du corps) afin que le lien soit canonicalisé et couvert par le témoin d'auteur :",
   copyContext: "Copier les termes @context",
   linkFootnote:
-    "seules les Info Actions peuvent établir un lien · le lien sert à la découverte + à l'alignement d'epoch, jamais de critère d'éligibilité",
+    "tout type d'action de gouvernance peut établir un lien · le lien sert à la découverte + à l'alignement d'epoch, jamais de critère d'éligibilité",
 
   // Header
   refTitle:
     "Référence complète du sondage — hash de la transaction de définition et index de sortie",
   refLead: "ref {ref}",
   untitledSurvey: "Sondage sans titre",
-  govLinkBadge: "Info Action",
-  govLinkAdvertisedFallback: "Annoncé par une Info Action de gouvernance",
+  govLinkBadge: "Action liée",
+  govLinkAdvertisedFallback: "Annoncé par une action de gouvernance",
   govLinkAdvertisedBy: "Annoncé par",
   govLinkMeta:
     "le sondage et le vote se clôturent tous deux à l'epoch {epoch} · ouvert à tous les rôles éligibles — voter sur l'action liée est optionnel",

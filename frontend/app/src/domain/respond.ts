@@ -111,11 +111,17 @@ export function decided(q: Question, draft: Draft): boolean {
         v.points.every((p) => p >= 0) &&
         v.points.reduce((s, p) => s + p, 0) === q.budget
       );
-    case "rating":
-      return (
-        v.type === "rating" &&
-        v.ratings.every((r) => r !== null && ratingInScale(r, q.scale))
-      );
+    case "rating": {
+      if (v.type !== "rating") return false;
+      // require_all: every option must carry an in-scale rating. Otherwise a
+      // subset is allowed — at least one option rated, each in scale (an empty
+      // rating stays undecided; the responder skips to abstain).
+      if (q.requireAll) {
+        return v.ratings.every((r) => r !== null && ratingInScale(r, q.scale));
+      }
+      const rated = v.ratings.filter((r): r is bigint => r !== null);
+      return rated.length >= 1 && rated.every((r) => ratingInScale(r, q.scale));
+    }
     case "custom":
       return v.type === "custom" && v.text.trim() !== "";
   }

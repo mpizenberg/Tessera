@@ -161,12 +161,18 @@ export const Explore: Component = () => {
 
   // Linked (governance) surveys get their own section, shown first; the rest
   // split into open / closed so a linked survey never appears twice.
-  const govRows = createMemo(() => visible().filter((a) => a.govLink !== null));
+  const govRows = createMemo(() =>
+    visible().filter((a) => a.govLinks.length > 0),
+  );
   const openRows = createMemo(() =>
-    visible().filter((a) => a.govLink === null && !isClosed(viewStatus(a))),
+    visible().filter(
+      (a) => a.govLinks.length === 0 && !isClosed(viewStatus(a)),
+    ),
   );
   const closedRows = createMemo(() =>
-    visible().filter((a) => a.govLink === null && isClosed(viewStatus(a))),
+    visible().filter(
+      (a) => a.govLinks.length === 0 && isClosed(viewStatus(a)),
+    ),
   );
 
   const rowProps = (a: SurveyAggregate): EntryProps => ({
@@ -488,11 +494,9 @@ const GridRow: Component<EntryProps> = (props) => {
         <div class={css.desc}>
           {def().description || t("explore.noPresentation")}
         </div>
-        <Show when={props.a.govLink}>
-          {(link) => (
-            <GovLine actionId={link().actionId} title={link().title} />
-          )}
-        </Show>
+        <For each={props.a.govLinks}>
+          {(link) => <GovLine actionId={link.actionId} title={link.title} />}
+        </For>
       </div>
       <RoleChips roles={def().eligibleRoles} />
       <div>
@@ -570,9 +574,9 @@ const CardRow: Component<EntryProps> = (props) => {
           <OffChainBadge />
         </div>
       </Show>
-      <Show when={props.a.govLink}>
-        {(link) => <GovLine actionId={link().actionId} title={link().title} />}
-      </Show>
+      <For each={props.a.govLinks}>
+        {(link) => <GovLine actionId={link.actionId} title={link.title} />}
+      </For>
 
       <div class={css.cardMeta}>
         <MetaChip label={t("explore.metaForm")}>

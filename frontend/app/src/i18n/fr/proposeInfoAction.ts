@@ -38,6 +38,12 @@ const proposeInfoAction: Messages = {
     "Fenêtre dépassée — le sondage se termine à l'époque {end}, donc cette action devait être soumise à l'époque {submitEpoch}. Soumise maintenant (époque {epoch}), elle expirerait à {deadline} et ne peut plus être liée à ce sondage.",
 
   // Étape 1 · Charger l'ancre
+  // Notes de section : partie générique vs partie spécifique aux Info Actions.
+  genericSectionNote:
+    "Ces étapes préparent l'ancre et sont identiques pour tout type d'action de gouvernance. Vous construisez une autre action avec vos propres outils ? Suivez-les pour obtenir un document validé, son hash et une URL hébergée à référencer depuis votre action.",
+  submitSectionNote:
+    "Cette dernière étape est spécifique aux Info Actions — le seul type d'action que Tessera construit et soumet pour vous.",
+
   step1Head: "1 · Charger le document d'ancre",
   loadHintPre: "Choisissez le fichier d'ancre CIP-108 ",
   loadHintMid: " (son ",

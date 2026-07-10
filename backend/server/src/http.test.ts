@@ -85,7 +85,7 @@ const defFor = (
   title: string,
 ): SurveyDefinition =>
   ({
-    specVersion: 4,
+    specVersion: 5,
     owner,
     title,
     description: "",

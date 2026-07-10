@@ -36,9 +36,9 @@ const survey = {
   keep: "Keep",
   switchNetwork: "Switch your wallet to {network} to cancel",
 
-  // Link survey to a governance Info Action
+  // Link survey to a governance action (any kind — CIP-179 v5)
   linkOptional: "Optional",
-  linkTitle: "Link this survey to a governance Info Action",
+  linkTitle: "Link this survey to a governance action",
   /**
    * Linkage explainer, split into prose runs around four styled inline tokens:
    * a bold "Action → Survey", and the mono code literals `cip179`, `body`,
@@ -50,11 +50,11 @@ const survey = {
   /** Bold run between linkBody1 and linkBody2. */
   linkBodyDirection: "Action → Survey",
   linkBody2:
-    ": your survey already exists, so the Info Action just points at it. Nest this object as",
-  linkBody3: "inside the Info Action's CIP-108",
+    ": your survey already exists, so the governance action just points at it. Nest this object as",
+  linkBody3: "inside the action's CIP-108",
   linkBody4: "(and add the CIP-179",
   linkBody5:
-    "terms, per the spec, so the anchor stays valid JSON-LD). The action's voting end epoch must equal this survey's",
+    "terms, per the spec, so the anchor stays valid JSON-LD). The action's expiry epoch must equal this survey's",
   linkBody6: ", or tooling won't attach it.",
   copied: "Copied ✓",
   copyJson: "Copy JSON",
@@ -63,15 +63,15 @@ const survey = {
     "Merge these terms into your anchor's @context (the CIP179 namespace at the root, the cip179 term inside the body context) so the link is canonicalized and covered by the author witness:",
   copyContext: "Copy @context terms",
   linkFootnote:
-    "only Info Actions may link · linkage is discovery + epoch-alignment, never an eligibility gate",
+    "any governance action kind may link · linkage is discovery + epoch-alignment, never an eligibility gate",
 
   // Header
   refTitle: "Full survey ref — defining transaction hash and output index",
   /** {ref} is the raw transaction-hash#index, shown untranslated. */
   refLead: "ref {ref}",
   untitledSurvey: "Untitled survey",
-  govLinkBadge: "Info Action",
-  govLinkAdvertisedFallback: "Advertised by a governance Info Action",
+  govLinkBadge: "Linked action",
+  govLinkAdvertisedFallback: "Advertised by a governance action",
   /** Prose run before the bold action title; the title is appended in JSX. */
   govLinkAdvertisedBy: "Advertised by",
   /** {epoch} is the raw end epoch, shown untranslated. */

@@ -63,6 +63,8 @@ export interface QuestionDraft {
   ratingMin: string;
   ratingMax: string;
   ratingStep: string;
+  /** CIP-179 v5 require_all: when true a present answer must rate every option. */
+  requireAll: boolean;
   // custom
   customUri: string;
   customHash: string;
@@ -145,6 +147,7 @@ export function initQuestionDraft(type: QuestionType): QuestionDraft {
     ratingMin: "1",
     ratingMax: "5",
     ratingStep: "",
+    requireAll: true,
     customUri: "",
     customHash: "",
   };
@@ -314,6 +317,7 @@ function toQuestion(
         type: "rating",
         options: opts(draft.labels),
         scale,
+        requireAll: draft.requireAll,
       };
     }
   }

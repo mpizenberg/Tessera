@@ -37,9 +37,9 @@ const create = {
 
   // --- Timing section ---
   sectionTiming: "Timing",
-  govToggleTitle: "Tie this survey to a governance Info Action",
+  govToggleTitle: "Tie this survey to a governance action",
   govToggleDesc:
-    "An on-chain Info Action will advertise this survey and they close together.",
+    "An on-chain governance action will advertise this survey and they close together.",
   endEpochLabel: "End epoch (inclusive)",
   autoLockedBadge: "auto · locked",
   /** {date} is a preformatted wall-clock date. */
@@ -50,10 +50,10 @@ const create = {
   /** {epoch} is a raw epoch identifier; spliced into acceptedThroughEpoch. */
   currentEpochIs: "Current epoch is {epoch}.",
   govLifetimeUnreadable:
-    "Couldn't read gov_action_lifetime from the chain, so the deadline can't be computed. Enter the Info Action's voting end epoch manually — they must match exactly.",
+    "Couldn't read gov_action_lifetime from the chain, so the deadline can't be computed. Enter the action's expiry epoch manually — they must match exactly.",
   /** {epochParen} is e.g. " (5)" when the tip is known, otherwise empty. */
   govNoteIntro:
-    "Locked to the Info Action's voting deadline. On {network}, a governance action submitted this epoch{epochParen} closes at epoch",
+    "Locked to the governance action's expiry epoch. On {network}, a governance action submitted this epoch{epochParen} closes at epoch",
   govNoteOutro:
     ", so the survey's end epoch must equal that. If you'll submit the action in a later epoch, untoggle and set a matching epoch by hand.",
   /** {epoch} is a raw epoch identifier. */
@@ -148,6 +148,10 @@ const create = {
   // --- Rating ---
   ratingNumericScale: "Numeric scale",
   ratingLabelledScale: "Labelled scale",
+  ratingRequireAll: "Rate every option",
+  ratingAllowSubset: "Allow rating a subset",
+  ratingRequireAllHint:
+    "When on, a response must rate every option. Turn it off to let responders rate only some.",
 
   // --- Custom question ---
   customUriLabel: "Method schema URI",

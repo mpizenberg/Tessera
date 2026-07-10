@@ -41,9 +41,9 @@ const create: Messages = {
 
   // --- Timing section ---
   sectionTiming: "Calendrier",
-  govToggleTitle: "Lier ce sondage à une Info Action de gouvernance",
+  govToggleTitle: "Lier ce sondage à une action de gouvernance",
   govToggleDesc:
-    "Une Info Action on-chain annoncera ce sondage et ils se clôturent ensemble.",
+    "Une action de gouvernance on-chain annoncera ce sondage et ils se clôturent ensemble.",
   endEpochLabel: "Époque de fin (incluse)",
   autoLockedBadge: "auto · verrouillé",
   closesOn: "Clôture ~{date}",
@@ -52,9 +52,9 @@ const create: Messages = {
     "Les réponses sont acceptées jusqu'à la fin de cette époque. {hint}",
   currentEpochIs: "L'époque actuelle est {epoch}.",
   govLifetimeUnreadable:
-    "Impossible de lire gov_action_lifetime depuis la chaîne, le délai ne peut donc pas être calculé. Saisissez manuellement l'époque de fin de vote de l'Info Action — elles doivent correspondre exactement.",
+    "Impossible de lire gov_action_lifetime depuis la chaîne, le délai ne peut donc pas être calculé. Saisissez manuellement l'époque d'expiration de l'action — elles doivent correspondre exactement.",
   govNoteIntro:
-    "Verrouillé sur le délai de vote de l'Info Action. Sur {network}, une action de gouvernance soumise à cette époque{epochParen} se clôture à l'époque",
+    "Verrouillé sur l'époque d'expiration de l'action de gouvernance. Sur {network}, une action de gouvernance soumise à cette époque{epochParen} se clôture à l'époque",
   govNoteOutro:
     ", l'époque de fin du sondage doit donc être égale à celle-ci. Si vous soumettez l'action à une époque ultérieure, désactivez l'option et définissez à la main une époque correspondante.",
   tooEarlyWarning:
@@ -142,6 +142,10 @@ const create: Messages = {
   // --- Rating ---
   ratingNumericScale: "Échelle numérique",
   ratingLabelledScale: "Échelle avec libellés",
+  ratingRequireAll: "Noter chaque option",
+  ratingAllowSubset: "Autoriser une notation partielle",
+  ratingRequireAllHint:
+    "Activé, une réponse doit noter chaque option. Désactivez-le pour laisser les répondants n'en noter qu'une partie.",
 
   // --- Custom question ---
   customUriLabel: "URI du schéma de méthode",
