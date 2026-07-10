@@ -29,7 +29,7 @@ import {
   type Network,
 } from "@tessera/core";
 import { KoiosDataSource, KoiosTallyInputs } from "@tessera/koios";
-import { fetchBeacon, revealWithBeacon } from "cip-179/tlock";
+import { revealResponses } from "cip-179/tlock";
 import { evolutionCodec } from "cip-179/evolution";
 
 import { diffResponseSets, linkedActionIdFor, verifyArtifact } from "./verify";
@@ -184,14 +184,12 @@ async function main(): Promise<void> {
     // Sealed reveal, wired independently of the backend: fetch (and BLS-verify)
     // the drand beacon ourselves, then decrypt offline. Unused for public
     // artifacts.
-    reveal: async (records, { round }) => {
-      const beacon = await fetchBeacon(round);
-      return revealWithBeacon(
+    reveal: (records, { round }) =>
+      revealResponses(
         evolutionCodec,
         records.map((r) => r.response),
-        beacon,
-      );
-    },
+        round,
+      ),
   });
 
   for (const note of preNotes) console.warn(`note: ${note}`);

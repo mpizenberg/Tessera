@@ -69,6 +69,14 @@ never install them. `@mattpiz/tlock-js` is **lazy-imported** inside the tlock
 client, so a finalize/verify pass touches it only when a sealed survey is
 actually present.
 
+> **Workspace note.** Inside this pnpm workspace the optional peers are
+> satisfied by cip-179's own `devDependencies`. A production-only install
+> (`pnpm install --prod`) skips those, and peers of a symlinked workspace
+> package do **not** resolve from the consumer's `node_modules` — so a
+> self-hosted Node deployment that uses `cip-179/tlock` or `cip-179/evolution`
+> must install with devDependencies included (or hoist the two packages).
+> Registry consumers are unaffected: npm/pnpm resolve peers normally there.
+
 ## The codec (`cip-179`)
 
 The root export does three things, all without any I/O:
@@ -249,8 +257,14 @@ own codec for the CBOR.
 pnpm install
 pnpm type-check
 pnpm test
-pnpm build   # emits dist/ (.js + .d.ts + maps) for every subpath
+pnpm build   # cleans + emits dist/ (.js + .d.ts + maps) for every subpath
 ```
+
+In the workspace the package is consumed straight from `src` (the `exports`
+map points at TypeScript source, like every sibling package), so cross-package
+edits are live with no build step. `dist/` is only produced for publishing:
+`publishConfig.exports` swaps the map to the compiled output at `pnpm publish`
+time, and `prepublishOnly` rebuilds it from clean.
 
 ## Layout
 

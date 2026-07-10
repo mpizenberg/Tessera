@@ -57,7 +57,7 @@ import {
   SubmitProgressModal,
   type SubmitStep,
 } from "~/ui/components/SubmitProgress";
-import { isQuicknet, sealedCiphertextSize } from "cip-179/tlock";
+import { isQuicknet, sealAnswers, sealedCiphertextSize } from "cip-179/tlock";
 import { formatRevealDate } from "~/tlock/drand";
 import {
   fullRef,
@@ -453,10 +453,10 @@ export const Respond: Component = () => {
         // the ciphertext instead of the plaintext answers.
         setStepKey("encrypt");
         setBusyText(t("respond.encrypting"));
-        const [{ sealAnswers }, { evolutionCodec }] = await Promise.all([
-          import("cip-179/tlock"),
-          import("~/wallet/cbor"),
-        ]);
+        // Only ~/wallet/cbor is loaded lazily — it is the import that gates
+        // the heavy evolution-sdk chunk. cip-179/tlock is already statically
+        // imported above (tlock-js itself stays lazy inside its client).
+        const { evolutionCodec } = await import("~/wallet/cbor");
         const answers = collectAnswers(def.questions, drafts);
         const ciphertext = await sealAnswers(
           evolutionCodec,

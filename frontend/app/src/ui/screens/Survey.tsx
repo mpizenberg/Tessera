@@ -60,7 +60,7 @@ import {
 import { walletOwns } from "~/domain/roles";
 import { resultsView } from "~/domain/resultsRouting";
 import { usePresentation } from "~/enrichment/usePresentation";
-import { isQuicknet, roundIsAvailable } from "cip-179/tlock";
+import { isQuicknet, revealResponses, roundIsAvailable } from "cip-179/tlock";
 import { formatRevealDate } from "~/tlock/drand";
 import {
   endsText,
@@ -1827,10 +1827,10 @@ const SealedResults: Component<{
   };
 
   const [revealed] = createResource(revealKey, async () => {
-    const [{ revealResponses }, { evolutionCodec }] = await Promise.all([
-      import("cip-179/tlock"),
-      import("~/wallet/cbor"),
-    ]);
+    // Only ~/wallet/cbor is loaded lazily — it is the import that gates the
+    // heavy evolution-sdk chunk. cip-179/tlock is already statically imported
+    // above (tlock-js itself stays lazy inside its client).
+    const { evolutionCodec } = await import("~/wallet/cbor");
     // Decrypt the *full* pre-dedup in-window set, then classify + dedup in core:
     // dedup must run over the valid decrypted responses, never before them, or an
     // invalid later ciphertext would suppress a valid earlier one that then never

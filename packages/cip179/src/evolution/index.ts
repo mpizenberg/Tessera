@@ -95,13 +95,16 @@ export function drepId(credential: Credential): string {
   return DRep.toBech32(drep);
 }
 
+/** Compiled once — a fresh schema per call would defeat parser memoization. */
+const encodeGovAction = Schema.decodeSync(Bech32.FromBytes("gov_action"));
+
 /** The CIP-129 bech32 governance action id (`gov_action1…`). */
 export function govActionId(txIdHex: string, index: number): string {
   const txId = hexToBytes(txIdHex);
   const bytes = new Uint8Array(txId.length + 1);
   bytes.set(txId, 0);
   bytes[txId.length] = index;
-  return Schema.decodeSync(Bech32.FromBytes("gov_action"))(bytes);
+  return encodeGovAction(bytes);
 }
 
 // ── TxProofCodec: decode ────────────────────────────────────────────────────
@@ -130,12 +133,14 @@ function decodeVotes(
   if (!votingProcedures?.procedures) return [];
   const votes: DecodedVote[] = [];
   for (const [voter, entries] of votingProcedures.procedures) {
-    const actionIds = [...entries].map(([ga]) => {
+    const actions = [...entries].map(([ga]) => {
       const hash = ga.transactionId.hash;
-      const txIdHex = typeof hash === "string" ? hash : bytesToHex(hash);
-      return govActionId(txIdHex, Number(ga.govActionIndex));
+      return {
+        txIdHex: typeof hash === "string" ? hash : bytesToHex(hash),
+        index: Number(ga.govActionIndex),
+      };
     });
-    votes.push({ voter, actionIds });
+    votes.push({ voter, actions });
   }
   return votes;
 }
@@ -180,5 +185,6 @@ export const evolutionCodec: MetadatumCodec & TxProofCodec = {
   cborToMetadatum,
   stakeAddress,
   drepId,
+  govActionId,
   decodeTx,
 };

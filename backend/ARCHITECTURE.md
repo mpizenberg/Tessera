@@ -695,7 +695,8 @@ Contents (sketch):
   evaluated in `cip-179/domain`'s `proof.ts` over `TxProof` evidence decoded by
   `packages/cip179/src/txproof/txProof.ts` (voting_procedures shape pinned by real
   preview vote-tx fixtures); verdicts persisted per response (§6.5).
-- ~~**Credential encodings**~~ — **done**: `packages/cip179/src/txproof/bech32.ts` (§6.4).
+- ~~**Credential encodings**~~ — **done**: `packages/cip179/src/evolution/index.ts`
+  (`stakeAddress` / `drepId` / `govActionId`, behind the `TxProofCodec` port) (§6.4).
 - ~~**Canonicalization profile**~~ — **done**: `cip-179/tally` `canonical.ts`
   (JCS-lite + decimal-string bigints + blake2b-256), used by emitter and
   verifier (§7).

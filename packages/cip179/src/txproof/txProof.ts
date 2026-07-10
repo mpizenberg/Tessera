@@ -120,8 +120,14 @@ export function decodeTxProof(
 
     const votes: VoteBinding[] = [];
     for (const vote of decoded.votes) {
+      // Abstain/NoConfidence voters bind nothing — skip before encoding, so
+      // their entries cost nothing and can't fail the whole proof.
       const cred = voterCredential(vote.voter);
-      if (cred) votes.push({ ...cred, actionIds: vote.actionIds });
+      if (!cred) continue;
+      const actionIds = vote.actions.map((a) =>
+        codec.govActionId(a.txIdHex, a.index),
+      );
+      votes.push({ ...cred, actionIds });
     }
 
     return { requiredSigners: decoded.requiredSigners, nativeScripts, votes };

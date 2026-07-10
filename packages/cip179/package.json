@@ -9,28 +9,56 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
     },
     "./domain": {
-      "types": "./dist/domain/index.d.ts",
-      "import": "./dist/domain/index.js"
+      "types": "./src/domain/index.ts",
+      "import": "./src/domain/index.ts"
     },
     "./tally": {
-      "types": "./dist/tally/index.d.ts",
-      "import": "./dist/tally/index.js"
+      "types": "./src/tally/index.ts",
+      "import": "./src/tally/index.ts"
     },
     "./txproof": {
-      "types": "./dist/txproof/index.d.ts",
-      "import": "./dist/txproof/index.js"
+      "types": "./src/txproof/index.ts",
+      "import": "./src/txproof/index.ts"
     },
     "./tlock": {
-      "types": "./dist/tlock/index.d.ts",
-      "import": "./dist/tlock/index.js"
+      "types": "./src/tlock/index.ts",
+      "import": "./src/tlock/index.ts"
     },
     "./evolution": {
-      "types": "./dist/evolution/index.d.ts",
-      "import": "./dist/evolution/index.js"
+      "types": "./src/evolution/index.ts",
+      "import": "./src/evolution/index.ts"
+    }
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./domain": {
+        "types": "./dist/domain/index.d.ts",
+        "import": "./dist/domain/index.js"
+      },
+      "./tally": {
+        "types": "./dist/tally/index.d.ts",
+        "import": "./dist/tally/index.js"
+      },
+      "./txproof": {
+        "types": "./dist/txproof/index.d.ts",
+        "import": "./dist/txproof/index.js"
+      },
+      "./tlock": {
+        "types": "./dist/tlock/index.d.ts",
+        "import": "./dist/tlock/index.js"
+      },
+      "./evolution": {
+        "types": "./dist/evolution/index.d.ts",
+        "import": "./dist/evolution/index.js"
+      }
     }
   },
   "files": [
@@ -44,8 +72,8 @@
     "pnpm": ">=10"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "prepare": "tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "prepublishOnly": "pnpm run build",
     "type-check": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },

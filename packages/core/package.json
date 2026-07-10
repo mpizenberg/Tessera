@@ -1,7 +1,7 @@
 {
   "name": "@tessera/core",
   "version": "0.1.0",
-  "description": "Tessera application core: the DataSource read seam, the Explore list/health payloads, keyset paging, and portable config. Re-exports the reusable cip-179 domain + tally surface for downstream convenience. No I/O, no runtime coupling.",
+  "description": "Tessera application core: the DataSource read seam, the Explore list/health payloads, keyset paging, and portable config. The reusable domain + tally surface lives in cip-179 and is imported directly, never re-exported here. No I/O, no runtime coupling.",
   "type": "module",
   "private": true,
   "exports": {

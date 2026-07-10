@@ -77,11 +77,22 @@ export type VoterNode =
       readonly poolKeyHash: { readonly hash: Uint8Array };
     };
 
+/** A raw governance action id — the ledger `gov_action_id` pair, pre-encoding. */
+export interface GovActionRef {
+  /** Hex transaction id of the governance action's proposing tx. */
+  readonly txIdHex: string;
+  readonly index: number;
+}
+
 /** One decoded `voting_procedures` entry: the voter + the ids it voted on. */
 export interface DecodedVote {
   readonly voter: VoterNode;
-  /** Bech32 CIP-129 ids (`gov_action1…`) of the actions this voter voted on. */
-  readonly actionIds: readonly string[];
+  /**
+   * The actions this voter voted on, as raw (txId, index) pairs. cip-179
+   * encodes them to CIP-129 ids via {@link TxProofCodec.govActionId}, so the
+   * comparison format is defined by the codec in exactly one place.
+   */
+  readonly actions: readonly GovActionRef[];
 }
 
 /**
@@ -108,6 +119,8 @@ export interface TxProofCodec {
   stakeAddress(credential: Credential, network: string): string;
   /** CIP-129 bech32 DRep id (`drep1…`) of a DRep credential. */
   drepId(credential: Credential): string;
+  /** CIP-129 bech32 governance action id (`gov_action1…`). */
+  govActionId(txIdHex: string, index: number): string;
   /** Decode a tx's proof-relevant fields, or `null` if it can't be decoded. */
   decodeTx(txCborHex: string): DecodedTx | null;
 }

@@ -9,14 +9,8 @@ const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 export default defineConfig({
   resolve: {
     alias: {
-      // Subpath entries must precede the bare `cip-179` alias (matched in
-      // order) — mirrors vite.config.ts.
-      "cip-179/domain": r("../../packages/cip179/src/domain/index.ts"),
-      "cip-179/tally": r("../../packages/cip179/src/tally/index.ts"),
-      "cip-179/txproof": r("../../packages/cip179/src/txproof/index.ts"),
-      "cip-179/tlock": r("../../packages/cip179/src/tlock/index.ts"),
-      "cip-179/evolution": r("../../packages/cip179/src/evolution/index.ts"),
-      "cip-179": r("../../packages/cip179/src/index.ts"),
+      // Mirrors vite.config.ts; `cip-179` resolves via its src-pointing
+      // exports map, no aliases needed.
       "@tessera/core": r("../../packages/core/src/index.ts"),
       "@tessera/koios": r("../../packages/koios/src/index.ts"),
       "~": r("./src"),
