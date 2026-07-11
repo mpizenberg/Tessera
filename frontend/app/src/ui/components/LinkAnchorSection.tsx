@@ -18,6 +18,7 @@ import {
   createEffect,
   createMemo,
   createSignal,
+  untrack,
   type Component,
 } from "solid-js";
 import { A } from "@solidjs/router";
@@ -107,21 +108,25 @@ export const LinkAnchorSection: Component<LinkAnchorSectionProps> = (props) => {
   // `http:` URL can never be committed to the chain.
   const urlValid = () => isSafeAnchorUri(url().trim());
 
-  // Publish the prepared state upward reactively.
+  // Publish the prepared state upward reactively. The callback runs untracked:
+  // a parent handler that reads its own signals (e.g. to diff against the
+  // previous prepared state) must not become a dependency of this effect, or
+  // its own set-calls re-trigger the effect in an infinite loop.
   createEffect(() => {
     const a = anchor();
     if (!a) {
-      props.onChange(null);
+      untrack(() => props.onChange(null));
       return;
     }
-    props.onChange({
+    const payload: PreparedAnchor = {
       anchor: a,
       url: url().trim(),
       urlValid: urlValid(),
       blocking: blocking(),
       surveyRef: a.surveyRef,
       linkedSurveyTitle: linkedSurvey()?.record.definition.title,
-    });
+    };
+    untrack(() => props.onChange(payload));
   });
 
   const loadFile = async (file: File | undefined) => {
