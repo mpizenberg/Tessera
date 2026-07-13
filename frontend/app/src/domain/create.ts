@@ -25,6 +25,7 @@ import {
   type RatingScale,
   type Role,
   type SurveyDefinition,
+  type ValidationProblem,
 } from "cip-179";
 
 import { hexToBytes } from "cip-179/domain";
@@ -351,12 +352,20 @@ const PLACEHOLDER_ANCHOR: ContentAnchor = {
   hash: new Uint8Array(32),
 };
 
+/**
+ * A single publish-blocking problem. Parse failures the builder detects itself
+ * are already-localized (or literal) strings; the codec's semantic problems are
+ * structured cip-179 {@link ValidationProblem}s the caller renders in its own
+ * locale (see `~/i18n/problem`).
+ */
+export type CreateProblem = string | ValidationProblem;
+
 export function buildDefinition(
   owner: Credential,
   meta: DefinitionMeta,
   drafts: readonly QuestionDraft[],
   contentAnchor?: ContentAnchor,
-): { definition: SurveyDefinition; problems: string[] } {
+): { definition: SurveyDefinition; problems: CreateProblem[] } {
   const problems: string[] = [];
   const external = meta.contentMode === "external";
 
@@ -389,8 +398,10 @@ export function buildDefinition(
     ...(external ? { contentAnchor: contentAnchor ?? PLACEHOLDER_ANCHOR } : {}),
   };
 
-  problems.push(...validateDefinition(definition));
-  return { definition, problems };
+  return {
+    definition,
+    problems: [...problems, ...validateDefinition(definition)],
+  };
 }
 
 /** The off-chain presentation document (JSON) for an external-content survey. */

@@ -28,6 +28,7 @@ import {
   initQuestionDraft,
   questionTypeLabel,
   usesOptions,
+  type CreateProblem,
   type DefinitionMeta,
   type QuestionDraft,
   type QuestionType,
@@ -47,6 +48,7 @@ import { formatEpochEndDate, formatRevealDate } from "~/tlock/drand";
 import { networkMismatch, roleColors, roleLabel, shortRef } from "~/ui/format";
 import type { WalletIdentity } from "~/wallet/types";
 import { t, n } from "~/i18n";
+import { problemText } from "~/i18n/problem";
 import css from "./Create.module.css";
 
 /**
@@ -157,7 +159,10 @@ export const Create: Component = () => {
     const o = owner();
     return o ? buildDefinition(o, meta, questions) : null;
   });
-  const problems = (): string[] => built()?.problems ?? [];
+  const problems = (): CreateProblem[] => built()?.problems ?? [];
+  /** Render structured codec problems in the active locale; pass strings through. */
+  const problemStrings = (): string[] =>
+    problems().map((p) => (typeof p === "string" ? p : problemText(p)));
 
   // Pro on-chain preview: the label-17 definition payload, built live. External
   // content uses the same placeholder anchor `built` validates with (the real
@@ -402,7 +407,7 @@ export const Create: Component = () => {
               <Show when={showProblems() && problems().length > 0}>
                 <ProblemList
                   title={t("create.fixBeforePublishing")}
-                  problems={problems()}
+                  problems={problemStrings()}
                 />
               </Show>
               <Show when={submitError()}>

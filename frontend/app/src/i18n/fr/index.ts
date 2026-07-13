@@ -22,6 +22,7 @@ import settings from "./settings";
 import submitProgress from "./submitProgress";
 import survey from "./survey";
 import txLink from "./txLink";
+import validation from "./validation";
 
 const fr: Dict = {
   appError,
@@ -39,6 +40,7 @@ const fr: Dict = {
   submitProgress,
   survey,
   txLink,
+  validation,
 };
 
 export default fr;

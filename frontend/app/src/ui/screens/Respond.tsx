@@ -71,6 +71,7 @@ import {
 } from "~/ui/format";
 import type { WalletIdentity } from "~/wallet/types";
 import { t, n } from "~/i18n";
+import { problemText } from "~/i18n/problem";
 import css from "./Respond.module.css";
 
 // ----------------------------------------------------------------------------
@@ -429,7 +430,7 @@ export const Respond: Component = () => {
       { ...def, submissionMode: { type: "public" } },
       buildResponse(s.record.ref, r, cred, def.questions, drafts),
     );
-    setProblems(found);
+    setProblems(found.map(problemText));
     if (found.length > 0) return;
 
     setSubmitting(true);

@@ -3,10 +3,12 @@
  *
  * These functions check the cross-field invariants the CDDL cannot express
  * (option-count bounds, abstain/required rules, points summing to budget, ...).
- * They are pure and return a list of human-readable problems; an empty list
- * means valid. They do NOT check anything requiring ledger state (credential
- * proofs, role membership, epochs, cancellation, dedup) — that is the
- * responsibility of an indexer with chain access.
+ * They are pure and return a list of {@link ValidationProblem}s — a stable
+ * `{ code, params }` pair each, not prose — so a caller can render them in any
+ * language (see {@link describeProblem} for the default English rendering). An
+ * empty list means valid. They do NOT check anything requiring ledger state
+ * (credential proofs, role membership, epochs, cancellation, dedup) — that is
+ * the responsibility of an indexer with chain access.
  *
  * RULESET-PINNED BEHAVIOR: the "validity" rule in `@tessera/core`'s
  * `RULESET_DESCRIPTOR` is exactly "the response passes this validation against
@@ -18,6 +20,8 @@
  * `packages/core/src/artifact.ts` and update the golden hash in
  * `artifact.test.ts` in the same commit, or old artifacts silently stop
  * reproducing (a MISMATCH that reads as tampering, not as a rules upgrade).
+ * Note that the *verdict* (whether the list is empty) is what is pinned — the
+ * problem codes/messages are presentation only and can evolve freely.
  *
  * For sealed surveys this runs twice against the `sealed-reveal` rule: once
  * structurally on the sealed response at submit/scan time, then again on the
@@ -38,6 +42,89 @@ import type {
   SurveyResponse,
 } from "./types.js";
 
+// ----------------------------------------------------------------------------
+// Structured problems
+// ----------------------------------------------------------------------------
+
+/**
+ * Every stable problem code the validators can emit. Frozen so downstream code
+ * (the app, the embeddable widget) can map each to a localized message and a
+ * test can assert its catalog is exhaustive.
+ */
+export const VALIDATION_PROBLEM_CODES = [
+  // --- definition ---
+  "definition.specVersionUnsupported",
+  "definition.eligibleRolesEmpty",
+  "definition.eligibleRolesDuplicate",
+  "definition.noQuestions",
+  "definition.sealedRoundInvalid",
+  "definition.sealedPaddingInvalid",
+  // --- question ---
+  "question.tooFewOptions",
+  "question.optionCountTooLow",
+  "question.optionCountRequiresExternal",
+  "question.labelTooLong",
+  "question.maxLessThanMin",
+  "question.stepNotPositive",
+  "question.ratingTooFewLabels",
+  "question.ratingCountTooLow",
+  "question.ratingCountRequiresExternal",
+  "question.minSelectionsNegative",
+  "question.maxSelectionsTooLow",
+  "question.minSelectionsGtMax",
+  "question.maxSelectionsGtOptions",
+  "question.minRankedTooLow",
+  "question.minRankedGtMax",
+  "question.maxRankedGtOptions",
+  "question.budgetNotPositive",
+  // --- response ---
+  "response.specVersionMismatch",
+  "response.roleNotEligible",
+  "response.sealedRequired",
+  "response.publicRequired",
+  "response.sealedCiphertextEmpty",
+  "response.duplicateAnswer",
+  "response.questionIndexOutOfRange",
+  "response.requiredNotAnswered",
+  // --- answer ---
+  "answer.typeMismatch",
+  "answer.optionIndexOutOfRange",
+  "answer.optionIndicesOutOfRange",
+  "answer.duplicateOptionIndices",
+  "answer.selectionCountOutOfRange",
+  "answer.duplicateRankedIndices",
+  "answer.rankedIndexOutOfRange",
+  "answer.rankedCountOutOfRange",
+  "answer.valueOutOfRange",
+  "answer.valueStepMismatch",
+  "answer.pointsNegative",
+  "answer.pointsSumMismatch",
+  "answer.ratingInvalid",
+  "answer.ratingRequireAll",
+] as const;
+
+/** A stable identifier for a semantic validation problem. */
+export type ValidationProblemCode = (typeof VALIDATION_PROBLEM_CODES)[number];
+
+/**
+ * A single semantic validation problem: a stable {@link ValidationProblemCode}
+ * plus the values it interpolates. Presentation-agnostic — render it with
+ * {@link describeProblem} (English) or map `code` to a localized catalog.
+ *
+ * `where` (present on most question/answer problems) is a machine locator such
+ * as `questions[2]` or `answers[0].ratings[1]`, meant to be shown verbatim, not
+ * translated.
+ */
+export interface ValidationProblem {
+  readonly code: ValidationProblemCode;
+  readonly params?: Record<string, string | number>;
+}
+
+const problem = (
+  code: ValidationProblemCode,
+  params?: Record<string, string | number>,
+): ValidationProblem => (params ? { code, params } : { code });
+
 /** Number of options a question offers (inline labels or external count). */
 const optionCount = (opts: OptionsOrCount): number =>
   opts.type === "options" ? opts.labels.length : opts.count;
@@ -48,10 +135,20 @@ const hasDuplicates = (xs: readonly number[]): boolean =>
 const inRange = (x: number, n: number): boolean => x >= 0 && x < n;
 
 /** Flag any `bounded_text` label over the 64 UTF-8 byte CDDL limit. */
-const checkLabels = (labels: readonly string[], where: string, out: string[]) =>
+const checkLabels = (
+  labels: readonly string[],
+  where: string,
+  out: ValidationProblem[],
+) =>
   labels.forEach((l, i) => {
     if (utf8ByteLength(l) > MAX_CHUNK_BYTES) {
-      out.push(`${where}: label ${i} exceeds ${MAX_CHUNK_BYTES} UTF-8 bytes`);
+      out.push(
+        problem("question.labelTooLong", {
+          where,
+          index: i,
+          max: MAX_CHUNK_BYTES,
+        }),
+      );
     }
   });
 
@@ -63,17 +160,17 @@ const validateOptionsOrCount = (
   opts: OptionsOrCount,
   externalMode: boolean,
   where: string,
-  out: string[],
+  out: ValidationProblem[],
 ): void => {
   if (opts.type === "options") {
-    if (opts.labels.length < 2) out.push(`${where}: needs at least 2 options`);
+    if (opts.labels.length < 2)
+      out.push(problem("question.tooFewOptions", { where }));
     checkLabels(opts.labels, where, out);
   } else {
-    if (opts.count < 2) out.push(`${where}: option count must be >= 2`);
+    if (opts.count < 2)
+      out.push(problem("question.optionCountTooLow", { where }));
     if (!externalMode) {
-      out.push(
-        `${where}: option-count form requires external-content mode (key 8)`,
-      );
+      out.push(problem("question.optionCountRequiresExternal", { where }));
     }
   }
 };
@@ -81,18 +178,18 @@ const validateOptionsOrCount = (
 const validateNumericConstraints = (
   c: NumericConstraints,
   where: string,
-  out: string[],
+  out: ValidationProblem[],
 ): void => {
-  if (c.max < c.min) out.push(`${where}: max_value must be >= min_value`);
+  if (c.max < c.min) out.push(problem("question.maxLessThanMin", { where }));
   if (c.step !== undefined && c.step <= 0n)
-    out.push(`${where}: step must be > 0`);
+    out.push(problem("question.stepNotPositive", { where }));
 };
 
 const validateRatingScale = (
   scale: RatingScale,
   externalMode: boolean,
   where: string,
-  out: string[],
+  out: ValidationProblem[],
 ): void => {
   switch (scale.type) {
     case "numeric":
@@ -100,17 +197,15 @@ const validateRatingScale = (
       break;
     case "labels":
       if (scale.labels.length < 2) {
-        out.push(`${where}: rating scale needs at least 2 labels`);
+        out.push(problem("question.ratingTooFewLabels", { where }));
       }
       checkLabels(scale.labels, `${where} scale`, out);
       break;
     case "count":
       if (scale.count < 2)
-        out.push(`${where}: rating level count must be >= 2`);
+        out.push(problem("question.ratingCountTooLow", { where }));
       if (!externalMode) {
-        out.push(
-          `${where}: rating level-count form requires external-content mode`,
-        );
+        out.push(problem("question.ratingCountRequiresExternal", { where }));
       }
       break;
   }
@@ -120,7 +215,7 @@ const validateQuestion = (
   q: Question,
   externalMode: boolean,
   where: string,
-  out: string[],
+  out: ValidationProblem[],
 ): void => {
   switch (q.type) {
     case "custom":
@@ -132,15 +227,15 @@ const validateQuestion = (
       validateOptionsOrCount(q.options, externalMode, where, out);
       const n = optionCount(q.options);
       if (q.minSelections < 0)
-        out.push(`${where}: min_selections must be >= 0`);
+        out.push(problem("question.minSelectionsNegative", { where }));
       if (q.maxSelections < 1)
-        out.push(`${where}: max_selections must be >= 1`);
+        out.push(problem("question.maxSelectionsTooLow", { where }));
       if (q.minSelections > q.maxSelections) {
-        out.push(`${where}: min_selections must be <= max_selections`);
+        out.push(problem("question.minSelectionsGtMax", { where }));
       }
       if (q.maxSelections > n) {
         out.push(
-          `${where}: max_selections must be <= number of options (${n})`,
+          problem("question.maxSelectionsGtOptions", { where, count: n }),
         );
       }
       break;
@@ -148,12 +243,13 @@ const validateQuestion = (
     case "ranking": {
       validateOptionsOrCount(q.options, externalMode, where, out);
       const n = optionCount(q.options);
-      if (q.minRanked < 1) out.push(`${where}: min_ranked must be >= 1`);
+      if (q.minRanked < 1)
+        out.push(problem("question.minRankedTooLow", { where }));
       if (q.minRanked > q.maxRanked) {
-        out.push(`${where}: min_ranked must be <= max_ranked`);
+        out.push(problem("question.minRankedGtMax", { where }));
       }
       if (q.maxRanked > n) {
-        out.push(`${where}: max_ranked must be <= number of options (${n})`);
+        out.push(problem("question.maxRankedGtOptions", { where, count: n }));
       }
       break;
     }
@@ -162,7 +258,8 @@ const validateQuestion = (
       break;
     case "pointsAllocation":
       validateOptionsOrCount(q.options, externalMode, where, out);
-      if (q.budget <= 0) out.push(`${where}: budget must be > 0`);
+      if (q.budget <= 0)
+        out.push(problem("question.budgetNotPositive", { where }));
       break;
     case "rating":
       validateOptionsOrCount(q.options, externalMode, where, out);
@@ -172,24 +269,32 @@ const validateQuestion = (
 };
 
 /** Validate a survey definition's internal consistency. */
-export const validateDefinition = (def: SurveyDefinition): string[] => {
-  const out: string[] = [];
+export const validateDefinition = (
+  def: SurveyDefinition,
+): ValidationProblem[] => {
+  const out: ValidationProblem[] = [];
   if (def.specVersion !== SPEC_VERSION) {
-    out.push(`spec_version ${def.specVersion} != supported ${SPEC_VERSION}`);
+    out.push(
+      problem("definition.specVersionUnsupported", {
+        actual: def.specVersion,
+        supported: SPEC_VERSION,
+      }),
+    );
   }
   if (def.eligibleRoles.length === 0) {
-    out.push("eligible_roles must be non-empty");
+    out.push(problem("definition.eligibleRolesEmpty"));
   }
   if (hasDuplicates(def.eligibleRoles as number[])) {
-    out.push("eligible_roles should not contain duplicates");
+    out.push(problem("definition.eligibleRolesDuplicate"));
   }
   if (def.questions.length === 0) {
-    out.push("survey must have at least one question");
+    out.push(problem("definition.noQuestions"));
   }
   if (def.submissionMode.type === "sealed") {
-    if (def.submissionMode.round <= 0) out.push("sealed round must be > 0");
+    if (def.submissionMode.round <= 0)
+      out.push(problem("definition.sealedRoundInvalid"));
     if (def.submissionMode.paddingSize <= 0) {
-      out.push("sealed padding_size must be > 0");
+      out.push(problem("definition.sealedPaddingInvalid"));
     }
   }
   const externalMode = def.contentAnchor !== undefined;
@@ -235,12 +340,16 @@ const validateAnswer = (
   answer: AnswerItem,
   question: Question,
   where: string,
-  out: string[],
+  out: ValidationProblem[],
 ): void => {
   const expected = QUESTION_TYPE_FOR_ANSWER[answer.type];
   if (question.type !== expected) {
     out.push(
-      `${where}: answer type "${answer.type}" does not match question type "${question.type}"`,
+      problem("answer.typeMismatch", {
+        where,
+        answerType: answer.type,
+        questionType: question.type,
+      }),
     );
     return;
   }
@@ -252,7 +361,12 @@ const validateAnswer = (
       if (question.type !== "singleChoice") return;
       const n = optionCount(question.options);
       if (!inRange(answer.optionIndex, n)) {
-        out.push(`${where}: option index ${answer.optionIndex} out of range`);
+        out.push(
+          problem("answer.optionIndexOutOfRange", {
+            where,
+            index: answer.optionIndex,
+          }),
+        );
       }
       break;
     }
@@ -260,16 +374,22 @@ const validateAnswer = (
       if (question.type !== "multiSelect") return;
       const n = optionCount(question.options);
       const idx = answer.optionIndices;
-      if (hasDuplicates(idx)) out.push(`${where}: duplicate option indices`);
+      if (hasDuplicates(idx))
+        out.push(problem("answer.duplicateOptionIndices", { where }));
       if (!idx.every((x) => inRange(x, n))) {
-        out.push(`${where}: option index out of range`);
+        out.push(problem("answer.optionIndicesOutOfRange", { where }));
       }
       if (
         idx.length < question.minSelections ||
         idx.length > question.maxSelections
       ) {
         out.push(
-          `${where}: selection count ${idx.length} not in [${question.minSelections}, ${question.maxSelections}]`,
+          problem("answer.selectionCountOutOfRange", {
+            where,
+            count: idx.length,
+            min: question.minSelections,
+            max: question.maxSelections,
+          }),
         );
       }
       break;
@@ -278,13 +398,19 @@ const validateAnswer = (
       if (question.type !== "ranking") return;
       const n = optionCount(question.options);
       const idx = answer.ranking;
-      if (hasDuplicates(idx)) out.push(`${where}: duplicate ranked indices`);
+      if (hasDuplicates(idx))
+        out.push(problem("answer.duplicateRankedIndices", { where }));
       if (!idx.every((x) => inRange(x, n))) {
-        out.push(`${where}: ranked index out of range`);
+        out.push(problem("answer.rankedIndexOutOfRange", { where }));
       }
       if (idx.length < question.minRanked || idx.length > question.maxRanked) {
         out.push(
-          `${where}: ranked count ${idx.length} not in [${question.minRanked}, ${question.maxRanked}]`,
+          problem("answer.rankedCountOutOfRange", {
+            where,
+            count: idx.length,
+            min: question.minRanked,
+            max: question.maxRanked,
+          }),
         );
       }
       break;
@@ -293,9 +419,18 @@ const validateAnswer = (
       if (question.type !== "numericRange") return;
       const { min, max, step } = question.constraints;
       const v = answer.value;
-      if (v < min || v > max) out.push(`${where}: value ${v} out of range`);
+      if (v < min || v > max)
+        out.push(
+          problem("answer.valueOutOfRange", { where, value: String(v) }),
+        );
       if (step !== undefined && step > 0n && (v - min) % step !== 0n) {
-        out.push(`${where}: value ${v} does not satisfy step ${step}`);
+        out.push(
+          problem("answer.valueStepMismatch", {
+            where,
+            value: String(v),
+            step: String(step),
+          }),
+        );
       }
       break;
     }
@@ -303,18 +438,25 @@ const validateAnswer = (
       if (question.type !== "pointsAllocation") return;
       const n = optionCount(question.options);
       const idx = answer.allocations.map((a) => a.optionIndex);
-      if (hasDuplicates(idx)) out.push(`${where}: duplicate option indices`);
+      if (hasDuplicates(idx))
+        out.push(problem("answer.duplicateOptionIndices", { where }));
       if (!idx.every((x) => inRange(x, n))) {
-        out.push(`${where}: option index out of range`);
+        out.push(problem("answer.optionIndicesOutOfRange", { where }));
       }
       if (answer.allocations.some((a) => a.points < 0)) {
-        out.push(`${where}: points must be >= 0`);
+        out.push(problem("answer.pointsNegative", { where }));
       }
       // Exact integer arithmetic — a float sum can lose precision above 2^53
       // and disagree with a bigint verifier on the hash-relevant verdict.
       const sum = answer.allocations.reduce((s, a) => s + BigInt(a.points), 0n);
       if (sum !== BigInt(question.budget)) {
-        out.push(`${where}: points sum ${sum} != budget ${question.budget}`);
+        out.push(
+          problem("answer.pointsSumMismatch", {
+            where,
+            sum: String(sum),
+            budget: String(question.budget),
+          }),
+        );
       }
       break;
     }
@@ -322,14 +464,19 @@ const validateAnswer = (
       if (question.type !== "rating") return;
       const n = optionCount(question.options);
       const idx = answer.ratings.map((r) => r.optionIndex);
-      if (hasDuplicates(idx)) out.push(`${where}: duplicate option indices`);
+      if (hasDuplicates(idx))
+        out.push(problem("answer.duplicateOptionIndices", { where }));
       if (!idx.every((x) => inRange(x, n))) {
-        out.push(`${where}: option index out of range`);
+        out.push(problem("answer.optionIndicesOutOfRange", { where }));
       }
       answer.ratings.forEach((r, i) => {
         if (!ratingValid(r.rating, question.scale)) {
           out.push(
-            `${where}.ratings[${i}]: rating ${r.rating} invalid for scale`,
+            problem("answer.ratingInvalid", {
+              where,
+              index: i,
+              rating: String(r.rating),
+            }),
           );
         }
       });
@@ -338,7 +485,11 @@ const validateAnswer = (
       // which this rule does not touch.
       if (question.requireAll && answer.ratings.length !== n) {
         out.push(
-          `${where}: require_all rating must cover all ${n} options, got ${answer.ratings.length}`,
+          problem("answer.ratingRequireAll", {
+            where,
+            count: n,
+            got: answer.ratings.length,
+          }),
         );
       }
       break;
@@ -355,30 +506,33 @@ const validateAnswer = (
 export const validateResponse = (
   definition: SurveyDefinition,
   response: SurveyResponse,
-): string[] => {
-  const out: string[] = [];
+): ValidationProblem[] => {
+  const out: ValidationProblem[] = [];
 
   if (response.specVersion !== definition.specVersion) {
     out.push(
-      `response spec_version ${response.specVersion} != survey ${definition.specVersion}`,
+      problem("response.specVersionMismatch", {
+        actual: response.specVersion,
+        expected: definition.specVersion,
+      }),
     );
   }
   if (!definition.eligibleRoles.includes(response.role)) {
-    out.push(`role ${response.role} is not in the survey's eligible_roles`);
+    out.push(problem("response.roleNotEligible", { role: response.role }));
   }
 
   const sealed = definition.submissionMode.type === "sealed";
   if (sealed && response.answers.type !== "sealed") {
-    out.push("sealed survey requires a sealed (ciphertext) response");
+    out.push(problem("response.sealedRequired"));
     return out;
   }
   if (!sealed && response.answers.type !== "public") {
-    out.push("public survey requires public (plaintext) answers");
+    out.push(problem("response.publicRequired"));
     return out;
   }
   if (response.answers.type === "sealed") {
     if (response.answers.ciphertext.length === 0) {
-      out.push("sealed response ciphertext is empty");
+      out.push(problem("response.sealedCiphertextEmpty"));
     }
     return out;
   }
@@ -388,12 +542,22 @@ export const validateResponse = (
   answers.forEach((a, i) => {
     const where = `answers[${i}]`;
     if (answered.has(a.questionIndex)) {
-      out.push(`${where}: duplicate answer for question ${a.questionIndex}`);
+      out.push(
+        problem("response.duplicateAnswer", {
+          where,
+          questionIndex: a.questionIndex,
+        }),
+      );
     }
     answered.add(a.questionIndex);
     const question = definition.questions[a.questionIndex];
     if (question === undefined) {
-      out.push(`${where}: question index ${a.questionIndex} out of range`);
+      out.push(
+        problem("response.questionIndexOutOfRange", {
+          where,
+          questionIndex: a.questionIndex,
+        }),
+      );
       return;
     }
     validateAnswer(a, question, where, out);
@@ -401,9 +565,108 @@ export const validateResponse = (
 
   definition.questions.forEach((q, i) => {
     if (q.required && !answered.has(i)) {
-      out.push(`required question ${i} is not answered`);
+      out.push(problem("response.requiredNotAnswered", { questionIndex: i }));
     }
   });
 
   return out;
 };
+
+// ----------------------------------------------------------------------------
+// Default English rendering (logging / CLI / fallback)
+// ----------------------------------------------------------------------------
+
+/**
+ * English one-liner templates for every problem code. `{token}` placeholders are
+ * filled from a problem's `params`. Downstream UIs (the app, the widget) map
+ * `code` to their own localized catalogs instead; this map is the fallback and
+ * keeps the library self-describing.
+ */
+const PROBLEM_MESSAGES_EN: Record<ValidationProblemCode, string> = {
+  "definition.specVersionUnsupported":
+    "spec_version {actual} != supported {supported}",
+  "definition.eligibleRolesEmpty": "eligible_roles must be non-empty",
+  "definition.eligibleRolesDuplicate":
+    "eligible_roles should not contain duplicates",
+  "definition.noQuestions": "survey must have at least one question",
+  "definition.sealedRoundInvalid": "sealed round must be > 0",
+  "definition.sealedPaddingInvalid": "sealed padding_size must be > 0",
+
+  "question.tooFewOptions": "{where}: needs at least 2 options",
+  "question.optionCountTooLow": "{where}: option count must be >= 2",
+  "question.optionCountRequiresExternal":
+    "{where}: option-count form requires external-content mode (key 8)",
+  "question.labelTooLong": "{where}: label {index} exceeds {max} UTF-8 bytes",
+  "question.maxLessThanMin": "{where}: max_value must be >= min_value",
+  "question.stepNotPositive": "{where}: step must be > 0",
+  "question.ratingTooFewLabels":
+    "{where}: rating scale needs at least 2 labels",
+  "question.ratingCountTooLow": "{where}: rating level count must be >= 2",
+  "question.ratingCountRequiresExternal":
+    "{where}: rating level-count form requires external-content mode",
+  "question.minSelectionsNegative": "{where}: min_selections must be >= 0",
+  "question.maxSelectionsTooLow": "{where}: max_selections must be >= 1",
+  "question.minSelectionsGtMax":
+    "{where}: min_selections must be <= max_selections",
+  "question.maxSelectionsGtOptions":
+    "{where}: max_selections must be <= number of options ({count})",
+  "question.minRankedTooLow": "{where}: min_ranked must be >= 1",
+  "question.minRankedGtMax": "{where}: min_ranked must be <= max_ranked",
+  "question.maxRankedGtOptions":
+    "{where}: max_ranked must be <= number of options ({count})",
+  "question.budgetNotPositive": "{where}: budget must be > 0",
+
+  "response.specVersionMismatch":
+    "response spec_version {actual} != survey {expected}",
+  "response.roleNotEligible":
+    "role {role} is not in the survey's eligible_roles",
+  "response.sealedRequired":
+    "sealed survey requires a sealed (ciphertext) response",
+  "response.publicRequired":
+    "public survey requires public (plaintext) answers",
+  "response.sealedCiphertextEmpty": "sealed response ciphertext is empty",
+  "response.duplicateAnswer":
+    "{where}: duplicate answer for question {questionIndex}",
+  "response.questionIndexOutOfRange":
+    "{where}: question index {questionIndex} out of range",
+  "response.requiredNotAnswered":
+    "required question {questionIndex} is not answered",
+
+  "answer.typeMismatch":
+    '{where}: answer type "{answerType}" does not match question type "{questionType}"',
+  "answer.optionIndexOutOfRange": "{where}: option index {index} out of range",
+  "answer.optionIndicesOutOfRange": "{where}: option index out of range",
+  "answer.duplicateOptionIndices": "{where}: duplicate option indices",
+  "answer.selectionCountOutOfRange":
+    "{where}: selection count {count} not in [{min}, {max}]",
+  "answer.duplicateRankedIndices": "{where}: duplicate ranked indices",
+  "answer.rankedIndexOutOfRange": "{where}: ranked index out of range",
+  "answer.rankedCountOutOfRange":
+    "{where}: ranked count {count} not in [{min}, {max}]",
+  "answer.valueOutOfRange": "{where}: value {value} out of range",
+  "answer.valueStepMismatch":
+    "{where}: value {value} does not satisfy step {step}",
+  "answer.pointsNegative": "{where}: points must be >= 0",
+  "answer.pointsSumMismatch": "{where}: points sum {sum} != budget {budget}",
+  "answer.ratingInvalid":
+    "{where}.ratings[{index}]: rating {rating} invalid for scale",
+  "answer.ratingRequireAll":
+    "{where}: require_all rating must cover all {count} options, got {got}",
+};
+
+const interpolate = (
+  template: string,
+  params: Record<string, string | number> = {},
+): string =>
+  template.replace(/\{(\w+)\}/g, (_, name: string) =>
+    name in params ? String(params[name]) : `{${name}}`,
+  );
+
+/** Render a single problem in English (default/fallback presentation). */
+export const describeProblem = (p: ValidationProblem): string =>
+  interpolate(PROBLEM_MESSAGES_EN[p.code], p.params);
+
+/** Render a list of problems in English. */
+export const describeProblems = (
+  problems: readonly ValidationProblem[],
+): string[] => problems.map(describeProblem);
