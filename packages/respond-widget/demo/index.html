@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>&lt;tessera-respond&gt; — built-artifact demo</title>
+    <!--
+      A plain-HTML host for the BUILT bundle (no bundler, no framework, fully
+      offline): the automated twin lives in test/artifact.test.ts. To view:
+
+        pnpm --filter @tessera/respond-widget build
+        python3 -m http.server 3200 --directory packages/respond-widget
+        open http://localhost:3200/demo/
+
+      Switching to the sealed survey and submitting shows the tlock/evolution
+      chunks lazy-loading in the network tab — everything else ships in the
+      one entry module.
+    -->
+    <style>
+      body {
+        margin: 0;
+        background: #f4efe3;
+        color: #23201a;
+        font-family: system-ui, sans-serif;
+      }
+      .page {
+        max-width: 820px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 4px;
+      }
+      .sub {
+        color: #6b6356;
+        font-size: 13px;
+        margin: 0 0 16px;
+      }
+      .controls {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+      button[data-sample] {
+        font: inherit;
+        font-size: 12.5px;
+        font-weight: 600;
+        cursor: pointer;
+        border-radius: 8px;
+        padding: 6px 11px;
+        border: 1px solid #e7e0d0;
+        background: #fff;
+        color: #6b6356;
+      }
+      button.active {
+        border-color: #bc5b33;
+        background: #bc5b33;
+        color: #fff;
+      }
+      .frame {
+        background: #fff;
+        border: 1px solid #e7e0d0;
+        border-radius: 14px;
+        padding: 18px 20px;
+      }
+      #log {
+        font-family: ui-monospace, monospace;
+        font-size: 11.5px;
+        line-height: 1.5;
+        background: #1c2536;
+        color: #d7dde8;
+        border-radius: 10px;
+        padding: 12px 14px;
+        margin-top: 16px;
+        min-height: 120px;
+        max-height: 40vh;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <h1>&lt;tessera-respond&gt; built-artifact demo</h1>
+      <p class="sub">
+        This page loads <code>dist/tessera-respond.es.js</code> with a bare
+        <code>&lt;script type="module"&gt;</code> and hard-coded mock props — no
+        bundler, no network. Emitted events appear below.
+      </p>
+      <div class="controls">
+        <button data-sample="public" class="active">Public</button>
+        <button data-sample="sealed">Sealed (lazy chunks)</button>
+      </div>
+      <div class="frame">
+        <tessera-respond id="widget"></tessera-respond>
+      </div>
+      <pre id="log">(events will appear here)</pre>
+    </div>
+
+    <script type="module">
+      import "../dist/tessera-respond.es.js"; // registers the element
+
+      // --- Mock data (the widget never fetches; the host always supplies) ---
+
+      const hexToBytes = (hex) =>
+        Uint8Array.from(hex.match(/../g), (b) => parseInt(b, 16));
+
+      const surveyRef = { txId: hexToBytes("11".repeat(32)), index: 0 };
+
+      const responder = {
+        identity: {
+          payment: { kind: "key", hashHex: "aa".repeat(28) },
+          stake: { kind: "key", hashHex: "bb".repeat(28) },
+          drep: { kind: "key", hashHex: "cc".repeat(28) },
+        },
+      };
+
+      const baseDefinition = {
+        specVersion: 1,
+        owner: { type: "key", keyHash: hexToBytes("00".repeat(28)) },
+        title: "Artifact demo survey",
+        description:
+          "Served from a static page via the built ES module — answer and submit to see the label-17 payload.",
+        eligibleRoles: [0, 3, 4], // DRep, Stakeholder, Keyholder
+        endEpoch: 600,
+        submissionMode: { type: "public" },
+        questions: [
+          {
+            type: "singleChoice",
+            prompt: "Which upgrade should ship first?",
+            required: true,
+            options: {
+              type: "options",
+              labels: ["Scaling", "Governance polish", "Developer tooling"],
+            },
+          },
+          {
+            type: "numericRange",
+            prompt: "Suggested treasury cut (%)?",
+            constraints: { min: 0n, max: 100n, step: 5n },
+          },
+        ],
+      };
+
+      const SAMPLES = {
+        public: baseDefinition,
+        sealed: {
+          ...baseDefinition,
+          title: "Sealed artifact demo survey",
+          submissionMode: {
+            type: "sealed",
+            // drand quicknet
+            chainHash: hexToBytes(
+              "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971",
+            ),
+            round: 45000000,
+            paddingSize: 512,
+          },
+        },
+      };
+
+      // --- Wire the element (props in, CustomEvents out) --------------------
+
+      const el = document.getElementById("widget");
+      el.definition = SAMPLES.public;
+      el.surveyRef = surveyRef;
+      el.responder = responder;
+      el.tipEpoch = 500;
+
+      const logEl = document.getElementById("log");
+      const plain = (v) => {
+        if (typeof v === "bigint") return `${v}n`;
+        if (v instanceof Uint8Array)
+          return `0x${[...v].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+        if (v instanceof Map)
+          return Object.fromEntries(
+            [...v.entries()].map(([k, x]) => [String(plain(k)), plain(x)]),
+          );
+        if (Array.isArray(v)) return v.map(plain);
+        if (v && typeof v === "object")
+          return Object.fromEntries(
+            Object.entries(v).map(([k, x]) => [k, plain(x)]),
+          );
+        return v;
+      };
+      for (const type of [
+        "tessera:response",
+        "tessera:change",
+        "tessera:invalid",
+      ]) {
+        el.addEventListener(type, (e) => {
+          logEl.textContent = `${type}\n${JSON.stringify(plain(e.detail), null, 2)}\n\n${logEl.textContent}`;
+        });
+      }
+
+      for (const btn of document.querySelectorAll("[data-sample]")) {
+        btn.addEventListener("click", () => {
+          el.definition = SAMPLES[btn.dataset.sample];
+          for (const b of document.querySelectorAll("[data-sample]"))
+            b.classList.toggle("active", b === btn);
+        });
+      }
+    </script>
+  </body>
+</html>

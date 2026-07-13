@@ -27,7 +27,7 @@
     "@tessera/koios": "workspace:*",
     "@tessera/respond-core": "workspace:*",
     "cip-179": "workspace:*",
-    "solid-js": "^1.9.0"
+    "solid-js": "^1.9.14"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",
