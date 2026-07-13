@@ -76,6 +76,11 @@ const fr: RespondMessages = {
     skippedNote:
       "Ignorée — abstention. Rien n'est enregistré pour cette question.",
 
+    // --- Navigation pas-à-pas (mode une question par écran) -----------------
+    stepPrev: "Précédente",
+    stepNext: "Suivante",
+    stepCount: "Question {n} sur {total}",
+
     // --- Multi-select body -------------------------------------------------
     multiSelectCount: "sélectionnez {min}–{max} · {chosen} choisie(s)",
     noneLead: "« Aucune de celles-ci » est une vraie réponse.",

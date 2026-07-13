@@ -74,6 +74,24 @@ adoptWidgetStyles(shadow);
 
 const [sample, setSample] = createSignal<SampleKey>("public");
 const [locale, setLocale] = createSignal("en");
+const [layout, setLayout] = createSignal<"one-per-screen" | "list">(
+  "one-per-screen",
+);
+const [themeName, setThemeName] = createSignal("default");
+
+// `theme`-prop demo: re-skins the accent (and the DRep chip that follows it)
+// without touching any CSS. "default" is an empty override set, so switching
+// back also exercises the stale-key cleanup.
+const THEMES: Record<string, Record<string, string>> = {
+  default: {},
+  plum: {
+    accent: "#6b46ff",
+    "accent-bg": "#efeaff",
+    "accent-line": "#d9cdf8",
+    "role-drep": "#6b46ff",
+    "role-drep-bg": "#efeaff",
+  },
+};
 
 render(
   () => (
@@ -83,6 +101,8 @@ render(
       responder={responder}
       tipEpoch={TIP_EPOCH}
       locale={locale()}
+      layout={layout()}
+      theme={THEMES[themeName()] ?? {}}
     />
   ),
   shadow,
@@ -104,6 +124,22 @@ for (const btn of document.querySelectorAll<HTMLButtonElement>(
   btn.addEventListener("click", () => {
     setLocale(btn.dataset.locale!);
     syncActive("data-locale", btn.dataset.locale!);
+  });
+}
+for (const btn of document.querySelectorAll<HTMLButtonElement>(
+  "[data-layout]",
+)) {
+  btn.addEventListener("click", () => {
+    setLayout(btn.dataset.layout as "one-per-screen" | "list");
+    syncActive("data-layout", btn.dataset.layout!);
+  });
+}
+for (const btn of document.querySelectorAll<HTMLButtonElement>(
+  "[data-theme]",
+)) {
+  btn.addEventListener("click", () => {
+    setThemeName(btn.dataset.theme!);
+    syncActive("data-theme", btn.dataset.theme!);
   });
 }
 

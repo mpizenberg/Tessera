@@ -86,6 +86,12 @@ const en = {
     noPrompt: "(no prompt)",
     skippedNote: "Skipped — abstaining. Nothing is recorded for this question.",
 
+    // --- Stepper (one-per-screen layout) ------------------------------------
+    stepPrev: "Previous",
+    stepNext: "Next",
+    /** {n}/{total} are locale-formatted counts. */
+    stepCount: "Question {n} of {total}",
+
     // --- Multi-select body -------------------------------------------------
     /** {min}/{max}/{chosen} are locale-formatted counts. */
     multiSelectCount: "select {min}–{max} · {chosen} chosen",

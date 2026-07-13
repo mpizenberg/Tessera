@@ -1,73 +1,86 @@
 /*
  * Design tokens for the <tessera-respond> widget, on :host so they resolve
  * inside the shadow root (a document-level :root sheet never reaches a shadow
- * tree). Ported verbatim from the app's ui/theme.css :root block.
+ * tree). Values ported from the app's ui/theme.css :root block, renamed to the
+ * public --tessera-* namespace and pruned to the tokens the widget's CSS
+ * actually consumes (test/tokens.test.ts keeps both directions honest: every
+ * reference defined here, every definition referenced somewhere).
  *
- * Milestone 4 keeps the app's original token names (--accent, --line, …) so the
- * moved styles port with minimal churn. Milestone 5 renames them to the public
- * --tessera-* namespace and wires the host-overridable `theme` prop.
+ * These are the *defaults* — the single source of truth, so the component CSS
+ * uses bare var(--tessera-*) with no per-site fallbacks. Custom properties
+ * inherit through the shadow boundary, so a host overrides them either with
+ * CSS (`tessera-respond { --tessera-accent: … }`) or via the `theme` prop,
+ * which reflects each entry as an inline `--tessera-<key>` on the host
+ * element (inline styles beat this :host rule).
  */
 :host {
   /* ===== TYPE ===== */
-  --sans: "Hanken Grotesk", system-ui, sans-serif;
-  --mono: "IBM Plex Mono", monospace;
-  --serif: "Newsreader", Georgia, serif;
+  --tessera-sans: "Hanken Grotesk", system-ui, sans-serif;
+  --tessera-mono: "IBM Plex Mono", monospace;
+  --tessera-serif: "Newsreader", Georgia, serif;
   /* ===== INK + TEXT (warm) ===== */
-  --ink: #23201a;
-  --body: #3a352b;
-  --muted: #6b6356;
-  --faint: #9a8f79;
-  --dim: #a79c88;
-  --pale: #b8ae99;
-  --arrow: #cfc6b4;
+  --tessera-ink: #23201a;
+  --tessera-body: #3a352b;
+  --tessera-muted: #6b6356;
+  --tessera-faint: #9a8f79;
+  --tessera-dim: #a79c88;
   /* ===== LINES + SURFACES (warm paper) ===== */
-  --line: #e7e0d0;
-  --line2: #ede6d7;
-  --hair: #f2ecde;
-  --track: #efe9db;
-  --surface: #f4efe3;
-  --surface2: #fbf8f1;
-  --surface3: #f2ecde;
-  --border-strong: #d8cdb6;
+  --tessera-paper: #ffffff;
+  --tessera-line: #e7e0d0;
+  --tessera-line2: #ede6d7;
+  --tessera-hair: #f2ecde;
+  --tessera-surface2: #fbf8f1;
+  --tessera-surface3: #f2ecde;
+  --tessera-header-line: #e7dfce;
   /* ===== CARD ===== */
-  --card-bg: #fbfaf6;
-  --card-line: #f0ebd8;
-  --label: #7a6a45;
+  --tessera-card-bg: #fbfaf6;
+  --tessera-card-line: #f0ebd8;
+  --tessera-label: #7a6a45;
+  --tessera-label-strong: #5b4a22;
   /* ===== ACCENT (clay) ===== */
-  --accent: #bc5b33;
-  --accent-hover: #a54e2b;
-  --accent-2: #cf6b40;
-  --accent-tint: #d89b7e;
-  --accent-bg: #f7ece3;
-  --accent-bg-soft: #fbf4ee;
-  --accent-line: #ead3c4;
+  --tessera-accent: #bc5b33;
+  --tessera-accent-bg: #f7ece3;
+  --tessera-accent-line: #ead3c4;
+  --tessera-on-accent: #ffffff;
   /* ===== SEMANTICS ===== */
-  --ok: #4f7a3a;
-  --ok-bg: #eaf1e3;
-  --ok-line: #d4e4c8;
-  --warn: #9a6b1e;
-  --warn-bg: #f6edd9;
-  --warn-line: #e8d5ae;
-  --danger: #a8412e;
-  --danger-bg: #f7e9e3;
-  --danger-line: #e6c3b6;
-  --danger-ink: #8a3a2e;
+  --tessera-ok: #4f7a3a;
+  --tessera-ok-line: #d4e4c8;
+  --tessera-ok-bg-soft: #f0faf3;
+  --tessera-ok-ink: #3f7a55;
+  --tessera-warn: #9a6b1e;
+  --tessera-warn-line: #e8d5ae;
+  --tessera-danger: #a8412e;
+  --tessera-danger-bg: #f7e9e3;
+  --tessera-danger-line: #e6c3b6;
+  --tessera-danger-line-soft: #f0d2d0;
+  --tessera-danger-ink: #8a3a2e;
+  /* ===== CUSTOM-QUESTION SCHEMA STRIP (dark) ===== */
+  --tessera-schema-tag: #7e89a8;
+  --tessera-schema-tag-bg: #1c2536;
+  --tessera-schema-uri: #c4ccda;
+  /* ===== ROLE CHIPS (text / background per role) ===== */
+  --tessera-role-drep: var(--tessera-accent);
+  --tessera-role-drep-bg: var(--tessera-accent-bg);
+  --tessera-role-spo: #2e6b5e;
+  --tessera-role-spo-bg: #e4efeb;
+  --tessera-role-cc: #6b4fa0;
+  --tessera-role-cc-bg: #ece7f4;
+  --tessera-role-stakeholder: #4f7a3a;
+  --tessera-role-stakeholder-bg: #e8f1e0;
+  --tessera-role-keyholder: #9a6b1e;
+  --tessera-role-keyholder-bg: #f6edd9;
   /* ===== RADII ===== */
-  --r-card: 18px;
-  --r-panel: 16px;
-  --r-lg: 14px;
-  --r-md: 12px;
-  --r-control: 11px;
-  --r-input: 10px;
-  --r-sm: 9px;
-  --r-chip: 8px;
-  --r-xs: 7px;
-  --r-2xs: 6px;
-  --r-3xs: 5px;
+  --tessera-r-card: 18px;
+  --tessera-r-md: 12px;
+  --tessera-r-control: 11px;
+  --tessera-r-sm: 9px;
+  --tessera-r-chip: 8px;
+  --tessera-r-xs: 7px;
+  --tessera-r-3xs: 5px;
 
   display: block;
-  font-family: var(--sans);
-  color: var(--ink);
+  font-family: var(--tessera-sans);
+  color: var(--tessera-ink);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }

@@ -63,7 +63,9 @@
         color: var(--muted);
       }
       button[data-sample],
-      button[data-locale] {
+      button[data-locale],
+      button[data-layout],
+      button[data-theme] {
         font: inherit;
         font-size: 12.5px;
         font-weight: 600;
@@ -130,9 +132,11 @@
       <div>
         <h1>&lt;tessera-respond&gt; dev harness</h1>
         <p class="sub">
-          Milestone 4 — <code>RespondRoot</code> mounted in a shadow root with
-          plain sample props. Submit to emit <code>tessera:response</code>; the
-          sealed sample timelock-encrypts fully offline.
+          <code>RespondRoot</code> mounted in a shadow root with plain sample
+          props. Submit to emit <code>tessera:response</code>; the sealed sample
+          timelock-encrypts fully offline. The Plum theme goes through the
+          <code>theme</code> prop (inline <code>--tessera-*</code>
+          overrides on the host).
         </p>
         <div class="controls">
           <div class="group">
@@ -146,6 +150,16 @@
             <b>Locale</b>
             <button data-locale="en" class="active">en</button>
             <button data-locale="fr">fr</button>
+          </div>
+          <div class="group">
+            <b>Layout</b>
+            <button data-layout="one-per-screen" class="active">Stepper</button>
+            <button data-layout="list">List</button>
+          </div>
+          <div class="group">
+            <b>Theme</b>
+            <button data-theme="default" class="active">Default</button>
+            <button data-theme="plum">Plum</button>
           </div>
         </div>
         <div class="frame">

@@ -3,9 +3,9 @@
  * needs, re-implemented from the injected catalog + tokens (plan §3.2).
  *
  * Role labels stay hard-coded proper nouns (DRep/SPO/CC/…), matching the app.
- * Role descriptions come from the `roles` catalog namespace. Role colors are the
- * app's literal palette for now; milestone 5 exposes them as `--tessera-role-*`
- * tokens so hosts can re-skin the chips.
+ * Role descriptions come from the `roles` catalog namespace. Role colors are
+ * the `--tessera-role-*` tokens (defaults in theme.css), so hosts can re-skin
+ * the chips via CSS or the `theme` prop.
  */
 
 import { Role } from "cip-179";
@@ -21,13 +21,19 @@ const ROLE_LABEL: Record<number, string> = {
   [Role.Keyholder]: "Keyholder",
 };
 
-/** [text color, background] per role, mirroring the app palette. */
+/** [text color, background] per role — the `--tessera-role-*` theme tokens. */
 const ROLE_COLORS: Record<number, readonly [string, string]> = {
-  [Role.DRep]: ["var(--accent)", "var(--accent-bg)"],
-  [Role.SPO]: ["#2E6B5E", "#E4EFEB"],
-  [Role.CC]: ["#6B4FA0", "#ECE7F4"],
-  [Role.Stakeholder]: ["#4F7A3A", "#E8F1E0"],
-  [Role.Keyholder]: ["#9A6B1E", "#F6EDD9"],
+  [Role.DRep]: ["var(--tessera-role-drep)", "var(--tessera-role-drep-bg)"],
+  [Role.SPO]: ["var(--tessera-role-spo)", "var(--tessera-role-spo-bg)"],
+  [Role.CC]: ["var(--tessera-role-cc)", "var(--tessera-role-cc-bg)"],
+  [Role.Stakeholder]: [
+    "var(--tessera-role-stakeholder)",
+    "var(--tessera-role-stakeholder-bg)",
+  ],
+  [Role.Keyholder]: [
+    "var(--tessera-role-keyholder)",
+    "var(--tessera-role-keyholder-bg)",
+  ],
 };
 
 /** `roles` catalog key for each role's one-line explanation. */
@@ -53,7 +59,9 @@ export function roleLabel(role: number): string {
 }
 
 export function roleColors(role: number): readonly [string, string] {
-  return ROLE_COLORS[role] ?? ["var(--muted)", "var(--surface3)"];
+  return (
+    ROLE_COLORS[role] ?? ["var(--tessera-muted)", "var(--tessera-surface3)"]
+  );
 }
 
 export function roleDescription(i18n: I18n, role: number): string {

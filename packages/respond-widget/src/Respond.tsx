@@ -12,8 +12,10 @@
  * - `viewStatus`/`SurveyAggregate` → `surveyStatus(endEpoch, tipEpoch)` + the
  *   `cancelled` prop; `formatRevealDate` → `i18n.d(unixTimeForRound(round))`.
  *
- * Milestone 4 renders the `"list"` layout (every question at once). The
- * `"one-per-screen"` stepper and the `theme`-prop reflection are milestone 5.
+ * Two layouts share all state and logic (layout is pure presentation):
+ * `"one-per-screen"` (default) steps through the question cards one at a time;
+ * `"list"` renders them all at once. The `theme` prop is reflected as inline
+ * `--tessera-*` custom properties on the shadow host.
  */
 
 import {
@@ -97,6 +99,26 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     );
   };
 
+  // Reflect the `theme` prop as inline `--tessera-<key>` custom properties on
+  // the shadow host — they inherit through the boundary and, being inline,
+  // beat the :host defaults in theme.css. Without a shadow root (a bare
+  // RespondRoot mount), fall back to the widget's own root div. Keys dropped
+  // from the prop are cleared back to the defaults.
+  let themedKeys: string[] = [];
+  createEffect(() => {
+    const theme = props.theme ?? {};
+    const node = rootRef?.getRootNode();
+    const target = node instanceof ShadowRoot ? node.host : rootRef;
+    if (!(target instanceof HTMLElement)) return;
+    for (const key of themedKeys) {
+      if (!(key in theme)) target.style.removeProperty(`--tessera-${key}`);
+    }
+    for (const [key, value] of Object.entries(theme)) {
+      target.style.setProperty(`--tessera-${key}`, value);
+    }
+    themedKeys = Object.keys(theme);
+  });
+
   const respondable = createMemo<Role[]>(() =>
     respondableRolesFor(props.definition, props.responder),
   );
@@ -150,7 +172,10 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
           existing(),
         ] as const,
       ([k, r], prev) => {
-        if (!prev || prev[0] !== k || prev[1] !== r) setTouched(false);
+        if (!prev || prev[0] !== k || prev[1] !== r) {
+          setTouched(false);
+          setStep(0);
+        }
         if (touched()) return;
         const def = props.definition;
         const ex = existing();
@@ -162,6 +187,16 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
   );
 
   const total = () => props.definition.questions.length;
+
+  // Stepper position for the one-per-screen layout — reset alongside the
+  // drafts (survey/role change, above) and clamped in case the definition
+  // shrinks under it.
+  const layout = () => props.layout ?? "one-per-screen";
+  const [step, setStep] = createSignal(0);
+  const stepIndex = createMemo(() =>
+    Math.min(step(), Math.max(0, total() - 1)),
+  );
+
   const decidedCount = createMemo(
     () =>
       props.definition.questions.filter(
@@ -322,19 +357,43 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
               <SealedUnsupportedNotice />
             </Show>
 
-            <div class="questionList">
-              <For each={props.definition.questions}>
-                {(q, i) => (
-                  <QuestionCard
-                    q={q}
-                    index={i()}
-                    draft={drafts[i()]}
-                    onChange={(v) => setValue(i(), v)}
-                    onSkip={(sk) => setSkipped(i(), sk)}
+            <Show
+              when={layout() === "list"}
+              fallback={
+                <div class="questionList">
+                  <Show when={props.definition.questions[stepIndex()]}>
+                    {(q) => (
+                      <QuestionCard
+                        q={q()}
+                        index={stepIndex()}
+                        draft={drafts[stepIndex()]}
+                        onChange={(v) => setValue(stepIndex(), v)}
+                        onSkip={(sk) => setSkipped(stepIndex(), sk)}
+                      />
+                    )}
+                  </Show>
+                  <StepperNav
+                    index={stepIndex()}
+                    total={total()}
+                    onStep={setStep}
                   />
-                )}
-              </For>
-            </div>
+                </div>
+              }
+            >
+              <div class="questionList">
+                <For each={props.definition.questions}>
+                  {(q, i) => (
+                    <QuestionCard
+                      q={q}
+                      index={i()}
+                      draft={drafts[i()]}
+                      onChange={(v) => setValue(i(), v)}
+                      onSkip={(sk) => setSkipped(i(), sk)}
+                    />
+                  )}
+                </For>
+              </div>
+            </Show>
 
             <Show when={problems().length > 0}>
               <ProblemList problems={problems()} />
@@ -563,6 +622,42 @@ const QuestionCard: Component<{
           </Show>
         </div>
       </Show>
+    </div>
+  );
+};
+
+// ----------------------------------------------------------------------------
+// Stepper navigation (one-per-screen layout)
+// ----------------------------------------------------------------------------
+
+const StepperNav: Component<{
+  index: number;
+  total: number;
+  onStep: (i: number) => void;
+}> = (props) => {
+  const i18n = useI18n();
+  return (
+    <div class="stepperNav">
+      <button
+        class="stepNavBtn"
+        disabled={props.index <= 0}
+        onClick={() => props.onStep(Math.max(0, props.index - 1))}
+      >
+        ← {i18n.t("respond.stepPrev")}
+      </button>
+      <span class="stepCount">
+        {i18n.t("respond.stepCount", {
+          n: i18n.n(props.index + 1),
+          total: i18n.n(props.total),
+        })}
+      </span>
+      <button
+        class="stepNavBtn"
+        disabled={props.index >= props.total - 1}
+        onClick={() => props.onStep(Math.min(props.total - 1, props.index + 1))}
+      >
+        {i18n.t("respond.stepNext")} →
+      </button>
     </div>
   );
 };

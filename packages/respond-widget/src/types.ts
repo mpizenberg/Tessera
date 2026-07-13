@@ -59,9 +59,15 @@ export interface TesseraRespondProps {
   locale?: string;
   /** Deep-merged string overrides / an unshipped language. */
   messages?: DeepPartial<RespondMessages>;
-  /** Design-token overrides mapped to CSS custom properties on :host. (Milestone 5.) */
+  /**
+   * Design-token overrides: each entry is reflected as an inline
+   * `--tessera-<key>` custom property on the host element, e.g.
+   * `{ accent: "#6b46ff", "role-drep": "#6b46ff" }`. Equivalent to setting the
+   * same properties on `tessera-respond` in host CSS; see theme.css for the
+   * token list.
+   */
   theme?: Record<string, string>;
-  /** Layout of the form. `"one-per-screen"` (default) lands in milestone 5; `"list"` renders every question at once. */
+  /** Layout of the form: `"one-per-screen"` (default) steps through the questions one at a time; `"list"` renders them all at once. */
   layout?: "one-per-screen" | "list";
   /** Optional initial role when the responder is eligible in several. */
   role?: Role;
