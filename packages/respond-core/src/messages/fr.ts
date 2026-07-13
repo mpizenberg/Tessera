@@ -123,6 +123,51 @@ const fr: RespondMessages = {
     keyholder:
       "Quiconque possède un portefeuille — revendiqué dans le navigateur avec votre clé de paiement (dépense) ; aucune inscription ni activité on-chain requise.",
   },
+
+  // Traductions des problèmes structurés cip-179 (sous-arbres response + answer).
+  // Les identifiants techniques et le locateur {where} restent tels quels.
+  validation: {
+    response: {
+      specVersionMismatch:
+        "spec_version de la réponse {actual} != sondage {expected}",
+      roleNotEligible:
+        "le rôle {role} ne figure pas dans les eligible_roles du sondage",
+      sealedRequired:
+        "un sondage scellé requiert une réponse scellée (chiffrée)",
+      publicRequired:
+        "un sondage public requiert des réponses publiques (en clair)",
+      sealedCiphertextEmpty: "le texte chiffré de la réponse scellée est vide",
+      duplicateAnswer:
+        "{where} : réponse en double pour la question {questionIndex}",
+      questionIndexOutOfRange:
+        "{where} : l'index de question {questionIndex} est hors limites",
+      requiredNotAnswered:
+        "la question obligatoire {questionIndex} n'a pas de réponse",
+    },
+    answer: {
+      typeMismatch:
+        "{where} : le type de réponse « {answerType} » ne correspond pas au type de question « {questionType} »",
+      optionIndexOutOfRange:
+        "{where} : l'index d'option {index} est hors limites",
+      optionIndicesOutOfRange: "{where} : index d'option hors limites",
+      duplicateOptionIndices: "{where} : index d'options en double",
+      selectionCountOutOfRange:
+        "{where} : nombre de sélections {count} hors de [{min}, {max}]",
+      duplicateRankedIndices: "{where} : index de classement en double",
+      rankedIndexOutOfRange: "{where} : index de classement hors limites",
+      rankedCountOutOfRange:
+        "{where} : nombre d'éléments classés {count} hors de [{min}, {max}]",
+      valueOutOfRange: "{where} : la valeur {value} est hors limites",
+      valueStepMismatch:
+        "{where} : la valeur {value} ne respecte pas le pas {step}",
+      pointsNegative: "{where} : les points doivent être >= 0",
+      pointsSumMismatch: "{where} : somme des points {sum} != budget {budget}",
+      ratingInvalid:
+        "{where}.ratings[{index}] : la note {rating} est invalide pour l'échelle",
+      ratingRequireAll:
+        "{where} : une notation require_all doit couvrir les {count} options, {got} fournie(s)",
+    },
+  },
 };
 
 export default fr;

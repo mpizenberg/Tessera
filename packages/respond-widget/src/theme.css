@@ -1,0 +1,81 @@
+/*
+ * Design tokens for the <tessera-respond> widget, on :host so they resolve
+ * inside the shadow root (a document-level :root sheet never reaches a shadow
+ * tree). Ported verbatim from the app's ui/theme.css :root block.
+ *
+ * Milestone 4 keeps the app's original token names (--accent, --line, …) so the
+ * moved styles port with minimal churn. Milestone 5 renames them to the public
+ * --tessera-* namespace and wires the host-overridable `theme` prop.
+ */
+:host {
+  /* ===== TYPE ===== */
+  --sans: "Hanken Grotesk", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", monospace;
+  --serif: "Newsreader", Georgia, serif;
+  /* ===== INK + TEXT (warm) ===== */
+  --ink: #23201a;
+  --body: #3a352b;
+  --muted: #6b6356;
+  --faint: #9a8f79;
+  --dim: #a79c88;
+  --pale: #b8ae99;
+  --arrow: #cfc6b4;
+  /* ===== LINES + SURFACES (warm paper) ===== */
+  --line: #e7e0d0;
+  --line2: #ede6d7;
+  --hair: #f2ecde;
+  --track: #efe9db;
+  --surface: #f4efe3;
+  --surface2: #fbf8f1;
+  --surface3: #f2ecde;
+  --border-strong: #d8cdb6;
+  /* ===== CARD ===== */
+  --card-bg: #fbfaf6;
+  --card-line: #f0ebd8;
+  --label: #7a6a45;
+  /* ===== ACCENT (clay) ===== */
+  --accent: #bc5b33;
+  --accent-hover: #a54e2b;
+  --accent-2: #cf6b40;
+  --accent-tint: #d89b7e;
+  --accent-bg: #f7ece3;
+  --accent-bg-soft: #fbf4ee;
+  --accent-line: #ead3c4;
+  /* ===== SEMANTICS ===== */
+  --ok: #4f7a3a;
+  --ok-bg: #eaf1e3;
+  --ok-line: #d4e4c8;
+  --warn: #9a6b1e;
+  --warn-bg: #f6edd9;
+  --warn-line: #e8d5ae;
+  --danger: #a8412e;
+  --danger-bg: #f7e9e3;
+  --danger-line: #e6c3b6;
+  --danger-ink: #8a3a2e;
+  /* ===== RADII ===== */
+  --r-card: 18px;
+  --r-panel: 16px;
+  --r-lg: 14px;
+  --r-md: 12px;
+  --r-control: 11px;
+  --r-input: 10px;
+  --r-sm: 9px;
+  --r-chip: 8px;
+  --r-xs: 7px;
+  --r-2xs: 6px;
+  --r-3xs: 5px;
+
+  display: block;
+  font-family: var(--sans);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* The app leans on a global `* { box-sizing }`; that page rule can't reach the
+   shadow tree, so re-establish it here for the widget's own subtree. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}

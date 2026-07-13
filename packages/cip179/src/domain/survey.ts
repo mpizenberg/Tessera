@@ -61,14 +61,28 @@ export interface SurveyAggregate {
   readonly cancellationClaimed: boolean;
 }
 
+/**
+ * Lifecycle from the chain tip alone, ignoring cancellation. Responses are
+ * accepted through `endEpoch` **inclusive**, so a survey is `"ended"` only once
+ * the tip has moved *past* it. Callers fold in cancellation separately: the
+ * aggregate via {@link statusOf}, an embedding host via its own cancellation
+ * flag (it has only the definition's `endEpoch` and a chain-tip epoch, not the
+ * full records snapshot the aggregate needs).
+ */
+export function surveyStatus(
+  endEpoch: number,
+  tipEpoch: number,
+): "active" | "ended" {
+  return tipEpoch > endEpoch ? "ended" : "active";
+}
+
 function statusOf(
   endEpoch: number,
   cancelled: boolean,
   tipEpoch: number,
 ): SurveyStatus {
   if (cancelled) return "cancelled";
-  // Responses are accepted through end_epoch inclusive.
-  return tipEpoch > endEpoch ? "ended" : "active";
+  return surveyStatus(endEpoch, tipEpoch);
 }
 
 /**

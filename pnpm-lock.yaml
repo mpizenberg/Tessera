@@ -171,6 +171,37 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@25.9.4)
 
+  packages/respond-widget:
+    dependencies:
+      '@tessera/respond-core':
+        specifier: workspace:*
+        version: link:../respond-core
+      cip-179:
+        specifier: workspace:*
+        version: link:../cip179
+      solid-js:
+        specifier: ^1.9.0
+        version: 1.9.13
+    devDependencies:
+      '@evolution-sdk/evolution':
+        specifier: ^0.5.9
+        version: 0.5.9(@effect/cluster@0.58.2(@effect/platform@0.96.2(effect@3.21.4))(@effect/rpc@0.75.1(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))(@effect/workflow@0.18.2(@effect/experimental@0.60.0(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))(@effect/platform@0.96.2(effect@3.21.4))(@effect/rpc@0.75.1(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))(effect@3.21.4))(effect@3.21.4))(@effect/rpc@0.75.1(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))(@effect/platform@0.96.2(effect@3.21.4))(effect@3.21.4))
+      '@mattpiz/tlock-js':
+        specifier: 0.10.0
+        version: 0.10.0
+      '@types/node':
+        specifier: ^25.9.3
+        version: 25.9.4
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vite:
+        specifier: ^6.0.0
+        version: 6.4.3(@types/node@25.9.4)(tsx@4.22.4)
+      vite-plugin-solid:
+        specifier: ^2.11.0
+        version: 2.11.12(solid-js@1.9.13)(vite@6.4.3(@types/node@25.9.4)(tsx@4.22.4))
+
   packages/verifier:
     dependencies:
       '@evolution-sdk/evolution':

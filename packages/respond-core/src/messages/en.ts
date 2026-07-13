@@ -3,12 +3,15 @@
  * truth every other locale's shape is checked against (`RespondMessages =
  * typeof en`, see ./types.ts).
  *
- * Two namespaces, `respond` (the answering UI) and `roles` (role explanations),
- * ported from the app's `i18n/en/respond.ts` + `roles.ts`. This is a **subset**:
- * strings for concerns the widget doesn't own — wallet connection, network
- * conformance, IPFS/rationale pinning, chain fetch/loading, submit progress and
- * navigation — stay in the host app and are intentionally absent here. The exact
- * set is finalized when the trimmed component lands (milestone 4).
+ * Three namespaces: `respond` (the answering UI), `roles` (role explanations),
+ * and `validation` (the structured cip-179 problem codes the widget renders when
+ * it emits `tessera:invalid`). The first two are ported from the app's
+ * `i18n/en/respond.ts` + `roles.ts` as a **subset** — strings for concerns the
+ * widget doesn't own (wallet connection, network conformance, IPFS/rationale
+ * pinning, chain fetch/loading, submit progress and navigation) stay in the host
+ * app and are intentionally absent. `validation` carries only the `response.*`
+ * and `answer.*` codes `validateResponse` can emit (the widget doesn't create
+ * surveys, so the `definition.*`/`question.*` codes are omitted).
  *
  * Messages are whole phrases with `{token}` placeholders filled at call time by
  * `I18n.t(key, params)`; a host can override or extend any subtree via the
@@ -134,6 +137,48 @@ const en = {
       "Any ada holder with a stake key — claimed in-browser by your connected wallet.",
     keyholder:
       "Anyone with a wallet — claimed in-browser with your payment (spending) key; no registration or on-chain activity needed.",
+  },
+
+  // Localized renderings of the cip-179 structured problems `validateResponse`
+  // can emit. Keyed by `ValidationProblemCode` (e.g. code
+  // "answer.optionIndexOutOfRange" → `validation.answer.optionIndexOutOfRange`);
+  // `{where}` is a machine locator (e.g. `answers[0]`) shown verbatim, never
+  // translated. Ported from the app's `i18n/en/validation.ts` (response + answer
+  // subtrees only).
+  validation: {
+    response: {
+      specVersionMismatch:
+        "response spec_version {actual} != survey {expected}",
+      roleNotEligible: "role {role} is not in the survey's eligible_roles",
+      sealedRequired: "sealed survey requires a sealed (ciphertext) response",
+      publicRequired: "public survey requires public (plaintext) answers",
+      sealedCiphertextEmpty: "sealed response ciphertext is empty",
+      duplicateAnswer: "{where}: duplicate answer for question {questionIndex}",
+      questionIndexOutOfRange:
+        "{where}: question index {questionIndex} out of range",
+      requiredNotAnswered: "required question {questionIndex} is not answered",
+    },
+    answer: {
+      typeMismatch:
+        '{where}: answer type "{answerType}" does not match question type "{questionType}"',
+      optionIndexOutOfRange: "{where}: option index {index} out of range",
+      optionIndicesOutOfRange: "{where}: option index out of range",
+      duplicateOptionIndices: "{where}: duplicate option indices",
+      selectionCountOutOfRange:
+        "{where}: selection count {count} not in [{min}, {max}]",
+      duplicateRankedIndices: "{where}: duplicate ranked indices",
+      rankedIndexOutOfRange: "{where}: ranked index out of range",
+      rankedCountOutOfRange:
+        "{where}: ranked count {count} not in [{min}, {max}]",
+      valueOutOfRange: "{where}: value {value} out of range",
+      valueStepMismatch: "{where}: value {value} does not satisfy step {step}",
+      pointsNegative: "{where}: points must be >= 0",
+      pointsSumMismatch: "{where}: points sum {sum} != budget {budget}",
+      ratingInvalid:
+        "{where}.ratings[{index}]: rating {rating} invalid for scale",
+      ratingRequireAll:
+        "{where}: require_all rating must cover all {count} options, got {got}",
+    },
   },
 };
 

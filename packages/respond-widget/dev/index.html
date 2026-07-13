@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>&lt;tessera-respond&gt; — dev harness</title>
+    <style>
+      :root {
+        --bg: #f4efe3;
+        --ink: #23201a;
+        --muted: #6b6356;
+        --line: #e7e0d0;
+        --accent: #bc5b33;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: system-ui, sans-serif;
+      }
+      .page {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 24px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 420px;
+        gap: 24px;
+        align-items: start;
+      }
+      @media (max-width: 920px) {
+        .page {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 4px;
+      }
+      .sub {
+        color: var(--muted);
+        font-size: 13px;
+        margin: 0 0 16px;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+      .group {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        margin-right: 12px;
+      }
+      .group b {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+      button[data-sample],
+      button[data-locale] {
+        font: inherit;
+        font-size: 12.5px;
+        font-weight: 600;
+        cursor: pointer;
+        border-radius: 8px;
+        padding: 6px 11px;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--muted);
+      }
+      button.active {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: #fff;
+      }
+      .frame {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 18px 20px;
+      }
+      .aside {
+        position: sticky;
+        top: 24px;
+      }
+      .aside h2 {
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        margin: 0 0 8px;
+      }
+      #change {
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        font-size: 11.5px;
+        color: var(--muted);
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      #log {
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        font-size: 11.5px;
+        line-height: 1.5;
+        color: var(--ink);
+        background: #1c2536;
+        color: #d7dde8;
+        border-radius: 10px;
+        padding: 12px 14px;
+        margin-top: 12px;
+        min-height: 240px;
+        max-height: 60vh;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div>
+        <h1>&lt;tessera-respond&gt; dev harness</h1>
+        <p class="sub">
+          Milestone 4 — <code>RespondRoot</code> mounted in a shadow root with
+          plain sample props. Submit to emit <code>tessera:response</code>; the
+          sealed sample timelock-encrypts fully offline.
+        </p>
+        <div class="controls">
+          <div class="group">
+            <b>Survey</b>
+            <button data-sample="public" class="active">Public</button>
+            <button data-sample="sealed">Sealed</button>
+            <button data-sample="closed">Closed</button>
+            <button data-sample="ineligible">Ineligible</button>
+          </div>
+          <div class="group">
+            <b>Locale</b>
+            <button data-locale="en" class="active">en</button>
+            <button data-locale="fr">fr</button>
+          </div>
+        </div>
+        <div class="frame">
+          <div id="mount"></div>
+        </div>
+      </div>
+
+      <div class="aside">
+        <h2>Emitted events</h2>
+        <div id="change">tessera:change → (waiting…)</div>
+        <pre id="log"></pre>
+      </div>
+    </div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

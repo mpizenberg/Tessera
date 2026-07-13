@@ -22,6 +22,11 @@ published. Keep adding entries here until release.
 
 ### Added
 
+- `surveyStatus(endEpoch, tipEpoch)` (in `./domain`) — the tip-only
+  active/ended lifecycle rule, factored out of the internal `statusOf` so an
+  embedding host (e.g. the `<tessera-respond>` widget) can gate open/closed from
+  just the definition's `endEpoch` and a chain-tip epoch, without the full
+  records snapshot `aggregate` needs. No behavior change to `aggregate`.
 - `ValidationProblem` and `ValidationProblemCode` types.
 - `VALIDATION_PROBLEM_CODES` — the frozen set of every code the validators can
   emit (stable identifiers a UI maps to localized messages).

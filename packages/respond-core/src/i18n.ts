@@ -17,6 +17,8 @@
  * flags the misconfiguration (UI text will render in English).
  */
 
+import type { ValidationProblem } from "cip-179";
+
 import en from "./messages/en.js";
 import fr from "./messages/fr.js";
 import type {
@@ -154,4 +156,15 @@ export function createI18n(opts: CreateI18nOptions = {}): I18n {
       return f.format(new Date(unixSeconds * 1000));
     },
   };
+}
+
+/**
+ * Localized one-line rendering of a cip-179 {@link ValidationProblem}: maps its
+ * stable `code` to the `validation.<code>` catalog leaf and interpolates the
+ * problem's `params` (the `{where}` locator is passed through verbatim). Mirrors
+ * the app's `~/i18n/problem.ts`; the widget uses it to fill `tessera:invalid`'s
+ * `messages` from the same catalog it renders everything else with.
+ */
+export function renderProblem(i18n: I18n, problem: ValidationProblem): string {
+  return i18n.t(`validation.${problem.code}` as MsgKey, problem.params);
 }
