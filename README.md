@@ -61,6 +61,18 @@ The app serves at http://127.0.0.1:3000, reading chain data through the local
 backend — **no Koios token needed**, for reads or for building transactions
 (they are signed and submitted by your CIP-30 wallet).
 
+To avoid retyping the prefix every run, put it in a git-ignored
+`frontend/app/.env.local` instead — Vite loads it in every mode, so a plain
+`pnpm --filter tessera-app dev` picks it up:
+
+```sh
+# frontend/app/.env.local
+VITE_INDEXER_URL=http://localhost:8787
+```
+
+Without it (a bare `pnpm dev` and no `.env` override), the app falls back to
+Direct mode and browser reads to Koios are CORS-blocked — see below.
+
 Alternatively, skip the backend and let the browser scan [Koios][koios]
 directly (the power-user/offline path) by leaving `VITE_INDEXER_URL` unset.
 That path requires an authenticated Koios token (tier 1 is free): the anonymous
