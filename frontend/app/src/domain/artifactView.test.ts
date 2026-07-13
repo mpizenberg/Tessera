@@ -193,7 +193,12 @@ describe("resultRoleViews", () => {
   ];
 
   it("chain weighting: sums voted weight and derives turnout only when a total exists", () => {
-    const [stakeholder, keyholder] = resultRoleViews(artifact, def, [], "chain");
+    const [stakeholder, keyholder] = resultRoleViews(
+      artifact,
+      def,
+      [],
+      "chain",
+    );
     expect(stakeholder).toMatchObject({
       role: 3,
       responderCount: 2,

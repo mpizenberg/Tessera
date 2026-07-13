@@ -3,4 +3,5 @@ node_modules
 coverage
 pnpm-lock.yaml
 frontend/app/src/tlock/vendor/tlock.js
+frontend/cip-179.md
 backend/deps
