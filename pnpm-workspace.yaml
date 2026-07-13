@@ -3,6 +3,7 @@ packages:
   - packages/cip179
   - packages/core
   - packages/koios
+  - packages/respond-core
   - packages/verifier
   - backend/server
 

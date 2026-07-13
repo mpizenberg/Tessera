@@ -61,13 +61,17 @@ import {
   type SurveyAggregate,
   type SurveyRecord,
 } from "cip-179/domain";
-import { claimableRoles } from "~/domain/roles";
+import { claimableRoles } from "@tessera/respond-core";
 import {
   connectWallet,
   isWalletEnabled,
   listInstalledWallets,
 } from "~/wallet/cip30";
-import type { ConnectedWallet, InstalledWallet } from "~/wallet/types";
+import {
+  toResponderIdentity,
+  type ConnectedWallet,
+  type InstalledWallet,
+} from "~/wallet/types";
 import {
   applyPresentation,
   parsePresentation,
@@ -571,7 +575,7 @@ export const AppProvider: ParentComponent = (props) => {
     try {
       const w = await connectWallet(key);
       setWallet(w);
-      setActiveRole(claimableRoles(w.identity)[0] ?? null);
+      setActiveRole(claimableRoles(toResponderIdentity(w.identity))[0] ?? null);
       storeLastWallet(key);
     } catch (e) {
       if (silent) clearLastWallet();
@@ -640,7 +644,7 @@ export const AppProvider: ParentComponent = (props) => {
     disconnect,
     claimableRoles: () => {
       const w = wallet();
-      return w ? claimableRoles(w.identity) : [];
+      return w ? claimableRoles(toResponderIdentity(w.identity)) : [];
     },
     activeRole,
     setActiveRole,

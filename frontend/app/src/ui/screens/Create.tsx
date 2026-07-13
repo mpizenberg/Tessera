@@ -20,7 +20,7 @@ import {
 
 import { useApp } from "~/state";
 import type { Network } from "~/config";
-import { walletCredToCip179 } from "~/domain/roles";
+import { walletCredToCip179 } from "@tessera/respond-core";
 import {
   QUESTION_TYPES,
   buildDefinition,

@@ -34,7 +34,6 @@ import {
   hexToBytes,
   type SurveyAggregate,
 } from "cip-179/domain";
-import { respondableRoles, roleCredential } from "~/domain/roles";
 import {
   buildResponse,
   buildSealedResponse,
@@ -44,9 +43,11 @@ import {
   initDraft,
   optionCount,
   prefillDrafts,
+  respondableRoles,
+  roleCredential,
   type Draft,
   type DraftValue,
-} from "~/domain/respond";
+} from "@tessera/respond-core";
 import { usePresentation } from "~/enrichment/usePresentation";
 import { IPFS_PROVIDERS } from "~/enrichment/providers";
 import { OnchainPreview } from "~/ui/components/OnchainPreview";
@@ -69,7 +70,7 @@ import {
   shortRef,
   viewStatus,
 } from "~/ui/format";
-import type { WalletIdentity } from "~/wallet/types";
+import { toResponderIdentity, type WalletIdentity } from "~/wallet/types";
 import { t, n } from "~/i18n";
 import { problemText } from "~/i18n/problem";
 import css from "./Respond.module.css";
@@ -119,7 +120,7 @@ export const Respond: Component = () => {
   const respondable = createMemo<Role[]>(() => {
     const def = definition();
     const id = identity();
-    return def && id ? respondableRoles(def, id) : [];
+    return def && id ? respondableRoles(def, toResponderIdentity(id)) : [];
   });
 
   // Role we respond as: honor the header's active role if it's respondable here,
@@ -138,7 +139,9 @@ export const Respond: Component = () => {
   const credential = createMemo<Credential | null>(() => {
     const id = identity();
     const r = role();
-    return id && r !== null ? (roleCredential(id, r) ?? null) : null;
+    return id && r !== null
+      ? (roleCredential(toResponderIdentity(id), r) ?? null)
+      : null;
   });
 
   // The wallet's prior public response for (this survey, role, credential).

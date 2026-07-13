@@ -72,6 +72,9 @@ importers:
       '@tessera/koios':
         specifier: workspace:*
         version: link:../../packages/koios
+      '@tessera/respond-core':
+        specifier: workspace:*
+        version: link:../../packages/respond-core
       cip-179:
         specifier: workspace:*
         version: link:../../packages/cip179
@@ -138,6 +141,19 @@ importers:
       '@tessera/core':
         specifier: workspace:*
         version: link:../core
+      cip-179:
+        specifier: workspace:*
+        version: link:../cip179
+    devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@25.9.4)
+
+  packages/respond-core:
+    dependencies:
       cip-179:
         specifier: workspace:*
         version: link:../cip179
