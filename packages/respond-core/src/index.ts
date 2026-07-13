@@ -9,6 +9,7 @@
  * - `roles.ts`: wallet-derivable role/credential logic over `ResponderIdentity`.
  * - `eligibility.ts`: eligibility including host-trusted SPO/CC credentials.
  * - `i18n.ts`: the side-effect-free `createI18n` factory + bundled `en`/`fr`.
+ * - `seal.ts`: the lazy sealed-submission wrapper (tlock + evolution CBOR).
  *
  * No I/O, no framework — everything a codec type away from `cip-179`.
  *
@@ -20,3 +21,4 @@ export * from "./roles.js";
 export * from "./eligibility.js";
 export * from "./draft.js";
 export * from "./i18n.js";
+export * from "./seal.js";

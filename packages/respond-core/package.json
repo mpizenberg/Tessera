@@ -21,7 +21,21 @@
   "dependencies": {
     "cip-179": "workspace:*"
   },
+  "peerDependencies": {
+    "@evolution-sdk/evolution": "^0.5.9",
+    "@mattpiz/tlock-js": "0.10.0"
+  },
+  "peerDependenciesMeta": {
+    "@evolution-sdk/evolution": {
+      "optional": true
+    },
+    "@mattpiz/tlock-js": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@evolution-sdk/evolution": "^0.5.9",
+    "@mattpiz/tlock-js": "0.10.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   }
