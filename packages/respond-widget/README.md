@@ -26,8 +26,9 @@ yours.
 | Open/closed gating from the tip; quicknet check for a sealed survey  | **Widget** (`surveyStatus` from `cip-179/domain`) |
 
 The widget hands you a validated (and, if sealed, already-encrypted) payload. You
-are responsible only for attaching it at metadata label 17, adding the declared
-credentials to `required_signers`, signing, and submitting.
+are responsible only for attaching it at metadata label 17, **proving** each
+declared credential through the carrying transaction (see
+[Proving credentials](#proving-credentials)), signing, and submitting.
 
 ## Two ways to consume it
 
@@ -74,7 +75,8 @@ chunks to inline and defeat the whole point. Script-tag hosts therefore use
   el.addEventListener("tessera:response", async (e) => {
     const { payload, proveCredentials } = e.detail;
     // 1. attach `payload` at metadata label 17
-    // 2. add each proveCredentials[i].credential to required_signers
+    // 2. prove each proveCredentials[i].credential in the tx — via
+    //    required_signers (mechanism A) or a governance vote (mechanism B)
     // 3. sign with the wallet, submit
   });
 </script>
@@ -90,8 +92,8 @@ intended pattern; it upgrades and connects before your script runs.
 For a full **bundler + wallet + real submission** example, see the reference host
 in the app: [`frontend/app/src/ui/screens/DevWidgetHost.tsx`](../../frontend/app/src/ui/screens/DevWidgetHost.tsx).
 It embeds `<tessera-respond>` exactly as a third-party integrator would and closes
-the loop the widget leaves open — mapping `proveCredentials` to `required_signers`
-and signing + submitting through a CIP-30 wallet.
+the loop the widget leaves open — proving `proveCredentials` via `required_signers`
+(mechanism A) and signing + submitting through a CIP-30 wallet.
 
 ## Props
 
@@ -135,22 +137,44 @@ interface RespondResult {
   role: Role;
   credential: Credential;
   payload: Metadatum; // attach at metadata label 17
-  proveCredentials: CredentialProof[]; // add each to required_signers
+  proveCredentials: CredentialProof[]; // prove each in the carrying tx
   sealed: boolean;
 }
 
 interface CredentialProof {
   credential: Credential;
-  keyKind: "payment" | "stake" | "drep" | "pool" | "cc"; // which key must sign
+  keyKind: "payment" | "stake" | "drep" | "pool" | "cc"; // which key proves it
 }
 ```
 
 `payload` is a generic `Metadatum` tree (**not** CBOR bytes) — hand it to your
 Cardano library's metadatum serializer at label 17. Each `proveCredentials` entry
-tells you which credential to add to `required_signers` and, via `keyKind`, which
-key the wallet must sign with (e.g. the stake key when answering as Stakeholder).
-See the wallet write path in `frontend/app/src/wallet/submit.ts` for a worked
-reference (`submitMetadataTx` adds each credential via `tx.addSigner`).
+names a credential the transaction must **prove** control of, and `keyKind` tells
+you which key does so (e.g. the stake key when answering as Stakeholder).
+
+### Proving credentials
+
+CIP-179 authenticates a response's credential through its carrying transaction by
+**either** of two mechanisms — the widget only _declares_ the credentials; **how**
+you prove them is yours:
+
+- **Mechanism A** — put the credential in the transaction's `required_signers`
+  (or satisfy its native script in the witness set). Works for every role. This is
+  the simple, always-available path, and what the reference host does via
+  `frontend/app/src/wallet/submit.ts` (`submitMetadataTx` adds each credential with
+  `tx.addSigner`).
+- **Mechanism B** (governance-linked surveys only) — the **same transaction**
+  casts a qualifying **governance vote** with that very credential on one of the
+  survey's linked actions, the Conway voter tag matching the claimed role (CC,
+  DRep, SPO). No `required_signers` entry is then needed for it — the vote binding
+  is the proof. Only DRep / SPO / CC can bind this way; Stakeholder and Keyholder
+  have no voter tag and must use mechanism A.
+
+So a DRep answering a governance-linked survey in the very transaction that votes
+on its linked action is already proven by that vote (mechanism B); in any other
+case, add the credential to `required_signers` (mechanism A). `keyKind` is the same
+hint either way — it tells you which key signs, whether that signature lands in
+`required_signers` or in the vote's witness.
 
 ## The responder & eligibility
 
@@ -220,8 +244,10 @@ against a survey bundle.
 The widget deliberately leaves these to you:
 
 1. **Attach + submit.** On `tessera:response`, put `payload` at metadata label 17,
-   add each `proveCredentials[].credential` to `required_signers`, sign with the
-   indicated key kinds, and submit.
+   prove each `proveCredentials[].credential` in the transaction — via
+   `required_signers` or a governance-vote binding (see
+   [Proving credentials](#proving-credentials)) — sign with the indicated key
+   kinds, and submit.
 2. **Network conformance.** The slim identity carries no network id, so the widget
    can't tell whether the wallet is on the wrong chain. Check
    `walletNetworkId === targetNetwork` before you submit.
