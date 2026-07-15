@@ -79,6 +79,7 @@ const [layout, setLayout] = createSignal<"one-per-screen" | "list">(
   "one-per-screen",
 );
 const [themeName, setThemeName] = createSignal("default");
+const [fontName, setFontName] = createSignal("default");
 
 // `theme`-prop demo: re-skins the accent (and the DRep chip that follows it)
 // without touching any CSS. "default" is an empty override set, so switching
@@ -140,6 +141,20 @@ const THEMES: Record<string, Record<string, string>> = {
   },
 };
 
+// Font demo: the widget never loads fonts (that's the host page's job), it
+// only names them via the --tessera-{sans,mono,serif} tokens — so this
+// harness, which loads no webfonts, shows the system fallbacks by default and
+// re-fonts the whole widget from system families here. Merged with the color
+// theme below: both are just token overrides on the same prop.
+const FONTS: Record<string, Record<string, string>> = {
+  default: {},
+  bookish: {
+    sans: "Georgia, 'Times New Roman', serif",
+    serif: "'Palatino Linotype', Palatino, Georgia, serif",
+    mono: "'Courier New', monospace",
+  },
+};
+
 render(
   () => (
     <RespondRoot
@@ -153,7 +168,7 @@ render(
       cancelled={sample() === "cancelled"}
       locale={locale()}
       layout={layout()}
-      theme={THEMES[themeName()] ?? {}}
+      theme={{ ...THEMES[themeName()], ...FONTS[fontName()] }}
     />
   ),
   shadow,
@@ -183,6 +198,12 @@ for (const btn of document.querySelectorAll<HTMLButtonElement>(
   btn.addEventListener("click", () => {
     setLayout(btn.dataset.layout as "one-per-screen" | "list");
     syncActive("data-layout", btn.dataset.layout!);
+  });
+}
+for (const btn of document.querySelectorAll<HTMLButtonElement>("[data-font]")) {
+  btn.addEventListener("click", () => {
+    setFontName(btn.dataset.font!);
+    syncActive("data-font", btn.dataset.font!);
   });
 }
 for (const btn of document.querySelectorAll<HTMLButtonElement>(
