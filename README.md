@@ -36,15 +36,17 @@ served document matches the on-chain hash.
 
 ## Repository layout
 
-| Path                | What it is                                                                                                                                                                                                     |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `frontend/app`      | The browser app — [SolidJS][solid] + [Vite][vite] + TypeScript.                                                                                                                                                |
-| `packages/cip179`   | The reusable `cip-179` package: label-17 codec plus the cross-implementation domain / tally / txproof / tlock surface.                                                                                         |
-| `packages/core`     | Tessera app core (`@tessera/core`): the `DataSource` seam, Explore list/health payloads, keyset paging, the survey-list aggregation adapter, and config. The reusable domain/tally surface lives in `cip-179`. |
-| `packages/koios`    | The Koios read path (`KoiosDataSource`, tally inputs), shared by direct mode, backend, and verifier.                                                                                                           |
-| `packages/verifier` | Standalone CLI that re-derives a survey's result artifact from chain data and checks its content hash.                                                                                                         |
-| `backend/server`    | Tier-1 serving backend: cached chain reads, response validation, weight snapshots, artifact finalization. Node or CF+D1.                                                                                       |
-| `backend/deps`      | Indexer submodules (Adder / Yaci Store / Oura) for a future Tier-2; design notes in `backend/*.md`.                                                                                                            |
+| Path                      | What it is                                                                                                                                                                                                     |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `frontend/app`            | The browser app — [SolidJS][solid] + [Vite][vite] + TypeScript.                                                                                                                                                |
+| `packages/cip179`         | The reusable `cip-179` package: label-17 codec plus the cross-implementation domain / tally / txproof / tlock surface.                                                                                         |
+| `packages/core`           | Tessera app core (`@tessera/core`): the `DataSource` seam, Explore list/health payloads, keyset paging, the survey-list aggregation adapter, and config. The reusable domain/tally surface lives in `cip-179`. |
+| `packages/koios`          | The Koios read path (`KoiosDataSource`, tally inputs), shared by direct mode, backend, and verifier.                                                                                                           |
+| `packages/respond-core`   | `@tessera/respond-core`: the pure, framework-free answering core (drafting, role/eligibility, i18n factory, lazy sealed wrapper) shared by the app and the widget.                                             |
+| `packages/respond-widget` | `@tessera/respond-widget`: the embeddable `<tessera-respond>` custom element — answer a survey anywhere, emitting a ready-to-attach label-17 payload. Framework-agnostic; wallets/chain stay host-side.        |
+| `packages/verifier`       | Standalone CLI that re-derives a survey's result artifact from chain data and checks its content hash.                                                                                                         |
+| `backend/server`          | Tier-1 serving backend: cached chain reads, response validation, weight snapshots, artifact finalization. Node or CF+D1.                                                                                       |
+| `backend/deps`            | Indexer submodules (Adder / Yaci Store / Oura) for a future Tier-2; design notes in `backend/*.md`.                                                                                                            |
 
 ## Quick start
 
@@ -98,7 +100,8 @@ entered in Settings, stored only in the browser.
 ## Development
 
 The repo is a pnpm workspace (`frontend/app`, `packages/cip179`,
-`packages/core`, `packages/koios`, `packages/verifier`, `backend/server`).
+`packages/core`, `packages/koios`, `packages/respond-core`,
+`packages/respond-widget`, `packages/verifier`, `backend/server`).
 Packages are consumed from TypeScript source (Vite aliases / `exports` pointing
 at `src`), so cross-package edits are live with no build step.
 
