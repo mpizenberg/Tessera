@@ -1,0 +1,268 @@
+/* Dev-only reference-host chrome (plan §7). Deliberately un-localized — this
+   page is a developer tool, not a shipped screen. Colours use the app tokens so
+   it sits visually alongside the rest of the app. */
+
+.page {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 24px 20px 96px;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+.back:hover {
+  color: var(--ink);
+}
+.backArrow {
+  font-size: 15px;
+}
+
+/* --- dev banner ---------------------------------------------------------- */
+
+.devBanner {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  border: 1px dashed var(--accent-line);
+  background: var(--accent-bg-soft);
+  border-radius: var(--r-panel);
+  padding: 14px 16px;
+  margin-bottom: 20px;
+}
+.devTag {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #fff;
+  background: var(--accent);
+  border-radius: var(--r-xs);
+  padding: 3px 7px;
+  margin-top: 1px;
+}
+.devBannerBody {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--body);
+}
+.devBannerBody code {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: var(--surface2);
+  border-radius: var(--r-2xs);
+  padding: 1px 5px;
+}
+.devBannerBody a {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+.devBannerBody a:hover {
+  text-decoration: underline;
+}
+
+/* --- layout controls ----------------------------------------------------- */
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.controlsLabel {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-right: 4px;
+}
+.controlBtn {
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+}
+.controlBtnOn {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+/* --- split: widget | log ------------------------------------------------- */
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.widgetFrame {
+  border: 1px solid var(--card-line);
+  background: var(--card-bg);
+  border-radius: var(--r-card);
+  padding: 18px 20px;
+}
+
+.connectPrompt {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 24px 4px;
+  text-align: center;
+}
+
+/* --- integration log panel ---------------------------------------------- */
+
+.panel {
+  position: sticky;
+  top: 16px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: var(--r-panel);
+  padding: 14px 16px;
+}
+.panelTitle {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 0 0 12px;
+}
+.panelWarn,
+.panelError,
+.panelNote {
+  font-size: 12.5px;
+  line-height: 1.5;
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+.panelWarn {
+  color: var(--warn);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-line);
+}
+.panelError {
+  color: var(--danger-ink);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-line);
+}
+.panelNote {
+  color: var(--muted);
+  background: var(--surface2);
+}
+
+.logBlock {
+  margin-bottom: 12px;
+}
+.logBlock:last-child {
+  margin-bottom: 0;
+}
+.logLabel {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.logBody {
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--body);
+  background: var(--surface2);
+  border-radius: var(--r-xs);
+  padding: 8px 10px;
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* --- submitted panel ----------------------------------------------------- */
+
+.submitted {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  border: 1px solid var(--ok-line);
+  background: var(--ok-bg);
+  border-radius: var(--r-card);
+  padding: 40px 24px;
+}
+.submittedCheck {
+  font-size: 30px;
+  color: var(--ok);
+}
+.submittedTitle {
+  font-size: 18px;
+  margin: 0;
+  color: var(--ink);
+}
+.submittedText {
+  font-size: 14px;
+  color: var(--muted);
+  margin: 0;
+  max-width: 42ch;
+}
+.submittedTx {
+  margin-top: 4px;
+}
+.submittedLink {
+  margin-top: 8px;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 14px;
+  text-decoration: none;
+}
+.submittedLink:hover {
+  text-decoration: underline;
+}
+
+/* --- empty / loading ----------------------------------------------------- */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 14px;
+  padding: 48px 0;
+}
+.emptyError {
+  color: var(--danger-ink);
+}
+.retry {
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}

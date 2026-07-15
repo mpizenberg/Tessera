@@ -246,13 +246,27 @@ export const Survey: Component = () => {
                 viewStatus(sv()) === "public" || viewStatus(sv()) === "sealed"
               }
             >
-              <A
-                href={`/survey/${encodeURIComponent(key())}/respond`}
-                class={css.respondCta}
-              >
-                {t("survey.respondCta")}{" "}
-                <span class={css.respondCtaArrow}>→</span>
-              </A>
+              <div class={css.respondCtaRow}>
+                <A
+                  href={`/survey/${encodeURIComponent(key())}/respond`}
+                  class={css.respondCta}
+                >
+                  {t("survey.respondCta")}{" "}
+                  <span class={css.respondCtaArrow}>→</span>
+                </A>
+                {/* Dev-only: answer the same survey through the embeddable
+                    <tessera-respond> widget instead, via the reference-host
+                    page. Never present in production (see App.tsx). */}
+                {import.meta.env.DEV && (
+                  <A
+                    href={`/dev/widget/${encodeURIComponent(key())}`}
+                    class={css.respondDevCta}
+                  >
+                    <span class={css.respondDevTag}>DEV</span> Respond via
+                    widget
+                  </A>
+                )}
+              </div>
             </Show>
 
             <Show
