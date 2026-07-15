@@ -260,6 +260,48 @@ describe("built <tessera-respond> artifact", () => {
     expect(validateResponse(def, payload.responses[0]!)).toEqual([]);
   });
 
+  it("shows the cancelled notice when the host flags cancellation", () => {
+    // Cancellation is an on-chain fact only the host can observe (a tag-2
+    // message) — it arrives via the `cancelled` prop, not `surveyStatus`.
+    const el = mount(SAMPLES.public, { cancelled: true });
+    const root = shadow(el);
+    expect(root.querySelector(".noticeTitle")?.textContent).toBe(
+      "This survey was cancelled",
+    );
+    expect(root.querySelector(".card")).toBe(null);
+    expect(root.querySelector(".submitBtn")).toBe(null);
+  });
+
+  it("answers as SPO from a host-supplied credential, wallet-free", async () => {
+    // Proving credentials is out of the widget's scope — a host that vouches
+    // for an SPO credential (via `hostCredentials`, even with no wallet
+    // identity at all) gets the full answering flow, and the credential comes
+    // back in `proveCredentials` for the host's required_signers.
+    const spoCred = {
+      type: "key",
+      keyHash: hexToBytes("dd".repeat(28)),
+    } as const;
+    const def: SurveyDefinition = {
+      ...oneQuestionDef({ type: "public" }),
+      eligibleRoles: [Role.SPO],
+    };
+    const el = mount(def, {
+      responder: { hostCredentials: { [Role.SPO]: spoCred } },
+    });
+    const root = shadow(el);
+    click(root, ".optionRow");
+    const responded = once(el, "tessera:response");
+    click(root, ".submitBtn");
+    const detail = (await responded).detail as RespondResult;
+
+    expect(detail.role).toBe(Role.SPO);
+    expect(detail.credential).toEqual(spoCred);
+    expect(detail.proveCredentials).toEqual([
+      { credential: spoCred, keyKind: "pool" },
+    ]);
+    expect(decodePayload(detail.payload).type).toBe("responses");
+  });
+
   it("lazy-loads the sealed chunks and emits a real ciphertext", async () => {
     const paddingSize = 512;
     const def = oneQuestionDef({

@@ -15,6 +15,7 @@ import { RespondRoot, adoptWidgetStyles } from "../src/index";
 import {
   SAMPLES,
   responder,
+  spoResponder,
   surveyRef,
   TIP_EPOCH,
   type SampleKey,
@@ -98,8 +99,12 @@ render(
     <RespondRoot
       definition={SAMPLES[sample()]}
       surveyRef={surveyRef}
-      responder={responder}
+      // The SPO sample's host vouches for a pool credential the wallet can't
+      // hold — that's what makes its SPO/CC-only survey answerable.
+      responder={sample() === "spo" ? spoResponder : responder}
       tipEpoch={TIP_EPOCH}
+      // Cancellation is a host-observed on-chain fact, passed as a prop.
+      cancelled={sample() === "cancelled"}
       locale={locale()}
       layout={layout()}
       theme={THEMES[themeName()] ?? {}}

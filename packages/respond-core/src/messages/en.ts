@@ -32,7 +32,8 @@ const en = {
     ineligibleTitle: "You can't respond to this survey",
     ineligibleLead:
       "It's open only to the roles below, and your identity can't claim any of them here. Here's what each one means:",
-    notClaimable: " Not claimable in a browser wallet.",
+    notClaimable:
+      " Browser wallets can't hold this credential — the site must supply it.",
 
     // --- Header ------------------------------------------------------------
     respondLabel: "Respond",

@@ -23,7 +23,8 @@ const fr: RespondMessages = {
     ineligibleTitle: "Vous ne pouvez pas répondre à ce sondage",
     ineligibleLead:
       "Elle n'est ouverte qu'aux rôles ci-dessous, et votre identité ne peut en revendiquer aucun ici. Voici ce que signifie chacun :",
-    notClaimable: " Non revendicable dans un portefeuille de navigateur.",
+    notClaimable:
+      " Un portefeuille de navigateur ne peut pas détenir ce justificatif — le site doit le fournir.",
 
     // --- Header ------------------------------------------------------------
     respondLabel: "Répondre",

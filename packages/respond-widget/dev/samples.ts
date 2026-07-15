@@ -39,6 +39,17 @@ export const responder: Responder = {
   },
 };
 
+/**
+ * The same wallet, on a host that also vouches for an SPO credential (a pool
+ * cold key hash a browser wallet can't hold). The widget trusts it, lets the
+ * user answer as SPO, and hands the credential back in `proveCredentials` —
+ * proving it (via required_signers) stays the host's job.
+ */
+export const spoResponder: Responder = {
+  ...responder,
+  hostCredentials: { [Role.SPO]: keyCred("dd".repeat(28)) },
+};
+
 /** Current chain tip — before every sample's `endEpoch` except `closed`. */
 export const TIP_EPOCH = 500;
 
@@ -139,8 +150,18 @@ export const SAMPLES = {
     },
   }),
   closed: makeDef({ title: "Closed demo survey", endEpoch: 400 }),
+  // Cancellation isn't in the definition (or `surveyStatus`) — it's an
+  // on-chain tag-2 message only the host can observe, passed to the widget as
+  // the `cancelled` prop. main.tsx sets it for this sample.
+  cancelled: makeDef({ title: "Cancelled demo survey" }),
   ineligible: makeDef({
     title: "SPO/CC-only demo survey",
+    eligibleRoles: [Role.SPO, Role.CC],
+  }),
+  // Same SPO/CC-only gate, but main.tsx pairs this sample with `spoResponder`
+  // (host-supplied SPO credential) — so it's answerable, unlike `ineligible`.
+  spo: makeDef({
+    title: "SPO/CC-only demo survey (host credential)",
     eligibleRoles: [Role.SPO, Role.CC],
   }),
 } satisfies Record<string, SurveyDefinition>;
