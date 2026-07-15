@@ -167,6 +167,51 @@ describe("built <tessera-respond> artifact", () => {
     expect(root.querySelector(".stepperNav")).toBe(null);
   });
 
+  it("remounts the right body for every question type while stepping", () => {
+    // Regression: the stepper card must be keyed by its question — a
+    // QuestionBody picks its widget at creation, so an unkeyed card kept
+    // question 1's single-choice body for every later step (multi-select
+    // behaved single-select, and reaching the option-less numericRange
+    // question crashed in optionCount).
+    const el = mount(SAMPLES.public);
+    const root = shadow(el);
+    const next = () => click(root, ".stepperNav .stepNavBtn:last-child");
+    const has = (selector: string, step: string) =>
+      expect(
+        root.querySelector(selector),
+        `expected ${selector} at the ${step} step`,
+      ).not.toBe(null);
+
+    has(".radio", "singleChoice");
+    next();
+    has(".checkbox", "multiSelect");
+    // Multi-select means two clicks leave two options selected.
+    const rows = root.querySelectorAll<HTMLElement>(".optionRow");
+    rows[0]!.click();
+    rows[1]!.click();
+    expect(root.querySelectorAll(".optionRowOn").length).toBe(2);
+    next();
+    has(".rankPool", "ranking");
+    next();
+    has(".rangeFull", "numericRange"); // crashed here before the fix
+    next();
+    has(".pointsRow", "pointsAllocation");
+    next();
+    has(".ratingRow", "rating");
+    next();
+    has(".customInput", "custom");
+    expect(
+      root.querySelector<HTMLButtonElement>(
+        ".stepperNav .stepNavBtn:last-child",
+      )!.disabled,
+    ).toBe(true);
+    // Stepping back re-finds the draft: both multi-select picks still on.
+    for (let i = 0; i < 5; i++)
+      click(root, ".stepperNav .stepNavBtn:first-child");
+    has(".checkbox", "multiSelect (revisited)");
+    expect(root.querySelectorAll(".optionRowOn").length).toBe(2);
+  });
+
   it("upgrades from HTML markup, waits for props, and honors attributes", () => {
     document.body.innerHTML = `<tessera-respond locale="fr"></tessera-respond>`;
     const el = document.body.querySelector("tessera-respond") as HTMLElement &

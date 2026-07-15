@@ -461,8 +461,13 @@ const CustomBody: Component<{
 /**
  * Pick the body for the question's type, passing the draft value reactively.
  * Question type and draft-value type always match by construction, so the casts
- * are type-narrowing only (no runtime effect) and reactivity is preserved — no
- * remount on edits, so text/number inputs keep focus.
+ * are type-narrowing only (no runtime effect); value edits flow reactively with
+ * no remount, so text/number inputs keep focus.
+ *
+ * The switch itself runs once, at creation — `q` must stay the same question
+ * for this component's lifetime (some bodies also capture constraints at
+ * setup). Parents mount one QuestionBody per question: the list layout does so
+ * naturally, and the stepper keys its single card by the current question.
  */
 export const QuestionBody: Component<{
   q: Question;

@@ -361,10 +361,14 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
               when={layout() === "list"}
               fallback={
                 <div class="questionList">
-                  <Show when={props.definition.questions[stepIndex()]}>
+                  {/* `keyed` remounts the card when the question changes: a
+                      QuestionBody picks its widget by question type at creation
+                      (see bodies/index.tsx), so it must not outlive its
+                      question the way a non-keyed Show would let it. */}
+                  <Show keyed when={props.definition.questions[stepIndex()]}>
                     {(q) => (
                       <QuestionCard
-                        q={q()}
+                        q={q}
                         index={stepIndex()}
                         draft={drafts[stepIndex()]}
                         onChange={(v) => setValue(stepIndex(), v)}
