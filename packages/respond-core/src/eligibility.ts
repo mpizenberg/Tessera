@@ -1,53 +1,43 @@
 /**
- * Eligibility with host-trusted credentials.
+ * Who is answering, and which roles they can respond as.
  *
- * `roles.ts` derives roles a browser wallet can claim on its own (Keyholder,
- * Stakeholder, DRep). SPO and CC need keys a browser wallet doesn't hold, so a
- * host supplies them verbatim via {@link Responder.hostCredentials}; the widget
- * trusts them and lists them in `proveCredentials` for the host to satisfy via
- * `required_signers`.
- *
- * Named `respondableRolesFor` (not `respondableRoles`) so it doesn't collide
- * with the wallet-only {@link respondableRoles} in `roles.ts` — both are
- * exported from the package index.
+ * A {@link Responder} is just the credential the responder asserts for each
+ * role it can act as — a browser wallet's payment/stake/DRep credentials,
+ * host-trusted SPO/CC keys, or both, in one uniform map. respond-core takes
+ * these *verbatim*: it does not (and cannot) verify that the responder controls
+ * them. Authenticity is bound host-side by the carrying transaction (CIP-179
+ * credential proof — a `required_signers` entry or a governance-vote binding),
+ * so deriving this map from whatever identity a host holds is the host's job,
+ * not respond-core's. The app builds it from a CIP-30 wallet in
+ * `frontend/app/src/domain/roles.ts` (`walletResponder`).
  */
 
-import { Role, type Credential, type SurveyDefinition } from "cip-179";
-
-import type { ResponderIdentity } from "./identity.js";
-import { roleCredential } from "./roles.js";
-
-export interface Responder {
-  /** The slim wallet-derived identity, if the responder has a connected wallet. */
-  identity?: ResponderIdentity;
-  /** Host-trusted credentials for roles a browser wallet can't derive (SPO, CC). */
-  hostCredentials?: Partial<Record<Role, Credential>>;
-}
+import { type Credential, type Role, type SurveyDefinition } from "cip-179";
 
 /**
- * Credential for a chosen role: wallet-derived first ({@link roleCredential}),
- * then a host-trusted one. Tolerates an absent `identity` (a host may embed with
- * only an SPO credential).
+ * The credential this responder asserts for each role it can act as. Roles a
+ * browser wallet derives (Keyholder / Stakeholder / DRep) and host-trusted ones
+ * (SPO / CC) are all just entries here — respond-core does not distinguish
+ * their provenance, and never validates them.
  */
+export type Responder = Partial<Record<Role, Credential>>;
+
+/** The credential this responder asserts for `role`, if any. */
 export function credentialForRole(
   role: Role,
   responder: Responder,
 ): Credential | undefined {
-  const fromWallet = responder.identity
-    ? roleCredential(responder.identity, role)
-    : undefined;
-  return fromWallet ?? responder.hostCredentials?.[role];
+  return responder[role];
 }
 
 /**
- * Roles the responder may claim = eligible ∩ (wallet-derivable ∪ host-provided).
- * Tolerates an absent `identity`.
+ * Roles the responder may claim to this survey: the survey's eligible roles
+ * intersected with the roles the responder has a credential for. A *claim*
+ * surface, not ledger-verified eligibility (that's the indexer's, per CIP-179).
  */
 export function respondableRolesFor(
   def: SurveyDefinition,
   responder: Responder,
 ): Role[] {
-  return def.eligibleRoles.filter(
-    (role) => credentialForRole(role, responder) !== undefined,
-  );
+  return def.eligibleRoles.filter((role) => responder[role] !== undefined);
 }

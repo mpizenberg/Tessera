@@ -36,11 +36,7 @@ import {
 import { A, useParams } from "@solidjs/router";
 import type { SurveyDefinition, SurveyRef, SurveyResponse } from "cip-179";
 import { dedupeResponses, findSurvey } from "cip-179/domain";
-import {
-  findExistingResponse,
-  respondableRoles,
-  roleCredential,
-} from "@tessera/respond-core";
+import { findExistingResponse } from "@tessera/respond-core";
 import type {
   Responder,
   RespondChangeDetail,
@@ -49,7 +45,11 @@ import type {
 } from "@tessera/respond-widget";
 
 import { useApp } from "~/state";
-import { toResponderIdentity } from "~/wallet/types";
+import {
+  respondableRoles,
+  roleCredential,
+  walletResponder,
+} from "~/domain/roles";
 import { usePresentation } from "~/enrichment/usePresentation";
 import { networkMismatch, shortRef } from "~/ui/format";
 import { TxLink } from "~/ui/components/TxLink";
@@ -107,11 +107,12 @@ const DevWidgetHost: Component = () => {
   const definition = (): SurveyDefinition | undefined => pres.def();
 
   const identity = () => app.wallet()?.identity ?? null;
-  // Widget responder = the slim wallet-derived identity. SPO/CC would ride in
-  // `hostCredentials`, but a browser wallet holds none, so identity-only here.
+  // Widget responder = the wallet's role→credential map. SPO/CC would be extra
+  // entries a host with those cold keys adds; a browser wallet holds none, so
+  // the wallet-derived map is all we have here.
   const responder = createMemo<Responder | null>(() => {
     const id = identity();
-    return id ? { identity: toResponderIdentity(id) } : null;
+    return id ? walletResponder(id) : null;
   });
 
   const tipEpoch = (): number | undefined =>
@@ -124,7 +125,7 @@ const DevWidgetHost: Component = () => {
   const respondable = createMemo(() => {
     const def = definition();
     const id = identity();
-    return def && id ? respondableRoles(def, toResponderIdentity(id)) : [];
+    return def && id ? respondableRoles(def, id) : [];
   });
 
   // The responder's prior public response for *each* role it can claim here, so
@@ -136,10 +137,9 @@ const DevWidgetHost: Component = () => {
     const s = survey();
     const id = identity();
     if (!b || !s || !id) return [];
-    const respId = toResponderIdentity(id);
     const mine = dedupeResponses(b.responses).map((x) => x.response);
     return respondable().flatMap((r) => {
-      const cred = roleCredential(respId, r);
+      const cred = roleCredential(id, r);
       const prior = cred
         ? findExistingResponse(mine, s.record.ref, r, cred)
         : undefined;

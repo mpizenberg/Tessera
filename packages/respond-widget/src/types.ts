@@ -37,7 +37,7 @@ export interface TesseraRespondProps {
    * rides back out on every {@link RespondResult} and into the built response.
    */
   surveyRef: SurveyRef;
-  /** Who is answering: a slim identity (payment/stake/DRep credentials) and/or host-trusted credentials (SPO/CC). */
+  /** Who is answering: the credential asserted for each role (wallet-derived and/or host-trusted). */
   responder: Responder;
   /**
    * Required. Current chain-tip epoch — the widget derives active/ended via
@@ -92,7 +92,7 @@ export interface RespondResult {
   credential: Credential;
   /** Attach at metadata label 17. */
   payload: Metadatum;
-  /** Add each to `required_signers`, signing with the indicated keyKind. */
+  /** Prove each through the carrying tx (required_signers or a governance-vote binding); keyKind names the signing key. */
   proveCredentials: CredentialProof[];
   sealed: boolean;
 }

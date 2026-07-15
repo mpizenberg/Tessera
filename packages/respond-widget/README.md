@@ -2,7 +2,7 @@
 
 The embeddable **`<tessera-respond>`** custom element: drop it into any web page to
 let a user answer a [CIP-179](../../frontend/cip-179.md) survey. Give it a survey
-definition and a responder identity as props; it renders the answering UI,
+definition and a responder (a role→credential map) as props; it renders the answering UI,
 validates the answers, timelock-encrypts them for a sealed survey, and emits a
 **ready-to-attach label-17 `Metadatum`** back to you via a `CustomEvent`. You
 attach that payload to a transaction and submit it.
@@ -68,7 +68,9 @@ chunks to inline and defeat the whole point. Script-tag hosts therefore use
   // Object-valued props are set as DOM PROPERTIES, not attributes.
   el.definition = surveyDefinition; // the SurveyDefinition you fetched
   el.surveyRef = { txId, index }; // where it lives on-chain
-  el.responder = { identity: { payment, stake, drep } };
+  // Each role the user can answer as → its credential. Keys are the cip-179
+  // Role numbers: Keyholder 4, Stakeholder 3, DRep 0, SPO 1, CC 2.
+  el.responder = { 4: paymentCred, 3: stakeCred, 0: drepCred };
   el.tipEpoch = currentEpoch; // from your chain-tip source
 
   // The widget emits; you attach + sign + submit.
@@ -178,32 +180,24 @@ hint either way — it tells you which key signs, whether that signature lands i
 
 ## The responder & eligibility
 
+`responder` maps each role the user can answer as to the credential that role
+carries — one uniform map (no wallet shape, no provenance flags):
+
 ```ts
-interface Responder {
-  identity?: ResponderIdentity; // wallet-derived
-  hostCredentials?: Partial<Record<Role, Credential>>; // host-trusted (SPO, CC)
-}
-
-interface ResponderIdentity {
-  payment: WalletCredential; // every wallet has one  → Keyholder
-  stake?: WalletCredential; // if present            → Stakeholder
-  drep?: WalletCredential; // CIP-95 DRep key        → DRep
-}
-
-interface WalletCredential {
-  kind: "key" | "script";
-  hashHex: string;
-}
+type Responder = Partial<Record<Role, Credential>>;
 ```
 
-- **Keyholder / Stakeholder / DRep** are derived from the slim `identity` — map
-  whatever identity you hold down to these three credentials. This is _not_ the
-  app's CIP-30-shaped identity; you never fabricate app-only fields like network
-  id or change address.
-- **SPO and CC** need keys a browser wallet doesn't hold, so they are never
-  wallet-derivable. Supply them verbatim in `hostCredentials`; the widget trusts
-  them and lists them in `proveCredentials` for you to satisfy. Both functions
-  tolerate an absent `identity` — a host may embed with only an SPO credential.
+- **Keyholder / Stakeholder / DRep** come from a connected wallet — its
+  payment / stake / DRep credentials. Deriving them is yours; the widget never
+  touches a wallet. The Tessera app does it in
+  [`frontend/app/src/domain/roles.ts`](../../frontend/app/src/domain/roles.ts)
+  (`walletResponder`), which you can copy.
+- **SPO and CC** need cold keys a browser wallet can't hold, so they're never
+  wallet-derivable — add them as extra entries when your host vouches for one. A
+  responder can be entirely host-supplied (an SPO credential and nothing else).
+- The widget takes the map **verbatim** and never validates it — it lists each
+  chosen credential in `proveCredentials` for you to prove through the carrying
+  transaction (see [Proving credentials](#proving-credentials)).
 - **The widget picks the role internally.** A responder eligible in several roles
   gets a role picker; the emitted `role` + `credential` reflect the one chosen.
   The role → signing-key mapping is fixed: Keyholder→`payment`,
@@ -248,7 +242,7 @@ The widget deliberately leaves these to you:
    `required_signers` or a governance-vote binding (see
    [Proving credentials](#proving-credentials)) — sign with the indicated key
    kinds, and submit.
-2. **Network conformance.** The slim identity carries no network id, so the widget
+2. **Network conformance.** The responder carries no network id, so the widget
    can't tell whether the wallet is on the wrong chain. Check
    `walletNetworkId === targetNetwork` before you submit.
 3. **Tip freshness.** `tipEpoch` is a snapshot; a survey can close between your

@@ -1,13 +1,12 @@
 # @tessera/respond-core
 
 The **pure, framework-free core** for answering [CIP-179](../../frontend/cip-179.md)
-surveys: response drafting, role/credential derivation, eligibility (including
-host-trusted SPO/CC credentials), an instance-scoped i18n factory, and the lazy
-sealed-submission wrapper.
+surveys: response drafting, responder eligibility, an instance-scoped i18n
+factory, and the lazy sealed-submission wrapper.
 
-No I/O, no framework, no DOM — everything a codec type away from `cip-179`. It is
-shared by the Tessera app and the embeddable
-[`<tessera-respond>`](../respond-widget/README.md) widget so both derive
+No I/O, no framework, no DOM, **and no wallet knowledge** — everything a codec type
+away from `cip-179`. It is shared by the Tessera app and the embeddable
+[`<tessera-respond>`](../respond-widget/README.md) widget so both compute
 eligibility, build responses, and localize from one source of truth. Reach for it
 directly only if you're building your own answering UI or computing eligibility
 host-side; if you just embed the widget, you rarely import this package.
@@ -16,52 +15,42 @@ host-side; if you just embed the widget, you rarely import this package.
 
 | Module           | Exports                                                                                                                                                           |
 | :--------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `identity.ts`    | `WalletCredential`, the slim `ResponderIdentity`.                                                                                                                 |
-| `roles.ts`       | `claimableRoles`, `roleCredential`, `respondableRoles`, `walletCredToCip179` — wallet-derivable roles.                                                            |
-| `eligibility.ts` | `Responder`, `respondableRolesFor`, `credentialForRole` — eligibility incl. host-trusted SPO/CC.                                                                  |
+| `eligibility.ts` | `Responder` (the role→credential map), `respondableRolesFor`, `credentialForRole`.                                                                                |
 | `draft.ts`       | `Draft` / `DraftValue`, `initDraft`, `decided`, `collectAnswers`, `buildResponse`, `buildSealedResponse`, `findExistingResponse`, `prefillDrafts`, `optionCount`. |
 | `i18n.ts`        | `createI18n`, the `I18n` interface, `renderProblem`, catalog types.                                                                                               |
 | `seal.ts`        | `sealResponse` — the lazy tlock + evolution-CBOR wrapper.                                                                                                         |
 
 Everything is re-exported from the package root: `import { … } from "@tessera/respond-core"`.
 
-## Identity, roles & eligibility
+## The responder & eligibility
 
-The **slim identity** carries only the credentials role derivation needs —
-deliberately _not_ the app's CIP-30-shaped identity (network id, change address,
-wallet name, …), so a host maps whatever identity it holds down to this without
-fabricating app-only fields:
+A **`Responder`** is just the credential a responder asserts for each role it can
+act as — one uniform map:
 
 ```ts
-interface WalletCredential {
-  kind: "key" | "script";
-  hashHex: string;
-}
-
-interface ResponderIdentity {
-  payment: WalletCredential; // every wallet has one → Keyholder
-  stake?: WalletCredential; //  if present          → Stakeholder
-  drep?: WalletCredential; //   CIP-95 DRep key      → DRep
-}
-
-interface Responder {
-  identity?: ResponderIdentity; // wallet-derived roles
-  hostCredentials?: Partial<Record<Role, Credential>>; // host-trusted (SPO, CC)
-}
+type Responder = Partial<Record<Role, Credential>>;
 ```
 
-- `roles.ts` derives the roles a **browser wallet** can claim on its own
-  (Keyholder / Stakeholder / DRep) from a `ResponderIdentity`.
-- `eligibility.ts` layers in **host-trusted** credentials: SPO and CC need keys a
-  browser wallet doesn't hold, so a host supplies them verbatim in
-  `hostCredentials`. `respondableRolesFor(def, responder)` returns
-  `eligibleRoles ∩ (wallet-derivable ∪ host-provided)`; `credentialForRole(role,
-responder)` resolves the credential for a chosen role (wallet-derived first, then
-  host-trusted). Both tolerate an absent `identity`.
+respond-core takes it **verbatim**: it never verifies that the responder controls
+those credentials. Authenticity is bound _host-side_ by the response's carrying
+transaction (CIP-179 credential proof — a `required_signers` entry or a
+governance-vote binding), so respond-core stays **wallet-agnostic** — it doesn't
+know or care whether an entry came from a browser wallet or a host-trusted cold
+key.
 
-> Two similarly named functions coexist intentionally: `respondableRoles`
-> (`roles.ts`, wallet-only) and `respondableRolesFor` (`eligibility.ts`,
-> incl. host credentials). Use the latter when SPO/CC may be in play.
+- `respondableRolesFor(def, responder)` → the survey's `eligibleRoles` intersected
+  with the roles the responder has a credential for (a _claim_ surface, not
+  ledger-verified — role membership at the end-epoch snapshot is the indexer's job
+  per CIP-179).
+- `credentialForRole(role, responder)` → the credential for a chosen role, or
+  `undefined`.
+
+> **Deriving the map is the host's job**, not respond-core's.
+> Keyholder / Stakeholder / DRep come from a browser wallet's payment / stake /
+> DRep credentials; SPO and CC need cold keys no browser wallet holds, so a host
+> adds them as extra entries. The Tessera app builds the whole map from a connected
+> CIP-30 wallet in `frontend/app/src/domain/roles.ts` (`walletResponder`) — this
+> package deliberately carries none of that wallet logic.
 
 ## Drafting & building responses
 

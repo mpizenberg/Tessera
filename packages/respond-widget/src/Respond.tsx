@@ -308,8 +308,9 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
         type: "responses",
         responses: [response],
       });
-      // Prove control of the responder credential via required_signers — the
-      // host wires it, keyed by the role's signing kind.
+      // Declare the responder credential for the host to prove through the
+      // carrying tx (required_signers or a governance-vote binding), keyed by
+      // the role's signing kind.
       const proveCredentials: CredentialProof[] = [
         { credential: cred, keyKind: keyKindForRole(r) },
       ];

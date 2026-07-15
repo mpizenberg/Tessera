@@ -30,24 +30,25 @@ export const surveyRef: SurveyRef = {
   index: 0,
 };
 
-/** A wallet-shaped responder eligible as DRep / Stakeholder / Keyholder. */
+/**
+ * A wallet-shaped responder eligible as DRep / Stakeholder / Keyholder — the
+ * role→credential map a host derives from a connected wallet.
+ */
 export const responder: Responder = {
-  identity: {
-    payment: { kind: "key", hashHex: "aa".repeat(28) },
-    stake: { kind: "key", hashHex: "bb".repeat(28) },
-    drep: { kind: "key", hashHex: "cc".repeat(28) },
-  },
+  [Role.Keyholder]: keyCred("aa".repeat(28)),
+  [Role.Stakeholder]: keyCred("bb".repeat(28)),
+  [Role.DRep]: keyCred("cc".repeat(28)),
 };
 
 /**
  * The same wallet, on a host that also vouches for an SPO credential (a pool
- * cold key hash a browser wallet can't hold). The widget trusts it, lets the
- * user answer as SPO, and hands the credential back in `proveCredentials` —
- * proving it (via required_signers) stays the host's job.
+ * cold key hash a browser wallet can't hold) — just an extra entry in the map.
+ * The widget trusts it, lets the user answer as SPO, and hands the credential
+ * back in `proveCredentials`; proving it through the tx stays the host's job.
  */
 export const spoResponder: Responder = {
   ...responder,
-  hostCredentials: { [Role.SPO]: keyCred("dd".repeat(28)) },
+  [Role.SPO]: keyCred("dd".repeat(28)),
 };
 
 /** Current chain tip — before every sample's `endEpoch` except `closed`. */

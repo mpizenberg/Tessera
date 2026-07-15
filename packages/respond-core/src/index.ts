@@ -5,9 +5,9 @@
  *
  * - `draft.ts`: response drafting (drafts → validated answers → `SurveyResponse`,
  *   the `decided()` progress gate, prefill for the edit/replace flow).
- * - `identity.ts`: the slim {@link ResponderIdentity} + {@link WalletCredential}.
- * - `roles.ts`: wallet-derivable role/credential logic over `ResponderIdentity`.
- * - `eligibility.ts`: eligibility including host-trusted SPO/CC credentials.
+ * - `eligibility.ts`: the {@link Responder} role→credential map + which roles a
+ *   responder may claim to a survey. Wallet-agnostic: deriving the map from a
+ *   wallet is the host's job (respond-core never validates credentials).
  * - `i18n.ts`: the side-effect-free `createI18n` factory + bundled `en`/`fr`.
  * - `seal.ts`: the lazy sealed-submission wrapper (tlock + evolution CBOR).
  *
@@ -16,8 +16,6 @@
  * @module
  */
 
-export * from "./identity.js";
-export * from "./roles.js";
 export * from "./eligibility.js";
 export * from "./draft.js";
 export * from "./i18n.js";

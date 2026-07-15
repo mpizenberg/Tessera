@@ -4,17 +4,11 @@
  * mirroring the `DataSource` seam on the read side.
  */
 
-import type {
-  ResponderIdentity,
-  WalletCredential,
-} from "@tessera/respond-core";
-
-/**
- * `WalletCredential` now lives in `@tessera/respond-core` (shared with the
- * embeddable widget); re-exported here so the app's wallet-seam consumers keep
- * importing it from one place.
- */
-export type { WalletCredential };
+/** A key- or script-hash credential, as hex — the app's wallet-seam credential. */
+export interface WalletCredential {
+  readonly kind: "key" | "script";
+  readonly hashHex: string;
+}
 
 /** A wallet advertised on `window.cardano`. */
 export interface InstalledWallet {
@@ -47,21 +41,6 @@ export interface ConnectedWallet {
   readonly identity: WalletIdentity;
   /** Raw CIP-30 API, retained for transaction signing in later milestones. */
   readonly api: Cip30Api;
-}
-
-/**
- * Adapt the app's CIP-30-shaped {@link WalletIdentity} down to the slim
- * {@link ResponderIdentity} that `@tessera/respond-core` (and the widget) run
- * on — just the payment/stake/DRep credentials, none of the app-only fields.
- */
-export function toResponderIdentity(
-  identity: WalletIdentity,
-): ResponderIdentity {
-  return {
-    payment: identity.payment,
-    ...(identity.stake ? { stake: identity.stake } : {}),
-    ...(identity.drep ? { drep: identity.drep } : {}),
-  };
 }
 
 // --- Minimal CIP-30 / CIP-95 surface we rely on -----------------------------

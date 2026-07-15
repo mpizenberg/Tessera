@@ -27,7 +27,7 @@ import {
 } from "cip-179";
 import { hexToBytes } from "cip-179/domain";
 import { QUICKNET_CHAIN_HASH } from "cip-179/tlock";
-import { buildResponse, roleCredential } from "@tessera/respond-core";
+import { buildResponse } from "@tessera/respond-core";
 
 import { SAMPLES, TIP_EPOCH, responder, surveyRef } from "../dev/samples";
 import type { RespondResult } from "../src/types";
@@ -275,9 +275,9 @@ describe("built <tessera-respond> artifact", () => {
 
   it("answers as SPO from a host-supplied credential, wallet-free", async () => {
     // Proving credentials is out of the widget's scope — a host that vouches
-    // for an SPO credential (via `hostCredentials`, even with no wallet
-    // identity at all) gets the full answering flow, and the credential comes
-    // back in `proveCredentials` for the host's required_signers.
+    // for an SPO credential (just an entry in the responder map, even with no
+    // wallet-derived roles at all) gets the full answering flow, and the
+    // credential comes back in `proveCredentials` for the host to prove.
     const spoCred = {
       type: "key",
       keyHash: hexToBytes("dd".repeat(28)),
@@ -287,7 +287,7 @@ describe("built <tessera-respond> artifact", () => {
       eligibleRoles: [Role.SPO],
     };
     const el = mount(def, {
-      responder: { hostCredentials: { [Role.SPO]: spoCred } },
+      responder: { [Role.SPO]: spoCred },
     });
     const root = shadow(el);
     click(root, ".optionRow");
@@ -312,11 +312,11 @@ describe("built <tessera-respond> artifact", () => {
       ...oneQuestionDef({ type: "public" }),
       eligibleRoles: [Role.DRep, Role.Stakeholder],
     };
-    const id = responder.identity!;
     // A prior response per role, answering the one question differently:
-    // DRep → "First" (0), Stakeholder → "Second" (1).
+    // DRep → "First" (0), Stakeholder → "Second" (1). `responder` is the
+    // role→credential map, so index it for each role's credential.
     const prior = (role: Role, optionIndex: number) =>
-      buildResponse(surveyRef, role, roleCredential(id, role)!, def.questions, [
+      buildResponse(surveyRef, role, responder[role]!, def.questions, [
         { skipped: false, value: { type: "singleChoice", optionIndex } },
       ]);
     const el = mount(def, {
