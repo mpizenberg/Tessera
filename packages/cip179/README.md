@@ -2,7 +2,7 @@
 
 Reusable TypeScript building blocks for the
 [CIP-179](../../frontend/cip-179.md) _On-Chain Surveys and Polls_ format
-(metadata label `17`, spec version 4).
+(metadata label `17`, spec version 5).
 
 The package is organized as **subpath entry points**, layered by dependency
 weight. The root is a pure, side-effect-free codec with zero dependencies; the
