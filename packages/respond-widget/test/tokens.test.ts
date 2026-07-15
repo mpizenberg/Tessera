@@ -75,6 +75,25 @@ describe("theming tokens", () => {
     }
   });
 
+  it("fonts route through tokens: no literal families, no @font-face", () => {
+    // Font families are themeable exactly like colors: the three
+    // --tessera-{sans,mono,serif} tokens (defaults in theme.css) are the only
+    // place a family may be named. Component rules either reference a token or
+    // `inherit` (needed on native controls, which don't inherit fonts).
+    // `@font-face` is banned everywhere: it doesn't register inside a shadow
+    // root, so loading webfonts is the host page's job by design.
+    for (const f of files) {
+      if (!f.path.endsWith(".css")) continue;
+      expect(f.text, `@font-face in ${f.path}`).not.toMatch(/@font-face/);
+      if (f.path === "theme.css") continue;
+      for (const m of f.text.matchAll(/font(?:-family)?\s*:\s*([^;]+);/g)) {
+        expect(m[1]!.trim(), `literal font in ${f.path}`).toMatch(
+          /^(inherit|var\(--tessera-[\w-]+\))$/,
+        );
+      }
+    }
+  });
+
   it("every defined token is referenced somewhere in src/", () => {
     const used = new Set(references.flatMap((f) => f.vars));
     for (const name of defined) {
