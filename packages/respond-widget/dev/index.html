@@ -87,6 +87,14 @@
         border-radius: 14px;
         padding: 18px 20px;
       }
+      /* Dark-theme demo: the widget root is transparent, so the host supplies
+         the page background — and `color-scheme: dark` for native controls
+         (range tracks, number spinners), which custom properties can't set. */
+      .frame.dark {
+        background: #16130e;
+        border-color: #302a20;
+        color-scheme: dark;
+      }
       .aside {
         position: sticky;
         top: 24px;
@@ -162,6 +170,7 @@
             <b>Theme</b>
             <button data-theme="default" class="active">Default</button>
             <button data-theme="plum">Plum</button>
+            <button data-theme="dark">Dark</button>
           </div>
         </div>
         <div class="frame">

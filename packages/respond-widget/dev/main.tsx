@@ -92,6 +92,52 @@ const THEMES: Record<string, Record<string, string>> = {
     "role-drep": "#6b46ff",
     "role-drep-bg": "#efeaff",
   },
+  // A full dark re-skin, proving every color flows through the tokens (the
+  // token-gate test forbids literals outside theme.css). Native controls
+  // (range track, number spinners) also need `color-scheme: dark`, which a
+  // custom property can't express — the harness sets it on the frame in CSS.
+  dark: {
+    ink: "#f2ede3",
+    body: "#d9d2c4",
+    muted: "#a89d8a",
+    faint: "#7d7462",
+    dim: "#6d6455",
+    paper: "#1f1c16",
+    line: "#3a352b",
+    line2: "#353026",
+    hair: "#2b2721",
+    surface2: "#262219",
+    surface3: "#2b2721",
+    "header-line": "#3a3425",
+    "card-bg": "#24211a",
+    "card-line": "#322d22",
+    label: "#b3a175",
+    "label-strong": "#cdbf9a",
+    accent: "#d97a4d",
+    "accent-bg": "#3a2a1f",
+    "accent-line": "#5a3d2a",
+    ok: "#8fbf76",
+    "ok-line": "#3d4f33",
+    "ok-bg-soft": "#223024",
+    "ok-ink": "#9ecfae",
+    warn: "#d9a94f",
+    "warn-line": "#55461f",
+    danger: "#e07b63",
+    "danger-bg": "#3a241d",
+    "danger-line": "#55372a",
+    "danger-line-soft": "#4a2f28",
+    "danger-ink": "#e69582",
+    "role-drep": "#d97a4d",
+    "role-drep-bg": "#3a2a1f",
+    "role-spo": "#7fbfae",
+    "role-spo-bg": "#21362f",
+    "role-cc": "#b39ddb",
+    "role-cc-bg": "#2e2839",
+    "role-stakeholder": "#9ccf7f",
+    "role-stakeholder-bg": "#26331f",
+    "role-keyholder": "#d9b36a",
+    "role-keyholder-bg": "#38301c",
+  },
 };
 
 render(
@@ -145,6 +191,9 @@ for (const btn of document.querySelectorAll<HTMLButtonElement>(
   btn.addEventListener("click", () => {
     setThemeName(btn.dataset.theme!);
     syncActive("data-theme", btn.dataset.theme!);
+    document
+      .querySelector(".frame")
+      ?.classList.toggle("dark", btn.dataset.theme === "dark");
   });
 }
 
