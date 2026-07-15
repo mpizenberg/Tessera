@@ -48,11 +48,15 @@ export interface TesseraRespondProps {
   /** A valid on-chain cancellation exists (host-checked); renders the cancelled state. */
   cancelled?: boolean;
   /**
-   * Optional prefill for an edit/replace flow (host fetched the prior on-chain
-   * response). Public prior responses only — a sealed one is ciphertext and
-   * cannot prefill.
+   * Optional prefill for an edit/replace flow: the responder's prior public
+   * responses to this survey, as fetched from chain by the host — **one per
+   * role** they've answered as. The role is chosen inside the widget (a
+   * responder eligible in several roles switches between them), so the host
+   * can't know up front which prior response applies; it passes them all and
+   * the widget selects the one matching the current role + credential. Public
+   * responses only — a sealed prior response is ciphertext and can't prefill.
    */
-  priorResponse?: SurveyResponse;
+  priorResponses?: readonly SurveyResponse[];
   /** Optional host-pinned rationale (CIP-179 key 5); the widget never pins. */
   rationaleAnchor?: ContentAnchor;
   /** BCP-47 locale; default `"en"`. Drives both strings and number/date formatting. */

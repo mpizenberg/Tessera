@@ -27,6 +27,7 @@ import {
 } from "cip-179";
 import { hexToBytes } from "cip-179/domain";
 import { QUICKNET_CHAIN_HASH } from "cip-179/tlock";
+import { buildResponse, roleCredential } from "@tessera/respond-core";
 
 import { SAMPLES, TIP_EPOCH, responder, surveyRef } from "../dev/samples";
 import type { RespondResult } from "../src/types";
@@ -300,6 +301,44 @@ describe("built <tessera-respond> artifact", () => {
       { credential: spoCred, keyKind: "pool" },
     ]);
     expect(decodePayload(detail.payload).type).toBe("responses");
+  });
+
+  it("prefills the prior response for whichever role a multi-role responder picks", () => {
+    // A responder eligible in several roles switches between them inside the
+    // widget, so the host can't know up front which prior response applies. It
+    // hands over one per role (`priorResponses`) and the widget selects by the
+    // chosen role — the fix for the singular prop, which could only prefill one.
+    const def: SurveyDefinition = {
+      ...oneQuestionDef({ type: "public" }),
+      eligibleRoles: [Role.DRep, Role.Stakeholder],
+    };
+    const id = responder.identity!;
+    // A prior response per role, answering the one question differently:
+    // DRep → "First" (0), Stakeholder → "Second" (1).
+    const prior = (role: Role, optionIndex: number) =>
+      buildResponse(surveyRef, role, roleCredential(id, role)!, def.questions, [
+        { skipped: false, value: { type: "singleChoice", optionIndex } },
+      ]);
+    const el = mount(def, {
+      // Order irrelevant — the widget matches by role, not position.
+      priorResponses: [prior(Role.Stakeholder, 1), prior(Role.DRep, 0)],
+    });
+    const root = shadow(el);
+
+    const onIndex = (): number =>
+      [...root.querySelectorAll(".optionRow")].findIndex((r) =>
+        r.classList.contains("optionRowOn"),
+      );
+    // Default role is the first respondable (DRep) → its "First" is prefilled.
+    expect(onIndex()).toBe(0);
+
+    // Switch to Stakeholder via the header role picker → reprefills "Second".
+    const stakeBtn = [
+      ...root.querySelectorAll<HTMLButtonElement>(".rolePick"),
+    ].find((b) => b.textContent === "Stakeholder");
+    expect(stakeBtn, "a Stakeholder role button").not.toBe(undefined);
+    stakeBtn!.click();
+    expect(onIndex()).toBe(1);
   });
 
   it("lazy-loads the sealed chunks and emits a real ciphertext", async () => {

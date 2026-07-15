@@ -40,7 +40,7 @@ const defaults: ElementProps = {
   responder: undefined,
   tipEpoch: undefined,
   cancelled: false,
-  priorResponse: undefined,
+  priorResponses: undefined,
   rationaleAnchor: undefined,
   locale: "en",
   messages: undefined,

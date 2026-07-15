@@ -74,7 +74,7 @@ type RespondElement = HTMLElement & {
   responder?: Responder | undefined;
   tipEpoch?: number | undefined;
   cancelled?: boolean | undefined;
-  priorResponse?: SurveyResponse | undefined;
+  priorResponses?: readonly SurveyResponse[] | undefined;
   locale?: string | undefined;
   layout?: ("one-per-screen" | "list") | undefined;
 };
@@ -119,29 +119,32 @@ const DevWidgetHost: Component = () => {
 
   const cancelled = (): boolean => Boolean(survey()?.cancelled);
 
-  // Roles this wallet may claim here — used only to resolve the prior response
-  // for the widget's default (first) role, matching how the widget seeds.
+  // Roles this wallet may claim here — the widget picks one internally, so the
+  // host resolves a prior response for each of them.
   const respondable = createMemo(() => {
     const def = definition();
     const id = identity();
     return def && id ? respondableRoles(def, toResponderIdentity(id)) : [];
   });
 
-  // The wallet's prior public response for the default role, if any. The widget
-  // takes a single `priorResponse` and filters it by its chosen role+credential;
-  // supplying the default-role one covers the common edit/replace case. (Picking
-  // a different role in the widget simply won't prefill — a known limitation of
-  // the singular prop, fine for a reference host.)
-  const priorResponse = createMemo<SurveyResponse | undefined>(() => {
+  // The responder's prior public response for *each* role it can claim here, so
+  // the widget re-prefills as the user switches roles. One deduped set, filtered
+  // per role by the wallet's own credential (the built-in Respond screen does
+  // the same, just for its single currently-selected role).
+  const priorResponses = createMemo<SurveyResponse[]>(() => {
     const b = bundle.error ? undefined : bundle();
     const s = survey();
     const id = identity();
-    const r0 = respondable()[0];
-    if (!b || !s || !id || r0 === undefined) return undefined;
-    const cred = roleCredential(toResponderIdentity(id), r0);
-    if (!cred) return undefined;
+    if (!b || !s || !id) return [];
+    const respId = toResponderIdentity(id);
     const mine = dedupeResponses(b.responses).map((x) => x.response);
-    return findExistingResponse(mine, s.record.ref, r0, cred);
+    return respondable().flatMap((r) => {
+      const cred = roleCredential(respId, r);
+      const prior = cred
+        ? findExistingResponse(mine, s.record.ref, r, cred)
+        : undefined;
+      return prior ? [prior] : [];
+    });
   });
 
   // Network conformance is the host's job — the widget never sees a network id.
@@ -167,7 +170,7 @@ const DevWidgetHost: Component = () => {
     node.responder = responder() ?? undefined;
     node.tipEpoch = tipEpoch();
     node.cancelled = cancelled();
-    node.priorResponse = priorResponse();
+    node.priorResponses = priorResponses();
     node.locale = locale();
     node.layout = layout();
   });

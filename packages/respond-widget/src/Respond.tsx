@@ -141,14 +141,16 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     return r !== null ? (credentialForRole(r, props.responder) ?? null) : null;
   });
 
-  // The responder's prior public response for the current (role, credential),
-  // if the host supplied one — reuse the exact-match helper the app uses.
+  // The responder's prior public response for the *current* (role, credential),
+  // picked from the host-supplied set. The host passes one per role it answered
+  // as; `findExistingResponse` selects the one matching the chosen role, so
+  // switching roles re-prefills correctly (or clears, when that role is fresh).
   const existing = createMemo(() => {
-    const pr = props.priorResponse;
+    const prs = props.priorResponses;
     const r = role();
     const cred = credential();
-    if (!pr || r === null || !cred) return undefined;
-    return findExistingResponse([pr], props.surveyRef, r, cred);
+    if (!prs || prs.length === 0 || r === null || !cred) return undefined;
+    return findExistingResponse(prs, props.surveyRef, r, cred);
   });
 
   // Store mirror of Draft with mutable fields so path setters typecheck.
