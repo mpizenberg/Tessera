@@ -527,10 +527,18 @@ export class KoiosDataSource implements DataSource {
   /**
    * Credential-proof evidence per transaction: fetch each tx's CBOR
    * (`/tx_cbor`, batched) and decode required signers, native scripts, and
-   * vote bindings. A hash whose fetch or decode fails maps to `null`
-   * (unproven — callers may retry on a later refresh). Used for cancellation
-   * owner-proofs at scan time and response credential-proofs (§6.3 rule 2) by
-   * the serving tier's validation pass.
+   * vote bindings. Used for cancellation owner-proofs at scan time and response
+   * credential-proofs (§6.3 rule 2) by the serving tier's validation pass.
+   *
+   * The two map outcomes are semantically distinct and callers MUST NOT conflate
+   * them:
+   *  - a **non-null `TxProof`** is a *definitive, complete* reading of the tx's
+   *    evidence — an empty proof (no matching signer / no script / no vote) means
+   *    the credential is genuinely *unproven*, a final negative verdict;
+   *  - **`null`** means the evidence *could not be established this refresh* (the
+   *    batch fetch threw, the row carried no CBOR, or the decode failed) — i.e.
+   *    *unknown*, so the caller must retry on a later refresh, never treat it as
+   *    a negative verdict (freezing an artifact on it would be wrong — finding 1).
    */
   async txProofs(
     txHashes: readonly string[],

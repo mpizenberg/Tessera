@@ -390,7 +390,16 @@ export async function finalizeClosedSurveys(
 
 /**
  * Emit cancellation artifacts for candidates with an owner-proven, in-window
- * cancellation; return the remaining (non-cancelled) candidates.
+ * cancellation; return the remaining (non-cancelled) candidates to tally.
+ *
+ * A survey whose cancellation status can't be settled this refresh is *neither*
+ * emitted nor returned — it is postponed to a later cron (finding 1). That
+ * happens when the winning cancellation isn't yet determined: `txProofs` returns
+ * `null` for a cancelling tx whose CBOR couldn't be fetched/decoded this refresh
+ * (unknown, distinct from a fetched tx that simply doesn't prove the owner), and
+ * emitting on incomplete evidence risks freezing the wrong immutable artifact —
+ * a genuinely-cancelled survey tallied in full, or a winner the verifier will
+ * refetch to a different (earlier) one → false MISMATCH.
  */
 async function withCancellations(
   config: ServerConfig,
@@ -413,20 +422,40 @@ async function withCancellations(
   const open: SurveyRecord[] = [];
   for (const s of candidates) {
     const key = refKey(s.ref);
-    // The recorded cancellation must be reproducible by a verifier, so the
-    // choice among several verified ones is pinned by the ruleset: earliest
-    // in chain order (slot, then tx hash).
-    const winning = [...relevant]
-      .sort((a, b) => a.slot - b.slot || (a.txHash < b.txHash ? -1 : 1))
-      .find(
-        (c) =>
-          refKey(c.target) === key &&
-          c.epochNo <= s.definition.endEpoch && // CIP-179: in-window only
-          cancellationVerified(
-            s.definition.owner,
-            proofs.get(c.txHash) ?? null,
-          ),
+    // The winner is the earliest verified cancellation in the ruleset's pinned
+    // chain order (slot, then tx hash), so walk in that order: the first one
+    // whose proof verifies wins. But if we reach one whose proof is *unknown*
+    // (`null` — fetch/decode failed this refresh) before any verified one, the
+    // winner isn't yet determined: that unknown cancellation could itself be a
+    // valid earlier winner once its proof resolves. Postpone rather than guess.
+    const inWindow = relevant
+      .filter(
+        (c) => refKey(c.target) === key && c.epochNo <= s.definition.endEpoch,
+      )
+      .sort((a, b) => a.slot - b.slot || (a.txHash < b.txHash ? -1 : 1));
+
+    let winning: (typeof inWindow)[number] | undefined;
+    let unknown: (typeof inWindow)[number] | undefined;
+    for (const c of inWindow) {
+      const proof = proofs.get(c.txHash) ?? null;
+      if (proof === null) {
+        unknown = c;
+        break;
+      }
+      if (cancellationVerified(s.definition.owner, proof)) {
+        winning = c;
+        break;
+      }
+    }
+
+    if (unknown) {
+      // Neither tallied nor cancelled this pass — retried next refresh, the same
+      // "unknown ≠ negative" discipline `validate.ts` applies to response proofs.
+      console.warn(
+        `finalize: ${key} postponed — cancellation ${unknown.txHash} proof unknown (fetch/decode failed)`,
       );
+      continue;
+    }
     if (!winning) {
       open.push(s);
       continue;

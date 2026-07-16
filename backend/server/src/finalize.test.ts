@@ -229,6 +229,43 @@ const noProofs = {
   txProofs: vi.fn(async () => new Map<string, TxProof | null>()),
 };
 
+/** A `txProofs` source returning a fixed per-hash verdict map. */
+function proofsStub(entries: Record<string, TxProof | null>) {
+  return {
+    txProofs: vi.fn(
+      async () => new Map<string, TxProof | null>(Object.entries(entries)),
+    ),
+  };
+}
+
+/** Owner-verified evidence: the survey owner's key hash is a required signer. */
+const OWNER_PROOF: TxProof = {
+  requiredSigners: [OWNER_HASH],
+  nativeScripts: [],
+  votes: [],
+};
+/** Fetched + decoded, but the owner isn't among the signers — definitive no. */
+const STRANGER_PROOF: TxProof = {
+  requiredSigners: ["ff".repeat(28)],
+  nativeScripts: [],
+  votes: [],
+};
+
+/** An in-window cancellation targeting the fixture survey. */
+function cancellation(
+  txHash: string,
+  slot: number,
+  epochNo = 499, // ≤ END_EPOCH → in-window
+): CancellationRecord {
+  return {
+    txHash,
+    slot,
+    epochNo,
+    target: { txId: hexToBytes(SURVEY_TX), index: 0 },
+    proof: null, // snapshot never verified it (survey was closed)
+  };
+}
+
 async function seed(
   store: MemBackendStore,
   rows: readonly ValidatedResponseRow[],
@@ -513,6 +550,115 @@ describe("finalizeClosedSurveys", () => {
     });
     expect(artifact.tally.perRole).toEqual([]);
     expect(inputs.stakeholderCalls).toBe(0); // no weight work for cancelled
+  });
+
+  it("postpones (never tallies) a survey whose in-window cancellation proof failed to fetch (finding 1)", async () => {
+    const store = memBackendStore();
+    await seed(store, [validatedRow(rA)]);
+    const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
+    const cx = cancellation("cc".repeat(32), 300);
+
+    // The cancelling tx's CBOR couldn't be fetched/decoded this refresh → the
+    // proof is `null` (unknown). The pre-fix bug tallied the survey in full and
+    // froze that immutable artifact; it must instead postpone.
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      inputs,
+      proofsStub({ [cx.txHash]: null }),
+      records(survey(), [rA], [cx]),
+      TIP,
+    );
+    expect(store.artifacts.size).toBe(0); // neither tallied nor cancelled
+    expect(store.weights.size).toBe(0); // and no weight work yet
+    expect(inputs.stakeholderCalls).toBe(0);
+
+    // Next refresh the proof resolves (owner-verified) → cancellation artifact.
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      inputs,
+      proofsStub({ [cx.txHash]: OWNER_PROOF }),
+      records(survey(), [rA], [cx]),
+      TIP,
+    );
+    const artifact = JSON.parse(
+      store.artifacts.get(SURVEY_KEY)!.artifact,
+    ) as TallyArtifact;
+    expect(artifact.tally.cancelled).toMatchObject({ txHash: cx.txHash });
+    expect(artifact.tally.perRole).toEqual([]);
+    expect(inputs.stakeholderCalls).toBe(0); // still no weight work
+  });
+
+  it("tallies a survey whose in-window cancellation is fetched but unproven (owner not a signer)", async () => {
+    const store = memBackendStore();
+    await seed(store, [validatedRow(rA)]);
+    const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
+    const cx = cancellation("cc".repeat(32), 300);
+
+    // A *definitive* negative (fetched + decoded, owner not a signer) must NOT
+    // postpone — the survey is genuinely uncancelled and tallies normally.
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      inputs,
+      proofsStub({ [cx.txHash]: STRANGER_PROOF }),
+      records(survey(), [rA], [cx]),
+      TIP,
+    );
+    const artifact = JSON.parse(
+      store.artifacts.get(SURVEY_KEY)!.artifact,
+    ) as TallyArtifact;
+    expect(artifact.tally.cancelled).toBeUndefined();
+    expect(
+      artifact.tally.perRole.find((r) => r.role === 3)!.responders,
+    ).toHaveLength(1);
+  });
+
+  it("postpones when an earlier cancellation's proof is unknown but a later one verifies (winner undetermined)", async () => {
+    const store = memBackendStore();
+    await seed(store, [validatedRow(rA)]);
+    const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
+    const earlier = cancellation("c1".repeat(32), 300); // unknown proof
+    const later = cancellation("c2".repeat(32), 400); // owner-verified
+
+    // The earlier unknown could resolve to the winning cancellation, changing
+    // the artifact the verifier would rebuild — so freeze nothing yet.
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      inputs,
+      proofsStub({ [earlier.txHash]: null, [later.txHash]: OWNER_PROOF }),
+      records(survey(), [rA], [earlier, later]),
+      TIP,
+    );
+    expect(store.artifacts.size).toBe(0);
+    expect(store.weights.size).toBe(0);
+  });
+
+  it("emits the earlier verified cancellation even when a later one's proof is unknown (winner determined)", async () => {
+    const store = memBackendStore();
+    await seed(store, [validatedRow(rA)]);
+    const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
+    const earlier = cancellation("c1".repeat(32), 300); // owner-verified
+    const later = cancellation("c2".repeat(32), 400); // unknown, irrelevant
+
+    // The earliest verified cancellation wins; a later unknown can't displace it.
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      inputs,
+      proofsStub({ [earlier.txHash]: OWNER_PROOF, [later.txHash]: null }),
+      records(survey(), [rA], [earlier, later]),
+      TIP,
+    );
+    const artifact = JSON.parse(
+      store.artifacts.get(SURVEY_KEY)!.artifact,
+    ) as TallyArtifact;
+    expect(artifact.tally.cancelled).toMatchObject({
+      txHash: earlier.txHash,
+      slot: 300,
+    });
   });
 
   it("emits a sealed artifact with revealed answers and a provenance beacon", async () => {
