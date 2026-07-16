@@ -14,14 +14,16 @@
  * by design: a validation hiccup must never sink the snapshot refresh.
  */
 
-import { Role, validateResponse } from "cip-179";
+import { validateResponse } from "cip-179";
 
 import {
+  BINDABLE_ROLES,
   credentialKey,
   refKey,
-  responseCredentialProven,
+  responseCredentialProof,
   type Cip179Records,
   type GovLink,
+  type UnresolvedGovAction,
 } from "cip-179/domain";
 import type { KoiosDataSource } from "@tessera/koios";
 
@@ -29,29 +31,26 @@ import type { TallyStore, ValidatedResponseRow } from "./store";
 import { validationKey } from "./store";
 
 /**
- * Roles that carry a Conway voter tag and so *can* be proven via a governance
- * vote binding (mechanism B) — the only roles whose verdict depends on the
- * survey's gov links. Stakeholder/Keyholder can never bind, so their proof is
- * link-independent and safe to freeze even when the gov-links fetch failed.
- */
-const BINDABLE_ROLES: ReadonlySet<number> = new Set([
-  Role.CC,
-  Role.DRep,
-  Role.SPO,
-]);
-
-/**
  * Validate the snapshot's responses that were never (fully) validated before,
  * plus any whose survey's governance link changed since their last verdict, and
  * persist the results. Responses referencing a survey outside the snapshot are
  * skipped entirely (no row) — they can't be tallied anyway.
  *
- * `govLinksReliable` is false when this refresh's gov-links fetch failed (an
- * empty list then means "unknown", not "none"). Mechanism B only ever *adds*
- * proof (a non-qualifying vote never invalidates), so a mechanism-A pass is
- * final even with links unknown; only a bindable role's *negative* verdict
- * could flip on a hidden link, so those are left null and retried, and no row
- * is re-validated on an apparent link change.
+ * A bindable role's *negative* verdict is never frozen while a link it might
+ * depend on is unknown (finding 6). Two flavours of "unknown", both left as a
+ * null `proofOk` and retried rather than coerced into "unproven":
+ *  - `govLinksReliable` is false — this refresh's whole gov-links fetch failed,
+ *    so *every* link is unknown; every bindable negative waits.
+ *  - `unresolved` lists epoch-aligned actions whose anchor couldn't be resolved
+ *    (a successful fetch can still carry unresolved anchors). A bindable
+ *    response that cast a qualifying vote on one of those actions could still
+ *    turn out proven, so only *it* waits — scoping the uncertainty to the
+ *    responses that actually voted on the unresolved action, not every survey
+ *    sharing the epoch.
+ * Mechanism B only ever *adds* proof (a non-qualifying vote never invalidates),
+ * so a mechanism-A pass is final regardless; a survey's link set changing still
+ * re-validates completed bindable verdicts (an unresolved anchor later resolving
+ * into a link shows up as such a change).
  */
 export async function validateNewResponses(
   store: TallyStore,
@@ -59,6 +58,7 @@ export async function validateNewResponses(
   govLinks: readonly GovLink[],
   source: Pick<KoiosDataSource, "txBlockIndices" | "txProofs">,
   govLinksReliable = true,
+  unresolved: readonly UnresolvedGovAction[] = [],
 ): Promise<void> {
   const defByKey = new Map(
     records.surveys.map((s) => [refKey(s.ref), s.definition]),
@@ -75,10 +75,11 @@ export async function validateNewResponses(
       else linksByKey.set(link.surveyKey, [link]);
     }
   }
-  // Canonical cursor for a survey's epoch-aligned link set (order-insensitive):
-  // the stored value a completed verdict is pinned to. Any change to the set —
-  // a link appearing, changing, or being removed — changes this string and so
-  // triggers re-evaluation of the bindable-role verdicts pinned to it.
+  // Canonical cursor for a survey's epoch-aligned resolved link set
+  // (order-insensitive): the stored value a completed verdict is pinned to. When
+  // a previously-unresolved anchor resolves into a link the set grows, this
+  // string changes, and the bindable-role verdicts pinned to it are re-evaluated
+  // (mechanism B only adds proof, so the change can only turn one proven).
   const linkSetKey = (key: string): string | null => {
     const list = linksByKey.get(key);
     if (!list || list.length === 0) return null;
@@ -87,6 +88,16 @@ export async function validateNewResponses(
       .sort()
       .join(",");
   };
+  // Epoch-aligned *unresolved* action ids per end epoch — the actions whose
+  // anchor couldn't be resolved this refresh, so we can't yet tell if they link
+  // a survey ending at that epoch. A bindable response that voted on one of
+  // these can't have its negative frozen (finding 6).
+  const unresolvedByEpoch = new Map<number, string[]>();
+  for (const u of unresolved) {
+    const list = unresolvedByEpoch.get(u.endEpoch);
+    if (list) list.push(u.actionId);
+    else unresolvedByEpoch.set(u.endEpoch, [u.actionId]);
+  }
 
   const completed = await store.completedValidations();
   const candidates = records.responses.filter((r) => {
@@ -126,18 +137,33 @@ export async function validateNewResponses(
     const linkedActionIds = (linksByKey.get(surveyKey) ?? []).map(
       (l) => l.actionId,
     );
-    // Mechanism B only ever adds proof, so a pass is final regardless of the
-    // link set. With links unknown this refresh, only a bindable role's
-    // *negative* verdict could flip on a hidden link — leave those to retry.
-    const proven = proof
-      ? responseCredentialProven(r.response, proof, linkedActionIds)
-      : null;
-    const proofOk =
-      proven === false &&
-      !govLinksReliable &&
-      BINDABLE_ROLES.has(r.response.role)
-        ? null
-        : proven;
+    const unresolvedActionIds = unresolvedByEpoch.get(def.endEpoch) ?? [];
+    // A null proof is enrichment-pending (the tx CBOR wasn't fetched yet) →
+    // retry, not a final "unproven". Otherwise the three-valued verdict decides:
+    //  - proven → true;
+    //  - unknown (voted on an unresolved epoch-aligned action) → null, retry;
+    //  - unproven → false, EXCEPT a bindable role's negative when the whole
+    //    gov-links fetch failed (every link then unknown) → null, retry.
+    // Mechanism B only ever adds proof, so a pass is always final (finding 6).
+    let proofOk: boolean | null;
+    if (proof === null) {
+      proofOk = null;
+    } else {
+      const verdict = responseCredentialProof(
+        r.response,
+        proof,
+        linkedActionIds,
+        unresolvedActionIds,
+      );
+      proofOk =
+        verdict === "proven"
+          ? true
+          : verdict === "unknown"
+            ? null
+            : !govLinksReliable && BINDABLE_ROLES.has(r.response.role)
+              ? null
+              : false;
+    }
     rows.push({
       txHash: r.txHash,
       responseIndex: r.responseIndex,

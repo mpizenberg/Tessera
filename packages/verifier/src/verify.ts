@@ -17,13 +17,14 @@
 import { validateResponse, type SurveyResponse } from "cip-179";
 
 import {
+  BINDABLE_ROLES,
   auditRevealedResponses,
   bytesToHex,
   cancellationVerified,
   credentialKey,
   laterInChain,
   refKey,
-  responseCredentialProven,
+  responseCredentialProof,
   type ResponseRecord,
   type SurveyBundle,
   type TxProof,
@@ -51,6 +52,19 @@ export interface VerifyInputs {
   readonly network: string;
   /** Epoch-aligned linking governance action ids (empty = standalone). */
   readonly linkedActionIds: readonly string[];
+  /**
+   * Epoch-aligned actions whose anchor this verifier couldn't resolve, so their
+   * link status is unknown. A response that cast a qualifying vote on one and
+   * isn't otherwise proven makes the rebuild INDETERMINATE rather than silently
+   * dropped (finding 6). Default `[]` — everything resolved.
+   */
+  readonly unresolvedActionIds?: readonly string[];
+  /**
+   * False when this verifier's whole gov-links fetch failed, so *every* link is
+   * unknown: a bindable role's response not proven by mechanism A is then
+   * indeterminate, not unproven. Default `true`.
+   */
+  readonly govLinksReliable?: boolean;
   /** `tx_block_index` per tx of the bundle (from Koios `/tx_info`). */
   readonly blockIndices: ReadonlyMap<string, number>;
   /** Decoded proof evidence per tx of the bundle (from Koios `/tx_cbor`). */
@@ -71,6 +85,13 @@ export interface VerifyInputs {
 
 export interface VerifyResult {
   readonly match: boolean;
+  /**
+   * True when the rebuild couldn't reach a definite counted set — a governance
+   * link needed to decide a mechanism-B proof couldn't be resolved (finding 6).
+   * `match` is then not meaningful (it is `false`, but this is NOT a MISMATCH);
+   * the reason is in `notes`. Re-run when the inputs are resolvable.
+   */
+  readonly indeterminate: boolean;
   /** Content hash of the artifact as received. */
   readonly receivedHash: string;
   /** Content hash of the independently rebuilt tally. */
@@ -87,9 +108,11 @@ const ROLE_DREP = 0;
 const ROLE_KEYHOLDER = 4;
 
 /** Rebuild the hashed tally body from chain data + the pinned ruleset. */
-export async function rebuildTally(
-  inputs: VerifyInputs,
-): Promise<{ tally: TallyBody; notes: string[] }> {
+export async function rebuildTally(inputs: VerifyInputs): Promise<{
+  tally: TallyBody;
+  notes: string[];
+  indeterminate: string | null;
+}> {
   const notes: string[] = [];
   const { bundle } = inputs;
   const def = bundle.survey.definition;
@@ -128,26 +151,60 @@ export async function rebuildTally(
         perRole: [],
       },
       notes,
+      indeterminate: null,
     };
   }
 
   // §6.3 rules 1–3 from scratch: window (authoritative epochNo), validity
   // (full codec validation), credential proof (mechanism A/B), then
   // latest-in-chain-order per (role, credential).
+  const unresolvedActionIds = inputs.unresolvedActionIds ?? [];
+  const govLinksReliable = inputs.govLinksReliable ?? true;
   const eligible: ResponseRecord[] = [];
+  let indeterminate: string | null = null;
   for (const r of bundle.responses) {
     if (r.epochNo > endEpoch) continue;
     if (validateResponse(def, r.response).length !== 0) continue;
+    // Uncovered roles never count, so their proof verdict can't affect the
+    // hash — filter them before the proof step (and before flagging indeterminacy
+    // on an unresolvable link they'd be dropped for regardless).
+    if (!COVERED_ROLES.includes(r.response.role)) continue;
     const proof = inputs.proofs.get(r.txHash) ?? null;
     if (!proof) {
       notes.push(`no proof evidence for tx ${r.txHash} — response excluded`);
       continue;
     }
-    if (!responseCredentialProven(r.response, proof, inputs.linkedActionIds))
+    const verdict = responseCredentialProof(
+      r.response,
+      proof,
+      inputs.linkedActionIds,
+      unresolvedActionIds,
+    );
+    // A verdict that hinges on an unresolvable governance link is unknown, not a
+    // negative — surface it, don't silently drop the response (finding 6). Two
+    // sources: it voted on an epoch-aligned action whose anchor we couldn't
+    // resolve (`unknown`), or our whole gov-links fetch failed so every link is
+    // unknown (`unproven` + `!govLinksReliable`, bindable role only).
+    if (
+      verdict === "unknown" ||
+      (verdict === "unproven" &&
+        !govLinksReliable &&
+        BINDABLE_ROLES.has(r.response.role))
+    ) {
+      indeterminate ??=
+        `credential proof for ${r.txHash}:${r.responseIndex} depends on a ` +
+        `governance-link anchor this verifier could not resolve — the counted ` +
+        `set cannot be reproduced; retry when the link is resolvable`;
       continue;
-    if (!COVERED_ROLES.includes(r.response.role)) continue;
+    }
+    if (verdict !== "proven") continue;
     const blockIndex = inputs.blockIndices.get(r.txHash);
     eligible.push(blockIndex === undefined ? r : { ...r, blockIndex });
+  }
+  // A single unresolved-link uncertainty makes the whole rebuild indeterminate:
+  // we can't produce THE counted set, so a hash comparison would be misleading.
+  if (indeterminate) {
+    return { tally: { ...base, perRole: [] }, notes, indeterminate };
   }
   let counted: ResponseRecord[];
   if (sealed) {
@@ -160,7 +217,7 @@ export async function rebuildTally(
       notes.push(
         "sealed survey on an unsupported (non-quicknet) drand chain — no reveal, empty tally",
       );
-      return { tally: { ...base, perRole: [] }, notes };
+      return { tally: { ...base, perRole: [] }, notes, indeterminate: null };
     }
     if (!inputs.reveal) {
       throw new Error(
@@ -273,7 +330,7 @@ export async function rebuildTally(
     });
   }
 
-  return { tally: { ...base, perRole }, notes };
+  return { tally: { ...base, perRole }, notes, indeterminate: null };
 }
 
 /** Human-readable differences between the received and rebuilt tallies. */
@@ -333,11 +390,43 @@ export async function verifyArtifact(
   inputs: VerifyInputs,
 ): Promise<VerifyResult> {
   const receivedHash = artifactHash(inputs.artifact.tally);
-  const { tally: rebuilt, notes } = await rebuildTally(inputs);
+  const { tally: rebuilt, notes, indeterminate } = await rebuildTally(inputs);
   const rebuiltHash = artifactHash(rebuilt);
+
+  // Diff this verifier's independently-resolved link set against the one the
+  // emitter committed (unhashed provenance), so a divergence in governance-link
+  // resolution is named explicitly rather than surfacing only as an opaque hash
+  // MISMATCH (finding 6). Absent `govLinks` = a pre-commit or cancellation
+  // artifact; nothing to compare.
+  const committed = inputs.artifact.provenance.govLinks;
+  if (committed !== undefined) {
+    const c = [...committed].sort();
+    const resolved = [...inputs.linkedActionIds].sort();
+    if (c.length !== resolved.length || c.some((id, i) => id !== resolved[i])) {
+      notes.push(
+        `governance link set diverged — artifact committed [${c.join(", ")}], ` +
+          `this verifier resolved [${resolved.join(", ")}]; any difference below ` +
+          `may stem from differing link resolution, not a dishonest tally`,
+      );
+    }
+  }
+
+  if (indeterminate !== null) {
+    return {
+      match: false,
+      indeterminate: true,
+      receivedHash,
+      rebuiltHash,
+      rebuilt,
+      notes: [...notes, indeterminate],
+      diffs: [],
+    };
+  }
+
   const match = rebuiltHash === receivedHash;
   return {
     match,
+    indeterminate: false,
     receivedHash,
     rebuiltHash,
     rebuilt,

@@ -407,6 +407,27 @@ describe("verifyArtifact", () => {
     expect(result.match).toBe(true); // everything else re-verified
     expect(result.notes.join("\n")).toContain("not independently re-fetchable");
   });
+
+  it("names a governance link-set divergence without forcing a mismatch (finding 6)", async () => {
+    // The emitter committed a link the verifier didn't resolve. Stakeholders are
+    // proven by mechanism A, so the tally still reproduces (match) — but the
+    // divergence is surfaced explicitly rather than hidden. Provenance is
+    // unhashed, so committing the set changes neither hash.
+    const artifact = emittedArtifact();
+    const withLinks: TallyArtifact = {
+      ...artifact,
+      provenance: {
+        ...artifact.provenance,
+        govLinks: ["gov_action1committed"],
+      },
+    };
+    const result = await verifyArtifact(
+      inputs({ artifact: withLinks, linkedActionIds: [] }),
+    );
+    expect(result.match).toBe(true);
+    expect(result.indeterminate).toBe(false);
+    expect(result.notes.join("\n")).toContain("link set diverged");
+  });
 });
 
 // --- Sealed surveys: reveal with an independently fetched beacon -------------
@@ -916,5 +937,70 @@ describe("verifyArtifact — mechanism B (governance vote binding)", () => {
     );
     expect(result.match).toBe(false);
     expect(result.diffs.join("\n")).toContain("present only in received");
+  });
+
+  // --- finding 6: unresolvable links → INDETERMINATE, never a silent verdict ---
+
+  const voteOnly = new Map<string, TxProof | null>([
+    [
+      D_A.txHash,
+      {
+        requiredSigners: [], // mechanism A fails → the vote is the only hope
+        nativeScripts: [],
+        votes: [
+          { voterTag: 2, credentialHash: "a1".repeat(28), actionIds: [ACTION] },
+        ],
+      },
+    ],
+  ]);
+
+  it("INDETERMINATE when a mechanism-B-only proof hinges on an unresolved anchor", async () => {
+    // ACTION's anchor couldn't be resolved: not in linkedActionIds, but flagged
+    // unresolved. The vote might prove D_A once it resolves — so no verdict, and
+    // crucially NOT a silent MISMATCH from dropping a maybe-valid responder.
+    const result = await verifyArtifact(
+      drepInputs({
+        proofs: voteOnly,
+        linkedActionIds: [],
+        unresolvedActionIds: [ACTION],
+      }),
+    );
+    expect(result.indeterminate).toBe(true);
+    expect(result.match).toBe(false);
+    expect(result.diffs).toEqual([]);
+    expect(result.notes.join("\n")).toContain("could not resolve");
+  });
+
+  it("INDETERMINATE when the whole gov-links fetch failed for a bindable response", async () => {
+    // govLinksReliable=false → every link unknown; a DRep not proven by
+    // mechanism A can't be decided this run.
+    const result = await verifyArtifact(
+      drepInputs({
+        proofs: voteOnly,
+        linkedActionIds: [],
+        govLinksReliable: false,
+      }),
+    );
+    expect(result.indeterminate).toBe(true);
+    expect(result.match).toBe(false);
+  });
+
+  it("is decisive (mechanism A) even with gov links unreliable", async () => {
+    // The credential signs the tx, so links are irrelevant: a definite verdict.
+    const signed = new Map<string, TxProof | null>([
+      [
+        D_A.txHash,
+        { requiredSigners: ["a1".repeat(28)], nativeScripts: [], votes: [] },
+      ],
+    ]);
+    const result = await verifyArtifact(
+      drepInputs({
+        proofs: signed,
+        linkedActionIds: [],
+        govLinksReliable: false,
+      }),
+    );
+    expect(result.indeterminate).toBe(false);
+    expect(result.match).toBe(true);
   });
 });

@@ -13,7 +13,9 @@
  * (proofs, block indices, weights, totals, governance links) also comes straight
  * from Koios. The tally is rebuilt under the pinned ruleset and its content hash
  * compared. Exit codes: 0 MATCH, 1 MISMATCH (differences printed), 2 usage /
- * no artifact / survey not found on-chain / fetch failure.
+ * no artifact / survey not found on-chain / fetch failure, 3 INDETERMINATE (a
+ * required input — e.g. a governance-link anchor — could not be resolved, so no
+ * verdict is possible yet; retry when resolvable).
  */
 
 import { exit } from "node:process";
@@ -163,21 +165,35 @@ async function main(): Promise<void> {
       ...bundle.cancellations.map((c) => c.txHash),
     ]),
   ];
-  const [blockIndices, proofs, govLinks] = await Promise.all([
+  let govLinksReliable = true;
+  const [blockIndices, proofs, govScan] = await Promise.all([
     source.txBlockIndices(txHashes),
     source.txProofs(txHashes),
     source.fetchGovernanceLinks(config.sinceUnix).catch((err) => {
-      console.warn(`gov links unavailable (${String(err)}) — assuming none`);
-      return [];
+      // A fetch failure is UNKNOWN, not "no links" — flag it so a mechanism-B
+      // proof it might decide comes back INDETERMINATE, never a silent exclude.
+      console.warn(
+        `gov links unavailable (${String(err)}) — treating as unresolved`,
+      );
+      govLinksReliable = false;
+      return { links: [], unresolved: [] };
     }),
   ]);
+  // Epoch-aligned actions whose anchor Koios couldn't resolve for us: only those
+  // matching this survey's end epoch can cloud its mechanism-B verdicts.
+  const endEpoch = bundle.survey.definition.endEpoch;
+  const unresolvedActionIds = govScan.unresolved
+    .filter((u) => u.endEpoch === endEpoch)
+    .map((u) => u.actionId);
 
   // 4. Rebuild + compare.
   const result = await verifyArtifact({
     bundle,
     artifact,
     network,
-    linkedActionIds: linkedActionIdsFor(bundle, govLinks),
+    linkedActionIds: linkedActionIdsFor(bundle, govScan.links),
+    unresolvedActionIds,
+    govLinksReliable,
     blockIndices,
     proofs,
     weights: new KoiosTallyInputs(config),
@@ -196,6 +212,13 @@ async function main(): Promise<void> {
   for (const note of result.notes) console.warn(`note: ${note}`);
   console.log(`received hash: ${result.receivedHash}`);
   console.log(`rebuilt hash:  ${result.rebuiltHash}`);
+  if (result.indeterminate) {
+    console.log(
+      "INDETERMINATE — a required input could not be resolved (see notes " +
+        "above); this is not a MISMATCH. Retry when the input is resolvable.",
+    );
+    exit(3);
+  }
   if (result.match) {
     console.log("MATCH — the artifact reproduces from chain data");
     exit(0);

@@ -304,6 +304,67 @@ describe("validateNewResponses", () => {
     expect(source.txProofs).toHaveBeenCalledTimes(2);
   });
 
+  it("holds a bindable verdict whose only possible proof votes an unresolved-anchor action (finding 6)", async () => {
+    const ACTION = "gov_action1unresolved";
+    const store = memTallyStore();
+    // t1: DRep, no signature — mechanism A fails; it votes the action whose
+    // anchor Koios couldn't resolve, so whether it links this survey is unknown.
+    // t2: DRep signing a different credential — mechanism A fails and it never
+    // voted the unresolved action, so nothing could ever prove it: final false.
+    const source = fakeSource(
+      {
+        t1: {
+          requiredSigners: [],
+          nativeScripts: [],
+          votes: [
+            { voterTag: 2, credentialHash: hexOf(1), actionIds: [ACTION] },
+          ],
+        },
+        t2: signedProof(9),
+      },
+      { t1: 3, t2: 4 },
+    );
+    await validateNewResponses(
+      store,
+      records(response("t1", 1, Role.DRep), response("t2", 2, Role.DRep)),
+      [], // no RESOLVED links this refresh
+      source,
+      true, // the fetch itself succeeded
+      [{ actionId: ACTION, endEpoch: DEF.endEpoch }], // but this anchor is unresolved
+    );
+    expect(store.rows.get("t1:0")!.proofOk).toBe(null); // unknown → retry
+    expect(store.rows.get("t2:0")!.proofOk).toBe(false); // didn't vote it → final
+  });
+
+  it("an unresolved anchor at a DIFFERENT epoch never clouds the survey (finding 6)", async () => {
+    const ACTION = "gov_action1elsewhere";
+    const store = memTallyStore();
+    const source = fakeSource(
+      {
+        t1: {
+          requiredSigners: [],
+          nativeScripts: [],
+          votes: [
+            { voterTag: 2, credentialHash: hexOf(1), actionIds: [ACTION] },
+          ],
+        },
+      },
+      { t1: 3 },
+    );
+    // The unresolved action expires at a different epoch than the survey ends,
+    // so epoch-alignment rules it out — it can't link this survey regardless of
+    // its content, and the negative is final rather than deferred.
+    await validateNewResponses(
+      store,
+      records(response("t1", 1, Role.DRep)),
+      [],
+      source,
+      true,
+      [{ actionId: ACTION, endEpoch: DEF.endEpoch + 1 }],
+    );
+    expect(store.rows.get("t1:0")!.proofOk).toBe(false);
+  });
+
   it("marks ill-formed responses (ineligible role) as not well-formed", async () => {
     const store = memTallyStore();
     const source = fakeSource({ t1: signedProof(1) }, { t1: 0 });

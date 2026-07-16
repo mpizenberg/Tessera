@@ -30,10 +30,12 @@ import type {
   ChainTip,
   Cip179Records,
   GovLink,
+  GovLinkScan,
   ResponseRecord,
   SurveyBundle,
   SurveyRecord,
   TxProof,
+  UnresolvedGovAction,
 } from "cip-179/domain";
 import type { TallyArtifact } from "cip-179/tally";
 import type { AppConfig, DataSource, SurveyListPayload } from "@tessera/core";
@@ -452,11 +454,11 @@ export class KoiosDataSource implements DataSource {
     // refresh): a proposal-endpoint failure must not sink the survey list.
     // Bounded by the same `sinceUnix` floor as the survey scan itself — an
     // action older than the scan window can't link to a survey we'd show.
-    const govLinks = await this.fetchGovernanceLinks(
+    const { links: govLinks } = await this.fetchGovernanceLinks(
       this.config.sinceUnix,
     ).catch((err) => {
       console.warn(`governance linkage unavailable: ${String(err)}`);
-      return [];
+      return { links: [] as GovLink[], unresolved: [] };
     });
     return {
       surveys: records.surveys,
@@ -613,7 +615,7 @@ export class KoiosDataSource implements DataSource {
     return null;
   }
 
-  async fetchGovernanceLinks(sinceUnix: number): Promise<GovLink[]> {
+  async fetchGovernanceLinks(sinceUnix: number): Promise<GovLinkScan> {
     // Any governance action kind may carry the link (CIP-179 v5), so no
     // proposal_type filter — only those created at/after `sinceUnix`, since
     // older actions can't link to a still-active survey, which bounds the scan.
@@ -625,11 +627,27 @@ export class KoiosDataSource implements DataSource {
         `&block_time=gte.${Math.floor(sinceUnix)}`,
     );
     const links: GovLink[] = [];
+    const unresolved: UnresolvedGovAction[] = [];
     for (const row of rows) {
       const link = parseGovLink(row);
-      if (link) links.push(link);
+      if (link) {
+        links.push(link);
+        continue;
+      }
+      // Not a resolved link. Separate "the anchor couldn't be resolved" (Koios
+      // returned no `meta_json`) from "resolved, and it's not a survey link": an
+      // unresolved anchor is *unknown*, not "none", so mechanism-B verdicts that
+      // could depend on it must not be frozen against it (finding 6). Needs an
+      // on-chain expiry to epoch-align the uncertainty; a row without one is
+      // unusable either way.
+      if (row.expiration !== null && anchorUnresolved(row.meta_json)) {
+        unresolved.push({
+          actionId: row.proposal_id,
+          endEpoch: row.expiration - 1,
+        });
+      }
     }
-    return links;
+    return { links, unresolved };
   }
 
   private classify(
@@ -694,6 +712,18 @@ export class KoiosDataSource implements DataSource {
  * The human title shown is the action's own CIP-108 `body.title`. Returns null
  * for any action whose anchor doesn't carry a (well-formed) link.
  */
+/**
+ * Whether a proposal's anchor is *unresolved* (Koios returned no `meta_json`)
+ * rather than resolved-but-not-a-link. Koios fills `meta_json` only when it can
+ * reach and parse the off-chain anchor, so a null (or non-object) value means
+ * the doc couldn't be resolved — its link status is unknown, not "none". A
+ * resolved anchor is a JSON object; we let {@link parseGovLink} decide whether
+ * it actually carries a `body.cip179` survey link.
+ */
+export function anchorUnresolved(metaJson: unknown): boolean {
+  return typeof metaJson !== "object" || metaJson === null;
+}
+
 export function parseGovLink(row: ProposalRow): GovLink | null {
   if (row.expiration === null) return null;
   // Shared shape validation (single source of truth with the proposal builder);

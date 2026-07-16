@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { Role, type Credential, type SurveyResponse } from "../index.js";
 
-import { responseCredentialProven, roleOfVoterTag } from "./proof.js";
+import {
+  responseCredentialProof,
+  responseCredentialProven,
+  roleOfVoterTag,
+} from "./proof.js";
 import type { TxProof, VoteBinding } from "./records.js";
 
 const keyCred = (b: number): Credential => ({
@@ -252,5 +256,88 @@ describe("mechanism B (governance-linked survey)", () => {
     expect(
       responseCredentialProven(resp(Role.DRep, keyCred(1)), p, LINKED),
     ).toBe(true);
+  });
+});
+
+// --- Three-valued proof: "unknown" on an unresolvable link (finding 6) -------
+//
+// `responseCredentialProof` adds a third verdict for the case a resolved-link
+// check can't decide: the response casts a qualifying vote on an EPOCH-ALIGNED
+// action whose anchor couldn't be resolved, so if that anchor turns out to link
+// the survey the verdict would flip to proven. Callers must not freeze that as
+// a negative.
+
+describe("responseCredentialProof (three-valued)", () => {
+  const UNRESOLVED = [OTHER_ACTION]; // stands for an unresolved epoch-aligned action
+
+  it("is proven via mechanism A regardless of unresolved anchors", () => {
+    const p = proof({
+      requiredSigners: [hx(1)],
+      votes: [vote(2, 1, UNRESOLVED)],
+    });
+    expect(
+      responseCredentialProof(resp(Role.DRep, keyCred(1)), p, [], UNRESOLVED),
+    ).toBe("proven");
+  });
+
+  it("is proven via a vote on a RESOLVED link even if others are unresolved", () => {
+    const p = proof({ votes: [vote(2, 1, [ACTION])] });
+    expect(
+      responseCredentialProof(
+        resp(Role.DRep, keyCred(1)),
+        p,
+        LINKED,
+        UNRESOLVED,
+      ),
+    ).toBe("proven");
+  });
+
+  it("is unknown when the sole possible proof votes an UNRESOLVED action", () => {
+    // No signature (A fails), no resolved link — only a qualifying vote on the
+    // action whose anchor we couldn't resolve. Could still prove → not final.
+    const p = proof({ votes: [vote(2, 1, UNRESOLVED)] });
+    expect(
+      responseCredentialProof(resp(Role.DRep, keyCred(1)), p, [], UNRESOLVED),
+    ).toBe("unknown");
+  });
+
+  it("is unproven (final) when the response never voted the unresolved action", () => {
+    // The action is unresolved, but THIS response cast no qualifying vote on it,
+    // so resolving it could never prove this response — the negative is final.
+    // (Scoping the uncertainty to the actual voters avoids paralysis.)
+    const p = proof({ votes: [vote(2, 1, [ACTION])] }); // votes a different action
+    expect(
+      responseCredentialProof(resp(Role.DRep, keyCred(1)), p, [], UNRESOLVED),
+    ).toBe("unproven");
+  });
+
+  it("a wrong-role vote on the unresolved action is not a maybe-binding", () => {
+    // SPO-tag vote, response claims DRep → not a qualifying vote, so even an
+    // unresolved anchor can't flip it: final unproven, not unknown.
+    const p = proof({ votes: [vote(4, 1, UNRESOLVED)] });
+    expect(
+      responseCredentialProof(resp(Role.DRep, keyCred(1)), p, [], UNRESOLVED),
+    ).toBe("unproven");
+  });
+
+  it("with no unresolved actions it only ever returns proven/unproven", () => {
+    const voteOnly = proof({ votes: [vote(2, 1, [ACTION])] });
+    expect(
+      responseCredentialProof(resp(Role.DRep, keyCred(1)), voteOnly, LINKED),
+    ).toBe("proven");
+    expect(
+      responseCredentialProof(resp(Role.DRep, keyCred(1)), voteOnly, []),
+    ).toBe("unproven");
+  });
+
+  it("no proof at all is unproven, never unknown", () => {
+    expect(
+      responseCredentialProof(
+        resp(Role.DRep, keyCred(1)),
+        null,
+        [],
+        UNRESOLVED,
+      ),
+    ).toBe("unproven");
   });
 });

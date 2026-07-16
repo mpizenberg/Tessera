@@ -12,6 +12,7 @@ import {
   type CancellationRecord,
   type ChainTip,
   type Cip179Records,
+  type GovLink,
   type ResponseRecord,
   type SurveyRecord,
   type TxProof,
@@ -556,6 +557,70 @@ describe("finalizeClosedSurveys", () => {
       return store.artifacts.get(SURVEY_KEY)!.artifactHash;
     };
     expect(await make()).toBe(await make());
+  });
+
+  it("commits the resolved gov-link set to (unhashed) provenance (finding 6)", async () => {
+    const store = memBackendStore();
+    await seed(store, [validatedRow(rA)]);
+    const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
+    const link: GovLink = {
+      surveyKey: SURVEY_KEY,
+      actionId: "gov_action1linked",
+      endEpoch: END_EPOCH,
+      title: null,
+    };
+    // Noise that must be filtered out: a link for this survey at the wrong epoch,
+    // and a link for a different survey at this epoch.
+    const noise: GovLink[] = [
+      {
+        surveyKey: SURVEY_KEY,
+        actionId: "gov_action1wrongepoch",
+        endEpoch: END_EPOCH + 1,
+        title: null,
+      },
+      {
+        surveyKey: `${"bb".repeat(32)}:0`,
+        actionId: "gov_action1othersurvey",
+        endEpoch: END_EPOCH,
+        title: null,
+      },
+    ];
+    const before = store.artifacts.get(SURVEY_KEY);
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      inputs,
+      noProofs,
+      records(survey(), [rA]),
+      TIP,
+      undefined,
+      [link, ...noise],
+    );
+    const stored = store.artifacts.get(SURVEY_KEY)!;
+    const artifact = JSON.parse(stored.artifact) as TallyArtifact;
+    expect(artifact.provenance.govLinks).toEqual(["gov_action1linked"]);
+    // Provenance is outside the hash: the committed link set changes no content
+    // address (the counted set already committed it via perRole).
+    expect(before).toBeUndefined();
+    expect(stored.artifactHash).toBe(artifactHash(artifact.tally));
+  });
+
+  it("commits an empty gov-link set for a standalone survey (finding 6)", async () => {
+    const store = memBackendStore();
+    await seed(store, [validatedRow(rA)]);
+    const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      inputs,
+      noProofs,
+      records(survey(), [rA]),
+      TIP,
+    );
+    const artifact = JSON.parse(
+      store.artifacts.get(SURVEY_KEY)!.artifact,
+    ) as TallyArtifact;
+    expect(artifact.provenance.govLinks).toEqual([]);
   });
 
   it("emits a cancellation artifact for an owner-proven, in-window cancellation", async () => {

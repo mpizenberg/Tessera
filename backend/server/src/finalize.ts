@@ -34,6 +34,7 @@ import {
   voteDeadlineUnix,
   type ChainTip,
   type Cip179Records,
+  type GovLink,
   type ResponseRecord,
   type SurveyRecord,
   type TxProof,
@@ -89,6 +90,7 @@ export async function finalizeClosedSurveys(
   records: Cip179Records,
   tip: ChainTip,
   reveal: SealedRevealFn = tlockSealedReveal,
+  govLinks: readonly GovLink[] = [],
 ): Promise<void> {
   // An incomplete snapshot (a dropped metadata batch or the page cap) may be
   // missing a responder tx or a cancellation for *any* survey, and we can't tell
@@ -247,6 +249,15 @@ export async function finalizeClosedSurveys(
       try {
         const mode = s.definition.submissionMode;
         const { counted, eligible, pending } = countedBySurvey.get(key)!;
+        // The epoch-aligned link set the mechanism-B verdicts were built on,
+        // committed to the artifact's provenance so a re-verifier can diff its
+        // own (finding 6). Same filter+sort as validate's `linkSetKey`.
+        const linkedActionIds = govLinks
+          .filter(
+            (l) => l.surveyKey === key && l.endEpoch === s.definition.endEpoch,
+          )
+          .map((l) => l.actionId)
+          .sort();
 
         if (mode.type === "sealed") {
           // Weights are frozen above (R1). Wait for the drand round to publish,
@@ -342,6 +353,7 @@ export async function finalizeClosedSurveys(
                 round: mode.round,
                 beacon: result.beacon,
               },
+              linkedActionIds,
             },
           );
           await store.putArtifact({
@@ -381,7 +393,7 @@ export async function finalizeClosedSurveys(
           weightByRole,
           totalByRole,
           nowSec,
-          { sealed: false },
+          { sealed: false, linkedActionIds },
         );
         await store.putArtifact({
           surveyKey: key,
@@ -695,10 +707,16 @@ interface TallyEntry {
   readonly response: SurveyResponse;
 }
 
-/** Sealed-only artifact extras, folded into the body + provenance. */
+/** Artifact extras folded into the body + provenance. */
 interface SealedArtifactOpts {
   readonly sealed: boolean;
   readonly sealedReveal?: TallyArtifact["provenance"]["sealedReveal"];
+  /**
+   * Epoch-aligned action ids this survey resolved as linked, sorted (`[]` =
+   * standalone). Committed to provenance (unhashed) for the re-verifier's link
+   * set diff (finding 6).
+   */
+  readonly linkedActionIds: readonly string[];
 }
 
 /**
@@ -772,6 +790,7 @@ function buildArtifact(
         role,
         endpoint: ROLE_ENDPOINTS[role] ?? "unknown",
       })),
+      govLinks: opts.linkedActionIds,
       ...(opts.sealedReveal && { sealedReveal: opts.sealedReveal }),
     },
   };

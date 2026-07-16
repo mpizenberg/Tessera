@@ -223,6 +223,20 @@ export interface TallyArtifact {
       readonly endpoint: string;
     }[];
     /**
+     * The epoch-aligned governance action ids the emitter resolved as linking
+     * this survey (mechanism-B proof), sorted; `[]` = resolved and standalone.
+     * Absent on a cancellation artifact (links aren't evaluated there).
+     *
+     * **Outside the hash**: the counted set these links produced is already
+     * committed via {@link TallyBody.perRole}, so recording them changes no
+     * content address. It makes the artifact self-describing, and lets a
+     * re-verifier diff its own independently-resolved link set against the
+     * emitter's — turning a would-be opaque tally mismatch into a precise
+     * "link set diverged" signal (finding 6). Not a trust shortcut: the verifier
+     * still re-resolves and re-checks; this is provenance, not evidence.
+     */
+    readonly govLinks?: readonly string[];
+    /**
      * Present iff the survey is sealed: the drand chain + round the answers were
      * revealed with, and the beacon itself. Deliberately **outside** the hash —
      * the tally's on-chain definition already pins `(chainHash, round)`, and the

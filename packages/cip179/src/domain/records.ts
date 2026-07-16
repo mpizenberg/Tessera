@@ -175,6 +175,37 @@ export interface GovLink {
 }
 
 /**
+ * A governance action whose anchor could not be resolved (the indexer returned
+ * no `meta_json`), so whether it links a survey is **unknown**, not "no link".
+ * Distinguishing the two is what lets a consumer surface an unresolved anchor
+ * instead of silently deciding "not linked" (finding 6).
+ *
+ * The action's `endEpoch` is on-chain (available even when the off-chain anchor
+ * isn't), so it scopes the uncertainty by the epoch-alignment rule: an
+ * unresolved anchor only clouds surveys ending at this epoch — and, of those,
+ * only responses that actually cast a role-matching vote on this action — rather
+ * than every survey.
+ */
+export interface UnresolvedGovAction {
+  /** Bech32 governance action id (on-chain, always available). */
+  readonly actionId: string;
+  /** The action's expiry epoch (`expiration - 1`); a survey it could link ends here. */
+  readonly endEpoch: number;
+}
+
+/**
+ * The result of scanning governance actions for survey links: the resolved
+ * links, plus the epoch-aligned actions whose anchor couldn't be resolved. The
+ * two are kept apart so a consumer can treat an *unresolvable* anchor as unknown
+ * (retry / postpone / report indeterminate) instead of coercing it into the
+ * substantive verdict "this survey has no links" (finding 6).
+ */
+export interface GovLinkScan {
+  readonly links: readonly GovLink[];
+  readonly unresolved: readonly UnresolvedGovAction[];
+}
+
+/**
  * The self-contained slice for one survey: its definition record, ALL of its
  * responses (sealed ciphertexts included — client-side audit/tally/reveal need
  * the raw set), the cancellations targeting it, and the tip that anchors

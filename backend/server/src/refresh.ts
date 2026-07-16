@@ -88,12 +88,12 @@ export async function refreshSnapshot(
     // "unknown", not "none" — validation must not freeze a link-dependent verdict
     // against it, so the failure is signalled separately.
     let govLinksReliable = true;
-    const govLinks = await source
+    const { links: govLinks, unresolved: govUnresolved } = await source
       .fetchGovernanceLinks(config.app.sinceUnix)
       .catch((err) => {
         console.warn(`gov links fetch failed: ${String(err)}`);
         govLinksReliable = false;
-        return [];
+        return { links: [], unresolved: [] };
       });
 
     const payload = toJsonSafe({ records, tip, govLinks });
@@ -117,6 +117,7 @@ export async function refreshSnapshot(
       govLinks,
       source,
       govLinksReliable,
+      govUnresolved,
     ).catch((err) =>
       console.warn(`response validation failed (will retry): ${String(err)}`),
     );
@@ -131,6 +132,8 @@ export async function refreshSnapshot(
       source,
       records,
       tip,
+      undefined,
+      govLinks,
     ).catch((err) =>
       console.warn(`finalization failed (will retry): ${String(err)}`),
     );

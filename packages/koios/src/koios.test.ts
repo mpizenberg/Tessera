@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AppConfig } from "@tessera/core";
 
-import { KoiosDataSource, parseGovLink, type ProposalRow } from "./koios";
+import {
+  KoiosDataSource,
+  anchorUnresolved,
+  parseGovLink,
+  type ProposalRow,
+} from "./koios";
 
 // A CIP-108 anchor doc where a survey link lives at `body.cip179`, as produced
 // by the LinkActionPanel and described in CIP-179. Sub-objects are spread in so
@@ -123,6 +128,27 @@ describe("parseGovLink", () => {
     expect(
       parseGovLink(row(anchor({ cip179: LINK }), /* expiration */ null)),
     ).toBeNull();
+  });
+});
+
+// An anchor Koios couldn't resolve (`meta_json` null) is UNKNOWN, not "no link":
+// `fetchGovernanceLinks` files it under `unresolved` so a mechanism-B verdict it
+// might decide is deferred/surfaced, never silently coerced to unproven
+// (finding 6). This predicate is what draws that line.
+describe("anchorUnresolved", () => {
+  it("is true for a null (or non-object) meta_json — couldn't resolve", () => {
+    expect(anchorUnresolved(null)).toBe(true);
+    expect(anchorUnresolved(undefined)).toBe(true);
+    expect(anchorUnresolved("not an object")).toBe(true);
+  });
+
+  it("is false for a resolved anchor object — parseGovLink then decides", () => {
+    // A resolved doc that happens not to be a survey link is still "resolved".
+    expect(anchorUnresolved(anchor({ title: "Just a normal action" }))).toBe(
+      false,
+    );
+    expect(anchorUnresolved(anchor({ cip179: LINK }))).toBe(false);
+    expect(anchorUnresolved({})).toBe(false);
   });
 });
 
