@@ -7,7 +7,8 @@
  *    deregistration)` — registration state. Only registration/deregistration
  *    change it (delegations/withdrawals merely imply registration), so we filter
  *    to those two server-side; a credential is registered at E iff, walking its
- *    events in `absolute_slot` order up to E, the last one is a registration.
+ *    events in `absolute_slot` order up to E, the last one is a registration (a
+ *    same-slot register+deregister pair pins to deregistered — see the walk).
  *    Still offset-paginated (a churny account can register/deregister many
  *    times) so a long history is never silently truncated at Koios's ~1000 cap.
  *  - `/account_stake_history?epoch_no=eq.E` — active stake. One row per
@@ -205,7 +206,23 @@ export class KoiosTallyInputs implements TallyInputSource {
         list.push(row);
       }
       for (const [address, events] of eventsByAddress) {
-        events.sort((a, b) => a.absolute_slot - b.absolute_slot);
+        // Same-slot tie-break (RULESET-PINNED-BEHAVIOR): a credential can
+        // register and deregister in the same slot (two certs in one tx are
+        // legal), and `account_update_history` carries no within-slot ordinal —
+        // no tx_block_index / cert index, confirmed against the Koios API schema
+        // — so the true cert order is unobservable. Pin a deterministic rule
+        // rather than let Koios row order decide it (finding 5): sort a
+        // deregistration *after* a registration within a slot, so an ambiguous
+        // same-slot pair resolves to deregistered. Fail-closed — a membership
+        // filter must not admit a credential whose final state can't be
+        // established. Emitter and verifier run this same code, so both freeze
+        // the identical verdict into the hashed artifact.
+        const deregLast = (e: AccountUpdateRow) =>
+          e.action_type === "deregistration" ? 1 : 0;
+        events.sort(
+          (a, b) =>
+            a.absolute_slot - b.absolute_slot || deregLast(a) - deregLast(b),
+        );
         let isRegistered = false;
         for (const e of events) {
           // A deregistration closes the account; a registration (re)opens it.

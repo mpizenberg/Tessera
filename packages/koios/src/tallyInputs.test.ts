@@ -25,6 +25,17 @@ const cred = (hex: string): Credential => ({
   keyHash: hexToBytes(hex),
 });
 
+/** An `account_update_history` row of the given action at `slot`. */
+const update = (stake_address: string, action_type: string, slot: number) => ({
+  stake_address,
+  action_type,
+  absolute_slot: slot,
+  epoch_no: 1,
+});
+const reg = (addr: string, slot: number) => update(addr, "registration", slot);
+const dereg = (addr: string, slot: number) =>
+  update(addr, "deregistration", slot);
+
 type Handler = (
   url: string,
   body: { _stake_addresses?: string[] } | null,
@@ -196,6 +207,53 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
     );
     expect(weights.get(`key:${HASH_A}`)).toEqual({
       registered: false,
+      weight: 0n,
+    });
+  });
+
+  it("resolves a same-slot register+deregister tie to deregistered, independent of row order (finding 5)", async () => {
+    const [addrA, addrB, addrC] = await Promise.all([
+      stakeAddress(cred(HASH_A), "preview"),
+      stakeAddress(cred(HASH_B), "preview"),
+      stakeAddress(cred(HASH_C), "preview"),
+    ]);
+    stubFetch((url) => {
+      if (url.includes("/account_stake_history")) return [];
+      if (url.includes("/account_update_history")) {
+        return [
+          // A: register + deregister in the SAME slot, rows in one order…
+          reg(addrA, 100),
+          dereg(addrA, 100),
+          // B: the SAME slot pair, rows in the OPPOSITE order — must not matter.
+          dereg(addrB, 100),
+          reg(addrB, 100),
+          // C: the same-slot tie is not the final word — a later plain
+          // registration (higher slot) still wins.
+          reg(addrC, 100),
+          dereg(addrC, 100),
+          reg(addrC, 200),
+        ];
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+
+    const weights = await new KoiosTallyInputs(CONFIG).stakeholderWeights(
+      1345,
+      [cred(HASH_A), cred(HASH_B), cred(HASH_C)],
+    );
+    // Fail-closed and deterministic: an ambiguous same-slot pair resolves to
+    // deregistered for BOTH A and B, so Koios row order can't change membership.
+    expect(weights.get(`key:${HASH_A}`)).toEqual({
+      registered: false,
+      weight: 0n,
+    });
+    expect(weights.get(`key:${HASH_B}`)).toEqual({
+      registered: false,
+      weight: 0n,
+    });
+    // …but the rule is slot-local: C's later registration still counts.
+    expect(weights.get(`key:${HASH_C}`)).toEqual({
+      registered: true,
       weight: 0n,
     });
   });
