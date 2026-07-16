@@ -31,6 +31,7 @@ import {
   laterInChain,
   parseCredentialKey,
   refKey,
+  scriptCredentialHash,
   voteDeadlineUnix,
   type ChainTip,
   type Cip179Records,
@@ -432,14 +433,31 @@ async function withCancellations(
   nowSec: number,
 ): Promise<SurveyRecord[]> {
   const candidateKeys = new Set(candidates.map((s) => refKey(s.ref)));
+  const ownerByKey = new Map(
+    candidates.map((s) => [refKey(s.ref), s.definition.owner]),
+  );
   const relevant = records.cancellations.filter((c) =>
     candidateKeys.has(refKey(c.target)),
   );
   if (relevant.length === 0) return [...candidates];
 
-  const proofs: Map<string, TxProof | null> = await source.txProofs([
-    ...new Set(relevant.map((c) => c.txHash)),
-  ]);
+  // A native-script owner may not attach its script to the cancelling tx
+  // (mechanism A permits chain resolution); tell `txProofs` which script hash to
+  // resolve by hash for each cancellation tx (finding 7).
+  const neededScripts = new Map<string, string[]>();
+  for (const c of relevant) {
+    const owner = ownerByKey.get(refKey(c.target));
+    const scriptHash = owner ? scriptCredentialHash(owner) : null;
+    if (!scriptHash) continue;
+    const list = neededScripts.get(c.txHash);
+    if (list) list.push(scriptHash);
+    else neededScripts.set(c.txHash, [scriptHash]);
+  }
+
+  const proofs: Map<string, TxProof | null> = await source.txProofs(
+    [...new Set(relevant.map((c) => c.txHash))],
+    neededScripts,
+  );
 
   const open: SurveyRecord[] = [];
   for (const s of candidates) {

@@ -21,6 +21,7 @@ import {
   credentialKey,
   refKey,
   responseCredentialProof,
+  scriptCredentialHash,
   type Cip179Records,
   type GovLink,
   type UnresolvedGovAction,
@@ -122,9 +123,20 @@ export async function validateNewResponses(
   if (candidates.length === 0) return;
 
   const txHashes = [...new Set(candidates.map((r) => r.txHash))];
+  // A script-credentialed response's native script may not be attached to its
+  // tx (mechanism A permits chain resolution); tell `txProofs` which script hash
+  // to resolve by hash for each response tx (finding 7).
+  const neededScripts = new Map<string, string[]>();
+  for (const r of candidates) {
+    const scriptHash = scriptCredentialHash(r.response.credential);
+    if (!scriptHash) continue;
+    const list = neededScripts.get(r.txHash);
+    if (list) list.push(scriptHash);
+    else neededScripts.set(r.txHash, [scriptHash]);
+  }
   const [blockIndices, proofs] = await Promise.all([
     source.txBlockIndices(txHashes),
-    source.txProofs(txHashes),
+    source.txProofs(txHashes, neededScripts),
   ]);
 
   const checkedAt = Math.floor(Date.now() / 1000);

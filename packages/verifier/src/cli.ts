@@ -22,7 +22,12 @@ import { exit } from "node:process";
 
 import type { SurveyRef } from "cip-179";
 
-import { hexToBytes, refKey, type SurveyBundle } from "cip-179/domain";
+import {
+  hexToBytes,
+  refKey,
+  scriptCredentialHash,
+  type SurveyBundle,
+} from "cip-179/domain";
 import { fromJsonSafe, type TallyArtifact } from "cip-179/tally";
 import {
   KOIOS_URL,
@@ -165,10 +170,25 @@ async function main(): Promise<void> {
       ...bundle.cancellations.map((c) => c.txHash),
     ]),
   ];
+  // Native-script credentials whose script may not be attached to the carrying
+  // tx: resolve them by hash so mechanism A is evaluated the same way the emitter
+  // does (finding 7). Cancellations all target this survey → its owner.
+  const neededScripts = new Map<string, string[]>();
+  const addNeeded = (txHash: string, scriptHash: string | null) => {
+    if (!scriptHash) return;
+    const list = neededScripts.get(txHash);
+    if (list) list.push(scriptHash);
+    else neededScripts.set(txHash, [scriptHash]);
+  };
+  const ownerScriptHash = scriptCredentialHash(bundle.survey.definition.owner);
+  for (const c of bundle.cancellations) addNeeded(c.txHash, ownerScriptHash);
+  for (const r of bundle.responses)
+    addNeeded(r.txHash, scriptCredentialHash(r.response.credential));
+
   let govLinksReliable = true;
   const [blockIndices, proofs, govScan] = await Promise.all([
     source.txBlockIndices(txHashes),
-    source.txProofs(txHashes),
+    source.txProofs(txHashes, neededScripts),
     source.fetchGovernanceLinks(config.sinceUnix).catch((err) => {
       // A fetch failure is UNKNOWN, not "no links" — flag it so a mechanism-B
       // proof it might decide comes back INDETERMINATE, never a silent exclude.

@@ -101,6 +101,40 @@ function voterCredential(
 }
 
 /**
+ * Interpret a native script resolved **by hash** (from a chain index, not the
+ * carrying tx's witness set) into the `{ scriptHash, script }` shape a
+ * {@link TxProof} carries in `nativeScripts`, or `null` if `scriptCborHex` isn't
+ * a decodable native script (a Plutus script → `null`, so it resolves nothing
+ * and the credential stays unproven — a Plutus owner has no mechanism-A path).
+ *
+ * CIP-179 mechanism A allows the native script backing a script credential to be
+ * resolved through chain indexing when the metadata-only transaction that
+ * carries the response/cancellation doesn't attach it. A data source fetches the
+ * script CBOR by hash (e.g. Koios `/script_info`) and folds the result into the
+ * relevant tx's `TxProof.nativeScripts`; the pure {@link cancellationVerified} /
+ * {@link responseCredentialProven} evaluation is then unchanged — it still just
+ * looks the script hash up in `nativeScripts`. The hash is recomputed from the
+ * (re-canonicalised) CBOR exactly as for a witness script, so a source returning
+ * bytes that don't hash to the requested credential simply won't match it.
+ */
+export function decodeResolvedNativeScript(
+  codec: TxProofCodec,
+  scriptCborHex: string,
+): { scriptHash: string; script: NativeScriptInfo } | null {
+  const decoded = codec.decodeNativeScript(scriptCborHex);
+  if (!decoded) return null;
+  try {
+    return {
+      scriptHash: nativeScriptHash(decoded.scriptCbor),
+      script: toInfo(decoded.script),
+    };
+  } catch (err) {
+    console.warn(`could not interpret resolved native script: ${String(err)}`);
+    return null;
+  }
+}
+
+/**
  * Interpret a transaction's credential-proof evidence — `required_signers`,
  * witness-set native scripts (mechanism A) and vote bindings (mechanism B) —
  * decoding its CBOR through `codec`, or `null` if it can't be decoded or

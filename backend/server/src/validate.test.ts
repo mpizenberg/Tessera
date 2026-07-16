@@ -393,9 +393,54 @@ describe("validateNewResponses", () => {
       [],
       source,
     );
-    // One tx → one fetch, two rows; only cred 1 signed.
-    expect(source.txProofs).toHaveBeenCalledWith(["t1"]);
+    // One tx → one fetch, two rows; only cred 1 signed. Key credentials, so no
+    // native scripts to resolve by hash (empty needed-scripts map).
+    expect(source.txProofs).toHaveBeenCalledWith(["t1"], new Map());
     expect(store.rows.get("t1:0")!.proofOk).toBe(true);
     expect(store.rows.get("t1:1")!.proofOk).toBe(false);
+  });
+
+  it("hands a script credential's hash to txProofs for by-hash resolution (finding 7)", async () => {
+    const store = memTallyStore();
+    const scriptCred: Credential = {
+      type: "script",
+      scriptHash: Uint8Array.of(9),
+    };
+    const scriptHashHex = bytesToHex(scriptCred.scriptHash);
+    // The proof `txProofs` returns already carries the chain-resolved script
+    // (the merge happens inside the real `txProofs`; the fake just supplies the
+    // post-merge proof), so mechanism A verifies.
+    const proof: TxProof = {
+      requiredSigners: [hexOf(9)],
+      nativeScripts: [
+        {
+          scriptHash: scriptHashHex,
+          script: { kind: "sig", keyHash: hexOf(9) },
+        },
+      ],
+      votes: [],
+    };
+    const source = fakeSource({ ts: proof }, { ts: 3 });
+    const scriptResp: ResponseRecord = {
+      txHash: "ts",
+      slot: 200,
+      epochNo: 1341,
+      responseIndex: 0,
+      response: {
+        specVersion: 5,
+        surveyRef: survey.ref,
+        role: Role.DRep,
+        credential: scriptCred,
+        answers: { type: "public", answers: [] },
+      },
+    };
+    await validateNewResponses(store, records(scriptResp), [], source);
+    // The script hash is passed so the source can resolve it by hash when the
+    // carrying tx doesn't attach it; a key-credentialed response passes nothing.
+    expect(source.txProofs).toHaveBeenCalledWith(
+      ["ts"],
+      new Map([["ts", [scriptHashHex]]]),
+    );
+    expect(store.rows.get("ts:0")!.proofOk).toBe(true);
   });
 });

@@ -179,6 +179,28 @@ export function decodeTx(txCborHex: string): DecodedTx | null {
   }
 }
 
+/**
+ * Decode a bare native script from its CBOR (hex) — a Koios `/script_info`
+ * `bytes` value — to the neutral {@link DecodedNativeScript}, or `null` if it
+ * isn't a decodable native script (a Plutus script's bytes throw here, so the
+ * caller resolves nothing and the credential stays unproven). Re-serialises to
+ * canonical CBOR so the interpretation hashes it exactly as a witness script.
+ */
+export function decodeNativeScript(
+  scriptCborHex: string,
+): DecodedNativeScript | null {
+  try {
+    const ns = NativeScripts.fromCBORHex(scriptCborHex);
+    return {
+      scriptCbor: NativeScripts.toCBORBytes(ns),
+      script: ns as unknown as NativeScriptNode,
+    };
+  } catch (err) {
+    console.warn(`could not decode native script: ${String(err)}`);
+    return null;
+  }
+}
+
 /** The evolution-sdk-backed codec — satisfies both cip-179 ports. */
 export const evolutionCodec: MetadatumCodec & TxProofCodec = {
   metadatumToCbor,
@@ -187,4 +209,5 @@ export const evolutionCodec: MetadatumCodec & TxProofCodec = {
   drepId,
   govActionId,
   decodeTx,
+  decodeNativeScript,
 };

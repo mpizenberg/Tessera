@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AppConfig } from "@tessera/core";
+import type { Credential } from "cip-179";
+import { cancellationVerified, hexToBytes } from "cip-179/domain";
+import { decodeResolvedNativeScript } from "cip-179/txproof";
+import { evolutionCodec } from "cip-179/evolution";
 
 import {
   KoiosDataSource,
@@ -453,5 +457,157 @@ describe("fetchAll — tx metadata cache (finding 5)", () => {
     expect(run3.incomplete).toBe(false);
     expect(run3.responses).toHaveLength(2);
     expect(metadataBatches).toEqual([]);
+  });
+});
+
+// --- mechanism-A native-script resolution by hash (finding 7) ----------------
+//
+// A native script backing a script credential need not be attached to the
+// carrying tx (a metadata-only tx spends nothing from it). CIP-179 mechanism A
+// lets it be resolved by hash via chain indexing; `txProofs` does so through
+// Koios `/script_info` and folds the result into the tx's proof, so the pure
+// evaluation is identical to the emitter's — otherwise Tessera and a conformant
+// verifier tally the same chain differently.
+
+// DREP_VOTE_TX_CBOR lists this key hash in required_signers; a sig script over it
+// is therefore satisfied by that tx. CBOR of `[0, keyhash]`.
+const KEYHASH = "d16978b7f8052ad3383bee5930d37ec05fe483ff4477d50df3585c57";
+const SIG_SCRIPT_CBOR = `8200581c${KEYHASH}`;
+const SCRIPT_HASH = decodeResolvedNativeScript(
+  evolutionCodec,
+  SIG_SCRIPT_CBOR,
+)!.scriptHash;
+// A minimal tx that lists KEYHASH in required_signers and attaches NO script.
+const SIGNED_TX_CBOR =
+  "84a600d9010281825820128d8098467043c6ba9d84d5360782ec3841084625afde5e0d7fdf7e" +
+  "e951526300018182583900ad63500e30fae29cb2961f48b83360743abcd331aed01b9d3ec8f4" +
+  "db4f467a090e6903ed92b585afd0a6932526a0eb1df314a4a3ce6be4001b00000001fa4a21f0" +
+  "021a0002ab71031a06e621970ed9010281581cd16978b7f8052ad3383bee5930d37ec05fe483" +
+  "ff4477d50df3585c5713a18202581cd16978b7f8052ad3383bee5930d37ec05fe483ff4477d5" +
+  "0df3585c57a1825820178a410703c9a88d38acc8e7e00217722f98e697c826ebd105e0c5beaf" +
+  "32e00f008200f6a100d90102828258201a0ca31c60a58eb30a18c463acf6bc670105655fa686" +
+  "bbacce6f17f252f3646b58407b577b96203cc9bda779a10c61911fa609bf3196262ed4a5687c" +
+  "54ab14076623b48648152f53d211a63c2b6db17c8fb13eb9d3e7de3af86713c0ef03a1320c0c" +
+  "8258201f6479010c6a232da09c690550adf5740887de895ca4ffd446720915a165b1df58403e" +
+  "ff09e7737a63c59eda414eff7105679f0da90574776ae16bd99abf1b0195e4633c6314f24dd2" +
+  "802b7bfff954158719eee04cd609c638c1affda54bafbcbf08f5f6";
+
+const TX = "77".repeat(32);
+const scriptOwner = (): Credential => ({
+  type: "script",
+  scriptHash: hexToBytes(SCRIPT_HASH),
+});
+
+/** Stub `/tx_cbor` (one tx) and `/script_info` (parameterised) responses. */
+function stubProofFetch(scriptInfo: () => Response) {
+  const mock = vi.fn(async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/tx_cbor"))
+      return new Response(
+        JSON.stringify([{ tx_hash: TX, cbor: SIGNED_TX_CBOR }]),
+        { status: 200 },
+      );
+    if (url.includes("/script_info")) return scriptInfo();
+    return new Response("[]", { status: 200 });
+  });
+  vi.stubGlobal("fetch", mock);
+  return mock;
+}
+
+describe("resolveNativeScripts", () => {
+  it("decodes native rows, drops Plutus, and keys by the recomputed hash", async () => {
+    stubProofFetch(
+      () =>
+        new Response(
+          JSON.stringify([
+            {
+              script_hash: SCRIPT_HASH,
+              type: "multisig",
+              bytes: SIG_SCRIPT_CBOR,
+            },
+            { script_hash: "plu700", type: "plutusV3", bytes: "deadbeef" },
+          ]),
+          { status: 200 },
+        ),
+    );
+    const { scripts, reliable } = await new KoiosDataSource(
+      CONFIG,
+    ).resolveNativeScripts([SCRIPT_HASH, "plu700"]);
+    expect(reliable).toBe(true);
+    expect([...scripts.keys()]).toEqual([SCRIPT_HASH]); // Plutus row excluded
+    expect(scripts.get(SCRIPT_HASH)).toEqual({ kind: "sig", keyHash: KEYHASH });
+  });
+
+  it("reports reliable=false when a /script_info batch throws (couldn't ask)", async () => {
+    stubProofFetch(() => new Response("boom", { status: 500 }));
+    const { scripts, reliable } = await new KoiosDataSource(
+      CONFIG,
+    ).resolveNativeScripts([SCRIPT_HASH]);
+    expect(reliable).toBe(false);
+    expect(scripts.size).toBe(0);
+  });
+});
+
+describe("txProofs — mechanism-A script resolution", () => {
+  it("folds a chain-resolved script into the proof so mechanism A verifies", async () => {
+    stubProofFetch(
+      () =>
+        new Response(
+          JSON.stringify([
+            {
+              script_hash: SCRIPT_HASH,
+              type: "multisig",
+              bytes: SIG_SCRIPT_CBOR,
+            },
+          ]),
+          { status: 200 },
+        ),
+    );
+    const proofs = await new KoiosDataSource(CONFIG).txProofs(
+      [TX],
+      new Map([[TX, [SCRIPT_HASH]]]),
+    );
+    const proof = proofs.get(TX);
+    expect(proof).not.toBeNull();
+    // The witness set carried no script; the resolved one is merged in.
+    expect(proof!.nativeScripts).toEqual([
+      { scriptHash: SCRIPT_HASH, script: { kind: "sig", keyHash: KEYHASH } },
+    ]);
+    // …and the tx's required_signers satisfy it → the script owner is proven.
+    expect(cancellationVerified(scriptOwner(), proof!)).toBe(true);
+  });
+
+  it("nulls the proof (unknown, retry) when /script_info can't be reached", async () => {
+    stubProofFetch(() => new Response("boom", { status: 500 }));
+    const proofs = await new KoiosDataSource(CONFIG).txProofs(
+      [TX],
+      new Map([[TX, [SCRIPT_HASH]]]),
+    );
+    // A needed, non-witnessed script we couldn't resolve is surfaced as unknown,
+    // never silently decided "unproven" (findings 6/7).
+    expect(proofs.get(TX)).toBeNull();
+  });
+
+  it("leaves a definitively-absent script unmerged → a final unproven (no paralysis)", async () => {
+    // A successful fetch that returns no such native script (Plutus, or a hash
+    // never on-chain — e.g. a bogus claim). The proof stays non-null, the script
+    // stays absent, so mechanism A is a final negative and finalization proceeds.
+    stubProofFetch(() => new Response("[]", { status: 200 }));
+    const proofs = await new KoiosDataSource(CONFIG).txProofs(
+      [TX],
+      new Map([[TX, [SCRIPT_HASH]]]),
+    );
+    const proof = proofs.get(TX);
+    expect(proof).not.toBeNull();
+    expect(proof!.nativeScripts).toEqual([]);
+    expect(cancellationVerified(scriptOwner(), proof!)).toBe(false);
+  });
+
+  it("makes no /script_info request when nothing needs resolving", async () => {
+    const fetchMock = stubProofFetch(() => new Response("[]", { status: 200 }));
+    await new KoiosDataSource(CONFIG).txProofs([TX]); // no needed-scripts map
+    expect(
+      fetchMock.mock.calls.some((c) => String(c[0]).includes("/script_info")),
+    ).toBe(false);
   });
 });

@@ -72,6 +72,17 @@ function credentialHashHex(credential: Credential): string {
     : bytesToHex(credential.scriptHash);
 }
 
+/**
+ * The native-script hash a script credential claims (hex), or `null` for a key
+ * credential. A data source uses it to resolve the credential's native script by
+ * hash (mechanism-A chain resolution) when the carrying tx doesn't witness it.
+ */
+export function scriptCredentialHash(credential: Credential): string | null {
+  return credential.type === "script"
+    ? bytesToHex(credential.scriptHash)
+    : null;
+}
+
 /** The tx's vote bindings cast *by the response credential* (hash AND kind). */
 function bindingsByCredential(
   credential: Credential,

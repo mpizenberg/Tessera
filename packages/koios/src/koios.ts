@@ -24,6 +24,7 @@ import {
   parseCip179Link,
   refKey,
   responseCounts,
+  scriptCredentialHash,
 } from "cip-179/domain";
 import type {
   CancellationRecord,
@@ -31,6 +32,7 @@ import type {
   Cip179Records,
   GovLink,
   GovLinkScan,
+  NativeScriptInfo,
   ResponseRecord,
   SurveyBundle,
   SurveyRecord,
@@ -42,7 +44,7 @@ import type { AppConfig, DataSource, SurveyListPayload } from "@tessera/core";
 import { Koios } from "@evolution-sdk/evolution/sdk/provider/Koios";
 import type { ProtocolParameters } from "@evolution-sdk/evolution/sdk/provider/Provider";
 import { koiosJsonToMetadatum, type KoiosJson } from "./metadatum";
-import { decodeTxProof } from "cip-179/txproof";
+import { decodeResolvedNativeScript, decodeTxProof } from "cip-179/txproof";
 import { evolutionCodec } from "cip-179/evolution";
 
 /** Max tx hashes per /tx_metadata POST (larger bodies return HTTP 413). */
@@ -50,6 +52,9 @@ const TX_METADATA_BATCH = 50;
 
 /** Max tx hashes per /tx_cbor POST — raw CBOR is bulky, so a smaller page (100 returns 413). */
 const TX_CBOR_BATCH = 25;
+
+/** Max script hashes per /script_info POST (native-script resolution by hash). */
+const SCRIPT_INFO_BATCH = 50;
 
 /**
  * Rows per label-index page. Koios allows up to 1000 rows/response, but we page
@@ -107,6 +112,14 @@ interface TxCborRow {
   tx_hash: string;
   /** Full transaction CBOR (hex), or null if unavailable. */
   cbor: string | null;
+}
+
+interface ScriptInfoRow {
+  script_hash: string;
+  /** Koios script type: native scripts are `multisig`/`timelock`; the rest are Plutus. */
+  type: string;
+  /** The script's CBOR (hex), or null if unavailable. */
+  bytes: string | null;
 }
 
 export interface ProposalRow {
@@ -428,11 +441,31 @@ export class KoiosDataSource implements DataSource {
       else closedCancellations.push(c);
     }
 
+    // A script-credentialed owner's native script may not be attached to the
+    // cancelling tx (CIP-179 mechanism A allows chain resolution). Map each open
+    // cancellation's tx to its target survey's owner script hash so `txProofs`
+    // can resolve it by hash when the witness set lacks it (finding 7).
+    const ownerByKey = new Map(
+      surveys.map((s) => [refKeyOf(s.ref), s.definition.owner]),
+    );
+    const cancellationScripts = new Map<string, string[]>();
+    for (const c of openCancellations) {
+      const owner = ownerByKey.get(refKeyOf(c.target));
+      const scriptHash = owner ? scriptCredentialHash(owner) : null;
+      if (!scriptHash) continue;
+      const list = cancellationScripts.get(c.txHash);
+      if (list) list.push(scriptHash);
+      else cancellationScripts.set(c.txHash, [scriptHash]);
+    }
+
     return {
       surveys,
       responses,
       cancellations: [
-        ...(await this.withCancellationProofs(openCancellations)),
+        ...(await this.withCancellationProofs(
+          openCancellations,
+          cancellationScripts,
+        )),
         ...closedCancellations,
       ],
       incomplete,
@@ -515,11 +548,13 @@ export class KoiosDataSource implements DataSource {
    */
   private async withCancellationProofs(
     cancellations: readonly CancellationRecord[],
+    neededScripts: ReadonlyMap<string, readonly string[]>,
   ): Promise<CancellationRecord[]> {
     if (cancellations.length === 0) return [...cancellations];
-    const proofByHash = await this.txProofs([
-      ...new Set(cancellations.map((c) => c.txHash)),
-    ]);
+    const proofByHash = await this.txProofs(
+      [...new Set(cancellations.map((c) => c.txHash))],
+      neededScripts,
+    );
     return cancellations.map((c) => ({
       ...c,
       proof: proofByHash.get(c.txHash) ?? null,
@@ -541,9 +576,23 @@ export class KoiosDataSource implements DataSource {
    *    batch fetch threw, the row carried no CBOR, or the decode failed) — i.e.
    *    *unknown*, so the caller must retry on a later refresh, never treat it as
    *    a negative verdict (freezing an artifact on it would be wrong — finding 1).
+   *
+   * `neededScripts` maps a tx hash to the native-script *credential* hashes its
+   * record(s) claim (a script owner/response credential). CIP-179 mechanism A
+   * lets that script be resolved by hash through a chain index, not only from the
+   * carrying tx's witness set — a metadata-only tx need not attach it — so any
+   * such hash absent from the witness set is fetched via `/script_info` and
+   * folded into that tx's `nativeScripts` (the pure evaluation is unchanged). A
+   * script that resolves cleanly but is genuinely *absent* on-chain (or Plutus,
+   * so no native mechanism-A path) stays unmerged → a *final* unproven, which is
+   * correct and can't paralyse finalization. But a `/script_info` request that
+   * *failed* (couldn't ask) for a needed, non-witnessed script downgrades that
+   * tx's proof to `null` (unknown) so it rides the same retry path, never a
+   * silent negative on unresolved data (findings 6/7).
    */
   async txProofs(
     txHashes: readonly string[],
+    neededScripts: ReadonlyMap<string, readonly string[]> = new Map(),
   ): Promise<Map<string, TxProof | null>> {
     const proofByHash = new Map<string, TxProof | null>(
       txHashes.map((h) => [h, null]),
@@ -566,7 +615,101 @@ export class KoiosDataSource implements DataSource {
     for (const [hash, cbor] of cborByHash) {
       proofByHash.set(hash, decodeTxProof(evolutionCodec, cbor));
     }
+    await this.resolveMechanismAScripts(proofByHash, neededScripts);
     return proofByHash;
+  }
+
+  /**
+   * Fold chain-resolved native scripts into `proofByHash` for the mechanism-A
+   * script credentials in `neededScripts` that aren't already in their tx's
+   * witness set (CIP-179 lets the script be resolved by hash, not only from the
+   * carrying tx). Mutates `proofByHash` in place:
+   *  - a resolved script is appended to its tx's `nativeScripts`;
+   *  - a script whose `/script_info` fetch *succeeded* but returned no native
+   *    script (never on-chain, or Plutus) is left out → mechanism A finds no
+   *    match → a *final* unproven (so a bogus script-hash response is simply
+   *    excluded, never a perpetual postponement);
+   *  - a script whose fetch *failed* nulls its tx's proof → unknown/retry, so an
+   *    unresolvable-this-refresh script is surfaced, not silently decided.
+   */
+  private async resolveMechanismAScripts(
+    proofByHash: Map<string, TxProof | null>,
+    neededScripts: ReadonlyMap<string, readonly string[]>,
+  ): Promise<void> {
+    // The script hashes actually missing from their own tx's witness set — the
+    // only ones needing a chain lookup. Union them so `/script_info` is hit once.
+    const missingByTx = new Map<string, string[]>();
+    const wanted = new Set<string>();
+    for (const [txHash, hashes] of neededScripts) {
+      const proof = proofByHash.get(txHash);
+      if (!proof) continue; // tx unknown already → nothing to add
+      const witnessed = new Set(proof.nativeScripts.map((ns) => ns.scriptHash));
+      const missing = [...new Set(hashes)].filter((h) => !witnessed.has(h));
+      if (missing.length === 0) continue;
+      missingByTx.set(txHash, missing);
+      for (const h of missing) wanted.add(h);
+    }
+    if (wanted.size === 0) return;
+
+    const { scripts, reliable } = await this.resolveNativeScripts([...wanted]);
+    for (const [txHash, missing] of missingByTx) {
+      const proof = proofByHash.get(txHash);
+      if (!proof) continue;
+      const add: TxProof["nativeScripts"][number][] = [];
+      let unresolvable = false;
+      for (const h of missing) {
+        const script = scripts.get(h);
+        if (script) add.push({ scriptHash: h, script });
+        else if (!reliable) unresolvable = true; // couldn't ask → unknown, retry
+        // reliable && no script: definitively not a native script → leave out.
+      }
+      if (unresolvable) {
+        proofByHash.set(txHash, null);
+        continue;
+      }
+      if (add.length > 0) {
+        proofByHash.set(txHash, {
+          ...proof,
+          nativeScripts: [...proof.nativeScripts, ...add],
+        });
+      }
+    }
+  }
+
+  /**
+   * Resolve native scripts by hash via `/script_info` (batched). Returns the
+   * decoded scripts keyed by their recomputed hash, and `reliable = false` iff a
+   * batch request *threw* — the caller distinguishes "asked, no such native
+   * script" (definitive) from "couldn't ask" (unknown, retry). Only `multisig`/
+   * `timelock` rows (native scripts) are decoded; Plutus rows and undecodable
+   * bytes are dropped (a Plutus credential has no mechanism-A path anyway).
+   */
+  async resolveNativeScripts(
+    scriptHashes: readonly string[],
+  ): Promise<{ scripts: Map<string, NativeScriptInfo>; reliable: boolean }> {
+    const scripts = new Map<string, NativeScriptInfo>();
+    let reliable = true;
+    for (let i = 0; i < scriptHashes.length; i += SCRIPT_INFO_BATCH) {
+      const batch = scriptHashes.slice(i, i + SCRIPT_INFO_BATCH);
+      try {
+        const rows = await this.post<ScriptInfoRow[]>(
+          "/script_info?select=script_hash,type,bytes",
+          { _script_hashes: batch },
+        );
+        for (const r of rows) {
+          if (!r.bytes) continue;
+          if (r.type !== "multisig" && r.type !== "timelock") continue;
+          const decoded = decodeResolvedNativeScript(evolutionCodec, r.bytes);
+          if (decoded) scripts.set(decoded.scriptHash, decoded.script);
+        }
+      } catch (err) {
+        console.warn(
+          `script_info batch failed; its scripts stay unresolved: ${String(err)}`,
+        );
+        reliable = false;
+      }
+    }
+    return { scripts, reliable };
   }
 
   /**

@@ -123,4 +123,14 @@ export interface TxProofCodec {
   govActionId(txIdHex: string, index: number): string;
   /** Decode a tx's proof-relevant fields, or `null` if it can't be decoded. */
   decodeTx(txCborHex: string): DecodedTx | null;
+  /**
+   * Decode a bare native script from its own CBOR (hex), or `null` if it isn't a
+   * decodable native script. Used to resolve a mechanism-A native script *by
+   * hash* through a chain index (e.g. Koios `/script_info`) when it isn't
+   * attached to the carrying tx's witness set — CIP-179 mechanism A permits the
+   * script to be resolved from the chain, not only the tx (a metadata-only tx
+   * need not carry it). Returns the same {@link DecodedNativeScript} the tx
+   * decoder emits, so the interpretation hashes it identically.
+   */
+  decodeNativeScript(scriptCborHex: string): DecodedNativeScript | null;
 }
