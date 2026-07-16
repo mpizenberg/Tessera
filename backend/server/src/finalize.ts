@@ -239,89 +239,141 @@ export async function finalizeClosedSurveys(
 
     for (const s of surveys) {
       const key = refKey(s.ref);
-      const mode = s.definition.submissionMode;
-      const { counted, eligible, pending } = countedBySurvey.get(key)!;
+      // Per-survey isolation: a poisoned definition (e.g. a tally that throws)
+      // must not abort the whole pass and starve every later survey of
+      // finalization. Any escape here skips just this survey; it retries next
+      // refresh (idempotent), and a permanently-broken one simply never
+      // finalizes — its own problem, not the finalizer's.
+      try {
+        const mode = s.definition.submissionMode;
+        const { counted, eligible, pending } = countedBySurvey.get(key)!;
 
-      if (mode.type === "sealed") {
-        // Weights are frozen above (R1). Wait for the drand round to publish,
-        // then reveal + tally the PRE-dedup set (finding 2: dedup runs after
-        // reveal-time validation, in auditRevealedResponses).
-        if (!roundIsAvailable(mode.round, nowSec)) {
-          console.log(
-            `finalize: ${key} sealed reveal postponed — round ${mode.round} not yet available`,
-          );
-          continue;
-        }
-        if (await pruneReorgedOut(key, eligible)) continue;
-        if (pending) {
-          console.warn(`finalize: ${key} postponed — ${pending}`);
-          continue;
-        }
-        // Decrypt budget: a survey larger than the whole budget still runs when
-        // the budget is untouched (progress guaranteed); otherwise a survey that
-        // doesn't fit the remainder waits for next pass.
-        const need = eligible.length;
-        if (
-          need > sealedDecryptBudget &&
-          sealedDecryptBudget < MAX_SEALED_DECRYPTS_PER_PASS
-        ) {
-          console.log(
-            `finalize: ${key} sealed reveal postponed — decrypt budget exhausted this pass`,
-          );
-          continue;
-        }
-        // Join each eligible row to its on-chain response (carrying the sealed
-        // ciphertext). A miss means the snapshot dropped it — postpone.
-        const inWindow: ResponseRecord[] = [];
-        let missingRecord: string | null = null;
-        for (const r of eligible) {
-          const rec = responseByKey.get(`${r.txHash}:${r.responseIndex}`);
-          if (!rec) {
-            missingRecord = `${r.txHash}:${r.responseIndex}`;
-            break;
+        if (mode.type === "sealed") {
+          // Weights are frozen above (R1). Wait for the drand round to publish,
+          // then reveal + tally the PRE-dedup set (finding 2: dedup runs after
+          // reveal-time validation, in auditRevealedResponses).
+          if (!roundIsAvailable(mode.round, nowSec)) {
+            console.log(
+              `finalize: ${key} sealed reveal postponed — round ${mode.round} not yet available`,
+            );
+            continue;
           }
-          inWindow.push(rec);
-        }
-        if (missingRecord) {
-          console.warn(
-            `finalize: ${key} postponed — response ${missingRecord} missing from snapshot`,
+          if (await pruneReorgedOut(key, eligible)) continue;
+          if (pending) {
+            console.warn(`finalize: ${key} postponed — ${pending}`);
+            continue;
+          }
+          // Decrypt budget: a survey larger than the whole budget still runs when
+          // the budget is untouched (progress guaranteed); otherwise a survey that
+          // doesn't fit the remainder waits for next pass.
+          const need = eligible.length;
+          if (
+            need > sealedDecryptBudget &&
+            sealedDecryptBudget < MAX_SEALED_DECRYPTS_PER_PASS
+          ) {
+            console.log(
+              `finalize: ${key} sealed reveal postponed — decrypt budget exhausted this pass`,
+            );
+            continue;
+          }
+          // Join each eligible row to its on-chain response (carrying the sealed
+          // ciphertext). A miss means the snapshot dropped it — postpone.
+          const inWindow: ResponseRecord[] = [];
+          let missingRecord: string | null = null;
+          for (const r of eligible) {
+            const rec = responseByKey.get(`${r.txHash}:${r.responseIndex}`);
+            if (!rec) {
+              missingRecord = `${r.txHash}:${r.responseIndex}`;
+              break;
+            }
+            inWindow.push(rec);
+          }
+          if (missingRecord) {
+            console.warn(
+              `finalize: ${key} postponed — response ${missingRecord} missing from snapshot`,
+            );
+            continue;
+          }
+          sealedDecryptBudget -= need;
+          let result;
+          try {
+            result = await reveal(inWindow, { round: mode.round });
+          } catch (err) {
+            // Transient (beacon fetch, verification) — retry next refresh. Never
+            // let it escape and abort the whole finalize pass.
+            console.warn(
+              `finalize: ${key} sealed reveal failed (${String(err)}) — retry next refresh`,
+            );
+            continue;
+          }
+          // Reveal → validate → dedup (§6.5). counted carry decrypted answers.
+          const audit = auditRevealedResponses(
+            inWindow,
+            result.revealed,
+            s.definition,
+          );
+          const rowByKey = new Map(
+            eligible.map((r) => [`${r.txHash}:${r.responseIndex}`, r]),
+          );
+          const entries = audit.counted.map((rec) => ({
+            row: rowByKey.get(`${rec.txHash}:${rec.responseIndex}`)!,
+            response: rec.response,
+          }));
+          const missing = incompleteReason(
+            entries.map((e) => e.row),
+            weightByRole,
+            totalByRole,
+          );
+          if (missing) {
+            console.warn(`finalize: ${key} postponed — ${missing}`);
+            continue;
+          }
+          const artifact = buildArtifact(
+            config,
+            s,
+            entries,
+            weightByRole,
+            totalByRole,
+            nowSec,
+            {
+              sealed: true,
+              sealedReveal: {
+                chainHash: bytesToHex(mode.chainHash),
+                round: mode.round,
+                beacon: result.beacon,
+              },
+            },
+          );
+          await store.putArtifact({
+            surveyKey: key,
+            endEpoch: s.definition.endEpoch,
+            artifactHash: artifact.hash,
+            artifact: artifact.json,
+            createdAt: nowSec,
+          });
+          console.log(
+            `finalize: ${key} → sealed artifact ${artifact.hash} ` +
+              `(counted ${audit.counted.length}, superseded ${audit.superseded.length}, ` +
+              `invalid ${audit.invalid.length}, undecryptable ${audit.failed.length})`,
           );
           continue;
         }
-        sealedDecryptBudget -= need;
-        let result;
-        try {
-          result = await reveal(inWindow, { round: mode.round });
-        } catch (err) {
-          // Transient (beacon fetch, verification) — retry next refresh. Never
-          // let it escape and abort the whole finalize pass.
-          console.warn(
-            `finalize: ${key} sealed reveal failed (${String(err)}) — retry next refresh`,
-          );
-          continue;
-        }
-        // Reveal → validate → dedup (§6.5). counted carry decrypted answers.
-        const audit = auditRevealedResponses(
-          inWindow,
-          result.revealed,
-          s.definition,
-        );
-        const rowByKey = new Map(
-          eligible.map((r) => [`${r.txHash}:${r.responseIndex}`, r]),
-        );
-        const entries = audit.counted.map((rec) => ({
-          row: rowByKey.get(`${rec.txHash}:${rec.responseIndex}`)!,
-          response: rec.response,
-        }));
-        const missing = incompleteReason(
-          entries.map((e) => e.row),
-          weightByRole,
-          totalByRole,
-        );
+
+        // --- public survey -------------------------------------------------------
+        if (await pruneReorgedOut(key, counted)) continue;
+        const missing =
+          pending ?? incompleteReason(counted, weightByRole, totalByRole);
         if (missing) {
           console.warn(`finalize: ${key} postponed — ${missing}`);
           continue;
         }
+        // Rejoin each counted row to its on-chain response (guaranteed present by
+        // the reorg-prune above and the `records.incomplete` guard).
+        const entries = counted.map((r) => ({
+          row: r,
+          response: responseByKey.get(`${r.txHash}:${r.responseIndex}`)!
+            .response,
+        }));
         const artifact = buildArtifact(
           config,
           s,
@@ -329,14 +381,7 @@ export async function finalizeClosedSurveys(
           weightByRole,
           totalByRole,
           nowSec,
-          {
-            sealed: true,
-            sealedReveal: {
-              chainHash: bytesToHex(mode.chainHash),
-              round: mode.round,
-              beacon: result.beacon,
-            },
-          },
+          { sealed: false },
         );
         await store.putArtifact({
           surveyKey: key,
@@ -345,45 +390,10 @@ export async function finalizeClosedSurveys(
           artifact: artifact.json,
           createdAt: nowSec,
         });
-        console.log(
-          `finalize: ${key} → sealed artifact ${artifact.hash} ` +
-            `(counted ${audit.counted.length}, superseded ${audit.superseded.length}, ` +
-            `invalid ${audit.invalid.length}, undecryptable ${audit.failed.length})`,
-        );
-        continue;
+        console.log(`finalize: ${key} → artifact ${artifact.hash}`);
+      } catch (err) {
+        console.warn(`finalize: ${key} skipped this pass — ${String(err)}`);
       }
-
-      // --- public survey -------------------------------------------------------
-      if (await pruneReorgedOut(key, counted)) continue;
-      const missing =
-        pending ?? incompleteReason(counted, weightByRole, totalByRole);
-      if (missing) {
-        console.warn(`finalize: ${key} postponed — ${missing}`);
-        continue;
-      }
-      // Rejoin each counted row to its on-chain response (guaranteed present by
-      // the reorg-prune above and the `records.incomplete` guard).
-      const entries = counted.map((r) => ({
-        row: r,
-        response: responseByKey.get(`${r.txHash}:${r.responseIndex}`)!.response,
-      }));
-      const artifact = buildArtifact(
-        config,
-        s,
-        entries,
-        weightByRole,
-        totalByRole,
-        nowSec,
-        { sealed: false },
-      );
-      await store.putArtifact({
-        surveyKey: key,
-        endEpoch: s.definition.endEpoch,
-        artifactHash: artifact.hash,
-        artifact: artifact.json,
-        createdAt: nowSec,
-      });
-      console.log(`finalize: ${key} → artifact ${artifact.hash}`);
     }
   }
 }

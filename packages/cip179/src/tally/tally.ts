@@ -101,10 +101,24 @@ export type QuestionTally =
       readonly samples: string[];
     };
 
+/**
+ * Upper bound on how many option/level buckets any *display* widget will
+ * materialize. The hashed artifact is sparse (grows with responses, never with
+ * the declared span), but this count-based display path still fills dense rows
+ * for zero-answer options so the reader sees every choice. A hostile definition
+ * can declare an astronomically large `count`/rating span (`ratingScaleInfo`
+ * levels = `(max-min)/step+1`); without this cap `new Array(count)` /
+ * `new Array(levels)` throws `RangeError` (OOM sooner) and crashes results for
+ * everyone. No real survey approaches this, so legitimate results are untouched;
+ * a pathological one renders its first {@link MAX_DISPLAY_BUCKETS} buckets plus
+ * whatever higher indices were actually answered (added by the callers below).
+ */
+export const MAX_DISPLAY_BUCKETS = 1000;
+
 function optionLabels(opts: OptionsOrCount): string[] {
-  return opts.type === "options"
-    ? [...opts.labels]
-    : Array.from({ length: opts.count }, (_, i) => `Option ${i + 1}`);
+  if (opts.type === "options") return [...opts.labels];
+  const n = Math.min(opts.count, MAX_DISPLAY_BUCKETS);
+  return Array.from({ length: n }, (_, i) => `Option ${i + 1}`);
 }
 
 function answersFor(
@@ -297,9 +311,12 @@ export function tallyQuestion(
     case "rating": {
       const labels = optionLabels(question.options);
       const info = ratingScaleInfo(question.scale);
+      // The per-level distribution is display-only; cap its width so a hostile
+      // scale span can't force a giant allocation (see MAX_DISPLAY_BUCKETS).
+      const displayLevels = Math.min(info.levels, MAX_DISPLAY_BUCKETS);
       const sums = new Array(labels.length).fill(0);
       const ns = new Array(labels.length).fill(0);
-      const counts = labels.map(() => new Array(info.levels).fill(0));
+      const counts = labels.map(() => new Array(displayLevels).fill(0));
       for (const a of items) {
         if (a.type === "rating") {
           for (const r of a.ratings) {
@@ -309,7 +326,7 @@ export function tallyQuestion(
             sums[oi] += val;
             ns[oi]++;
             const li = Math.round((val - info.baseMin) / info.step);
-            if (li >= 0 && li < info.levels) counts[oi]![li]++;
+            if (li >= 0 && li < displayLevels) counts[oi]![li]++;
           }
         }
       }

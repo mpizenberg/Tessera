@@ -10,6 +10,7 @@ import type { Question, Role, SurveyDefinition, SurveyResponse } from "cip-179";
 
 import { optionLabelOf, parseCredentialKey } from "cip-179/domain";
 import {
+  MAX_DISPLAY_BUCKETS,
   responderAnswers,
   toArtifactQuestions,
   weightedTallySurvey,
@@ -132,18 +133,65 @@ function barViews(
   }));
 }
 
+/** Declared option count of a question, or null when it has no options. */
+function declaredOptionCount(q: Question | undefined): number | null {
+  if (q && "options" in q)
+    return q.options.type === "options"
+      ? q.options.labels.length
+      : q.options.count;
+  return null;
+}
+
+/**
+ * Which option indices to render for a *sparse* artifact question. The tally
+ * body carries only answered options; here we fill 0..min(declared, cap) so
+ * zero-answer options still show as empty rows, then append any populated index
+ * beyond that (a hostile huge-count survey answered at a high index) so nothing
+ * counted is hidden — all without ever materializing the attacker-declared
+ * width (see {@link MAX_DISPLAY_BUCKETS}).
+ */
+function renderIndices(
+  q: Question | undefined,
+  populated: readonly number[],
+): number[] {
+  const declared = declaredOptionCount(q);
+  const set = new Set<number>();
+  if (declared !== null) {
+    const n = Math.min(declared, MAX_DISPLAY_BUCKETS);
+    for (let i = 0; i < n; i++) set.add(i);
+  }
+  for (const i of populated) set.add(i);
+  return [...set].sort((a, b) => a - b);
+}
+
 export function weightedQuestionView(
   q: Question | undefined,
   aq: ArtifactQuestion,
 ): WeightedQuestionView {
   switch (aq.kind) {
     case "options": {
-      const weights = aq.optionWeights.map(BigInt);
-      const labels = weights.map((_, i) => optionLabelOf(q, i));
+      const byIndex = new Map(aq.options.map((o) => [o.index, o]));
+      const max = aq.options.reduce((m, o) => {
+        const w = BigInt(o.weight);
+        return w > m ? w : m;
+      }, 0n);
+      const bars = renderIndices(
+        q,
+        aq.options.map((o) => o.index),
+      ).map((index) => {
+        const o = byIndex.get(index);
+        const weight = o ? BigInt(o.weight) : 0n;
+        return {
+          label: optionLabelOf(q, index),
+          weight,
+          count: o?.count ?? 0,
+          frac: fracOf(weight, max),
+        };
+      });
       return {
         kind: "bars",
         unit: aq.unit,
-        bars: barViews(labels, weights, aq.optionCounts),
+        bars,
         answeredCount: aq.answeredCount,
         answeredWeight: BigInt(aq.answeredWeight),
       };
@@ -163,18 +211,29 @@ export function weightedQuestionView(
         answeredWeight,
       };
     }
-    case "perOption":
+    case "perOption": {
+      const byIndex = new Map(aq.perOption.map((o) => [o.index, o]));
+      const rows = renderIndices(
+        q,
+        aq.perOption.map((o) => o.index),
+      ).map((index) => {
+        const o = byIndex.get(index);
+        return {
+          label: optionLabelOf(q, index),
+          avg: o
+            ? ratioOf(BigInt(o.weightedSum), BigInt(o.answeredWeight))
+            : null,
+          count: o?.count ?? 0,
+        };
+      });
       return {
         kind: "rows",
         unit: aq.unit,
-        rows: aq.perOption.map((o, i) => ({
-          label: optionLabelOf(q, i),
-          avg: ratioOf(BigInt(o.weightedSum), BigInt(o.answeredWeight)),
-          count: o.count,
-        })),
+        rows,
         answeredCount: aq.answeredCount,
         answeredWeight: BigInt(aq.answeredWeight),
       };
+    }
     case "custom":
       return {
         kind: "custom",

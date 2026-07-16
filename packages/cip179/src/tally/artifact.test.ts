@@ -72,7 +72,7 @@ describe("rulesetHash", () => {
   // rules", which is the exact failure mode the hash exists to prevent.
   it("matches its pinned golden hash (bump rulesetVersion on any change)", () => {
     expect(rulesetHash()).toBe(
-      "64efbd0fb3614348e5c2620275baa9f9eb3e274e4ae9fa46d7fb9f8643fd24bc",
+      "ae2c8b1c67651ad41b9aa8f8a70b0d276ce5e69942a2fb1817c67dbe51fdbfc3",
     );
   });
 
@@ -126,8 +126,7 @@ describe("toArtifactQuestions", () => {
       {
         kind: "options",
         unit: "singleChoice",
-        optionWeights: [45_000_000_000_000_000n, 0n],
-        optionCounts: [1, 0],
+        options: [{ index: 0, weight: 45_000_000_000_000_000n, count: 1 }],
         answeredCount: 1,
         answeredWeight: 45_000_000_000_000_000n,
       },
@@ -141,8 +140,15 @@ describe("toArtifactQuestions", () => {
       {
         kind: "perOption",
         unit: "rating",
-        perOption: [{ weightedSum: 6n, answeredWeight: 2n, count: 2 }],
-        levelWeights: [[0n, 2n]],
+        perOption: [
+          {
+            index: 0,
+            weightedSum: 6n,
+            answeredWeight: 2n,
+            count: 2,
+            levels: [{ level: 1, weight: 2n }],
+          },
+        ],
         answeredCount: 2,
         answeredWeight: 2n,
       },
@@ -152,8 +158,7 @@ describe("toArtifactQuestions", () => {
     expect(qs[0]).toEqual({
       kind: "options",
       unit: "singleChoice",
-      optionWeights: ["45000000000000000", "0"],
-      optionCounts: [1, 0],
+      options: [{ index: 0, weight: "45000000000000000", count: 1 }],
       answeredCount: 1,
       answeredWeight: "45000000000000000",
     });
@@ -161,7 +166,17 @@ describe("toArtifactQuestions", () => {
       weightedSum: "10",
       values: [{ value: "5", weight: "2", count: 2 }],
     });
-    expect(qs[2]).toMatchObject({ levelWeights: [["0", "2"]] });
+    expect(qs[2]).toMatchObject({
+      perOption: [
+        {
+          index: 0,
+          weightedSum: "6",
+          answeredWeight: "2",
+          count: 2,
+          levels: [{ level: 1, weight: "2" }],
+        },
+      ],
+    });
     expect(qs[3]).toEqual({
       kind: "custom",
       answeredCount: 3,
@@ -171,17 +186,21 @@ describe("toArtifactQuestions", () => {
     expect(() => canonicalJson(qs)).not.toThrow();
   });
 
-  it("omits levelWeights when the tally has none (points)", () => {
+  it("omits per-option levels when the tally has none (points)", () => {
     const qs = toArtifactQuestions([
       {
         kind: "perOption",
         unit: "points",
-        perOption: [],
-        answeredCount: 0,
-        answeredWeight: 0n,
+        perOption: [
+          { index: 0, weightedSum: 4n, answeredWeight: 2n, count: 2 },
+        ],
+        answeredCount: 2,
+        answeredWeight: 2n,
       },
     ]);
-    expect("levelWeights" in qs[0]!).toBe(false);
+    const q0 = qs[0]!;
+    if (q0.kind !== "perOption") throw new Error("expected perOption");
+    expect("levels" in q0.perOption[0]!).toBe(false);
   });
 });
 

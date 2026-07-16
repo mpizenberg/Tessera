@@ -44,8 +44,10 @@ describe("weightedQuestionView", () => {
     const v = weightedQuestionView(SC, {
       kind: "options",
       unit: "singleChoice",
-      optionWeights: ["100", "7"],
-      optionCounts: [1, 1],
+      options: [
+        { index: 0, weight: "100", count: 1 },
+        { index: 1, weight: "7", count: 1 },
+      ],
       answeredCount: 2,
       answeredWeight: "107",
     });
@@ -59,6 +61,22 @@ describe("weightedQuestionView", () => {
       answeredCount: 2,
       answeredWeight: 107n,
     });
+  });
+
+  it("bars: a zero-answer option is refilled from the definition (sparse in, dense out)", () => {
+    const v = weightedQuestionView(SC, {
+      kind: "options",
+      unit: "singleChoice",
+      // Only "yes" was chosen; the artifact omits "no" entirely.
+      options: [{ index: 0, weight: "100", count: 2 }],
+      answeredCount: 2,
+      answeredWeight: "100",
+    });
+    if (v.kind !== "bars") throw new Error("expected bars");
+    expect(v.bars).toEqual([
+      { label: "yes", weight: 100n, count: 2, frac: 1 },
+      { label: "no", weight: 0n, count: 0, frac: 0 },
+    ]);
   });
 
   it("histogram: exact weighted mean, bins labeled by value", () => {
@@ -82,9 +100,9 @@ describe("weightedQuestionView", () => {
     const v = weightedQuestionView(SC, {
       kind: "perOption",
       unit: "rating",
+      // Only "yes" was rated; "no" is absent and refilled as an empty row.
       perOption: [
-        { weightedSum: "507", answeredWeight: "107", count: 2 },
-        { weightedSum: "0", answeredWeight: "0", count: 0 },
+        { index: 0, weightedSum: "507", answeredWeight: "107", count: 2 },
       ],
       answeredCount: 2,
       answeredWeight: "107",
@@ -134,8 +152,10 @@ describe("resultRoleViews", () => {
             {
               kind: "options",
               unit: "singleChoice",
-              optionWeights: ["100", "150"],
-              optionCounts: [1, 1],
+              options: [
+                { index: 0, weight: "100", count: 1 },
+                { index: 1, weight: "150", count: 1 },
+              ],
               answeredCount: 2,
               answeredWeight: "250",
             },
@@ -156,8 +176,8 @@ describe("resultRoleViews", () => {
             {
               kind: "options",
               unit: "singleChoice",
-              optionWeights: ["1", "0"],
-              optionCounts: [1, 0],
+              // Only "yes" (index 0) got the vote; "no" is absent (sparse).
+              options: [{ index: 0, weight: "1", count: 1 }],
               answeredCount: 1,
               answeredWeight: "1",
             },

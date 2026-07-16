@@ -324,7 +324,10 @@ describe("finalizeClosedSurveys", () => {
     const q = role3.questions[0]!;
     expect(q).toMatchObject({
       kind: "options",
-      optionWeights: ["100", "7"],
+      options: [
+        { index: 0, weight: "100" },
+        { index: 1, weight: "7" },
+      ],
       answeredWeight: "107",
     });
     // Weight rows were snapshotted (the resume cursor).
@@ -392,6 +395,53 @@ describe("finalizeClosedSurveys", () => {
     expect(seen).toHaveLength(1);
     expect([...seen[0]!].sort()).toEqual([KEY_A, KEY_B, KEY_C].sort());
     expect(store.artifacts.size).toBe(2); // both surveys emitted
+  });
+
+  it("isolates a poisoned survey: one failing emission never blocks the others (finding 3)", async () => {
+    const store = memBackendStore();
+    const SURVEY_TX2 = "dd".repeat(32);
+    const SURVEY_KEY2 = `${SURVEY_TX2}:0`;
+    const s2: SurveyRecord = {
+      txHash: SURVEY_TX2,
+      slot: 100,
+      epochNo: 495,
+      ref: { txId: hexToBytes(SURVEY_TX2), index: 0 },
+      definition: definition(),
+    };
+    const rA1 = response("11".repeat(32), CRED_A, 0);
+    const rB2 = response("22".repeat(32), CRED_B, 0);
+    await seed(store, [
+      validatedRow(rA1),
+      validatedRow(rB2, { surveyKey: SURVEY_KEY2 }),
+    ]);
+    const inputs = fakeInputs({
+      [KEY_A]: { weight: 100n, registered: true },
+      [KEY_B]: { weight: 7n, registered: true },
+    });
+    // Survey 1's artifact write throws (stand-in for any per-survey failure —
+    // e.g. a definition whose tally blows up). Without per-survey isolation the
+    // throw would abort the whole pass and starve survey 2 forever.
+    const poisoned = {
+      ...store,
+      async putArtifact(row: Parameters<typeof store.putArtifact>[0]) {
+        if (row.surveyKey === SURVEY_KEY)
+          throw new Error("poisoned survey emission");
+        return store.putArtifact(row);
+      },
+    };
+    const recs: Cip179Records = {
+      surveys: [survey(), s2],
+      responses: [rA1, rB2],
+      cancellations: [],
+    };
+
+    // The pass completes normally (does not reject) despite survey 1 throwing.
+    await expect(
+      finalizeClosedSurveys(CONFIG, poisoned, inputs, noProofs, recs, TIP),
+    ).resolves.toBeUndefined();
+
+    expect(store.artifacts.has(SURVEY_KEY)).toBe(false); // poisoned → skipped
+    expect(store.artifacts.has(SURVEY_KEY2)).toBe(true); // healthy → finalized
   });
 
   it("postpones when the electorate total is unavailable, resumes without refetching weights", async () => {
@@ -690,7 +740,9 @@ describe("finalizeClosedSurveys", () => {
     // The revealed answers are committed in the artifact (the sealed-artifact rule).
     expect(responderAnswers(role3.responders[0]!)).toEqual(SEALED_ANSWER);
     // And they drove the tally: option 1 ("no") carries A's weight.
-    expect(role3.questions[0]).toMatchObject({ optionWeights: ["0", "100"] });
+    expect(role3.questions[0]).toMatchObject({
+      options: [{ index: 1, weight: "100" }],
+    });
     // The beacon is recorded in (unhashed) provenance for offline audit.
     expect(artifact.provenance.sealedReveal).toEqual({
       chainHash: QUICKNET_CHAIN_HASH_HEX,
@@ -737,7 +789,9 @@ describe("finalizeClosedSurveys", () => {
     expect(role3.responders).toHaveLength(1);
     // The earlier VALID response is the one counted — not the later null.
     expect(role3.responders[0]!.txHash).toBe(early.txHash);
-    expect(role3.questions[0]).toMatchObject({ optionWeights: ["0", "100"] });
+    expect(role3.questions[0]).toMatchObject({
+      options: [{ index: 1, weight: "100" }],
+    });
   });
 
   it("postpones a sealed reveal while the round is unavailable (weights frozen, reveal not called)", async () => {
@@ -914,7 +968,9 @@ describe("finalizeClosedSurveys", () => {
         responseIndex: rA2.responseIndex,
       },
     ]);
-    expect(role3.questions[0]).toMatchObject({ optionWeights: ["0", "100"] });
+    expect(role3.questions[0]).toMatchObject({
+      options: [{ index: 1, weight: "100" }],
+    });
   });
 
   it("postpones emission while any counted-candidate verdict or block index is pending (finding 1)", async () => {

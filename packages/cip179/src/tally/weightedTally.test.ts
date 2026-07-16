@@ -7,7 +7,7 @@ import type {
   SurveyResponse,
 } from "../index.js";
 
-import { tallySurvey } from "./tally.js";
+import { MAX_DISPLAY_BUCKETS, tallySurvey } from "./tally.js";
 import {
   weightedTallyQuestion,
   weightedTallySurvey,
@@ -147,13 +147,16 @@ const R3 = responder(3, 3n, [
 describe("weightedTallyQuestion", () => {
   const all = [R1, R2, R3];
 
-  it("options: buckets weight and count per chosen option", () => {
+  it("options: buckets weight and count per chosen option (sparse — no zero option)", () => {
     const t = weightedTallyQuestion(QUESTIONS[0]!, 0, all);
     expect(t).toEqual({
       kind: "options",
       unit: "singleChoice",
-      optionWeights: [100n, 7n, 0n],
-      optionCounts: [1, 1, 0],
+      // Option "c" (index 2) got no votes → absent, not a zero bucket.
+      options: [
+        { index: 0, weight: 100n, count: 1 },
+        { index: 1, weight: 7n, count: 1 },
+      ],
       answeredCount: 2,
       answeredWeight: 107n,
     });
@@ -163,8 +166,11 @@ describe("weightedTallyQuestion", () => {
     const t = weightedTallyQuestion(QUESTIONS[1]!, 1, all);
     expect(t).toMatchObject({
       unit: "multiSelect",
-      optionWeights: [100n, 7n, 100n],
-      optionCounts: [1, 1, 1],
+      options: [
+        { index: 0, weight: 100n, count: 1 },
+        { index: 1, weight: 7n, count: 1 },
+        { index: 2, weight: 100n, count: 1 },
+      ],
       answeredWeight: 107n,
     });
   });
@@ -173,8 +179,11 @@ describe("weightedTallyQuestion", () => {
     const t = weightedTallyQuestion(QUESTIONS[2]!, 2, all);
     expect(t).toMatchObject({
       unit: "rankingFirst",
-      optionWeights: [7n, 0n, 100n],
-      optionCounts: [1, 0, 1],
+      // R2 top=0 (w7), R1 top=2 (w100); index 1 never leads → absent.
+      options: [
+        { index: 0, weight: 7n, count: 1 },
+        { index: 2, weight: 100n, count: 1 },
+      ],
     });
   });
 
@@ -196,10 +205,16 @@ describe("weightedTallyQuestion", () => {
     const t = weightedTallyQuestion(QUESTIONS[4]!, 4, all);
     expect(t).toMatchObject({
       unit: "points",
+      // Option 2 got no allocation → absent (sparse); the two answered options
+      // still carry the survey-level answeredWeight as their denominator.
       perOption: [
-        { weightedSum: 100n * 10n + 7n * 4n, answeredWeight: 107n, count: 2 },
-        { weightedSum: 7n * 6n, answeredWeight: 107n, count: 1 },
-        { weightedSum: 0n, answeredWeight: 107n, count: 0 },
+        {
+          index: 0,
+          weightedSum: 100n * 10n + 7n * 4n,
+          answeredWeight: 107n,
+          count: 2,
+        },
+        { index: 1, weightedSum: 7n * 6n, answeredWeight: 107n, count: 1 },
       ],
       answeredWeight: 107n,
     });
@@ -207,20 +222,33 @@ describe("weightedTallyQuestion", () => {
 
   it("rating: per-option denominators cover only that option's raters", () => {
     const t = weightedTallyQuestion(QUESTIONS[5]!, 5, all);
+    // Levels 1..5 → indices 0..4: R1 rated a=5 (level 4, w100), R2 a=1 (level 0,
+    // w7) and b=3 (level 2, w7). Option c (index 2) unrated → absent; each
+    // option's levels list carries only its populated levels, level ascending.
     expect(t).toMatchObject({
       unit: "rating",
       perOption: [
-        { weightedSum: 100n * 5n + 7n * 1n, answeredWeight: 107n, count: 2 },
-        { weightedSum: 7n * 3n, answeredWeight: 7n, count: 1 },
-        { weightedSum: 0n, answeredWeight: 0n, count: 0 },
+        {
+          index: 0,
+          weightedSum: 100n * 5n + 7n * 1n,
+          answeredWeight: 107n,
+          count: 2,
+          levels: [
+            { level: 0, weight: 7n },
+            { level: 4, weight: 100n },
+          ],
+        },
+        {
+          index: 1,
+          weightedSum: 7n * 3n,
+          answeredWeight: 7n,
+          count: 1,
+          levels: [{ level: 2, weight: 7n }],
+        },
       ],
     });
-    // Levels 1..5 → indices 0..4: R1 rated a=5 (level 4), R2 a=1, b=3.
-    if (t.kind !== "perOption" || !t.levelWeights) throw new Error("no levels");
-    const lw = t.levelWeights;
-    expect(lw[0]).toEqual([7n, 0n, 0n, 0n, 100n]);
-    expect(lw[1]).toEqual([0n, 0n, 7n, 0n, 0n]);
-    expect(lw[2]).toEqual([0n, 0n, 0n, 0n, 0n]);
+    if (t.kind !== "perOption") throw new Error("expected perOption");
+    expect(t.perOption).toHaveLength(2); // no entry for the unrated option
   });
 
   it("custom: participation only", () => {
@@ -238,7 +266,7 @@ describe("weightedTallyQuestion", () => {
     ]);
     const t = weightedTallyQuestion(QUESTIONS[0]!, 0, [rogue]);
     expect(t).toMatchObject({
-      optionWeights: [0n, 0n, 0n],
+      options: [], // out-of-range selection lands nowhere → no buckets
       // It still *answered* (participation), the weight just lands nowhere.
       answeredCount: 1,
       answeredWeight: 50n,
@@ -274,7 +302,24 @@ describe("weightedTallySurvey with all weights 1n reproduces tally.ts counts", (
   );
   const weighted = weightedTallySurvey(DEF, responders);
 
-  const asNumbers = (ws: readonly bigint[]) => ws.map(Number);
+  /** Sparse option buckets → dense weight array of length n (Number). */
+  const denseWeights = (
+    opts: readonly { index: number; weight: bigint }[],
+    n: number,
+  ) => {
+    const out = new Array<number>(n).fill(0);
+    for (const o of opts) out[o.index] = Number(o.weight);
+    return out;
+  };
+  /** Sparse option buckets → dense count array of length n. */
+  const denseCounts = (
+    opts: readonly { index: number; count: number }[],
+    n: number,
+  ) => {
+    const out = new Array<number>(n).fill(0);
+    for (const o of opts) out[o.index] = o.count;
+    return out;
+  };
 
   it("matches the three options-shaped questions", () => {
     for (const qi of [0, 1, 2]) {
@@ -284,8 +329,9 @@ describe("weightedTallySurvey with all weights 1n reproduces tally.ts counts", (
         { kind: "options" }
       >;
       if (c.kind !== "bars") throw new Error("expected bars");
-      expect(asNumbers(w.optionWeights)).toEqual(c.bars.map((b) => b.count));
-      expect(w.optionCounts).toEqual(c.bars.map((b) => b.count));
+      const n = c.bars.length;
+      expect(denseWeights(w.options, n)).toEqual(c.bars.map((b) => b.count));
+      expect(denseCounts(w.options, n)).toEqual(c.bars.map((b) => b.count));
       expect(w.answeredCount).toBe(c.answered);
       expect(Number(w.answeredWeight)).toBe(c.answered);
     }
@@ -315,11 +361,11 @@ describe("weightedTallySurvey with all weights 1n reproduces tally.ts counts", (
       { kind: "perOption" }
     >;
     if (c.kind !== "points") throw new Error("expected points");
+    const byIndex = new Map(w.perOption.map((o) => [o.index, o]));
     for (let i = 0; i < c.rows.length; i++) {
-      const o = w.perOption[i]!;
-      expect(Number(o.weightedSum) / Number(o.answeredWeight)).toBe(
-        c.rows[i]!.avg,
-      );
+      const o = byIndex.get(i);
+      const avg = o ? Number(o.weightedSum) / Number(o.answeredWeight) : 0;
+      expect(avg).toBe(c.rows[i]!.avg);
     }
   });
 
@@ -330,13 +376,15 @@ describe("weightedTallySurvey with all weights 1n reproduces tally.ts counts", (
       { kind: "perOption" }
     >;
     if (c.kind !== "rating") throw new Error("expected rating");
+    const byIndex = new Map(w.perOption.map((o) => [o.index, o]));
     for (let i = 0; i < c.rows.length; i++) {
-      const o = w.perOption[i]!;
-      const avg = o.count
-        ? Number(o.weightedSum) / Number(o.answeredWeight)
-        : 0;
+      const o = byIndex.get(i);
+      const avg = o ? Number(o.weightedSum) / Number(o.answeredWeight) : 0;
       expect(avg).toBe(c.rows[i]!.avg);
-      expect(w.levelWeights![i]!.map(Number)).toEqual(c.rows[i]!.counts);
+      // Densify the sparse per-level weights back to the display counts' width.
+      const dense = new Array<number>(c.rows[i]!.counts.length).fill(0);
+      for (const l of o?.levels ?? []) dense[l.level] = Number(l.weight);
+      expect(dense).toEqual(c.rows[i]!.counts);
     }
   });
 
@@ -346,5 +394,100 @@ describe("weightedTallySurvey with all weights 1n reproduces tally.ts counts", (
     if (c.kind !== "custom") throw new Error("expected custom");
     expect(w.answeredCount).toBe(c.answered);
     expect(Number(w.answeredWeight)).toBe(c.answered);
+  });
+});
+
+// --- DoS resistance: cost scales with responses, never the declared span -------
+
+describe("resists a hostile huge declared span", () => {
+  it("count-type options: only selected indices emitted, no giant allocation", () => {
+    // 2^40 options: the old dense `new Array(count)` would RangeError/OOM here.
+    const q: Question = {
+      type: "singleChoice",
+      prompt: "",
+      options: { type: "count", count: 2 ** 40 },
+    };
+    const r = responder(1, 5n, [
+      { type: "singleChoice", questionIndex: 0, optionIndex: 3 },
+    ]);
+    const t = weightedTallyQuestion(q, 0, [r]) as Extract<
+      WeightedQuestionTally,
+      { kind: "options" }
+    >;
+    expect(t.options).toEqual([{ index: 3, weight: 5n, count: 1 }]);
+  });
+
+  it("rating with an astronomically wide numeric scale: sparse levels only", () => {
+    // levels = 2^40 + 1: the old dense per-level array would blow up.
+    const q: Question = {
+      type: "rating",
+      prompt: "",
+      options: OPTS,
+      scale: {
+        type: "numeric",
+        constraints: { min: 0n, max: BigInt(2 ** 40), step: 1n },
+      },
+      requireAll: false,
+    };
+    const r = responder(1, 5n, [
+      {
+        type: "rating",
+        questionIndex: 0,
+        ratings: [{ optionIndex: 0, rating: 7n }],
+      },
+    ]);
+    const t = weightedTallyQuestion(q, 0, [r]) as Extract<
+      WeightedQuestionTally,
+      { kind: "perOption" }
+    >;
+    expect(t.perOption).toEqual([
+      {
+        index: 0,
+        weightedSum: 35n,
+        answeredWeight: 5n,
+        count: 1,
+        levels: [{ level: 7, weight: 5n }],
+      },
+    ]);
+  });
+
+  it("display tally caps buckets so the browser path can't be forced to allocate", () => {
+    const def: SurveyDefinition = {
+      ...DEF,
+      questions: [
+        {
+          type: "singleChoice",
+          prompt: "",
+          options: { type: "count", count: 2 ** 40 },
+        },
+        {
+          type: "rating",
+          prompt: "",
+          options: OPTS,
+          scale: {
+            type: "numeric",
+            constraints: { min: 0n, max: BigInt(2 ** 40), step: 1n },
+          },
+          requireAll: false,
+        },
+      ],
+    };
+    const resp = respWith(1, [
+      { type: "singleChoice", questionIndex: 0, optionIndex: 3 },
+      {
+        type: "rating",
+        questionIndex: 1,
+        ratings: [{ optionIndex: 0, rating: 7n }],
+      },
+    ]);
+    // The old dense `new Array(count)` / `new Array(levels)` would RangeError.
+    const [choice, rating] = tallySurvey(def, [resp], 1);
+    if (choice!.kind !== "bars") throw new Error("expected bars");
+    expect(choice.bars.length).toBeLessThanOrEqual(MAX_DISPLAY_BUCKETS);
+    expect(choice.bars[3]!.count).toBe(1); // the answered option is present
+    if (rating!.kind !== "rating") throw new Error("expected rating");
+    expect(rating.rows[0]!.counts.length).toBeLessThanOrEqual(
+      MAX_DISPLAY_BUCKETS,
+    );
   });
 });

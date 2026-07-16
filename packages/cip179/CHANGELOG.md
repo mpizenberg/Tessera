@@ -19,9 +19,39 @@ published. Keep adding entries here until release.
   Consumers that only checked emptiness (`.length === 0` ⇒ valid) are
   unaffected. Consumers that displayed the strings should map `code` to their
   own catalog, or call `describeProblem` for the previous English wording.
+- **Tally bodies are now sparse** (`./tally`). Per-option and per-level
+  aggregates were dense arrays sized by the definition's declared option count /
+  rating span — a hostile `count: 2^40` or wide numeric scale forced a
+  `new Array(~10^15)` allocation (`RangeError`/OOM). They now carry only the
+  options/levels actually answered, each tagged with its own `index` (and
+  `level`), so cost grows with responses rather than the declared width.
+  - `WeightedQuestionTally`/`ArtifactQuestion` `kind:"options"` drop
+    `optionWeights` + `optionCounts` for `options` — a list of
+    `WeightedOptionBucket` (`index`, `weight`, `count`), index ascending.
+  - `kind:"perOption"` drops the dense `perOption` array + `levelWeights` for a
+    list of `WeightedPerOption` (`index`, `weightedSum`, `answeredWeight`,
+    `count`, optional sparse `levels`), each `levels` entry a
+    `WeightedLevelBucket` (`level`, `weight`).
+  - Removed `WeightedOptionAggregate`; added `WeightedOptionBucket`,
+    `WeightedPerOption`, `WeightedLevelBucket`.
+  - Consumers that indexed the old dense arrays positionally must now read each
+    entry's `index`; a zero-answer option is simply absent (refill from the
+    definition if you render every option).
+- **Ruleset bump: `rulesetVersion` 4 → 5** for the sparse tally body. The
+  counted set and every aggregate value are unchanged (representation only), but
+  the body schema differs, so `rulesetHash()` changes and v5 artifact hashes are
+  incomparable with v4.
+- Numeric constraints (`min`/`max`/`step` on `numericRange` questions and numeric
+  rating scales) are now rejected at decode when outside the JS-safe integer
+  range (`Cip179DecodeError`), matching how the bare level count already behaved.
+  A definition carrying an out-of-safe-range bound no longer decodes.
 
 ### Added
 
+- `MAX_DISPLAY_BUCKETS` (in `./tally`) — the cap on how many option/level
+  buckets the count-based **display** tally materializes (the hashed artifact is
+  sparse and needs no cap). Keeps a hostile declared span from crashing the
+  results view; no real survey approaches it.
 - `surveyStatus(endEpoch, tipEpoch)` (in `./domain`) — the tip-only
   active/ended lifecycle rule, factored out of the internal `statusOf` so an
   embedding host (e.g. the `<tessera-respond>` widget) can gate open/closed from
@@ -35,10 +65,13 @@ published. Keep adding entries here until release.
 
 ### Notes
 
-- **No ruleset change.** The validity _verdict_ is unchanged — the returned
-  list is empty iff the structure is valid — so the tally ruleset hash in
-  `@tessera/core` is untouched (no `rulesetVersion` bump); the golden artifact
-  test stays green. Only the _representation_ of problems changed.
+- The `validateResponse`/`validateDefinition` change is representation-only: the
+  validity _verdict_ is unchanged (the list is empty iff the structure is valid),
+  so on its own it needed no `rulesetVersion` bump.
+- The **tally sparsification does bump the ruleset** (`rulesetVersion` 4 → 5, see
+  above): the schema of the hashed body changed even though no counted value did.
+  v5 hashes are incomparable with v4, so artifacts re-finalize on deploy; the
+  golden `rulesetHash()` test was updated in the same change.
 
 ## [0.2.0]
 

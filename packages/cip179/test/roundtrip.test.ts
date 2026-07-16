@@ -17,6 +17,7 @@ import {
   type AnswerItem,
   type Cip179Payload,
   type Metadatum,
+  type Question,
   type RatingQuestion,
   type SurveyDefinition,
   type SurveyResponse,
@@ -396,6 +397,45 @@ describe("rating require_all (v5)", () => {
   it("treats omission as an abstain regardless of require_all", () => {
     expect(validateResponse(definition(true), abstain)).toEqual([]);
     expect(validateResponse(definition(false), abstain)).toEqual([]);
+  });
+});
+
+describe("numeric constraints bounded to safe integers", () => {
+  // min/max/step drive rating-scale bucketing, which crosses Number(); an
+  // out-of-safe-range bound would lose precision and describe a nonsensical
+  // scale. Reject it at decode rather than carry it into the tally.
+  const overSafe = BigInt(Number.MAX_SAFE_INTEGER) + 1n;
+
+  it("rejects a numericRange bound beyond the JS-safe integer range", () => {
+    const q: Question = {
+      type: "numericRange",
+      prompt: "How many?",
+      constraints: { min: 0n, max: overSafe },
+    };
+    expect(() => decodeQuestion(encodeQuestion(q))).toThrow(Cip179DecodeError);
+  });
+
+  it("rejects a numeric rating-scale bound beyond the safe range", () => {
+    const q: RatingQuestion = {
+      type: "rating",
+      prompt: "Rate",
+      options: { type: "options", labels: ["A", "B"] },
+      scale: {
+        type: "numeric",
+        constraints: { min: 0n, max: overSafe, step: 1n },
+      },
+      requireAll: false,
+    };
+    expect(() => decodeQuestion(encodeQuestion(q))).toThrow(Cip179DecodeError);
+  });
+
+  it("still accepts a bound at exactly the maximum safe integer", () => {
+    const q: Question = {
+      type: "numericRange",
+      prompt: "How many?",
+      constraints: { min: 0n, max: BigInt(Number.MAX_SAFE_INTEGER) },
+    };
+    expect(decodeQuestion(encodeQuestion(q))).toEqual(q);
   });
 });
 

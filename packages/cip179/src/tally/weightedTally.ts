@@ -42,23 +42,54 @@ export interface WeightedValueBin {
   readonly count: number;
 }
 
-/** Weighted numerator/denominator for one option of a per-option question. */
-export interface WeightedOptionAggregate {
+/**
+ * One option that received at least one answer. **Sparse:** the declared option
+ * count (`{type:"count", count}`) is attacker-controlled and unbounded, so we
+ * never allocate a dense per-option array — only options actually answered are
+ * emitted, `index` ascending. A zero-answer option simply doesn't appear (the
+ * display fills it back in from the definition; see `artifactView.ts`).
+ */
+export interface WeightedOptionBucket {
+  /** The option's index in the definition. */
+  readonly index: number;
+  /** Σ responder weight backing this option. */
+  readonly weight: bigint;
+  /** Responders who selected this option. */
+  readonly count: number;
+}
+
+/** One scale level that received weight, for a rated option (level ascending). */
+export interface WeightedLevelBucket {
+  /** Level index (0 = the scale's minimum), bucketed by {@link ratingScaleInfo}. */
+  readonly level: number;
+  readonly weight: bigint;
+}
+
+/** Weighted numerator/denominator for one answered option (points/rating). */
+export interface WeightedPerOption {
+  /** The option's index in the definition. */
+  readonly index: number;
   /** Σ (answer value × responder weight) for this option. */
   readonly weightedSum: bigint;
   /** Σ responder weight backing that sum — the mean's exact denominator. */
   readonly answeredWeight: bigint;
   /** Responders explicitly contributing to this option. */
   readonly count: number;
+  /**
+   * Rating only: the sparse per-level weight distribution for this option — the
+   * scale span is attacker-controlled, so only populated levels are emitted
+   * (level ascending). Absent for points questions.
+   */
+  readonly levels?: readonly WeightedLevelBucket[];
 }
 
 export type WeightedQuestionTally =
   | {
-      /** One weight bucket per option (single/multi choice, first preferences). */
+      /** One weight bucket per *answered* option (single/multi choice, first
+       * preferences) — sparse, `index` ascending. */
       readonly kind: "options";
       readonly unit: "singleChoice" | "multiSelect" | "rankingFirst";
-      readonly optionWeights: readonly bigint[];
-      readonly optionCounts: readonly number[];
+      readonly options: readonly WeightedOptionBucket[];
       readonly answeredCount: number;
       readonly answeredWeight: bigint;
     }
@@ -73,13 +104,8 @@ export type WeightedQuestionTally =
   | {
       readonly kind: "perOption";
       readonly unit: "points" | "rating";
-      readonly perOption: readonly WeightedOptionAggregate[];
-      /**
-       * Rating only: weight distribution per option per scale level
-       * (`levelWeights[option][level]`, level 0 = the scale's minimum, bucketed
-       * by {@link ratingScaleInfo} exactly as the count tally does).
-       */
-      readonly levelWeights?: readonly (readonly bigint[])[];
+      /** One entry per *answered* option — sparse, `index` ascending. */
+      readonly perOption: readonly WeightedPerOption[];
       readonly answeredCount: number;
       readonly answeredWeight: bigint;
     }
@@ -89,6 +115,30 @@ export type WeightedQuestionTally =
       readonly answeredCount: number;
       readonly answeredWeight: bigint;
     };
+
+/** Accumulate `weight`/`+1 count` into a sparse option map. */
+function addOption(
+  m: Map<number, { weight: bigint; count: number }>,
+  index: number,
+  weight: bigint,
+): void {
+  const e = m.get(index);
+  if (e) {
+    e.weight += weight;
+    e.count++;
+  } else {
+    m.set(index, { weight, count: 1 });
+  }
+}
+
+/** A sparse option map → sorted {@link WeightedOptionBucket} list. */
+function optionBuckets(
+  m: Map<number, { weight: bigint; count: number }>,
+): WeightedOptionBucket[] {
+  return [...m.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([index, e]) => ({ index, weight: e.weight, count: e.count }));
+}
 
 function optionCountOf(opts: OptionsOrCount): number {
   return opts.type === "options" ? opts.labels.length : opts.count;
@@ -120,19 +170,19 @@ export function weightedTallyQuestion(
   switch (question.type) {
     case "singleChoice": {
       const n = optionCountOf(question.options);
-      const optionWeights = new Array<bigint>(n).fill(0n);
-      const optionCounts = new Array<number>(n).fill(0);
+      const byOption = new Map<number, { weight: bigint; count: number }>();
       for (const { a, w } of answered) {
-        if (a.type === "singleChoice" && a.optionIndex < n) {
-          optionWeights[a.optionIndex] += w;
-          optionCounts[a.optionIndex]++;
-        }
+        if (
+          a.type === "singleChoice" &&
+          a.optionIndex >= 0 &&
+          a.optionIndex < n
+        )
+          addOption(byOption, a.optionIndex, w);
       }
       return {
         kind: "options",
         unit: "singleChoice",
-        optionWeights,
-        optionCounts,
+        options: optionBuckets(byOption),
         answeredCount,
         answeredWeight,
       };
@@ -140,23 +190,17 @@ export function weightedTallyQuestion(
 
     case "multiSelect": {
       const n = optionCountOf(question.options);
-      const optionWeights = new Array<bigint>(n).fill(0n);
-      const optionCounts = new Array<number>(n).fill(0);
+      const byOption = new Map<number, { weight: bigint; count: number }>();
       for (const { a, w } of answered) {
         if (a.type === "multiSelect") {
-          for (const i of a.optionIndices) {
-            if (i < n) {
-              optionWeights[i] += w;
-              optionCounts[i]++;
-            }
-          }
+          for (const i of a.optionIndices)
+            if (i >= 0 && i < n) addOption(byOption, i, w);
         }
       }
       return {
         kind: "options",
         unit: "multiSelect",
-        optionWeights,
-        optionCounts,
+        options: optionBuckets(byOption),
         answeredCount,
         answeredWeight,
       };
@@ -164,22 +208,17 @@ export function weightedTallyQuestion(
 
     case "ranking": {
       const n = optionCountOf(question.options);
-      const optionWeights = new Array<bigint>(n).fill(0n);
-      const optionCounts = new Array<number>(n).fill(0);
+      const byOption = new Map<number, { weight: bigint; count: number }>();
       for (const { a, w } of answered) {
         if (a.type === "ranking" && a.ranking.length > 0) {
           const top = a.ranking[0]!;
-          if (top < n) {
-            optionWeights[top] += w;
-            optionCounts[top]++;
-          }
+          if (top >= 0 && top < n) addOption(byOption, top, w);
         }
       }
       return {
         kind: "options",
         unit: "rankingFirst",
-        optionWeights,
-        optionCounts,
+        options: optionBuckets(byOption),
         answeredCount,
         answeredWeight,
       };
@@ -218,26 +257,36 @@ export function weightedTallyQuestion(
       // weighted mean is weightedSum / answeredWeight (same for all options);
       // `count` records who allocated to the option explicitly.
       const n = optionCountOf(question.options);
-      const sums = new Array<bigint>(n).fill(0n);
-      const counts = new Array<number>(n).fill(0);
+      const byOption = new Map<number, { sum: bigint; count: number }>();
       for (const { a, w } of answered) {
         if (a.type === "pointsAllocation") {
           for (const p of a.allocations) {
-            if (p.optionIndex < n) {
-              sums[p.optionIndex] += BigInt(p.points) * w;
-              counts[p.optionIndex]++;
+            if (p.optionIndex >= 0 && p.optionIndex < n) {
+              const e = byOption.get(p.optionIndex);
+              const add = BigInt(p.points) * w;
+              if (e) {
+                e.sum += add;
+                e.count++;
+              } else {
+                byOption.set(p.optionIndex, { sum: add, count: 1 });
+              }
             }
           }
         }
       }
+      const perOption = [...byOption.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([index, e]) => ({
+          index,
+          weightedSum: e.sum,
+          // Every answering responder backs every option's denominator.
+          answeredWeight,
+          count: e.count,
+        }));
       return {
         kind: "perOption",
         unit: "points",
-        perOption: sums.map((weightedSum, i) => ({
-          weightedSum,
-          answeredWeight,
-          count: counts[i]!,
-        })),
+        perOption,
         answeredCount,
         answeredWeight,
       };
@@ -250,33 +299,51 @@ export function weightedTallyQuestion(
       // responder count; a subset question (require_all=false) leaves them opt-in.
       const n = optionCountOf(question.options);
       const info = ratingScaleInfo(question.scale);
-      const sums = new Array<bigint>(n).fill(0n);
-      const optWeights = new Array<bigint>(n).fill(0n);
-      const counts = new Array<number>(n).fill(0);
-      const levelWeights = Array.from({ length: n }, () =>
-        new Array<bigint>(info.levels).fill(0n),
-      );
+      // Sparse per option: only rated options, and within each only populated
+      // levels — the scale span (`info.levels`) is attacker-controlled, so it is
+      // used only as a bound to test against, never as an allocation size.
+      const byOption = new Map<
+        number,
+        {
+          sum: bigint;
+          weight: bigint;
+          count: number;
+          levels: Map<number, bigint>;
+        }
+      >();
       for (const { a, w } of answered) {
         if (a.type !== "rating") continue;
         for (const r of a.ratings) {
           const oi = r.optionIndex;
-          if (oi >= n) continue;
-          sums[oi] += r.rating * w;
-          optWeights[oi] += w;
-          counts[oi]++;
+          if (oi < 0 || oi >= n) continue;
+          let e = byOption.get(oi);
+          if (!e) {
+            e = { sum: 0n, weight: 0n, count: 0, levels: new Map() };
+            byOption.set(oi, e);
+          }
+          e.sum += r.rating * w;
+          e.weight += w;
+          e.count++;
           const li = Math.round((Number(r.rating) - info.baseMin) / info.step);
-          if (li >= 0 && li < info.levels) levelWeights[oi]![li] += w;
+          if (li >= 0 && li < info.levels)
+            e.levels.set(li, (e.levels.get(li) ?? 0n) + w);
         }
       }
+      const perOption = [...byOption.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([index, e]) => ({
+          index,
+          weightedSum: e.sum,
+          answeredWeight: e.weight,
+          count: e.count,
+          levels: [...e.levels.entries()]
+            .sort(([a], [b]) => a - b)
+            .map(([level, weight]) => ({ level, weight })),
+        }));
       return {
         kind: "perOption",
         unit: "rating",
-        perOption: sums.map((weightedSum, i) => ({
-          weightedSum,
-          answeredWeight: optWeights[i]!,
-          count: counts[i]!,
-        })),
-        levelWeights,
+        perOption,
         answeredCount,
         answeredWeight,
       };

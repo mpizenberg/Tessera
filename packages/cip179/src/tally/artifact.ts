@@ -46,7 +46,15 @@ export const RULESET_DESCRIPTOR = {
   // on any linked action proves on its own, a non-qualifying vote never
   // invalidates (mechanism A decides). Both change the counted set, so hashes
   // are incomparable with v3.
-  rulesetVersion: 4,
+  // v5: per-question tallies are now *sparse* — `options`/`perOption` carry only
+  // options that were actually answered (each with its own `index`), and rating
+  // level distributions carry only populated levels. A hostile definition can
+  // declare an astronomically large option count / rating span, and the old
+  // dense arrays were sized by that declared width (a DoS: `new Array(2^40)`);
+  // the sparse body grows with responses, never with the declared span. Pure
+  // representation change — the counted set and every aggregate value are
+  // unchanged — but the body schema differs, so hashes are incomparable with v4.
+  rulesetVersion: 5,
   cip179SpecVersion: 5,
   /** Roles artifacts cover: 0 DRep, 3 Stakeholder, 4 Keyholder (SPO/CC deferred). */
   coveredRoles: [0, 3, 4],
@@ -103,8 +111,12 @@ export type ArtifactQuestion =
   | {
       readonly kind: "options";
       readonly unit: "singleChoice" | "multiSelect" | "rankingFirst";
-      readonly optionWeights: readonly string[];
-      readonly optionCounts: readonly number[];
+      /** One entry per *answered* option, `index` ascending (sparse). */
+      readonly options: readonly {
+        readonly index: number;
+        readonly weight: string;
+        readonly count: number;
+      }[];
       readonly answeredCount: number;
       readonly answeredWeight: string;
     }
@@ -122,12 +134,18 @@ export type ArtifactQuestion =
   | {
       readonly kind: "perOption";
       readonly unit: "points" | "rating";
+      /** One entry per *answered* option, `index` ascending (sparse). */
       readonly perOption: readonly {
+        readonly index: number;
         readonly weightedSum: string;
         readonly answeredWeight: string;
         readonly count: number;
+        /** Rating only: sparse per-level weights, `level` ascending. */
+        readonly levels?: readonly {
+          readonly level: number;
+          readonly weight: string;
+        }[];
       }[];
-      readonly levelWeights?: readonly (readonly string[])[];
       readonly answeredCount: number;
       readonly answeredWeight: string;
     }
@@ -234,8 +252,11 @@ export function toArtifactQuestions(
         return {
           kind: "options",
           unit: t.unit,
-          optionWeights: t.optionWeights.map(String),
-          optionCounts: [...t.optionCounts],
+          options: t.options.map((o) => ({
+            index: o.index,
+            weight: String(o.weight),
+            count: o.count,
+          })),
           answeredCount: t.answeredCount,
           answeredWeight: String(t.answeredWeight),
         };
@@ -256,13 +277,17 @@ export function toArtifactQuestions(
           kind: "perOption",
           unit: t.unit,
           perOption: t.perOption.map((o) => ({
+            index: o.index,
             weightedSum: String(o.weightedSum),
             answeredWeight: String(o.answeredWeight),
             count: o.count,
+            ...(o.levels !== undefined && {
+              levels: o.levels.map((l) => ({
+                level: l.level,
+                weight: String(l.weight),
+              })),
+            }),
           })),
-          ...(t.levelWeights !== undefined && {
-            levelWeights: t.levelWeights.map((row) => row.map(String)),
-          }),
           answeredCount: t.answeredCount,
           answeredWeight: String(t.answeredWeight),
         };

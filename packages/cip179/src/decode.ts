@@ -88,11 +88,25 @@ const asBytesOfSize = (
 const asInt = (m: Metadatum, path: string): bigint =>
   isInt(m) ? m : fail("expected integer", path);
 
+/** True iff `n` fits the JS-safe integer range (exactly representable). */
+const inSafeRange = (n: bigint): boolean =>
+  n <= BigInt(Number.MAX_SAFE_INTEGER) && n >= BigInt(Number.MIN_SAFE_INTEGER);
+
+/**
+ * An integer kept as bigint but constrained to the JS-safe range. Numeric
+ * constraints (`min`/`max`/`step`) drive rating-scale bucketing, which crosses
+ * `Number()` — an out-of-safe-range bound would both lose precision there and
+ * (with the sparse tally aside) describe a nonsensical scale. Rejecting it at
+ * decode keeps every downstream `Number(bound)` exact.
+ */
+const asSafeInt = (m: Metadatum, path: string): bigint => {
+  const n = asInt(m, path);
+  return inSafeRange(n) ? n : fail(`integer out of safe range: ${n}`, path);
+};
+
 /** Narrow a bigint to a JS-safe integer, or fail with the path. */
 const safeNumber = (n: bigint, path: string): number =>
-  n > BigInt(Number.MAX_SAFE_INTEGER) || n < BigInt(Number.MIN_SAFE_INTEGER)
-    ? fail(`integer out of safe range: ${n}`, path)
-    : Number(n);
+  inSafeRange(n) ? Number(n) : fail(`integer out of safe range: ${n}`, path);
 
 const asNumber = (m: Metadatum, path: string): number =>
   safeNumber(asInt(m, path), path);
@@ -218,10 +232,10 @@ const decodeNumericConstraints = (
 ): NumericConstraints => {
   const arr = asList(m, path);
   expectLen(arr, 2, 3, path);
-  const min = asInt(arr[0], `${path}[0]`);
-  const max = asInt(arr[1], `${path}[1]`);
+  const min = asSafeInt(arr[0], `${path}[0]`);
+  const max = asSafeInt(arr[1], `${path}[1]`);
   return arr.length === 3
-    ? { min, max, step: asInt(arr[2], `${path}[2]`) }
+    ? { min, max, step: asSafeInt(arr[2], `${path}[2]`) }
     : { min, max };
 };
 
