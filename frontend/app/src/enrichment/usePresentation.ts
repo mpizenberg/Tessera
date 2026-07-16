@@ -16,7 +16,12 @@ import { createResource, type Accessor } from "solid-js";
 import type { SurveyDefinition } from "cip-179";
 
 import { useApp } from "~/state";
-import { applyPresentation, parsePresentation } from "./presentation";
+import {
+  applyPresentation,
+  displayDefinitionFor,
+  parsePresentation,
+  presentationUnavailable,
+} from "./presentation";
 
 export interface PresentationState {
   /** Display definition: enriched when available, else the on-chain one. */
@@ -55,9 +60,18 @@ export function usePresentation(
   );
 
   return {
-    def: () => (enriched.state === "ready" ? enriched() : source()),
+    // The resource holds the previous survey's value when the source turns
+    // non-external (Solid skips the fetcher) and across a switch until the new
+    // fetch settles; `displayDefinitionFor` rejects both stale cases by anchor.
+    def: () =>
+      displayDefinitionFor(
+        source(),
+        enriched.state === "ready" ? enriched() : undefined,
+      ),
     external: () => !!source()?.contentAnchor,
-    loading: () => enriched.loading,
-    unavailable: () => !!enriched.error,
+    // Only a fetch for the *current* external survey counts as loading.
+    loading: () => !!source()?.contentAnchor && enriched.loading,
+    unavailable: () =>
+      presentationUnavailable(source(), enriched.loading, !!enriched.error),
   };
 }
