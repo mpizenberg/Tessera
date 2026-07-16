@@ -19,8 +19,6 @@ import type {
   SurveyResponse,
 } from "../index.js";
 
-import { ratingScaleInfo } from "./tally.js";
-
 /** One counted responder with the weight it carries into the tally. */
 export interface WeightedResponder {
   /** Stable credential identity ("key:<hex>" | "script:<hex>"). */
@@ -58,29 +56,21 @@ export interface WeightedOptionBucket {
   readonly count: number;
 }
 
-/** One scale level that received weight, for a rated option (level ascending). */
-export interface WeightedLevelBucket {
-  /** Level index (0 = the scale's minimum), bucketed by {@link ratingScaleInfo}. */
-  readonly level: number;
-  readonly weight: bigint;
-}
-
 /** Weighted numerator/denominator for one answered option (points/rating). */
 export interface WeightedPerOption {
   /** The option's index in the definition. */
   readonly index: number;
   /** Σ (answer value × responder weight) for this option. */
   readonly weightedSum: bigint;
-  /** Σ responder weight backing that sum — the mean's exact denominator. */
-  readonly answeredWeight: bigint;
+  /**
+   * Σ responder weight backing that sum — the mean's exact denominator.
+   * Rating only: each option's raters differ, so the denominator is per option.
+   * Points omits it — every answering responder backs every option, so the
+   * denominator is identically the question-level `answeredWeight`.
+   */
+  readonly answeredWeight?: bigint;
   /** Responders explicitly contributing to this option. */
   readonly count: number;
-  /**
-   * Rating only: the sparse per-level weight distribution for this option — the
-   * scale span is attacker-controlled, so only populated levels are emitted
-   * (level ascending). Absent for points questions.
-   */
-  readonly levels?: readonly WeightedLevelBucket[];
 }
 
 export type WeightedQuestionTally =
@@ -279,8 +269,8 @@ export function weightedTallyQuestion(
         .map(([index, e]) => ({
           index,
           weightedSum: e.sum,
-          // Every answering responder backs every option's denominator.
-          answeredWeight,
+          // No per-option `answeredWeight`: every answering responder backs every
+          // option, so the denominator is the question-level `answeredWeight`.
           count: e.count,
         }));
       return {
@@ -298,18 +288,12 @@ export function weightedTallyQuestion(
       // question forces every option rated, so its denominators converge on the
       // responder count; a subset question (require_all=false) leaves them opt-in.
       const n = optionCountOf(question.options);
-      const info = ratingScaleInfo(question.scale);
-      // Sparse per option: only rated options, and within each only populated
-      // levels — the scale span (`info.levels`) is attacker-controlled, so it is
-      // used only as a bound to test against, never as an allocation size.
+      // Sparse per option: only rated options are emitted. Each carries its own
+      // `answeredWeight` (the raters of *that* option), which is the mean's exact
+      // denominator and genuinely differs per option when `require_all=false`.
       const byOption = new Map<
         number,
-        {
-          sum: bigint;
-          weight: bigint;
-          count: number;
-          levels: Map<number, bigint>;
-        }
+        { sum: bigint; weight: bigint; count: number }
       >();
       for (const { a, w } of answered) {
         if (a.type !== "rating") continue;
@@ -318,15 +302,12 @@ export function weightedTallyQuestion(
           if (oi < 0 || oi >= n) continue;
           let e = byOption.get(oi);
           if (!e) {
-            e = { sum: 0n, weight: 0n, count: 0, levels: new Map() };
+            e = { sum: 0n, weight: 0n, count: 0 };
             byOption.set(oi, e);
           }
           e.sum += r.rating * w;
           e.weight += w;
           e.count++;
-          const li = Math.round((Number(r.rating) - info.baseMin) / info.step);
-          if (li >= 0 && li < info.levels)
-            e.levels.set(li, (e.levels.get(li) ?? 0n) + w);
         }
       }
       const perOption = [...byOption.entries()]
@@ -336,9 +317,6 @@ export function weightedTallyQuestion(
           weightedSum: e.sum,
           answeredWeight: e.weight,
           count: e.count,
-          levels: [...e.levels.entries()]
-            .sort(([a], [b]) => a - b)
-            .map(([level, weight]) => ({ level, weight })),
         }));
       return {
         kind: "perOption",

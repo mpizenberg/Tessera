@@ -205,26 +205,24 @@ describe("weightedTallyQuestion", () => {
     const t = weightedTallyQuestion(QUESTIONS[4]!, 4, all);
     expect(t).toMatchObject({
       unit: "points",
-      // Option 2 got no allocation → absent (sparse); the two answered options
-      // still carry the survey-level answeredWeight as their denominator.
+      // Option 2 got no allocation → absent (sparse). Points entries carry no
+      // per-option answeredWeight — the denominator is the survey-level
+      // answeredWeight (107n), identical for every option.
       perOption: [
-        {
-          index: 0,
-          weightedSum: 100n * 10n + 7n * 4n,
-          answeredWeight: 107n,
-          count: 2,
-        },
-        { index: 1, weightedSum: 7n * 6n, answeredWeight: 107n, count: 1 },
+        { index: 0, weightedSum: 100n * 10n + 7n * 4n, count: 2 },
+        { index: 1, weightedSum: 7n * 6n, count: 1 },
       ],
       answeredWeight: 107n,
     });
+    if (t.kind !== "perOption") throw new Error("expected perOption");
+    expect("answeredWeight" in t.perOption[0]!).toBe(false);
   });
 
   it("rating: per-option denominators cover only that option's raters", () => {
     const t = weightedTallyQuestion(QUESTIONS[5]!, 5, all);
-    // Levels 1..5 → indices 0..4: R1 rated a=5 (level 4, w100), R2 a=1 (level 0,
-    // w7) and b=3 (level 2, w7). Option c (index 2) unrated → absent; each
-    // option's levels list carries only its populated levels, level ascending.
+    // R1 rated a=5 (w100); R2 rated a=1 (w7) and b=3 (w7). Option c (index 2)
+    // unrated → absent. Each option's answeredWeight covers only its own raters,
+    // so a's is 107n (both) but b's is 7n (R2 only) — the require_all=false case.
     expect(t).toMatchObject({
       unit: "rating",
       perOption: [
@@ -233,18 +231,8 @@ describe("weightedTallyQuestion", () => {
           weightedSum: 100n * 5n + 7n * 1n,
           answeredWeight: 107n,
           count: 2,
-          levels: [
-            { level: 0, weight: 7n },
-            { level: 4, weight: 100n },
-          ],
         },
-        {
-          index: 1,
-          weightedSum: 7n * 3n,
-          answeredWeight: 7n,
-          count: 1,
-          levels: [{ level: 2, weight: 7n }],
-        },
+        { index: 1, weightedSum: 7n * 3n, answeredWeight: 7n, count: 1 },
       ],
     });
     if (t.kind !== "perOption") throw new Error("expected perOption");
@@ -364,12 +352,13 @@ describe("weightedTallySurvey with all weights 1n reproduces tally.ts counts", (
     const byIndex = new Map(w.perOption.map((o) => [o.index, o]));
     for (let i = 0; i < c.rows.length; i++) {
       const o = byIndex.get(i);
-      const avg = o ? Number(o.weightedSum) / Number(o.answeredWeight) : 0;
+      // Points denominator is the question-level answeredWeight (not per-option).
+      const avg = o ? Number(o.weightedSum) / Number(w.answeredWeight) : 0;
       expect(avg).toBe(c.rows[i]!.avg);
     }
   });
 
-  it("matches rating averages and level distributions", () => {
+  it("matches rating averages", () => {
     const c = counted[5]!;
     const w = weighted[5]! as Extract<
       WeightedQuestionTally,
@@ -381,10 +370,6 @@ describe("weightedTallySurvey with all weights 1n reproduces tally.ts counts", (
       const o = byIndex.get(i);
       const avg = o ? Number(o.weightedSum) / Number(o.answeredWeight) : 0;
       expect(avg).toBe(c.rows[i]!.avg);
-      // Densify the sparse per-level weights back to the display counts' width.
-      const dense = new Array<number>(c.rows[i]!.counts.length).fill(0);
-      for (const l of o?.levels ?? []) dense[l.level] = Number(l.weight);
-      expect(dense).toEqual(c.rows[i]!.counts);
     }
   });
 
@@ -417,8 +402,10 @@ describe("resists a hostile huge declared span", () => {
     expect(t.options).toEqual([{ index: 3, weight: 5n, count: 1 }]);
   });
 
-  it("rating with an astronomically wide numeric scale: sparse levels only", () => {
-    // levels = 2^40 + 1: the old dense per-level array would blow up.
+  it("rating with an astronomically wide numeric scale: cost is per-rater, not per-span", () => {
+    // A 2^40-wide scale: the hashed rating path never touches the scale span now
+    // (the per-level histogram was dropped in ruleset v6), so nothing is sized by
+    // the declared width — only the rated options are emitted.
     const q: Question = {
       type: "rating",
       prompt: "",
@@ -441,13 +428,7 @@ describe("resists a hostile huge declared span", () => {
       { kind: "perOption" }
     >;
     expect(t.perOption).toEqual([
-      {
-        index: 0,
-        weightedSum: 35n,
-        answeredWeight: 5n,
-        count: 1,
-        levels: [{ level: 7, weight: 5n }],
-      },
+      { index: 0, weightedSum: 35n, answeredWeight: 5n, count: 1 },
     ]);
   });
 

@@ -72,7 +72,7 @@ describe("rulesetHash", () => {
   // rules", which is the exact failure mode the hash exists to prevent.
   it("matches its pinned golden hash (bump rulesetVersion on any change)", () => {
     expect(rulesetHash()).toBe(
-      "ae2c8b1c67651ad41b9aa8f8a70b0d276ce5e69942a2fb1817c67dbe51fdbfc3",
+      "d2d89f51b6ad5625c651d25822a2789c6cc6b98b4406f5c9362b04b6efa4dd55",
     );
   });
 
@@ -141,13 +141,7 @@ describe("toArtifactQuestions", () => {
         kind: "perOption",
         unit: "rating",
         perOption: [
-          {
-            index: 0,
-            weightedSum: 6n,
-            answeredWeight: 2n,
-            count: 2,
-            levels: [{ level: 1, weight: 2n }],
-          },
+          { index: 0, weightedSum: 6n, answeredWeight: 2n, count: 2 },
         ],
         answeredCount: 2,
         answeredWeight: 2n,
@@ -168,13 +162,7 @@ describe("toArtifactQuestions", () => {
     });
     expect(qs[2]).toMatchObject({
       perOption: [
-        {
-          index: 0,
-          weightedSum: "6",
-          answeredWeight: "2",
-          count: 2,
-          levels: [{ level: 1, weight: "2" }],
-        },
+        { index: 0, weightedSum: "6", answeredWeight: "2", count: 2 },
       ],
     });
     expect(qs[3]).toEqual({
@@ -186,21 +174,21 @@ describe("toArtifactQuestions", () => {
     expect(() => canonicalJson(qs)).not.toThrow();
   });
 
-  it("omits per-option levels when the tally has none (points)", () => {
+  it("omits per-option answeredWeight when the tally omits it (points)", () => {
     const qs = toArtifactQuestions([
       {
         kind: "perOption",
         unit: "points",
-        perOption: [
-          { index: 0, weightedSum: 4n, answeredWeight: 2n, count: 2 },
-        ],
+        // Points entries carry no per-option answeredWeight — the denominator is
+        // the question-level value, identical for every option.
+        perOption: [{ index: 0, weightedSum: 4n, count: 2 }],
         answeredCount: 2,
         answeredWeight: 2n,
       },
     ]);
     const q0 = qs[0]!;
     if (q0.kind !== "perOption") throw new Error("expected perOption");
-    expect("levels" in q0.perOption[0]!).toBe(false);
+    expect("answeredWeight" in q0.perOption[0]!).toBe(false);
   });
 });
 

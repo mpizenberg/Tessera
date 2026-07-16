@@ -218,11 +218,12 @@ export function weightedQuestionView(
         aq.perOption.map((o) => o.index),
       ).map((index) => {
         const o = byIndex.get(index);
+        // Points omits the per-option denominator (it equals the question-level
+        // `answeredWeight`, identical for every option); rating commits its own.
+        const denom = o?.answeredWeight ?? aq.answeredWeight;
         return {
           label: optionLabelOf(q, index),
-          avg: o
-            ? ratioOf(BigInt(o.weightedSum), BigInt(o.answeredWeight))
-            : null,
+          avg: o ? ratioOf(BigInt(o.weightedSum), BigInt(denom)) : null,
           count: o?.count ?? 0,
         };
       });

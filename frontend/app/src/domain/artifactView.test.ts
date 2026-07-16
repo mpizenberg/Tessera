@@ -111,6 +111,24 @@ describe("weightedQuestionView", () => {
     expect(v.rows[0]).toEqual({ label: "yes", avg: 4.7383, count: 2 });
     expect(v.rows[1]).toEqual({ label: "no", avg: null, count: 0 });
   });
+
+  it("rows: points means use the question-level denominator (no per-option answeredWeight)", () => {
+    const v = weightedQuestionView(SC, {
+      kind: "perOption",
+      unit: "points",
+      // Points omits the per-option answeredWeight; both rows divide by the
+      // question-level answeredWeight (200).
+      perOption: [
+        { index: 0, weightedSum: "300", count: 2 },
+        { index: 1, weightedSum: "100", count: 1 },
+      ],
+      answeredCount: 2,
+      answeredWeight: "200",
+    });
+    if (v.kind !== "rows") throw new Error("expected rows");
+    expect(v.rows[0]).toEqual({ label: "yes", avg: 1.5, count: 2 }); // 300/200
+    expect(v.rows[1]).toEqual({ label: "no", avg: 0.5, count: 1 }); // 100/200
+  });
 });
 
 describe("resultRoleViews", () => {

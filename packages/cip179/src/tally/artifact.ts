@@ -54,7 +54,14 @@ export const RULESET_DESCRIPTOR = {
   // the sparse body grows with responses, never with the declared span. Pure
   // representation change — the counted set and every aggregate value are
   // unchanged — but the body schema differs, so hashes are incomparable with v4.
-  rulesetVersion: 5,
+  // v6: dropped two presentation/redundant fields from the hashed body — the
+  // rating per-option level histogram (display-only, read by no verifier,
+  // derivable from the committed responders) and the points per-option
+  // `answeredWeight` (which merely duplicated the question-level value, identical
+  // for every option). `ratingScaleInfo` no longer participates in the hashed
+  // body at all. Pure representation change — no counted value differs — but the
+  // schema differs, so v6 hashes are incomparable with v5.
+  rulesetVersion: 6,
   cip179SpecVersion: 5,
   /** Roles artifacts cover: 0 DRep, 3 Stakeholder, 4 Keyholder (SPO/CC deferred). */
   coveredRoles: [0, 3, 4],
@@ -138,13 +145,13 @@ export type ArtifactQuestion =
       readonly perOption: readonly {
         readonly index: number;
         readonly weightedSum: string;
-        readonly answeredWeight: string;
+        /**
+         * The mean's exact denominator. Rating only — each option's raters
+         * differ; points omits it (the denominator is the question-level
+         * `answeredWeight`, identical for every option).
+         */
+        readonly answeredWeight?: string;
         readonly count: number;
-        /** Rating only: sparse per-level weights, `level` ascending. */
-        readonly levels?: readonly {
-          readonly level: number;
-          readonly weight: string;
-        }[];
       }[];
       readonly answeredCount: number;
       readonly answeredWeight: string;
@@ -279,13 +286,11 @@ export function toArtifactQuestions(
           perOption: t.perOption.map((o) => ({
             index: o.index,
             weightedSum: String(o.weightedSum),
-            answeredWeight: String(o.answeredWeight),
             count: o.count,
-            ...(o.levels !== undefined && {
-              levels: o.levels.map((l) => ({
-                level: l.level,
-                weight: String(l.weight),
-              })),
+            // Rating commits its per-option denominator; points omits it (it
+            // equals the question-level `answeredWeight`).
+            ...(o.answeredWeight !== undefined && {
+              answeredWeight: String(o.answeredWeight),
             }),
           })),
           answeredCount: t.answeredCount,

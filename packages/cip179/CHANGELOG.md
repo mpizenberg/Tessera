@@ -41,6 +41,23 @@ published. Keep adding entries here until release.
   counted set and every aggregate value are unchanged (representation only), but
   the body schema differs, so `rulesetHash()` changes and v5 artifact hashes are
   incomparable with v4.
+- **Slimmed the hashed tally body** (`./tally`): two presentation/redundant
+  fields no longer participate in the artifact hash.
+  - Rating `perOption` entries drop `levels` — the per-option, per-scale-level
+    weight histogram. It was a display device (built via `ratingScaleInfo`
+    bucketing), read by no verifier, and derivable from the committed responders;
+    `ratingScaleInfo` no longer participates in the hashed path at all.
+  - Points `perOption` entries drop `answeredWeight` — it merely duplicated the
+    question-level `answeredWeight` (points makes every option's denominator the
+    same). Rating keeps its per-option `answeredWeight` (each option's raters
+    genuinely differ). `WeightedPerOption.answeredWeight` and the artifact's
+    `perOption[].answeredWeight` are now optional (present for rating only);
+    `WeightedLevelBucket` is removed.
+  - Consumers computing a points mean must divide by the question-level
+    `answeredWeight` rather than a per-option field.
+- **Ruleset bump: `rulesetVersion` 5 → 6** for the slimmed body. Again pure
+  representation (no counted value changes), but the schema differs, so
+  `rulesetHash()` changes and v6 hashes are incomparable with v5.
 - Numeric constraints (`min`/`max`/`step` on `numericRange` questions and numeric
   rating scales) are now rejected at decode when outside the JS-safe integer
   range (`Cip179DecodeError`), matching how the bare level count already behaved.
@@ -68,10 +85,11 @@ published. Keep adding entries here until release.
 - The `validateResponse`/`validateDefinition` change is representation-only: the
   validity _verdict_ is unchanged (the list is empty iff the structure is valid),
   so on its own it needed no `rulesetVersion` bump.
-- The **tally sparsification does bump the ruleset** (`rulesetVersion` 4 → 5, see
-  above): the schema of the hashed body changed even though no counted value did.
-  v5 hashes are incomparable with v4, so artifacts re-finalize on deploy; the
-  golden `rulesetHash()` test was updated in the same change.
+- The **tally schema changes bump the ruleset** twice (`rulesetVersion` 4 → 5 for
+  sparsification, then 5 → 6 for the slimmed body, both above): the hashed body's
+  schema changed even though no counted value did. v6 hashes are incomparable
+  with v5 (and v4), so artifacts re-finalize on deploy; the golden `rulesetHash()`
+  test was updated in the same changes.
 
 ## [0.2.0]
 
