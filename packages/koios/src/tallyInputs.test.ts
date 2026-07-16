@@ -43,9 +43,32 @@ const reg = (addr: string, slot: number, tx = "tx0") =>
 const dereg = (addr: string, slot: number, tx = "tx0") =>
   update(addr, "deregistration", slot, tx);
 
+/** A `/tx_info` row (with `_certs:true`) for a conflicting tx. */
+const txInfoRow = (
+  tx_hash: string,
+  tx_block_index: number | null,
+  certificates:
+    | { type: string; index: number; info: { stake_address?: string } }[]
+    | null,
+) => ({ tx_hash, tx_block_index, certificates });
+const regCert = (addr: string, index: number) => ({
+  type: "stake_registration",
+  index,
+  info: { stake_address: addr },
+});
+const deregCert = (addr: string, index: number) => ({
+  type: "stake_deregistration",
+  index,
+  info: { stake_address: addr },
+});
+
 type Handler = (
   url: string,
-  body: { _stake_addresses?: string[] } | null,
+  body: {
+    _stake_addresses?: string[];
+    _tx_hashes?: string[];
+    _certs?: boolean;
+  } | null,
 ) => unknown;
 
 function stubFetch(handler: Handler) {
@@ -239,10 +262,10 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
       }
       if (url.includes("/tx_info")) {
         return [
-          { tx_hash: "tx1", tx_block_index: 3 },
-          { tx_hash: "tx2", tx_block_index: 5 },
-          { tx_hash: "tx3", tx_block_index: 5 },
-          { tx_hash: "tx4", tx_block_index: 8 },
+          txInfoRow("tx1", 3, [deregCert(addrA, 0)]),
+          txInfoRow("tx2", 5, [regCert(addrA, 0)]),
+          txInfoRow("tx3", 5, [regCert(addrB, 0)]),
+          txInfoRow("tx4", 8, [deregCert(addrB, 0)]),
         ];
       }
       throw new Error(`unexpected ${url}`);
@@ -262,34 +285,53 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
     });
   });
 
-  it("falls back to the deregistration-last convention only for two certs in ONE tx (documented limitation)", async () => {
-    const addrA = await stakeAddress(cred(HASH_A), "preview");
+  it("resolves two certs for one credential in ONE tx by cert_index — exact ledger order, no convention (finding 5)", async () => {
+    const [addrA, addrB] = await Promise.all([
+      stakeAddress(cred(HASH_A), "preview"),
+      stakeAddress(cred(HASH_B), "preview"),
+    ]);
     let txInfoCalls = 0;
-    stubFetch((url) => {
+    let certsRequested = false;
+    stubFetch((url, body) => {
       if (url.includes("/account_stake_history")) return [];
       if (url.includes("/account_update_history")) {
-        // register + deregister in the SAME tx — cert order unobservable.
-        return [reg(addrA, 100, "txX"), dereg(addrA, 100, "txX")];
+        return [
+          // A: register then deregister in the SAME tx → dereg is cert 1 → OUT.
+          reg(addrA, 100, "txA"),
+          dereg(addrA, 100, "txA"),
+          // B: deregister then re-register in the SAME tx → reg is cert 1 → IN.
+          dereg(addrB, 100, "txB"),
+          reg(addrB, 100, "txB"),
+        ];
       }
       if (url.includes("/tx_info")) {
         txInfoCalls += 1;
-        return [];
+        certsRequested = body?._certs === true;
+        return [
+          txInfoRow("txA", 0, [regCert(addrA, 0), deregCert(addrA, 1)]),
+          txInfoRow("txB", 0, [deregCert(addrB, 0), regCert(addrB, 1)]),
+        ];
       }
       throw new Error(`unexpected ${url}`);
     });
     const weights = await new KoiosTallyInputs(CONFIG).stakeholderWeights(
       1345,
-      [cred(HASH_A)],
+      [cred(HASH_A), cred(HASH_B)],
     );
-    // One tx → nothing to order → no tx_info read; convention → deregistered.
-    expect(txInfoCalls).toBe(0);
+    // Same-tx conflict now needs the cert list — one tx_info read, `_certs` on.
+    expect(txInfoCalls).toBe(1);
+    expect(certsRequested).toBe(true);
     expect(weights.get(`key:${HASH_A}`)).toEqual({
-      registered: false,
+      registered: false, // dereg (cert 1) applied last
+      weight: 0n,
+    });
+    expect(weights.get(`key:${HASH_B}`)).toEqual({
+      registered: true, // reg (cert 1) applied last
       weight: 0n,
     });
   });
 
-  it("throws (retry) when a cross-tx same-slot tie has no tx_block_index — never guesses", async () => {
+  it("throws (retry) when a conflicting tx's cert data is unavailable — never guesses", async () => {
     const addrA = await stakeAddress(cred(HASH_A), "preview");
     stubFetch((url) => {
       if (url.includes("/account_stake_history")) return [];
@@ -297,16 +339,20 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
         return [dereg(addrA, 100, "tx1"), reg(addrA, 100, "tx2")];
       }
       if (url.includes("/tx_info")) {
-        return [{ tx_hash: "tx1", tx_block_index: 3 }]; // tx2's index missing
+        // tx2's data is unavailable → can't order the tie → must retry.
+        return [
+          txInfoRow("tx1", 3, [deregCert(addrA, 0)]),
+          txInfoRow("tx2", null, null),
+        ];
       }
       throw new Error(`unexpected ${url}`);
     });
     await expect(
       new KoiosTallyInputs(CONFIG).stakeholderWeights(1345, [cred(HASH_A)]),
-    ).rejects.toThrow(/tx_block_index unavailable/);
+    ).rejects.toThrow(/tx_info unavailable/);
   });
 
-  it("reads no tx_info when no account has a same-slot tie (common case)", async () => {
+  it("reads no tx_info when no account has a same-slot conflict (common case)", async () => {
     const addrA = await stakeAddress(cred(HASH_A), "preview");
     let txInfoCalls = 0;
     stubFetch((url) => {

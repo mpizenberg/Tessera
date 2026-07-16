@@ -7,17 +7,17 @@
  *    deregistration)` — registration state. Only registration/deregistration
  *    change it (delegations/withdrawals merely imply registration), so we filter
  *    to those two server-side; a credential is registered at E iff the last
- *    event in chain order (up to E) is a registration. Chain order is
- *    `(absolute_slot, tx_block_index, cert_index)`; the deciding slot's
- *    `tx_block_index` comes from a `/tx_info` read, taken only when that slot
- *    spans several txs (rare). Still offset-paginated (a churny account can
+ *    event in chain order (up to E) is not a deregistration. Chain order is
+ *    `(absolute_slot, tx_block_index, cert_index)`, and only the account's max
+ *    slot can decide (earlier slots are overridden). When that slot holds both a
+ *    registration and a deregistration — in different txs *or* the same tx — we
+ *    read those txs' `/tx_info` certificates (`_certs`) and take the last cert by
+ *    `(tx_block_index, cert_index)`, exactly the ledger's within-slot
+ *    certificate application order, so the verdict matches the chain with no
+ *    convention. The common case (no same-slot reg/dereg mix) needs no
+ *    `/tx_info` read. Still offset-paginated (a churny account can
  *    register/deregister many times) so a long history is never silently
  *    truncated at Koios's ~1000 cap.
- *    LIMITATION: two certs for the same credential in ONE tx can't be ordered —
- *    Koios exposes no `cert_index` (`tx_info.certificates` is empty for stake
- *    certs, verified live). That one case falls back to a fail-closed CONVENTION
- *    (a deregistration in the deciding tx wins); every other same-slot case is
- *    resolved to true chain order via `tx_block_index`. See the walk.
  *  - `/account_stake_history?epoch_no=eq.E` — active stake. One row per
  *    account *delegated to a pool* at E; a registered account with no row
  *    counts with weight 0 (§6.1 "registered but empty").
@@ -53,9 +53,20 @@ const PAGE_LIMIT = 100;
 
 /**
  * Max tx hashes per `/tx_info` batch — used only to order the (rare) same-slot
- * registration ties by `tx_block_index`. The projection is tiny (two columns).
+ * registration conflicts by `(tx_block_index, cert_index)`. The projection is
+ * three columns incl. the trimmed `certificates` array, so batches stay small.
  */
 const TX_INFO_BATCH = 50;
+
+/**
+ * Koios `tx_info` certificate `type` strings that register / deregister a stake
+ * credential (verified live; the schema's `stake_deregistraion` spelling is a
+ * docs typo — the wire value is `stake_deregistration`). Used only to order a
+ * same-slot registration conflict by cert index; delegation/gov cert types
+ * don't change registration state and are ignored.
+ */
+const REGISTRATION_CERT_TYPES = new Set(["stake_registration"]);
+const DEREGISTRATION_CERT_TYPES = new Set(["stake_deregistration"]);
 
 /**
  * Runaway guard for `postAll`: only trips if Koios ignores our `offset` (which
@@ -75,10 +86,27 @@ interface AccountUpdateRow {
   tx_hash: string;
 }
 
+/** A certificate as returned by `/tx_info` with `_certs:true`. */
+interface TxCert {
+  /** e.g. `stake_registration`, `stake_deregistration`, `pool_delegation`. */
+  type: string;
+  /** Position of this cert within the tx — the within-slot tiebreak. */
+  index: number;
+  info: { stake_address?: string | null } | null;
+}
+
 interface TxInfoRow {
   tx_hash: string;
   /** Position of the tx within its block; null if Koios can't serve it. */
   tx_block_index: number | null;
+  /** Present only with `_certs:true`; null/absent if Koios can't serve it. */
+  certificates: TxCert[] | null;
+}
+
+/** A conflicting tx's chain-order key: its block position + its certs. */
+interface TxCertOrder {
+  blockIndex: number;
+  certs: TxCert[];
 }
 
 interface AccountStakeRow {
@@ -168,27 +196,86 @@ export class KoiosTallyInputs implements TallyInputSource {
   }
 
   /**
-   * `tx_block_index` (position within the block) per tx, via `/tx_info` — the
-   * same-slot chain-order key for registration resolution. A tx whose index
-   * Koios can't serve is simply absent from the map; the caller throws (retry)
-   * rather than resolve a tie without it. A failed request propagates for the
-   * same reason. (`tx_info.certificates` would give the finer within-tx cert
-   * order too, but it comes back empty for stake certs — verified live.)
+   * Chain-order key per tx (block position + certificate list) via `/tx_info`
+   * with `_certs:true` — how a same-slot registration conflict is resolved to
+   * the ledger's true verdict. A tx whose block index or certs Koios can't serve
+   * is simply absent from the map; {@link resolveConflict} then throws (retry)
+   * rather than resolve without it. A failed request propagates for the same
+   * reason.
    */
-  private async blockIndices(
+  private async certOrder(
     txHashes: readonly string[],
-  ): Promise<Map<string, number>> {
-    const byHash = new Map<string, number>();
+  ): Promise<Map<string, TxCertOrder>> {
+    const byHash = new Map<string, TxCertOrder>();
     for (let i = 0; i < txHashes.length; i += TX_INFO_BATCH) {
       const rows = await this.post<TxInfoRow[]>(
-        "/tx_info?select=tx_hash,tx_block_index",
-        { _tx_hashes: txHashes.slice(i, i + TX_INFO_BATCH) },
+        "/tx_info?select=tx_hash,tx_block_index,certificates",
+        { _tx_hashes: txHashes.slice(i, i + TX_INFO_BATCH), _certs: true },
       );
       for (const r of rows) {
-        if (r.tx_block_index !== null) byHash.set(r.tx_hash, r.tx_block_index);
+        if (r.tx_block_index !== null && Array.isArray(r.certificates)) {
+          byHash.set(r.tx_hash, {
+            blockIndex: r.tx_block_index,
+            certs: r.certificates,
+          });
+        }
       }
     }
     return byHash;
+  }
+
+  /**
+   * Resolve a same-slot registration conflict — a deregistration and a
+   * registration both landing in the account's deciding slot — to the ledger's
+   * verdict. Collects every stake reg/dereg cert for `address` across the
+   * conflicting txs, orders them by `(tx_block_index, cert_index)` (exactly the
+   * ledger's within-slot certificate application order), and returns whether the
+   * *last* one leaves the credential registered.
+   *
+   * Fail-closed: throws (→ retry, never a guess frozen into the hashed artifact)
+   * if a conflicting tx's block index / certs are unavailable, or if the certs
+   * don't corroborate both the registration and the deregistration that
+   * `account_update_history` reported (a classification or data gap).
+   */
+  private resolveConflict(
+    address: string,
+    deciding: readonly AccountUpdateRow[],
+    txOrder: Map<string, TxCertOrder>,
+  ): boolean {
+    const relevant: {
+      blockIndex: number;
+      certIndex: number;
+      registered: boolean;
+    }[] = [];
+    for (const tx of new Set(deciding.map((e) => e.tx_hash))) {
+      const info = txOrder.get(tx);
+      if (!info) {
+        throw new Error(`tx_info unavailable for ${tx} — retry next refresh`);
+      }
+      for (const c of info.certs) {
+        if (c.info?.stake_address !== address) continue;
+        const isReg = REGISTRATION_CERT_TYPES.has(c.type);
+        const isDereg = DEREGISTRATION_CERT_TYPES.has(c.type);
+        if (!isReg && !isDereg) continue; // delegation/gov cert — irrelevant
+        relevant.push({
+          blockIndex: info.blockIndex,
+          certIndex: c.index,
+          registered: isReg,
+        });
+      }
+    }
+    if (
+      !relevant.some((c) => c.registered) ||
+      !relevant.some((c) => !c.registered)
+    ) {
+      throw new Error(
+        `same-slot certs for ${address} don't corroborate account_update_history — retry`,
+      );
+    }
+    relevant.sort(
+      (a, b) => a.blockIndex - b.blockIndex || a.certIndex - b.certIndex,
+    );
+    return relevant[relevant.length - 1]!.registered;
   }
 
   async stakeholderWeights(
@@ -249,14 +336,14 @@ export class KoiosTallyInputs implements TallyInputSource {
         list.push(row);
       }
 
-      // Registration state = the type of the *last* event in chain order. Since
-      // one slot holds at most one block (Praos), the last event lives in the
-      // account's max slot, and within that slot chain order is
-      // (tx_block_index, cert_index). Only the deciding slot matters — earlier
-      // slots are overridden. We fetch `tx_block_index` only when that slot spans
-      // more than one tx (rare); a single-tx slot needs no extra read.
+      // A credential is registered at E iff the last state-changing cert in
+      // chain order (≤ E) is not a deregistration. One slot holds at most one
+      // block (Praos), so only the account's max slot can decide — earlier slots
+      // are overridden. The only case that needs more than the max-slot event
+      // types is a same-slot *mix* of a registration and a deregistration; that
+      // is resolved below to true chain order via the certificate indices.
       const decidingByAddress = new Map<string, AccountUpdateRow[]>();
-      const orderTxs = new Set<string>();
+      const conflictTxs = new Set<string>();
       for (const [address, events] of eventsByAddress) {
         const maxSlot = events.reduce(
           (m, e) => Math.max(m, e.absolute_slot),
@@ -264,46 +351,31 @@ export class KoiosTallyInputs implements TallyInputSource {
         );
         const deciding = events.filter((e) => e.absolute_slot === maxSlot);
         decidingByAddress.set(address, deciding);
-        if (new Set(deciding.map((e) => e.tx_hash)).size > 1) {
-          for (const e of deciding) orderTxs.add(e.tx_hash);
+        const hasDereg = deciding.some(
+          (e) => e.action_type === "deregistration",
+        );
+        const hasReg = deciding.some((e) => e.action_type !== "deregistration");
+        if (hasDereg && hasReg) {
+          for (const e of deciding) conflictTxs.add(e.tx_hash);
         }
       }
-      const blockIndex = orderTxs.size
-        ? await this.blockIndices([...orderTxs])
-        : new Map<string, number>();
+      // Only same-slot conflicts need the certificate order; the common case
+      // (a clean max slot) reads no `/tx_info` at all.
+      const txOrder = conflictTxs.size
+        ? await this.certOrder([...conflictTxs])
+        : new Map<string, TxCertOrder>();
 
       for (const [address, deciding] of decidingByAddress) {
-        // The deciding tx is the one applied last in the block: with a single tx
-        // it's that tx; with several (multiple txs in one slot/block) order by
-        // `tx_block_index` (true chain order). A needed index Koios can't serve
-        // means we can't order deterministically — throw so the pass retries
-        // rather than guess (a fall-back would diverge emitter from verifier).
-        const txs = [...new Set(deciding.map((e) => e.tx_hash))];
-        let decidingTx = txs[0]!;
-        if (txs.length > 1) {
-          let bestIdx = -1;
-          for (const h of txs) {
-            const idx = blockIndex.get(h);
-            if (idx === undefined) {
-              throw new Error(
-                `tx_block_index unavailable for ${h} — retry next refresh`,
-              );
-            }
-            if (idx > bestIdx) [bestIdx, decidingTx] = [idx, h];
-          }
-        }
-        // Within the deciding tx, the order of a same-credential
-        // register+deregister pair is unobservable from Koios (`tx_info`'s
-        // `certificates` is empty for stake certs — verified live on mainnet), so
-        // this one case falls back to a CONVENTION (RULESET-PINNED-BEHAVIOR): a
-        // deregistration present in the deciding tx wins. Fail-closed — a
-        // membership filter must not admit a credential whose final state can't
-        // be established. Everything else (cross-tx same-slot, distinct slots) is
-        // resolved to true chain order above. Any non-dereg type (a stray
-        // delegation that slipped the filter) counts as registered, as before.
-        const isRegistered = deciding
-          .filter((e) => e.tx_hash === decidingTx)
-          .every((e) => e.action_type !== "deregistration");
+        const hasDereg = deciding.some(
+          (e) => e.action_type === "deregistration",
+        );
+        const hasReg = deciding.some((e) => e.action_type !== "deregistration");
+        // No deregistration in the deciding slot → registered (a registration or
+        // delegation is the last cert). All deregistration → not registered.
+        // Both → order the actual certs to see which one applied last.
+        const isRegistered =
+          !hasDereg ||
+          (hasReg && this.resolveConflict(address, deciding, txOrder));
         if (isRegistered) registered.add(address);
       }
 
