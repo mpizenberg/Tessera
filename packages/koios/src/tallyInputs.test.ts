@@ -199,6 +199,25 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
       weight: 0n,
     });
   });
+
+  it("orders both paginated reads by a total key so offset pages are stable (finding 2)", async () => {
+    const seen: string[] = [];
+    stubFetch((url) => {
+      seen.push(url);
+      return []; // empty → one page each; we only inspect the request URLs
+    });
+    await new KoiosTallyInputs(CONFIG).stakeholderWeights(1345, [cred(HASH_A)]);
+
+    const updateUrl = seen.find((u) => u.includes("/account_update_history"))!;
+    const stakeUrl = seen.find((u) => u.includes("/account_stake_history"))!;
+    // A *unique* tiebreak, not just absolute_slot — otherwise PostgREST can
+    // shuffle tied rows across a page boundary and drop/duplicate one, corrupting
+    // the registration walk that feeds the hashed artifact.
+    expect(updateUrl).toContain(
+      "order=absolute_slot.asc,stake_address.asc,action_type.asc",
+    );
+    expect(stakeUrl).toContain("order=stake_address.asc");
+  });
 });
 
 describe("KoiosTallyInputs.drepWeights", () => {

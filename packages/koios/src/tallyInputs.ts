@@ -118,6 +118,13 @@ export class KoiosTallyInputs implements TallyInputSource {
    * POST an RPC endpoint, following `offset` pages until a short one — so a
    * result set larger than Koios's single-response cap is fully read instead of
    * silently truncated. `path` already carries its filter query string.
+   *
+   * The caller MUST include a **total** `order=` (a unique key) in `path`:
+   * PostgREST gives no stable ordering without one, so `limit/offset` pages over
+   * an unordered set can shuffle rows across page boundaries between the
+   * successive requests, silently dropping or duplicating rows (finding 2). A
+   * partial order (ties) has the same failure whenever a tie-group straddles a
+   * page boundary — so order down to a uniquely-identifying column.
    */
   private async postAll<T>(path: string, body: unknown): Promise<T[]> {
     const sep = path.includes("?") ? "&" : "?";
@@ -161,6 +168,10 @@ export class KoiosTallyInputs implements TallyInputSource {
       // returns every lifecycle event for the batch and readily exceeds Koios's
       // ~1000-row cap on long-lived accounts; losing a row (e.g. a final
       // deregistration) would corrupt registration state in the hashed artifact.
+      // Each carries a *total* `order=` so pagination is stable across pages —
+      // without it PostgREST may shuffle rows between requests and drop or
+      // duplicate one at a page boundary (finding 2). Direction is irrelevant to
+      // the result (the walk re-sorts locally); only the total order matters.
       const [updates, stakes] = await Promise.all([
         this.postAll<AccountUpdateRow>(
           `/account_update_history?epoch_no=lte.${epoch}` +
@@ -170,12 +181,18 @@ export class KoiosTallyInputs implements TallyInputSource {
             // history from thousands of rows to a handful, so pagination rarely
             // trips at all (the walk below still tolerates any type defensively).
             `&action_type=in.(registration,deregistration)` +
-            `&select=stake_address,action_type,absolute_slot,epoch_no`,
+            `&select=stake_address,action_type,absolute_slot,epoch_no` +
+            // Total order: `absolute_slot` alone ties (a same-slot dereg+reg is
+            // two certs in one tx), so break by address then action type.
+            `&order=absolute_slot.asc,stake_address.asc,action_type.asc`,
           { _stake_addresses: batch },
         ),
         this.postAll<AccountStakeRow>(
           `/account_stake_history?epoch_no=eq.${epoch}` +
-            `&select=stake_address,epoch_no,active_stake`,
+            `&select=stake_address,epoch_no,active_stake` +
+            // Epoch is fixed, so one row per account — `stake_address` is a total
+            // order (this never actually paginates, but the contract holds).
+            `&order=stake_address.asc`,
           { _stake_addresses: batch },
         ),
       ]);
