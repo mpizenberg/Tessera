@@ -44,9 +44,6 @@ import {
   RULESET_DESCRIPTOR,
   artifactHash,
   responderAnswers,
-  roleBreakdown,
-  tallySurvey,
-  type QuestionTally,
   type TallyArtifact,
 } from "cip-179/tally";
 
@@ -57,6 +54,11 @@ import {
   type Weighting,
   type WeightedQuestionView,
 } from "~/domain/artifactView";
+import {
+  roleBreakdown,
+  tallySurvey,
+  type QuestionTally,
+} from "~/domain/displayTally";
 import { walletOwns } from "~/domain/roles";
 import { resultsView } from "~/domain/resultsRouting";
 import { usePresentation } from "~/enrichment/usePresentation";

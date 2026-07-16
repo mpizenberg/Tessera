@@ -58,6 +58,15 @@ published. Keep adding entries here until release.
 - **Ruleset bump: `rulesetVersion` 5 → 6** for the slimmed body. Again pure
   representation (no counted value changes), but the schema differs, so
   `rulesetHash()` changes and v6 hashes are incomparable with v5.
+- **Removed the count-based display tally from the public API** (`./tally`):
+  `tallySurvey`, `tallyQuestion`, `roleBreakdown`, `ratingScaleInfo`,
+  `MAX_DISPLAY_BUCKETS`, and the display shapes (`QuestionTally`, `Bar`,
+  `PointsRow`, `RatingRow`, `HistogramBin`) no longer ship from `cip-179`. This
+  was presentation (floats, bar fills, means, level bucketing), never
+  content-addressed; once v6 took `ratingScaleInfo` out of the hashed path it had
+  no in-package dependent, so it now lives with its one consumer in the frontend.
+  The package keeps only the codec, domain, and the reproducible weighted tally /
+  artifact. (No external non-frontend consumer existed.)
 - Numeric constraints (`min`/`max`/`step` on `numericRange` questions and numeric
   rating scales) are now rejected at decode when outside the JS-safe integer
   range (`Cip179DecodeError`), matching how the bare level count already behaved.
@@ -65,10 +74,6 @@ published. Keep adding entries here until release.
 
 ### Added
 
-- `MAX_DISPLAY_BUCKETS` (in `./tally`) — the cap on how many option/level
-  buckets the count-based **display** tally materializes (the hashed artifact is
-  sparse and needs no cap). Keeps a hostile declared span from crashing the
-  results view; no real survey approaches it.
 - `surveyStatus(endEpoch, tipEpoch)` (in `./domain`) — the tip-only
   active/ended lifecycle rule, factored out of the internal `statusOf` so an
   embedding host (e.g. the `<tessera-respond>` widget) can gate open/closed from

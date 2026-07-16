@@ -10,7 +10,6 @@ import type { Question, Role, SurveyDefinition, SurveyResponse } from "cip-179";
 
 import { optionLabelOf, parseCredentialKey } from "cip-179/domain";
 import {
-  MAX_DISPLAY_BUCKETS,
   responderAnswers,
   toArtifactQuestions,
   weightedTallySurvey,
@@ -20,6 +19,8 @@ import {
   type TallyArtifact,
   type WeightedResponder,
 } from "cip-179/tally";
+
+import { MAX_DISPLAY_BUCKETS } from "./displayTally";
 
 /** Fill fraction 0–1 of `part` relative to `max` (4 decimal places). */
 export function fracOf(part: bigint, max: bigint): number {

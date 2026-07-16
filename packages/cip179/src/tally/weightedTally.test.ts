@@ -1,16 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type {
-  AnswerItem,
-  Question,
-  Role,
-  SurveyDefinition,
-  SurveyResponse,
-} from "../index.js";
+import type { AnswerItem, Question, Role, SurveyResponse } from "../index.js";
 
-import { MAX_DISPLAY_BUCKETS, tallySurvey } from "./tally.js";
 import {
   weightedTallyQuestion,
-  weightedTallySurvey,
   type WeightedQuestionTally,
   type WeightedResponder,
 } from "./weightedTally.js";
@@ -44,17 +36,6 @@ const QUESTIONS: Question[] = [
     methodSchema: { uri: "ipfs://x", hash: new Uint8Array(32) },
   },
 ];
-
-const DEF: SurveyDefinition = {
-  specVersion: 5,
-  owner: { type: "key", keyHash: Uint8Array.of(0) },
-  title: "t",
-  description: "",
-  eligibleRoles: [3] as Role[],
-  endEpoch: 9,
-  submissionMode: { type: "public" },
-  questions: QUESTIONS,
-};
 
 function respWith(cred: number, answers: AnswerItem[]): SurveyResponse {
   return {
@@ -274,114 +255,6 @@ describe("weightedTallyQuestion", () => {
   });
 });
 
-// --- the cross-check: all weights 1n ⇔ the count tally --------------------------
-
-describe("weightedTallySurvey with all weights 1n reproduces tally.ts counts", () => {
-  const responders = [
-    R1,
-    R2,
-    R3,
-    responder(4, 1n, fullAnswers(2, [], [1], 55n, [[2, 10]], [[2, 4n]])),
-  ].map((r) => ({ ...r, weight: 1n }));
-  const counted = tallySurvey(
-    DEF,
-    responders.map((r) => r.response),
-    responders.length,
-  );
-  const weighted = weightedTallySurvey(DEF, responders);
-
-  /** Sparse option buckets → dense weight array of length n (Number). */
-  const denseWeights = (
-    opts: readonly { index: number; weight: bigint }[],
-    n: number,
-  ) => {
-    const out = new Array<number>(n).fill(0);
-    for (const o of opts) out[o.index] = Number(o.weight);
-    return out;
-  };
-  /** Sparse option buckets → dense count array of length n. */
-  const denseCounts = (
-    opts: readonly { index: number; count: number }[],
-    n: number,
-  ) => {
-    const out = new Array<number>(n).fill(0);
-    for (const o of opts) out[o.index] = o.count;
-    return out;
-  };
-
-  it("matches the three options-shaped questions", () => {
-    for (const qi of [0, 1, 2]) {
-      const c = counted[qi]!;
-      const w = weighted[qi]! as Extract<
-        WeightedQuestionTally,
-        { kind: "options" }
-      >;
-      if (c.kind !== "bars") throw new Error("expected bars");
-      const n = c.bars.length;
-      expect(denseWeights(w.options, n)).toEqual(c.bars.map((b) => b.count));
-      expect(denseCounts(w.options, n)).toEqual(c.bars.map((b) => b.count));
-      expect(w.answeredCount).toBe(c.answered);
-      expect(Number(w.answeredWeight)).toBe(c.answered);
-    }
-  });
-
-  it("matches the numeric histogram, mean and participation", () => {
-    const c = counted[3]!;
-    const w = weighted[3]! as Extract<
-      WeightedQuestionTally,
-      { kind: "numeric" }
-    >;
-    if (c.kind !== "histogram") throw new Error("expected histogram");
-    expect(
-      w.values.map((v) => ({ label: String(v.value), count: v.count })),
-    ).toEqual(c.bins);
-    expect(w.values.map((v) => Number(v.weight))).toEqual(
-      c.bins.map((b) => b.count),
-    );
-    expect(Number(w.weightedSum) / Number(w.answeredWeight)).toBe(c.mean);
-    expect(w.answeredCount).toBe(c.answered);
-  });
-
-  it("matches points averages (weightedSum / answeredWeight = avg)", () => {
-    const c = counted[4]!;
-    const w = weighted[4]! as Extract<
-      WeightedQuestionTally,
-      { kind: "perOption" }
-    >;
-    if (c.kind !== "points") throw new Error("expected points");
-    const byIndex = new Map(w.perOption.map((o) => [o.index, o]));
-    for (let i = 0; i < c.rows.length; i++) {
-      const o = byIndex.get(i);
-      // Points denominator is the question-level answeredWeight (not per-option).
-      const avg = o ? Number(o.weightedSum) / Number(w.answeredWeight) : 0;
-      expect(avg).toBe(c.rows[i]!.avg);
-    }
-  });
-
-  it("matches rating averages", () => {
-    const c = counted[5]!;
-    const w = weighted[5]! as Extract<
-      WeightedQuestionTally,
-      { kind: "perOption" }
-    >;
-    if (c.kind !== "rating") throw new Error("expected rating");
-    const byIndex = new Map(w.perOption.map((o) => [o.index, o]));
-    for (let i = 0; i < c.rows.length; i++) {
-      const o = byIndex.get(i);
-      const avg = o ? Number(o.weightedSum) / Number(o.answeredWeight) : 0;
-      expect(avg).toBe(c.rows[i]!.avg);
-    }
-  });
-
-  it("matches custom participation", () => {
-    const c = counted[6]!;
-    const w = weighted[6]!;
-    if (c.kind !== "custom") throw new Error("expected custom");
-    expect(w.answeredCount).toBe(c.answered);
-    expect(Number(w.answeredWeight)).toBe(c.answered);
-  });
-});
-
 // --- DoS resistance: cost scales with responses, never the declared span -------
 
 describe("resists a hostile huge declared span", () => {
@@ -430,45 +303,5 @@ describe("resists a hostile huge declared span", () => {
     expect(t.perOption).toEqual([
       { index: 0, weightedSum: 35n, answeredWeight: 5n, count: 1 },
     ]);
-  });
-
-  it("display tally caps buckets so the browser path can't be forced to allocate", () => {
-    const def: SurveyDefinition = {
-      ...DEF,
-      questions: [
-        {
-          type: "singleChoice",
-          prompt: "",
-          options: { type: "count", count: 2 ** 40 },
-        },
-        {
-          type: "rating",
-          prompt: "",
-          options: OPTS,
-          scale: {
-            type: "numeric",
-            constraints: { min: 0n, max: BigInt(2 ** 40), step: 1n },
-          },
-          requireAll: false,
-        },
-      ],
-    };
-    const resp = respWith(1, [
-      { type: "singleChoice", questionIndex: 0, optionIndex: 3 },
-      {
-        type: "rating",
-        questionIndex: 1,
-        ratings: [{ optionIndex: 0, rating: 7n }],
-      },
-    ]);
-    // The old dense `new Array(count)` / `new Array(levels)` would RangeError.
-    const [choice, rating] = tallySurvey(def, [resp], 1);
-    if (choice!.kind !== "bars") throw new Error("expected bars");
-    expect(choice.bars.length).toBeLessThanOrEqual(MAX_DISPLAY_BUCKETS);
-    expect(choice.bars[3]!.count).toBe(1); // the answered option is present
-    if (rating!.kind !== "rating") throw new Error("expected rating");
-    expect(rating.rows[0]!.counts.length).toBeLessThanOrEqual(
-      MAX_DISPLAY_BUCKETS,
-    );
   });
 });

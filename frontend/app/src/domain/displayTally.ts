@@ -5,9 +5,10 @@
  * Results widget renders (bar fill fractions, means/medians, capped samples,
  * "Option N" fallback labels). It intentionally uses floats and is **never
  * content-addressed**: the hashed artifact comes from the weighted BigInt path
- * (`weightedTally*`), which the ARCHITECTURE §4 "integer pairs, never floats"
- * guarantee is about. This one is a presentation helper that happens to live in
- * the package.
+ * (`cip-179`'s `weightedTally*`), which the ARCHITECTURE §4 "integer pairs,
+ * never floats" guarantee is about. Presentation is not part of the codec, so
+ * this helper lives in the frontend with its one consumer (the Results screen),
+ * not in the `cip-179` package.
  *
  * Sealed responses are opaque until their drand round publishes, so they are
  * not tallied here — the UI shows a "reveals in …" placeholder instead.
@@ -16,10 +17,10 @@
  * computed over whatever response set is passed in, so role-filtered tallies
  * are just a pre-filter at the call site.
  *
- * **Input contract:** callers pass the *audited* response set
- * ({@link auditResponses}'s `counted`), i.e. responses already validated against
- * the definition. This module therefore assumes each answer is in-constraint and
- * does not re-validate — out-of-range indices are still skipped defensively, but
+ * **Input contract:** callers pass the *audited* response set (`auditResponses`'s
+ * `counted`), i.e. responses already validated against the definition. This
+ * module therefore assumes each answer is in-constraint and does not
+ * re-validate — out-of-range indices are still skipped defensively, but
  * duplicate selections, over-budget allocations, and out-of-scale ratings are
  * trusted. Tallying raw (unaudited) on-chain responses would mis-count, since an
  * attacker can craft answers that decode cleanly yet violate the constraints.
@@ -32,7 +33,7 @@ import type {
   RatingScale,
   SurveyDefinition,
   SurveyResponse,
-} from "../index.js";
+} from "cip-179";
 
 export interface Bar {
   readonly label: string;
@@ -157,8 +158,8 @@ function median(xs: number[]): number {
 
 /**
  * Shared level bucketing for rating scales (numeric min/step, labels, count) —
- * used by both the count-based tally below and the weighted tally, so their
- * level histograms bucket identically.
+ * the display rating histogram's level layout. (The hashed weighted tally does
+ * not bucket by level, so this is display-only.)
  */
 export function ratingScaleInfo(scale: RatingScale): {
   levels: number;

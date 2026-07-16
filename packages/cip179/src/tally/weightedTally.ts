@@ -1,14 +1,15 @@
 /**
  * Stake-weighted tallying (`backend/ARCHITECTURE.md` §6.6). Every aggregate is
  * a BigInt — no floats anywhere; presentation layers derive fractions/means
- * from the exact `{weightedSum, answeredWeight}` rationals. Mirrors `./tally.ts`
- * question-by-question, and with every weight `1n` it reproduces its counts
- * exactly (which is also how the count-only Keyholder role is tallied).
+ * from the exact `{weightedSum, answeredWeight}` rationals. With every weight
+ * `1n` it reduces to a plain count tally (which is also how the count-only
+ * Keyholder role is tallied, and what the frontend's display tally is
+ * cross-checked against).
  *
- * **Input contract:** like `tally.ts`, callers pass responses that already
- * passed validation and dedup — the *counted* set, at most one responder per
- * (role, credential), each carrying its snapshot weight. Out-of-range indices
- * are still skipped defensively, but in-constraint answers are trusted.
+ * **Input contract:** callers pass responses that already passed validation and
+ * dedup — the *counted* set, at most one responder per (role, credential), each
+ * carrying its snapshot weight. Out-of-range indices are still skipped
+ * defensively, but in-constraint answers are trusted.
  */
 
 import type {
