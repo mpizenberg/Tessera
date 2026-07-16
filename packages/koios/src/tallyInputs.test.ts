@@ -25,16 +25,23 @@ const cred = (hex: string): Credential => ({
   keyHash: hexToBytes(hex),
 });
 
-/** An `account_update_history` row of the given action at `slot`. */
-const update = (stake_address: string, action_type: string, slot: number) => ({
+/** An `account_update_history` row of the given action at `slot` in `tx`. */
+const update = (
+  stake_address: string,
+  action_type: string,
+  slot: number,
+  tx_hash = "tx0",
+) => ({
   stake_address,
   action_type,
   absolute_slot: slot,
   epoch_no: 1,
+  tx_hash,
 });
-const reg = (addr: string, slot: number) => update(addr, "registration", slot);
-const dereg = (addr: string, slot: number) =>
-  update(addr, "deregistration", slot);
+const reg = (addr: string, slot: number, tx = "tx0") =>
+  update(addr, "registration", slot, tx);
+const dereg = (addr: string, slot: number, tx = "tx0") =>
+  update(addr, "deregistration", slot, tx);
 
 type Handler = (
   url: string,
@@ -211,27 +218,31 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
     });
   });
 
-  it("resolves a same-slot register+deregister tie to deregistered, independent of row order (finding 5)", async () => {
-    const [addrA, addrB, addrC] = await Promise.all([
+  it("resolves a same-slot tie across DIFFERENT txs by tx_block_index — chain order, not convention (finding 5)", async () => {
+    const [addrA, addrB] = await Promise.all([
       stakeAddress(cred(HASH_A), "preview"),
       stakeAddress(cred(HASH_B), "preview"),
-      stakeAddress(cred(HASH_C), "preview"),
     ]);
     stubFetch((url) => {
       if (url.includes("/account_stake_history")) return [];
       if (url.includes("/account_update_history")) {
         return [
-          // A: register + deregister in the SAME slot, rows in one order…
-          reg(addrA, 100),
-          dereg(addrA, 100),
-          // B: the SAME slot pair, rows in the OPPOSITE order — must not matter.
-          dereg(addrB, 100),
-          reg(addrB, 100),
-          // C: the same-slot tie is not the final word — a later plain
-          // registration (higher slot) still wins.
-          reg(addrC, 100),
-          dereg(addrC, 100),
-          reg(addrC, 200),
+          // A: dereg (block 3) then reg (block 5) in the SAME slot → the reg is
+          // applied last → REGISTERED. A slot-only "deregistration-last" rule
+          // would wrongly say deregistered; tx_block_index is the truth.
+          dereg(addrA, 100, "tx1"),
+          reg(addrA, 100, "tx2"),
+          // B: reg (block 5) then dereg (block 8), same slot → DEREGISTERED.
+          reg(addrB, 100, "tx3"),
+          dereg(addrB, 100, "tx4"),
+        ];
+      }
+      if (url.includes("/tx_info")) {
+        return [
+          { tx_hash: "tx1", tx_block_index: 3 },
+          { tx_hash: "tx2", tx_block_index: 5 },
+          { tx_hash: "tx3", tx_block_index: 5 },
+          { tx_hash: "tx4", tx_block_index: 8 },
         ];
       }
       throw new Error(`unexpected ${url}`);
@@ -239,21 +250,84 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
 
     const weights = await new KoiosTallyInputs(CONFIG).stakeholderWeights(
       1345,
-      [cred(HASH_A), cred(HASH_B), cred(HASH_C)],
+      [cred(HASH_A), cred(HASH_B)],
     );
-    // Fail-closed and deterministic: an ambiguous same-slot pair resolves to
-    // deregistered for BOTH A and B, so Koios row order can't change membership.
     expect(weights.get(`key:${HASH_A}`)).toEqual({
-      registered: false,
+      registered: true,
       weight: 0n,
     });
     expect(weights.get(`key:${HASH_B}`)).toEqual({
       registered: false,
       weight: 0n,
     });
-    // …but the rule is slot-local: C's later registration still counts.
-    expect(weights.get(`key:${HASH_C}`)).toEqual({
-      registered: true,
+  });
+
+  it("falls back to the deregistration-last convention only for two certs in ONE tx (documented limitation)", async () => {
+    const addrA = await stakeAddress(cred(HASH_A), "preview");
+    let txInfoCalls = 0;
+    stubFetch((url) => {
+      if (url.includes("/account_stake_history")) return [];
+      if (url.includes("/account_update_history")) {
+        // register + deregister in the SAME tx — cert order unobservable.
+        return [reg(addrA, 100, "txX"), dereg(addrA, 100, "txX")];
+      }
+      if (url.includes("/tx_info")) {
+        txInfoCalls += 1;
+        return [];
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+    const weights = await new KoiosTallyInputs(CONFIG).stakeholderWeights(
+      1345,
+      [cred(HASH_A)],
+    );
+    // One tx → nothing to order → no tx_info read; convention → deregistered.
+    expect(txInfoCalls).toBe(0);
+    expect(weights.get(`key:${HASH_A}`)).toEqual({
+      registered: false,
+      weight: 0n,
+    });
+  });
+
+  it("throws (retry) when a cross-tx same-slot tie has no tx_block_index — never guesses", async () => {
+    const addrA = await stakeAddress(cred(HASH_A), "preview");
+    stubFetch((url) => {
+      if (url.includes("/account_stake_history")) return [];
+      if (url.includes("/account_update_history")) {
+        return [dereg(addrA, 100, "tx1"), reg(addrA, 100, "tx2")];
+      }
+      if (url.includes("/tx_info")) {
+        return [{ tx_hash: "tx1", tx_block_index: 3 }]; // tx2's index missing
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+    await expect(
+      new KoiosTallyInputs(CONFIG).stakeholderWeights(1345, [cred(HASH_A)]),
+    ).rejects.toThrow(/tx_block_index unavailable/);
+  });
+
+  it("reads no tx_info when no account has a same-slot tie (common case)", async () => {
+    const addrA = await stakeAddress(cred(HASH_A), "preview");
+    let txInfoCalls = 0;
+    stubFetch((url) => {
+      if (url.includes("/account_stake_history")) return [];
+      if (url.includes("/account_update_history")) {
+        // Distinct slots: the later one (dereg@200) decides, no ordering needed.
+        return [reg(addrA, 100, "tx1"), dereg(addrA, 200, "tx2")];
+      }
+      if (url.includes("/tx_info")) {
+        txInfoCalls += 1;
+        return [];
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+    const weights = await new KoiosTallyInputs(CONFIG).stakeholderWeights(
+      1345,
+      [cred(HASH_A)],
+    );
+    expect(txInfoCalls).toBe(0);
+    expect(weights.get(`key:${HASH_A}`)).toEqual({
+      registered: false,
       weight: 0n,
     });
   });
@@ -272,7 +346,7 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
     // shuffle tied rows across a page boundary and drop/duplicate one, corrupting
     // the registration walk that feeds the hashed artifact.
     expect(updateUrl).toContain(
-      "order=absolute_slot.asc,stake_address.asc,action_type.asc",
+      "order=absolute_slot.asc,stake_address.asc,tx_hash.asc,action_type.asc",
     );
     expect(stakeUrl).toContain("order=stake_address.asc");
   });
