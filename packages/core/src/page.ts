@@ -98,9 +98,22 @@ export function parseSurveyCursor(s: string): SurveyCursor | null {
   return { bucket: Number(m[1]), slot: Number(m[2]), key: m[3] as string };
 }
 
-/** Normalize a search string into its lowercased AND terms. */
+/**
+ * Cap on the number of AND terms a search string contributes. The backend turns
+ * each term into a `LIKE ?` bound parameter, so an uncapped `?q=` of hundreds of
+ * words would exceed D1's bound-parameter limit and 500 a public endpoint
+ * (review finding 42). Eight is far past any real survey search.
+ */
+export const MAX_SEARCH_TERMS = 8;
+
+/** Normalize a search string into its lowercased AND terms (capped). */
 export function searchTermsOf(search: string | undefined): string[] {
-  return (search ?? "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+  return (search ?? "")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, MAX_SEARCH_TERMS);
 }
 
 /** Text fragments from one question: its prompt plus any inline option or

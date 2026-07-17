@@ -4,7 +4,7 @@
  * passthroughs `/api/tip`, `/api/tx_status`, `/api/pparams` go upstream).
  */
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Role, type Credential, type SurveyDefinition } from "cip-179";
 import { hexToBytes } from "cip-179/domain";
@@ -518,5 +518,80 @@ describe("GET /api/health", () => {
       koiosCallsPerRefresh: 50,
       koiosCallsPerDay: null,
     });
+  });
+});
+
+// The one passthrough this suite exercises upstream (the others hit real Koios).
+// It is the sole *comfort* call, and finding 15 gave it two guards: input
+// validation before anything reaches Koios, and a segregated (default
+// unauthenticated) token so a flood can't burn the refresh/finalize quota.
+describe("GET /api/tx_status (finding 15)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const H = (b: string) => b.repeat(32); // a 64-hex tx hash from a byte literal
+
+  it("rejects a malformed hash with 400 and never calls Koios", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const res = await appWith(memStore(null)).request(
+      "/api/tx_status?hashes=not-a-hash",
+    );
+    expect(res.status).toBe(400);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized hash list with 400 and never calls Koios", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const many = Array.from({ length: 21 }, (_, i) =>
+      i.toString(16).padStart(2, "0").repeat(32),
+    ).join(",");
+    const res = await appWith(memStore(null)).request(
+      `/api/tx_status?hashes=${many}`,
+    );
+    expect(res.status).toBe(400);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("forwards valid hashes and returns the confirmation map", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify([{ tx_hash: H("ab"), num_confirmations: 3 }]),
+            { status: 200 },
+          ),
+      ),
+    );
+    const res = await appWith(memStore(null)).request(
+      `/api/tx_status?hashes=${H("ab")}`,
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ [H("ab")]: 3 });
+  });
+
+  it("polls Koios unauthenticated even when KOIOS_TOKEN is set (quota segregation)", async () => {
+    const authHeaders: (string | null)[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: string | URL, init?: RequestInit) => {
+        authHeaders.push(new Headers(init?.headers).get("Authorization"));
+        return new Response(
+          JSON.stringify([{ tx_hash: H("cd"), num_confirmations: 1 }]),
+          { status: 200 },
+        );
+      }),
+    );
+    // The critical path's identity is set, but comfort polling must not carry it.
+    const app = createApp(
+      loadConfig({ KOIOS_TOKEN: "super-secret" }),
+      memStore(null),
+      {
+        compress: false,
+      },
+    );
+    await app.request(`/api/tx_status?hashes=${H("cd")}`);
+    expect(authHeaders).toEqual([null]);
   });
 });

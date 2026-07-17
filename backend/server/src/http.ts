@@ -70,6 +70,14 @@ const DEFAULT_PAGE_LIMIT = 50;
 const MAX_PAGE_LIMIT = 200;
 
 /**
+ * Upper bound on hashes one `/api/tx_status` request forwards to Koios. Real
+ * submit flows have a handful of pending txs; this only rejects abusively
+ * oversized lists (the actual DoS defense is the segregated token below —
+ * comfort polling can't touch the refresh/finalize quota regardless).
+ */
+const MAX_TX_STATUS_HASHES = 20;
+
+/**
  * Memoize an async producer for `ttlMs`. The in-flight promise is shared, so a
  * burst of concurrent requests triggers a single upstream call; a rejection
  * evicts itself immediately so one failure isn't served for the whole window.
@@ -143,9 +151,20 @@ export function createApp(
   // Compress bodies when the client accepts it. The snapshot is hex-string-heavy
   // JSON, which deflates several fold; on Cloudflare the edge does this instead.
   if (options.compress !== false) app.use(compress());
-  // Passthroughs go to Koios: tx status live (it's per-hash and post-submit),
-  // tip and pparams behind the short memo above.
+  // Passthroughs to Koios. `tip`/`pparams` sit behind the short memo above and
+  // carry the operator's Koios identity (`config.app.koiosToken`) — memoization
+  // caps them at ~one upstream call per window, so they can't burn quota even
+  // though `pparams` feeds the (necessary) submit flow. `tx_status` is uncached
+  // comfort traffic (post-submit confirmation polling), so it goes through a
+  // SEPARATE source with its own token (`config.passthroughKoiosToken`, default
+  // unauthenticated): a flood of `/api/tx_status` can only exhaust that isolated
+  // quota, never the identity refresh/validate/finalize rely on for artifact
+  // *correctness* (review finding 15).
   const source = new KoiosDataSource(config.app);
+  const convenienceSource = new KoiosDataSource(
+    config.app,
+    () => config.passthroughKoiosToken,
+  );
   const cachedTip = ttlCache(UPSTREAM_TTL_MS, () => source.chainTip());
   const cachedPParams = ttlCache(UPSTREAM_TTL_MS, async () =>
     toJsonSafe(await source.protocolParameters()),
@@ -350,9 +369,17 @@ export function createApp(
   app.get("/api/tx_status", async (c) => {
     const hashes = (c.req.query("hashes") ?? "")
       .split(",")
-      .map((h) => h.trim())
+      .map((h) => h.trim().toLowerCase())
       .filter(Boolean);
-    const statuses = await source.txStatus(hashes);
+    // Cheap forwarding hygiene: never relay an oversized or non-hex list
+    // upstream. (An empty list is fine — `txStatus([])` short-circuits to `{}`.)
+    if (hashes.length > MAX_TX_STATUS_HASHES)
+      return c.json({ error: "too many tx hashes" }, 400);
+    if (!hashes.every((h) => /^[0-9a-f]{64}$/.test(h)))
+      return c.json({ error: "malformed tx hash" }, 400);
+    // Segregated identity: comfort polling is quota-isolated from the critical
+    // Koios path (see `convenienceSource` above).
+    const statuses = await convenienceSource.txStatus(hashes);
     return c.json(Object.fromEntries(statuses));
   });
 

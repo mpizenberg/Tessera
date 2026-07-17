@@ -8,6 +8,7 @@ import {
   type SurveyRecord,
 } from "cip-179/domain";
 import {
+  MAX_SEARCH_TERMS,
   encodeSurveyCursor,
   pageSurveyList,
   parseSurveyCursor,
@@ -194,5 +195,12 @@ describe("searchTermsOf", () => {
     expect(searchTermsOf("  Foo   BAR ")).toEqual(["foo", "bar"]);
     expect(searchTermsOf(undefined)).toEqual([]);
     expect(searchTermsOf("   ")).toEqual([]);
+  });
+
+  it("caps the term count to bound D1 bound-params (finding 42)", () => {
+    const many = Array.from({ length: 200 }, (_, i) => `t${i}`).join(" ");
+    const terms = searchTermsOf(many);
+    expect(terms).toHaveLength(MAX_SEARCH_TERMS);
+    expect(terms[0]).toBe("t0"); // keeps the leading terms, drops the tail
   });
 });

@@ -87,6 +87,13 @@ with no change to the domain or UI layers."_
   chainsync). It replaces Koios as the `TallyInputSource` when it lands.
 - The tiers are decoupled by a **content-addressed tally artifact** (§7): the
   unit of result publication and the seam across the Koios→node swap.
+- **Two Koios identities.** The critical path (snapshot refresh, response
+  validation, artifact finalization) and the short-cached `tip`/`pparams`
+  passthroughs use the operator's `KOIOS_TOKEN`. The uncached `/api/tx_status`
+  comfort passthrough (browser confirmation polling) uses a **separate**
+  `KOIOS_PASSTHROUGH_TOKEN`, default unauthenticated — so a flood of that public
+  endpoint can only exhaust its own quota, never the one artifact correctness
+  depends on. See `backend/server/.env.example`.
 
 ### Two seams
 

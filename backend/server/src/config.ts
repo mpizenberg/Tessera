@@ -43,6 +43,16 @@ export interface ServerConfig {
    * without a limit to compare against.
    */
   readonly koiosDailyLimit: number | undefined;
+  /**
+   * A SEPARATE Koios identity for the comfort passthrough (`/api/tx_status`) —
+   * uncached, frontend-driven confirmation polling. Kept distinct from
+   * `app.koiosToken` so a flood of that public endpoint can only burn *this*
+   * quota, never the identity refresh/validate/finalize depend on for artifact
+   * correctness (review finding 15). Defaults to `undefined` = unauthenticated:
+   * a genuinely separate, per-IP-limited Koios bucket with zero config. Set
+   * `KOIOS_PASSTHROUGH_TOKEN` to give comfort traffic its own keyed tier.
+   */
+  readonly passthroughKoiosToken: string | undefined;
 }
 
 export function loadConfig(
@@ -66,5 +76,6 @@ export function loadConfig(
     koiosCallsPerRefreshLimit: Number(env["SUBREQUEST_LIMIT"] ?? 50),
     koiosDailyLimit:
       Number.isFinite(dailyLimit) && dailyLimit > 0 ? dailyLimit : undefined,
+    passthroughKoiosToken: env["KOIOS_PASSTHROUGH_TOKEN"] || undefined,
   };
 }
