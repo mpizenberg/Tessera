@@ -40,6 +40,8 @@ import type { AppConfig } from "@tessera/core";
 
 import { evolutionCodec } from "cip-179/evolution";
 
+import { koiosFetchJson } from "./http";
+
 /** Max stake addresses per bulk POST (matches the other Koios batch sizes). */
 const ACCOUNT_BATCH = 50;
 
@@ -74,8 +76,6 @@ const DEREGISTRATION_CERT_TYPES = new Set(["stake_deregistration"]);
  * hitting this means something is wrong — fail loudly rather than truncate.
  */
 const MAX_ACCOUNT_PAGES = 50;
-
-const REQUEST_TIMEOUT_MS = 15_000;
 
 interface AccountUpdateRow {
   stake_address: string;
@@ -143,25 +143,23 @@ export class KoiosTallyInputs implements TallyInputSource {
   }
 
   private async get<T>(path: string): Promise<T> {
-    this.onRequest?.();
-    const res = await fetch(this.config.koiosUrl + path, {
-      headers: this.headers(),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-    if (!res.ok) throw new Error(`Koios GET ${path} → ${res.status}`);
-    return res.json() as Promise<T>;
+    return koiosFetchJson<T>(
+      this.config.koiosUrl + path,
+      { headers: this.headers() },
+      { label: path, onRequest: this.onRequest },
+    );
   }
 
   private async post<T>(path: string, body: unknown): Promise<T> {
-    this.onRequest?.();
-    const res = await fetch(this.config.koiosUrl + path, {
-      method: "POST",
-      headers: this.headers({ "Content-Type": "application/json" }),
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-    if (!res.ok) throw new Error(`Koios POST ${path} → ${res.status}`);
-    return res.json() as Promise<T>;
+    return koiosFetchJson<T>(
+      this.config.koiosUrl + path,
+      {
+        method: "POST",
+        headers: this.headers({ "Content-Type": "application/json" }),
+        body: JSON.stringify(body),
+      },
+      { label: path, onRequest: this.onRequest },
+    );
   }
 
   /**

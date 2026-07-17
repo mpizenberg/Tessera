@@ -611,3 +611,129 @@ describe("txProofs — mechanism-A script resolution", () => {
     ).toBe(false);
   });
 });
+
+// --- Koios read-path resilience (findings 17, 37, 39) ------------------------
+
+const TIP_ROW = {
+  epoch_no: 1_346,
+  abs_slot: 10_000,
+  epoch_slot: 100,
+  block_time: 1_750_000_000,
+};
+const tipResponse = () =>
+  new Response(JSON.stringify([TIP_ROW]), { status: 200 });
+
+// Finding 17 — `absolute_slot` alone is a partial order, so tied label-17 txs
+// could shuffle across a page boundary and one could slip the scan unseen. The
+// scan must order down to the unique, already-selected `tx_hash`.
+describe("fetchAll — label scan tie-break order (finding 17)", () => {
+  it("breaks slot ties on tx_hash for a total, page-stable order", async () => {
+    const fetchMock = stubKoios();
+    await new KoiosDataSource(CONFIG).fetchAll();
+    const scanUrl = fetchMock.mock.calls
+      .map((c) => String(c[0]))
+      .find((u) => u.includes("/tx_by_metalabel"))!;
+    expect(scanUrl).toContain("order=absolute_slot.desc,tx_hash.desc");
+  });
+});
+
+// Finding 39 — a transient failure on one label-scan page must flag the
+// snapshot `incomplete` (finalization then postpones) rather than rejecting the
+// whole scan and blanking an otherwise-good explorer.
+describe("fetchAll — a failed scan page never sinks the scan (finding 39)", () => {
+  it("returns an incomplete snapshot instead of throwing", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes("/tip")) return tipResponse();
+        // The (only) label page fails — a 500 is not retried, so it fails once.
+        if (url.includes("/tx_by_metalabel"))
+          return new Response("boom", { status: 500 });
+        return new Response("[]", { status: 200 });
+      }),
+    );
+    const records = await new KoiosDataSource(CONFIG).fetchAll();
+    expect(records.incomplete).toBe(true);
+    expect(records.surveys).toEqual([]);
+    expect(records.responses).toEqual([]);
+  });
+});
+
+// Finding 39 — the per-tx metadata fan-out must throttle rather than fire every
+// batch at once (the shape that trips Koios's rate limiter), while still
+// fetching every batch.
+describe("fetchAll — bounded tx_metadata fan-out (finding 39)", () => {
+  it("caps in-flight metadata batches yet covers them all", async () => {
+    const N = 350; // 7 batches of 50
+    const labelTxs = Array.from({ length: N }, (_, i) =>
+      i.toString(16).padStart(64, "0"),
+    );
+    let inFlight = 0;
+    let maxInFlight = 0;
+    let batchCount = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes("/tip")) return tipResponse();
+        if (url.includes("/tx_by_metalabel")) {
+          const offset = Number(new URL(url).searchParams.get("offset"));
+          const rows = labelTxs.slice(offset, offset + 100).map((tx_hash) => ({
+            tx_hash,
+            absolute_slot: 5_000,
+            epoch_no: 1_340,
+          }));
+          return new Response(JSON.stringify(rows), { status: 200 });
+        }
+        if (url.includes("/tx_metadata")) {
+          batchCount += 1;
+          inFlight += 1;
+          maxInFlight = Math.max(maxInFlight, inFlight);
+          await new Promise((r) => setTimeout(r, 2)); // hold the slot open
+          inFlight -= 1;
+          return new Response("[]", { status: 200 }); // fan-out only; no payloads
+        }
+        return new Response("[]", { status: 200 });
+      }),
+    );
+    await new KoiosDataSource(CONFIG).fetchAll();
+    expect(batchCount).toBe(Math.ceil(N / 50)); // every batch was fetched
+    expect(maxInFlight).toBeLessThanOrEqual(6); // never more than the cap at once
+    expect(maxInFlight).toBeGreaterThan(1); // …but genuinely parallel
+  });
+});
+
+// Finding 37 — the governance-link read must page like every other unbounded
+// Koios read, under a unique stable order, or it silently truncates at Koios's
+// row cap and a linked survey renders standalone differently across refreshes.
+describe("fetchGovernanceLinks — pagination (finding 37)", () => {
+  it("offset-paginates proposal_list under a stable unique order", async () => {
+    const PAGE = 100;
+    const seenOffsets: number[] = [];
+    let orderSeen: string | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (!url.includes("/proposal_list"))
+          return new Response("[]", { status: 200 });
+        const params = new URL(url).searchParams;
+        const offset = Number(params.get("offset"));
+        seenOffsets.push(offset);
+        orderSeen = params.get("order");
+        const count = offset === 0 ? PAGE : 2; // page 0 full → page 1 short
+        const rows = Array.from({ length: count }, (_, i) =>
+          row(anchor({ title: "T", cip179: LINK }), 42, {
+            proposal_id: `gov_action1_${offset + i}`,
+          }),
+        );
+        return new Response(JSON.stringify(rows), { status: 200 });
+      }),
+    );
+    const { links } = await new KoiosDataSource(CONFIG).fetchGovernanceLinks(0);
+    expect(seenOffsets).toEqual([0, PAGE]); // followed the offset cursor
+    expect(orderSeen).toBe("proposal_id.asc"); // unique, stable across pages
+    expect(links).toHaveLength(PAGE + 2); // both pages' links accumulated
+  });
+});

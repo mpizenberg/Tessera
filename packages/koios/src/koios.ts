@@ -44,6 +44,7 @@ import type { AppConfig, DataSource, SurveyListPayload } from "@tessera/core";
 import { Koios } from "@evolution-sdk/evolution/sdk/provider/Koios";
 import type { ProtocolParameters } from "@evolution-sdk/evolution/sdk/provider/Provider";
 import { koiosJsonToMetadatum, type KoiosJson } from "./metadatum";
+import { koiosFetchJson, mapSettled, MAX_INFLIGHT_BATCHES } from "./http";
 import { decodeResolvedNativeScript, decodeTxProof } from "cip-179/txproof";
 import { evolutionCodec } from "cip-179/evolution";
 
@@ -69,9 +70,6 @@ const PAGE_SIZE = 100;
  * `incomplete` rather than silently truncated.
  */
 const MAX_PAGES = 50;
-
-/** Per-request timeout: a stalled connection should fail, not hang forever. */
-const REQUEST_TIMEOUT_MS = 15_000;
 
 interface TxByLabel {
   tx_hash: string;
@@ -196,25 +194,23 @@ export class KoiosDataSource implements DataSource {
   }
 
   private async get<T>(path: string): Promise<T> {
-    this.onRequest?.();
-    const res = await fetch(this.config.koiosUrl + path, {
-      headers: this.headers(),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-    if (!res.ok) throw new Error(`Koios GET ${path} → ${res.status}`);
-    return res.json() as Promise<T>;
+    return koiosFetchJson<T>(
+      this.config.koiosUrl + path,
+      { headers: this.headers() },
+      { label: path, onRequest: this.onRequest },
+    );
   }
 
   private async post<T>(path: string, body: unknown): Promise<T> {
-    this.onRequest?.();
-    const res = await fetch(this.config.koiosUrl + path, {
-      method: "POST",
-      headers: this.headers({ "Content-Type": "application/json" }),
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-    if (!res.ok) throw new Error(`Koios POST ${path} → ${res.status}`);
-    return res.json() as Promise<T>;
+    return koiosFetchJson<T>(
+      this.config.koiosUrl + path,
+      {
+        method: "POST",
+        headers: this.headers({ "Content-Type": "application/json" }),
+        body: JSON.stringify(body),
+      },
+      { label: path, onRequest: this.onRequest },
+    );
   }
 
   private async tip(): Promise<TipRow> {
@@ -290,16 +286,39 @@ export class KoiosDataSource implements DataSource {
     // page cap, which flags the snapshot `incomplete` instead of lying. Keyed by
     // tx_hash in a Map so a row re-seen across pages (a tx landing mid-scan) is
     // deduped rather than fetched twice.
+    //
+    // `order` breaks slot ties on `tx_hash` too (finding 17): `absolute_slot`
+    // alone is a *partial* order, so several label-17 txs sharing a slot across
+    // a page boundary could shuffle between the successive page requests and let
+    // a row slip through unseen — a response missed by the scan, which would read
+    // as a false MISMATCH, not a truncation. `tx_hash` is unique and already
+    // selected, so `(absolute_slot, tx_hash)` is a total order stable across
+    // pages. (Same discipline as `tallyInputs.postAll`.)
+    //
+    // A failed page flags the snapshot `incomplete` and stops the scan rather
+    // than rejecting the whole `fetchAll` (finding 39): a transient blip on one
+    // page shouldn't blank an otherwise-good snapshot — the pages already fetched
+    // (the newest) stand, and finalization postpones on `incomplete` anyway. The
+    // fetch itself already absorbs a single transient failure with one retry.
     const posByHash = new Map<string, { slot: number; epochNo: number }>();
     let incomplete = false;
     for (let page = 0; page < MAX_PAGES; page++) {
-      const rows = await this.get<TxByLabel[]>(
-        `/tx_by_metalabel?_label=${METADATA_LABEL}` +
-          `&select=tx_hash,absolute_slot,epoch_no` +
-          `&absolute_slot=gte.${sinceSlot}` +
-          `&order=absolute_slot.desc` +
-          `&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`,
-      );
+      let rows: TxByLabel[];
+      try {
+        rows = await this.get<TxByLabel[]>(
+          `/tx_by_metalabel?_label=${METADATA_LABEL}` +
+            `&select=tx_hash,absolute_slot,epoch_no` +
+            `&absolute_slot=gte.${sinceSlot}` +
+            `&order=absolute_slot.desc,tx_hash.desc` +
+            `&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`,
+        );
+      } catch (err) {
+        incomplete = true;
+        console.warn(
+          `tx_by_metalabel page ${page} failed (snapshot incomplete): ${String(err)}`,
+        );
+        break;
+      }
       for (const s of rows) {
         if (!posByHash.has(s.tx_hash))
           posByHash.set(s.tx_hash, {
@@ -350,8 +369,16 @@ export class KoiosDataSource implements DataSource {
     // the same batches forever. Hashes a fulfilled batch returned no row for
     // are banked as null (answered authoritatively: no metadata) so they are
     // not re-requested every run either.
-    const metaPages = await Promise.allSettled(
-      batches.map(async (batch) => {
+    //
+    // Capped at MAX_INFLIGHT_BATCHES in flight (finding 39): firing every batch
+    // at once is the shape that trips Koios's rate limiter, whose 429s would
+    // otherwise cascade batches into `incomplete` and postpone finalization.
+    // `mapSettled` keeps the same per-batch settle semantics as the former
+    // `Promise.allSettled`, just throttled.
+    const metaPages = await mapSettled(
+      batches,
+      MAX_INFLIGHT_BATCHES,
+      async (batch) => {
         const rows = await this.post<TxMetadata[]>(
           "/tx_metadata?select=tx_hash,metadata",
           { _tx_hashes: batch },
@@ -366,7 +393,7 @@ export class KoiosDataSource implements DataSource {
             );
         }
         return rows;
-      }),
+      },
     );
     const metas: TxMetadata[] = [];
     for (const hash of hashes) {
@@ -765,29 +792,48 @@ export class KoiosDataSource implements DataSource {
     // Koios requires the filtered column be selected, hence `block_time` in
     // select. Koios resolves the anchor JSON into `meta_json` when reachable;
     // we read the CIP-179 link fields straight from it.
-    const rows = await this.get<ProposalRow[]>(
-      `/proposal_list?select=proposal_id,proposal_type,expiration,meta_json,block_time` +
-        `&block_time=gte.${Math.floor(sinceUnix)}`,
-    );
+    //
+    // Offset-paginate like the label scan (finding 37): a single unbounded GET
+    // silently drops rows past Koios's ~1000-row cap once the governance-action
+    // set since `sinceUnix` grows large enough, and *which* rows is undefined —
+    // a linked survey could then render standalone, differently across refreshes.
+    // `order=proposal_id.asc` (unique, and selected) makes pagination stable so
+    // no row shuffles across a page boundary (finding 2). Links are best-effort
+    // display enrichment (never a hashed input), so a scan that somehow exceeds
+    // the page cap just logs and returns what it has rather than flagging.
     const links: GovLink[] = [];
     const unresolved: UnresolvedGovAction[] = [];
-    for (const row of rows) {
-      const link = parseGovLink(row);
-      if (link) {
-        links.push(link);
-        continue;
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const rows = await this.get<ProposalRow[]>(
+        `/proposal_list?select=proposal_id,proposal_type,expiration,meta_json,block_time` +
+          `&block_time=gte.${Math.floor(sinceUnix)}` +
+          `&order=proposal_id.asc` +
+          `&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`,
+      );
+      for (const row of rows) {
+        const link = parseGovLink(row);
+        if (link) {
+          links.push(link);
+          continue;
+        }
+        // Not a resolved link. Separate "the anchor couldn't be resolved" (Koios
+        // returned no `meta_json`) from "resolved, and it's not a survey link": an
+        // unresolved anchor is *unknown*, not "none", so mechanism-B verdicts that
+        // could depend on it must not be frozen against it (finding 6). Needs an
+        // on-chain expiry to epoch-align the uncertainty; a row without one is
+        // unusable either way.
+        if (row.expiration !== null && anchorUnresolved(row.meta_json)) {
+          unresolved.push({
+            actionId: row.proposal_id,
+            endEpoch: row.expiration - 1,
+          });
+        }
       }
-      // Not a resolved link. Separate "the anchor couldn't be resolved" (Koios
-      // returned no `meta_json`) from "resolved, and it's not a survey link": an
-      // unresolved anchor is *unknown*, not "none", so mechanism-B verdicts that
-      // could depend on it must not be frozen against it (finding 6). Needs an
-      // on-chain expiry to epoch-align the uncertainty; a row without one is
-      // unusable either way.
-      if (row.expiration !== null && anchorUnresolved(row.meta_json)) {
-        unresolved.push({
-          actionId: row.proposal_id,
-          endEpoch: row.expiration - 1,
-        });
+      if (rows.length < PAGE_SIZE) break; // last page reached → exhausted
+      if (page === MAX_PAGES - 1) {
+        console.warn(
+          `proposal_list exceeded ${MAX_PAGES * PAGE_SIZE} rows; governance links may be incomplete`,
+        );
       }
     }
     return { links, unresolved };
