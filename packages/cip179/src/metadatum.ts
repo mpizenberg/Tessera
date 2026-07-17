@@ -115,10 +115,21 @@ export const encodeChunkedText = (text: string): Metadatum => {
   return chunkText(text);
 };
 
-/** Decode `chunked_text` (single string or array of strings) into a string. */
+/**
+ * Decode `chunked_text` (single string or array of strings) into a string.
+ *
+ * The CDDL is `chunked_text = bounded_text / [+ bounded_text]`: the array form
+ * is one-or-more, so `[]` — though valid ledger metadata — is not valid
+ * `chunked_text`. Reject it rather than silently join to `""` (which would let,
+ * e.g., a non-external survey acquire the empty title only external-content mode
+ * permits). See review finding 43.
+ */
 export const decodeChunkedText = (m: Metadatum): string => {
   if (isText(m)) return m;
   if (isList(m)) {
+    if (m.length === 0) {
+      throw new TypeError("chunked_text array must be non-empty");
+    }
     return m
       .map((chunk) => {
         if (!isText(chunk)) {
@@ -156,10 +167,18 @@ export const encodeChunkedBytes = (bytes: Uint8Array): Metadatum => {
   return chunkBytes(bytes);
 };
 
-/** Decode `chunked_bytes` (single byte string or array) into one Uint8Array. */
+/**
+ * Decode `chunked_bytes` (single byte string or array) into one Uint8Array.
+ *
+ * As with `chunked_text`, the CDDL array form is `[+ bounded_bytes]` — one or
+ * more — so `[]` is rejected rather than decoded to an empty byte string.
+ */
 export const decodeChunkedBytes = (m: Metadatum): Uint8Array => {
   if (isBytes(m)) return m;
   if (isList(m)) {
+    if (m.length === 0) {
+      throw new TypeError("chunked_bytes array must be non-empty");
+    }
     const parts = m.map((chunk) => {
       if (!isBytes(chunk)) {
         throw new TypeError(

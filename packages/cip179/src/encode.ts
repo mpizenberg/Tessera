@@ -10,6 +10,8 @@
 
 import {
   CredentialTag,
+  HASH28_BYTES,
+  HASH32_BYTES,
   METADATA_LABEL,
   PayloadTag,
   QuestionTag,
@@ -57,33 +59,72 @@ const boundedLabel = (label: string, kind: string): string => {
   return label;
 };
 
+/**
+ * A byte string that must be exactly `size` bytes — the encoder-side mirror of
+ * the decoder's `asBytesOfSize`. A wrong-size hash otherwise encodes silently
+ * into metadata that every conformant decoder (including this package's own)
+ * rejects, surfacing only after a fee-paying submission (review finding 35).
+ */
+const bytesOfSize = (
+  value: Uint8Array,
+  size: number,
+  field: string,
+): Uint8Array => {
+  if (value.length !== size) {
+    throw new Cip179EncodeError(
+      `${field} must be exactly ${size} bytes, got ${value.length}`,
+    );
+  }
+  return value;
+};
+
+/** A CDDL `uint` (a non-negative integer), optionally capped at `max`. */
+const uint = (
+  value: number,
+  field: string,
+  max = Number.MAX_SAFE_INTEGER,
+): number => {
+  if (!Number.isInteger(value) || value < 0 || value > max) {
+    throw new Cip179EncodeError(
+      `${field} must be an integer in 0..${max}, got ${value}`,
+    );
+  }
+  return value;
+};
+
 // ----------------------------------------------------------------------------
 // Primitives
 // ----------------------------------------------------------------------------
 
 export const encodeSurveyRef = (ref: SurveyRef): Metadatum => [
-  ref.txId,
-  big(ref.index),
+  bytesOfSize(ref.txId, HASH32_BYTES, "survey_ref tx_id"),
+  big(uint(ref.index, "survey_ref index", 0xffff)),
 ];
 
 export const encodeContentAnchor = (anchor: ContentAnchor): Metadatum => [
   encodeChunkedText(anchor.uri),
-  anchor.hash,
+  bytesOfSize(anchor.hash, HASH32_BYTES, "content_anchor hash"),
 ];
 
 export const encodeCredential = (cred: Credential): Metadatum =>
   cred.type === "key"
-    ? [big(CredentialTag.Key), cred.keyHash]
-    : [big(CredentialTag.Script), cred.scriptHash];
+    ? [
+        big(CredentialTag.Key),
+        bytesOfSize(cred.keyHash, HASH28_BYTES, "credential key_hash"),
+      ]
+    : [
+        big(CredentialTag.Script),
+        bytesOfSize(cred.scriptHash, HASH28_BYTES, "credential script_hash"),
+      ];
 
 export const encodeSubmissionMode = (mode: SubmissionMode): Metadatum =>
   mode.type === "public"
     ? [big(SubmissionModeTag.Public)]
     : [
         big(SubmissionModeTag.Sealed),
-        mode.chainHash,
-        big(mode.round),
-        big(mode.paddingSize),
+        bytesOfSize(mode.chainHash, HASH32_BYTES, "submission_mode chain_hash"),
+        big(uint(mode.round, "submission_mode round")),
+        big(uint(mode.paddingSize, "submission_mode padding_size")),
       ];
 
 const encodeOptionsOrCount = (opts: OptionsOrCount): Metadatum =>
@@ -260,7 +301,7 @@ export const encodeSurveyDefinition = (def: SurveyDefinition): Metadatum =>
     [2, encodeChunkedText(def.title)],
     [3, encodeChunkedText(def.description)],
     [4, def.eligibleRoles.map(big)],
-    [5, big(def.endEpoch)],
+    [5, big(uint(def.endEpoch, "end_epoch"))],
     [6, encodeSubmissionMode(def.submissionMode)],
     [7, def.questions.map(encodeQuestion)],
     [8, def.contentAnchor ? encodeContentAnchor(def.contentAnchor) : undefined],

@@ -127,6 +127,16 @@ const text = (m: Metadatum, path: string): string => {
   }
 };
 
+/** `text`'s counterpart for `chunked_bytes`, preserving the path-aware contract
+ * so a malformed chunk surfaces as a `Cip179DecodeError`, not a bare error. */
+const bytes = (m: Metadatum, path: string): Uint8Array => {
+  try {
+    return decodeChunkedBytes(m);
+  } catch (e) {
+    return fail((e as Error).message, path);
+  }
+};
+
 const expectLen = (
   arr: MetadatumList,
   min: number,
@@ -484,11 +494,11 @@ const decodeResponseAnswers = (
   // Sealed: byte string, or array of byte strings (chunked_bytes).
   // Public: array of answer items (each an array).
   if (isBytes(m)) {
-    return { type: "sealed", ciphertext: decodeChunkedBytes(m) };
+    return { type: "sealed", ciphertext: bytes(m, path) };
   }
   const arr = asList(m, path);
   if (arr.length > 0 && isBytes(arr[0])) {
-    return { type: "sealed", ciphertext: decodeChunkedBytes(m) };
+    return { type: "sealed", ciphertext: bytes(m, path) };
   }
   // CDDL: response_answers = [+ answer_item] / chunked_bytes — never empty.
   if (arr.length === 0) fail("expected non-empty answer list", path);

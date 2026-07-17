@@ -73,6 +73,27 @@ published. Keep adding entries here until release.
 - `describeProblem` / `describeProblems` — default English rendering of a
   problem (`{token}` params interpolated); the self-describing fallback.
 
+### Fixed
+
+- **`chunked_text` / `chunked_bytes` reject the empty array** the CDDL forbids
+  (`chunked_text = bounded_text / [+ bounded_text]`, and the `bounded_bytes`
+  analog — the array form is one-or-more). `decodeChunkedText([])` previously
+  joined to `""`, letting a non-external survey acquire the empty title only
+  external-content mode permits; both decoders now throw.
+- **Sealed-answer decode honors the decoder's error contract.** A malformed
+  sealed `answers` array (e.g. `[bytes, 5]`) leaked a bare `TypeError` from
+  `decodeChunkedBytes`; both sealed-ciphertext decode paths now surface a
+  path-carrying `Cip179DecodeError`, like every other decode branch, so callers
+  filtering on `Cip179DecodeError` classify it correctly.
+- **Encoders fail early on the CDDL size/bounds the decoder already enforces**,
+  instead of emitting metadata every conformant decoder (including this
+  package's own) would reject — a wrong-size hash or negative epoch was
+  previously caught only after a fee-paying submission. `encodeSurveyRef`
+  (tx_id 32 B, index `uint .size 2`), `encodeContentAnchor` (hash 32 B),
+  `encodeCredential` (hash 28 B), `encodeSubmissionMode` (chain_hash 32 B,
+  round/padding `uint`), and `end_epoch` now throw `Cip179EncodeError` on
+  out-of-bounds input. Valid inputs encode byte-for-byte as before.
+
 ### Notes
 
 - The `validateResponse`/`validateDefinition` change is representation-only: the
@@ -83,6 +104,10 @@ published. Keep adding entries here until release.
   counted value did. 0.3.0 hashes are incomparable with 0.2.0 (v4), so artifacts
   re-finalize on deploy; the golden `rulesetHash()` test was updated in the same
   change.
+- The **decode/encode conformance fixes** (under _Fixed_) only reject malformed
+  input more strictly; valid-input behavior and the hashed artifact body are
+  unchanged, so they carry **no `rulesetVersion` impact** and the golden
+  `rulesetHash()` is untouched.
 
 ## [0.2.0]
 
