@@ -19,7 +19,7 @@
 
 export { RespondRoot } from "./Respond";
 export { adoptWidgetStyles, cssText } from "./styles";
-export { I18nContext, useI18n } from "./i18n-context";
+export { I18nContext, useI18n } from "@tessera/respond-ui";
 export { RESPOND_EVENTS } from "./types";
 export type {
   CredentialProof,

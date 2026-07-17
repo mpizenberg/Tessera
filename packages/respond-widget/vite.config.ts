@@ -19,9 +19,11 @@ export default defineConfig(({ command }) => ({
   plugins: [solid()],
   resolve: {
     alias: {
-      // Resolve respond-core straight from source so cross-package edits stay
-      // live. `cip-179` resolves via its own `exports` map (→ src) with no alias.
+      // Resolve the workspace libraries straight from source so cross-package
+      // edits stay live (and so vite-plugin-solid transforms respond-ui's JSX).
+      // `cip-179` resolves via its own `exports` map (→ src) with no alias.
       "@tessera/respond-core": r("../respond-core/src/index.ts"),
+      "@tessera/respond-ui": r("../respond-ui/src/index.ts"),
     },
   },
   ...(command === "serve"

@@ -26,6 +26,7 @@
     "@tessera/core": "workspace:*",
     "@tessera/koios": "workspace:*",
     "@tessera/respond-core": "workspace:*",
+    "@tessera/respond-ui": "workspace:*",
     "@tessera/respond-widget": "workspace:*",
     "cip-179": "workspace:*",
     "solid-js": "^1.9.14"

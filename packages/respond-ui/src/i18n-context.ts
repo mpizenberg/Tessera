@@ -1,12 +1,12 @@
 /**
- * Solid context carrying the widget's {@link I18n} instance down to every body.
+ * Solid context carrying the {@link I18n} instance down to every body.
  *
- * The app's bodies read a module-global reactive `t`/`n`; the widget's read this
- * context instead, so each instance is scoped to its own `locale`/`messages`
- * props (plan §3.2). The context holds an **accessor** (`() => I18n`) recreated
- * by a memo when those props change; `useI18n` returns a stable facade that
- * delegates through it, so callers keep the plain `i18n.t(...)` API while every
- * call stays reactive to a locale switch.
+ * Both consumers provide it: the widget from its instance-scoped
+ * `createI18n({ locale, messages })` props, the app from the same `createI18n`
+ * driven by its reactive global locale. The context holds an **accessor**
+ * (`() => I18n`) recreated by a memo when the locale changes; `useI18n` returns
+ * a stable facade that delegates through it, so callers keep the plain
+ * `i18n.t(...)` API while every call stays reactive to a locale switch.
  */
 
 import { createContext, useContext, type Accessor } from "solid-js";

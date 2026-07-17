@@ -4,6 +4,7 @@ packages:
   - packages/core
   - packages/koios
   - packages/respond-core
+  - packages/respond-ui
   - packages/respond-widget
   - packages/verifier
   - backend/server

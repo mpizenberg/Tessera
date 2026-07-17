@@ -378,11 +378,12 @@ with no build step.
 | :---------------- | :------------------------------------------------------------------------ |
 | `src/element.tsx` | `customElement("tessera-respond", …)` registration + prop reflection.     |
 | `src/Respond.tsx` | The trimmed answering component (props in → `tessera:*` events out).      |
-| `src/bodies/`     | Per-question body components (single-choice, ranking, numeric, …).        |
 | `src/roles.ts`    | Role label/color/keyKind presentation over the injected catalog + tokens. |
 | `src/theme.css`   | The `--tessera-*` design-token defaults on `:host`.                       |
 | `src/styles/`     | Component CSS, shadow-scoped plain CSS delivered via `?inline`.           |
 | `src/types.ts`    | The public prop/event TypeScript contract.                                |
 
-See [`@tessera/respond-core`](../respond-core/README.md) for the pure logic the
-widget (and the app) share.
+The per-question body components live in
+[`@tessera/respond-ui`](../respond-ui/README.md), shared with the app; see
+[`@tessera/respond-core`](../respond-core/README.md) for the pure logic both
+share.

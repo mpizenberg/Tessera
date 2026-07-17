@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@tessera/respond-core": "workspace:*",
+    "@tessera/respond-ui": "workspace:*",
     "cip-179": "workspace:*",
     "solid-element": "^1.9.2",
     "solid-js": "^1.9.14"

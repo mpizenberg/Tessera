@@ -22,6 +22,7 @@
       "@tessera/core": ["../../packages/core/src/index.ts"],
       "@tessera/koios": ["../../packages/koios/src/index.ts"],
       "@tessera/respond-core": ["../../packages/respond-core/src/index.ts"],
+      "@tessera/respond-ui": ["../../packages/respond-ui/src/index.ts"],
       "~/*": ["./src/*"]
     }
   },

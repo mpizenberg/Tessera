@@ -19,9 +19,7 @@ import {
   type ContentAnchor,
   type Credential,
   type Metadatum,
-  type OptionsOrCount,
   type Question,
-  type RatingScale,
   type Role,
   type SurveyDefinition,
   type SurveyResponse,
@@ -38,15 +36,25 @@ import {
   buildResponse,
   buildSealedResponse,
   collectAnswers,
+  createI18n,
   decided,
   findExistingResponse,
   hasAnyAnswer,
   initDraft,
-  optionCount,
   prefillDrafts,
   type Draft,
   type DraftValue,
+  type I18n,
 } from "@tessera/respond-core";
+import {
+  ClassesContext,
+  I18nContext,
+  QuestionBody,
+  range,
+  typeMeta,
+  useI18n,
+  type BodyClasses,
+} from "@tessera/respond-ui";
 import { respondableRoles, roleCredential } from "~/domain/roles";
 import { usePresentation } from "~/enrichment/usePresentation";
 import { IPFS_PROVIDERS } from "~/enrichment/providers";
@@ -71,9 +79,71 @@ import {
   viewStatus,
 } from "~/ui/format";
 import { type WalletIdentity } from "~/wallet/types";
-import { t, n } from "~/i18n";
+import { locale, t, n } from "~/i18n";
 import { problemText } from "~/i18n/problem";
 import css from "./Respond.module.css";
+
+/**
+ * The shared question bodies (`@tessera/respond-ui`) render class names through
+ * {@link ClassesContext}; this maps each one to this screen's CSS module. Keys
+ * are checked complete by `BodyClasses`, so a body can't render a class this
+ * screen doesn't style.
+ */
+const bodyClasses: BodyClasses = {
+  optionGroup: css.optionGroup,
+  optionRow: css.optionRow,
+  optionRowOn: css.optionRowOn,
+  radio: css.radio,
+  radioOn: css.radioOn,
+  radioDot: css.radioDot,
+  multiGrid: css.multiGrid,
+  checkbox: css.checkbox,
+  checkboxOn: css.checkboxOn,
+  multiCount: css.multiCount,
+  noneNote: css.noneNote,
+  noneNoteText: css.noneNoteText,
+  noneNoteLead: css.noneNoteLead,
+  rankedList: css.rankedList,
+  rankedRow: css.rankedRow,
+  rankNum: css.rankNum,
+  rankLabel: css.rankLabel,
+  rankBtn: css.rankBtn,
+  rankBtnDanger: css.rankBtnDanger,
+  rankPoolHint: css.rankPoolHint,
+  rankPool: css.rankPool,
+  poolBtn: css.poolBtn,
+  poolBtnDisabled: css.poolBtnDisabled,
+  numHero: css.numHero,
+  numValue: css.numValue,
+  numberInput: css.numberInput,
+  rangeFull: css.rangeFull,
+  rangeBounds: css.rangeBounds,
+  pointsHeader: css.pointsHeader,
+  pointsRemainLabel: css.pointsRemainLabel,
+  pointsRemain: css.pointsRemain,
+  pointsRemainDone: css.pointsRemainDone,
+  pointsRow: css.pointsRow,
+  pointsRowHead: css.pointsRowHead,
+  pointsOptLabel: css.pointsOptLabel,
+  pointsControls: css.pointsControls,
+  stepBtn: css.stepBtn,
+  pointsInput: css.pointsInput,
+  rangeFullBlock: css.rangeFullBlock,
+  pointsFooter: css.pointsFooter,
+  ratingList: css.ratingList,
+  ratingRow: css.ratingRow,
+  ratingOptLabel: css.ratingOptLabel,
+  ratingNumberInput: css.ratingNumberInput,
+  ratingLevels: css.ratingLevels,
+  ratingBtn: css.ratingBtn,
+  ratingBtnOn: css.ratingBtnOn,
+  ratHint: css.ratHint,
+  customSchema: css.customSchema,
+  customSchemaTag: css.customSchemaTag,
+  customSchemaUri: css.customSchemaUri,
+  customInput: css.customInput,
+  customHint: css.customHint,
+};
 
 // ----------------------------------------------------------------------------
 // Screen
@@ -83,6 +153,11 @@ export const Respond: Component = () => {
   const app = useApp();
   const params = useParams<{ key: string }>();
   const key = () => decodeURIComponent(params.key);
+
+  // i18n for the shared question bodies: respond-core's `createI18n` (the same
+  // catalog the widget renders from) driven by the app's reactive locale. The
+  // context takes the memo itself, so a locale switch re-renders every body.
+  const bodiesI18n = createMemo<I18n>(() => createI18n({ locale: locale() }));
 
   // Fall back to the optimistic set so a just-created survey is answerable
   // immediately, before Koios indexes it (mirrors the results page).
@@ -575,19 +650,25 @@ export const Respond: Component = () => {
                 <LabelsAbsentBanner keyStr={key()} />
               </Show>
 
-              <div class={css.questionList}>
-                <For each={(definition() ?? s().record.definition).questions}>
-                  {(q, i) => (
-                    <QuestionCard
-                      q={q}
-                      index={i()}
-                      draft={drafts[i()]}
-                      onChange={(v) => setValue(i(), v)}
-                      onSkip={(sk) => setSkipped(i(), sk)}
-                    />
-                  )}
-                </For>
-              </div>
+              <I18nContext.Provider value={bodiesI18n}>
+                <ClassesContext.Provider value={bodyClasses}>
+                  <div class={css.questionList}>
+                    <For
+                      each={(definition() ?? s().record.definition).questions}
+                    >
+                      {(q, i) => (
+                        <QuestionCard
+                          q={q}
+                          index={i()}
+                          draft={drafts[i()]}
+                          onChange={(v) => setValue(i(), v)}
+                          onSkip={(sk) => setSkipped(i(), sk)}
+                        />
+                      )}
+                    </For>
+                  </div>
+                </ClassesContext.Provider>
+              </I18nContext.Provider>
 
               <Show when={app.ui.pro}>
                 <RationaleSection
@@ -962,20 +1043,6 @@ const RationaleSection: Component<{
 // Question card (header + skip + body switch)
 // ----------------------------------------------------------------------------
 
-// Reactive label lookup (calls t() per type, so it re-renders on locale switch).
-const TYPE_LABEL_KEY: Record<Question["type"], string> = {
-  custom: "respond.typeCustom",
-  singleChoice: "respond.typeSingleChoice",
-  multiSelect: "respond.typeMultiSelect",
-  ranking: "respond.typeRanking",
-  numericRange: "respond.typeNumericRange",
-  pointsAllocation: "respond.typePointsAllocation",
-  rating: "respond.typeRating",
-};
-function typeLabel(type: Question["type"]): string {
-  return t(TYPE_LABEL_KEY[type] as Parameters<typeof t>[0]);
-}
-
 const QuestionCard: Component<{
   q: Question;
   index: number;
@@ -983,6 +1050,7 @@ const QuestionCard: Component<{
   onChange: (v: DraftValue) => void;
   onSkip: (skipped: boolean) => void;
 }> = (props) => {
+  const i18n = useI18n();
   const skipped = () => props.draft?.skipped ?? false;
   return (
     <div class={css.card}>
@@ -991,7 +1059,7 @@ const QuestionCard: Component<{
           <span class={css.qChip}>
             {t("respond.questionChip", { n: n(props.index + 1) })}
           </span>
-          <span class={css.qType}>{typeMeta(props.q)}</span>
+          <span class={css.qType}>{typeMeta(i18n, props.q)}</span>
           <Show when={props.q.required}>
             <span class={css.qRequired}>{t("respond.required")}</span>
           </Show>
@@ -1025,514 +1093,6 @@ const QuestionCard: Component<{
     </div>
   );
 };
-
-/**
- * Pick the body for the question's type, passing the draft value reactively.
- * Question type and draft-value type always match by construction, so the casts
- * are type-narrowing only (no runtime effect) and reactivity is preserved — no
- * remount on edits, so text/number inputs keep focus.
- */
-const QuestionBody: Component<{
-  q: Question;
-  value: DraftValue;
-  onChange: (v: DraftValue) => void;
-}> = (props) => {
-  type V<T extends DraftValue["type"]> = Extract<DraftValue, { type: T }>;
-  type Q<T extends Question["type"]> = Extract<Question, { type: T }>;
-  switch (props.q.type) {
-    case "singleChoice":
-      return (
-        <SingleChoiceBody
-          q={props.q as Q<"singleChoice">}
-          v={props.value as V<"singleChoice">}
-          onChange={props.onChange}
-        />
-      );
-    case "multiSelect":
-      return (
-        <MultiSelectBody
-          q={props.q as Q<"multiSelect">}
-          v={props.value as V<"multiSelect">}
-          onChange={props.onChange}
-        />
-      );
-    case "ranking":
-      return (
-        <RankingBody
-          q={props.q as Q<"ranking">}
-          v={props.value as V<"ranking">}
-          onChange={props.onChange}
-        />
-      );
-    case "numericRange":
-      return (
-        <NumericBody
-          q={props.q as Q<"numericRange">}
-          v={props.value as V<"numeric">}
-          onChange={props.onChange}
-        />
-      );
-    case "pointsAllocation":
-      return (
-        <PointsBody
-          q={props.q as Q<"pointsAllocation">}
-          v={props.value as V<"pointsAllocation">}
-          onChange={props.onChange}
-        />
-      );
-    case "rating":
-      return (
-        <RatingBody
-          q={props.q as Q<"rating">}
-          v={props.value as V<"rating">}
-          onChange={props.onChange}
-        />
-      );
-    case "custom":
-      return (
-        <CustomBody
-          q={props.q as Q<"custom">}
-          v={props.value as V<"custom">}
-          onChange={props.onChange}
-        />
-      );
-  }
-};
-
-// ----------------------------------------------------------------------------
-// Per-type bodies
-// ----------------------------------------------------------------------------
-
-const SingleChoiceBody: Component<{
-  q: Extract<Question, { type: "singleChoice" }>;
-  v: Extract<DraftValue, { type: "singleChoice" }>;
-  onChange: (v: DraftValue) => void;
-}> = (props) => (
-  <div role="radiogroup" class={css.optionGroup}>
-    <For each={range(optionCount(props.q.options))}>
-      {(i) => {
-        const on = () => props.v.optionIndex === i;
-        const pick = () =>
-          props.onChange({ type: "singleChoice", optionIndex: i });
-        return (
-          <div
-            role="radio"
-            tabindex={0}
-            aria-checked={on()}
-            onClick={pick}
-            onKeyDown={activateOnKey(pick)}
-            class={css.optionRow}
-            classList={{ [css.optionRowOn]: on() }}
-          >
-            <span class={css.radio} classList={{ [css.radioOn]: on() }}>
-              <Show when={on()}>
-                <span class={css.radioDot} />
-              </Show>
-            </span>
-            <span>{labelFor(props.q.options, i)}</span>
-          </div>
-        );
-      }}
-    </For>
-  </div>
-);
-
-const MultiSelectBody: Component<{
-  q: Extract<Question, { type: "multiSelect" }>;
-  v: Extract<DraftValue, { type: "multiSelect" }>;
-  onChange: (v: DraftValue) => void;
-}> = (props) => {
-  const toggle = (i: number) => {
-    const set = new Set(props.v.selected);
-    if (set.has(i)) set.delete(i);
-    else if (props.v.selected.length < props.q.maxSelections) set.add(i);
-    props.onChange({
-      type: "multiSelect",
-      selected: [...set].sort((a, b) => a - b),
-    });
-  };
-  return (
-    <>
-      <div class={css.multiGrid}>
-        <For each={range(optionCount(props.q.options))}>
-          {(i) => {
-            const on = () => props.v.selected.includes(i);
-            return (
-              <div
-                role="checkbox"
-                tabindex={0}
-                aria-checked={on()}
-                onClick={() => toggle(i)}
-                onKeyDown={activateOnKey(() => toggle(i))}
-                class={css.optionRow}
-                classList={{ [css.optionRowOn]: on() }}
-              >
-                <span
-                  class={css.checkbox}
-                  classList={{ [css.checkboxOn]: on() }}
-                >
-                  <Show when={on()}>✓</Show>
-                </span>
-                <span>{labelFor(props.q.options, i)}</span>
-              </div>
-            );
-          }}
-        </For>
-      </div>
-      <div class={css.multiCount}>
-        {t("respond.multiSelectCount", {
-          min: n(props.q.minSelections),
-          max: n(props.q.maxSelections),
-          chosen: n(props.v.selected.length),
-        })}
-      </div>
-      <Show when={props.q.minSelections === 0}>
-        <div class={css.noneNote}>
-          <span class={css.noneNoteText}>
-            <b class={css.noneNoteLead}>{t("respond.noneLead")}</b>{" "}
-            {t("respond.noneNote")}
-          </span>
-        </div>
-      </Show>
-    </>
-  );
-};
-
-const RankingBody: Component<{
-  q: Extract<Question, { type: "ranking" }>;
-  v: Extract<DraftValue, { type: "ranking" }>;
-  onChange: (v: DraftValue) => void;
-}> = (props) => {
-  const ranked = () => props.v.ranked;
-  const pool = () =>
-    range(optionCount(props.q.options)).filter((i) => !ranked().includes(i));
-  const set = (next: number[]) =>
-    props.onChange({ type: "ranking", ranked: next });
-  const add = (i: number) => {
-    if (ranked().length < props.q.maxRanked) set([...ranked(), i]);
-  };
-  const remove = (i: number) => set(ranked().filter((x) => x !== i));
-  const move = (idx: number, delta: number) => {
-    const next = [...ranked()];
-    const j = idx + delta;
-    if (j < 0 || j >= next.length) return;
-    [next[idx], next[j]] = [next[j]!, next[idx]!];
-    set(next);
-  };
-  return (
-    <>
-      <Show when={ranked().length > 0}>
-        <div class={css.rankedList}>
-          <For each={ranked()}>
-            {(optIdx, pos) => (
-              <div class={css.rankedRow}>
-                <span class={css.rankNum}>{pos() + 1}</span>
-                <span class={css.rankLabel}>
-                  {labelFor(props.q.options, optIdx)}
-                </span>
-                <button
-                  class={css.rankBtn}
-                  onClick={() => move(pos(), -1)}
-                  aria-label={t("respond.rankMoveUp")}
-                >
-                  ↑
-                </button>
-                <button
-                  class={css.rankBtn}
-                  onClick={() => move(pos(), 1)}
-                  aria-label={t("respond.rankMoveDown")}
-                >
-                  ↓
-                </button>
-                <button
-                  class={`${css.rankBtn} ${css.rankBtnDanger}`}
-                  onClick={() => remove(optIdx)}
-                  aria-label={t("respond.rankRemove")}
-                >
-                  ×
-                </button>
-              </div>
-            )}
-          </For>
-        </div>
-      </Show>
-      <Show when={pool().length > 0}>
-        <div class={css.rankPoolHint}>
-          {t("respond.rankPoolHint", {
-            min: n(props.q.minRanked),
-            max: n(props.q.maxRanked),
-          })}
-        </div>
-        <div class={css.rankPool}>
-          <For each={pool()}>
-            {(i) => (
-              <button
-                onClick={() => add(i)}
-                disabled={ranked().length >= props.q.maxRanked}
-                class={css.poolBtn}
-                classList={{
-                  [css.poolBtnDisabled]: ranked().length >= props.q.maxRanked,
-                }}
-              >
-                + {labelFor(props.q.options, i)}
-              </button>
-            )}
-          </For>
-        </div>
-      </Show>
-    </>
-  );
-};
-
-const NumericBody: Component<{
-  q: Extract<Question, { type: "numericRange" }>;
-  v: Extract<DraftValue, { type: "numeric" }>;
-  onChange: (v: DraftValue) => void;
-}> = (props) => {
-  const { min, max } = props.q.constraints;
-  const step = props.q.constraints.step ?? 1n;
-  const span = max - min;
-  // The range input works in JS numbers, so both bounds must be exactly
-  // representable — a huge min with a small span would otherwise render (and
-  // submit) rounded positions. Fall back to the bigint number input if not.
-  const safe = (n: bigint): boolean =>
-    n <= BigInt(Number.MAX_SAFE_INTEGER) &&
-    n >= BigInt(Number.MIN_SAFE_INTEGER);
-  const sliderOk = span > 0n && span <= 100000n && safe(min) && safe(max);
-  const set = (value: bigint) => props.onChange({ type: "numeric", value });
-  return (
-    <>
-      <div class={css.numHero}>
-        <span class={css.numValue}>{props.v.value.toString()}</span>
-      </div>
-      <Show
-        when={sliderOk}
-        fallback={
-          <input
-            type="number"
-            value={props.v.value.toString()}
-            min={min.toString()}
-            max={max.toString()}
-            step={step.toString()}
-            onInput={(e) => {
-              const n = e.currentTarget.value.trim();
-              if (n === "") return;
-              try {
-                set(clampStep(BigInt(n), min, max, step));
-              } catch {
-                /* ignore non-integer input */
-              }
-            }}
-            class={css.numberInput}
-          />
-        }
-      >
-        <input
-          type="range"
-          min={Number(min)}
-          max={Number(max)}
-          step={Number(step)}
-          value={Number(props.v.value)}
-          onInput={(e) =>
-            set(clampStep(BigInt(e.currentTarget.value), min, max, step))
-          }
-          class={css.rangeFull}
-        />
-        <div class={css.rangeBounds}>
-          <span>{min.toString()}</span>
-          <span>{max.toString()}</span>
-        </div>
-      </Show>
-    </>
-  );
-};
-
-const PointsBody: Component<{
-  q: Extract<Question, { type: "pointsAllocation" }>;
-  v: Extract<DraftValue, { type: "pointsAllocation" }>;
-  onChange: (v: DraftValue) => void;
-}> = (props) => {
-  const sum = () => props.v.points.reduce((s, p) => s + p, 0);
-  const remaining = () => props.q.budget - sum();
-  // Clamp to [0, budget − others] so a single field can never push the total
-  // over budget — the same invariant the +/- buttons enforce.
-  const setPoints = (i: number, raw: number) => {
-    const others = sum() - (props.v.points[i] ?? 0);
-    const value = Math.max(0, Math.min(raw, props.q.budget - others));
-    const next = [...props.v.points];
-    next[i] = value;
-    props.onChange({ type: "pointsAllocation", points: next });
-  };
-  const bump = (i: number, delta: number) =>
-    setPoints(i, (props.v.points[i] ?? 0) + delta);
-  // Capped slider: the track keeps its full 0..budget range, but the thumb is
-  // blocked past the remaining budget. We clamp the dragged value and, when it
-  // was over the cap, write it back onto the element so the thumb snaps to the
-  // cap — Solid won't re-render the input if the clamped value matches state.
-  const slideTo = (i: number, el: HTMLInputElement) => {
-    const raw = parseInt(el.value, 10) || 0;
-    const others = sum() - (props.v.points[i] ?? 0);
-    const capped = Math.max(0, Math.min(raw, props.q.budget - others));
-    if (capped !== raw) el.value = String(capped);
-    setPoints(i, capped);
-  };
-  return (
-    <>
-      <div class={css.pointsHeader}>
-        <span class={css.pointsRemainLabel}>
-          {t("respond.pointsRemainLabel")}
-        </span>
-        <span
-          class={css.pointsRemain}
-          classList={{ [css.pointsRemainDone]: remaining() === 0 }}
-        >
-          {t("respond.pointsRemain", { n: n(remaining()) })}
-        </span>
-      </div>
-      <For each={range(optionCount(props.q.options))}>
-        {(i) => (
-          <div class={css.pointsRow}>
-            <div class={css.pointsRowHead}>
-              <span class={css.pointsOptLabel}>
-                {labelFor(props.q.options, i)}
-              </span>
-              <div class={css.pointsControls}>
-                <button class={css.stepBtn} onClick={() => bump(i, -1)}>
-                  −
-                </button>
-                <input
-                  type="number"
-                  min={0}
-                  max={props.q.budget}
-                  value={props.v.points[i] ?? 0}
-                  onInput={(e) => {
-                    const n = parseInt(e.currentTarget.value, 10);
-                    setPoints(i, Number.isFinite(n) ? n : 0);
-                  }}
-                  class={css.pointsInput}
-                />
-                <button class={css.stepBtn} onClick={() => bump(i, 1)}>
-                  +
-                </button>
-              </div>
-            </div>
-            <input
-              type="range"
-              min={0}
-              max={props.q.budget}
-              step={1}
-              value={props.v.points[i] ?? 0}
-              onInput={(e) => slideTo(i, e.currentTarget)}
-              class={css.rangeFullBlock}
-            />
-          </div>
-        )}
-      </For>
-      <div class={css.pointsFooter}>
-        {t("respond.pointsFooter", { budget: n(props.q.budget) })}
-      </div>
-    </>
-  );
-};
-
-const RatingBody: Component<{
-  q: Extract<Question, { type: "rating" }>;
-  v: Extract<DraftValue, { type: "rating" }>;
-  onChange: (v: DraftValue) => void;
-}> = (props) => {
-  const levels = ratingLevels(props.q.scale);
-  // `null` clears the option back to unrated — meaningful now that a subset
-  // answer is valid (require_all = false), and harmless otherwise.
-  const setRating = (optIdx: number, rating: bigint | null) => {
-    const next = [...props.v.ratings];
-    next[optIdx] = rating;
-    props.onChange({ type: "rating", ratings: next });
-  };
-  return (
-    <div class={css.ratingList}>
-      <For each={range(optionCount(props.q.options))}>
-        {(optIdx) => (
-          <div class={css.ratingRow}>
-            <span class={css.ratingOptLabel}>
-              {labelFor(props.q.options, optIdx)}
-            </span>
-            <Show
-              when={levels}
-              fallback={
-                <input
-                  type="number"
-                  value={props.v.ratings[optIdx]?.toString() ?? ""}
-                  onInput={(e) => {
-                    const n = e.currentTarget.value.trim();
-                    if (n === "") {
-                      setRating(optIdx, null); // emptied → unrated
-                      return;
-                    }
-                    try {
-                      setRating(optIdx, BigInt(n));
-                    } catch {
-                      /* ignore */
-                    }
-                  }}
-                  class={css.ratingNumberInput}
-                />
-              }
-            >
-              <div class={css.ratingLevels}>
-                <For each={levels!}>
-                  {(lvl) => {
-                    const on = () => props.v.ratings[optIdx] === lvl.value;
-                    return (
-                      <button
-                        // Clicking the active level clears it (back to unrated).
-                        onClick={() =>
-                          setRating(optIdx, on() ? null : lvl.value)
-                        }
-                        aria-pressed={on()}
-                        class={css.ratingBtn}
-                        classList={{ [css.ratingBtnOn]: on() }}
-                      >
-                        {lvl.label}
-                      </button>
-                    );
-                  }}
-                </For>
-              </div>
-            </Show>
-          </div>
-        )}
-      </For>
-      <p class={css.ratHint}>
-        {props.q.requireAll
-          ? t("respond.ratingRequireAll")
-          : t("respond.ratingAllowSubset")}
-      </p>
-    </div>
-  );
-};
-
-const CustomBody: Component<{
-  q: Extract<Question, { type: "custom" }>;
-  v: Extract<DraftValue, { type: "custom" }>;
-  onChange: (v: DraftValue) => void;
-}> = (props) => (
-  <>
-    <div class={css.customSchema}>
-      <span class={css.customSchemaTag}>{t("respond.customSchemaTag")}</span>
-      <span class={css.customSchemaUri}>{props.q.methodSchema.uri}</span>
-    </div>
-    <input
-      type="text"
-      value={props.v.text}
-      placeholder={t("respond.customPlaceholder")}
-      onInput={(e) =>
-        props.onChange({ type: "custom", text: e.currentTarget.value })
-      }
-      class={css.customInput}
-    />
-    <p class={css.customHint}>{t("respond.customHint")}</p>
-  </>
-);
 
 // ----------------------------------------------------------------------------
 // Submit bar, panels, small bits
@@ -1671,98 +1231,3 @@ const Empty: Component<{
     </Show>
   </div>
 );
-
-// ----------------------------------------------------------------------------
-// helpers
-// ----------------------------------------------------------------------------
-
-function range(n: number): number[] {
-  return Array.from({ length: Math.max(0, n) }, (_, i) => i);
-}
-
-/**
- * Keyboard handler for div-based radio/checkbox rows: Enter or Space activates
- * the row (Space's default page-scroll is suppressed), matching native controls.
- */
-function activateOnKey(fn: () => void) {
-  return (e: KeyboardEvent) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      fn();
-    }
-  };
-}
-
-function labelFor(opts: OptionsOrCount, i: number): string {
-  const fallback = () => t("respond.optionFallback", { n: n(i + 1) });
-  return opts.type === "options" ? (opts.labels[i] ?? fallback()) : fallback();
-}
-
-function typeMeta(q: Question): string {
-  switch (q.type) {
-    case "multiSelect":
-      return t("respond.typeMetaRange", {
-        base: typeLabel(q.type),
-        min: n(q.minSelections),
-        max: n(q.maxSelections),
-      });
-    case "ranking":
-      return t("respond.typeMetaRange", {
-        base: typeLabel(q.type),
-        min: n(q.minRanked),
-        max: n(q.maxRanked),
-      });
-    case "numericRange": {
-      // Bounds are bigints (possibly large) — shown verbatim, ungrouped.
-      const { min, max } = q.constraints;
-      return t("respond.typeMetaRange", {
-        base: typeLabel(q.type),
-        min: min.toString(),
-        max: max.toString(),
-      });
-    }
-    case "pointsAllocation":
-      return t("respond.typeMetaBudget", {
-        base: typeLabel(q.type),
-        budget: n(q.budget),
-      });
-    default:
-      return typeLabel(q.type);
-  }
-}
-
-function clampStep(
-  value: bigint,
-  min: bigint,
-  max: bigint,
-  step: bigint,
-): bigint {
-  let v = value < min ? min : value > max ? max : value;
-  if (step > 0n) v = min + ((v - min) / step) * step;
-  return v;
-}
-
-function ratingLevels(
-  scale: RatingScale,
-): { value: bigint; label: string }[] | null {
-  switch (scale.type) {
-    case "labels":
-      return scale.labels.map((l, i) => ({ value: BigInt(i), label: l }));
-    case "count":
-      return range(scale.count).map((i) => ({
-        value: BigInt(i),
-        label: String(i + 1),
-      }));
-    case "numeric": {
-      const { min, max } = scale.constraints;
-      const step = scale.constraints.step ?? 1n;
-      if (step <= 0n || max < min) return null;
-      const n = Number((max - min) / step) + 1;
-      if (n < 1 || n > 12) return null;
-      return range(n).map((i) => {
-        const v = min + BigInt(i) * step;
-        return { value: v, label: v.toString() };
-      });
-    }
-  }
-}

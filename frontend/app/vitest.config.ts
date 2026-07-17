@@ -14,6 +14,7 @@ export default defineConfig({
       "@tessera/core": r("../../packages/core/src/index.ts"),
       "@tessera/koios": r("../../packages/koios/src/index.ts"),
       "@tessera/respond-core": r("../../packages/respond-core/src/index.ts"),
+      "@tessera/respond-ui": r("../../packages/respond-ui/src/index.ts"),
       "~": r("./src"),
     },
   },

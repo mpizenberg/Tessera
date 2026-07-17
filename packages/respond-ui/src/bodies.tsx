@@ -1,9 +1,10 @@
 /**
- * The per-question body components, moved from the app's Respond.tsx and rewired
- * from the module-global `t`/`n` to the injected i18n (`useI18n()`) and from
- * CSS-module classes to plain shadow-scoped class names. No logic changes: each
- * still takes `(q, v, onChange)` and the draft store / `decided()` gating comes
- * from `@tessera/respond-core`.
+ * The per-question body components — the single implementation of the CIP-179
+ * answering controls, consumed by both the Tessera app and the
+ * `<tessera-respond>` widget so their behavior cannot drift. Each takes
+ * `(q, v, onChange)`; the draft store and `decided()` gating come from
+ * `@tessera/respond-core`. Strings come from the injected i18n (`useI18n()`),
+ * class names from the injected map (`useClasses()`, identity by default).
  */
 
 import { For, Show, type Component } from "solid-js";
@@ -11,7 +12,8 @@ import { For, Show, type Component } from "solid-js";
 import type { Question } from "cip-179";
 import { optionCount, type DraftValue } from "@tessera/respond-core";
 
-import { useI18n } from "../i18n-context";
+import { useI18n } from "./i18n-context";
+import { useClasses } from "./classes-context";
 import {
   activateOnKey,
   clampStep,
@@ -26,8 +28,9 @@ const SingleChoiceBody: Component<{
   onChange: (v: DraftValue) => void;
 }> = (props) => {
   const i18n = useI18n();
+  const cls = useClasses();
   return (
-    <div role="radiogroup" class="optionGroup">
+    <div role="radiogroup" class={cls.optionGroup}>
       <For each={range(optionCount(props.q.options))}>
         {(i) => {
           const on = () => props.v.optionIndex === i;
@@ -40,12 +43,12 @@ const SingleChoiceBody: Component<{
               aria-checked={on()}
               onClick={pick}
               onKeyDown={activateOnKey(pick)}
-              class="optionRow"
-              classList={{ optionRowOn: on() }}
+              class={cls.optionRow}
+              classList={{ [cls.optionRowOn]: on() }}
             >
-              <span class="radio" classList={{ radioOn: on() }}>
+              <span class={cls.radio} classList={{ [cls.radioOn]: on() }}>
                 <Show when={on()}>
-                  <span class="radioDot" />
+                  <span class={cls.radioDot} />
                 </Show>
               </span>
               <span>{labelFor(i18n, props.q.options, i)}</span>
@@ -63,6 +66,7 @@ const MultiSelectBody: Component<{
   onChange: (v: DraftValue) => void;
 }> = (props) => {
   const i18n = useI18n();
+  const cls = useClasses();
   const toggle = (i: number) => {
     const set = new Set(props.v.selected);
     if (set.has(i)) set.delete(i);
@@ -74,7 +78,7 @@ const MultiSelectBody: Component<{
   };
   return (
     <>
-      <div class="multiGrid">
+      <div class={cls.multiGrid}>
         <For each={range(optionCount(props.q.options))}>
           {(i) => {
             const on = () => props.v.selected.includes(i);
@@ -85,10 +89,13 @@ const MultiSelectBody: Component<{
                 aria-checked={on()}
                 onClick={() => toggle(i)}
                 onKeyDown={activateOnKey(() => toggle(i))}
-                class="optionRow"
-                classList={{ optionRowOn: on() }}
+                class={cls.optionRow}
+                classList={{ [cls.optionRowOn]: on() }}
               >
-                <span class="checkbox" classList={{ checkboxOn: on() }}>
+                <span
+                  class={cls.checkbox}
+                  classList={{ [cls.checkboxOn]: on() }}
+                >
                   <Show when={on()}>✓</Show>
                 </span>
                 <span>{labelFor(i18n, props.q.options, i)}</span>
@@ -97,7 +104,7 @@ const MultiSelectBody: Component<{
           }}
         </For>
       </div>
-      <div class="multiCount">
+      <div class={cls.multiCount}>
         {i18n.t("respond.multiSelectCount", {
           min: i18n.n(props.q.minSelections),
           max: i18n.n(props.q.maxSelections),
@@ -105,9 +112,9 @@ const MultiSelectBody: Component<{
         })}
       </div>
       <Show when={props.q.minSelections === 0}>
-        <div class="noneNote">
-          <span class="noneNoteText">
-            <b class="noneNoteLead">{i18n.t("respond.noneLead")}</b>{" "}
+        <div class={cls.noneNote}>
+          <span class={cls.noneNoteText}>
+            <b class={cls.noneNoteLead}>{i18n.t("respond.noneLead")}</b>{" "}
             {i18n.t("respond.noneNote")}
           </span>
         </div>
@@ -122,6 +129,7 @@ const RankingBody: Component<{
   onChange: (v: DraftValue) => void;
 }> = (props) => {
   const i18n = useI18n();
+  const cls = useClasses();
   const ranked = () => props.v.ranked;
   const pool = () =>
     range(optionCount(props.q.options)).filter((i) => !ranked().includes(i));
@@ -141,30 +149,30 @@ const RankingBody: Component<{
   return (
     <>
       <Show when={ranked().length > 0}>
-        <div class="rankedList">
+        <div class={cls.rankedList}>
           <For each={ranked()}>
             {(optIdx, pos) => (
-              <div class="rankedRow">
-                <span class="rankNum">{pos() + 1}</span>
-                <span class="rankLabel">
+              <div class={cls.rankedRow}>
+                <span class={cls.rankNum}>{pos() + 1}</span>
+                <span class={cls.rankLabel}>
                   {labelFor(i18n, props.q.options, optIdx)}
                 </span>
                 <button
-                  class="rankBtn"
+                  class={cls.rankBtn}
                   onClick={() => move(pos(), -1)}
                   aria-label={i18n.t("respond.rankMoveUp")}
                 >
                   ↑
                 </button>
                 <button
-                  class="rankBtn"
+                  class={cls.rankBtn}
                   onClick={() => move(pos(), 1)}
                   aria-label={i18n.t("respond.rankMoveDown")}
                 >
                   ↓
                 </button>
                 <button
-                  class="rankBtn rankBtnDanger"
+                  class={`${cls.rankBtn} ${cls.rankBtnDanger}`}
                   onClick={() => remove(optIdx)}
                   aria-label={i18n.t("respond.rankRemove")}
                 >
@@ -176,21 +184,21 @@ const RankingBody: Component<{
         </div>
       </Show>
       <Show when={pool().length > 0}>
-        <div class="rankPoolHint">
+        <div class={cls.rankPoolHint}>
           {i18n.t("respond.rankPoolHint", {
             min: i18n.n(props.q.minRanked),
             max: i18n.n(props.q.maxRanked),
           })}
         </div>
-        <div class="rankPool">
+        <div class={cls.rankPool}>
           <For each={pool()}>
             {(i) => (
               <button
                 onClick={() => add(i)}
                 disabled={ranked().length >= props.q.maxRanked}
-                class="poolBtn"
+                class={cls.poolBtn}
                 classList={{
-                  poolBtnDisabled: ranked().length >= props.q.maxRanked,
+                  [cls.poolBtnDisabled]: ranked().length >= props.q.maxRanked,
                 }}
               >
                 + {labelFor(i18n, props.q.options, i)}
@@ -208,6 +216,7 @@ const NumericBody: Component<{
   v: Extract<DraftValue, { type: "numeric" }>;
   onChange: (v: DraftValue) => void;
 }> = (props) => {
+  const cls = useClasses();
   const { min, max } = props.q.constraints;
   const step = props.q.constraints.step ?? 1n;
   const span = max - min;
@@ -221,8 +230,8 @@ const NumericBody: Component<{
   const set = (value: bigint) => props.onChange({ type: "numeric", value });
   return (
     <>
-      <div class="numHero">
-        <span class="numValue">{props.v.value.toString()}</span>
+      <div class={cls.numHero}>
+        <span class={cls.numValue}>{props.v.value.toString()}</span>
       </div>
       <Show
         when={sliderOk}
@@ -242,7 +251,7 @@ const NumericBody: Component<{
                 /* ignore non-integer input */
               }
             }}
-            class="numberInput"
+            class={cls.numberInput}
           />
         }
       >
@@ -255,9 +264,9 @@ const NumericBody: Component<{
           onInput={(e) =>
             set(clampStep(BigInt(e.currentTarget.value), min, max, step))
           }
-          class="rangeFull"
+          class={cls.rangeFull}
         />
-        <div class="rangeBounds">
+        <div class={cls.rangeBounds}>
           <span>{min.toString()}</span>
           <span>{max.toString()}</span>
         </div>
@@ -272,6 +281,7 @@ const PointsBody: Component<{
   onChange: (v: DraftValue) => void;
 }> = (props) => {
   const i18n = useI18n();
+  const cls = useClasses();
   const sum = () => props.v.points.reduce((s, p) => s + p, 0);
   const remaining = () => props.q.budget - sum();
   // Clamp to [0, budget − others] so a single field can never push the total
@@ -298,26 +308,26 @@ const PointsBody: Component<{
   };
   return (
     <>
-      <div class="pointsHeader">
-        <span class="pointsRemainLabel">
+      <div class={cls.pointsHeader}>
+        <span class={cls.pointsRemainLabel}>
           {i18n.t("respond.pointsRemainLabel")}
         </span>
         <span
-          class="pointsRemain"
-          classList={{ pointsRemainDone: remaining() === 0 }}
+          class={cls.pointsRemain}
+          classList={{ [cls.pointsRemainDone]: remaining() === 0 }}
         >
           {i18n.t("respond.pointsRemain", { n: i18n.n(remaining()) })}
         </span>
       </div>
       <For each={range(optionCount(props.q.options))}>
         {(i) => (
-          <div class="pointsRow">
-            <div class="pointsRowHead">
-              <span class="pointsOptLabel">
+          <div class={cls.pointsRow}>
+            <div class={cls.pointsRowHead}>
+              <span class={cls.pointsOptLabel}>
                 {labelFor(i18n, props.q.options, i)}
               </span>
-              <div class="pointsControls">
-                <button class="stepBtn" onClick={() => bump(i, -1)}>
+              <div class={cls.pointsControls}>
+                <button class={cls.stepBtn} onClick={() => bump(i, -1)}>
                   −
                 </button>
                 <input
@@ -329,9 +339,9 @@ const PointsBody: Component<{
                     const parsed = parseInt(e.currentTarget.value, 10);
                     setPoints(i, Number.isFinite(parsed) ? parsed : 0);
                   }}
-                  class="pointsInput"
+                  class={cls.pointsInput}
                 />
-                <button class="stepBtn" onClick={() => bump(i, 1)}>
+                <button class={cls.stepBtn} onClick={() => bump(i, 1)}>
                   +
                 </button>
               </div>
@@ -343,12 +353,12 @@ const PointsBody: Component<{
               step={1}
               value={props.v.points[i] ?? 0}
               onInput={(e) => slideTo(i, e.currentTarget)}
-              class="rangeFullBlock"
+              class={cls.rangeFullBlock}
             />
           </div>
         )}
       </For>
-      <div class="pointsFooter">
+      <div class={cls.pointsFooter}>
         {i18n.t("respond.pointsFooter", { budget: i18n.n(props.q.budget) })}
       </div>
     </>
@@ -361,20 +371,21 @@ const RatingBody: Component<{
   onChange: (v: DraftValue) => void;
 }> = (props) => {
   const i18n = useI18n();
+  const cls = useClasses();
   const levels = ratingLevels(props.q.scale);
-  // `null` clears the option back to unrated — meaningful now that a subset
-  // answer is valid (require_all = false), and harmless otherwise.
+  // `null` clears the option back to unrated — meaningful when a subset answer
+  // is valid (require_all = false), and harmless otherwise.
   const setRating = (optIdx: number, rating: bigint | null) => {
     const next = [...props.v.ratings];
     next[optIdx] = rating;
     props.onChange({ type: "rating", ratings: next });
   };
   return (
-    <div class="ratingList">
+    <div class={cls.ratingList}>
       <For each={range(optionCount(props.q.options))}>
         {(optIdx) => (
-          <div class="ratingRow">
-            <span class="ratingOptLabel">
+          <div class={cls.ratingRow}>
+            <span class={cls.ratingOptLabel}>
               {labelFor(i18n, props.q.options, optIdx)}
             </span>
             <Show
@@ -395,11 +406,11 @@ const RatingBody: Component<{
                       /* ignore */
                     }
                   }}
-                  class="ratingNumberInput"
+                  class={cls.ratingNumberInput}
                 />
               }
             >
-              <div class="ratingLevels">
+              <div class={cls.ratingLevels}>
                 <For each={levels!}>
                   {(lvl) => {
                     const on = () => props.v.ratings[optIdx] === lvl.value;
@@ -410,8 +421,8 @@ const RatingBody: Component<{
                           setRating(optIdx, on() ? null : lvl.value)
                         }
                         aria-pressed={on()}
-                        class="ratingBtn"
-                        classList={{ ratingBtnOn: on() }}
+                        class={cls.ratingBtn}
+                        classList={{ [cls.ratingBtnOn]: on() }}
                       >
                         {lvl.label}
                       </button>
@@ -423,7 +434,7 @@ const RatingBody: Component<{
           </div>
         )}
       </For>
-      <p class="ratHint">
+      <p class={cls.ratHint}>
         {props.q.requireAll
           ? i18n.t("respond.ratingRequireAll")
           : i18n.t("respond.ratingAllowSubset")}
@@ -438,11 +449,14 @@ const CustomBody: Component<{
   onChange: (v: DraftValue) => void;
 }> = (props) => {
   const i18n = useI18n();
+  const cls = useClasses();
   return (
     <>
-      <div class="customSchema">
-        <span class="customSchemaTag">{i18n.t("respond.customSchemaTag")}</span>
-        <span class="customSchemaUri">{props.q.methodSchema.uri}</span>
+      <div class={cls.customSchema}>
+        <span class={cls.customSchemaTag}>
+          {i18n.t("respond.customSchemaTag")}
+        </span>
+        <span class={cls.customSchemaUri}>{props.q.methodSchema.uri}</span>
       </div>
       <input
         type="text"
@@ -451,9 +465,9 @@ const CustomBody: Component<{
         onInput={(e) =>
           props.onChange({ type: "custom", text: e.currentTarget.value })
         }
-        class="customInput"
+        class={cls.customInput}
       />
-      <p class="customHint">{i18n.t("respond.customHint")}</p>
+      <p class={cls.customHint}>{i18n.t("respond.customHint")}</p>
     </>
   );
 };

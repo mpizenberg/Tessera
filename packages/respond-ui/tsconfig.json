@@ -6,7 +6,7 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "preserve",
     "jsxImportSource": "solid-js",
-    "types": ["vite/client"],
+    "types": [],
     "strict": true,
     "exactOptionalPropertyTypes": true,
     "noUnusedLocals": true,
@@ -15,14 +15,8 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "skipLibCheck": true,
-    "allowImportingTsExtensions": true,
     "noEmit": true,
-    "forceConsistentCasingInFileNames": true,
-    "baseUrl": ".",
-    "paths": {
-      "@tessera/respond-core": ["../respond-core/src/index.ts"],
-      "@tessera/respond-ui": ["../respond-ui/src/index.ts"]
-    }
+    "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "dev", "vite.config.ts", "vitest.config.ts"]
+  "include": ["src"]
 }

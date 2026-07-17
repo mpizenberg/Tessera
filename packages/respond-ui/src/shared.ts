@@ -1,9 +1,9 @@
 /**
- * Helpers shared by the per-question bodies and the question card.
+ * Helpers shared by the per-question bodies and their host question cards.
  *
  * The label helpers (`labelFor`, `typeLabel`, `typeMeta`) take the injected
- * {@link I18n} explicitly — the app versions read the module-global `t`/`n`,
- * which the widget deliberately doesn't have. Everything else is pure.
+ * {@link I18n} explicitly so every consumer renders from the same catalog.
+ * Everything else is pure.
  */
 
 import type { OptionsOrCount, Question, RatingScale } from "cip-179";

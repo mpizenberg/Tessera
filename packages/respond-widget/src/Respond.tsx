@@ -59,9 +59,12 @@ import {
   type I18n,
 } from "@tessera/respond-core";
 
-import { I18nContext, useI18n } from "./i18n-context";
-import { QuestionBody } from "./bodies";
-import { typeMeta } from "./bodies/shared";
+import {
+  I18nContext,
+  QuestionBody,
+  typeMeta,
+  useI18n,
+} from "@tessera/respond-ui";
 import {
   keyKindForRole,
   roleBrowserClaimable,
