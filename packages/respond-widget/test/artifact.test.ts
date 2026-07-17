@@ -273,6 +273,125 @@ describe("built <tessera-respond> artifact", () => {
     expect(root.querySelector(".submitBtn")).toBe(null);
   });
 
+  it("treats a bare `cancelled` attribute as cancelled (HTML boolean style)", () => {
+    // component-register parses a valueless attribute to `undefined`; without
+    // the wrapper's hasAttribute fallback this idiomatic form failed *open*,
+    // rendering the survey answerable.
+    document.body.innerHTML = `<tessera-respond cancelled></tessera-respond>`;
+    const el = document.body.querySelector("tessera-respond") as HTMLElement &
+      Record<string, unknown>;
+    el.definition = SAMPLES.public;
+    el.surveyRef = surveyRef;
+    el.responder = responder;
+    el.tipEpoch = TIP_EPOCH;
+    const root = shadow(el);
+    expect(root.querySelector(".noticeTitle")?.textContent).toBe(
+      "This survey was cancelled",
+    );
+    expect(root.querySelector(".submitBtn")).toBe(null);
+  });
+
+  it("survives the host swapping the definition to a new question shape mid-edit", () => {
+    const def = oneQuestionDef({ type: "public" });
+    const el = mount(def);
+    const root = shadow(el);
+    click(root, ".optionRow"); // touch → reseeding is now gated off
+    // Re-set the definition with a *different question type*: the stale
+    // singleChoice draft renders against a multiSelect question. QuestionBody
+    // falls back to a fresh initial value instead of crashing on the cast.
+    el.definition = {
+      ...def,
+      questions: [
+        {
+          type: "multiSelect",
+          prompt: "Pick some",
+          required: true,
+          options: { type: "options", labels: ["A", "B"] },
+          minSelections: 1,
+          maxSelections: 2,
+        },
+      ],
+    } as SurveyDefinition;
+    expect(root.querySelector(".checkbox")).not.toBe(null);
+    expect(root.querySelectorAll(".optionRowOn").length).toBe(0);
+  });
+
+  it("reseeds pristine when the credential behind the current role changes", () => {
+    // Form identity is (survey, role, credential): a host swapping `responder`
+    // to a different wallet holding the same role must not keep wallet A's
+    // edits to submit under wallet B's credential.
+    const el = mount(oneQuestionDef({ type: "public" }));
+    const root = shadow(el);
+    click(root, ".optionRow");
+    expect(root.querySelectorAll(".optionRowOn").length).toBe(1);
+    el.responder = {
+      [Role.Keyholder]: { type: "key", keyHash: hexToBytes("ee".repeat(28)) },
+    };
+    expect(root.querySelectorAll(".optionRowOn").length).toBe(0);
+  });
+
+  it("restores in-progress answers when switching back to a role", () => {
+    const def: SurveyDefinition = {
+      ...oneQuestionDef({ type: "public" }),
+      eligibleRoles: [Role.DRep, Role.Stakeholder],
+    };
+    const el = mount(def);
+    const root = shadow(el);
+    const pickRole = (label: string): void => {
+      const btn = [
+        ...root.querySelectorAll<HTMLButtonElement>(".rolePick"),
+      ].find((b) => b.textContent === label);
+      expect(btn, `a ${label} role button`).not.toBe(undefined);
+      btn!.click();
+    };
+    click(root, ".optionRow"); // answer as DRep (first respondable)
+    pickRole("Stakeholder"); // fresh, pristine form for the other role
+    expect(root.querySelectorAll(".optionRowOn").length).toBe(0);
+    pickRole("DRep"); // a misclick isn't data loss: the edit is restored
+    expect(root.querySelectorAll(".optionRowOn").length).toBe(1);
+  });
+
+  it("honors the initial-role preference (property or attribute)", () => {
+    const def: SurveyDefinition = {
+      ...oneQuestionDef({ type: "public" }),
+      eligibleRoles: [Role.DRep, Role.Stakeholder],
+    };
+    // Property form.
+    const el = mount(def, { initialRole: Role.Stakeholder });
+    expect(shadow(el).querySelector(".rolePickOn")?.textContent).toBe(
+      "Stakeholder",
+    );
+    // Attribute form (Stakeholder = 3), parsed by the hyphenated alias.
+    document.body.innerHTML = `<tessera-respond initial-role="3"></tessera-respond>`;
+    const el2 = document.body.querySelector("tessera-respond") as HTMLElement &
+      Record<string, unknown>;
+    el2.definition = def;
+    el2.surveyRef = surveyRef;
+    el2.responder = responder;
+    el2.tipEpoch = TIP_EPOCH;
+    expect(shadow(el2).querySelector(".rolePickOn")?.textContent).toBe(
+      "Stakeholder",
+    );
+  });
+
+  it("adopts the stylesheet once even when the host moves the element", async () => {
+    // component-register re-initializes the whole component on a true
+    // disconnect + reconnect, but the shadow root (and its adopted styles)
+    // survives — the sheet must not stack up.
+    const el = mount(SAMPLES.public);
+    const styleCount = (): number =>
+      shadow(el).adoptedStyleSheets.length +
+      shadow(el).querySelectorAll("style").length;
+    const before = styleCount();
+    expect(before).toBeGreaterThan(0);
+    el.remove();
+    // disconnectedCallback releases asynchronously; let it settle.
+    await new Promise((r) => setTimeout(r));
+    document.body.appendChild(el);
+    expect(shadow(el).querySelector(".root")).not.toBe(null); // re-initialized
+    expect(styleCount()).toBe(before);
+  });
+
   it("answers as SPO from a host-supplied credential, wallet-free", async () => {
     // Proving credentials is out of the widget's scope — a host that vouches
     // for an SPO credential (just an entry in the responder map, even with no

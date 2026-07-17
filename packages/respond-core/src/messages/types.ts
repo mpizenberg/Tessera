@@ -10,7 +10,7 @@
 
 import type en from "./en.js";
 
-/** The full catalog shape (two namespaces: `respond`, `roles`). */
+/** The full catalog shape (three namespaces: `respond`, `roles`, `validation`). */
 export type RespondMessages = typeof en;
 
 /** Values fillable into `{token}` placeholders. */

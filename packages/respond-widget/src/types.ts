@@ -73,8 +73,14 @@ export interface TesseraRespondProps {
   theme?: Record<string, string>;
   /** Layout of the form: `"one-per-screen"` (default) steps through the questions one at a time; `"list"` renders them all at once. */
   layout?: "one-per-screen" | "list";
-  /** Optional initial role when the responder is eligible in several. */
-  role?: Role;
+  /**
+   * Optional initial role when the responder is eligible in several — a
+   * preference only; the user can still switch. Not named `role`: that would
+   * shadow the element's global ARIA `role` attribute/property, so a host or
+   * a11y library setting `el.role = "region"` would corrupt this prop (and ARIA
+   * reflection would stop working).
+   */
+  initialRole?: Role;
 }
 
 /** Which wallet/pool key must sign for a credential's proof. */

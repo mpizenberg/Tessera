@@ -27,6 +27,7 @@ import {
 
 import { useApp } from "~/state";
 import {
+  credentialKey,
   dedupeResponses,
   findSurvey,
   hexToBytes,
@@ -239,18 +240,59 @@ export const Respond: Component = () => {
   // data and reloads never clobber in-progress input.
   const [touched, setTouched] = createSignal(false);
 
+  // Per-(role, credential) stash of in-progress answers, kept for the screen's
+  // lifetime so a misclick on a role chip doesn't destroy edits — switching
+  // back restores them. Only touched forms are stashed (a pristine form is
+  // reproduced exactly by reseeding); cleared when the survey changes.
+  const draftCache = new Map<
+    string,
+    { skipped: boolean; value: DraftValue }[]
+  >();
+  const draftKey = (r: Role | null, cred: Credential | null): string =>
+    `${r}:${cred ? credentialKey(cred) : ""}`;
+
   // (Re)seed drafts when the form's identity or its backing data changes:
-  //  - survey key / chosen role → a different prior response to pre-fill from
+  //  - survey key / role / credential → a different prior response to pre-fill
+  //    from (the credential matters: switching wallets mid-edit must not carry
+  //    wallet A's drafts under wallet B's credential)
   //  - definition()            → external-content enrichment swapping labels in
   //  - existing()              → a prior on-chain response that resolves *after*
   //    the first seed (e.g. once the wallet auto-reconnects)
-  // A change of survey or role makes the form pristine again; otherwise we only
-  // (re)seed while the user hasn't started editing.
+  // An identity change restores that identity's stashed edits or makes the form
+  // pristine again; otherwise we only (re)seed while the user hasn't started
+  // editing.
   createEffect(
     on(
-      () => [survey()?.key, role(), definition(), existing()] as const,
-      ([k, r], prev) => {
-        if (!prev || prev[0] !== k || prev[1] !== r) setTouched(false);
+      () =>
+        [
+          survey()?.key,
+          role(),
+          credential(),
+          definition(),
+          existing(),
+        ] as const,
+      ([k, r, cred], prev) => {
+        if (
+          prev &&
+          (prev[0] !== k || draftKey(prev[1], prev[2]) !== draftKey(r, cred))
+        ) {
+          if (prev[0] !== k) draftCache.clear();
+          else if (touched()) {
+            // Draft values are replaced immutably on edit, so copying the
+            // records detaches the stash from future store writes.
+            draftCache.set(
+              draftKey(prev[1], prev[2]),
+              drafts.map((d) => ({ skipped: d.skipped, value: d.value })),
+            );
+          }
+          const stashed = draftCache.get(draftKey(r, cred));
+          if (stashed) {
+            setTouched(true);
+            setDrafts(stashed.map((d) => ({ ...d })));
+            return;
+          }
+          setTouched(false);
+        }
         if (touched()) return;
         const def = definition();
         if (!def) {

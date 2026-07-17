@@ -99,11 +99,13 @@ the loop the widget leaves open — proving `proveCredentials` via `required_sig
 
 ## Props
 
-Object-valued props (everything but `locale`, `layout`, `cancelled`, `tipEpoch`)
-**must be set as DOM properties** (`el.definition = …`), never as HTML attributes.
-`solid-element` exposes each as a reactive prop with a hyphenated attribute alias,
-so the string/number/boolean ones (`locale`, `layout`, `tip-epoch`, `cancelled`)
-_may_ also be written as plain attributes.
+Object-valued props (everything but `locale`, `layout`, `cancelled`, `tipEpoch`,
+`initialRole`) **must be set as DOM properties** (`el.definition = …`), never as
+HTML attributes. `solid-element` exposes each as a reactive prop with a
+hyphenated attribute alias, so the string/number/boolean ones (`locale`,
+`layout`, `tip-epoch`, `initial-role`, `cancelled`) _may_ also be written as
+plain attributes. `cancelled` also works HTML boolean-attribute style — a bare
+`<tessera-respond cancelled>` means cancelled.
 
 | Prop              | Type                            | Req. | Default            | Notes                                                                                                              |
 | :---------------- | :------------------------------ | :--: | :----------------- | :----------------------------------------------------------------------------------------------------------------- |
@@ -118,7 +120,7 @@ _may_ also be written as plain attributes.
 | `messages`        | `DeepPartial<RespondMessages>`  |      | —                  | Deep-merged string overrides, or a whole unshipped language.                                                       |
 | `theme`           | `Record<string, string>`        |      | —                  | Design-token overrides, reflected as `--tessera-<key>` on the host — see [Theming](#theming--fonts).               |
 | `layout`          | `"one-per-screen" \| "list"`    |      | `"one-per-screen"` | Stepper (one question at a time) or all questions at once.                                                         |
-| `role`            | `Role`                          |      | —                  | Initial role when the responder is eligible in several. The user can still switch.                                 |
+| `initialRole`     | `Role`                          |      | —                  | Initial role when the responder is eligible in several. The user can still switch.                                 |
 
 ## Events
 
@@ -292,7 +294,7 @@ still locale-correct, only the prose falls back.
 ```ts
 el.locale = "fr"; // bundled
 el.locale = "de";
-el.messages = { submit: { send: "Absenden" } /* … */ }; // supply/override strings
+el.messages = { respond: { signAndSubmit: "Absenden" } /* … */ }; // supply/override strings
 ```
 
 ## Theming & fonts
@@ -348,6 +350,17 @@ two copies break reactivity. Under pnpm this usually happens automatically
 `resolve.dedupe`. The Tessera app does exactly this in
 [`frontend/app/vite.config.ts`](../../frontend/app/vite.config.ts). A script-tag
 host loading the self-contained artifact has no such concern — Solid is bundled in.
+
+## One copy per page
+
+Load the widget from a **single** source, once. `<tessera-respond>` is a global
+custom-element name, and a second copy of the package landing on the same page
+(the script-tag artifact _plus_ a bundler copy, or two different versions) does
+**not** error: the second registration swaps its component into the class the
+first copy defined, so new connections render the second copy's UI against the
+**first** copy's prop/attribute wiring. A prop that only the newer version
+declares is then silently non-reactive. If you mix consumption styles or
+versions, dedupe them to one before anything registers the element.
 
 ## Development
 

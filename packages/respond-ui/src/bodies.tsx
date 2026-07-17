@@ -7,10 +7,10 @@
  * class names from the injected map (`useClasses()`, identity by default).
  */
 
-import { For, Show, type Component } from "solid-js";
+import { For, Show, createMemo, type Component } from "solid-js";
 
 import type { Question } from "cip-179";
-import { optionCount, type DraftValue } from "@tessera/respond-core";
+import { initDraft, optionCount, type DraftValue } from "@tessera/respond-core";
 
 import { useI18n } from "./i18n-context";
 import { useClasses } from "./classes-context";
@@ -472,11 +472,28 @@ const CustomBody: Component<{
   );
 };
 
+/** The draft-value type each question type renders with (identity except `numericRange` → `numeric`). */
+const DRAFT_TYPE = {
+  singleChoice: "singleChoice",
+  multiSelect: "multiSelect",
+  ranking: "ranking",
+  numericRange: "numeric",
+  pointsAllocation: "pointsAllocation",
+  rating: "rating",
+  custom: "custom",
+} as const satisfies Record<Question["type"], DraftValue["type"]>;
+
 /**
  * Pick the body for the question's type, passing the draft value reactively.
- * Question type and draft-value type always match by construction, so the casts
- * are type-narrowing only (no runtime effect); value edits flow reactively with
- * no remount, so text/number inputs keep focus.
+ * Question type and draft-value type match by construction, so the casts are
+ * type-narrowing only (no runtime effect); value edits flow reactively with no
+ * remount, so text/number inputs keep focus.
+ *
+ * The one exception is a host contract violation: re-setting the definition
+ * with a different question *shape* while edited drafts survive (reseeding is
+ * gated on pristine forms). A stale draft of the wrong type would crash the
+ * body it's cast into, so the guard below renders from a fresh initial value
+ * instead — the next edit writes a matching draft back to the store.
  *
  * The switch itself runs once, at creation — `q` must stay the same question
  * for this component's lifetime (some bodies also capture constraints at
@@ -490,12 +507,17 @@ export const QuestionBody: Component<{
 }> = (props) => {
   type V<T extends DraftValue["type"]> = Extract<DraftValue, { type: T }>;
   type Q<T extends Question["type"]> = Extract<Question, { type: T }>;
+  const value = createMemo<DraftValue>(() =>
+    props.value.type === DRAFT_TYPE[props.q.type]
+      ? props.value
+      : initDraft(props.q).value,
+  );
   switch (props.q.type) {
     case "singleChoice":
       return (
         <SingleChoiceBody
           q={props.q as Q<"singleChoice">}
-          v={props.value as V<"singleChoice">}
+          v={value() as V<"singleChoice">}
           onChange={props.onChange}
         />
       );
@@ -503,7 +525,7 @@ export const QuestionBody: Component<{
       return (
         <MultiSelectBody
           q={props.q as Q<"multiSelect">}
-          v={props.value as V<"multiSelect">}
+          v={value() as V<"multiSelect">}
           onChange={props.onChange}
         />
       );
@@ -511,7 +533,7 @@ export const QuestionBody: Component<{
       return (
         <RankingBody
           q={props.q as Q<"ranking">}
-          v={props.value as V<"ranking">}
+          v={value() as V<"ranking">}
           onChange={props.onChange}
         />
       );
@@ -519,7 +541,7 @@ export const QuestionBody: Component<{
       return (
         <NumericBody
           q={props.q as Q<"numericRange">}
-          v={props.value as V<"numeric">}
+          v={value() as V<"numeric">}
           onChange={props.onChange}
         />
       );
@@ -527,7 +549,7 @@ export const QuestionBody: Component<{
       return (
         <PointsBody
           q={props.q as Q<"pointsAllocation">}
-          v={props.value as V<"pointsAllocation">}
+          v={value() as V<"pointsAllocation">}
           onChange={props.onChange}
         />
       );
@@ -535,7 +557,7 @@ export const QuestionBody: Component<{
       return (
         <RatingBody
           q={props.q as Q<"rating">}
-          v={props.value as V<"rating">}
+          v={value() as V<"rating">}
           onChange={props.onChange}
         />
       );
@@ -543,7 +565,7 @@ export const QuestionBody: Component<{
       return (
         <CustomBody
           q={props.q as Q<"custom">}
-          v={props.value as V<"custom">}
+          v={value() as V<"custom">}
           onChange={props.onChange}
         />
       );

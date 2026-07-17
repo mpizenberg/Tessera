@@ -37,7 +37,7 @@ import {
   type Question,
   type SurveyDefinition,
 } from "cip-179";
-import { refKey, surveyStatus } from "cip-179/domain";
+import { credentialKey, refKey, surveyStatus } from "cip-179/domain";
 import { isQuicknet, unixTimeForRound } from "cip-179/tlock";
 
 import {
@@ -127,15 +127,16 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     respondableRolesFor(props.definition, props.responder),
   );
 
-  // Role we respond as: honor the header's picked role if respondable here, else
-  // the host-provided initial `role` if respondable, else the first claimable.
+  // Role we respond as: honor the header's picked role if respondable here,
+  // else the host-provided `initialRole` if respondable, else the first
+  // claimable.
   const [roleOverride, setRoleOverride] = createSignal<Role | null>(null);
   const role = createMemo<Role | null>(() => {
     const rs = respondable();
     if (rs.length === 0) return null;
     const o = roleOverride();
     if (o !== null && rs.includes(o)) return o;
-    const pref = props.role;
+    const pref = props.initialRole;
     if (pref !== undefined && rs.includes(pref)) return pref;
     return rs[0]!;
   });
@@ -165,22 +166,55 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
   // changes never clobber in-progress input.
   const [touched, setTouched] = createSignal(false);
 
-  // (Re)seed drafts when the form's identity or backing data changes. A change
-  // of survey or role makes the form pristine again; otherwise we only (re)seed
-  // while the user hasn't started editing.
+  // Per-(role, credential) stash of in-progress answers, kept for the
+  // component's lifetime so a misclick on a role chip doesn't destroy edits —
+  // switching back restores them. Only touched forms are stashed (a pristine
+  // form is reproduced exactly by reseeding); cleared when the survey changes.
+  const draftCache = new Map<
+    string,
+    { skipped: boolean; value: DraftValue }[]
+  >();
+  const draftKey = (r: Role | null, cred: Credential | null): string =>
+    `${r}:${cred ? credentialKey(cred) : ""}`;
+
+  // (Re)seed drafts when the form's identity or backing data changes. Identity
+  // is (survey, role, credential) — the credential matters because a host may
+  // swap `responder` to a different wallet holding the same role, and wallet
+  // A's edits must never be submitted under wallet B's credential. An identity
+  // change restores that identity's stashed edits or makes the form pristine;
+  // otherwise we only (re)seed while the user hasn't started editing.
   createEffect(
     on(
       () =>
         [
           refKey(props.surveyRef),
           role(),
+          credential(),
           props.definition,
           existing(),
         ] as const,
-      ([k, r], prev) => {
-        if (!prev || prev[0] !== k || prev[1] !== r) {
-          setTouched(false);
+      ([k, r, cred], prev) => {
+        if (
+          prev &&
+          (prev[0] !== k || draftKey(prev[1], prev[2]) !== draftKey(r, cred))
+        ) {
+          if (prev[0] !== k) draftCache.clear();
+          else if (touched()) {
+            // Draft values are replaced immutably on edit, so copying the
+            // records detaches the stash from future store writes.
+            draftCache.set(
+              draftKey(prev[1], prev[2]),
+              drafts.map((d) => ({ skipped: d.skipped, value: d.value })),
+            );
+          }
           setStep(0);
+          const stashed = draftCache.get(draftKey(r, cred));
+          if (stashed) {
+            setTouched(true);
+            setDrafts(stashed.map((d) => ({ ...d })));
+            return;
+          }
+          setTouched(false);
         }
         if (touched()) return;
         const def = props.definition;
@@ -290,8 +324,8 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     setProblems([]);
 
     setSubmitting(true);
+    const sealed = sealedMode();
     try {
-      const sealed = sealedMode();
       const response = sealed
         ? buildSealedResponse(
             props.surveyRef,
@@ -336,8 +370,14 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
       dispatch(RESPOND_EVENTS.response, result);
     } catch (e) {
       // Sealing failed (e.g. the tlock chunk couldn't load) — surface it
-      // inline; the host owns everything after the emit.
-      setProblems([e instanceof Error ? e.message : String(e)]);
+      // inline through the catalog, with the raw message as detail; the host
+      // owns everything after the emit.
+      const detail = e instanceof Error ? e.message : String(e);
+      setProblems([
+        i18n().t(sealed ? "respond.sealFailed" : "respond.submitFailed", {
+          detail,
+        }),
+      ]);
     } finally {
       setSubmitting(false);
     }

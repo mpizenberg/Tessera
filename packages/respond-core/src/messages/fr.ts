@@ -115,6 +115,10 @@ const fr: RespondMessages = {
 
     // --- Submit problems list ---------------------------------------------
     problemsTitle: "Veuillez corriger avant d'envoyer",
+    sealFailed:
+      "Le chiffrement de vos réponses a échoué — souvent un incident réseau lors du chargement du module de chiffrement. Rien n'a été envoyé ; vérifiez votre connexion et réessayez. ({detail})",
+    submitFailed:
+      "La préparation de votre réponse a échoué de manière inattendue. Rien n'a été envoyé. ({detail})",
 
     // --- Option fallback label --------------------------------------------
     optionFallback: "Option {n}",

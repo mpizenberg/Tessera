@@ -130,6 +130,12 @@ const en = {
 
     // --- Submit problems list ---------------------------------------------
     problemsTitle: "Please fix before submitting",
+    /** {detail} is the underlying error message, shown untranslated. */
+    sealFailed:
+      "Encrypting your answers failed — often a network hiccup while fetching the encryption module. Nothing was submitted; check your connection and try again. ({detail})",
+    /** {detail} is the underlying error message, shown untranslated. */
+    submitFailed:
+      "Preparing your response failed unexpectedly. Nothing was submitted. ({detail})",
 
     // --- Option fallback label --------------------------------------------
     /** {n} is the 1-based option number. */

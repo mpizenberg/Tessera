@@ -36,13 +36,20 @@ function sharedSheet(): CSSStyleSheet | null {
  * Adopt the widget stylesheet into a shadow root. Uses the shared constructed
  * sheet when available (cheap — parsed once, shared by every instance), else
  * appends a `<style>` element as a fallback.
+ *
+ * Idempotent per root: component-register re-initializes the whole component
+ * when a host moves the element in the DOM, but the shadow root (and whatever
+ * it already adopted) survives — so guard against stacking duplicates.
  */
 export function adoptWidgetStyles(root: ShadowRoot): void {
   const sheet = sharedSheet();
   if (sheet && "adoptedStyleSheets" in root) {
-    root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
-  } else {
+    if (!root.adoptedStyleSheets.includes(sheet)) {
+      root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+    }
+  } else if (!root.querySelector("style[data-tessera-styles]")) {
     const style = document.createElement("style");
+    style.setAttribute("data-tessera-styles", "");
     style.textContent = cssText;
     root.appendChild(style);
   }

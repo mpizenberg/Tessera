@@ -46,7 +46,7 @@ const defaults: ElementProps = {
   messages: undefined,
   theme: undefined,
   layout: "one-per-screen",
-  role: undefined,
+  initialRole: undefined,
 };
 
 customElement<ElementProps>(
@@ -59,9 +59,17 @@ customElement<ElementProps>(
       props.surveyRef !== undefined &&
       props.responder !== undefined &&
       props.tipEpoch !== undefined;
+    // component-register parses a valueless attribute ("") to `undefined`, so
+    // idiomatic HTML `<tessera-respond cancelled>` would silently fail *open*.
+    // Normalize: when the prop is unset, attribute presence means cancelled.
+    const cancelled = () =>
+      props.cancelled ?? element.hasAttribute("cancelled");
     return (
       <Show when={ready()}>
-        <RespondRoot {...(props as unknown as TesseraRespondProps)} />
+        <RespondRoot
+          {...(props as unknown as TesseraRespondProps)}
+          cancelled={cancelled()}
+        />
       </Show>
     );
   },
