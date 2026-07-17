@@ -101,7 +101,10 @@ export interface RespondResult {
 export interface RespondChangeDetail {
   decided: number;
   total: number;
-  /** Every question decided, the survey is open, and a role is claimable. */
+  /**
+   * Every question decided (with ≥1 actually answered — an all-skipped form is
+   * spec-invalid), the survey is open, and a role is claimable.
+   */
   valid: boolean;
 }
 

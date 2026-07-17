@@ -218,6 +218,26 @@ export function collectAnswers(
   return out;
 }
 
+/**
+ * Does the draft set record at least one answer (some non-skipped, answerable
+ * question)? Submission must require it, on top of {@link decided}: an
+ * all-optional survey can be fully "decided" with every question skipped, yet a
+ * response with zero answer items is spec-invalid (CDDL
+ * `response_answers = [+ answer_item]`) — the encoder refuses it and every
+ * conformant reader would skip the whole carrying tx, so the responder would
+ * pay a fee for a response that exists nowhere. Guard-safe against a
+ * transiently-missing draft (returns false), like the progress gate.
+ */
+export function hasAnyAnswer(
+  questions: readonly Question[],
+  drafts: readonly Draft[],
+): boolean {
+  return questions.some((q, i) => {
+    const d = drafts[i];
+    return d !== undefined && buildAnswerItem(q, i, d) !== null;
+  });
+}
+
 /** Assemble a public response from collected drafts. */
 export function buildResponse(
   ref: SurveyRef,

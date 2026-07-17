@@ -40,6 +40,7 @@ import {
   collectAnswers,
   decided,
   findExistingResponse,
+  hasAnyAnswer,
   initDraft,
   optionCount,
   prefillDrafts,
@@ -195,6 +196,12 @@ export const Respond: Component = () => {
     if (!def) return 0;
     return def.questions.filter((q, i) => drafts[i] && decided(q, drafts[i]!))
       .length;
+  });
+  // Every-question-decided still allows an all-skipped (all-optional) form; a
+  // response needs ≥1 recorded answer or it is spec-invalid and drops at scan.
+  const answered = createMemo(() => {
+    const def = definition();
+    return def ? hasAnyAnswer(def.questions, drafts) : false;
   });
 
   const sealedMode = createMemo(() => {
@@ -634,6 +641,7 @@ export const Respond: Component = () => {
         <SubmitBar
           decided={decidedCount()}
           total={total()}
+          answered={answered()}
           replacing={existing() !== undefined}
           submitting={submitting()}
           mismatch={mismatch()}
@@ -1529,6 +1537,8 @@ const CustomBody: Component<{
 const SubmitBar: Component<{
   decided: number;
   total: number;
+  /** At least one question carries a recorded answer (not all-skipped). */
+  answered: boolean;
   replacing: boolean;
   submitting: boolean;
   mismatch: boolean;
@@ -1542,6 +1552,7 @@ const SubmitBar: Component<{
   const ready = () =>
     props.decided >= props.total &&
     props.total > 0 &&
+    props.answered &&
     !props.mismatch &&
     !props.blocked;
   return (

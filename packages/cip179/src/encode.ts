@@ -238,10 +238,16 @@ export const encodeAnswerItem = (a: AnswerItem): Metadatum => {
   }
 };
 
-const encodeResponseAnswers = (ans: ResponseAnswers): Metadatum =>
-  ans.type === "public"
-    ? ans.answers.map(encodeAnswerItem)
-    : encodeChunkedBytes(ans.ciphertext);
+const encodeResponseAnswers = (ans: ResponseAnswers): Metadatum => {
+  if (ans.type === "sealed") return encodeChunkedBytes(ans.ciphertext);
+  // CDDL: response_answers = [+ answer_item] — never empty. The decoder rejects
+  // `[]` and every conformant reader skips a tx carrying it, so refuse to emit
+  // one at all (symmetric with the decoder) rather than sign a response that
+  // exists nowhere on-chain.
+  if (ans.answers.length === 0)
+    throw new Error("response answers must be non-empty");
+  return ans.answers.map(encodeAnswerItem);
+};
 
 // ----------------------------------------------------------------------------
 // Top-level records

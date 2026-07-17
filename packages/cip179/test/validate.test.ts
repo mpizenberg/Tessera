@@ -57,6 +57,22 @@ describe("structured validation problems", () => {
     expect(validateResponse(singleChoiceDef(), responseWith(0))).toEqual([]);
   });
 
+  it("flags an empty public answers array (finding 9)", () => {
+    // The decoder rejects `[]`, but the responder UIs and a revealed sealed
+    // plaintext build a public answer set without it — so the validator is the
+    // backstop. Use an *optional* question to isolate `answersEmpty` (a required
+    // one would also add `requiredNotAnswered`).
+    const def = singleChoiceDef();
+    (def.questions[0] as { required: boolean }).required = false;
+    const empty: SurveyResponse = {
+      ...responseWith(0),
+      answers: { type: "public", answers: [] },
+    };
+    expect(validateResponse(def, empty)).toEqual([
+      { code: "response.answersEmpty" },
+    ]);
+  });
+
   it("emits codes drawn only from the frozen code set", () => {
     const def = singleChoiceDef();
     // Ineligible role + out-of-range option → two distinct problems.

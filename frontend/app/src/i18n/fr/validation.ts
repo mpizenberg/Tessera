@@ -49,6 +49,7 @@ const validation: Messages = {
     publicRequired:
       "un sondage public requiert des réponses publiques (en clair)",
     sealedCiphertextEmpty: "le texte chiffré de la réponse scellée est vide",
+    answersEmpty: "répondez à au moins une question avant de soumettre",
     duplicateAnswer:
       "{where} : réponse en double pour la question {questionIndex}",
     questionIndexOutOfRange:

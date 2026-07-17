@@ -47,6 +47,7 @@ const validation = {
     sealedRequired: "sealed survey requires a sealed (ciphertext) response",
     publicRequired: "public survey requires public (plaintext) answers",
     sealedCiphertextEmpty: "sealed response ciphertext is empty",
+    answersEmpty: "answer at least one question before submitting",
     duplicateAnswer: "{where}: duplicate answer for question {questionIndex}",
     questionIndexOutOfRange:
       "{where}: question index {questionIndex} out of range",

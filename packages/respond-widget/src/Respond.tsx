@@ -48,6 +48,7 @@ import {
   credentialForRole,
   decided,
   findExistingResponse,
+  hasAnyAnswer,
   initDraft,
   prefillDrafts,
   renderProblem,
@@ -205,6 +206,11 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
         (q, i) => drafts[i] && decided(q, drafts[i]!),
       ).length,
   );
+  // Every-question-decided still allows an all-skipped (all-optional) form; a
+  // response needs ≥1 recorded answer or it is spec-invalid and drops at scan.
+  const answered = createMemo(() =>
+    hasAnyAnswer(props.definition.questions, drafts),
+  );
 
   const sealedMode = createMemo(() => {
     const mode = props.definition.submissionMode;
@@ -240,13 +246,15 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     setDrafts(i, "skipped", skipped);
   };
 
-  // Ready to submit: open, eligible, unblocked, and every question decided.
+  // Ready to submit: open, eligible, unblocked, every question decided, and at
+  // least one question actually answered (an all-skipped form is spec-invalid).
   const valid = () =>
     open() &&
     role() !== null &&
     !sealedUnsupported() &&
     total() > 0 &&
-    decidedCount() >= total();
+    decidedCount() >= total() &&
+    answered();
 
   // Progress, for host-driven submit buttons (fires on every edit).
   createEffect(() => {
@@ -409,6 +417,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
             <SubmitBar
               decided={decidedCount()}
               total={total()}
+              answered={answered()}
               replacing={existing() !== undefined}
               submitting={submitting()}
               blocked={sealedUnsupported()}
@@ -690,6 +699,8 @@ const ProblemList: Component<{ problems: string[] }> = (props) => {
 const SubmitBar: Component<{
   decided: number;
   total: number;
+  /** At least one question carries a recorded answer (not all-skipped). */
+  answered: boolean;
   replacing: boolean;
   submitting: boolean;
   /** Submission is impossible (e.g. a sealed survey on an unsupported chain). */
@@ -699,7 +710,10 @@ const SubmitBar: Component<{
 }> = (props) => {
   const i18n = useI18n();
   const ready = () =>
-    props.decided >= props.total && props.total > 0 && !props.blocked;
+    props.decided >= props.total &&
+    props.total > 0 &&
+    props.answered &&
+    !props.blocked;
   const idleText = () =>
     props.sealed
       ? i18n.t("respond.encryptAndSubmit")

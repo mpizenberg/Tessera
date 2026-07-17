@@ -16,6 +16,7 @@ import { Role, type AnswerItem, type SurveyResponse } from "../index.js";
 
 import { evolutionCodec } from "../evolution/index.js";
 import type { RandomnessBeacon } from "./client.js";
+import { encryptToRound } from "./client.js";
 import { sealAnswers, revealWithBeacon } from "./seal.js";
 import beaconFixture from "./quicknet-beacon-1000000.json" with { type: "json" };
 
@@ -84,6 +85,28 @@ describe("sealAnswers → revealWithBeacon", () => {
     );
     expect(a).toBeNull();
     expect(b!.answers).toEqual({ type: "public", answers: ANSWERS });
+  });
+
+  it("refuses to seal an empty answer set (finding 8)", async () => {
+    // CDDL forbids an empty answers array; sealing one would produce a plaintext
+    // that reveals to zero answers and (pre-fix) counted as a participant.
+    await expect(sealAnswers(evolutionCodec, [], ROUND, 0)).rejects.toThrow();
+  });
+
+  it("reveals an empty-array plaintext as null, never a phantom participant (finding 8)", async () => {
+    // A ciphertext whose plaintext is the CBOR empty array `80`, built by
+    // encrypting directly (sealAnswers now refuses it) — the spec-invalid
+    // sealed ballot the fix targets. Mirroring the public decoder, an empty
+    // decoded array is a decode failure → null → excluded (not counted as a
+    // zero-answer participant).
+    const emptyCbor = evolutionCodec.metadatumToCbor([]);
+    const ciphertext = await encryptToRound(emptyCbor, ROUND);
+    const [revealed] = await revealWithBeacon(
+      evolutionCodec,
+      [sealedResponse(ciphertext)],
+      BEACON,
+    );
+    expect(revealed).toBeNull();
   });
 
   it("passes a non-sealed response through unchanged", async () => {

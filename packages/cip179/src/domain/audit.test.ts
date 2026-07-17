@@ -28,8 +28,11 @@ const keyCred = (b: number) => ({
 });
 const REF = { txId: Uint8Array.of(9), index: 0 };
 
-/** Base definition: end_epoch 9, roles 0–3 eligible, no questions (so the
- *  empty-answer responses the deadline/dedup cases use validate cleanly). */
+/** Base definition: end_epoch 9, roles 0–3 eligible, one (optional)
+ *  single-choice question of two options. Every countable response must now
+ *  carry at least one answer (an empty answers array is invalid — finding 9),
+ *  so the deadline/dedup cases answer `sc(0)`; the same question also exercises
+ *  out-of-constraint answers. */
 const DEF: SurveyDefinition = {
   specVersion: 5,
   owner: keyCred(0),
@@ -38,13 +41,6 @@ const DEF: SurveyDefinition = {
   eligibleRoles: [0, 1, 2, 3] as Role[],
   endEpoch: 9,
   submissionMode: { type: "public" },
-  questions: [],
-};
-
-/** Same window, but with one (optional) single-choice question of two options —
- *  used to exercise out-of-constraint answers. */
-const DEF_SC: SurveyDefinition = {
-  ...DEF,
   questions: [
     {
       type: "singleChoice",
@@ -84,7 +80,7 @@ function recWith(
 }
 
 const rec = (txHash: string, slot: number, role: Role, cred: number) =>
-  recWith(txHash, slot, role, cred, []);
+  recWith(txHash, slot, role, cred, [sc(0)]);
 
 describe("epochOfSlot", () => {
   it("places slots into the right epoch relative to the tip", () => {
@@ -99,10 +95,10 @@ describe("epochOfSlot", () => {
 describe("responseIsCountable", () => {
   it("accepts an in-constraint answer and rejects an out-of-range one", () => {
     expect(
-      responseIsCountable(DEF_SC, recWith("", 0, 0, 1, [sc(0)]).response),
+      responseIsCountable(DEF, recWith("", 0, 0, 1, [sc(0)]).response),
     ).toBe(true);
     expect(
-      responseIsCountable(DEF_SC, recWith("", 0, 0, 1, [sc(5)]).response),
+      responseIsCountable(DEF, recWith("", 0, 0, 1, [sc(5)]).response),
     ).toBe(false);
   });
 
@@ -135,7 +131,7 @@ describe("auditRevealedResponses", () => {
       recWith("late", 950, 0, 1, [sc(1)]),
     ];
     const revealed = [pub(0, 1, [sc(0)]), pub(0, 1, [sc(1)])];
-    const r = auditRevealedResponses(inWindow, revealed, DEF_SC);
+    const r = auditRevealedResponses(inWindow, revealed, DEF);
     expect(r.counted.map((x) => x.txHash)).toEqual(["late"]);
     expect(r.superseded.map((x) => x.txHash)).toEqual(["early"]);
     expect(r.invalid).toEqual([]);
@@ -151,7 +147,7 @@ describe("auditRevealedResponses", () => {
       recWith("laterBad", 950, 0, 1, [sc(0)]),
     ];
     const revealed = [pub(0, 1, [sc(0)]), pub(0, 1, [sc(9)])]; // 9 is out of range
-    const r = auditRevealedResponses(inWindow, revealed, DEF_SC);
+    const r = auditRevealedResponses(inWindow, revealed, DEF);
     expect(r.counted.map((x) => x.txHash)).toEqual(["early"]);
     expect(r.superseded).toEqual([]);
     expect(r.invalid.map((x) => x.txHash)).toEqual(["laterBad"]);
@@ -164,7 +160,7 @@ describe("auditRevealedResponses", () => {
       recWith("laterFail", 950, 0, 1, [sc(0)]),
     ];
     const revealed = [pub(0, 1, [sc(0)]), null]; // later decrypt/decode failed
-    const r = auditRevealedResponses(inWindow, revealed, DEF_SC);
+    const r = auditRevealedResponses(inWindow, revealed, DEF);
     expect(r.counted.map((x) => x.txHash)).toEqual(["early"]);
     expect(r.superseded).toEqual([]);
     expect(r.failed.map((x) => x.txHash)).toEqual(["laterFail"]);
@@ -173,7 +169,7 @@ describe("auditRevealedResponses", () => {
 
   it("carries the decrypted answers onto the counted record", () => {
     const inWindow = [recWith("a", 940, 0, 1, [])];
-    const r = auditRevealedResponses(inWindow, [pub(0, 1, [sc(1)])], DEF_SC);
+    const r = auditRevealedResponses(inWindow, [pub(0, 1, [sc(1)])], DEF);
     expect(r.counted[0]!.response.answers).toEqual({
       type: "public",
       answers: [sc(1)],
@@ -233,7 +229,7 @@ describe("auditResponses", () => {
       recWith("ok", 950, 0, 1, [sc(0)]), // valid option
       recWith("bad", 960, 1, 2, [sc(5)]), // optionIndex out of range
     ];
-    const audit = auditResponses(raw, DEF_SC);
+    const audit = auditResponses(raw, DEF);
     expect(audit.counted.map((r) => r.txHash)).toEqual(["ok"]);
     expect(audit.excludedRecords).toHaveLength(1);
     expect(audit.excludedRecords[0]!.key).toBe("invalid");
@@ -247,7 +243,7 @@ describe("auditResponses", () => {
       recWith("early", 950, 0, 1, [sc(0)]), // valid
       recWith("laterBad", 960, 0, 1, [sc(9)]), // invalid, same identity
     ];
-    const audit = auditResponses(raw, DEF_SC);
+    const audit = auditResponses(raw, DEF);
     expect(audit.counted.map((r) => r.txHash)).toEqual(["early"]);
     expect(audit.excludedRecords.map((e) => e.key)).toEqual(["invalid"]);
   });
@@ -259,7 +255,7 @@ describe("auditResponses", () => {
       recWith("bad", 955, 3, 9, [sc(7)]), // invalid answer
       recWith("late", 1050, 2, 3, [sc(0)]), // after deadline
     ];
-    const audit = auditResponses(raw, DEF_SC);
+    const audit = auditResponses(raw, DEF);
     expect(audit.counted.map((r) => r.txHash)).toEqual(["b"]);
     // Compared order-independently: after-deadline/invalid are emitted in raw
     // order during the scan, superseded after dedup — what matters is each

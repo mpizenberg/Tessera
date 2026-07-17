@@ -12,6 +12,7 @@ import {
   buildResponse,
   collectAnswers,
   decided,
+  hasAnyAnswer,
   initDraft,
   prefillDrafts,
   type Draft,
@@ -85,6 +86,33 @@ describe("collectAnswers + buildResponse", () => {
       },
     });
     expect("rationale" in response).toBe(false);
+  });
+});
+
+describe("hasAnyAnswer", () => {
+  // Two optional questions: an all-skipped form is fully `decided()` yet records
+  // nothing — the gap the submit gate must close (finding 9).
+  const optionals: Question[] = [{ ...single, required: false }, numeric];
+
+  it("is false when every question is skipped (all-optional form)", () => {
+    const drafts: Draft[] = optionals.map((q) => ({
+      ...initDraft(q),
+      skipped: true,
+    }));
+    expect(drafts.every((d, i) => decided(optionals[i]!, d))).toBe(true);
+    expect(hasAnyAnswer(optionals, drafts)).toBe(false);
+  });
+
+  it("is true once one question carries an answer", () => {
+    const drafts: Draft[] = [
+      { skipped: false, value: { type: "singleChoice", optionIndex: 0 } },
+      { skipped: true, value: { type: "numeric", value: 0n } },
+    ];
+    expect(hasAnyAnswer(optionals, drafts)).toBe(true);
+  });
+
+  it("is guard-safe against a transiently-missing draft", () => {
+    expect(hasAnyAnswer(optionals, [])).toBe(false);
   });
 });
 

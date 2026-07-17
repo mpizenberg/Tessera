@@ -83,6 +83,7 @@ export const VALIDATION_PROBLEM_CODES = [
   "response.sealedRequired",
   "response.publicRequired",
   "response.sealedCiphertextEmpty",
+  "response.answersEmpty",
   "response.duplicateAnswer",
   "response.questionIndexOutOfRange",
   "response.requiredNotAnswered",
@@ -538,6 +539,15 @@ export const validateResponse = (
   }
 
   const answers = response.answers.answers;
+  // CDDL: response_answers = [+ answer_item] — a public response MUST carry at
+  // least one answer. The decoder already rejects an empty array (decode.ts),
+  // so this never fires for an on-chain public response; it guards the two
+  // paths that build a public answer set without going through the decoder —
+  // the responder UIs before submit, and a revealed sealed plaintext
+  // (seal.ts) whose empty array would otherwise count as a phantom participant.
+  if (answers.length === 0) {
+    out.push(problem("response.answersEmpty"));
+  }
   const answered = new Set<number>();
   answers.forEach((a, i) => {
     const where = `answers[${i}]`;
@@ -625,6 +635,8 @@ const PROBLEM_MESSAGES_EN: Record<ValidationProblemCode, string> = {
   "response.publicRequired":
     "public survey requires public (plaintext) answers",
   "response.sealedCiphertextEmpty": "sealed response ciphertext is empty",
+  "response.answersEmpty":
+    "a public response must answer at least one question",
   "response.duplicateAnswer":
     "{where}: duplicate answer for question {questionIndex}",
   "response.questionIndexOutOfRange":

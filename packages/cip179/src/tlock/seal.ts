@@ -44,6 +44,10 @@ export async function sealAnswers(
   round: number,
   paddingSize: number,
 ): Promise<Uint8Array> {
+  // CDDL: response_answers = [+ answer_item] — never empty. A sealed empty
+  // plaintext would reveal to zero answers and (pre-fix) count as a phantom
+  // participant; refuse to seal one, mirroring the public encoder.
+  if (answers.length === 0) throw new Error("cannot seal an empty answer set");
   const metadatum: Metadatum = answers.map(encodeAnswerItem);
   const plaintext = padTo(codec.metadatumToCbor(metadatum), paddingSize);
   return encryptToRound(plaintext, round);
@@ -77,6 +81,10 @@ export async function revealWithBeacon(
       const plaintext = await decryptWithBeacon(r.answers.ciphertext, beacon);
       const m = codec.cborToMetadatum(plaintext);
       if (!Array.isArray(m)) throw new Error("decrypted payload is not a list");
+      // CDDL: response_answers = [+ answer_item]. An empty array is not a valid
+      // response — mirror the public decoder (decode.ts) and treat it as a
+      // decode failure (→ null → `failed`), never a zero-answer participant.
+      if (m.length === 0) throw new Error("decrypted answers array is empty");
       const answers: AnswerItem[] = m.map((item, i) =>
         decodeAnswerItem(item, `answer[${i}]`),
       );

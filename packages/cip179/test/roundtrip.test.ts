@@ -158,6 +158,18 @@ describe("response round-trip", () => {
   it("survives encode/decode", () => {
     expect(roundtripPayload(payload)).toEqual(payload);
   });
+
+  it("refuses to encode an empty public answers array (finding 9)", () => {
+    // Symmetric with the decoder, which rejects `[]`: never sign a response the
+    // whole ecosystem (including Tessera's own scanner) would drop at read.
+    const empty: SurveyResponse = {
+      ...response,
+      answers: { type: "public", answers: [] },
+    };
+    expect(() =>
+      encodePayload({ type: "responses", responses: [empty] }),
+    ).toThrow();
+  });
 });
 
 describe("cancellation round-trip", () => {

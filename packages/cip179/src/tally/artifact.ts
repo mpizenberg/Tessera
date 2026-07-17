@@ -61,7 +61,15 @@ export const RULESET_DESCRIPTOR = {
   // for every option). `ratingScaleInfo` no longer participates in the hashed
   // body at all. Pure representation change — no counted value differs — but the
   // schema differs, so v6 hashes are incomparable with v5.
-  rulesetVersion: 6,
+  // v7: an empty answers array is no longer a valid response (CDDL
+  // `response_answers = [+ answer_item]`). The public path already couldn't
+  // carry one (the decoder rejects `[]`), but a *sealed* response could reveal
+  // to a zero-answer plaintext and was counted as a participant; the reveal now
+  // treats an empty decoded array as a decode failure and the validity rule
+  // rejects it, so such a ballot is excluded. Only sealed surveys with such a
+  // ballot change count, but the counted set can differ, so v7 hashes are
+  // incomparable with v6.
+  rulesetVersion: 7,
   cip179SpecVersion: 5,
   /** Roles artifacts cover: 0 DRep, 3 Stakeholder, 4 Keyholder (SPO/CC deferred). */
   coveredRoles: [0, 3, 4],
@@ -73,12 +81,12 @@ export const RULESET_DESCRIPTOR = {
   },
   rules: [
     "window: a response is countable iff its transaction's epoch_no <= the survey's end_epoch (inclusive)",
-    "validity: a response must pass full CIP-179 codec validation against the on-chain definition (eligible role, in-constraint answers including require_all rating coverage, required questions answered)",
+    "validity: a response must pass full CIP-179 codec validation against the on-chain definition (eligible role, at least one answer, in-constraint answers including require_all rating coverage, required questions answered)",
     "credential-proof: mechanism A (credential key in required_signers, or its native script witnessed and satisfied) or mechanism B (a voting_procedures vote in the response transaction by the same credential on any governance action linked to the survey, with the voter tag's role equal to the claimed role — sufficient on its own); a response with no qualifying vote falls back to mechanism A (a non-qualifying vote never invalidates); mechanism B applies only to governance-linked surveys, and votability needs no separate check — the ledger only accepts votes on actions still in the proposal set",
     "dedup: at most one counted response per (survey, role, credential) — the latest in chain order wins, ordered by (slot, tx_block_index, response_index)",
     "membership+weight: role membership and weights are snapshotted at the survey's end_epoch; a credential registered at end_epoch but without stake counts with weight 0; unregistered credentials are excluded",
     "cancellation: a survey is cancelled iff a cancelling transaction at epoch_no <= end_epoch proves the definition's owner credential via mechanism A; the earliest such transaction in chain order (slot, then tx hash) is the one recorded; a cancelled survey's artifact carries no per-role tallies",
-    "sealed-reveal: for a sealed survey, decrypt every in-window (rule 1), structurally-valid (rule 2), credential-proven (rule 3) response with the definition-pinned round's BLS-verified drand beacon, then decode the plaintext as the CBOR answers array (trailing zero padding to padding_size is ignored) and re-validate those answers against the definition; a response that fails to decrypt, decode, or re-validate is excluded",
+    "sealed-reveal: for a sealed survey, decrypt every in-window (rule 1), structurally-valid (rule 2), credential-proven (rule 3) response with the definition-pinned round's BLS-verified drand beacon, then decode the plaintext as the CBOR answers array (trailing zero padding to padding_size is ignored; an empty array is a decode failure) and re-validate those answers against the definition; a response that fails to decrypt, decode, or re-validate is excluded",
     "sealed-dedup: latest-in-chain dedup (rule 4) runs only over sealed responses whose decrypted answers re-validated; undecryptable/invalid responses are excluded and never supersede an earlier valid one; excluded responses are not committed to the artifact",
     "sealed-artifact: a sealed survey's tally carries sealed=true (cancellations included); each counted responder commits its revealed answers in JSON-safe wire form (bytes→hex, bigint→decimal string, Map→tagged pairs); only drand quicknet (chain hash 52db9ba7...c84e971) is supported — a non-quicknet sealed survey gets no artifact",
   ],

@@ -62,8 +62,22 @@ const DEF: SurveyDefinition = {
   eligibleRoles: [0, 3] as Role[],
   endEpoch: 1345,
   submissionMode: { type: "public" },
-  questions: [],
+  // One optional question so a well-formed response carries a valid answer; an
+  // empty answers array is no longer well-formed (finding 9).
+  questions: [
+    {
+      type: "singleChoice",
+      prompt: "",
+      options: { type: "options", labels: ["a", "b"] },
+    },
+  ],
 };
+
+const answer = {
+  type: "singleChoice",
+  questionIndex: 0,
+  optionIndex: 0,
+} as const;
 
 const survey: SurveyRecord = {
   txHash: SURVEY_TX,
@@ -89,7 +103,7 @@ function response(
       surveyRef: survey.ref,
       role,
       credential: keyCred(cred),
-      answers: { type: "public", answers: [] },
+      answers: { type: "public", answers: [answer] },
     },
   };
 }
@@ -431,7 +445,7 @@ describe("validateNewResponses", () => {
         surveyRef: survey.ref,
         role: Role.DRep,
         credential: scriptCred,
-        answers: { type: "public", answers: [] },
+        answers: { type: "public", answers: [answer] },
       },
     };
     await validateNewResponses(store, records(scriptResp), [], source);
