@@ -415,7 +415,7 @@ describe("verifyArtifact", () => {
     expect(bad.match).toBe(false);
   });
 
-  it("falls back to the artifact's total (with a note) when unfetchable", async () => {
+  it("flags a total taken from the artifact itself as unverified (finding 31)", async () => {
     const flakyWeights: TallyInputSource = {
       ...weights,
       async stakeholderTotal() {
@@ -424,7 +424,30 @@ describe("verifyArtifact", () => {
     };
     const result = await verifyArtifact(inputs({ weights: flakyWeights }));
     expect(result.match).toBe(true); // everything else re-verified
+    // ...but the electorate total was NOT independently confirmed: the flag lets
+    // the CLI downgrade this to exit 5 rather than a clean MATCH, so a backend
+    // can't inflate the denominator and pass while the total endpoint is down.
+    expect(result.unverifiedTotals).toBe(true);
     expect(result.notes.join("\n")).toContain("not independently re-fetchable");
+  });
+
+  it("a clean re-fetch of every total leaves unverifiedTotals false", async () => {
+    const result = await verifyArtifact(inputs());
+    expect(result.match).toBe(true);
+    expect(result.unverifiedTotals).toBe(false);
+  });
+
+  it("is INDETERMINATE when a counted response has no tx_block_index (finding 16)", async () => {
+    // A proven, in-window response whose tx Koios /tx_info didn't resolve: the
+    // dedup order can't be reproduced, so — matching the emitter, which POSTPONES
+    // finalization here — the verdict is INDETERMINATE (retry), never a MATCH or
+    // a false MISMATCH.
+    const result = await verifyArtifact(
+      inputs({ blockIndices: new Map([[R_A.txHash, 0]]) }), // R_B index missing
+    );
+    expect(result.indeterminate).toBe(true);
+    expect(result.match).toBe(false);
+    expect(result.notes.join("\n")).toContain("no tx_block_index");
   });
 
   it("names a governance link-set divergence without forcing a mismatch (finding 6)", async () => {
@@ -728,6 +751,10 @@ describe("verifyArtifact — Keyholder role", () => {
         proofs: khProofs,
         weights: noWeights,
         artifact: khArtifact,
+        blockIndices: new Map([
+          [K_A.txHash, 0],
+          [K_B.txHash, 1],
+        ]),
       }),
     );
     // No total-fallback note either: a null total is the rule, not a caveat.
@@ -760,6 +787,10 @@ describe("verifyArtifact — Keyholder role", () => {
         proofs: khProofs,
         weights: noWeights,
         artifact: tampered,
+        blockIndices: new Map([
+          [K_A.txHash, 0],
+          [K_B.txHash, 1],
+        ]),
       }),
     );
     expect(result.match).toBe(false);
@@ -844,6 +875,7 @@ describe("verifyArtifact — mechanism B (governance vote binding)", () => {
       weights: drepSource,
       artifact: drepArtifact,
       linkedActionIds: [ACTION],
+      blockIndices: new Map([[D_A.txHash, 0]]),
       ...overrides,
     });
 

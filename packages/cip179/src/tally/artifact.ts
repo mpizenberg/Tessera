@@ -15,13 +15,14 @@
  * compare equal.
  */
 
-import type { AnswerItem } from "../index.js";
+import type { AnswerItem, SurveyDefinition } from "../index.js";
 
 import { blake2b256Hex, canonicalJson } from "./canonical.js";
 import { fromJsonSafe, toJsonSafe } from "./wire.js";
-import type {
-  WeightedQuestionTally,
-  WeightedResponder,
+import {
+  weightedTallySurvey,
+  type WeightedQuestionTally,
+  type WeightedResponder,
 } from "./weightedTally.js";
 
 /**
@@ -367,6 +368,89 @@ export function toArtifactResponders(
     .sort((a, b) =>
       a.credential < b.credential ? -1 : a.credential > b.credential ? 1 : 0,
     );
+}
+
+/**
+ * The ruleset-pinned identity every tally body carries, independent of any
+ * counts: the network, the survey coordinate, and whether answers were sealed.
+ * `rulesetHash` is added by {@link baseTallyBody} so every variant commits to the
+ * same rules.
+ */
+export interface TallyBodyIdentity {
+  readonly network: string;
+  readonly survey: TallyBody["survey"];
+  readonly sealed: boolean;
+}
+
+/** The base shape shared by every body variant (weighted, cancelled, empty). */
+function baseTallyBody(
+  id: TallyBodyIdentity,
+): Pick<TallyBody, "rulesetHash" | "network" | "survey" | "sealed"> {
+  return {
+    rulesetHash: rulesetHash(),
+    network: id.network,
+    survey: id.survey,
+    sealed: id.sealed,
+  };
+}
+
+/**
+ * A body with no per-role tally: a survey that is untalliable (spec-invalid
+ * definition), on an unsupported sealed chain, or short-circuited indeterminate.
+ */
+export function emptyTallyBody(id: TallyBodyIdentity): TallyBody {
+  return { ...baseTallyBody(id), perRole: [] };
+}
+
+/** A cancelled survey's body: the winning cancellation marker, no per-role tally. */
+export function cancelledTallyBody(
+  id: TallyBodyIdentity,
+  cancelled: NonNullable<TallyBody["cancelled"]>,
+): TallyBody {
+  return { ...baseTallyBody(id), cancelled, perRole: [] };
+}
+
+/**
+ * One covered role's contribution to a weighted tally: its already
+ * §6.1-membership-filtered weighted responders and its electorate `total`. The
+ * membership filter and weight/total sourcing are inherently data-source-specific
+ * (the emitter reads its frozen snapshot rows; the verifier re-fetches from
+ * Koios), so they stay on each side; only the *result* flows through
+ * {@link assembleTallyBody}.
+ */
+export interface RoleTally {
+  readonly role: number;
+  readonly responders: readonly WeightedResponder[];
+  readonly total: string | null;
+}
+
+/**
+ * Assemble the full weighted tally body from per-role inputs. This is the ONE
+ * place the emitter and the verifier share role ordering, the per-role
+ * artifact-question / responder shaping, and the base body — so the two
+ * implementations cannot drift into a false MISMATCH (finding 29). Both already
+ * shared `weightedTallySurvey` / `toArtifactResponders` / `toArtifactQuestions`;
+ * this folds the surrounding glue (role sort + push shape + base body) in too.
+ */
+export function assembleTallyBody(
+  definition: SurveyDefinition,
+  id: TallyBodyIdentity,
+  roles: readonly RoleTally[],
+): TallyBody {
+  const perRole: ArtifactRoleTally[] = [...roles]
+    .sort((a, b) => a.role - b.role)
+    .map(({ role, responders, total }) => ({
+      role,
+      total,
+      responders: toArtifactResponders(
+        responders,
+        id.sealed ? { revealedAnswers: true } : undefined,
+      ),
+      questions: toArtifactQuestions(
+        weightedTallySurvey(definition, responders),
+      ),
+    }));
+  return { ...baseTallyBody(id), perRole };
 }
 
 /**

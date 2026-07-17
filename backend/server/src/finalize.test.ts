@@ -14,9 +14,11 @@ import {
   type Cip179Records,
   type GovLink,
   type ResponseRecord,
+  type SurveyBundle,
   type SurveyRecord,
   type TxProof,
 } from "cip-179/domain";
+import { verifyArtifact } from "@tessera/verifier";
 import {
   artifactHash,
   responderAnswers,
@@ -595,6 +597,87 @@ describe("finalizeClosedSurveys", () => {
       return store.artifacts.get(SURVEY_KEY)!.artifactHash;
     };
     expect(await make()).toBe(await make());
+  });
+
+  it("emits the same artifact hash regardless of input record order (finding 30)", async () => {
+    const run = async (
+      responses: ResponseRecord[],
+      rows: ValidatedResponseRow[],
+    ) => {
+      const store = memBackendStore();
+      await seed(store, rows);
+      await finalizeClosedSurveys(
+        CONFIG,
+        store,
+        fakeInputs({
+          [KEY_A]: { weight: 100n, registered: true },
+          [KEY_B]: { weight: 7n, registered: true },
+        }),
+        noProofs,
+        records(survey(), responses),
+        TIP,
+      );
+      return store.artifacts.get(SURVEY_KEY)!.artifactHash;
+    };
+    const forward = await run([rA, rB], [validatedRow(rA), validatedRow(rB)]);
+    const reversed = await run([rB, rA], [validatedRow(rB), validatedRow(rA)]);
+    expect(reversed).toBe(forward);
+  });
+
+  it("emits an artifact the independent verifier reproduces (cross-seam, finding 30)", async () => {
+    const store = memBackendStore();
+    await seed(store, [validatedRow(rA), validatedRow(rB)]);
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      fakeInputs({
+        [KEY_A]: { weight: 100n, registered: true },
+        [KEY_B]: { weight: 7n, registered: true },
+      }),
+      noProofs,
+      records(survey(), [rA, rB]),
+      TIP,
+    );
+    const artifact = JSON.parse(
+      store.artifacts.get(SURVEY_KEY)!.artifact,
+    ) as TallyArtifact;
+
+    // Feed the emitter's own artifact into the INDEPENDENT verifier, which
+    // re-derives the counted set and re-fetches weights/totals through a
+    // distinct code path. A MATCH proves the emitter↔verifier seam holds — not
+    // just the shared `assembleTallyBody` (a bug there would cancel out) but the
+    // surrounding glue each side implements separately (finding 30).
+    const proofOf = (hex: string): TxProof => ({
+      requiredSigners: [hex],
+      nativeScripts: [],
+      votes: [],
+    });
+    const result = await verifyArtifact({
+      bundle: {
+        survey: survey(),
+        responses: [rA, rB],
+        cancellations: [],
+        tip: TIP,
+      } satisfies SurveyBundle,
+      artifact,
+      network: "preview",
+      linkedActionIds: [],
+      blockIndices: new Map([
+        [rA.txHash, 0],
+        [rB.txHash, 0],
+      ]),
+      proofs: new Map<string, TxProof | null>([
+        [rA.txHash, proofOf("a1".repeat(28))],
+        [rB.txHash, proofOf("b2".repeat(28))],
+      ]),
+      weights: fakeInputs({
+        [KEY_A]: { weight: 100n, registered: true },
+        [KEY_B]: { weight: 7n, registered: true },
+      }),
+    });
+    expect(result.match).toBe(true);
+    expect(result.unverifiedTotals).toBe(false);
+    expect(result.diffs).toEqual([]);
   });
 
   it("commits the resolved gov-link set to (unhashed) provenance (finding 6)", async () => {

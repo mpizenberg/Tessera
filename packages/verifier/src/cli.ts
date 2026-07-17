@@ -14,10 +14,13 @@
  * from Koios. The tally is rebuilt under the pinned ruleset and its content hash
  * compared. Exit codes: 0 MATCH, 1 MISMATCH (differences printed), 2 usage /
  * not finalized / survey not found on-chain / fetch failure, 3 INDETERMINATE (a
- * required input — e.g. a governance-link anchor — could not be resolved, so no
- * verdict is possible yet; retry when resolvable), 4 UNTALLIABLE (the survey's
- * on-chain definition is spec-invalid — non-v5 or structurally invalid — so it
- * has no reproducible tally and no artifact should exist; findings 10/11).
+ * required input — e.g. a governance-link anchor, or a missing tx_block_index —
+ * could not be resolved, so no verdict is possible yet; retry when resolvable),
+ * 4 UNTALLIABLE (the survey's on-chain definition is spec-invalid — non-v5 or
+ * structurally invalid — so it has no reproducible tally and no artifact should
+ * exist; findings 10/11), 5 MATCH-BUT-UNVERIFIED-TOTAL (everything reproduced,
+ * but an electorate total could not be independently re-fetched and was taken
+ * from the artifact itself, so that one denominator is unconfirmed; finding 31).
  */
 
 import { exit } from "node:process";
@@ -272,6 +275,20 @@ async function main(): Promise<void> {
         "above); this is not a MISMATCH. Retry when the input is resolvable.",
     );
     exit(3);
+  }
+  if (result.match && result.unverifiedTotals) {
+    // Everything reproduced, but at least one hash-committed electorate total
+    // was taken from the artifact itself (the upstream couldn't serve it), so
+    // that denominator was assumed, not confirmed — a weaker verdict than a
+    // clean MATCH, and a distinct exit code so a scripted verify fails closed
+    // (finding 31). Retry when the total endpoint is back.
+    console.log(
+      "MATCH (unverified total) — the artifact reproduces from independent " +
+        "chain data, but one or more electorate totals could not be re-fetched " +
+        "and were taken from the artifact itself (see notes); that denominator " +
+        "is unconfirmed. Retry when the upstream total endpoint is available.",
+    );
+    exit(5);
   }
   if (result.match) {
     console.log("MATCH — the artifact reproduces from chain data");

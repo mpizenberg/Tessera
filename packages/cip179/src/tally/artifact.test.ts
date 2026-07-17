@@ -1,14 +1,22 @@
 import { describe, expect, it } from "vitest";
-import type { Role, SurveyResponse } from "../index.js";
+import type {
+  Credential,
+  Role,
+  SurveyDefinition,
+  SurveyResponse,
+} from "../index.js";
 
 import {
   RULESET_DESCRIPTOR,
   artifactHash,
+  assembleTallyBody,
   responderAnswers,
   rulesetHash,
   toArtifactQuestions,
   toArtifactResponders,
+  type RoleTally,
   type TallyBody,
+  type TallyBodyIdentity,
 } from "./artifact.js";
 import type { AnswerItem, Metadatum } from "../index.js";
 import { canonicalJson } from "./canonical.js";
@@ -117,6 +125,89 @@ describe("artifactHash", () => {
     const a = body(null);
     const roundTripped = JSON.parse(JSON.stringify(a)) as TallyBody;
     expect(artifactHash(roundTripped)).toBe(artifactHash(a));
+  });
+});
+
+// The ONE shared body assembler the emitter and verifier both call (finding 29).
+// A golden hash + a permutation test pin its output so a drift in role/responder
+// ordering or the base-body shape fails CI mechanically (finding 30).
+describe("assembleTallyBody", () => {
+  const ID: TallyBodyIdentity = {
+    network: "preview",
+    survey: { txId: "aa".repeat(32), index: 0, endEpoch: 900 },
+    sealed: false,
+  };
+  const DEF: SurveyDefinition = {
+    specVersion: 5,
+    owner: { type: "key", keyHash: Uint8Array.of(0) },
+    title: "t",
+    description: "",
+    eligibleRoles: [0, 3] as Role[],
+    endEpoch: 900,
+    submissionMode: { type: "public" },
+    questions: [
+      {
+        type: "singleChoice",
+        prompt: "",
+        options: { type: "options", labels: ["a", "b"] },
+      },
+    ],
+  };
+  const cred = (b: number): Credential => ({
+    type: "key",
+    keyHash: Uint8Array.of(b),
+  });
+  const wr = (b: number, weight: bigint, optionIndex: number) => ({
+    credentialKey: `key:0${b}`,
+    weight,
+    txHash: `tx${b}`,
+    responseIndex: 0,
+    response: {
+      specVersion: 5,
+      surveyRef: { txId: Uint8Array.of(9), index: 0 },
+      role: 3 as Role,
+      credential: cred(b),
+      answers: {
+        type: "public" as const,
+        answers: [
+          { type: "singleChoice" as const, questionIndex: 0, optionIndex },
+        ],
+      },
+    },
+  });
+  // Roles and responders passed OUT of sorted order on purpose.
+  const roles: RoleTally[] = [
+    { role: 3, responders: [wr(2, 100n, 0), wr(1, 50n, 1)], total: "1000" },
+    { role: 0, responders: [wr(3, 7n, 0)], total: "2000" },
+  ];
+
+  it("sorts roles ascending and responders by credential identity", () => {
+    const body = assembleTallyBody(DEF, ID, roles);
+    expect(body.perRole.map((r) => r.role)).toEqual([0, 3]);
+    expect(body.perRole[1]!.responders.map((r) => r.credential)).toEqual([
+      "key:01",
+      "key:02",
+    ]);
+  });
+
+  it("is invariant to the input order of roles and responders (finding 30)", () => {
+    const shuffled: RoleTally[] = [
+      { role: 0, responders: [wr(3, 7n, 0)], total: "2000" },
+      { role: 3, responders: [wr(1, 50n, 1), wr(2, 100n, 0)], total: "1000" },
+    ];
+    expect(artifactHash(assembleTallyBody(DEF, ID, shuffled))).toBe(
+      artifactHash(assembleTallyBody(DEF, ID, roles)),
+    );
+  });
+
+  // Golden content address of a nontrivial two-role weighted body. Like the
+  // ruleset golden above, this MUST NOT drift silently: a change here means the
+  // shared assembly OR the ruleset changed — update deliberately (and bump
+  // `rulesetVersion` if it was the ruleset), never paste to make CI green.
+  it("matches its pinned golden artifact hash", () => {
+    expect(artifactHash(assembleTallyBody(DEF, ID, roles))).toBe(
+      "ea808c474703c362ed1acb181f6731957ad9f81f5b48bb6256bcfc58a4d28cf9",
+    );
   });
 });
 

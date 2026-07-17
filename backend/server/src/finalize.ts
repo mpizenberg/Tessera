@@ -26,6 +26,7 @@ import { isDefinitionTalliable, Role, type SurveyResponse } from "cip-179";
 
 import {
   auditRevealedResponses,
+  byCancellationChainOrder,
   bytesToHex,
   cancellationVerified,
   laterInChain,
@@ -41,12 +42,11 @@ import {
   type TxProof,
 } from "cip-179/domain";
 import {
+  RULESET_DESCRIPTOR,
   artifactHash,
-  rulesetHash,
-  toArtifactQuestions,
-  toArtifactResponders,
-  weightedTallySurvey,
-  type ArtifactRoleTally,
+  assembleTallyBody,
+  cancelledTallyBody,
+  type RoleTally,
   type TallyArtifact,
   type TallyBody,
   type TallyInputSource,
@@ -66,12 +66,12 @@ import type { TallyStore, ValidatedResponseRow, WeightRow } from "./store";
  */
 const MAX_SEALED_DECRYPTS_PER_PASS = 500;
 
-/** Roles artifacts cover (must match core's RULESET_DESCRIPTOR). */
-const COVERED_ROLES: readonly number[] = [
-  Role.DRep,
-  Role.Stakeholder,
-  Role.Keyholder,
-];
+/**
+ * Roles artifacts cover — derived from the hashed ruleset descriptor (not a
+ * hand-kept copy) so the emitter can't drift from the verifier, which reads the
+ * same source (finding 29).
+ */
+const COVERED_ROLES: readonly number[] = [...RULESET_DESCRIPTOR.coveredRoles];
 
 /** Safety margin past the epoch boundary: Koios indexing lag + shallow reorgs. */
 const FINALIZE_MARGIN_SECONDS = 600;
@@ -488,7 +488,7 @@ async function withCancellations(
       .filter(
         (c) => refKey(c.target) === key && c.epochNo <= s.definition.endEpoch,
       )
-      .sort((a, b) => a.slot - b.slot || (a.txHash < b.txHash ? -1 : 1));
+      .sort(byCancellationChainOrder);
 
     let winning: (typeof inWindow)[number] | undefined;
     let unknown: (typeof inWindow)[number] | undefined;
@@ -516,18 +516,18 @@ async function withCancellations(
       open.push(s);
       continue;
     }
-    const body: TallyBody = {
-      rulesetHash: rulesetHash(),
-      network: config.app.network,
-      survey: surveyIdOf(s),
-      sealed: s.definition.submissionMode.type === "sealed",
-      cancelled: {
+    const body: TallyBody = cancelledTallyBody(
+      {
+        network: config.app.network,
+        survey: surveyIdOf(s),
+        sealed: s.definition.submissionMode.type === "sealed",
+      },
+      {
         txHash: winning.txHash,
         slot: winning.slot,
         epoch: winning.epochNo,
       },
-      perRole: [],
-    };
+    );
     const artifact: TallyArtifact = {
       tally: body,
       provenance: {
@@ -771,8 +771,12 @@ function buildArtifact(
   const rolesPresent = [...new Set(entries.map((e) => e.row.role))].sort(
     (a, b) => a - b,
   );
-  const perRole: ArtifactRoleTally[] = [];
-  for (const role of rolesPresent) {
+  // §6.1-filter each role's responders here (against the frozen weight snapshot,
+  // with the emitter's own drop-logging), then hand the result to the SHARED
+  // assembler — the verifier calls the same `assembleTallyBody`, so role
+  // ordering, per-role artifact shaping, and the base body stay identical by
+  // construction (finding 29).
+  const roles: RoleTally[] = rolesPresent.map((role) => {
     const responders: WeightedResponder[] = [];
     for (const { row: r, response } of entries) {
       if (r.role !== role) continue;
@@ -795,26 +799,18 @@ function buildArtifact(
         response,
       });
     }
-    perRole.push({
-      role,
-      total: totalByRole.get(role) ?? null,
-      responders: toArtifactResponders(
-        responders,
-        opts.sealed ? { revealedAnswers: true } : undefined,
-      ),
-      questions: toArtifactQuestions(
-        weightedTallySurvey(s.definition, responders),
-      ),
-    });
-  }
+    return { role, responders, total: totalByRole.get(role) ?? null };
+  });
 
-  const tally: TallyBody = {
-    rulesetHash: rulesetHash(),
-    network: config.app.network,
-    survey: surveyIdOf(s),
-    sealed: opts.sealed,
-    perRole,
-  };
+  const tally: TallyBody = assembleTallyBody(
+    s.definition,
+    {
+      network: config.app.network,
+      survey: surveyIdOf(s),
+      sealed: opts.sealed,
+    },
+    roles,
+  );
   const artifact: TallyArtifact = {
     tally,
     provenance: {

@@ -36,6 +36,9 @@ importers:
         specifier: ^4.6.0
         version: 4.12.27
     devDependencies:
+      '@tessera/verifier':
+        specifier: workspace:*
+        version: link:../../packages/verifier
       '@types/node':
         specifier: ^25.9.3
         version: 25.9.4

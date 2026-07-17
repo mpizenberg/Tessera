@@ -24,6 +24,7 @@ import {
 import {
   BINDABLE_ROLES,
   auditRevealedResponses,
+  byCancellationChainOrder,
   bytesToHex,
   cancellationVerified,
   credentialKey,
@@ -37,13 +38,13 @@ import {
 import {
   RULESET_DESCRIPTOR,
   artifactHash,
-  rulesetHash,
-  toArtifactQuestions,
-  toArtifactResponders,
-  weightedTallySurvey,
-  type ArtifactRoleTally,
+  assembleTallyBody,
+  cancelledTallyBody,
+  emptyTallyBody,
+  type RoleTally,
   type TallyArtifact,
   type TallyBody,
+  type TallyBodyIdentity,
   type TallyInputSource,
   type WeightedResponder,
 } from "cip-179/tally";
@@ -105,6 +106,16 @@ export interface VerifyResult {
    * itself a backend non-conformance. The reason is in `notes`.
    */
   readonly untalliable: boolean;
+  /**
+   * True when at least one role's electorate `total` could not be independently
+   * re-fetched and the rebuild fell back to the artifact's own hash-committed
+   * value (finding 31). A `match` that is true alongside this is a *weaker*
+   * verdict — every other field reproduced, but this one denominator was assumed,
+   * not confirmed — so the CLI reports it distinctly (exit 5), never a clean
+   * MATCH. A backend could otherwise inflate the turnout denominator and pass
+   * scripted verification whenever the upstream total endpoint is down.
+   */
+  readonly unverifiedTotals: boolean;
   /** Content hash of the artifact as received. */
   readonly receivedHash: string;
   /** Content hash of the independently rebuilt tally. */
@@ -126,6 +137,7 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
   notes: string[];
   indeterminate: string | null;
   untalliable: string | null;
+  unverifiedTotals: boolean;
 }> {
   const notes: string[] = [];
   const { bundle } = inputs;
@@ -137,8 +149,7 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
     endEpoch,
   };
   const sealed = def.submissionMode.type === "sealed";
-  const base = {
-    rulesetHash: rulesetHash(),
+  const id: TallyBodyIdentity = {
     network: inputs.network,
     survey: surveyId,
     sealed,
@@ -154,17 +165,18 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
       .map((p) => p.code)
       .join(", ");
     return {
-      tally: { ...base, perRole: [] },
+      tally: emptyTallyBody(id),
       notes,
       indeterminate: null,
       untalliable: `definition is spec-invalid (${codes}) — untalliable, no artifact should exist`,
+      unverifiedTotals: false,
     };
   }
 
   // Cancellation first: the earliest owner-proven, in-window cancellation (in
   // chain order — the choice the ruleset pins) short-circuits the tally.
   const winning = [...bundle.cancellations]
-    .sort((a, b) => a.slot - b.slot || (a.txHash < b.txHash ? -1 : 1))
+    .sort(byCancellationChainOrder)
     .find(
       (c) =>
         c.epochNo <= endEpoch &&
@@ -172,18 +184,15 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
     );
   if (winning) {
     return {
-      tally: {
-        ...base,
-        cancelled: {
-          txHash: winning.txHash,
-          slot: winning.slot,
-          epoch: winning.epochNo,
-        },
-        perRole: [],
-      },
+      tally: cancelledTallyBody(id, {
+        txHash: winning.txHash,
+        slot: winning.slot,
+        epoch: winning.epochNo,
+      }),
       notes,
       indeterminate: null,
       untalliable: null,
+      unverifiedTotals: false,
     };
   }
 
@@ -231,16 +240,31 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
     }
     if (verdict !== "proven") continue;
     const blockIndex = inputs.blockIndices.get(r.txHash);
-    eligible.push(blockIndex === undefined ? r : { ...r, blockIndex });
+    if (blockIndex === undefined) {
+      // A proven, in-window response whose tx has no `tx_block_index` (Koios
+      // `/tx_info` didn't resolve it): the dedup order (slot, tx_block_index,
+      // response_index) can't be reproduced — the `-1` sentinel `laterInChain`
+      // falls back to could resolve a same-slot tie differently. The emitter
+      // POSTPONES finalization in exactly this case (`countedRows`), so match
+      // that discipline: make the rebuild INDETERMINATE (retry when resolvable)
+      // rather than silently risk a false MISMATCH (finding 16).
+      indeterminate ??=
+        `response ${r.txHash}:${r.responseIndex} has no tx_block_index ` +
+        `(Koios /tx_info did not resolve it) — the counted order cannot be ` +
+        `reproduced; retry when it is resolvable`;
+      continue;
+    }
+    eligible.push({ ...r, blockIndex });
   }
   // A single unresolved-link uncertainty makes the whole rebuild indeterminate:
   // we can't produce THE counted set, so a hash comparison would be misleading.
   if (indeterminate) {
     return {
-      tally: { ...base, perRole: [] },
+      tally: emptyTallyBody(id),
       notes,
       indeterminate,
       untalliable: null,
+      unverifiedTotals: false,
     };
   }
   let counted: ResponseRecord[];
@@ -255,10 +279,11 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
         "sealed survey on an unsupported (non-quicknet) drand chain — no reveal, empty tally",
       );
       return {
-        tally: { ...base, perRole: [] },
+        tally: emptyTallyBody(id),
         notes,
         indeterminate: null,
         untalliable: null,
+        unverifiedTotals: false,
       };
     }
     if (!inputs.reveal) {
@@ -299,15 +324,19 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
     counted = [...best.values()];
   }
 
-  // Per role ascending: weights + membership at end_epoch, then the pure
-  // weighted tally.
+  // Per role ascending: weights + membership at end_epoch, then hand the
+  // §6.1-filtered responders + total to the SHARED assembler (the emitter uses
+  // the same `assembleTallyBody`, so role ordering, per-role artifact shaping,
+  // and the base body can't drift — finding 29). Weight/total sourcing and the
+  // membership filter are inherently data-source-specific, so they stay here.
   const rolesPresent = [...new Set(counted.map((r) => r.response.role))].sort(
     (a, b) => a - b,
   );
   const receivedTotals = new Map(
     inputs.artifact.tally.perRole.map((r) => [r.role, r.total]),
   );
-  const perRole: ArtifactRoleTally[] = [];
+  let unverifiedTotals = false;
+  const roles: RoleTally[] = [];
   for (const role of rolesPresent) {
     const roleRecords = counted.filter((r) => r.response.role === role);
     const creds = roleRecords.map((r) => r.response.credential);
@@ -352,31 +381,26 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
         total = String(fetched);
       } else {
         // The upstream can't serve the total right now: fall back to the
-        // artifact's own value so the rest still verifies — flagged, since
-        // this one number was then NOT independently confirmed.
+        // artifact's own value so the rest still verifies — but flag it, since
+        // this one hash-committed number was then NOT independently confirmed
+        // (finding 31). The CLI downgrades a MATCH that leans on this.
         total = receivedTotals.get(role) ?? null;
+        unverifiedTotals = true;
         notes.push(
           `role-${role} electorate total not independently re-fetchable — using the artifact's value`,
         );
       }
     }
 
-    perRole.push({
-      role,
-      total,
-      responders: toArtifactResponders(
-        responders,
-        sealed ? { revealedAnswers: true } : undefined,
-      ),
-      questions: toArtifactQuestions(weightedTallySurvey(def, responders)),
-    });
+    roles.push({ role, responders, total });
   }
 
   return {
-    tally: { ...base, perRole },
+    tally: assembleTallyBody(def, id, roles),
     notes,
     indeterminate: null,
     untalliable: null,
+    unverifiedTotals,
   };
 }
 
@@ -442,6 +466,7 @@ export async function verifyArtifact(
     notes,
     indeterminate,
     untalliable,
+    unverifiedTotals,
   } = await rebuildTally(inputs);
   const rebuiltHash = artifactHash(rebuilt);
 
@@ -453,6 +478,7 @@ export async function verifyArtifact(
       match: false,
       indeterminate: false,
       untalliable: true,
+      unverifiedTotals: false,
       receivedHash,
       rebuiltHash,
       rebuilt,
@@ -484,6 +510,7 @@ export async function verifyArtifact(
       match: false,
       indeterminate: true,
       untalliable: false,
+      unverifiedTotals: false,
       receivedHash,
       rebuiltHash,
       rebuilt,
@@ -497,6 +524,7 @@ export async function verifyArtifact(
     match,
     indeterminate: false,
     untalliable: false,
+    unverifiedTotals,
     receivedHash,
     rebuiltHash,
     rebuilt,

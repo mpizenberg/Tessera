@@ -74,6 +74,23 @@ export function laterInChain(a: ChainOrderKey, b: ChainOrderKey): boolean {
 }
 
 /**
+ * Chain order for cancellations (the ruleset `cancellation` rule): earliest
+ * first, by slot then tx hash. The emitter and verifier both walk cancellations
+ * in this order to pick the earliest owner-proven one as the recorded winner, and
+ * that `txHash` is hashed into the artifact — so, like {@link laterInChain}, this
+ * comparator is ruleset-pinned and must not diverge between the two. (tx hashes
+ * are unique, so the `0` tie-break is never exercised in practice.)
+ */
+export function byCancellationChainOrder(
+  a: { readonly slot: number; readonly txHash: string },
+  b: { readonly slot: number; readonly txHash: string },
+): number {
+  return (
+    a.slot - b.slot || (a.txHash < b.txHash ? -1 : a.txHash > b.txHash ? 1 : 0)
+  );
+}
+
+/**
  * Latest-valid-wins: at most one response per (survey, role, credential),
  * keeping the {@link laterInChain}-greatest one.
  */
