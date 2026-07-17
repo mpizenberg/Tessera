@@ -696,14 +696,18 @@ const ClosedNotice: Component<{ v: ReturnType<typeof viewStatus> }> = (
   <Notice
     tone="muted"
     title={
-      props.v === "cancelled"
-        ? t("respond.closedCancelledTitle")
-        : t("respond.closedTitle")
+      props.v === "invalid"
+        ? t("respond.untalliableTitle")
+        : props.v === "cancelled"
+          ? t("respond.closedCancelledTitle")
+          : t("respond.closedTitle")
     }
     body={
-      props.v === "cancelled"
-        ? t("respond.closedCancelledBody")
-        : t("respond.closedBody")
+      props.v === "invalid"
+        ? t("respond.untalliableBody")
+        : props.v === "cancelled"
+          ? t("respond.closedCancelledBody")
+          : t("respond.closedBody")
     }
   />
 );

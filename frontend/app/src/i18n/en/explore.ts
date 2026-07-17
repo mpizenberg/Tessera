@@ -19,6 +19,7 @@ const explore = {
   timeLeftMinutes: "{m}m left",
   endsWithdrawn: "withdrawn",
   endsClosed: "closed",
+  endsInvalid: "invalid",
 
   // Title row + summary.
   pageTitle: "Surveys & polls",
@@ -61,6 +62,7 @@ const explore = {
   answeredAria: "answered",
   badgeYours: "Yours",
   badgeOffChain: "⚠ labels off-chain",
+  badgeUntalliable: "⚠ invalid definition",
   /** {id} is the shortened governance action id. */
   govLinkedAction: "Linked action {id}",
   /** Spliced after govLinkedAction when a linked-action title is known; {title} is user content. */

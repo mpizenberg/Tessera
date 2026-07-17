@@ -72,7 +72,7 @@ describe("rulesetHash", () => {
   // rules", which is the exact failure mode the hash exists to prevent.
   it("matches its pinned golden hash (bump rulesetVersion on any change)", () => {
     expect(rulesetHash()).toBe(
-      "e0568c927ffee9041291dacc41128836f2e82a66b1c3a3498db457b0aa7b8b4d",
+      "653e56eba52d47f774b57a2fc7246ce95eeedcfd6a13264eef85a6305cc9611e",
     );
   });
 

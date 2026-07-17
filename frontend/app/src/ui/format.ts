@@ -141,19 +141,28 @@ export function roleColors(role: number): readonly [string, string] {
 
 /**
  * Presentation status: the mockup conflates lifecycle with visibility into one
- * of four register states. `public`/`sealed` are both "open"; `ended`/
- * `cancelled` are closed.
+ * of five register states. `public`/`sealed` are both "open"; `ended`/
+ * `cancelled`/`invalid` are closed (never answerable). `invalid` = the on-chain
+ * definition is spec-invalid, so the survey is untalliable (findings 10/11) — it
+ * has highest precedence (a malformed survey is not a real one, regardless of
+ * lifecycle or cancellation).
  */
-export type ViewStatus = "public" | "sealed" | "ended" | "cancelled";
+export type ViewStatus =
+  | "public"
+  | "sealed"
+  | "ended"
+  | "cancelled"
+  | "invalid";
 
 export function viewStatus(a: SurveyAggregate): ViewStatus {
+  if (!a.talliable) return "invalid";
   if (a.cancelled) return "cancelled";
   if (a.status === "ended") return "ended";
   return a.sealed ? "sealed" : "public";
 }
 
 export function isClosed(v: ViewStatus): boolean {
-  return v === "ended" || v === "cancelled";
+  return v === "ended" || v === "cancelled" || v === "invalid";
 }
 
 /** A short, human-friendly survey ref: "abcd…1234#0". */
@@ -194,6 +203,7 @@ export function endsText(
   nowUnix: number,
 ): string {
   const v = viewStatus(a);
+  if (v === "invalid") return t("explore.endsInvalid");
   if (v === "cancelled") return t("explore.endsWithdrawn");
   if (v === "ended") return t("explore.endsClosed");
   return timeLeft(

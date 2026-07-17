@@ -239,6 +239,10 @@ export const Survey: Component = () => {
               <ClaimedCancellationNotice />
             </Show>
 
+            <Show when={!sv().talliable}>
+              <InvalidDefinitionNotice />
+            </Show>
+
             <Show when={pres.external() && pres.unavailable()}>
               <LabelsUnavailable keyStr={key()} />
             </Show>
@@ -387,6 +391,19 @@ const ClaimedCancellationNotice: Component = () => (
   <div class={css.claimedNotice}>
     <strong>{t("survey.claimedNoticeStrong")}</strong>{" "}
     {t("survey.claimedNoticeRest")}
+  </div>
+);
+
+/**
+ * Shown when the on-chain definition is spec-invalid (non-v5 or structurally
+ * invalid): the survey is untalliable (findings 10/11) — no reproducible tally
+ * is produced and responding is blocked, since a conformant reader never counts
+ * it.
+ */
+const InvalidDefinitionNotice: Component = () => (
+  <div class={css.claimedNotice}>
+    <strong>{t("survey.invalidNoticeStrong")}</strong>{" "}
+    {t("survey.invalidNoticeRest")}
   </div>
 );
 

@@ -22,6 +22,11 @@ const survey: Messages = {
   claimedNoticeRest:
     "Une annulation référençant ce sondage a été publiée, mais ce client n'a pas pu vérifier qu'elle provenait du propriétaire du sondage — elle n'est donc pas prise en compte. Seule une annulation signée par le propriétaire invalide un sondage.",
 
+  // Avis de définition invalide (sondage non décomptable)
+  invalidNoticeStrong: "Définition invalide.",
+  invalidNoticeRest:
+    "La définition on-chain de ce sondage n'est pas conforme à CIP-179 v5 (mauvaise version de spec, ou une contrainte interdite par la spec) : elle est donc non décomptable : aucun résultat n'est produit et répondre est désactivé. La définition reste on-chain à titre de référence.",
+
   // Respond CTA
   respondCta: "Répondre à ce sondage",
 

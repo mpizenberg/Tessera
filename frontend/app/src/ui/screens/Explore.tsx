@@ -425,6 +425,11 @@ const OffChainBadge: Component = () => (
   <span class={css.badge}>{t("explore.badgeOffChain")}</span>
 );
 
+/** Marks a survey whose on-chain definition is spec-invalid (untalliable). */
+const InvalidBadge: Component = () => (
+  <span class={css.badge}>{t("explore.badgeUntalliable")}</span>
+);
+
 const GovLine: Component<{ actionId: string; title: string | null }> = (
   props,
 ) => (
@@ -490,6 +495,9 @@ const GridRow: Component<EntryProps> = (props) => {
           <Show when={labelsMissing()}>
             <OffChainBadge />
           </Show>
+          <Show when={!props.a.talliable}>
+            <InvalidBadge />
+          </Show>
         </div>
         <div class={css.desc}>
           {def().description || t("explore.noPresentation")}
@@ -517,7 +525,9 @@ const GridRow: Component<EntryProps> = (props) => {
       </div>
       <div class={css.repliesCell}>
         <span class={css.replies} classList={{ [css.repliesClosed]: closed() }}>
-          {v() === "cancelled" ? "—" : props.a.responseCount}
+          {v() === "cancelled" || v() === "invalid"
+            ? "—"
+            : props.a.responseCount}
         </span>
       </div>
     </A>
@@ -569,9 +579,14 @@ const CardRow: Component<EntryProps> = (props) => {
         {def().description || t("explore.noPresentation")}
       </div>
 
-      <Show when={labelsMissing()}>
+      <Show when={labelsMissing() || !props.a.talliable}>
         <div class={css.cardBadgeRow}>
-          <OffChainBadge />
+          <Show when={labelsMissing()}>
+            <OffChainBadge />
+          </Show>
+          <Show when={!props.a.talliable}>
+            <InvalidBadge />
+          </Show>
         </div>
       </Show>
       <For each={props.a.govLinks}>
@@ -599,7 +614,9 @@ const CardRow: Component<EntryProps> = (props) => {
           </span>
         </MetaChip>
         <MetaChip label={t("explore.metaReplies")}>
-          {v() === "cancelled" ? "—" : String(props.a.responseCount)}
+          {v() === "cancelled" || v() === "invalid"
+            ? "—"
+            : String(props.a.responseCount)}
         </MetaChip>
         <Show when={props.pro}>
           <MetaChip label={t("explore.metaEpoch")}>

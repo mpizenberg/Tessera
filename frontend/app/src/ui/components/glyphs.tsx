@@ -22,7 +22,10 @@ export const FormMosaic: Component<{ count: number; size?: number }> = (
   );
 };
 
-/** Visibility glyph: lock = sealed, ring = public/ended, dash = cancelled. */
+/**
+ * Visibility glyph: lock = sealed, ring = public/ended, dash = cancelled or
+ * invalid (an untalliable survey reads like a withdrawn one).
+ */
 export const VisGlyph: Component<{ status: ViewStatus }> = (props) => (
   <Show
     when={props.status === "sealed"}
@@ -37,7 +40,7 @@ export const VisGlyph: Component<{ status: ViewStatus }> = (props) => (
 
 const RingOrDash: Component<{ status: ViewStatus }> = (props) => (
   <Show
-    when={props.status !== "cancelled"}
+    when={props.status !== "cancelled" && props.status !== "invalid"}
     fallback={<span class={css.dash} />}
   >
     <span

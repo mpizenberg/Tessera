@@ -20,6 +20,7 @@ const explore: Messages = {
   timeLeftMinutes: "{m}min restantes",
   endsWithdrawn: "retiré",
   endsClosed: "terminé",
+  endsInvalid: "invalide",
 
   pageTitle: "Sondages & scrutins",
   summary: "{count} entrées · époque actuelle {epoch}",
@@ -54,6 +55,7 @@ const explore: Messages = {
   answeredAria: "répondu",
   badgeYours: "À vous",
   badgeOffChain: "⚠ libellés off-chain",
+  badgeUntalliable: "⚠ définition invalide",
   govLinkedAction: "Action liée {id}",
   govLinkedActionTitle: " · {title}",
   untitled: "Sans titre · contenu externe",

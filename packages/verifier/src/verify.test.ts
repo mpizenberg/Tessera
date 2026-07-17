@@ -239,6 +239,25 @@ describe("verifyArtifact", () => {
     expect(result.rebuilt.sealed).toBe(false);
   });
 
+  it("reports UNTALLIABLE for a spec-invalid definition, never MATCH (findings 10, 11)", async () => {
+    // The backend serves a normal full-tally artifact, but the *independent*
+    // on-chain definition declares spec_version 6 — untalliable. The verifier
+    // must not tally it (no MATCH on a survey that shouldn't have an artifact).
+    const invalidBundle: SurveyBundle = {
+      ...bundle,
+      survey: {
+        ...bundle.survey,
+        definition: { ...DEF, specVersion: 6 },
+      },
+    };
+    const result = await verifyArtifact(inputs({ bundle: invalidBundle }));
+    expect(result.untalliable).toBe(true);
+    expect(result.match).toBe(false);
+    expect(result.indeterminate).toBe(false);
+    expect(result.rebuilt.perRole).toEqual([]);
+    expect(result.notes.join(" ")).toContain("spec-invalid");
+  });
+
   it("MISMATCHes a tampered aggregate, naming the difference", async () => {
     const artifact = emittedArtifact();
     const role = artifact.tally.perRole[0]!;

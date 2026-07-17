@@ -13,14 +13,20 @@
  * (proofs, block indices, weights, totals, governance links) also comes straight
  * from Koios. The tally is rebuilt under the pinned ruleset and its content hash
  * compared. Exit codes: 0 MATCH, 1 MISMATCH (differences printed), 2 usage /
- * no artifact / survey not found on-chain / fetch failure, 3 INDETERMINATE (a
+ * not finalized / survey not found on-chain / fetch failure, 3 INDETERMINATE (a
  * required input — e.g. a governance-link anchor — could not be resolved, so no
- * verdict is possible yet; retry when resolvable).
+ * verdict is possible yet; retry when resolvable), 4 UNTALLIABLE (the survey's
+ * on-chain definition is spec-invalid — non-v5 or structurally invalid — so it
+ * has no reproducible tally and no artifact should exist; findings 10/11).
  */
 
 import { exit } from "node:process";
 
-import type { SurveyRef } from "cip-179";
+import {
+  definitionErrors,
+  isDefinitionTalliable,
+  type SurveyRef,
+} from "cip-179";
 
 import {
   hexToBytes,
@@ -107,18 +113,20 @@ async function main(): Promise<void> {
 
   // 1. The ONE backend read: the artifact under test. Its hash is recomputed
   // from independent chain data below, so trusting the backend to hand us the
-  // artifact-to-verify introduces no trust (a doctored artifact just fails).
+  // artifact-to-verify introduces no trust (a doctored artifact just fails). A
+  // 404 is NOT decided yet: it may mean "not finalized" or "untalliable" (an
+  // invalid definition legitimately has no artifact) — the independent scan
+  // below distinguishes them, so defer the verdict.
   const artifactRes = await fetch(
     `${base}/api/surveys/${txHash}/${index}/artifact`,
     { headers: { Accept: "application/json" } },
   );
-  if (artifactRes.status === 404) {
-    console.error("no artifact for this survey yet (open, or not finalized)");
-    exit(2);
-  }
-  if (!artifactRes.ok)
+  if (!artifactRes.ok && artifactRes.status !== 404)
     throw new Error(`artifact fetch → ${artifactRes.status}`);
-  const artifact = (await artifactRes.json()) as TallyArtifact;
+  const artifact =
+    artifactRes.status === 404
+      ? undefined
+      : ((await artifactRes.json()) as TallyArtifact);
 
   // 2. Independently reconstruct the survey's on-chain slice from a Koios
   // label-17 scan — the definition, the response *set*, and every response's
@@ -138,6 +146,32 @@ async function main(): Promise<void> {
     );
     exit(2);
   }
+
+  // Talliability is decided from the *independent* on-chain definition, not from
+  // the artifact — so a backend cannot make an invalid survey look talliable. An
+  // untalliable survey (non-v5 or spec-invalid definition, findings 10/11) must
+  // have no artifact; if one was served anyway the backend is non-conformant,
+  // which we surface rather than trying to verify a tally that shouldn't exist.
+  if (!isDefinitionTalliable(survey.definition)) {
+    for (const p of definitionErrors(survey.definition))
+      console.warn(`note: definition problem: ${p.code}`);
+    if (artifact) {
+      console.warn(
+        "note: the backend served an artifact for this survey, but its " +
+          "definition is spec-invalid — no artifact should exist",
+      );
+    }
+    console.log(
+      "UNTALLIABLE — the survey's on-chain definition is spec-invalid, so it " +
+        "has no reproducible tally (this is neither MATCH nor MISMATCH)",
+    );
+    exit(4);
+  }
+  if (!artifact) {
+    console.error("no artifact for this survey yet (open, or not finalized)");
+    exit(2);
+  }
+
   const bundle: SurveyBundle = {
     survey,
     responses: records.responses.filter(

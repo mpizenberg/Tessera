@@ -69,7 +69,14 @@ export const RULESET_DESCRIPTOR = {
   // rejects it, so such a ballot is excluded. Only sealed surveys with such a
   // ballot change count, but the counted set can differ, so v7 hashes are
   // incomparable with v6.
-  rulesetVersion: 7,
+  // v8: read-side definition validity is now enforced (findings 10, 11 via the
+  // `definition-validity` rule below). A survey whose on-chain definition fails
+  // semantic validation on any error-severity problem — including
+  // `spec_version != 5` — is untalliable and produces no artifact, where before
+  // it was decoded and tallied under v5 semantics. No *valid* survey's tally
+  // value changes, but the set of talliable surveys does (invalid ones drop out)
+  // and the gate is now pinned, so v8 hashes are incomparable with v7.
+  rulesetVersion: 8,
   cip179SpecVersion: 5,
   /** Roles artifacts cover: 0 DRep, 3 Stakeholder, 4 Keyholder (SPO/CC deferred). */
   coveredRoles: [0, 3, 4],
@@ -80,6 +87,7 @@ export const RULESET_DESCRIPTOR = {
     "4": "count",
   },
   rules: [
+    "definition-validity: a survey is talliable only if its on-chain definition passes semantic validation with no error-severity problem — spec_version == 5, non-empty eligible_roles, at least one question, in-bounds question constraints (option/selection/ranked/rating/points/numeric bounds), and for a sealed survey round > 0 and padding_size > 0; duplicate eligible_roles is a SHOULD (warning) and does not disqualify. An untalliable survey produces no artifact and is never counted; a backend that tallies one diverges from a conformant verifier (which independently reaches the same untalliable verdict)",
     "window: a response is countable iff its transaction's epoch_no <= the survey's end_epoch (inclusive)",
     "validity: a response must pass full CIP-179 codec validation against the on-chain definition (eligible role, at least one answer, in-constraint answers including require_all rating coverage, required questions answered)",
     "credential-proof: mechanism A (credential key in required_signers, or its native script witnessed and satisfied) or mechanism B (a voting_procedures vote in the response transaction by the same credential on any governance action linked to the survey, with the voter tag's role equal to the claimed role — sufficient on its own); a response with no qualifying vote falls back to mechanism A (a non-qualifying vote never invalidates); mechanism B applies only to governance-linked surveys, and votability needs no separate check — the ledger only accepts votes on actions still in the proposal set",

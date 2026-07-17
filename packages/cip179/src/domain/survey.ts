@@ -9,7 +9,7 @@
  * the indexer will later confirm it proved the owner credential.
  */
 
-import type { SurveyDefinition } from "../index.js";
+import { isDefinitionTalliable, type SurveyDefinition } from "../index.js";
 
 import { refKey, responseCounts } from "./dedupe.js";
 import type {
@@ -36,6 +36,16 @@ export interface SurveyAggregate {
   readonly sealed: boolean;
   /** External-content survey — presentation text lives off-chain (key 8). */
   readonly external: boolean;
+  /**
+   * Whether the on-chain definition is spec-valid enough to tally: no
+   * error-severity {@link import("../index.js").validateDefinition} problem —
+   * spec_version 5, non-empty roles, ≥1 question, in-bounds constraints (findings
+   * 10, 11). `false` = untalliable: the emitter writes no artifact, the UI badges
+   * it and blocks responding (answering it would waste a fee on a survey no
+   * conformant reader tallies). Duplicate roles are a SHOULD (warning) and stay
+   * talliable.
+   */
+  readonly talliable: boolean;
   /**
    * Epoch-aligned governance actions linking this survey (any action kind —
    * CIP-179 v5). Empty when standalone; a survey MAY be linked by several
@@ -238,6 +248,7 @@ export function aggregate(
       cancellationClaimed: !cancelled && cancelState === "claimed",
       sealed: record.definition.submissionMode.type === "sealed",
       external: record.definition.contentAnchor !== undefined,
+      talliable: isDefinitionTalliable(record.definition),
       govLinks,
       responseCount: countByKey[key] ?? 0,
       status: statusOf(record.definition.endEpoch, cancelled, tip.epoch),

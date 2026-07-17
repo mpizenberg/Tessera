@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  definitionErrors,
   describeProblem,
   describeProblems,
+  isDefinitionTalliable,
+  problemSeverity,
   Role,
   validateDefinition,
   validateResponse,
@@ -95,6 +98,50 @@ describe("structured validation problems", () => {
       code: "question.labelTooLong",
       params: { where: "questions[0]", index: 1, max: 64 },
     });
+  });
+});
+
+describe("definition severity + talliability (findings 10, 11, 34)", () => {
+  it("a valid v5 definition has no problems and is talliable", () => {
+    const def = singleChoiceDef();
+    expect(validateDefinition(def)).toEqual([]);
+    expect(isDefinitionTalliable(def)).toBe(true);
+  });
+
+  it("duplicate eligible_roles is a SHOULD → warning, still talliable (finding 34)", () => {
+    const def: SurveyDefinition = {
+      ...singleChoiceDef(),
+      eligibleRoles: [Role.DRep, Role.DRep] as Role[],
+    };
+    expect(validateDefinition(def)).toEqual([
+      { code: "definition.eligibleRolesDuplicate", severity: "warning" },
+    ]);
+    // Warnings never disqualify: a spec-valid foreign survey stays talliable.
+    expect(definitionErrors(def)).toEqual([]);
+    expect(isDefinitionTalliable(def)).toBe(true);
+  });
+
+  it("a non-v5 spec_version is an error → untalliable (finding 10)", () => {
+    const def: SurveyDefinition = { ...singleChoiceDef(), specVersion: 6 };
+    expect(isDefinitionTalliable(def)).toBe(false);
+    expect(definitionErrors(def).map((p) => p.code)).toContain(
+      "definition.specVersionUnsupported",
+    );
+  });
+
+  it("a structurally-invalid definition (no questions) is untalliable (finding 11)", () => {
+    const def: SurveyDefinition = { ...singleChoiceDef(), questions: [] };
+    expect(isDefinitionTalliable(def)).toBe(false);
+    expect(definitionErrors(def).map((p) => p.code)).toContain(
+      "definition.noQuestions",
+    );
+  });
+
+  it("error problems carry no severity field and default to 'error'", () => {
+    const def: SurveyDefinition = { ...singleChoiceDef(), questions: [] };
+    const [p] = validateDefinition(def);
+    expect(p!.severity).toBeUndefined();
+    expect(problemSeverity(p!)).toBe("error");
   });
 });
 

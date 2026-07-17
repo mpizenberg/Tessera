@@ -445,6 +445,44 @@ describe("finalizeClosedSurveys", () => {
     expect(store.artifacts.has(SURVEY_KEY2)).toBe(true); // healthy → finalized
   });
 
+  it("skips a spec-invalid (untalliable) survey — no artifact — without blocking valid ones (findings 10, 11)", async () => {
+    const store = memBackendStore();
+    const SURVEY_TX2 = "dd".repeat(32);
+    const SURVEY_KEY2 = `${SURVEY_TX2}:0`;
+    // Survey 1's on-chain definition declares spec_version 6 — untalliable, so it
+    // must produce no artifact (never tallied under v5 semantics).
+    const invalid: SurveyRecord = {
+      ...survey(),
+      definition: definition({ specVersion: 6 }),
+    };
+    const s2: SurveyRecord = {
+      txHash: SURVEY_TX2,
+      slot: 100,
+      epochNo: 495,
+      ref: { txId: hexToBytes(SURVEY_TX2), index: 0 },
+      definition: definition(),
+    };
+    const rA1 = response("11".repeat(32), CRED_A, 0);
+    const rB2 = response("22".repeat(32), CRED_B, 0);
+    await seed(store, [
+      validatedRow(rA1),
+      validatedRow(rB2, { surveyKey: SURVEY_KEY2 }),
+    ]);
+    const inputs = fakeInputs({
+      [KEY_A]: { weight: 100n, registered: true },
+      [KEY_B]: { weight: 7n, registered: true },
+    });
+    const recs: Cip179Records = {
+      surveys: [invalid, s2],
+      responses: [rA1, rB2],
+      cancellations: [],
+    };
+
+    await finalizeClosedSurveys(CONFIG, store, inputs, noProofs, recs, TIP);
+    expect(store.artifacts.has(SURVEY_KEY)).toBe(false); // untalliable → no artifact
+    expect(store.artifacts.has(SURVEY_KEY2)).toBe(true); // valid → finalized
+  });
+
   it("postpones when the electorate total is unavailable, resumes without refetching weights", async () => {
     const store = memBackendStore();
     await seed(store, [validatedRow(rA)]);

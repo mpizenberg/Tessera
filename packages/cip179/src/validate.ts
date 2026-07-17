@@ -119,12 +119,37 @@ export type ValidationProblemCode = (typeof VALIDATION_PROBLEM_CODES)[number];
 export interface ValidationProblem {
   readonly code: ValidationProblemCode;
   readonly params?: Record<string, string | number>;
+  /**
+   * `"error"` (the default when this field is absent) marks a spec MUST-violation
+   * that makes the structure invalid; `"warning"` marks a spec SHOULD-violation
+   * that is surfaced but never disqualifies (finding 34). Only warnings set the
+   * field, so an error problem stays `{ code, params? }`. Read it via
+   * {@link problemSeverity}; the read-side talliability gate
+   * ({@link isDefinitionTalliable}) counts only errors, so a SHOULD-violation
+   * (e.g. duplicate eligible_roles) can never render a spec-valid survey
+   * untalliable.
+   */
+  readonly severity?: "error" | "warning";
 }
 
 const problem = (
   code: ValidationProblemCode,
   params?: Record<string, string | number>,
 ): ValidationProblem => (params ? { code, params } : { code });
+
+/** A spec SHOULD-violation: surfaced, but never disqualifying (finding 34). */
+const warning = (
+  code: ValidationProblemCode,
+  params?: Record<string, string | number>,
+): ValidationProblem =>
+  params
+    ? { code, params, severity: "warning" }
+    : { code, severity: "warning" };
+
+/** A problem's severity, defaulting to `"error"` when the field is absent. */
+export function problemSeverity(p: ValidationProblem): "error" | "warning" {
+  return p.severity ?? "error";
+}
 
 /** Number of options a question offers (inline labels or external count). */
 const optionCount = (opts: OptionsOrCount): number =>
@@ -286,7 +311,10 @@ export const validateDefinition = (
     out.push(problem("definition.eligibleRolesEmpty"));
   }
   if (hasDuplicates(def.eligibleRoles as number[])) {
-    out.push(problem("definition.eligibleRolesDuplicate"));
+    // Spec: eligible_roles entries "SHOULD be unique" — a SHOULD, so a warning,
+    // not a disqualifier. A spec-valid foreign survey with duplicate roles stays
+    // talliable (finding 34); the read-side gate ignores warnings.
+    out.push(warning("definition.eligibleRolesDuplicate"));
   }
   if (def.questions.length === 0) {
     out.push(problem("definition.noQuestions"));
@@ -304,6 +332,33 @@ export const validateDefinition = (
   );
   return out;
 };
+
+/**
+ * The error-severity subset of {@link validateDefinition} — the MUST-violations
+ * that make a definition untalliable. Excludes SHOULD-warnings (finding 34).
+ */
+export function definitionErrors(def: SurveyDefinition): ValidationProblem[] {
+  return validateDefinition(def).filter((p) => problemSeverity(p) === "error");
+}
+
+/**
+ * Is a survey talliable at all? True iff its on-chain definition has **no
+ * error-severity** problem: `spec_version === SPEC_VERSION` (findings 10 — a
+ * non-v5 payload is never tallied under v5 semantics), non-empty `eligible_roles`,
+ * at least one question, in-bounds question constraints, and a valid sealed
+ * round/padding. Duplicate `eligible_roles` is a SHOULD (warning) and never
+ * disqualifies.
+ *
+ * This is the read-side gate the emitter and any independent verifier both apply
+ * (finding 11): a spec-invalid definition produces **no artifact** and is never
+ * tallied, so a hostile definition cannot be counted under broken constraints,
+ * and a backend that tallies one anyway diverges from a conformant verifier. It
+ * is pinned in `RULESET_DESCRIPTOR` (see `tally/artifact.ts`), so a change to
+ * *which* definitions are talliable is a semantic ruleset change.
+ */
+export function isDefinitionTalliable(def: SurveyDefinition): boolean {
+  return definitionErrors(def).length === 0;
+}
 
 // ----------------------------------------------------------------------------
 // Response validation (against the referenced definition)

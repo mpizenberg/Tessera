@@ -31,6 +31,9 @@ const respond = {
     "The owner withdrew it with a tag-2 cancellation. New responses are rejected. The definition stays on-chain for reference.",
   closedBody:
     "Its end epoch has passed, so new responses are no longer accepted. You can still read the results.",
+  untalliableTitle: "This survey's definition is invalid",
+  untalliableBody:
+    "Its on-chain definition doesn't conform to CIP-179 v5 (wrong spec version, or a constraint the spec forbids), so it is untalliable and no conformant reader counts it. Responding would waste a fee, so submission is disabled.",
 
   // --- Connect prompt ------------------------------------------------------
   connectTitle: "Connect a wallet to respond",

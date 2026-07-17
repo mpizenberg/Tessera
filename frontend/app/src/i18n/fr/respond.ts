@@ -37,6 +37,9 @@ const respond: Messages = {
     "Le propriétaire l'a retirée par une annulation tag-2. Les nouvelles réponses sont rejetées. La définition reste on-chain à titre de référence.",
   closedBody:
     "Son époque de fin est passée, les nouvelles réponses ne sont donc plus acceptées. Vous pouvez toujours consulter les résultats.",
+  untalliableTitle: "La définition de ce sondage est invalide",
+  untalliableBody:
+    "Sa définition on-chain n'est pas conforme à CIP-179 v5 (mauvaise version de spec, ou une contrainte interdite par la spec) : elle est donc non décomptable et aucun lecteur conforme ne la compte. Répondre gaspillerait des frais, l'envoi est donc désactivé.",
 
   // --- Connect prompt ------------------------------------------------------
   connectTitle: "Connectez un portefeuille pour répondre",

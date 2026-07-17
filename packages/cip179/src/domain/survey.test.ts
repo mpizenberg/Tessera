@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Role } from "../index.js";
 import type { Credential, SurveyDefinition } from "../index.js";
 
 import { bytesToHex } from "./hex.js";
@@ -156,6 +157,39 @@ describe("aggregateSurveys — cancellation tri-state", () => {
     expect(a.cancelled).toBe(false);
     expect(a.cancellationClaimed).toBe(false);
     expect(a.status).toBe("active");
+  });
+});
+
+describe("aggregateSurveys — talliable flag (findings 10, 11)", () => {
+  // The base `def` helper has empty roles + no questions, so it is untalliable;
+  // build a spec-valid definition on top of it for the positive case.
+  const validDef = (owner: Credential, endEpoch: number): SurveyDefinition => ({
+    ...def(owner, endEpoch),
+    eligibleRoles: [Role.DRep],
+    questions: [
+      {
+        type: "singleChoice",
+        prompt: "",
+        options: { type: "options", labels: ["a", "b"] },
+      },
+    ],
+  });
+
+  it("marks a spec-valid definition talliable", () => {
+    const a = agg1(recs([survey(0, validDef(keyOwner(1), 10))], []));
+    expect(a.talliable).toBe(true);
+  });
+
+  it("marks a structurally-invalid definition (no questions) untalliable", () => {
+    const a = agg1(recs([survey(0, def(keyOwner(1), 10))], []));
+    expect(a.talliable).toBe(false);
+  });
+
+  it("marks a non-v5 definition untalliable (finding 10)", () => {
+    const a = agg1(
+      recs([survey(0, { ...validDef(keyOwner(1), 10), specVersion: 6 })], []),
+    );
+    expect(a.talliable).toBe(false);
   });
 });
 

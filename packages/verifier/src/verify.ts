@@ -14,7 +14,12 @@
  * backend that omits or alters responses cannot reproduce the hash.
  */
 
-import { validateResponse, type SurveyResponse } from "cip-179";
+import {
+  definitionErrors,
+  isDefinitionTalliable,
+  validateResponse,
+  type SurveyResponse,
+} from "cip-179";
 
 import {
   BINDABLE_ROLES,
@@ -92,6 +97,14 @@ export interface VerifyResult {
    * the reason is in `notes`. Re-run when the inputs are resolvable.
    */
   readonly indeterminate: boolean;
+  /**
+   * True when the survey's on-chain definition is spec-invalid (non-v5 or
+   * structurally invalid), so it is untalliable and has no reproducible tally
+   * (findings 10/11). `match` is then not meaningful (`false`, but NOT a
+   * MISMATCH): a conformant emitter produces no artifact, so a served artifact is
+   * itself a backend non-conformance. The reason is in `notes`.
+   */
+  readonly untalliable: boolean;
   /** Content hash of the artifact as received. */
   readonly receivedHash: string;
   /** Content hash of the independently rebuilt tally. */
@@ -112,6 +125,7 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
   tally: TallyBody;
   notes: string[];
   indeterminate: string | null;
+  untalliable: string | null;
 }> {
   const notes: string[] = [];
   const { bundle } = inputs;
@@ -129,6 +143,23 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
     survey: surveyId,
     sealed,
   };
+
+  // Talliability first (the `definition-validity` ruleset rule): a spec-invalid
+  // definition — non-v5 or structurally invalid — is untalliable, so it has no
+  // reproducible tally and a conformant emitter writes no artifact. Decided from
+  // the independent on-chain definition, so a backend can't dress an invalid
+  // survey up as talliable (findings 10, 11).
+  if (!isDefinitionTalliable(def)) {
+    const codes = definitionErrors(def)
+      .map((p) => p.code)
+      .join(", ");
+    return {
+      tally: { ...base, perRole: [] },
+      notes,
+      indeterminate: null,
+      untalliable: `definition is spec-invalid (${codes}) — untalliable, no artifact should exist`,
+    };
+  }
 
   // Cancellation first: the earliest owner-proven, in-window cancellation (in
   // chain order — the choice the ruleset pins) short-circuits the tally.
@@ -152,6 +183,7 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
       },
       notes,
       indeterminate: null,
+      untalliable: null,
     };
   }
 
@@ -204,7 +236,12 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
   // A single unresolved-link uncertainty makes the whole rebuild indeterminate:
   // we can't produce THE counted set, so a hash comparison would be misleading.
   if (indeterminate) {
-    return { tally: { ...base, perRole: [] }, notes, indeterminate };
+    return {
+      tally: { ...base, perRole: [] },
+      notes,
+      indeterminate,
+      untalliable: null,
+    };
   }
   let counted: ResponseRecord[];
   if (sealed) {
@@ -217,7 +254,12 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
       notes.push(
         "sealed survey on an unsupported (non-quicknet) drand chain — no reveal, empty tally",
       );
-      return { tally: { ...base, perRole: [] }, notes, indeterminate: null };
+      return {
+        tally: { ...base, perRole: [] },
+        notes,
+        indeterminate: null,
+        untalliable: null,
+      };
     }
     if (!inputs.reveal) {
       throw new Error(
@@ -330,7 +372,12 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
     });
   }
 
-  return { tally: { ...base, perRole }, notes, indeterminate: null };
+  return {
+    tally: { ...base, perRole },
+    notes,
+    indeterminate: null,
+    untalliable: null,
+  };
 }
 
 /** Human-readable differences between the received and rebuilt tallies. */
@@ -390,8 +437,29 @@ export async function verifyArtifact(
   inputs: VerifyInputs,
 ): Promise<VerifyResult> {
   const receivedHash = artifactHash(inputs.artifact.tally);
-  const { tally: rebuilt, notes, indeterminate } = await rebuildTally(inputs);
+  const {
+    tally: rebuilt,
+    notes,
+    indeterminate,
+    untalliable,
+  } = await rebuildTally(inputs);
   const rebuiltHash = artifactHash(rebuilt);
+
+  // An untalliable survey has no reproducible tally: a served artifact is itself
+  // a backend non-conformance (a conformant emitter writes none), so this is
+  // neither MATCH nor MISMATCH regardless of what the artifact hashes to.
+  if (untalliable !== null) {
+    return {
+      match: false,
+      indeterminate: false,
+      untalliable: true,
+      receivedHash,
+      rebuiltHash,
+      rebuilt,
+      notes: [...notes, untalliable],
+      diffs: [],
+    };
+  }
 
   // Diff this verifier's independently-resolved link set against the one the
   // emitter committed (unhashed provenance), so a divergence in governance-link
@@ -415,6 +483,7 @@ export async function verifyArtifact(
     return {
       match: false,
       indeterminate: true,
+      untalliable: false,
       receivedHash,
       rebuiltHash,
       rebuilt,
@@ -427,6 +496,7 @@ export async function verifyArtifact(
   return {
     match,
     indeterminate: false,
+    untalliable: false,
     receivedHash,
     rebuiltHash,
     rebuilt,

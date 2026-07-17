@@ -19,6 +19,11 @@ const survey = {
   claimedNoticeRest:
     "A cancellation referencing this survey was published, but this client couldn't verify it came from the survey owner — so it isn't acted on. Only an owner-signed cancellation invalidates a survey.",
 
+  // Invalid-definition notice (untalliable survey). Bold lead + plain rest.
+  invalidNoticeStrong: "Invalid definition.",
+  invalidNoticeRest:
+    "This survey's on-chain definition doesn't conform to CIP-179 v5 (wrong spec version, or a constraint the spec forbids), so it is untalliable: no results are produced and responding is disabled. The definition stays on-chain for reference.",
+
   // Respond CTA
   respondCta: "Respond to this survey",
 

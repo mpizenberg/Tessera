@@ -22,7 +22,7 @@
  * sealed survey on an unsupported (non-quicknet) drand chain is skipped forever.
  */
 
-import { Role, type SurveyResponse } from "cip-179";
+import { isDefinitionTalliable, Role, type SurveyResponse } from "cip-179";
 
 import {
   auditRevealedResponses,
@@ -115,6 +115,22 @@ export async function finalizeClosedSurveys(
   );
   if (candidates.length === 0) return;
 
+  // Spec-invalid definitions are untalliable (findings 10, 11): a non-v5 or
+  // structurally-invalid survey produces NO artifact — it is never tallied under
+  // v5 semantics, and an independent verifier reaches the same untalliable
+  // verdict from the same on-chain definition. Drop them before any cancellation
+  // or weight work (an invalid definition is not a valid survey to begin with,
+  // so invalidity takes precedence over cancellation). The `definition-validity`
+  // rule in RULESET_DESCRIPTOR pins this gate.
+  const talliable = candidates.filter((s) => {
+    if (isDefinitionTalliable(s.definition)) return true;
+    console.warn(
+      `finalize: ${refKey(s.ref)} definition is spec-invalid — untalliable, no artifact`,
+    );
+    return false;
+  });
+  if (talliable.length === 0) return;
+
   // --- cancelled surveys: a cancellation artifact, no weight work ------------
   // The snapshot keeps `proof: null` for cancellations of closed surveys (the
   // scan only verifies open ones), so re-fetch the proofs here.
@@ -123,7 +139,7 @@ export async function finalizeClosedSurveys(
     store,
     source,
     records,
-    candidates,
+    talliable,
     nowSec,
   );
 
