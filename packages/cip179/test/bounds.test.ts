@@ -261,3 +261,42 @@ describe("sealed-answer decode honors the error contract (finding 44)", () => {
     expect(() => decodeSurveyResponse(resp)).toThrow(Cip179DecodeError);
   });
 });
+
+describe("an unsupported spec_version explains its own decode failure", () => {
+  // A v4 rating question omits the mandatory `require_all` flag v5 put at
+  // index 4, so v5 structural decode fails somewhere inside the question.
+  const definition = (specVersion: bigint): Metadatum =>
+    new Map<Metadatum, Metadatum>([
+      [0n, specVersion],
+      [1n, [0n, bytes(28)]], // owner
+      [2n, "t"], // title
+      [3n, ""], // description
+      [4n, [BigInt(Role.Stakeholder)]], // eligibleRoles
+      [5n, 10n], // endEpoch
+      [6n, [0n]], // submissionMode: public
+      [7n, [[6n, "rate", 3n, 5n]]], // questions — v4 rating arity
+    ]);
+
+  it("blames the version, not whichever field happens to differ", () => {
+    expect(() => decodeSurveyDefinition(definition(4n))).toThrow(
+      /unsupported spec_version 4 .* \(at definition\.specVersion\)/,
+    );
+  });
+
+  it("leaves a supported version's structural error untouched", () => {
+    expect(() => decodeSurveyDefinition(definition(5n))).toThrow(
+      /\(at definition\.questions\[0\]\)/,
+    );
+  });
+
+  it("still decodes an older version whose shape happens to fit", () => {
+    const v4 = definition(4n);
+    (v4 as Map<Metadatum, Metadatum>).set(7n, [[1n, "pick", 2n]]);
+    const decoded = decodeSurveyDefinition(v4);
+    expect(decoded.specVersion).toBe(4);
+    // Reporting it as untalliable beats dropping it: a reader can say why.
+    expect(validateDefinition(decoded).map((p) => p.code)).toContain(
+      "definition.specVersionUnsupported",
+    );
+  });
+});

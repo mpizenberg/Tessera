@@ -4,7 +4,7 @@
 
 You cannot measure your own token usage or trigger compaction — don't try. Instead, make compaction (automatic or manual) lossless by keeping state on disk:
 
-- Keep planning documents in a `plan/` folder at the repo root, one document per task or feature.
+- Keep planning documents in a `plans/` folder at the repo root, one document per task or feature, named `YYYY-MM-DD-short-slug.md` after the day the work starts so the folder sorts chronologically. Living documents that outlive a single task (a standing backlog, a reusable prompt) keep a bare descriptive name instead.
 - Work in the discrete increments defined by the plan document governing the current task; commit at each increment boundary.
 - Maintain a short **Progress** section at the top of that plan document: one line per completed increment, plus any deviation from the plan. Update it when an increment lands.
 - In a long session, a completed increment is the natural compaction point — finish it, update Progress, commit, then suggest the user run `/compact`.

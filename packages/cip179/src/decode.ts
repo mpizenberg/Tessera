@@ -7,6 +7,11 @@
  * versions) and strict about structure. They validate shape, not cross-field
  * semantics; use the `validate` module for that.
  *
+ * `spec_version` is read before the record it introduces, so a record from an
+ * unsupported version reports that rather than the first field whose shape
+ * moved. It is an attribution rule, not a gate: a foreign version that happens
+ * to fit still decodes, and stays for `validate` to rule untalliable.
+ *
  * @module
  */
 
@@ -19,6 +24,7 @@ import {
   QuestionTag,
   ROLE_VALUES,
   type Role,
+  SPEC_VERSION,
   SubmissionModeTag,
 } from "./constants.js";
 import { Cip179DecodeError } from "./errors.js";
@@ -512,38 +518,72 @@ const decodeResponseAnswers = (
 // Top-level records
 // ----------------------------------------------------------------------------
 
+/** Reader for a record map's mandatory keys, failing with the field's name. */
+const keyReader =
+  (map: MetadatumMap, path: string) =>
+  (k: number, name: string): Metadatum => {
+    const v = getKey(map, k);
+    if (v === undefined) fail(`missing key ${k} (${name})`, path);
+    return v as Metadatum;
+  };
+
+/**
+ * Decode a record body whose declared `spec_version` is already known. Another
+ * version's body has a shape this decoder does not describe, so a structural
+ * error raised inside it points at whichever field happens to differ rather
+ * than at the reason: report the version. A supported version's errors pass
+ * through untouched.
+ */
+const withSpecVersion = <T>(
+  specVersion: number,
+  path: string,
+  body: () => T,
+): T => {
+  try {
+    return body();
+  } catch (e) {
+    if (specVersion === SPEC_VERSION) throw e;
+    return fail(
+      `unsupported spec_version ${specVersion} ` +
+        `(this decoder implements v${SPEC_VERSION})`,
+      `${path}.specVersion`,
+    );
+  }
+};
+
 export const decodeSurveyDefinition = (
   m: Metadatum,
   path = "definition",
 ): SurveyDefinition => {
   const map = asMap(m, path);
-  const get = (k: number, name: string): Metadatum => {
-    const v = getKey(map, k);
-    if (v === undefined) fail(`missing key ${k} (${name})`, path);
-    return v as Metadatum;
-  };
-  const questions = asList(get(7, "questions"), `${path}.questions`);
-  const anchor = getKey(map, 8);
-  return {
-    specVersion: asNumber(get(0, "specVersion"), `${path}.specVersion`),
-    owner: decodeCredential(get(1, "owner"), `${path}.owner`),
-    title: text(get(2, "title"), `${path}.title`),
-    description: text(get(3, "description"), `${path}.description`),
-    eligibleRoles: asList(get(4, "eligibleRoles"), `${path}.eligibleRoles`).map(
-      (r, i) => decodeRole(r, `${path}.eligibleRoles[${i}]`),
-    ),
-    endEpoch: asNumber(get(5, "endEpoch"), `${path}.endEpoch`),
-    submissionMode: decodeSubmissionMode(
-      get(6, "submissionMode"),
-      `${path}.submissionMode`,
-    ),
-    questions: questions.map((q, i) =>
-      decodeQuestion(q, `${path}.questions[${i}]`),
-    ),
-    ...(anchor !== undefined
-      ? { contentAnchor: decodeContentAnchor(anchor, `${path}.contentAnchor`) }
-      : {}),
-  };
+  const get = keyReader(map, path);
+  const specVersion = asNumber(get(0, "specVersion"), `${path}.specVersion`);
+  return withSpecVersion(specVersion, path, () => {
+    const anchor = getKey(map, 8);
+    return {
+      specVersion,
+      owner: decodeCredential(get(1, "owner"), `${path}.owner`),
+      title: text(get(2, "title"), `${path}.title`),
+      description: text(get(3, "description"), `${path}.description`),
+      eligibleRoles: asList(
+        get(4, "eligibleRoles"),
+        `${path}.eligibleRoles`,
+      ).map((r, i) => decodeRole(r, `${path}.eligibleRoles[${i}]`)),
+      endEpoch: asNumber(get(5, "endEpoch"), `${path}.endEpoch`),
+      submissionMode: decodeSubmissionMode(
+        get(6, "submissionMode"),
+        `${path}.submissionMode`,
+      ),
+      questions: asList(get(7, "questions"), `${path}.questions`).map((q, i) =>
+        decodeQuestion(q, `${path}.questions[${i}]`),
+      ),
+      ...(anchor !== undefined
+        ? {
+            contentAnchor: decodeContentAnchor(anchor, `${path}.contentAnchor`),
+          }
+        : {}),
+    };
+  });
 };
 
 export const decodeSurveyResponse = (
@@ -551,22 +591,21 @@ export const decodeSurveyResponse = (
   path = "response",
 ): SurveyResponse => {
   const map = asMap(m, path);
-  const get = (k: number, name: string): Metadatum => {
-    const v = getKey(map, k);
-    if (v === undefined) fail(`missing key ${k} (${name})`, path);
-    return v as Metadatum;
-  };
-  const rationale = getKey(map, 5);
-  return {
-    specVersion: asNumber(get(0, "specVersion"), `${path}.specVersion`),
-    surveyRef: decodeSurveyRef(get(1, "surveyRef"), `${path}.surveyRef`),
-    role: decodeRole(get(2, "role"), `${path}.role`),
-    credential: decodeCredential(get(3, "credential"), `${path}.credential`),
-    answers: decodeResponseAnswers(get(4, "answers"), `${path}.answers`),
-    ...(rationale !== undefined
-      ? { rationale: decodeContentAnchor(rationale, `${path}.rationale`) }
-      : {}),
-  };
+  const get = keyReader(map, path);
+  const specVersion = asNumber(get(0, "specVersion"), `${path}.specVersion`);
+  return withSpecVersion(specVersion, path, () => {
+    const rationale = getKey(map, 5);
+    return {
+      specVersion,
+      surveyRef: decodeSurveyRef(get(1, "surveyRef"), `${path}.surveyRef`),
+      role: decodeRole(get(2, "role"), `${path}.role`),
+      credential: decodeCredential(get(3, "credential"), `${path}.credential`),
+      answers: decodeResponseAnswers(get(4, "answers"), `${path}.answers`),
+      ...(rationale !== undefined
+        ? { rationale: decodeContentAnchor(rationale, `${path}.rationale`) }
+        : {}),
+    };
+  });
 };
 
 export const decodeSurveyCancellation = (
