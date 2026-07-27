@@ -781,8 +781,17 @@ function buildArtifact(
     for (const { row: r, response } of entries) {
       if (r.role !== role) continue;
       const weight = weightByRole.get(role)?.get(r.credential);
-      // Guaranteed present by the emit-time completeness check (incompleteReason).
-      if (!weight) continue;
+      // `incompleteReason` already guaranteed this; reaching here means that
+      // invariant broke. Throwing postpones the survey (the per-survey catch
+      // logs and retries next pass) — dropping the responder instead would
+      // freeze a short tally into an immutable artifact, discoverable only as
+      // a verifier MISMATCH.
+      if (!weight) {
+        throw new Error(
+          `no frozen weight for role ${role} ${r.credential} — ` +
+            `completeness invariant broken`,
+        );
+      }
       if (!weight.registered) {
         // §6.1: membership at end_epoch is a hard filter (weight-0 registered
         // credentials stay counted; unregistered ones don't).
