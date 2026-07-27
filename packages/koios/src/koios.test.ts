@@ -381,6 +381,87 @@ describe("fetchAll — chain position", () => {
     expect(records.surveys[1]!.proof).toBeUndefined();
   });
 
+  // A definition proof and a cancellation proof are the same question over the
+  // same evidence, so they ride one request — two would double the scan's
+  // /tx_cbor cost for nothing.
+  it("fetches definition and cancellation proofs in a single tx_cbor request", async () => {
+    const CANCEL_TX = "ef".repeat(32);
+    const OWNER = "0f".repeat(28);
+    const definitionMetadata = {
+      "17": [
+        0,
+        [
+          {
+            "0": 5,
+            "1": [0, `0x${OWNER}`],
+            "2": "t",
+            "3": "",
+            "4": [3],
+            "5": 1_400, // open
+            "6": [0],
+            "7": [[1, "q", ["yes", "no"]]],
+          },
+        ],
+      ],
+    };
+    const cancellationMetadata = {
+      "17": [2, [[`0x${SURVEY_TX}`, 0]]],
+    };
+    const cborBodies: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/tx_by_metalabel")) {
+          return new Response(
+            JSON.stringify([
+              { tx_hash: SURVEY_TX, absolute_slot: 5_000, epoch_no: 1_340 },
+              { tx_hash: CANCEL_TX, absolute_slot: 6_000, epoch_no: 1_341 },
+            ]),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/tx_metadata")) {
+          return new Response(
+            JSON.stringify([
+              { tx_hash: SURVEY_TX, metadata: definitionMetadata },
+              { tx_hash: CANCEL_TX, metadata: cancellationMetadata },
+            ]),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/tx_cbor")) {
+          cborBodies.push(String(init?.body));
+          return new Response("[]", { status: 200 });
+        }
+        if (url.includes("/tip")) {
+          return new Response(
+            JSON.stringify([
+              {
+                epoch_no: 1_346,
+                abs_slot: 10_000,
+                epoch_slot: 100,
+                block_time: 1_750_000_000,
+              },
+            ]),
+            { status: 200 },
+          );
+        }
+        return new Response("[]", { status: 200 });
+      }),
+    );
+    const records = await new KoiosDataSource(CONFIG).fetchAll();
+
+    expect(records.surveys).toHaveLength(1);
+    expect(records.cancellations).toHaveLength(1);
+    expect(cborBodies).toHaveLength(1);
+    expect(cborBodies[0]).toContain(SURVEY_TX);
+    expect(cborBodies[0]).toContain(CANCEL_TX);
+    // Both sides still get their (unknown) verdict from that one reading.
+    expect(records.surveys[0]!.proof).toBeNull();
+    expect(records.cancellations[0]!.proof).toBeNull();
+  });
+
   it("flags the snapshot incomplete when a tx_metadata batch fails (findings 3, 12)", async () => {
     vi.stubGlobal(
       "fetch",

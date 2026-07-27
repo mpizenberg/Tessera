@@ -446,28 +446,44 @@ export class KoiosDataSource implements DataSource {
       });
     }
 
-    // Verify owner-proofs only for cancellations of still-open surveys; the
-    // rest (closed, or referencing an unknown survey) keep `proof: null`, which
-    // the domain treats as unverified. This leaves a cancelled-then-closed
-    // survey looking merely "ended" HERE — the serving tier covers that case
-    // from its finalized artifact instead (`finalizedCancelled` in the list
-    // payload; direct-Koios mode has no artifacts and accepts the gap).
+    // Owner-proof evidence, gathered for still-open surveys only. CIP-179 asks
+    // the same question of a survey's *defining* transaction ("MUST prove
+    // ownership of the `owner` credential") and of a transaction cancelling it
+    // (same credential, same mechanism A), so one `txProofs` call answers both
+    // — a single tx can even be both, a batch that defines one survey and
+    // cancels another. Records outside that set keep `proof: null`, which the
+    // domain treats as unverified.
     //
     // Deliberately NOT extended to closed surveys (considered, rejected): every
-    // in-window cancellation ever posted would then need its tx CBOR fetched on
-    // every scan, forever. That cost is permanent and cumulative — and
-    // adversarial: anyone can post cancellation txs against open surveys for
-    // ~one tx fee each, buying ⌈N/25⌉ extra Koios requests per scan for the
-    // rest of the deployment's life (against the Worker's subrequest cap, and
-    // per visitor in direct mode). The open-only rule keeps griefing cost
-    // transient: it evaporates when the targeted surveys close.
-    // Mirrors `cancellationStates` in @tessera/core's survey.ts.
+    // definition and every in-window cancellation ever posted would then have
+    // its tx CBOR fetched on every scan, forever — a permanent, cumulative
+    // cost, and for cancellations an adversarial one: anyone can post
+    // cancellation txs against open surveys for ~one tx fee each, buying
+    // ⌈N/25⌉ extra Koios requests per scan for the rest of the deployment's
+    // life (against the Worker's subrequest cap, and per visitor in direct
+    // mode). Open-only keeps that cost transient — it evaporates when the
+    // targeted surveys close — and it tracks where each proof matters: an
+    // unproven owner matters while a survey can still attract responses (the UI
+    // badges it untalliable and blocks answering, so nobody pays a fee to a
+    // survey published under a borrowed name), and a cancellation can only
+    // suppress a survey that is still open. Once closed, the finalized artifact
+    // carries both verdicts, and the emitter re-reads the proofs itself before
+    // freezing one.
+    //
+    // The gap that leaves HERE: a cancelled-then-closed survey looks merely
+    // "ended". The serving tier covers it from the artifact instead
+    // (`finalizedCancelled` in the list payload); direct-Koios mode has no
+    // artifacts and accepts the gap. Mirrors `cancellationStates` in
+    // @tessera/core's survey.ts.
     const refKeyOf = (ref: SurveyRef): string =>
       `${bytesToHex(ref.txId)}:${ref.index}`;
     const openSurveyKeys = new Set(
       surveys
         .filter((s) => tip.epoch_no <= s.definition.endEpoch)
         .map((s) => refKeyOf(s.ref)),
+    );
+    const openSurveys = surveys.filter((s) =>
+      openSurveyKeys.has(refKeyOf(s.ref)),
     );
     const openCancellations: CancellationRecord[] = [];
     const closedCancellations: CancellationRecord[] = [];
@@ -476,62 +492,51 @@ export class KoiosDataSource implements DataSource {
       else closedCancellations.push(c);
     }
 
-    // A script-credentialed owner's native script may not be attached to the
-    // cancelling tx (CIP-179 mechanism A allows chain resolution). Map each open
-    // cancellation's tx to its target survey's owner script hash so `txProofs`
-    // can resolve it by hash when the witness set lacks it (finding 7).
+    // A script-credentialed owner's native script may not be attached to the tx
+    // that has to prove it (CIP-179 mechanism A allows chain resolution), so
+    // tell `txProofs` which script hash each tx claims and let it resolve the
+    // hash when the witness set lacks it (finding 7).
     const ownerByKey = new Map(
       surveys.map((s) => [refKeyOf(s.ref), s.definition.owner]),
     );
-    const cancellationScripts = new Map<string, string[]>();
+    const neededScripts = new Map<string, string[]>();
+    const needScript = (txHash: string, scriptHash: string | null): void => {
+      if (!scriptHash) return;
+      const list = neededScripts.get(txHash);
+      if (list) list.push(scriptHash);
+      else neededScripts.set(txHash, [scriptHash]);
+    };
+    for (const s of openSurveys) {
+      needScript(s.txHash, scriptCredentialHash(s.definition.owner));
+    }
     for (const c of openCancellations) {
       const owner = ownerByKey.get(refKeyOf(c.target));
-      const scriptHash = owner ? scriptCredentialHash(owner) : null;
-      if (!scriptHash) continue;
-      const list = cancellationScripts.get(c.txHash);
-      if (list) list.push(scriptHash);
-      else cancellationScripts.set(c.txHash, [scriptHash]);
+      needScript(c.txHash, owner ? scriptCredentialHash(owner) : null);
     }
 
-    // Owner-proof for the *defining* transaction of each open survey (CIP-179:
-    // "the definition transaction MUST prove ownership of the `owner`
-    // credential"). Bounded to open surveys for the reason above, and for a
-    // second one: an unproven owner matters while a survey can still attract
-    // responses — the UI badges it untalliable and blocks answering, so nobody
-    // pays a fee to a survey published under a borrowed name. Once closed, the
-    // artifact carries the verdict instead, and the emitter fetches the proof
-    // itself before freezing anything.
-    const openSurveys = surveys.filter((s) =>
-      openSurveyKeys.has(refKeyOf(s.ref)),
-    );
-    const definitionScripts = new Map<string, string[]>();
-    for (const s of openSurveys) {
-      const scriptHash = scriptCredentialHash(s.definition.owner);
-      if (!scriptHash) continue;
-      const list = definitionScripts.get(s.txHash);
-      if (list) list.push(scriptHash);
-      else definitionScripts.set(s.txHash, [scriptHash]);
-    }
-    const ownerProofs =
-      openSurveys.length === 0
+    const proofTxs = [
+      ...new Set([
+        ...openSurveys.map((s) => s.txHash),
+        ...openCancellations.map((c) => c.txHash),
+      ]),
+    ];
+    const proofs =
+      proofTxs.length === 0
         ? new Map<string, TxProof | null>()
-        : await this.txProofs(
-            [...new Set(openSurveys.map((s) => s.txHash))],
-            definitionScripts,
-          );
+        : await this.txProofs(proofTxs, neededScripts);
 
     return {
       surveys: surveys.map((s) =>
         openSurveyKeys.has(refKeyOf(s.ref))
-          ? { ...s, proof: ownerProofs.get(s.txHash) ?? null }
+          ? { ...s, proof: proofs.get(s.txHash) ?? null }
           : s,
       ),
       responses,
       cancellations: [
-        ...(await this.withCancellationProofs(
-          openCancellations,
-          cancellationScripts,
-        )),
+        ...openCancellations.map((c) => ({
+          ...c,
+          proof: proofs.get(c.txHash) ?? null,
+        })),
         ...closedCancellations,
       ],
       incomplete,
@@ -602,36 +607,13 @@ export class KoiosDataSource implements DataSource {
   }
 
   /**
-   * Fill each cancellation's owner-proof evidence by fetching the cancelling
-   * transaction's CBOR (`/tx_cbor`) and decoding its `required_signers` +
-   * witness-set native scripts. Callers pass only cancellations of still-open
-   * surveys (a closed survey can't be suppressed, so verifying its cancellation
-   * would be wasted work — see {@link fetchAll}). Cancellations are rare, so this
-   * is one extra (batched) request per refresh only when any exist. A failed
-   * fetch/decode leaves `proof: null` → the cancellation is treated as
-   * unverified, never an error that sinks the snapshot. Decoded once per unique
-   * tx (a batched cancellation tx can target several surveys).
-   */
-  private async withCancellationProofs(
-    cancellations: readonly CancellationRecord[],
-    neededScripts: ReadonlyMap<string, readonly string[]>,
-  ): Promise<CancellationRecord[]> {
-    if (cancellations.length === 0) return [...cancellations];
-    const proofByHash = await this.txProofs(
-      [...new Set(cancellations.map((c) => c.txHash))],
-      neededScripts,
-    );
-    return cancellations.map((c) => ({
-      ...c,
-      proof: proofByHash.get(c.txHash) ?? null,
-    }));
-  }
-
-  /**
    * Credential-proof evidence per transaction: fetch each tx's CBOR
    * (`/tx_cbor`, batched) and decode required signers, native scripts, and
-   * vote bindings. Used for cancellation owner-proofs at scan time and response
-   * credential-proofs (§6.3 rule 2) by the serving tier's validation pass.
+   * vote bindings. Used at scan time for the owner-proofs of open surveys and
+   * of the transactions cancelling them, and for response credential-proofs
+   * (§6.3 rule 2) by the serving tier's validation pass. Each unique tx is
+   * fetched and decoded once, so a batch that carries several records costs one
+   * row.
    *
    * The two map outcomes are semantically distinct and callers MUST NOT conflate
    * them:
@@ -920,8 +902,8 @@ export class KoiosDataSource implements DataSource {
         break;
       case "cancellations":
         for (const { value: target } of payload.cancellations) {
-          // `proof` is filled in a second pass (withCancellationProofs), which
-          // fetches the cancelling tx's CBOR to read its owner-proof evidence.
+          // `proof` is filled in a second pass, which fetches the cancelling
+          // tx's CBOR to read its owner-proof evidence.
           out.cancellations.push({
             txHash,
             slot,

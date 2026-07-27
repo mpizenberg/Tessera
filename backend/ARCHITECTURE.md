@@ -42,8 +42,9 @@
 
 The frontend talks to Koios **directly from every browser**, on each load/refresh
 running the full read pipeline (`src/data/koios.ts`): paged
-`/tx_by_metalabel?_label=17`, batched `/tx_metadata`, `/tx_cbor` for cancellation
-proofs, `/proposal_list` for governance links, `/tip`, and polled `/tx_status`.
+`/tx_by_metalabel?_label=17`, batched `/tx_metadata`, one `/tx_cbor` pass for the
+owner-proofs of open surveys and of the transactions cancelling them,
+`/proposal_list` for governance links, `/tip`, and polled `/tx_status`.
 
 1. **Security.** `VITE_KOIOS_TOKEN` is baked into the JS bundle — a shared
    credential visible to anyone, burnable against one quota. The anonymous tier
