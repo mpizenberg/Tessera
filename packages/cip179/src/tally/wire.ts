@@ -6,28 +6,39 @@
  * losslessly (`stringify` throws on BigInt and drops typed-array structure;
  * `parse` coerces big numbers to lossy doubles). This codec maps any such value
  * to/from a tagged JSON-safe form, so a snapshot can cross HTTP and SQLite and be
- * reconstructed byte-for-byte.
+ * reconstructed as an equal value — with map entry order normalized, see below.
  *
  * Conventions mirror the artifact format (`backend/ARCHITECTURE.md` §7): bytes →
  * hex, big integers → decimal strings. Each tag is an object with a single
  * `$`-prefixed key. Decoded CIP-179 data never produces such an object itself
  * (its map keys are integers or plain strings, its values are the primitives
  * above), so the tags are unambiguous.
+ *
+ * RULESET-PINNED-BEHAVIOR: `$map` entries are sorted by the canonical JSON of
+ * the tagged key. A sealed artifact commits a custom answer's map this way, and
+ * the entry order a CBOR decoder reports is its own business — sorting is what
+ * lets an independent verifier reproduce the hash whatever codec it injects.
+ * The `sealed-artifact` rule in `RULESET_DESCRIPTOR` states it; changing the
+ * order is a ruleset change.
  */
 
 import { bytesToHex, hexToBytes } from "../domain/index.js";
+import { canonicalJson } from "./canonical.js";
 
 /** Recursively replace bytes/bigint/Map with tagged JSON-safe equivalents. */
 export function toJsonSafe(value: unknown): unknown {
   if (value instanceof Uint8Array) return { $bytes: bytesToHex(value) };
   if (typeof value === "bigint") return { $bigint: value.toString() };
   if (value instanceof Map) {
-    return {
-      $map: [...value.entries()].map(([k, v]) => [
-        toJsonSafe(k),
-        toJsonSafe(v),
-      ]),
-    };
+    // Tagging first makes every key canonicalJson-safe (no raw bigint/bytes),
+    // and sorting on that text is what keeps a sealed artifact independent of
+    // the decoder that produced the map.
+    const keyed = [...value.entries()].map(([k, v]) => {
+      const pair: [unknown, unknown] = [toJsonSafe(k), toJsonSafe(v)];
+      return { order: canonicalJson(pair[0]), pair };
+    });
+    keyed.sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
+    return { $map: keyed.map((e) => e.pair) };
   }
   if (Array.isArray(value)) return value.map(toJsonSafe);
   if (value !== null && typeof value === "object") {

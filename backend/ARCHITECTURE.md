@@ -562,7 +562,8 @@ Contents (sketch):
             "txHash": "…",
             "responseIndex": 0, // position in the tx's label-17 payload
             // sealed surveys only: the revealed answers in JSON-safe wire form
-            // (bytes→hex, bigint→decimal string, Map→tagged pairs), e.g.
+            // (bytes→hex, bigint→decimal string, Map→tagged pairs sorted by the
+            // canonical JSON of the tagged key), e.g.
             // "answers": [{ "type": "singleChoice", "questionIndex": 0, "optionIndex": 1 }]
           },
           // unregistered responders are excluded, not listed here

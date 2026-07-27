@@ -48,4 +48,40 @@ describe("wire codec", () => {
     expect(back.e).toBeInstanceOf(Uint8Array);
     expect(back.e.length).toBe(0);
   });
+
+  // Finding 32 — a sealed artifact hashes a custom answer's map, so the wire
+  // form must not inherit whichever entry order the injected CBOR decoder
+  // reported. Ruleset v9 sorts by the canonical JSON of the tagged key.
+  describe("$map entry order is canonical, not the decoder's", () => {
+    const entries: [unknown, unknown][] = [
+      [2n, "two"],
+      ["k", 1n],
+      [new Uint8Array([0xff]), "bytes"],
+      [0n, "zero"],
+    ];
+
+    it("serializes the same bytes whatever order a decoder produced", () => {
+      const forward = JSON.stringify(toJsonSafe(new Map(entries)));
+      const reversed = JSON.stringify(
+        toJsonSafe(new Map([...entries].reverse())),
+      );
+      expect(forward).toBe(reversed);
+    });
+
+    it("sorts nested maps too", () => {
+      const nest = (es: [unknown, unknown][]): unknown =>
+        new Map<unknown, unknown>([["outer", new Map(es)]]);
+      expect(JSON.stringify(toJsonSafe(nest(entries)))).toBe(
+        JSON.stringify(toJsonSafe(nest([...entries].reverse()))),
+      );
+    });
+
+    it("still round-trips every key to its own value", () => {
+      const back = roundTrip(new Map(entries)) as Map<unknown, unknown>;
+      expect(back.get(2n)).toBe("two");
+      expect(back.get("k")).toBe(1n);
+      expect(back.get(0n)).toBe("zero");
+      expect([...back.keys()].length).toBe(4);
+    });
+  });
 });

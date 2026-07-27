@@ -80,7 +80,14 @@ export const RULESET_DESCRIPTOR = {
   // it was decoded and tallied under v5 semantics. No *valid* survey's tally
   // value changes, but the set of talliable surveys does (invalid ones drop out)
   // and the gate is now pinned, so v8 hashes are incomparable with v7.
-  rulesetVersion: 8,
+  // v9: a sealed responder's committed answers now sort a custom answer's map
+  // entries by the canonical JSON of the tagged key. The order used to be
+  // whatever the injected CBOR decoder reported, so a verifier whose codec
+  // normalized map order could not reproduce such an artifact — the hash
+  // depended on a decoder's behavior rather than on the rules. Only sealed
+  // surveys with a custom map answer re-order and no counted value changes, but
+  // the hashed bytes can differ, so v9 hashes are incomparable with v8.
+  rulesetVersion: 9,
   cip179SpecVersion: 5,
   /** Roles artifacts cover: 0 DRep, 3 Stakeholder, 4 Keyholder (SPO/CC deferred). */
   coveredRoles: [0, 3, 4],
@@ -100,7 +107,7 @@ export const RULESET_DESCRIPTOR = {
     "cancellation: a survey is cancelled iff a cancelling transaction at epoch_no <= end_epoch proves the definition's owner credential via mechanism A; the earliest such transaction in chain order (slot, then tx hash) is the one recorded; a cancelled survey's artifact carries no per-role tallies",
     "sealed-reveal: for a sealed survey, decrypt every in-window (rule 1), structurally-valid (rule 2), credential-proven (rule 3) response with the definition-pinned round's BLS-verified drand beacon, then decode the plaintext as the CBOR answers array (trailing zero padding to padding_size is ignored; an empty array is a decode failure) and re-validate those answers against the definition; a response that fails to decrypt, decode, or re-validate is excluded",
     "sealed-dedup: latest-in-chain dedup (rule 4) runs only over sealed responses whose decrypted answers re-validated; undecryptable/invalid responses are excluded and never supersede an earlier valid one; excluded responses are not committed to the artifact",
-    "sealed-artifact: a sealed survey's tally carries sealed=true (cancellations included); each counted responder commits its revealed answers in JSON-safe wire form (bytes→hex, bigint→decimal string, Map→tagged pairs); only drand quicknet (chain hash 52db9ba7...c84e971) is supported — a non-quicknet sealed survey gets no artifact",
+    "sealed-artifact: a sealed survey's tally carries sealed=true (cancellations included); each counted responder commits its revealed answers in JSON-safe wire form (bytes→hex, bigint→decimal string, Map→tagged pairs whose entries are sorted by the canonical JSON of the tagged key); only drand quicknet (chain hash 52db9ba7...c84e971) is supported — a non-quicknet sealed survey gets no artifact",
   ],
 } as const;
 

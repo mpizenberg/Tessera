@@ -42,10 +42,22 @@ published. Keep adding entries here until release.
   - Consumers that indexed the old dense arrays positionally must now read each
     entry's `index`; a zero-answer option is simply absent (refill from the
     definition if you render every option).
-- **Ruleset bump: `rulesetVersion` 4 → 6** for the sparse, slimmed tally body.
-  The counted set and every aggregate value are unchanged (representation only),
-  but the body schema differs, so `rulesetHash()` changes and 0.3.0 artifact
-  hashes are incomparable with 0.2.0 (v4).
+- **Ruleset bump: `rulesetVersion` 4 → 9.** Four changes land in this release, so
+  0.3.0 artifact hashes are incomparable with 0.2.0 (v4) and artifacts
+  re-finalize on deploy. `RULESET_DESCRIPTOR` carries the full note for each.
+  - **v5, v6** — the sparse, slimmed tally body (above). The counted set and
+    every aggregate value are unchanged (representation only), but the body
+    schema differs.
+  - **v7** — an empty answers array is no longer a valid response, so a sealed
+    ballot revealing to zero answers is excluded rather than counted as a
+    participant. The counted set can differ.
+  - **v8** — read-side definition validity is enforced: a survey whose on-chain
+    definition has any error-severity problem (including `spec_version != 5`) is
+    untalliable and produces no artifact. No valid survey's tally changes; the
+    set of talliable surveys does.
+  - **v9** — a sealed responder's committed answers sort a custom answer's map
+    entries by the canonical JSON of the tagged key, instead of inheriting the
+    injected CBOR decoder's entry order.
 - **Removed the count-based display tally from the public API** (`./tally`):
   `tallySurvey`, `tallyQuestion`, `roleBreakdown`, `ratingScaleInfo`,
   `MAX_DISPLAY_BUCKETS`, and the display shapes (`QuestionTally`, `Bar`,
@@ -99,11 +111,9 @@ published. Keep adding entries here until release.
 - The `validateResponse`/`validateDefinition` change is representation-only: the
   validity _verdict_ is unchanged (the list is empty iff the structure is valid),
   so on its own it needed no `rulesetVersion` bump.
-- The **tally schema change bumps the ruleset** (`rulesetVersion` 4 → 6, above):
-  the hashed body's schema changed (sparse, and no level histogram) even though no
-  counted value did. 0.3.0 hashes are incomparable with 0.2.0 (v4), so artifacts
-  re-finalize on deploy; the golden `rulesetHash()` test was updated in the same
-  change.
+- The **ruleset bumps** (`rulesetVersion` 4 → 9, above) each updated the golden
+  `rulesetHash()` test in their own change — that test exists to make an
+  unbumped ruleset change fail CI, so it is never updated on its own.
 - The **decode/encode conformance fixes** (under _Fixed_) only reject malformed
   input more strictly; valid-input behavior and the hashed artifact body are
   unchanged, so they carry **no `rulesetVersion` impact** and the golden
