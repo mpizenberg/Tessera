@@ -364,12 +364,30 @@ export function buildDefinition(
   owner: Credential,
   meta: DefinitionMeta,
   drafts: readonly QuestionDraft[],
-  contentAnchor?: ContentAnchor,
+  opts: {
+    contentAnchor?: ContentAnchor;
+    /** Chain-tip epoch, when known — enables the CIP-179 end_epoch rule below. */
+    tipEpoch?: number | undefined;
+  } = {},
 ): { definition: SurveyDefinition; problems: CreateProblem[] } {
   const problems: string[] = [];
   const external = meta.contentMode === "external";
+  const { contentAnchor, tipEpoch } = opts;
 
   const endEpoch = parseEndEpoch(meta.endEpoch, problems);
+  // CIP-179 §Epoch Semantics: end_epoch MUST be past the epoch the definition
+  // is included in. Publishing one that isn't buys a survey no conformant
+  // reader — this one included — will ever tally. Reported with the codec's own
+  // problem code, since it is the same rule the read side gates on.
+  const epochProblems: ValidationProblem[] =
+    tipEpoch !== undefined && endEpoch <= tipEpoch
+      ? [
+          {
+            code: "definition.endEpochNotAfterInclusion",
+            params: { endEpoch, inclusionEpoch: tipEpoch },
+          },
+        ]
+      : [];
   const questions = drafts.map((d, i) =>
     toQuestion(d, `Q${i + 1}`, external, problems),
   );
@@ -400,7 +418,11 @@ export function buildDefinition(
 
   return {
     definition,
-    problems: [...problems, ...validateDefinition(definition)],
+    problems: [
+      ...problems,
+      ...epochProblems,
+      ...validateDefinition(definition),
+    ],
   };
 }
 

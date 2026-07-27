@@ -5,14 +5,17 @@ import {
   describeProblem,
   describeProblems,
   isDefinitionTalliable,
+  isSurveyTalliable,
   problemSeverity,
   Role,
+  surveyErrors,
   validateDefinition,
   validateResponse,
   VALIDATION_PROBLEM_CODES,
   type SurveyDefinition,
   type SurveyResponse,
 } from "../src/index.js";
+import type { SurveyRecord } from "../src/domain/index.js";
 
 const bytes = (n: number, fill = 0): Uint8Array => new Uint8Array(n).fill(fill);
 
@@ -135,6 +138,42 @@ describe("definition severity + talliability (findings 10, 11, 34)", () => {
     expect(definitionErrors(def).map((p) => p.code)).toContain(
       "definition.noQuestions",
     );
+  });
+
+  // Finding 45 — CIP-179 §Epoch Semantics: end_epoch MUST be greater than the
+  // epoch the definition transaction was included in. Only the record knows the
+  // latter, which is why the gate takes one.
+  describe("end_epoch against the inclusion epoch", () => {
+    const record = (endEpoch: number, epochNo: number): SurveyRecord => ({
+      txHash: "ab".repeat(32),
+      slot: 1,
+      epochNo,
+      ref: { txId: bytes(32), index: 0 },
+      definition: { ...singleChoiceDef(), endEpoch },
+    });
+
+    it("is talliable when end_epoch is past the inclusion epoch", () => {
+      expect(isSurveyTalliable(record(11, 10))).toBe(true);
+      expect(surveyErrors(record(11, 10))).toEqual([]);
+    });
+
+    it("is untalliable when the survey ends in the epoch that published it", () => {
+      expect(isSurveyTalliable(record(10, 10))).toBe(false);
+      expect(surveyErrors(record(10, 10))).toContainEqual({
+        code: "definition.endEpochNotAfterInclusion",
+        params: { endEpoch: 10, inclusionEpoch: 10 },
+      });
+    });
+
+    it("is untalliable when end_epoch is already past", () => {
+      expect(isSurveyTalliable(record(9, 10))).toBe(false);
+    });
+
+    it("leaves the definition-only gate alone — the rule needs the record", () => {
+      const same = record(10, 10);
+      expect(isDefinitionTalliable(same.definition)).toBe(true);
+      expect(definitionErrors(same.definition)).toEqual([]);
+    });
   });
 
   it("error problems carry no severity field and default to 'error'", () => {

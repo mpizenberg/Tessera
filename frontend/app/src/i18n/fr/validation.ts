@@ -14,6 +14,8 @@ const validation: Messages = {
     noQuestions: "le sondage doit comporter au moins une question",
     sealedRoundInvalid: "le round scellé doit être > 0",
     sealedPaddingInvalid: "le padding_size scellé doit être > 0",
+    endEpochNotAfterInclusion:
+      "end_epoch {endEpoch} doit être postérieur à l'époque de publication de la définition ({inclusionEpoch})",
   },
   question: {
     tooFewOptions: "{where} : au moins 2 options sont requises",

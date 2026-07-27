@@ -15,8 +15,8 @@
  */
 
 import {
-  definitionErrors,
-  isDefinitionTalliable,
+  isSurveyTalliable,
+  surveyErrors,
   validateResponse,
   type SurveyResponse,
 } from "cip-179";
@@ -156,12 +156,12 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
   };
 
   // Talliability first (the `definition-validity` ruleset rule): a spec-invalid
-  // definition — non-v5 or structurally invalid — is untalliable, so it has no
-  // reproducible tally and a conformant emitter writes no artifact. Decided from
-  // the independent on-chain definition, so a backend can't dress an invalid
-  // survey up as talliable (findings 10, 11).
-  if (!isDefinitionTalliable(def)) {
-    const codes = definitionErrors(def)
+  // survey — non-v5, structurally invalid, or ending in the epoch that published
+  // it — is untalliable, so it has no reproducible tally and a conformant
+  // emitter writes no artifact. Decided from the independent on-chain record, so
+  // a backend can't dress an invalid survey up as talliable (findings 10, 11, 45).
+  if (!isSurveyTalliable(bundle.survey)) {
+    const codes = surveyErrors(bundle.survey)
       .map((p) => p.code)
       .join(", ");
     return {

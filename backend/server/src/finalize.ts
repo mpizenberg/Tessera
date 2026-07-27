@@ -22,7 +22,7 @@
  * sealed survey on an unsupported (non-quicknet) drand chain is skipped forever.
  */
 
-import { isDefinitionTalliable, Role, type SurveyResponse } from "cip-179";
+import { isSurveyTalliable, Role, type SurveyResponse } from "cip-179";
 
 import {
   auditRevealedResponses,
@@ -115,15 +115,16 @@ export async function finalizeClosedSurveys(
   );
   if (candidates.length === 0) return;
 
-  // Spec-invalid definitions are untalliable (findings 10, 11): a non-v5 or
-  // structurally-invalid survey produces NO artifact — it is never tallied under
-  // v5 semantics, and an independent verifier reaches the same untalliable
-  // verdict from the same on-chain definition. Drop them before any cancellation
-  // or weight work (an invalid definition is not a valid survey to begin with,
-  // so invalidity takes precedence over cancellation). The `definition-validity`
+  // Spec-invalid surveys are untalliable (findings 10, 11, 45): a non-v5 or
+  // structurally-invalid definition, or one whose end_epoch is not past its own
+  // inclusion epoch, produces NO artifact — it is never tallied under v5
+  // semantics, and an independent verifier reaches the same untalliable verdict
+  // from the same on-chain record. Drop them before any cancellation or weight
+  // work (an invalid definition is not a valid survey to begin with, so
+  // invalidity takes precedence over cancellation). The `definition-validity`
   // rule in RULESET_DESCRIPTOR pins this gate.
   const talliable = candidates.filter((s) => {
-    if (isDefinitionTalliable(s.definition)) return true;
+    if (isSurveyTalliable(s)) return true;
     console.warn(
       `finalize: ${refKey(s.ref)} definition is spec-invalid — untalliable, no artifact`,
     );

@@ -157,7 +157,10 @@ export const Create: Component = () => {
 
   const built = createMemo(() => {
     const o = owner();
-    return o ? buildDefinition(o, meta, questions) : null;
+    if (!o) return null;
+    return buildDefinition(o, meta, questions, {
+      tipEpoch: app.list()?.tip.epoch,
+    });
   });
   const problems = (): CreateProblem[] => built()?.problems ?? [];
   /** Render structured codec problems in the active locale; pass strings through. */
@@ -257,8 +260,7 @@ export const Create: Component = () => {
         // immediately, without re-fetching it from IPFS.
         app.cachePresentationDoc(pinned.hash, doc);
         definition = buildDefinition(o, meta, questions, {
-          uri: pinned.uri,
-          hash: pinned.hash,
+          contentAnchor: { uri: pinned.uri, hash: pinned.hash },
         }).definition;
       }
       setStepKey("submit");

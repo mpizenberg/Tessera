@@ -17,6 +17,8 @@ const validation = {
     noQuestions: "survey must have at least one question",
     sealedRoundInvalid: "sealed round must be > 0",
     sealedPaddingInvalid: "sealed padding_size must be > 0",
+    endEpochNotAfterInclusion:
+      "end_epoch {endEpoch} must be after the epoch the definition is published in ({inclusionEpoch})",
   },
   question: {
     tooFewOptions: "{where}: needs at least 2 options",

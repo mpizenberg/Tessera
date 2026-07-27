@@ -42,7 +42,7 @@ published. Keep adding entries here until release.
   - Consumers that indexed the old dense arrays positionally must now read each
     entry's `index`; a zero-answer option is simply absent (refill from the
     definition if you render every option).
-- **Ruleset bump: `rulesetVersion` 4 → 10.** Five changes land in this release, so
+- **Ruleset bump: `rulesetVersion` 4 → 11.** Six changes land in this release, so
   0.3.0 artifact hashes are incomparable with 0.2.0 (v4) and artifacts
   re-finalize on deploy. `RULESET_DESCRIPTOR` carries the full note for each.
   - **v5, v6** — the sparse, slimmed tally body (above). The counted set and
@@ -61,6 +61,9 @@ published. Keep adding entries here until release.
   - **v10** — a batched payload is read item by item, so a well-formed record
     batched beside a malformed one is counted instead of being skipped with it.
     The counted set can grow.
+  - **v11** — the talliability gate enforces CIP-179's epoch rule: `end_epoch`
+    must be greater than the epoch the definition transaction was included in.
+    The set of talliable surveys shrinks.
 - **Removed the count-based display tally from the public API** (`./tally`):
   `tallySurvey`, `tallyQuestion`, `roleBreakdown`, `ratingScaleInfo`,
   `MAX_DISPLAY_BUCKETS`, and the display shapes (`QuestionTally`, `Bar`,
@@ -77,6 +80,13 @@ published. Keep adding entries here until release.
 
 ### Added
 
+- `isSurveyTalliable(record)` / `surveyErrors(record)` — the read-side
+  talliability gate, now taking a `SurveyRecord` because one of its rules needs
+  the definition's chain position (`end_epoch` > inclusion `epoch_no`).
+  `isDefinitionTalliable` / `definitionErrors` remain for what a definition can
+  decide about itself, but the gate an emitter or verifier applies is the
+  record-level pair.
+- `definition.endEpochNotAfterInclusion` validation problem code.
 - `decodePayloadItems` — the per-item counterpart to `decodePayload`, returning
   each decoded item with its position in the on-chain array plus a `skipped`
   list for the ones that failed. CIP-179 validates batched records

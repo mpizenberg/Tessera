@@ -31,6 +31,7 @@
  */
 
 import { SPEC_VERSION } from "./constants.js";
+import type { SurveyRecord } from "./domain/records.js";
 import { MAX_CHUNK_BYTES, utf8ByteLength } from "./metadatum.js";
 import type {
   AnswerItem,
@@ -59,6 +60,7 @@ export const VALIDATION_PROBLEM_CODES = [
   "definition.noQuestions",
   "definition.sealedRoundInvalid",
   "definition.sealedPaddingInvalid",
+  "definition.endEpochNotAfterInclusion",
   // --- question ---
   "question.tooFewOptions",
   "question.optionCountTooLow",
@@ -125,7 +127,7 @@ export interface ValidationProblem {
    * that is surfaced but never disqualifies (finding 34). Only warnings set the
    * field, so an error problem stays `{ code, params? }`. Read it via
    * {@link problemSeverity}; the read-side talliability gate
-   * ({@link isDefinitionTalliable}) counts only errors, so a SHOULD-violation
+   * ({@link isSurveyTalliable}) counts only errors, so a SHOULD-violation
    * (e.g. duplicate eligible_roles) can never render a spec-valid survey
    * untalliable.
    */
@@ -342,22 +344,54 @@ export function definitionErrors(def: SurveyDefinition): ValidationProblem[] {
 }
 
 /**
- * Is a survey talliable at all? True iff its on-chain definition has **no
+ * Is a definition talliable on its own terms? True iff it has **no
  * error-severity** problem: `spec_version === SPEC_VERSION` (findings 10 — a
  * non-v5 payload is never tallied under v5 semantics), non-empty `eligible_roles`,
  * at least one question, in-bounds question constraints, and a valid sealed
  * round/padding. Duplicate `eligible_roles` is a SHOULD (warning) and never
  * disqualifies.
  *
- * This is the read-side gate the emitter and any independent verifier both apply
- * (finding 11): a spec-invalid definition produces **no artifact** and is never
- * tallied, so a hostile definition cannot be counted under broken constraints,
- * and a backend that tallies one anyway diverges from a conformant verifier. It
- * is pinned in `RULESET_DESCRIPTOR` (see `tally/artifact.ts`), so a change to
- * *which* definitions are talliable is a semantic ruleset change.
+ * This covers only what the definition says about itself. The full read-side
+ * gate is {@link isSurveyTalliable}, which adds the rules that need the
+ * definition's chain position; prefer it wherever a {@link SurveyRecord} is at
+ * hand.
  */
 export function isDefinitionTalliable(def: SurveyDefinition): boolean {
   return definitionErrors(def).length === 0;
+}
+
+/**
+ * The error-severity problems that make a *published* survey untalliable: every
+ * {@link definitionErrors} problem, plus the epoch rule that only the record can
+ * decide — CIP-179 §Epoch Semantics, "`end_epoch` MUST be greater than the
+ * current epoch when the definition transaction is included". A definition
+ * published in its own final epoch leaves no epoch in which a response is both
+ * in-window and cast after the survey exists.
+ */
+export function surveyErrors(record: SurveyRecord): ValidationProblem[] {
+  const out = definitionErrors(record.definition);
+  if (record.definition.endEpoch <= record.epochNo) {
+    out.push(
+      problem("definition.endEpochNotAfterInclusion", {
+        endEpoch: record.definition.endEpoch,
+        inclusionEpoch: record.epochNo,
+      }),
+    );
+  }
+  return out;
+}
+
+/**
+ * Is a published survey talliable at all? The read-side gate the emitter and any
+ * independent verifier both apply (finding 11): a survey failing it produces
+ * **no artifact** and is never tallied, so a hostile definition cannot be
+ * counted under broken constraints, and a backend that tallies one anyway
+ * diverges from a conformant verifier. It is pinned in `RULESET_DESCRIPTOR` (see
+ * `tally/artifact.ts`), so a change to *which* surveys are talliable is a
+ * semantic ruleset change.
+ */
+export function isSurveyTalliable(record: SurveyRecord): boolean {
+  return surveyErrors(record).length === 0;
 }
 
 // ----------------------------------------------------------------------------
@@ -656,6 +690,8 @@ const PROBLEM_MESSAGES_EN: Record<ValidationProblemCode, string> = {
   "definition.noQuestions": "survey must have at least one question",
   "definition.sealedRoundInvalid": "sealed round must be > 0",
   "definition.sealedPaddingInvalid": "sealed padding_size must be > 0",
+  "definition.endEpochNotAfterInclusion":
+    "end_epoch {endEpoch} must be greater than the inclusion epoch {inclusionEpoch}",
 
   "question.tooFewOptions": "{where}: needs at least 2 options",
   "question.optionCountTooLow": "{where}: option count must be >= 2",

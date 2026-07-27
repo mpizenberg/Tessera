@@ -25,11 +25,7 @@
 
 import { exit } from "node:process";
 
-import {
-  definitionErrors,
-  isDefinitionTalliable,
-  type SurveyRef,
-} from "cip-179";
+import { isSurveyTalliable, surveyErrors, type SurveyRef } from "cip-179";
 
 import {
   hexToBytes,
@@ -155,8 +151,8 @@ async function main(): Promise<void> {
   // untalliable survey (non-v5 or spec-invalid definition, findings 10/11) must
   // have no artifact; if one was served anyway the backend is non-conformant,
   // which we surface rather than trying to verify a tally that shouldn't exist.
-  if (!isDefinitionTalliable(survey.definition)) {
-    for (const p of definitionErrors(survey.definition))
+  if (!isSurveyTalliable(survey)) {
+    for (const p of surveyErrors(survey))
       console.warn(`note: definition problem: ${p.code}`);
     if (artifact) {
       console.warn(

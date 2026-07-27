@@ -9,7 +9,7 @@
  * the indexer will later confirm it proved the owner credential.
  */
 
-import { isDefinitionTalliable, type SurveyDefinition } from "../index.js";
+import { isSurveyTalliable, type SurveyDefinition } from "../index.js";
 
 import { refKey, responseCounts } from "./dedupe.js";
 import type {
@@ -248,7 +248,7 @@ export function aggregate(
       cancellationClaimed: !cancelled && cancelState === "claimed",
       sealed: record.definition.submissionMode.type === "sealed",
       external: record.definition.contentAnchor !== undefined,
-      talliable: isDefinitionTalliable(record.definition),
+      talliable: isSurveyTalliable(record),
       govLinks,
       responseCount: countByKey[key] ?? 0,
       status: statusOf(record.definition.endEpoch, cancelled, tip.epoch),
