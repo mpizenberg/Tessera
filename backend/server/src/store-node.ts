@@ -34,6 +34,7 @@ import {
   REFRESH_LEASE_ACQUIRE,
   REFRESH_LEASE_RELEASE,
   REFRESH_RUN_RETENTION_SECONDS,
+  chunkText,
   validationKey,
 } from "./store";
 import {
@@ -137,17 +138,23 @@ export function openBackendStore(path: string): BackendStore {
   const db = new DatabaseSync(path);
   applyMigrations(db);
 
+  // Chunks and stamp in one statement: read separately, a refresh landing
+  // between them could pair one run's payload with the other's fetchedAt.
   const selectStmt = db.prepare(
-    "SELECT payload, fetched_at AS fetchedAt FROM snapshot_cache WHERE id = 1",
+    `SELECT c.payload AS payload, m.fetched_at AS fetchedAt
+     FROM snapshot_chunk c JOIN snapshot_meta m ON m.id = 1
+     ORDER BY c.seq`,
   );
-  const upsertStmt = db.prepare(`
-    INSERT INTO snapshot_cache (id, payload, fetched_at) VALUES (1, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      payload = excluded.payload,
-      fetched_at = excluded.fetched_at
+  const clearChunksStmt = db.prepare("DELETE FROM snapshot_chunk");
+  const insertChunkStmt = db.prepare(
+    "INSERT INTO snapshot_chunk (seq, payload) VALUES (?, ?)",
+  );
+  const putSnapshotMetaStmt = db.prepare(`
+    INSERT INTO snapshot_meta (id, fetched_at) VALUES (1, ?)
+    ON CONFLICT(id) DO UPDATE SET fetched_at = excluded.fetched_at
   `);
   const fetchedAtStmt = db.prepare(
-    "SELECT fetched_at AS fetchedAt FROM snapshot_cache WHERE id = 1",
+    "SELECT fetched_at AS fetchedAt FROM snapshot_meta WHERE id = 1",
   );
 
   const completedStmt = db.prepare(
@@ -281,14 +288,32 @@ export function openBackendStore(path: string): BackendStore {
 
   return {
     async get(): Promise<CachedSnapshot | null> {
-      const row = selectStmt.get() as
-        | { payload: string; fetchedAt: number }
-        | undefined;
-      if (!row) return null;
-      return { payload: JSON.parse(row.payload), fetchedAt: row.fetchedAt };
+      const rows = selectStmt.all() as unknown as {
+        payload: string;
+        fetchedAt: number;
+      }[];
+      const first = rows[0];
+      if (!first) return null;
+      return {
+        payload: JSON.parse(rows.map((r) => r.payload).join("")),
+        fetchedAt: first.fetchedAt,
+      };
     },
     async put(snapshot: CachedSnapshot): Promise<void> {
-      upsertStmt.run(JSON.stringify(snapshot.payload), snapshot.fetchedAt);
+      const chunks = chunkText(JSON.stringify(snapshot.payload));
+      // One transaction, so a reader never sees this run's chunks mixed with
+      // the last one's — including the shrinking case, where stale high-seq
+      // rows would otherwise trail the new payload.
+      db.exec("BEGIN");
+      try {
+        clearChunksStmt.run();
+        chunks.forEach((text, seq) => insertChunkStmt.run(seq, text));
+        putSnapshotMetaStmt.run(snapshot.fetchedAt);
+        db.exec("COMMIT");
+      } catch (err) {
+        db.exec("ROLLBACK");
+        throw err;
+      }
     },
     async snapshotFetchedAt(): Promise<number | null> {
       const row = fetchedAtStmt.get() as { fetchedAt: number } | undefined;

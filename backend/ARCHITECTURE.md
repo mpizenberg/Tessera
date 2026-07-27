@@ -246,10 +246,21 @@ How it landed (shared with Phase 2's tally work, which is why it waited):
 - The **dedupe rule** (latest-valid-per-credential) lives in `@tessera/core`
   (`dedupe.ts`: `refKey`/`credentialKey`/`dedupeResponses`/`responseCounts`),
   so the server's `responseCount` and the client's audit agree by construction.
-- The store keeps its one JSON blob row; each route decodes and slices it per
-  request (fine at current sizes). If profiling ever disagrees, an in-memory
-  index per isolate (rebuilt when `fetchedAt` changes) or the §6.5 tables
-  replace the per-request parse.
+- The store keeps the snapshot as one JSON document; each route decodes and
+  slices it per request (fine at current sizes). If profiling ever disagrees, an
+  in-memory index per isolate (rebuilt when `fetchedAt` changes) or the §6.5
+  tables replace the per-request parse.
+- That document is **stored across rows**, not in one value
+  (`migrations/0009_snapshot_chunks.sql`: `snapshot_chunk` keyed by `seq`, plus a
+  `snapshot_meta` stamp). D1 caps a single value at ~2,000,000 bytes, and the
+  payload grows with sealed participation — each sealed response carries a padded
+  ciphertext — so one value meant a size past which every refresh's write fails,
+  the snapshot freezes at its last good state, and validation/finalization stop
+  advancing while the stale snapshot keeps serving. Chunks are rewritten in one
+  transaction, so a reader never sees two runs' rows concatenated. The remaining
+  bound is per-request parse cost and Worker memory, which the refresh warns
+  about past `SNAPSHOT_WARN_BYTES`; the answer there is per-record rows, not
+  bigger chunks.
 - The frontend seam widened: `state.tsx`'s single eager resource became a list
   resource + a lazy per-survey bundle resource, and `DataSource` is now exactly
   `surveyList`/`surveyBundle`/`respondedKeys`/`txStatus` (`KoiosDataSource`

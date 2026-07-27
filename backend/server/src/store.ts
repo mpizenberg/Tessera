@@ -3,7 +3,7 @@
  *
  * The read-path snapshot is content the browser used to re-fetch on every load;
  * here it is computed once server-side and cached. Two implementations share
- * this seam and the same single-row SQLite schema (`snapshot_cache`):
+ * this seam and the same SQLite schema (`snapshot_chunk` + `snapshot_meta`):
  * `store-node.ts` (node:sqlite, local process) and `store-d1.ts` (Cloudflare
  * D1, Worker) — see `backend/ARCHITECTURE.md` §3. `get`/`put` are async because
  * D1 is; the node impl just wraps its synchronous calls. The Phase-2 tally
@@ -15,6 +15,43 @@ export interface CachedSnapshot {
   readonly payload: unknown;
   /** Unix seconds when this snapshot was fetched from Koios. */
   readonly fetchedAt: number;
+}
+
+/**
+ * Characters per stored snapshot chunk. D1 caps a single value at ~2,000,000
+ * bytes; a UTF-16 code unit costs at most 3 UTF-8 bytes (4-byte characters
+ * arrive as two units), so this bound holds under any payload content with
+ * room to spare.
+ */
+export const SNAPSHOT_CHUNK_CHARS = 512 * 1024;
+
+/**
+ * Payload size past which the snapshot is worth complaining about. Chunking
+ * removed the storage cliff, so what remains is per-request cost: every route
+ * serving from the blob parses all of it, inside a Worker's memory limit. The
+ * answer past this point is per-record rows, not larger chunks.
+ */
+export const SNAPSHOT_WARN_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Split `text` for storage, never between a surrogate pair — half a pair is
+ * not representable in UTF-8, so a split one would not survive the round trip
+ * through a TEXT column. Always yields at least one (possibly empty) chunk, so
+ * "no chunks stored" means "no snapshot" and nothing else.
+ */
+export function chunkText(
+  text: string,
+  size: number = SNAPSHOT_CHUNK_CHARS,
+): string[] {
+  const chunks: string[] = [];
+  for (let i = 0; i < text.length; ) {
+    let end = Math.min(i + size, text.length);
+    const last = text.charCodeAt(end - 1);
+    if (end < text.length && last >= 0xd800 && last <= 0xdbff) end -= 1;
+    chunks.push(text.slice(i, end));
+    i = end;
+  }
+  return chunks.length > 0 ? chunks : [""];
 }
 
 export interface SnapshotStore {

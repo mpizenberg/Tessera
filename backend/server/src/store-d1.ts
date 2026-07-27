@@ -26,6 +26,7 @@ import {
   REFRESH_LEASE_ACQUIRE,
   REFRESH_LEASE_RELEASE,
   REFRESH_RUN_RETENTION_SECONDS,
+  chunkText,
   validationKey,
 } from "./store";
 import {
@@ -69,29 +70,45 @@ const fromDb = (r: DbValidatedRow): ValidatedResponseRow => ({
 export function d1BackendStore(db: D1Like): BackendStore {
   return {
     async get(): Promise<CachedSnapshot | null> {
-      const row = await db
+      // Chunks and stamp in one statement: read separately, a refresh landing
+      // between them could pair one run's payload with the other's fetchedAt.
+      const { results } = await db
         .prepare(
-          "SELECT payload, fetched_at AS fetchedAt FROM snapshot_cache WHERE id = 1",
+          `SELECT c.payload AS payload, m.fetched_at AS fetchedAt
+           FROM snapshot_chunk c JOIN snapshot_meta m ON m.id = 1
+           ORDER BY c.seq`,
         )
-        .first<{ payload: string; fetchedAt: number }>();
-      if (!row) return null;
-      return { payload: JSON.parse(row.payload), fetchedAt: row.fetchedAt };
+        .all<{ payload: string; fetchedAt: number }>();
+      const first = results[0];
+      if (!first) return null;
+      return {
+        payload: JSON.parse(results.map((r) => r.payload).join("")),
+        fetchedAt: first.fetchedAt,
+      };
     },
     async put(snapshot: CachedSnapshot): Promise<void> {
-      await db
-        .prepare(
-          `INSERT INTO snapshot_cache (id, payload, fetched_at) VALUES (1, ?, ?)
-           ON CONFLICT(id) DO UPDATE SET
-             payload = excluded.payload,
-             fetched_at = excluded.fetched_at`,
-        )
-        .bind(JSON.stringify(snapshot.payload), snapshot.fetchedAt)
-        .run();
+      const chunks = chunkText(JSON.stringify(snapshot.payload));
+      const insert = db.prepare(
+        "INSERT INTO snapshot_chunk (seq, payload) VALUES (?, ?)",
+      );
+      // One transaction, so a reader never sees this run's chunks mixed with
+      // the last one's — including the shrinking case, where stale high-seq
+      // rows would otherwise trail the new payload.
+      await db.batch([
+        db.prepare("DELETE FROM snapshot_chunk"),
+        ...chunks.map((text, seq) => insert.bind(seq, text)),
+        db
+          .prepare(
+            `INSERT INTO snapshot_meta (id, fetched_at) VALUES (1, ?)
+             ON CONFLICT(id) DO UPDATE SET fetched_at = excluded.fetched_at`,
+          )
+          .bind(snapshot.fetchedAt),
+      ]);
     },
     async snapshotFetchedAt(): Promise<number | null> {
       const row = await db
         .prepare(
-          "SELECT fetched_at AS fetchedAt FROM snapshot_cache WHERE id = 1",
+          "SELECT fetched_at AS fetchedAt FROM snapshot_meta WHERE id = 1",
         )
         .first<{ fetchedAt: number }>();
       return row?.fetchedAt ?? null;

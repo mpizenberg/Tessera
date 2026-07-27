@@ -18,7 +18,11 @@ import { KoiosDataSource, KoiosTallyInputs } from "@tessera/koios";
 import type { ServerConfig } from "./config";
 import { finalizeClosedSurveys } from "./finalize";
 import { buildSurveyIndex } from "./listIndex";
-import { REFRESH_LEASE_SECONDS, type BackendStore } from "./store";
+import {
+  REFRESH_LEASE_SECONDS,
+  SNAPSHOT_WARN_BYTES,
+  type BackendStore,
+} from "./store";
 import { validateNewResponses } from "./validate";
 
 /** Cap stored failure messages so a pathological error can't bloat the row. */
@@ -115,6 +119,14 @@ export async function refreshSnapshot(
     const payloadBytes = JSON.stringify(payload).length;
     const fetchedAt = Math.floor(Date.now() / 1000);
     await store.put({ payload, fetchedAt });
+    if (payloadBytes > SNAPSHOT_WARN_BYTES) {
+      // Storage scales (the blob is chunked); per-request parsing does not —
+      // every route serving from the snapshot parses all of it.
+      console.warn(
+        `snapshot payload ${payloadBytes} bytes exceeds ${SNAPSHOT_WARN_BYTES} — ` +
+          `responses belong in their own rows before this grows further`,
+      );
+    }
 
     console.log(
       `snapshot refreshed: ${records.surveys.length} surveys, ` +

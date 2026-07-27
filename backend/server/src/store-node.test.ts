@@ -6,10 +6,11 @@
  * and the paging keyset (D1 shares the same SQLite dialect).
  */
 
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -19,7 +20,7 @@ import type {
   SurveyIndexRow,
   SurveyPageQuery,
 } from "./store";
-import { REFRESH_RUN_RETENTION_SECONDS } from "./store";
+import { REFRESH_RUN_RETENTION_SECONDS, chunkText } from "./store";
 import { openBackendStore } from "./store-node";
 
 const artifact = (surveyKey: string, tally: string, hash: string) => ({
@@ -146,7 +147,49 @@ describe("store-node migration of a pre-runner database", () => {
       "0006_refresh_run.sql",
       "0007_survey_index.sql",
       "0008_refresh_lease.sql",
+      "0009_snapshot_chunks.sql",
     ]);
+  });
+});
+
+describe("store-node migration of a single-blob snapshot", () => {
+  it("carries the stored snapshot over as the first chunk", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tessera-store-"));
+    const path = join(dir, "cache.sqlite");
+    // Bring a database up to 0008 exactly — the state a deployed backend is in
+    // before this upgrade — with a snapshot already cached.
+    const migrationsDir = fileURLToPath(
+      new URL("../migrations", import.meta.url),
+    );
+    const before = readdirSync(migrationsDir)
+      .filter((f) => f.endsWith(".sql") && f < "0009")
+      .sort();
+    const old = new DatabaseSync(path);
+    old.exec(`CREATE TABLE schema_migration (
+      name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL
+    );`);
+    for (const file of before) {
+      old.exec(readFileSync(join(migrationsDir, file), "utf8"));
+      old.prepare("INSERT INTO schema_migration VALUES (?, 1)").run(file);
+    }
+    old
+      .prepare(
+        "INSERT INTO snapshot_cache (id, payload, fetched_at) VALUES (1, ?, ?)",
+      )
+      .run(JSON.stringify({ surveys: ["kept"] }), 99);
+    old.close();
+
+    const store = openBackendStore(path);
+    try {
+      // Serving must not fall to 503 between the deploy and the next refresh.
+      expect(await store.get()).toEqual({
+        payload: { surveys: ["kept"] },
+        fetchedAt: 99,
+      });
+    } finally {
+      store.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -278,6 +321,67 @@ describe("store-node survey_index paging SQL", () => {
     });
     expect((await page({})).map((r) => r.surveyKey)).toEqual(["ee:0"]);
     expect((await store.surveyIndexMeta())?.fetchedAt).toBe(8);
+  });
+});
+
+describe("store-node chunked snapshot", () => {
+  let store: BackendStore;
+  afterEach(() => store.close());
+
+  it("round-trips a payload larger than one chunk", async () => {
+    store = openBackendStore(":memory:");
+    expect(await store.get()).toBeNull();
+    expect(await store.snapshotFetchedAt()).toBeNull();
+
+    // Comfortably over the chunk size, so the split is exercised rather than
+    // assumed — a single value this size is what used to hit D1's cap.
+    const payload = {
+      surveys: Array.from({ length: 400 }, (_, i) => ({
+        key: `survey-${i}`,
+        blob: "x".repeat(4_000),
+      })),
+    };
+    await store.put({ payload, fetchedAt: 42 });
+
+    expect(await store.get()).toEqual({ payload, fetchedAt: 42 });
+    expect(await store.snapshotFetchedAt()).toBe(42);
+  });
+
+  it("replaces the previous payload rather than trailing its chunks", async () => {
+    store = openBackendStore(":memory:");
+    await store.put({
+      payload: { blob: "y".repeat(2_000_000) },
+      fetchedAt: 1,
+    });
+    // Shrinking is the case a naive per-row upsert gets wrong: the old
+    // payload's high-seq rows would survive and corrupt the concatenation.
+    await store.put({ payload: { blob: "small" }, fetchedAt: 2 });
+
+    expect(await store.get()).toEqual({
+      payload: { blob: "small" },
+      fetchedAt: 2,
+    });
+  });
+
+  it("survives a multi-byte character on a chunk boundary", async () => {
+    store = openBackendStore(":memory:");
+    // Astral characters are surrogate pairs in JS; a split between the halves
+    // is not representable in UTF-8 and would not survive a TEXT column.
+    const title = "🎲".repeat(400_000);
+    await store.put({ payload: { title }, fetchedAt: 3 });
+
+    const back = (await store.get())?.payload as { title: string };
+    expect(back.title).toBe(title);
+  });
+});
+
+describe("chunkText", () => {
+  it("never splits a surrogate pair, and always yields a chunk", () => {
+    // Boundary lands exactly between the halves of the pair → back off one.
+    expect(chunkText("ab🎲cd", 3)).toEqual(["ab", "🎲c", "d"]);
+    expect(chunkText("abcdef", 3)).toEqual(["abc", "def"]);
+    expect(chunkText("", 3)).toEqual([""]);
+    expect(chunkText("🎲", 3)).toEqual(["🎲"]);
   });
 });
 
