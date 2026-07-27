@@ -86,15 +86,22 @@ function pairListWidth(opts: number, valueWidth: number): number {
   return uintWidth(opts) + opts * pair;
 }
 
-/** Top of a rating scale (the widest rating value it can carry). */
-function ratingMaxValue(scale: RatingScale): bigint {
+/**
+ * Widest CBOR width a rating value on `scale` can take. A numeric scale spans
+ * both ends: a rating is a CBOR `int`, and a negative `min` encodes wider than
+ * a small positive `max` (min = -1000 → 3 bytes, max = 5 → 1).
+ */
+function ratingValueWidth(scale: RatingScale): number {
   switch (scale.type) {
     case "numeric":
-      return scale.constraints.max;
+      return Math.max(
+        cborIntWidth(scale.constraints.min),
+        cborIntWidth(scale.constraints.max),
+      );
     case "labels":
-      return BigInt(Math.max(0, scale.labels.length - 1));
+      return uintWidth(scale.labels.length - 1);
     case "count":
-      return BigInt(Math.max(0, scale.count - 1));
+      return uintWidth(scale.count - 1);
   }
 }
 
@@ -135,7 +142,7 @@ function maxAnswerItemSize(question: Question, qIndex: number): number {
     case "rating":
       valueWidth = pairListWidth(
         optionCount(question.options),
-        cborIntWidth(ratingMaxValue(question.scale)),
+        ratingValueWidth(question.scale),
       );
       break;
   }

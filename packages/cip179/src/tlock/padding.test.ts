@@ -95,23 +95,27 @@ const custom = (): Question => ({
 const optionCount = (o: OptionsOrCount): number =>
   o.type === "options" ? o.labels.length : o.count;
 
+const cborLen = (m: bigint): number => metadatumToCbor(m).length;
+
 /**
- * The widest rating value a scale can carry — mirrors padding.ts's
- * `ratingMaxValue`. Using it (not 0n for non-numeric scales) is what makes the
- * labels/count branches actually exercise their real maximum (finding 25).
+ * The widest-encoding rating value a scale can carry — mirrors padding.ts's
+ * `ratingValueWidth`. A numeric scale spans both ends, so the maximal answer is
+ * whichever bound encodes wider, not simply `max` (finding 36). Using the top
+ * level (not 0n) for the labels/count branches is what makes those exercise
+ * their real maximum (finding 25).
  */
 const ratingTop = (scale: RatingScale): bigint => {
   switch (scale.type) {
-    case "numeric":
-      return scale.constraints.max;
+    case "numeric": {
+      const { min, max } = scale.constraints;
+      return cborLen(min) >= cborLen(max) ? min : max;
+    }
     case "labels":
       return BigInt(Math.max(0, scale.labels.length - 1));
     case "count":
       return BigInt(Math.max(0, scale.count - 1));
   }
 };
-
-const cborLen = (m: bigint): number => metadatumToCbor(m).length;
 
 /** The largest-encoding answer for a question (mirrors `maxPlaintextSize`'s assumptions). */
 function maximalAnswer(q: Question, i: number): AnswerItem {
@@ -230,6 +234,18 @@ describe("maxPlaintextSize", () => {
       numeric(-1000000, 5),
       numeric(0, 70000),
       numeric(-23, 23),
+    ];
+    expect(maxPlaintextSize(questions)).toBe(actualWidth(questions));
+  });
+
+  it("counts a negative rating scale at full width (finding 36)", () => {
+    // A rating is a CBOR int like any numeric answer: a respondent sitting at
+    // min = -1000 encodes 3 bytes where max = 5 encodes 1. Sizing the pad off
+    // `max` alone leaks those respondents through the ciphertext length.
+    const questions = [
+      ratingNumeric(4, -1000, 5),
+      ratingNumeric(3, -70000, 0),
+      ratingNumeric(2, -23, 23),
     ];
     expect(maxPlaintextSize(questions)).toBe(actualWidth(questions));
   });
