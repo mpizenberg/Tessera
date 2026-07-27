@@ -22,7 +22,12 @@ import type {
   ValidatedResponseRow,
   WeightRow,
 } from "./store";
-import { REFRESH_RUN_RETENTION_SECONDS, validationKey } from "./store";
+import {
+  REFRESH_LEASE_ACQUIRE,
+  REFRESH_LEASE_RELEASE,
+  REFRESH_RUN_RETENTION_SECONDS,
+  validationKey,
+} from "./store";
 import {
   SURVEY_INDEX_INSERT,
   SURVEY_INDEX_META_UPSERT,
@@ -190,16 +195,12 @@ export function d1BackendStore(db: D1Like): BackendStore {
         .all<Omit<WeightRow, "registered"> & { registered: number }>();
       return results.map((r) => ({ ...r, registered: r.registered !== 0 }));
     },
-    async upsertWeightRows(rows: readonly WeightRow[]): Promise<void> {
+    async insertWeightRows(rows: readonly WeightRow[]): Promise<void> {
       if (rows.length === 0) return;
       const stmt = db.prepare(`
-        INSERT INTO weight_snapshot
+        INSERT OR IGNORE INTO weight_snapshot
           (epoch, role, credential, weight, registered, fetched_at)
         VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(epoch, role, credential) DO UPDATE SET
-          weight = excluded.weight,
-          registered = excluded.registered,
-          fetched_at = excluded.fetched_at
       `);
       await db.batch(
         rows.map((r) =>
@@ -424,6 +425,21 @@ export function d1BackendStore(db: D1Like): BackendStore {
         .first<RefreshTotals>();
       return row ?? { runs: 0, failures: 0, koiosCalls: 0 };
     },
+    async acquireRefreshLease(
+      nowSec: number,
+      ttlSeconds: number,
+    ): Promise<string | null> {
+      const holder = crypto.randomUUID();
+      const row = await db
+        .prepare(REFRESH_LEASE_ACQUIRE)
+        .bind(holder, nowSec + ttlSeconds, nowSec)
+        .first<{ holder: string }>();
+      return row ? holder : null;
+    },
+    async releaseRefreshLease(token: string): Promise<void> {
+      await db.prepare(REFRESH_LEASE_RELEASE).bind(token).run();
+    },
+
     async incompleteValidationCount(): Promise<number> {
       const row = await db
         .prepare(

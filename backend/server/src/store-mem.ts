@@ -39,6 +39,7 @@ export function memBackendStore(
   const artifacts = new Map<string, ArtifactRow>();
   const txMetadata = new Map<string, unknown>();
   const refreshRuns = new Map<number, RefreshRunRow>();
+  let lease: { holder: string; expiresAt: number } | null = null;
   let surveyIndexRows: readonly SurveyIndexRow[] = [];
   let surveyIndexMeta: SurveyIndexMeta | null = null;
 
@@ -121,9 +122,11 @@ export function memBackendStore(
         (r) => r.epoch === epoch && r.role === role,
       );
     },
-    async upsertWeightRows(rows) {
-      for (const r of rows)
-        weights.set(weightKey(r.epoch, r.role, r.credential), r);
+    async insertWeightRows(rows) {
+      for (const r of rows) {
+        const key = weightKey(r.epoch, r.role, r.credential);
+        if (!weights.has(key)) weights.set(key, r);
+      }
     },
     async epochTotal(epoch, role) {
       return totals.get(`${epoch}|${role}`)?.total ?? null;
@@ -247,6 +250,15 @@ export function memBackendStore(
       return [...validated.values()].filter(
         (r) => r.blockIndex === null || r.proofOk === null,
       ).length;
+    },
+
+    async acquireRefreshLease(nowSec, ttlSeconds) {
+      if (lease && lease.expiresAt > nowSec) return null;
+      lease = { holder: crypto.randomUUID(), expiresAt: nowSec + ttlSeconds };
+      return lease.holder;
+    },
+    async releaseRefreshLease(token) {
+      if (lease?.holder === token) lease = null;
     },
 
     close() {},

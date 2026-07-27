@@ -695,7 +695,7 @@ async function fillWeights(
       registered: true,
       fetchedAt: nowSec,
     }));
-    await store.upsertWeightRows(fetched);
+    await store.insertWeightRows(fetched);
     for (const r of fetched) have.set(r.credential, r);
     return have;
   }
@@ -724,7 +724,7 @@ async function fillWeights(
         fetchedAt: nowSec,
       };
     });
-    await store.upsertWeightRows(fetched);
+    await store.insertWeightRows(fetched);
     for (const r of fetched) have.set(r.credential, r);
   }
   return have;

@@ -186,6 +186,12 @@ secret instead of in each browser.
 
 - A **scheduled refresh** (Cron / loop) rebuilds the current label-17 snapshot
   (surveys, responses, cancellations, tip, governance links) into the SQL store.
+  One run at a time, enforced by a lease row (`migrations/0008_refresh_lease.sql`):
+  neither scheduler serializes itself — Cloudflare may start a cron while the
+  previous one is still running, and the loop's interval fires regardless — and
+  two concurrent runs would let the slower one write its older scan last. The
+  lease is held for a bounded TTL so a run killed mid-flight, which never
+  releases, blocks its successors only until it expires.
 - The serving endpoints slice the cached snapshot per page (§5.1) plus a
   freshness stamp; `/tip` and `/tx_status` may stay live passthroughs for
   immediacy.
@@ -433,7 +439,9 @@ runner, which tracks applied files in a `schema_migration` table):
 
 ```sql
 -- shared across all surveys ending at the same epoch; a row is written only
--- once fetched (complete), so "row exists" = "weight known" = resume cursor
+-- once fetched (complete), so "row exists" = "weight known" = resume cursor.
+-- Insert-or-ignore: an artifact may already have been emitted from a stored
+-- weight, so a row is never revised once written
 weight_snapshot(
   epoch      INTEGER NOT NULL,
   role       INTEGER NOT NULL,          -- CIP-179 Role

@@ -123,7 +123,12 @@ export interface TallyStore {
 
   /** All snapshotted weights for one (epoch, role). */
   weightRows(epoch: number, role: number): Promise<WeightRow[]>;
-  upsertWeightRows(rows: readonly WeightRow[]): Promise<void>;
+  /**
+   * Insert-or-ignore: a snapshotted weight is written once and never revised.
+   * An artifact may already have been emitted from it, and a later re-read of
+   * the same past epoch can only reintroduce the possibility of disagreement.
+   */
+  insertWeightRows(rows: readonly WeightRow[]): Promise<void>;
   /** The (epoch, role) electorate total (decimal string), or null = not yet. */
   epochTotal(epoch: number, role: number): Promise<string | null>;
   putEpochTotal(
@@ -219,6 +224,58 @@ export interface HealthStore {
 }
 
 /**
+ * How long a refresh holds the lease. Correctness needs only that this exceeds
+ * a real run's duration (seconds); the remaining margin is what it costs to
+ * recover from a run killed mid-flight, which never releases — refreshes then
+ * pause until it expires.
+ */
+export const REFRESH_LEASE_SECONDS = 600;
+
+/**
+ * Take the lease for one run: insert it, or steal it iff the incumbent has
+ * expired. The `WHERE` makes that an atomic test-and-set — a conflicting row
+ * that is still live matches nothing, so the statement affects no rows and
+ * `RETURNING` yields none, which is how the loser learns it lost.
+ *
+ * Binds: (holder, expiresAt, nowSec).
+ */
+export const REFRESH_LEASE_ACQUIRE = `
+  INSERT INTO refresh_lease (id, holder, expires_at) VALUES (1, ?, ?)
+  ON CONFLICT(id) DO UPDATE SET
+    holder = excluded.holder,
+    expires_at = excluded.expires_at
+    WHERE refresh_lease.expires_at <= ?
+  RETURNING holder
+`;
+
+/**
+ * Release by token, so a run that overran its TTL and was superseded cannot
+ * free the lease its successor now holds. Binds: (holder).
+ */
+export const REFRESH_LEASE_RELEASE =
+  "DELETE FROM refresh_lease WHERE id = 1 AND holder = ?";
+
+/**
+ * Single-writer guard over the refresh. Neither runtime serializes its own
+ * scheduler, and concurrent runs are worse than wasteful: the slower one
+ * finishes last and writes its older scan over the newer snapshot, stamped with
+ * the newer `fetchedAt`.
+ */
+export interface RefreshLeaseStore {
+  /**
+   * Hold the lease until `nowSec + ttlSeconds`, returning an opaque token, or
+   * null if another run holds an unexpired one. Exactly one of two racing
+   * callers gets a token.
+   */
+  acquireRefreshLease(
+    nowSec: number,
+    ttlSeconds: number,
+  ): Promise<string | null>;
+  /** Give up a lease. A token that no longer holds it is a no-op. */
+  releaseRefreshLease(token: string): Promise<void>;
+}
+
+/**
  * One materialized row of the paged Explore list (`survey_index`), written by
  * the refresh from the aggregated snapshot. The `record`/`cancellations`/
  * `govLinks` columns hold each survey's slice of the wire payload as JSON
@@ -303,4 +360,5 @@ export type BackendStore = SnapshotStore &
   TallyStore &
   ScanCacheStore &
   HealthStore &
+  RefreshLeaseStore &
   SurveyIndexStore;

@@ -1,8 +1,9 @@
 /**
  * `store-node.ts` against a real (in-memory) SQLite database — exercised where
  * the SQL itself carries logic the in-memory store re-implements in JS, so the
- * two can't silently disagree. Today that's the `json_extract` predicate behind
- * `finalizedCancelledKeys` (D1 shares the same SQLite JSON1 dialect).
+ * two can't silently disagree. That's the `json_extract` predicate behind
+ * `finalizedCancelledKeys`, the conditional upsert behind the refresh lease,
+ * and the paging keyset (D1 shares the same SQLite dialect).
  */
 
 import { mkdtempSync, rmSync } from "node:fs";
@@ -144,6 +145,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0005_tx_metadata_cache.sql",
       "0006_refresh_run.sql",
       "0007_survey_index.sql",
+      "0008_refresh_lease.sql",
     ]);
   });
 });
@@ -276,6 +278,67 @@ describe("store-node survey_index paging SQL", () => {
     });
     expect((await page({})).map((r) => r.surveyKey)).toEqual(["ee:0"]);
     expect((await store.surveyIndexMeta())?.fetchedAt).toBe(8);
+  });
+});
+
+describe("store-node refresh lease", () => {
+  let store: BackendStore;
+  afterEach(() => store.close());
+
+  const TTL = 600;
+
+  it("admits one holder at a time and frees the lease on release", async () => {
+    store = openBackendStore(":memory:");
+
+    const first = await store.acquireRefreshLease(1000, TTL);
+    expect(first).not.toBeNull();
+    // A second run starting mid-flight gets nothing — this is the overlap the
+    // cron scheduler does not prevent on its own.
+    expect(await store.acquireRefreshLease(1180, TTL)).toBeNull();
+
+    await store.releaseRefreshLease(first!);
+    expect(await store.acquireRefreshLease(1360, TTL)).not.toBeNull();
+  });
+
+  it("lets the next run take over once an unreleased lease expires", async () => {
+    store = openBackendStore(":memory:");
+    // A run killed mid-flight (Worker CPU cap) never releases; only expiry
+    // unblocks its successors.
+    const killed = await store.acquireRefreshLease(1000, TTL);
+    expect(await store.acquireRefreshLease(1000 + TTL - 1, TTL)).toBeNull();
+
+    const heir = await store.acquireRefreshLease(1000 + TTL, TTL);
+    expect(heir).not.toBeNull();
+    expect(heir).not.toBe(killed);
+
+    // The superseded run must not be able to free its successor's lease.
+    await store.releaseRefreshLease(killed!);
+    expect(await store.acquireRefreshLease(1000 + TTL + 1, TTL)).toBeNull();
+  });
+});
+
+describe("store-node weight_snapshot immutability", () => {
+  let store: BackendStore;
+  afterEach(() => store.close());
+
+  it("keeps the first row written for an (epoch, role, credential)", async () => {
+    store = openBackendStore(":memory:");
+    const row = {
+      epoch: 500,
+      role: 3,
+      credential: "key:aa",
+      weight: "1000",
+      registered: true,
+      fetchedAt: 10,
+    };
+    await store.insertWeightRows([row]);
+    // An artifact may already have been emitted from the stored weight, so a
+    // later read of the same past epoch must not be able to revise it.
+    await store.insertWeightRows([
+      { ...row, weight: "42", registered: false, fetchedAt: 99 },
+    ]);
+
+    expect(await store.weightRows(500, 3)).toEqual([row]);
   });
 });
 

@@ -30,7 +30,12 @@ import type {
   ValidatedResponseRow,
   WeightRow,
 } from "./store";
-import { REFRESH_RUN_RETENTION_SECONDS, validationKey } from "./store";
+import {
+  REFRESH_LEASE_ACQUIRE,
+  REFRESH_LEASE_RELEASE,
+  REFRESH_RUN_RETENTION_SECONDS,
+  validationKey,
+} from "./store";
 import {
   SURVEY_INDEX_INSERT,
   SURVEY_INDEX_META_UPSERT,
@@ -186,14 +191,10 @@ export function openBackendStore(path: string): BackendStore {
             fetched_at AS fetchedAt
      FROM weight_snapshot WHERE epoch = ? AND role = ?`,
   );
-  const upsertWeightStmt = db.prepare(`
-    INSERT INTO weight_snapshot
+  const insertWeightStmt = db.prepare(`
+    INSERT OR IGNORE INTO weight_snapshot
       (epoch, role, credential, weight, registered, fetched_at)
     VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(epoch, role, credential) DO UPDATE SET
-      weight = excluded.weight,
-      registered = excluded.registered,
-      fetched_at = excluded.fetched_at
   `);
   const epochTotalStmt = db.prepare(
     "SELECT total FROM epoch_totals WHERE epoch = ? AND role = ?",
@@ -261,6 +262,9 @@ export function openBackendStore(path: string): BackendStore {
     `SELECT COUNT(*) AS n FROM validated_response
      WHERE block_index IS NULL OR proof_ok IS NULL`,
   );
+
+  const acquireLeaseStmt = db.prepare(REFRESH_LEASE_ACQUIRE);
+  const releaseLeaseStmt = db.prepare(REFRESH_LEASE_RELEASE);
 
   interface DbValidatedRow extends Omit<
     ValidatedResponseRow,
@@ -344,9 +348,9 @@ export function openBackendStore(path: string): BackendStore {
       > & { registered: number })[];
       return rows.map((r) => ({ ...r, registered: r.registered !== 0 }));
     },
-    async upsertWeightRows(rows: readonly WeightRow[]): Promise<void> {
+    async insertWeightRows(rows: readonly WeightRow[]): Promise<void> {
       for (const r of rows) {
-        upsertWeightStmt.run(
+        insertWeightStmt.run(
           r.epoch,
           r.role,
           r.credential,
@@ -516,6 +520,18 @@ export function openBackendStore(path: string): BackendStore {
     },
     async incompleteValidationCount(): Promise<number> {
       return (incompleteValidationStmt.get() as { n: number }).n;
+    },
+
+    async acquireRefreshLease(
+      nowSec: number,
+      ttlSeconds: number,
+    ): Promise<string | null> {
+      const holder = crypto.randomUUID();
+      const row = acquireLeaseStmt.get(holder, nowSec + ttlSeconds, nowSec);
+      return row === undefined ? null : holder;
+    },
+    async releaseRefreshLease(token: string): Promise<void> {
+      releaseLeaseStmt.run(token);
     },
 
     close() {

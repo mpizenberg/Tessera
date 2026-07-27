@@ -5,6 +5,11 @@
  * once per interval behind the server's token (or the anonymous tier). A failed
  * refresh logs and leaves the previous good snapshot in place — the server never
  * serves a half-built or blank snapshot because one fetch hiccuped.
+ *
+ * At most one run at a time, enforced by a stored lease. Neither scheduler
+ * serializes itself: a Cloudflare cron can start while the previous one is
+ * still running, and the Node loop's interval fires regardless. Two runs racing
+ * would let the slower one write its older scan last, over the newer snapshot.
  */
 
 import { toJsonSafe } from "cip-179/tally";
@@ -13,7 +18,7 @@ import { KoiosDataSource, KoiosTallyInputs } from "@tessera/koios";
 import type { ServerConfig } from "./config";
 import { finalizeClosedSurveys } from "./finalize";
 import { buildSurveyIndex } from "./listIndex";
-import type { BackendStore } from "./store";
+import { REFRESH_LEASE_SECONDS, type BackendStore } from "./store";
 import { validateNewResponses } from "./validate";
 
 /** Cap stored failure messages so a pathological error can't bloat the row. */
@@ -33,6 +38,16 @@ export async function refreshSnapshot(
   };
   const startedAt = Math.floor(Date.now() / 1000);
   const startedMs = Date.now();
+
+  const lease = await store.acquireRefreshLease(
+    startedAt,
+    REFRESH_LEASE_SECONDS,
+  );
+  if (!lease) {
+    console.log("refresh skipped: another run holds the lease");
+    return;
+  }
+
   const recordRun = (
     outcome:
       | {
@@ -174,6 +189,12 @@ export async function refreshSnapshot(
         `(keeping last snapshot): ${String(err)}`,
     );
     throw err;
+  } finally {
+    // Never let the release mask this run's outcome — a lease that goes
+    // unreleased just expires, which is the same path a killed run takes.
+    await store
+      .releaseRefreshLease(lease)
+      .catch((e) => console.warn(`refresh lease release failed: ${String(e)}`));
   }
 }
 
