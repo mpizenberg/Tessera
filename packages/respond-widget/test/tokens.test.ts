@@ -1,5 +1,5 @@
 /**
- * The plan-§4 token gate: the widget's public theming surface is the
+ * The token gate: the widget's public theming surface is the
  * --tessera-* custom-property namespace, with every default in src/theme.css.
  * Runs as part of `pnpm -r test`, so CI enforces it.
  *

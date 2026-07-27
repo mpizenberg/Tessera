@@ -22,7 +22,7 @@
  *
  * The IBE ciphertext (quicknet's RFC-9380 G1 scheme) is `U ‖ V ‖ W` with
  * `U` an **uncompressed** G1 point (96 bytes) and `V`, `W` each the 16-byte file
- * key length — 128 bytes. The payload seals the 128 KiB-chunked plaintext with
+ * key length — 128 bytes. The payload seals the 64 KiB-chunked plaintext with
  * a 16-byte Poly1305 tag per chunk.
  */
 

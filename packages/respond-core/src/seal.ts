@@ -9,7 +9,7 @@
  *
  * Both are **dynamically imported** here so the public answering path never
  * loads either: the widget's build splits them into chunks fetched only when a
- * sealed survey is actually answered (plan §2.3, §5).
+ * sealed survey is actually answered.
  */
 
 import type { AnswerItem } from "cip-179";

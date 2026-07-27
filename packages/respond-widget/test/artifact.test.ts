@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 /**
- * The plan-§7 (milestone 6) artifact smoke test: drive the **built** bundle —
+ * The artifact smoke test: drive the **built** bundle —
  * `dist/tessera-respond.es.js`, produced by the `pnpm build` step the `test`
  * script runs first — fully offline with mock props. It proves what only the
  * artifact can: the bundle is genuinely self-contained (importing it from a
@@ -9,7 +9,7 @@
  * through solid-element (properties and attributes), events cross the shadow
  * boundary, and — for a sealed definition — the tlock/evolution chunks
  * lazy-load and produce a real ciphertext (timelock encryption needs no
- * network). The real-on-chain end-to-end lives in the milestone-7 app page.
+ * network). The real-on-chain end-to-end lives in the app's DevWidgetHost page.
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";

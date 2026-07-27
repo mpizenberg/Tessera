@@ -2,8 +2,8 @@
  * Public prop / event contract for `<tessera-respond>`.
  *
  * Object-valued props (`definition`, `responder`, `surveyRef`, …) are set as DOM
- * **properties** (`el.definition = …`), not attributes; `solid-element` (added
- * in milestone 6) exposes them as reactive props. `locale` / `layout` may also
+ * **properties** (`el.definition = …`), not attributes; `solid-element`
+ * exposes them as reactive props. `locale` / `layout` may also
  * be plain string attributes. The widget emits everything back through
  * `CustomEvent`s (`bubbles: true, composed: true`, so they cross the shadow
  * boundary) — it never touches a wallet, chain, or the host's `<html>`.

@@ -54,9 +54,8 @@
 
 /*
  * The leading stat owns `margin-left: auto`, pushing the stat cluster to the
- * right edge of the head row. This replaces a dedicated empty spacer <span>
- * that used to exist purely for layout — one fewer DOM node. `composes` pulls
- * in all of .stat, so the two stay in sync.
+ * right edge of the head row — no spacer element needed. `composes` pulls in
+ * all of .stat, so the two stay in sync.
  */
 .statLead {
   composes: stat;

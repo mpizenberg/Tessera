@@ -1,5 +1,5 @@
 /**
- * Shadow-root CSS delivery (plan §4).
+ * Shadow-root CSS delivery.
  *
  * A document-level stylesheet never penetrates a shadow root, and Vite's lib
  * build extracts imported CSS into a separate asset — so "just import the CSS"

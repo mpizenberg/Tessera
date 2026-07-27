@@ -1,6 +1,6 @@
 /**
- * Dev-only reference host for the embeddable `<tessera-respond>` widget
- * (plan §7). It embeds the custom element exactly as a third-party integrator
+ * Dev-only reference host for the embeddable `<tessera-respond>` widget.
+ * It embeds the custom element exactly as a third-party integrator
  * would — object-valued props set as DOM **properties**, `tessera:*` events
  * consumed with `addEventListener` — and closes the loop the widget deliberately
  * leaves to the host: mapping the emitted `proveCredentials` to
@@ -15,7 +15,7 @@
  * Registered only under `import.meta.env.DEV` (see App.tsx), so this second copy
  * of the answering UI never ships to production. The widget itself is consumed
  * from workspace source (a single shared Solid instance) — the offline
- * built-artifact smoke test lives in the widget package (milestone 6); this page
+ * built-artifact smoke test lives in the widget package; this page
  * exercises the same source against real chain data.
  */
 

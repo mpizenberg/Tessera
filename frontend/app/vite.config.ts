@@ -16,7 +16,7 @@ export default defineConfig({
       "@tessera/respond-core": r("../../packages/respond-core/src/index.ts"),
       "@tessera/respond-ui": r("../../packages/respond-ui/src/index.ts"),
       // The embeddable widget is consumed from source too, so the dev-only
-      // reference-host page (milestone 7, `/dev/widget/:key`) drives the very
+      // reference-host page (`/dev/widget/:key`) drives the very
       // same code the built artifact ships. The `/element` subpath registers
       // the `<tessera-respond>` custom element.
       "@tessera/respond-widget/element": r(

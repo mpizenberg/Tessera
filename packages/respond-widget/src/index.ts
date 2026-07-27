@@ -2,17 +2,16 @@
  * `@tessera/respond-widget` — the embeddable `<tessera-respond>` answering
  * widget.
  *
- * Milestone 4 exports the pieces the dev harness (and, in milestone 6, the
- * `solid-element` wrapper) compose:
+ * The pieces the dev harness and the `solid-element` wrapper compose:
  *
  * - {@link RespondRoot}: the trimmed answering component (props in →
  *   `tessera:response` / `tessera:change` / `tessera:invalid` out);
- * - {@link adoptWidgetStyles}: shadow-root CSS delivery (§4);
+ * - {@link adoptWidgetStyles}: shadow-root CSS delivery;
  * - {@link I18nContext} / {@link useI18n}: the injected-i18n seam;
  * - the public prop / event TypeScript contract.
  *
- * The `customElement("tessera-respond", …)` registration and the `build.lib`
- * config land in milestone 6.
+ * The `customElement("tessera-respond", …)` registration lives in `./element`,
+ * which is also the lib-build entry.
  *
  * @module
  */

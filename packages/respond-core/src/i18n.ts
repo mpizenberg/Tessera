@@ -9,9 +9,9 @@
  * - `t` — look up a message for `locale`, interpolating `{token}` params;
  * - `n` — `Intl.NumberFormat(locale)` (1024 → "1,024" en · "1 024" fr);
  * - `d` — `Intl.DateTimeFormat(locale)` over unix **seconds** (the sealed
- *   reveal moment) — replaces the app's browser-locale `formatRevealDate`.
+ *   reveal moment).
  *
- * Number/locale policy (plan §2.4, option 1 + 3): numbers/dates always follow
+ * Number/locale policy: numbers/dates always follow
  * `locale`, even when strings fall back to English; and if `locale` resolves to
  * no bundled catalog *and* no `messages` override, a one-time dev-build warning
  * flags the misconfiguration (UI text will render in English).

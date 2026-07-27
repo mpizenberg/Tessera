@@ -19,8 +19,13 @@
  *     their string form, so they are unaffected regardless of magnitude.
  *   - A text value that genuinely starts with "0x" is indistinguishable from
  *     bytes. CIP-179 titles/prompts realistically never do.
+ *   - Map keys are stringified before we see them, so a CBOR *text* key "5" and
+ *     a CBOR *int* key 5 arrive identically and both become `5n` (and "007"
+ *     normalizes to `7n`). A crafted payload using text keys therefore decodes
+ *     to a tree a CBOR-native reader would reject. CIP-179 defines every map
+ *     key as an integer, so a conformant payload is unaffected.
  *
- * Switching the data source to a CBOR-native indexer later removes both
+ * Switching the data source to a CBOR-native indexer later removes all three
  * caveats — which is exactly why the `DataSource` seam exists.
  */
 

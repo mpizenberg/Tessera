@@ -1,6 +1,6 @@
 /**
  * The small subset of the app's `ui/format.ts` role presentation the widget
- * needs, re-implemented from the injected catalog + tokens (plan §3.2).
+ * needs, re-implemented from the injected catalog + tokens.
  *
  * Role labels stay hard-coded proper nouns (DRep/SPO/CC/…), matching the app.
  * Role descriptions come from the `roles` catalog namespace. Role colors are

@@ -1,11 +1,9 @@
 /*
- * The answering UI's styles, moved from the app's Respond.module.css and
- * converted to plain (non-module) CSS: inside a shadow root, plain class names
- * are already scoped, so CSS-module hashing buys nothing. `composes:` (a
- * CSS-Modules-only feature) is expanded inline; app-only rules (back link,
- * rationale editor, submitted panel, empty/loading states) are dropped; the
- * submit bar is in-flow rather than viewport-fixed, since the widget is an
- * embedded box, not a full page.
+ * The answering UI's styles as plain (non-module) CSS: inside a shadow root
+ * class names are already scoped, so CSS-module hashing buys nothing — and
+ * `composes:` is unavailable outside CSS Modules, so shared rules are written
+ * out inline. The submit bar is in-flow rather than viewport-fixed, since the
+ * widget is an embedded box, not a full page.
  *
  * Every color routes through a --tessera-* token defined in ../theme.css — no
  * literals here, so a host can re-skin anything (test/tokens.test.ts enforces

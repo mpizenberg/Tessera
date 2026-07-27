@@ -1,6 +1,6 @@
 /**
- * Dev harness (milestone 4): mount `RespondRoot` into a shadow root — the same
- * isolation `solid-element` will give it in milestone 6 — adopt the widget
+ * Dev harness: mount `RespondRoot` into a shadow root — the same isolation
+ * `solid-element` gives it in the registered element — adopt the widget
  * styles, drive it with the sample props, and log every emitted event.
  *
  * The events (`tessera:*`) are `composed: true`, so a listener on the light-DOM

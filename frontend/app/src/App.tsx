@@ -12,8 +12,8 @@ import { Settings } from "~/ui/screens/Settings";
 import { ProposeInfoAction } from "~/ui/screens/ProposeInfoAction";
 import { BottomNav } from "~/ui/components/BottomNav";
 
-// Dev-only reference host for the embeddable `<tessera-respond>` widget
-// (milestone 7). Lazily loaded behind the `import.meta.env.DEV` guard below so
+// Dev-only reference host for the embeddable `<tessera-respond>` widget.
+// Lazily loaded behind the `import.meta.env.DEV` guard below so
 // its second copy of the answering UI (and the whole widget bundle) is
 // dead-code-eliminated from production builds.
 const DevWidgetHost = import.meta.env.DEV

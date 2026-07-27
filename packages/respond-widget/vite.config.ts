@@ -8,7 +8,7 @@ const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 // - `vite` (serve) roots at dev/, the harness that mounts `RespondRoot`
 //   directly in a shadow root and logs the emitted events;
 // - `vite build` produces the self-contained `<tessera-respond>` artifact
-//   (plan §5): ES-only — Rollup can't code-split UMD, and the lazy sealed
+//   ES-only — Rollup can't code-split UMD, and the lazy sealed
 //   chunks matter more than legacy script-tag support — with Solid,
 //   respond-core, and the cip-179 codec bundled in (a script-tag host can't
 //   install peers). The tlock/evolution chunks split out via the dynamic

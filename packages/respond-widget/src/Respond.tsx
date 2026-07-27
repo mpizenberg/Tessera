@@ -1,16 +1,13 @@
 /**
- * The widget's answering component — the app's Respond.tsx screen with every
- * host coupling stripped (plan §3.2):
+ * The widget's answering component: host-independent by construction.
  *
- * - `useApp()` (survey lookup, wallet, submit) → `props.definition` / `surveyRef`
- *   / `responder` and an `onSubmit` that **emits** a `tessera:response` instead
- *   of submitting;
- * - `@solidjs/router`, `usePresentation`/IPFS, the Pro preview and rationale
- *   editor, network-mismatch gating → all dropped (the host owns them);
- * - the module-global `t`/`n` → an instance `createI18n({ locale, messages })`
- *   provided through {@link I18nContext};
- * - `viewStatus`/`SurveyAggregate` → `surveyStatus(endEpoch, tipEpoch)` + the
- *   `cancelled` prop; `formatRevealDate` → `i18n.d(unixTimeForRound(round))`.
+ * Everything it needs arrives as props — `definition` / `surveyRef` /
+ * `responder` identify the survey and the answerer, `tipEpoch` + `cancelled`
+ * decide open/closed via `surveyStatus(definition.endEpoch, tipEpoch)`, and
+ * `locale` / `messages` build an instance `createI18n(…)` provided through
+ * {@link I18nContext} (never a module global, so two instances can render in
+ * different locales). It reaches no router, wallet, chain, or network state:
+ * `onSubmit` **emits** a `tessera:response` for the host to sign and submit.
  *
  * Two layouts share all state and logic (layout is pure presentation):
  * `"one-per-screen"` (default) steps through the question cards one at a time;
@@ -261,7 +258,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     return m !== null && !isQuicknet(m.chainHash);
   });
 
-  // Open/closed from the host's chain tip + cancellation flag (plan §3.2).
+  // Open/closed from the host's chain tip + cancellation flag.
   const view = createMemo<"public" | "sealed" | "ended" | "cancelled">(() => {
     if (props.cancelled) return "cancelled";
     if (surveyStatus(props.definition.endEpoch, props.tipEpoch) === "ended") {

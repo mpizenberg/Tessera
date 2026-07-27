@@ -39,7 +39,7 @@ export interface WalletIdentity {
 /** A connected wallet: its identity plus the raw CIP-30 handle for signing. */
 export interface ConnectedWallet {
   readonly identity: WalletIdentity;
-  /** Raw CIP-30 API, retained for transaction signing in later milestones. */
+  /** Raw CIP-30 API, used for transaction signing. */
   readonly api: Cip30Api;
 }
 

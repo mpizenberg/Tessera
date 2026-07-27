@@ -1,5 +1,5 @@
 /**
- * Registers the `<tessera-respond>` custom element (plan §3.3): `solid-element`
+ * Registers the `<tessera-respond>` custom element: `solid-element`
  * turns the prop-defaults map below into reactive DOM properties (each with a
  * hyphenated attribute alias, so `locale`/`layout`/`tip-epoch` also work as
  * plain attributes), renders {@link RespondRoot} into an open shadow root, and
