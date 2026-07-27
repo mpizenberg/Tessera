@@ -4,16 +4,18 @@
  * Read path (mirrors the elm-cardano reference):
  *   1. GET  /tx_by_metalabel?_label=17   → tx hashes carrying CIP-179 metadata
  *   2. POST /tx_metadata                  → the label-17 JSON metadata per tx
- *   3. JSON → Metadatum → decodePayload   → classify into the three record sets
+ *   3. JSON → Metadatum → decodePayloadItems → classify into the three record sets
  *
- * One malformed payload never sinks the whole snapshot: decode failures are
- * logged and skipped, so a single bad transaction can't blank the explorer.
+ * One malformed record never sinks the whole snapshot: an unreadable payload
+ * envelope is logged and skipped, and within a batched payload each item is
+ * decoded on its own, so neither a bad transaction nor a bad sibling can blank
+ * the explorer or cost a well-formed record its place.
  */
 
 import {
-  decodePayload,
+  decodePayloadItems,
   METADATA_LABEL,
-  type Cip179Payload,
+  type DecodedPayloadItems,
   type SurveyRef,
 } from "cip-179";
 
@@ -424,14 +426,20 @@ export class KoiosDataSource implements DataSource {
       // silently mark the response on-time and collapse every dedup tie.
       const pos = posByHash.get(row.tx_hash);
       if (!pos) throw new Error(`metadata for unknown tx ${row.tx_hash}`);
-      let payload: Cip179Payload;
+      let decoded: DecodedPayloadItems;
       try {
-        payload = decodePayload(koiosJsonToMetadatum(raw));
+        decoded = decodePayloadItems(koiosJsonToMetadatum(raw));
       } catch (err) {
+        // Envelope-level failure (unknown tag, not an array): nothing to keep.
         console.warn(`skipping label-17 tx ${row.tx_hash}: ${String(err)}`);
         continue;
       }
-      this.classify(payload, row.tx_hash, pos, {
+      for (const s of decoded.skipped) {
+        console.warn(
+          `skipping label-17 item ${row.tx_hash}[${s.index}]: ${String(s.error)}`,
+        );
+      }
+      this.classify(decoded.payload, row.tx_hash, pos, {
         surveys,
         responses,
         cancellations,
@@ -840,7 +848,7 @@ export class KoiosDataSource implements DataSource {
   }
 
   private classify(
-    payload: Cip179Payload,
+    payload: DecodedPayloadItems["payload"],
     txHash: string,
     pos: { slot: number; epochNo: number },
     out: {
@@ -853,7 +861,7 @@ export class KoiosDataSource implements DataSource {
     switch (payload.type) {
       case "definitions": {
         const txId = hexToBytes(txHash);
-        payload.definitions.forEach((definition, index) => {
+        for (const { index, value: definition } of payload.definitions) {
           out.surveys.push({
             txHash,
             slot,
@@ -861,11 +869,14 @@ export class KoiosDataSource implements DataSource {
             ref: { txId, index },
             definition,
           });
-        });
+        }
         break;
       }
       case "responses":
-        payload.responses.forEach((response, responseIndex) => {
+        for (const {
+          index: responseIndex,
+          value: response,
+        } of payload.responses) {
           // The payload index is part of the §6.3 chain order (same-tx ties).
           out.responses.push({
             txHash,
@@ -874,10 +885,10 @@ export class KoiosDataSource implements DataSource {
             responseIndex,
             response,
           });
-        });
+        }
         break;
       case "cancellations":
-        for (const target of payload.cancellations) {
+        for (const { value: target } of payload.cancellations) {
           // `proof` is filled in a second pass (withCancellationProofs), which
           // fetches the cancelling tx's CBOR to read its owner-proof evidence.
           out.cancellations.push({

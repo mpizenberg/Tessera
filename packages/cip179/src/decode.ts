@@ -618,32 +618,124 @@ export const decodePayload = (
   m: Metadatum,
   path = "payload",
 ): Cip179Payload => {
+  const { payload, skipped } = decodePayloadItems(m, path);
+  const first = skipped[0];
+  if (first) throw first.error;
+  switch (payload.type) {
+    case "definitions":
+      return {
+        type: "definitions",
+        definitions: payload.definitions.map((d) => d.value),
+      };
+    case "responses":
+      return {
+        type: "responses",
+        responses: payload.responses.map((r) => r.value),
+      };
+    case "cancellations":
+      return {
+        type: "cancellations",
+        cancellations: payload.cancellations.map((c) => c.value),
+      };
+  }
+};
+
+/**
+ * One decoded item of a batched payload, carrying its position in the on-chain
+ * array. That position is the item's identity — `survey_index` for a definition,
+ * `response_index` for a response — so it is read off the array, never off the
+ * decoded list, which a skipped sibling would renumber.
+ */
+export interface PayloadItem<T> {
+  readonly index: number;
+  readonly value: T;
+}
+
+/** A payload item that did not decode, and why. */
+export interface SkippedPayloadItem {
+  readonly index: number;
+  readonly error: Cip179DecodeError;
+}
+
+export interface DecodedPayloadItems {
+  readonly payload:
+    | {
+        readonly type: "definitions";
+        readonly definitions: readonly PayloadItem<SurveyDefinition>[];
+      }
+    | {
+        readonly type: "responses";
+        readonly responses: readonly PayloadItem<SurveyResponse>[];
+      }
+    | {
+        readonly type: "cancellations";
+        readonly cancellations: readonly PayloadItem<SurveyCancellation>[];
+      };
+  /** Malformed items, in array order. Empty for a fully well-formed payload. */
+  readonly skipped: readonly SkippedPayloadItem[];
+}
+
+/**
+ * Decode a top-level payload item by item: each entry that decodes is returned
+ * with its index, each that doesn't is reported in `skipped`.
+ *
+ * CIP-179 validates batched records independently, so one malformed record must
+ * not cost its well-formed siblings — they are on-chain records a recovering
+ * implementation counts, and dropping the whole transaction is what makes two
+ * readers disagree about the same bytes. The *envelope* still throws: an
+ * unknown tag or a non-array payload leaves nothing to recover item-wise.
+ */
+export const decodePayloadItems = (
+  m: Metadatum,
+  path = "payload",
+): DecodedPayloadItems => {
   const arr = asList(m, path);
   expectLen(arr, 2, 2, path);
   const tag = asNumber(arr[0], `${path}[0]`);
   const items = asList(arr[1], `${path}[1]`);
   if (items.length === 0) fail("payload array must be non-empty", `${path}[1]`);
+
+  const skipped: SkippedPayloadItem[] = [];
+  const decodeEach = <T>(
+    what: string,
+    decode: (m: Metadatum, path: string) => T,
+  ): PayloadItem<T>[] => {
+    const out: PayloadItem<T>[] = [];
+    items.forEach((item, index) => {
+      try {
+        out.push({ index, value: decode(item, `${path}.${what}[${index}]`) });
+      } catch (e) {
+        if (!(e instanceof Cip179DecodeError)) throw e;
+        skipped.push({ index, error: e });
+      }
+    });
+    return out;
+  };
+
   switch (tag) {
     case PayloadTag.Definitions:
       return {
-        type: "definitions",
-        definitions: items.map((d, i) =>
-          decodeSurveyDefinition(d, `${path}.definitions[${i}]`),
-        ),
+        payload: {
+          type: "definitions",
+          definitions: decodeEach("definitions", decodeSurveyDefinition),
+        },
+        skipped,
       };
     case PayloadTag.Responses:
       return {
-        type: "responses",
-        responses: items.map((r, i) =>
-          decodeSurveyResponse(r, `${path}.responses[${i}]`),
-        ),
+        payload: {
+          type: "responses",
+          responses: decodeEach("responses", decodeSurveyResponse),
+        },
+        skipped,
       };
     case PayloadTag.Cancellations:
       return {
-        type: "cancellations",
-        cancellations: items.map((c, i) =>
-          decodeSurveyCancellation(c, `${path}.cancellations[${i}]`),
-        ),
+        payload: {
+          type: "cancellations",
+          cancellations: decodeEach("cancellations", decodeSurveyCancellation),
+        },
+        skipped,
       };
     default:
       return fail(`unknown payload tag ${tag}`, path);

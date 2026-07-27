@@ -87,7 +87,14 @@ export const RULESET_DESCRIPTOR = {
   // depended on a decoder's behavior rather than on the rules. Only sealed
   // surveys with a custom map answer re-order and no counted value changes, but
   // the hashed bytes can differ, so v9 hashes are incomparable with v8.
-  rulesetVersion: 9,
+  // v10: a batched label-17 payload is now read item by item (the
+  // `payload-items` rule below). One malformed record used to throw out of
+  // `decodePayload`, leaving the scanner no option but to skip the whole
+  // transaction — so a well-formed response batched beside a broken one was
+  // never counted, while an implementation that recovers per item counted it.
+  // Only surveys with such a batch change, but the counted set can differ, so
+  // v10 hashes are incomparable with v9.
+  rulesetVersion: 10,
   cip179SpecVersion: 5,
   /** Roles artifacts cover: 0 DRep, 3 Stakeholder, 4 Keyholder (SPO/CC deferred). */
   coveredRoles: [0, 3, 4],
@@ -98,6 +105,7 @@ export const RULESET_DESCRIPTOR = {
     "4": "count",
   },
   rules: [
+    "payload-items: a batched label-17 payload is decoded item by item — a malformed item is skipped and its well-formed siblings still count, each keeping its own position in the on-chain array as its survey_index / response_index; a payload whose envelope is unreadable (not a 2-element array, unknown tag, empty item array) contributes no records at all",
     "definition-validity: a survey is talliable only if its on-chain definition passes semantic validation with no error-severity problem — spec_version == 5, non-empty eligible_roles, at least one question, in-bounds question constraints (option/selection/ranked/rating/points/numeric bounds), and for a sealed survey round > 0 and padding_size > 0; duplicate eligible_roles is a SHOULD (warning) and does not disqualify. An untalliable survey produces no artifact and is never counted; a backend that tallies one diverges from a conformant verifier (which independently reaches the same untalliable verdict)",
     "window: a response is countable iff its transaction's epoch_no <= the survey's end_epoch (inclusive)",
     "validity: a response must pass full CIP-179 codec validation against the on-chain definition (eligible role, at least one answer, in-constraint answers including require_all rating coverage, required questions answered)",

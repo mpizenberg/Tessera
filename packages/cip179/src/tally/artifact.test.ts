@@ -80,7 +80,7 @@ describe("rulesetHash", () => {
   // rules", which is the exact failure mode the hash exists to prevent.
   it("matches its pinned golden hash (bump rulesetVersion on any change)", () => {
     expect(rulesetHash()).toBe(
-      "8c924841c3f0c1e7c8c8b2470de80d2fa18bcf40f986e30f8ab9e7b68521cbf7",
+      "6ce82cf3bab2b79d467699bc39d52295ad673c079fbc4b9820c1f94c4cebe37e",
     );
   });
 
@@ -206,7 +206,7 @@ describe("assembleTallyBody", () => {
   // `rulesetVersion` if it was the ruleset), never paste to make CI green.
   it("matches its pinned golden artifact hash", () => {
     expect(artifactHash(assembleTallyBody(DEF, ID, roles))).toBe(
-      "236a03e876b989ae8e10b4475f0247d4631e2cd9da1dda7e24b9f7c5cc831419",
+      "e7811b1de1659c2805f193e81e57178dccb1a005e9316bcb4f0b33aa4d56c2a8",
     );
   });
 });

@@ -42,7 +42,7 @@ published. Keep adding entries here until release.
   - Consumers that indexed the old dense arrays positionally must now read each
     entry's `index`; a zero-answer option is simply absent (refill from the
     definition if you render every option).
-- **Ruleset bump: `rulesetVersion` 4 → 9.** Four changes land in this release, so
+- **Ruleset bump: `rulesetVersion` 4 → 10.** Five changes land in this release, so
   0.3.0 artifact hashes are incomparable with 0.2.0 (v4) and artifacts
   re-finalize on deploy. `RULESET_DESCRIPTOR` carries the full note for each.
   - **v5, v6** — the sparse, slimmed tally body (above). The counted set and
@@ -58,6 +58,9 @@ published. Keep adding entries here until release.
   - **v9** — a sealed responder's committed answers sort a custom answer's map
     entries by the canonical JSON of the tagged key, instead of inheriting the
     injected CBOR decoder's entry order.
+  - **v10** — a batched payload is read item by item, so a well-formed record
+    batched beside a malformed one is counted instead of being skipped with it.
+    The counted set can grow.
 - **Removed the count-based display tally from the public API** (`./tally`):
   `tallySurvey`, `tallyQuestion`, `roleBreakdown`, `ratingScaleInfo`,
   `MAX_DISPLAY_BUCKETS`, and the display shapes (`QuestionTally`, `Bar`,
@@ -74,6 +77,17 @@ published. Keep adding entries here until release.
 
 ### Added
 
+- `decodePayloadItems` — the per-item counterpart to `decodePayload`, returning
+  each decoded item with its position in the on-chain array plus a `skipped`
+  list for the ones that failed. CIP-179 validates batched records
+  independently, so this is what a chain reader should use; `decodePayload`
+  stays as the strict all-or-nothing decoder (it now throws the _first_ item's
+  error, in array order).
+- `Cip179LinkResult.specVersion` — a governance link's declared CIP-179
+  revision, or `null` when absent or not an integer, alongside a problem
+  describing it. Advisory only: a link at another revision keeps its
+  `surveyRef`, since the CIP's link-validation rules are the ref resolving, the
+  epoch alignment and the `kind`.
 - `surveyStatus(endEpoch, tipEpoch)` (in `./domain`) — the tip-only
   active/ended lifecycle rule, factored out of the internal `statusOf` so an
   embedding host (e.g. the `<tessera-respond>` widget) can gate open/closed from
@@ -87,6 +101,13 @@ published. Keep adding entries here until release.
 
 ### Fixed
 
+- **`govActionId` no longer truncates the action index to one byte.** The index
+  was written into a single array slot, so index 256 encoded as index 0 — and
+  since mechanism-B matching compares ids from this function on both sides, the
+  collision was self-consistent: a vote on action 256 satisfied a link to
+  action 0. It is now big-endian in the narrowest width that holds it (one byte
+  reproduces every CIP-129 vector, two cover the rest of Conway's
+  `gov_action_index`), and an index outside `uint .size 2` throws.
 - **`chunked_text` / `chunked_bytes` reject the empty array** the CDDL forbids
   (`chunked_text = bounded_text / [+ bounded_text]`, and the `bounded_bytes`
   analog — the array form is one-or-more). `decodeChunkedText([])` previously

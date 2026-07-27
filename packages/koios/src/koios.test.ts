@@ -232,6 +232,66 @@ describe("fetchAll — chain position", () => {
     ]);
   });
 
+  // Finding 27 — a broken sibling used to throw out of `decodePayload`, and the
+  // scanner's only recourse was skipping the whole tx.
+  it("keeps a batch's well-formed responses when one item is malformed", async () => {
+    const resp = (credByte: string, role: number) => ({
+      "0": 5,
+      "1": [`0x${SURVEY_TX}`, 0],
+      "2": role,
+      "3": [0, `0x${credByte.repeat(28)}`],
+      "4": [[1, 0, 0]],
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes("/tx_by_metalabel")) {
+          return new Response(
+            JSON.stringify([
+              { tx_hash: RESP_TX, absolute_slot: 5_000, epoch_no: 1_340 },
+            ]),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/tx_metadata")) {
+          return new Response(
+            JSON.stringify([
+              {
+                tx_hash: RESP_TX,
+                metadata: {
+                  // Role 9 is not a CIP-179 role: item 1 alone is unreadable.
+                  "17": [1, [resp("11", 3), resp("22", 9), resp("33", 3)]],
+                },
+              },
+            ]),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/tip")) {
+          return new Response(
+            JSON.stringify([
+              {
+                epoch_no: 1_346,
+                abs_slot: 10_000,
+                epoch_slot: 100,
+                block_time: 1_750_000_000,
+              },
+            ]),
+            { status: 200 },
+          );
+        }
+        return new Response("[]", { status: 200 });
+      }),
+    );
+    const records = await new KoiosDataSource(CONFIG).fetchAll();
+
+    expect(records.responses).toHaveLength(2);
+    // Index 2 survives as index 2: renumbering it would move the response in
+    // the dedup chain order and mis-address it in a finalized artifact.
+    expect(records.responses.map((r) => r.responseIndex)).toEqual([0, 2]);
+  });
+
   it("flags the snapshot incomplete when a tx_metadata batch fails (findings 3, 12)", async () => {
     vi.stubGlobal(
       "fetch",

@@ -6,6 +6,8 @@ import {
   decodeAnswerItem,
   decodeChunkedText,
   decodeCredential,
+  decodePayload,
+  decodePayloadItems,
   decodeSubmissionMode,
   decodeSurveyDefinition,
   decodeSurveyRef,
@@ -298,5 +300,59 @@ describe("an unsupported spec_version explains its own decode failure", () => {
     expect(validateDefinition(decoded).map((p) => p.code)).toContain(
       "definition.specVersionUnsupported",
     );
+  });
+});
+
+// Finding 27 — CIP-179 validates batched records independently, so one
+// malformed item must not cost its siblings their place on chain.
+describe("a batched payload decodes item by item (finding 27)", () => {
+  const response = (roleTag: Metadatum): Metadatum =>
+    new Map<Metadatum, Metadatum>([
+      [0n, 5n],
+      [1n, [bytes(32), 0n]],
+      [2n, roleTag],
+      [3n, [0n, bytes(28)]],
+      [4n, [[1n, 0n, 0n]]], // one single-choice answer
+    ]);
+  // Role 9 is not a CIP-179 role, so item 1 fails where its siblings don't.
+  const batch: Metadatum = [
+    1n,
+    [response(BigInt(Role.DRep)), response(9n), response(BigInt(Role.SPO))],
+  ];
+
+  it("keeps the well-formed siblings and reports the rest", () => {
+    const { payload, skipped } = decodePayloadItems(batch);
+    expect(payload.type).toBe("responses");
+    expect(skipped.map((s) => s.index)).toEqual([1]);
+    expect(skipped[0]!.error).toBeInstanceOf(Cip179DecodeError);
+    if (payload.type !== "responses") throw new Error("wrong payload type");
+    expect(payload.responses.map((r) => r.value.role)).toEqual([
+      Role.DRep,
+      Role.SPO,
+    ]);
+  });
+
+  it("indexes survivors by array position, not by list position", () => {
+    const { payload } = decodePayloadItems(batch);
+    if (payload.type !== "responses") throw new Error("wrong payload type");
+    // The survivor after the gap keeps index 2 — it is its response_index, part
+    // of the dedup chain order and of the artifact's on-chain coordinate.
+    expect(payload.responses.map((r) => r.index)).toEqual([0, 2]);
+  });
+
+  it("still fails whole for an unreadable envelope", () => {
+    expect(() => decodePayloadItems([9n, [response(0n)]])).toThrow(
+      Cip179DecodeError,
+    );
+    expect(() => decodePayloadItems([1n, []])).toThrow(Cip179DecodeError);
+    expect(() => decodePayloadItems(5n)).toThrow(Cip179DecodeError);
+  });
+
+  it("leaves the strict decoder strict", () => {
+    expect(() => decodePayload(batch)).toThrow(Cip179DecodeError);
+    expect(decodePayload([1n, [response(BigInt(Role.DRep))]])).toEqual({
+      type: "responses",
+      responses: [expect.objectContaining({ role: Role.DRep })],
+    });
   });
 });
