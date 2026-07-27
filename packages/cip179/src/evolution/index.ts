@@ -98,12 +98,28 @@ export function drepId(credential: Credential): string {
 /** Compiled once — a fresh schema per call would defeat parser memoization. */
 const encodeGovAction = Schema.decodeSync(Bech32.FromBytes("gov_action"));
 
-/** The CIP-129 bech32 governance action id (`gov_action1…`). */
+/**
+ * The CIP-129 bech32 governance action id (`gov_action1…`).
+ *
+ * CIP-129 appends "the index bytes" to the 32-byte tx id and its examples only
+ * ever show indices below 256, so the width above that is unpinned; Conway's
+ * `gov_action_index` is `uint .size 2`. Encode big-endian in the narrowest width
+ * that holds the value — one byte reproduces every published vector, two cover
+ * the rest of the ledger's range. Writing a single byte unconditionally would
+ * wrap index 256 onto index 0, and mechanism B compares these ids on both sides,
+ * so the collision would read as a satisfied binding.
+ */
 export function govActionId(txIdHex: string, index: number): string {
+  if (!Number.isInteger(index) || index < 0 || index > 0xffff) {
+    throw new RangeError(`gov action index out of range: ${index}`);
+  }
   const txId = hexToBytes(txIdHex);
-  const bytes = new Uint8Array(txId.length + 1);
+  const width = index > 0xff ? 2 : 1;
+  const bytes = new Uint8Array(txId.length + width);
   bytes.set(txId, 0);
-  bytes[txId.length] = index;
+  for (let i = 0; i < width; i++) {
+    bytes[txId.length + i] = (index >>> ((width - 1 - i) * 8)) & 0xff;
+  }
   return encodeGovAction(bytes);
 }
 

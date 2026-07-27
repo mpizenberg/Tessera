@@ -12,7 +12,13 @@ const wellFormed = (over: Record<string, unknown> = {}) => ({
   "@context": {},
   body: {
     title: "A poll",
-    cip179: { kind: GOV_LINK_KIND, surveyTxId: TXID, surveyIndex: 3, ...over },
+    cip179: {
+      specVersion: 5,
+      kind: GOV_LINK_KIND,
+      surveyTxId: TXID,
+      surveyIndex: 3,
+      ...over,
+    },
   },
 });
 
@@ -67,6 +73,31 @@ describe("parseCip179Link", () => {
     const r = parseCip179Link(wellFormed({ surveyIndex: 0 }));
     expect(r.surveyRef).toEqual({ txId: TXID, index: 0 });
     expect(r.problems).toEqual([]);
+  });
+
+  // Finding 46 — the declared revision is reported so a reader can see it, but
+  // the CIP's link-validation rules are addressing + kind, so it never
+  // suppresses the ref.
+  describe("specVersion is reported, not enforced", () => {
+    it("reads the declared revision", () => {
+      expect(parseCip179Link(wellFormed()).specVersion).toBe(5);
+    });
+
+    it("keeps the link of another revision, and says so", () => {
+      const r = parseCip179Link(wellFormed({ specVersion: 4 }));
+      expect(r.surveyRef).toEqual({ txId: TXID, index: 3 });
+      expect(r.specVersion).toBe(4);
+      expect(r.problems.some((p) => p.includes("specVersion"))).toBe(true);
+    });
+
+    it("keeps the link when the field is absent or malformed", () => {
+      for (const bad of [undefined, "5", 5.5, null]) {
+        const r = parseCip179Link(wellFormed({ specVersion: bad }));
+        expect(r.surveyRef).toEqual({ txId: TXID, index: 3 });
+        expect(r.specVersion).toBeNull();
+        expect(r.problems.some((p) => p.includes("specVersion"))).toBe(true);
+      }
+    });
   });
 });
 

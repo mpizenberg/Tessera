@@ -50,6 +50,22 @@ describe("govActionId", () => {
   it("the action index changes the id", async () => {
     expect(govActionId(ACTION_TX, 1)).not.toBe(ACTION_ID);
   });
+
+  // Finding 38 — the index used to be written into a single array slot, so 256
+  // wrapped onto 0 and a mechanism-B binding could match the wrong action.
+  it("widens past one byte instead of wrapping onto a lower index", async () => {
+    expect(govActionId(ACTION_TX, 256)).not.toBe(govActionId(ACTION_TX, 0));
+    expect(govActionId(ACTION_TX, 257)).not.toBe(govActionId(ACTION_TX, 1));
+    expect(govActionId(ACTION_TX, 0x102)).not.toBe(
+      govActionId(ACTION_TX, 0x201),
+    );
+  });
+
+  it("rejects an index outside the ledger's uint .size 2", async () => {
+    expect(() => govActionId(ACTION_TX, 0x10000)).toThrow(RangeError);
+    expect(() => govActionId(ACTION_TX, -1)).toThrow(RangeError);
+    expect(() => govActionId(ACTION_TX, 1.5)).toThrow(RangeError);
+  });
 });
 
 describe("stakeAddress", () => {

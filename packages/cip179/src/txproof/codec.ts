@@ -119,7 +119,12 @@ export interface TxProofCodec {
   stakeAddress(credential: Credential, network: string): string;
   /** CIP-129 bech32 DRep id (`drep1…`) of a DRep credential. */
   drepId(credential: Credential): string;
-  /** CIP-129 bech32 governance action id (`gov_action1…`). */
+  /**
+   * CIP-129 bech32 governance action id (`gov_action1…`). Both sides of a
+   * mechanism-B match run through here, so an adapter must encode the index
+   * big-endian in the narrowest width that holds it — truncating Conway's
+   * two-byte `gov_action_index` to one would alias index 256 onto index 0.
+   */
   govActionId(txIdHex: string, index: number): string;
   /** Decode a tx's proof-relevant fields, or `null` if it can't be decoded. */
   decodeTx(txCborHex: string): DecodedTx | null;

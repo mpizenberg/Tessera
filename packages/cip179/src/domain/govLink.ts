@@ -10,6 +10,8 @@
  * the two can't drift — pure, no I/O, unit-testable.
  */
 
+import { SPEC_VERSION } from "../constants.js";
+
 /** Anchor's declared `body.cip179.kind` for a survey link. */
 export const GOV_LINK_KIND = "survey-link";
 
@@ -69,6 +71,14 @@ export interface SurveyRefLite {
 export interface Cip179LinkResult {
   /** The extracted ref — only non-null when the link is fully well-formed. */
   readonly surveyRef: SurveyRefLite | null;
+  /**
+   * The link's declared CIP-179 revision, or `null` when absent or not an
+   * integer. Advisory: it tells a reader which revision's linkage semantics the
+   * author wrote against, ahead of resolving the survey — but the survey's own
+   * `spec_version` is what the decoder answers to, so a foreign value here never
+   * withholds the ref. See {@link parseCip179Link}.
+   */
+  readonly specVersion: number | null;
   /** Human-readable shape problems; empty means a well-formed survey link. */
   readonly problems: string[];
 }
@@ -80,10 +90,22 @@ export interface Cip179LinkResult {
  * problems for callers that show them. `surveyTxId` must be 64-char hex — a
  * malformed id can never address a real survey, so it's rejected rather than
  * turned into a bogus ref.
+ *
+ * `specVersion` is reported, never enforced: the spec's validation rules for a
+ * link are the ref resolving, the epoch alignment and the `kind`, so a link
+ * declaring another revision is still a link, and dropping it would silently
+ * unlink a survey that a conformant reader keeps. It surfaces as a problem for
+ * the authoring side, which has no reason to write anything but the current
+ * revision.
  */
 export function parseCip179Link(parsed: unknown): Cip179LinkResult {
+  const none = (problems: string[]): Cip179LinkResult => ({
+    surveyRef: null,
+    specVersion: null,
+    problems,
+  });
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    return { surveyRef: null, problems: ["Top level must be a JSON object."] };
+    return none(["Top level must be a JSON object."]);
   }
   const obj = parsed as Record<string, unknown>;
   const problems: string[] = [];
@@ -91,14 +113,29 @@ export function parseCip179Link(parsed: unknown): Cip179LinkResult {
   const body = obj["body"];
   if (typeof body !== "object" || body === null) {
     problems.push('Missing CIP-108 "body" object.');
-    return { surveyRef: null, problems };
+    return none(problems);
   }
   const cip = (body as Record<string, unknown>)["cip179"];
   if (typeof cip !== "object" || cip === null) {
     problems.push('Missing "body.cip179" survey link.');
-    return { surveyRef: null, problems };
+    return none(problems);
   }
   const link = cip as Record<string, unknown>;
+
+  const declared = link["specVersion"];
+  const specVersion =
+    typeof declared === "number" && Number.isInteger(declared)
+      ? declared
+      : null;
+  if (specVersion === null) {
+    problems.push(
+      `"body.cip179.specVersion" must be an integer (got ${JSON.stringify(declared)}).`,
+    );
+  } else if (specVersion !== SPEC_VERSION) {
+    problems.push(
+      `"body.cip179.specVersion" is ${specVersion}; this tool writes v${SPEC_VERSION}.`,
+    );
+  }
   const kindOk = link["kind"] === GOV_LINK_KIND;
   if (!kindOk) {
     problems.push(
@@ -119,12 +156,13 @@ export function parseCip179Link(parsed: unknown): Cip179LinkResult {
     problems.push('"body.cip179.surveyIndex" must be a non-negative integer.');
   }
 
-  // A ref is extracted only when the whole link checks out — the discovery
-  // layer treats a non-null ref as "this is a survey link", so a wrong `kind`
-  // or malformed id must yield null, not a partial ref.
+  // A ref is extracted only when the whole *addressing* checks out — the
+  // discovery layer treats a non-null ref as "this is a survey link", so a wrong
+  // `kind` or malformed id must yield null, not a partial ref. `specVersion` is
+  // deliberately not part of that conjunction.
   const surveyRef =
     kindOk && txOk && indexOk
       ? { txId: (txId as string).toLowerCase(), index: index as number }
       : null;
-  return { surveyRef, problems };
+  return { surveyRef, specVersion, problems };
 }
