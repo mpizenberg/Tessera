@@ -151,6 +151,9 @@ async function main(): Promise<void> {
   // untalliable survey (non-v5 or spec-invalid definition, findings 10/11) must
   // have no artifact; if one was served anyway the backend is non-conformant,
   // which we surface rather than trying to verify a tally that shouldn't exist.
+  // Only the rules the record decides on its own are checked here, before any
+  // fetching; the owner-proof rule needs the defining tx and is applied by
+  // `rebuildTally`, which reaches the same UNTALLIABLE verdict.
   if (!isSurveyTalliable(survey)) {
     for (const p of surveyErrors(survey))
       console.warn(`note: definition problem: ${p.code}`);
@@ -199,6 +202,9 @@ async function main(): Promise<void> {
   // 3. The remaining independent inputs, all straight from Koios.
   const txHashes = [
     ...new Set([
+      // The defining tx: CIP-179 requires it to prove the survey's owner, so its
+      // evidence gates talliability exactly like a cancellation's does.
+      bundle.survey.txHash,
       ...bundle.responses.map((r) => r.txHash),
       ...bundle.cancellations.map((c) => c.txHash),
     ]),
@@ -214,6 +220,7 @@ async function main(): Promise<void> {
     else neededScripts.set(txHash, [scriptHash]);
   };
   const ownerScriptHash = scriptCredentialHash(bundle.survey.definition.owner);
+  addNeeded(bundle.survey.txHash, ownerScriptHash);
   for (const c of bundle.cancellations) addNeeded(c.txHash, ownerScriptHash);
   for (const r of bundle.responses)
     addNeeded(r.txHash, scriptCredentialHash(r.response.credential));

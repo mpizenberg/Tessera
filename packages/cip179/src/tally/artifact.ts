@@ -102,7 +102,14 @@ export const RULESET_DESCRIPTOR = {
   // position, not just the definition, so it moved from `isDefinitionTalliable`
   // to `isSurveyTalliable`. The set of talliable surveys shrinks, so v11 hashes
   // are incomparable with v10.
-  rulesetVersion: 11,
+  // v12: the talliability gate now also enforces CIP-179's owner rule — the
+  // defining transaction MUST prove the `owner` credential (mechanism A; B is
+  // responses-only, so a Plutus-script owner can never prove and is never
+  // talliable). Nothing checked it before, so a definition could name any
+  // credential — a known DRep, a foundation — and be tallied under a borrowed
+  // name. The set of talliable surveys shrinks, so v12 hashes are incomparable
+  // with v11.
+  rulesetVersion: 12,
   cip179SpecVersion: 5,
   /** Roles artifacts cover: 0 DRep, 3 Stakeholder, 4 Keyholder (SPO/CC deferred). */
   coveredRoles: [0, 3, 4],
@@ -114,7 +121,7 @@ export const RULESET_DESCRIPTOR = {
   },
   rules: [
     "payload-items: a batched label-17 payload is decoded item by item — a malformed item is skipped and its well-formed siblings still count, each keeping its own position in the on-chain array as its survey_index / response_index; a payload whose envelope is unreadable (not a 2-element array, unknown tag, empty item array) contributes no records at all",
-    "definition-validity: a survey is talliable only if its on-chain definition passes semantic validation with no error-severity problem — spec_version == 5, non-empty eligible_roles, at least one question, in-bounds question constraints (option/selection/ranked/rating/points/numeric bounds), for a sealed survey round > 0 and padding_size > 0, and end_epoch > the epoch_no of the transaction that published the definition; duplicate eligible_roles is a SHOULD (warning) and does not disqualify. An untalliable survey produces no artifact and is never counted; a backend that tallies one diverges from a conformant verifier (which independently reaches the same untalliable verdict)",
+    "definition-validity: a survey is talliable only if its on-chain definition passes semantic validation with no error-severity problem — spec_version == 5, non-empty eligible_roles, at least one question, in-bounds question constraints (option/selection/ranked/rating/points/numeric bounds), for a sealed survey round > 0 and padding_size > 0, end_epoch > the epoch_no of the transaction that published the definition, and that same transaction proving the owner credential via mechanism A (its key hash in required_signers, or its native script witnessed and satisfied — a Plutus-script owner has no proof path and is never talliable); duplicate eligible_roles is a SHOULD (warning) and does not disqualify. An untalliable survey produces no artifact and is never counted; a backend that tallies one diverges from a conformant verifier (which independently reaches the same untalliable verdict)",
     "window: a response is countable iff its transaction's epoch_no <= the survey's end_epoch (inclusive)",
     "validity: a response must pass full CIP-179 codec validation against the on-chain definition (eligible role, at least one answer, in-constraint answers including require_all rating coverage, required questions answered)",
     "credential-proof: mechanism A (credential key in required_signers, or its native script witnessed and satisfied) or mechanism B (a voting_procedures vote in the response transaction by the same credential on any governance action linked to the survey, with the voter tag's role equal to the claimed role — sufficient on its own); a response with no qualifying vote falls back to mechanism A (a non-qualifying vote never invalidates); mechanism B applies only to governance-linked surveys, and votability needs no separate check — the ledger only accepts votes on actions still in the proposal set",

@@ -4,7 +4,7 @@ import type { Credential, SurveyDefinition } from "../index.js";
 
 import { bytesToHex } from "./hex.js";
 import type {
-  CancellationProof,
+  MechanismAProof,
   CancellationRecord,
   ChainTip,
   Cip179Records,
@@ -51,7 +51,7 @@ const survey = (index: number, d: SurveyDefinition): SurveyRecord => ({
   definition: d,
 });
 
-const proof = (signers: string[]): CancellationProof => ({
+const proof = (signers: string[]): MechanismAProof => ({
   requiredSigners: signers,
   nativeScripts: [],
 });
@@ -59,7 +59,7 @@ const proof = (signers: string[]): CancellationProof => ({
 const cancel = (
   index: number,
   slot: number,
-  p: CancellationProof | null,
+  p: MechanismAProof | null,
 ): CancellationRecord => ({
   txHash: `c${index}-${slot}`,
   slot,

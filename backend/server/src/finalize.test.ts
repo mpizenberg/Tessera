@@ -39,6 +39,8 @@ import { memBackendStore, type MemBackendStore } from "./store-mem";
 const CONFIG = loadConfig({}); // preview: secondsPerEpoch 86_400
 
 const SURVEY_TX = "aa".repeat(32);
+/** A second survey, for the cases that need two in one pass. */
+const SURVEY_TX2 = "dd".repeat(32);
 const SURVEY_KEY = `${SURVEY_TX}:0`;
 const END_EPOCH = 500;
 
@@ -228,18 +230,37 @@ function fakeInputs(
   return self;
 }
 
-const noProofs = {
-  txProofs: vi.fn(async () => new Map<string, TxProof | null>()),
-};
-
-/** A `txProofs` source returning a fixed per-hash verdict map. */
-function proofsStub(entries: Record<string, TxProof | null>) {
+/**
+ * Both stubs answer for the defining transactions too: CIP-179 requires those to
+ * prove the survey owner, and finalization postpones a survey whose owner-proof
+ * it couldn't read — so without these entries every case would postpone for a
+ * reason unrelated to what it tests.
+ */
+/**
+ * A `txProofs` source. Each *defining* transaction proves its owner — CIP-179
+ * requires that, and finalization postpones a survey whose owner-proof it can't
+ * read, so a case about anything else still needs it — while `entries` answers
+ * for the rest (cancelling txs); an unlisted hash reads as a failed fetch.
+ */
+function proofsStub(
+  entries: Record<string, TxProof | null> = {},
+  definitionTxs: readonly string[] = [SURVEY_TX, SURVEY_TX2],
+) {
   return {
     txProofs: vi.fn(
-      async () => new Map<string, TxProof | null>(Object.entries(entries)),
+      async (hashes: readonly string[]) =>
+        new Map<string, TxProof | null>(
+          hashes.map((h) => [
+            h,
+            definitionTxs.includes(h) ? OWNER_PROOF : (entries[h] ?? null),
+          ]),
+        ),
     ),
   };
 }
+
+/** No cancellation evidence — the common case. */
+const noProofs = proofsStub();
 
 /** Owner-verified evidence: the survey owner's key hash is a required signer. */
 const OWNER_PROOF: TxProof = {
@@ -342,7 +363,6 @@ describe("finalizeClosedSurveys", () => {
 
   it("fetches the shared-credential union once across same-epoch surveys (§6.5)", async () => {
     const store = memBackendStore();
-    const SURVEY_TX2 = "dd".repeat(32);
     const SURVEY_KEY2 = `${SURVEY_TX2}:0`;
     const s2: SurveyRecord = {
       txHash: SURVEY_TX2,
@@ -402,7 +422,6 @@ describe("finalizeClosedSurveys", () => {
 
   it("isolates a poisoned survey: one failing emission never blocks the others (finding 3)", async () => {
     const store = memBackendStore();
-    const SURVEY_TX2 = "dd".repeat(32);
     const SURVEY_KEY2 = `${SURVEY_TX2}:0`;
     const s2: SurveyRecord = {
       txHash: SURVEY_TX2,
@@ -449,7 +468,6 @@ describe("finalizeClosedSurveys", () => {
 
   it("skips a spec-invalid (untalliable) survey — no artifact — without blocking valid ones (findings 10, 11)", async () => {
     const store = memBackendStore();
-    const SURVEY_TX2 = "dd".repeat(32);
     const SURVEY_KEY2 = `${SURVEY_TX2}:0`;
     // Survey 1's on-chain definition declares spec_version 6 — untalliable, so it
     // must produce no artifact (never tallied under v5 semantics).
@@ -483,6 +501,75 @@ describe("finalizeClosedSurveys", () => {
     await finalizeClosedSurveys(CONFIG, store, inputs, noProofs, recs, TIP);
     expect(store.artifacts.has(SURVEY_KEY)).toBe(false); // untalliable → no artifact
     expect(store.artifacts.has(SURVEY_KEY2)).toBe(true); // valid → finalized
+  });
+
+  // Finding 12 — CIP-179: "The definition transaction MUST prove ownership of
+  // the `owner` credential." Nothing checked it, so a survey could name any
+  // credential as owner and be tallied under a borrowed name.
+  it("skips a survey whose defining tx never proved the owner — without blocking valid ones", async () => {
+    const store = memBackendStore();
+    const s2: SurveyRecord = {
+      txHash: SURVEY_TX2,
+      slot: 100,
+      epochNo: 495,
+      ref: { txId: hexToBytes(SURVEY_TX2), index: 0 },
+      definition: definition(),
+    };
+    const rA1 = response("11".repeat(32), CRED_A, 0);
+    const rB2 = response("22".repeat(32), CRED_B, 0);
+    await seed(store, [
+      validatedRow(rA1),
+      validatedRow(rB2, { surveyKey: `${SURVEY_TX2}:0` }),
+    ]);
+    const inputs = fakeInputs({
+      [KEY_A]: { weight: 100n, registered: true },
+      [KEY_B]: { weight: 7n, registered: true },
+    });
+
+    // Survey 1's defining tx is read in full and simply doesn't sign for the
+    // owner — a definitive no, unlike a fetch that failed.
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      inputs,
+      proofsStub({ [SURVEY_TX]: STRANGER_PROOF }, [SURVEY_TX2]),
+      {
+        surveys: [survey(), s2],
+        responses: [rA1, rB2],
+        cancellations: [],
+      },
+      TIP,
+    );
+    expect(store.artifacts.has(SURVEY_KEY)).toBe(false);
+    expect(store.artifacts.has(`${SURVEY_TX2}:0`)).toBe(true);
+  });
+
+  it("postpones (never decides) a survey whose owner-proof could not be fetched", async () => {
+    const store = memBackendStore();
+    await seed(store, [validatedRow(rA)]);
+    const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
+    // No definition tx proves out and none is listed: every hash reads as a
+    // failed fetch — unknown, which must not freeze an artifact either way.
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      inputs,
+      proofsStub({}, []),
+      records(survey(), [rA], []),
+      TIP,
+    );
+    expect(store.artifacts.has(SURVEY_KEY)).toBe(false);
+
+    // Next pass, the fetch succeeds and the survey finalizes normally.
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      inputs,
+      noProofs,
+      records(survey(), [rA], []),
+      TIP,
+    );
+    expect(store.artifacts.has(SURVEY_KEY)).toBe(true);
   });
 
   it("postpones when the electorate total is unavailable, resumes without refetching weights", async () => {
@@ -667,6 +754,9 @@ describe("finalizeClosedSurveys", () => {
         [rB.txHash, 0],
       ]),
       proofs: new Map<string, TxProof | null>([
+        // The verifier gates on the defining tx's owner-proof too, exactly as
+        // the emitter just did.
+        [SURVEY_TX, OWNER_PROOF],
         [rA.txHash, proofOf("a1".repeat(28))],
         [rB.txHash, proofOf("b2".repeat(28))],
       ]),
@@ -754,17 +844,7 @@ describe("finalizeClosedSurveys", () => {
       target: { txId: hexToBytes(SURVEY_TX), index: 0 },
       proof: null, // snapshot never verified it (survey was closed)
     };
-    const proofs = {
-      txProofs: vi.fn(
-        async () =>
-          new Map<string, TxProof | null>([
-            [
-              cancellation.txHash,
-              { requiredSigners: [OWNER_HASH], nativeScripts: [], votes: [] },
-            ],
-          ]),
-      ),
-    };
+    const proofs = proofsStub({ [cancellation.txHash]: OWNER_PROOF });
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
 
     await finalizeClosedSurveys(
@@ -1077,17 +1157,7 @@ describe("finalizeClosedSurveys", () => {
       target: { txId: hexToBytes(SURVEY_TX), index: 0 },
       proof: null,
     };
-    const proofs = {
-      txProofs: vi.fn(
-        async () =>
-          new Map<string, TxProof | null>([
-            [
-              cancellation.txHash,
-              { requiredSigners: [OWNER_HASH], nativeScripts: [], votes: [] },
-            ],
-          ]),
-      ),
-    };
+    const proofs = proofsStub({ [cancellation.txHash]: OWNER_PROOF });
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
     const reveal = stubReveal({ [rSealed.txHash]: SEALED_ANSWER });
 

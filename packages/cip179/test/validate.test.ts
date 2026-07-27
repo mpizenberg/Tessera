@@ -15,7 +15,11 @@ import {
   type SurveyDefinition,
   type SurveyResponse,
 } from "../src/index.js";
-import type { SurveyRecord } from "../src/domain/index.js";
+import {
+  hexToBytes,
+  type MechanismAProof,
+  type SurveyRecord,
+} from "../src/domain/index.js";
 
 const bytes = (n: number, fill = 0): Uint8Array => new Uint8Array(n).fill(fill);
 
@@ -173,6 +177,50 @@ describe("definition severity + talliability (findings 10, 11, 34)", () => {
       const same = record(10, 10);
       expect(isDefinitionTalliable(same.definition)).toBe(true);
       expect(definitionErrors(same.definition)).toEqual([]);
+    });
+  });
+
+  // Finding 12 — CIP-179 §Survey Definition: the defining transaction MUST
+  // prove the `owner` credential (mechanism A; B is responses-only).
+  describe("owner-proof of the defining transaction", () => {
+    const OWNER = "01".repeat(28);
+    const record = (proof?: MechanismAProof | null): SurveyRecord => ({
+      txHash: "ab".repeat(32),
+      slot: 1,
+      epochNo: 9,
+      ref: { txId: bytes(32), index: 0 },
+      definition: {
+        ...singleChoiceDef(),
+        endEpoch: 10,
+        owner: { type: "key", keyHash: hexToBytes(OWNER) },
+      },
+      ...(proof !== undefined ? { proof } : {}),
+    });
+
+    it("is talliable when the defining tx signs for the owner", () => {
+      expect(
+        isSurveyTalliable(
+          record({ requiredSigners: [OWNER], nativeScripts: [] }),
+        ),
+      ).toBe(true);
+    });
+
+    it("is untalliable when the defining tx proves someone else", () => {
+      const stranger = record({
+        requiredSigners: ["99".repeat(28)],
+        nativeScripts: [],
+      });
+      expect(isSurveyTalliable(stranger)).toBe(false);
+      expect(surveyErrors(stranger)).toContainEqual({
+        code: "definition.ownerUnproven",
+      });
+    });
+
+    it("holds no opinion when the evidence was never read", () => {
+      // Absent and null are both "unknown" — a caller that freezes a result must
+      // require the evidence, rather than have this read as a proof that failed.
+      expect(surveyErrors(record())).toEqual([]);
+      expect(surveyErrors(record(null))).toEqual([]);
     });
   });
 

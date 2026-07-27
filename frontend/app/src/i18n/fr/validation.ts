@@ -16,6 +16,8 @@ const validation: Messages = {
     sealedPaddingInvalid: "le padding_size scellé doit être > 0",
     endEpochNotAfterInclusion:
       "end_epoch {endEpoch} doit être postérieur à l'époque de publication de la définition ({inclusionEpoch})",
+    ownerUnproven:
+      "la transaction qui a publié ce sondage ne prouve pas la propriété du credential owner",
   },
   question: {
     tooFewOptions: "{where} : au moins 2 options sont requises",

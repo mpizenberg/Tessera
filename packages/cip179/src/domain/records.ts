@@ -33,6 +33,15 @@ export interface SurveyRecord extends ChainPos {
   /** Canonical reference: (this tx, index within its definitions array). */
   readonly ref: SurveyRef;
   readonly definition: SurveyDefinition;
+  /**
+   * Owner-proof evidence from the *defining* transaction: CIP-179 requires it to
+   * prove the `owner` credential (mechanism A only — B is responses-only, so a
+   * Plutus-script owner has no proof path at all). Absent or `null` when the
+   * source didn't fetch it or couldn't decode it, which is **unknown**, not
+   * disproven: a consumer that freezes something (an artifact, a verdict) must
+   * postpone instead of reading it as a failed proof.
+   */
+  readonly proof?: MechanismAProof | null;
 }
 
 /** A response as published on-chain. */
@@ -67,12 +76,14 @@ export type NativeScriptInfo =
   | { readonly kind: "timelock" };
 
 /**
- * Evidence proving (or not) that a cancelling transaction authorized the
- * cancellation — decoded from the cancelling tx's CBOR. The owner-credential
- * check is pure domain logic ({@link import("./cancellation")}); the
- * source's job is only to surface what the tx contains.
+ * What a transaction contains that CIP-179 mechanism A evaluates — its
+ * `required_signers` and the native scripts it witnesses — decoded from the
+ * tx's CBOR. Whether it proves a given credential is pure domain logic
+ * ({@link import("./mechanismA")}); the source's job is only to surface what
+ * the tx contains. Definition, cancellation and response transactions all prove
+ * credentials from exactly this evidence.
  */
-export interface CancellationProof {
+export interface MechanismAProof {
   /** Key hashes in the tx body's `required_signers` (field 14), hex. */
   readonly requiredSigners: readonly string[];
   /** Native scripts in the tx's witness set, keyed by script hash (hex). */
@@ -103,10 +114,10 @@ export interface VoteBinding {
 /**
  * Everything a transaction contains that can prove a CIP-179 credential:
  * mechanism A evidence (required signers + native scripts, the
- * {@link CancellationProof} part) plus mechanism B evidence (governance vote
+ * {@link MechanismAProof} part) plus mechanism B evidence (governance vote
  * bindings) — decoded from the transaction's CBOR by the data source.
  */
-export interface TxProof extends CancellationProof {
+export interface TxProof extends MechanismAProof {
   readonly votes: readonly VoteBinding[];
 }
 
@@ -117,7 +128,7 @@ export interface CancellationRecord extends ChainPos {
    * Owner-proof evidence from the cancelling transaction, or `null` if it
    * couldn't be fetched/decoded (then the cancellation is treated as unverified).
    */
-  readonly proof: CancellationProof | null;
+  readonly proof: MechanismAProof | null;
 }
 
 /** Current chain position, for epoch-dependent lifecycle status. */

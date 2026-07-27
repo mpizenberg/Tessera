@@ -13,6 +13,17 @@ published. Keep adding entries here until release.
 
 ### Changed (breaking)
 
+- **`cancellationVerified` is now `mechanismAProven`, and `CancellationProof` is
+  `MechanismAProof`** (`./domain`; the module moved from `cancellation.ts` to
+  `mechanismA.ts`). The evaluation was never cancellation-specific — the same
+  evidence and the same rule decide a definition's owner-proof, a cancellation's
+  owner-proof and a response's mechanism-A proof — and the old name made the two
+  new call sites read as something they are not. Behavior is unchanged; the
+  credential parameter is no longer named `owner`.
+- `SurveyRecord` gains an optional `proof` (the defining transaction's mechanism-A
+  evidence). Absent or `null` means _not established_, which is not the same as
+  disproven: a consumer that freezes a result must obtain the evidence first
+  rather than read its absence as a failed proof.
 - `validateResponse` and `validateDefinition` now return
   `ValidationProblem[]` (`{ code, params }`) instead of `string[]` of
   hard-coded English prose, so callers can render problems in any language.
@@ -42,7 +53,7 @@ published. Keep adding entries here until release.
   - Consumers that indexed the old dense arrays positionally must now read each
     entry's `index`; a zero-answer option is simply absent (refill from the
     definition if you render every option).
-- **Ruleset bump: `rulesetVersion` 4 → 11.** Six changes land in this release, so
+- **Ruleset bump: `rulesetVersion` 4 → 12.** Seven changes land in this release, so
   0.3.0 artifact hashes are incomparable with 0.2.0 (v4) and artifacts
   re-finalize on deploy. `RULESET_DESCRIPTOR` carries the full note for each.
   - **v5, v6** — the sparse, slimmed tally body (above). The counted set and
@@ -64,6 +75,9 @@ published. Keep adding entries here until release.
   - **v11** — the talliability gate enforces CIP-179's epoch rule: `end_epoch`
     must be greater than the epoch the definition transaction was included in.
     The set of talliable surveys shrinks.
+  - **v12** — the talliability gate enforces CIP-179's owner rule: the defining
+    transaction must prove the `owner` credential via mechanism A. The set of
+    talliable surveys shrinks (a Plutus-script owner has no proof path at all).
 - **Removed the count-based display tally from the public API** (`./tally`):
   `tallySurvey`, `tallyQuestion`, `roleBreakdown`, `ratingScaleInfo`,
   `MAX_DISPLAY_BUCKETS`, and the display shapes (`QuestionTally`, `Bar`,
@@ -86,7 +100,8 @@ published. Keep adding entries here until release.
   `isDefinitionTalliable` / `definitionErrors` remain for what a definition can
   decide about itself, but the gate an emitter or verifier applies is the
   record-level pair.
-- `definition.endEpochNotAfterInclusion` validation problem code.
+- `definition.endEpochNotAfterInclusion` and `definition.ownerUnproven`
+  validation problem codes.
 - `decodePayloadItems` — the per-item counterpart to `decodePayload`, returning
   each decoded item with its position in the on-chain array plus a `skipped`
   list for the ones that failed. CIP-179 validates batched records

@@ -123,8 +123,19 @@ const weights: TallyInputSource = {
   },
 };
 
-/** Signed by each response credential — mechanism A proof per tx. */
+/**
+ * Signed by each response credential — mechanism A proof per tx. The defining tx
+ * is in here too: CIP-179 requires it to prove the survey's owner, so without it
+ * the rebuild is indeterminate rather than talliable.
+ */
+const OWNER_PROOF: TxProof = {
+  requiredSigners: ["0f".repeat(28)],
+  nativeScripts: [],
+  votes: [],
+};
+
 const proofs = new Map<string, TxProof | null>([
+  [SURVEY_TX, OWNER_PROOF],
   [
     R_A.txHash,
     {
@@ -258,6 +269,32 @@ describe("verifyArtifact", () => {
     expect(result.notes.join(" ")).toContain("spec-invalid");
   });
 
+  // Finding 12 — the owner rule is the one talliability rule the record can't
+  // decide alone, so the verifier fetches the defining tx like the emitter does.
+  it("reports UNTALLIABLE when the defining tx never proved the owner", async () => {
+    const stranger = new Map(proofs);
+    stranger.set(SURVEY_TX, {
+      requiredSigners: ["99".repeat(28)],
+      nativeScripts: [],
+      votes: [],
+    });
+    const result = await verifyArtifact(inputs({ proofs: stranger }));
+    expect(result.untalliable).toBe(true);
+    expect(result.match).toBe(false);
+    expect(result.notes.join(" ")).toContain("ownerUnproven");
+  });
+
+  it("is INDETERMINATE when the defining tx couldn't be read at all", async () => {
+    // Unknown is not a failed proof: a Koios hiccup must not read as "this
+    // survey was forged", which would report a sound artifact as non-conformant.
+    const unknown = new Map(proofs);
+    unknown.set(SURVEY_TX, null);
+    const result = await verifyArtifact(inputs({ proofs: unknown }));
+    expect(result.indeterminate).toBe(true);
+    expect(result.untalliable).toBe(false);
+    expect(result.match).toBe(false);
+  });
+
   it("MISMATCHes a tampered aggregate, naming the difference", async () => {
     const artifact = emittedArtifact();
     const role = artifact.tally.perRole[0]!;
@@ -344,6 +381,7 @@ describe("verifyArtifact", () => {
     const rA2 = response("33".repeat(32), CRED_A, 1, 200); // "no", same slot
     const tieBundle: SurveyBundle = { ...bundle, responses: [rA1, rA2] };
     const tieProofs = new Map<string, TxProof | null>([
+      [SURVEY_TX, OWNER_PROOF],
       [
         rA1.txHash,
         { requiredSigners: ["a1".repeat(28)], nativeScripts: [], votes: [] },
@@ -528,6 +566,7 @@ describe("verifyArtifact — sealed survey", () => {
     responses: [sA, sB],
   };
   const sealedProofs = new Map<string, TxProof | null>([
+    [SURVEY_TX, OWNER_PROOF],
     [
       sA.txHash,
       { requiredSigners: ["a1".repeat(28)], nativeScripts: [], votes: [] },
@@ -676,6 +715,7 @@ describe("verifyArtifact — Keyholder role", () => {
     responses: [K_A, K_B],
   };
   const khProofs = new Map<string, TxProof | null>([
+    [SURVEY_TX, OWNER_PROOF],
     [
       K_A.txHash,
       { requiredSigners: ["a1".repeat(28)], nativeScripts: [], votes: [] },
@@ -869,15 +909,22 @@ describe("verifyArtifact — mechanism B (governance vote binding)", () => {
       byRole: [{ role: 0, endpoint: "drep_voting_power_history" }],
     },
   };
-  const drepInputs = (overrides: Partial<VerifyInputs>): VerifyInputs =>
-    inputs({
+  // Each case below builds its own `proofs` around the response tx; the survey's
+  // own owner proof is constant, so fold it in rather than repeat it per case.
+  const drepInputs = (overrides: Partial<VerifyInputs>): VerifyInputs => {
+    const { proofs: given, ...rest } = overrides;
+    return inputs({
       bundle: drepBundle,
       weights: drepSource,
       artifact: drepArtifact,
       linkedActionIds: [ACTION],
       blockIndices: new Map([[D_A.txHash, 0]]),
-      ...overrides,
+      ...(given
+        ? { proofs: new Map([[SURVEY_TX, OWNER_PROOF], ...given]) }
+        : {}),
+      ...rest,
     });
+  };
 
   it("MATCHes when the credential is proven only by its vote on the linked action", async () => {
     // No required_signers at all: the vote binding is the sole proof.

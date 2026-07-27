@@ -493,8 +493,39 @@ export class KoiosDataSource implements DataSource {
       else cancellationScripts.set(c.txHash, [scriptHash]);
     }
 
+    // Owner-proof for the *defining* transaction of each open survey (CIP-179:
+    // "the definition transaction MUST prove ownership of the `owner`
+    // credential"). Bounded to open surveys for the reason above, and for a
+    // second one: an unproven owner matters while a survey can still attract
+    // responses — the UI badges it untalliable and blocks answering, so nobody
+    // pays a fee to a survey published under a borrowed name. Once closed, the
+    // artifact carries the verdict instead, and the emitter fetches the proof
+    // itself before freezing anything.
+    const openSurveys = surveys.filter((s) =>
+      openSurveyKeys.has(refKeyOf(s.ref)),
+    );
+    const definitionScripts = new Map<string, string[]>();
+    for (const s of openSurveys) {
+      const scriptHash = scriptCredentialHash(s.definition.owner);
+      if (!scriptHash) continue;
+      const list = definitionScripts.get(s.txHash);
+      if (list) list.push(scriptHash);
+      else definitionScripts.set(s.txHash, [scriptHash]);
+    }
+    const ownerProofs =
+      openSurveys.length === 0
+        ? new Map<string, TxProof | null>()
+        : await this.txProofs(
+            [...new Set(openSurveys.map((s) => s.txHash))],
+            definitionScripts,
+          );
+
     return {
-      surveys,
+      surveys: surveys.map((s) =>
+        openSurveyKeys.has(refKeyOf(s.ref))
+          ? { ...s, proof: ownerProofs.get(s.txHash) ?? null }
+          : s,
+      ),
       responses,
       cancellations: [
         ...(await this.withCancellationProofs(

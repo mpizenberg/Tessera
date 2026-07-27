@@ -26,7 +26,7 @@ import {
   auditRevealedResponses,
   byCancellationChainOrder,
   bytesToHex,
-  cancellationVerified,
+  mechanismAProven,
   credentialKey,
   laterInChain,
   refKey,
@@ -156,12 +156,18 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
   };
 
   // Talliability first (the `definition-validity` ruleset rule): a spec-invalid
-  // survey — non-v5, structurally invalid, or ending in the epoch that published
-  // it — is untalliable, so it has no reproducible tally and a conformant
-  // emitter writes no artifact. Decided from the independent on-chain record, so
-  // a backend can't dress an invalid survey up as talliable (findings 10, 11, 45).
-  if (!isSurveyTalliable(bundle.survey)) {
-    const codes = surveyErrors(bundle.survey)
+  // survey — non-v5, structurally invalid, ending in the epoch that published
+  // it, or defined by a transaction that never proved its `owner` — is
+  // untalliable, so it has no reproducible tally and a conformant emitter writes
+  // no artifact. Decided from the independently fetched record and defining-tx
+  // evidence, so a backend can't dress an invalid survey up as talliable
+  // (findings 10, 11, 45, 12).
+  const survey = {
+    ...bundle.survey,
+    proof: inputs.proofs.get(bundle.survey.txHash) ?? null,
+  };
+  if (!isSurveyTalliable(survey)) {
+    const codes = surveyErrors(survey)
       .map((p) => p.code)
       .join(", ");
     return {
@@ -169,6 +175,17 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
       notes,
       indeterminate: null,
       untalliable: `definition is spec-invalid (${codes}) — untalliable, no artifact should exist`,
+      unverifiedTotals: false,
+    };
+  }
+  // Everything else was decidable from the record alone; the owner rule was not,
+  // and an unread proof is unknown rather than unproven (finding 6's discipline).
+  if (!survey.proof) {
+    return {
+      tally: emptyTallyBody(id),
+      notes,
+      indeterminate: `the defining transaction ${survey.txHash} could not be fetched or decoded, so its owner-proof is unknown`,
+      untalliable: null,
       unverifiedTotals: false,
     };
   }
@@ -180,7 +197,7 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
     .find(
       (c) =>
         c.epochNo <= endEpoch &&
-        cancellationVerified(def.owner, inputs.proofs.get(c.txHash) ?? null),
+        mechanismAProven(def.owner, inputs.proofs.get(c.txHash) ?? null),
     );
   if (winning) {
     return {

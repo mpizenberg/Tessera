@@ -7,7 +7,7 @@
  *  - **Mechanism A** — the credential's key hash is in the tx body's
  *    `required_signers` (ledger-guaranteed signature), or its native script is
  *    in the witness set and satisfied by those signers. Same evidence, same
- *    evaluation as cancellation owner-proof ({@link cancellationVerified}).
+ *    evaluation as cancellation owner-proof ({@link mechanismAProven}).
  *  - **Mechanism B** (governance-linked surveys only) — the transaction also
  *    votes on one of the survey's linked actions with the very same credential,
  *    and the Conway voter tag's role matches the claimed role (0/1→CC, 2/3→DRep,
@@ -28,7 +28,7 @@ import type { Credential, SurveyResponse } from "../index.js";
 import { Role } from "../index.js";
 
 import { bytesToHex } from "./hex.js";
-import { cancellationVerified } from "./cancellation.js";
+import { mechanismAProven } from "./mechanismA.js";
 import type { TxProof, VoteBinding } from "./records.js";
 
 /**
@@ -98,10 +98,10 @@ function bindingsByCredential(
 /**
  * Mechanism A: required signers / satisfied native script. This is exactly the
  * cancellation owner-proof over the same evidence (TxProof extends
- * CancellationProof), so reuse it rather than duplicate the evaluation.
+ * MechanismAProof), so reuse it rather than duplicate the evaluation.
  */
 function mechanismA(credential: Credential, proof: TxProof): boolean {
-  return cancellationVerified(credential, proof);
+  return mechanismAProven(credential, proof);
 }
 
 /**

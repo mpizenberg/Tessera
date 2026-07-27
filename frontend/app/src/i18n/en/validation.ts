@@ -19,6 +19,8 @@ const validation = {
     sealedPaddingInvalid: "sealed padding_size must be > 0",
     endEpochNotAfterInclusion:
       "end_epoch {endEpoch} must be after the epoch the definition is published in ({inclusionEpoch})",
+    ownerUnproven:
+      "the transaction that published this survey does not prove the owner credential",
   },
   question: {
     tooFewOptions: "{where}: needs at least 2 options",

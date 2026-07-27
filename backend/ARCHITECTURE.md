@@ -649,7 +649,8 @@ Contents (sketch):
 ## 9. Trust & honesty
 
 - **Metadata and proofs are trust-minimized** (self-contained in tx CBOR,
-  client-re-verifiable — survey definitions, responses, cancellation owner-proofs)
+  client-re-verifiable — survey definitions, responses, definition and
+  cancellation owner-proofs)
   and stay that way.
 - **Weights are an oracle dependency.** A credential's stake = Σ(ada in every UTxO
   under that credential) + rewards, snapshotted at an epoch boundary — there is no

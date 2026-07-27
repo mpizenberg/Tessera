@@ -31,6 +31,7 @@
  */
 
 import { SPEC_VERSION } from "./constants.js";
+import { mechanismAProven } from "./domain/mechanismA.js";
 import type { SurveyRecord } from "./domain/records.js";
 import { MAX_CHUNK_BYTES, utf8ByteLength } from "./metadatum.js";
 import type {
@@ -61,6 +62,7 @@ export const VALIDATION_PROBLEM_CODES = [
   "definition.sealedRoundInvalid",
   "definition.sealedPaddingInvalid",
   "definition.endEpochNotAfterInclusion",
+  "definition.ownerUnproven",
   // --- question ---
   "question.tooFewOptions",
   "question.optionCountTooLow",
@@ -362,11 +364,21 @@ export function isDefinitionTalliable(def: SurveyDefinition): boolean {
 
 /**
  * The error-severity problems that make a *published* survey untalliable: every
- * {@link definitionErrors} problem, plus the epoch rule that only the record can
- * decide — CIP-179 §Epoch Semantics, "`end_epoch` MUST be greater than the
- * current epoch when the definition transaction is included". A definition
- * published in its own final epoch leaves no epoch in which a response is both
- * in-window and cast after the survey exists.
+ * {@link definitionErrors} problem, plus the two rules only the record can
+ * decide.
+ *
+ *  - CIP-179 §Epoch Semantics: "`end_epoch` MUST be greater than the current
+ *    epoch when the definition transaction is included." A definition published
+ *    in its own final epoch leaves no epoch in which a response is both
+ *    in-window and cast after the survey exists.
+ *  - CIP-179 §Survey Definition: "The definition transaction MUST prove
+ *    ownership of the `owner` credential." Without it a survey can name anyone
+ *    as owner — a DRep, a foundation — and be counted under a borrowed name.
+ *
+ * The owner rule is judged only when the record actually carries the defining
+ * transaction's evidence. An absent proof is unknown, not disproven, so it adds
+ * no problem here; a caller that freezes a result must require the evidence
+ * before it does (see `finalize`'s postpone path).
  */
 export function surveyErrors(record: SurveyRecord): ValidationProblem[] {
   const out = definitionErrors(record.definition);
@@ -377,6 +389,12 @@ export function surveyErrors(record: SurveyRecord): ValidationProblem[] {
         inclusionEpoch: record.epochNo,
       }),
     );
+  }
+  if (
+    record.proof &&
+    !mechanismAProven(record.definition.owner, record.proof)
+  ) {
+    out.push(problem("definition.ownerUnproven"));
   }
   return out;
 }
@@ -692,6 +710,8 @@ const PROBLEM_MESSAGES_EN: Record<ValidationProblemCode, string> = {
   "definition.sealedPaddingInvalid": "sealed padding_size must be > 0",
   "definition.endEpochNotAfterInclusion":
     "end_epoch {endEpoch} must be greater than the inclusion epoch {inclusionEpoch}",
+  "definition.ownerUnproven":
+    "the defining transaction does not prove the owner credential",
 
   "question.tooFewOptions": "{where}: needs at least 2 options",
   "question.optionCountTooLow": "{where}: option count must be >= 2",

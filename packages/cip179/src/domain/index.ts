@@ -14,7 +14,7 @@ export * from "./hex.js";
 export * from "./answer.js";
 export * from "./govLink.js";
 export * from "./dedupe.js";
-export * from "./cancellation.js";
+export * from "./mechanismA.js";
 export * from "./proof.js";
 export * from "./audit.js";
 export * from "./survey.js";

@@ -19,7 +19,7 @@ import type {
   GovLink,
   SurveyRecord,
 } from "./records.js";
-import { cancellationVerified } from "./cancellation.js";
+import { mechanismAProven } from "./mechanismA.js";
 
 // The dedupe rule and its identity keys live in `./dedupe` (the server's
 // per-survey `responseCount` calls the same code); re-exported here so
@@ -165,7 +165,7 @@ export function cancellationStates(
     // Verification is attempted only while the survey is open; a closed
     // survey's cancellation ships with `proof: null` (see above), so it can
     // only ever reach the `claimed` branch here, never `verified`.
-    if (tip.epoch <= def.endEpoch && cancellationVerified(def.owner, c.proof)) {
+    if (tip.epoch <= def.endEpoch && mechanismAProven(def.owner, c.proof)) {
       states.set(key, "verified");
     } else if (states.get(key) !== "verified") {
       states.set(key, "claimed");

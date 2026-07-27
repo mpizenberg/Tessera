@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AppConfig } from "@tessera/core";
 import type { Credential } from "cip-179";
-import { cancellationVerified, hexToBytes } from "cip-179/domain";
+import { mechanismAProven, hexToBytes } from "cip-179/domain";
 import { decodeResolvedNativeScript } from "cip-179/txproof";
 import { evolutionCodec } from "cip-179/evolution";
 
@@ -290,6 +290,95 @@ describe("fetchAll — chain position", () => {
     // Index 2 survives as index 2: renumbering it would move the response in
     // the dedup chain order and mis-address it in a finalized artifact.
     expect(records.responses.map((r) => r.responseIndex)).toEqual([0, 2]);
+  });
+
+  // Finding 12 — an open survey's defining tx is fetched so the UI can badge a
+  // survey whose owner was never proven, before anyone pays a fee answering it.
+  it("attaches the defining tx's owner-proof to open surveys only", async () => {
+    const OWNER = "0f".repeat(28);
+    const definitionMetadata = {
+      "17": [
+        0,
+        [
+          {
+            "0": 5,
+            "1": [0, `0x${OWNER}`],
+            "2": "t",
+            "3": "",
+            "4": [3],
+            "5": 1_400, // ends well past the tip → open
+            "6": [0],
+            "7": [[1, "q", ["yes", "no"]]],
+          },
+          {
+            "0": 5,
+            "1": [0, `0x${OWNER}`],
+            "2": "t",
+            "3": "",
+            "4": [3],
+            "5": 1_000, // already ended → closed, no proof fetched
+            "6": [0],
+            "7": [[1, "q", ["yes", "no"]]],
+          },
+        ],
+      ],
+    };
+    const cborCalls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/tx_by_metalabel")) {
+          return new Response(
+            JSON.stringify([
+              { tx_hash: SURVEY_TX, absolute_slot: 5_000, epoch_no: 1_340 },
+            ]),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/tx_metadata")) {
+          return new Response(
+            JSON.stringify([
+              { tx_hash: SURVEY_TX, metadata: definitionMetadata },
+            ]),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/tx_cbor")) {
+          cborCalls.push(String(init?.body));
+          // A tx body with the owner in required_signers (field 14).
+          return new Response(
+            JSON.stringify([{ tx_hash: SURVEY_TX, cbor: null }]),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/tip")) {
+          return new Response(
+            JSON.stringify([
+              {
+                epoch_no: 1_346,
+                abs_slot: 10_000,
+                epoch_slot: 100,
+                block_time: 1_750_000_000,
+              },
+            ]),
+            { status: 200 },
+          );
+        }
+        return new Response("[]", { status: 200 });
+      }),
+    );
+    const records = await new KoiosDataSource(CONFIG).fetchAll();
+
+    expect(records.surveys).toHaveLength(2);
+    // Requested once for the defining tx, because one of its surveys is open.
+    expect(cborCalls).toHaveLength(1);
+    expect(cborCalls[0]).toContain(SURVEY_TX);
+    // Undecodable CBOR is `null` — unknown, which the gate treats as "no
+    // opinion" rather than a failed proof.
+    expect(records.surveys[0]!.proof).toBeNull();
+    // The closed one is never asked about: its verdict comes from its artifact.
+    expect(records.surveys[1]!.proof).toBeUndefined();
   });
 
   it("flags the snapshot incomplete when a tx_metadata batch fails (findings 3, 12)", async () => {
@@ -634,7 +723,7 @@ describe("txProofs — mechanism-A script resolution", () => {
       { scriptHash: SCRIPT_HASH, script: { kind: "sig", keyHash: KEYHASH } },
     ]);
     // …and the tx's required_signers satisfy it → the script owner is proven.
-    expect(cancellationVerified(scriptOwner(), proof!)).toBe(true);
+    expect(mechanismAProven(scriptOwner(), proof!)).toBe(true);
   });
 
   it("nulls the proof (unknown, retry) when /script_info can't be reached", async () => {
@@ -660,7 +749,7 @@ describe("txProofs — mechanism-A script resolution", () => {
     const proof = proofs.get(TX);
     expect(proof).not.toBeNull();
     expect(proof!.nativeScripts).toEqual([]);
-    expect(cancellationVerified(scriptOwner(), proof!)).toBe(false);
+    expect(mechanismAProven(scriptOwner(), proof!)).toBe(false);
   });
 
   it("makes no /script_info request when nothing needs resolving", async () => {

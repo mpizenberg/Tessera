@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { Credential } from "../index.js";
 
 import { bytesToHex } from "./hex.js";
-import type { CancellationProof, NativeScriptInfo } from "./records.js";
-import { cancellationVerified, nativeScriptSatisfied } from "./cancellation.js";
+import type { MechanismAProof, NativeScriptInfo } from "./records.js";
+import { mechanismAProven, nativeScriptSatisfied } from "./mechanismA.js";
 
 const keyHash = (b: number) => Uint8Array.of(b);
 const keyOwner = (b: number): Credential => ({
@@ -18,28 +18,26 @@ const hx = (b: number) => bytesToHex(keyHash(b));
 
 const proof = (
   requiredSigners: string[],
-  nativeScripts: CancellationProof["nativeScripts"] = [],
-): CancellationProof => ({ requiredSigners, nativeScripts });
+  nativeScripts: MechanismAProof["nativeScripts"] = [],
+): MechanismAProof => ({ requiredSigners, nativeScripts });
 
-describe("cancellationVerified — key-based owner", () => {
+describe("mechanismAProven — key-based owner", () => {
   it("verifies when the owner key hash is a required signer", () => {
-    expect(cancellationVerified(keyOwner(1), proof([hx(1)]))).toBe(true);
-    expect(cancellationVerified(keyOwner(1), proof([hx(9), hx(1)]))).toBe(true);
+    expect(mechanismAProven(keyOwner(1), proof([hx(1)]))).toBe(true);
+    expect(mechanismAProven(keyOwner(1), proof([hx(9), hx(1)]))).toBe(true);
   });
 
   it("rejects when the owner key hash is absent (forgery / griefing)", () => {
-    expect(cancellationVerified(keyOwner(1), proof([hx(2), hx(3)]))).toBe(
-      false,
-    );
-    expect(cancellationVerified(keyOwner(1), proof([]))).toBe(false);
+    expect(mechanismAProven(keyOwner(1), proof([hx(2), hx(3)]))).toBe(false);
+    expect(mechanismAProven(keyOwner(1), proof([]))).toBe(false);
   });
 
   it("rejects when there is no proof at all", () => {
-    expect(cancellationVerified(keyOwner(1), null)).toBe(false);
+    expect(mechanismAProven(keyOwner(1), null)).toBe(false);
   });
 });
 
-describe("cancellationVerified — native-script owner", () => {
+describe("mechanismAProven — native-script owner", () => {
   const sig = (b: number): NativeScriptInfo => ({
     kind: "sig",
     keyHash: hx(b),
@@ -47,17 +45,17 @@ describe("cancellationVerified — native-script owner", () => {
 
   it("verifies a single-sig script satisfied by the required signers", () => {
     const p = proof([hx(5)], [{ scriptHash: hx(7), script: sig(5) }]);
-    expect(cancellationVerified(scriptOwner(7), p)).toBe(true);
+    expect(mechanismAProven(scriptOwner(7), p)).toBe(true);
   });
 
   it("rejects when the script is present but its signer is missing", () => {
     const p = proof([hx(6)], [{ scriptHash: hx(7), script: sig(5) }]);
-    expect(cancellationVerified(scriptOwner(7), p)).toBe(false);
+    expect(mechanismAProven(scriptOwner(7), p)).toBe(false);
   });
 
   it("rejects when no native script matches the owner hash (e.g. Plutus owner)", () => {
     const p = proof([hx(5)], [{ scriptHash: hx(8), script: sig(5) }]);
-    expect(cancellationVerified(scriptOwner(7), p)).toBe(false);
+    expect(mechanismAProven(scriptOwner(7), p)).toBe(false);
   });
 });
 

@@ -28,7 +28,7 @@ import {
   auditRevealedResponses,
   byCancellationChainOrder,
   bytesToHex,
-  cancellationVerified,
+  mechanismAProven,
   laterInChain,
   parseCredentialKey,
   refKey,
@@ -115,21 +115,34 @@ export async function finalizeClosedSurveys(
   );
   if (candidates.length === 0) return;
 
-  // Spec-invalid surveys are untalliable (findings 10, 11, 45): a non-v5 or
-  // structurally-invalid definition, or one whose end_epoch is not past its own
-  // inclusion epoch, produces NO artifact — it is never tallied under v5
-  // semantics, and an independent verifier reaches the same untalliable verdict
-  // from the same on-chain record. Drop them before any cancellation or weight
-  // work (an invalid definition is not a valid survey to begin with, so
-  // invalidity takes precedence over cancellation). The `definition-validity`
-  // rule in RULESET_DESCRIPTOR pins this gate.
-  const talliable = candidates.filter((s) => {
-    if (isSurveyTalliable(s)) return true;
-    console.warn(
-      `finalize: ${refKey(s.ref)} definition is spec-invalid — untalliable, no artifact`,
-    );
-    return false;
-  });
+  // Spec-invalid surveys are untalliable (findings 10, 11, 45, 12): a non-v5 or
+  // structurally-invalid definition, one whose end_epoch is not past its own
+  // inclusion epoch, or one whose defining transaction never proved the `owner`
+  // credential produces NO artifact — it is never tallied under v5 semantics,
+  // and an independent verifier reaches the same untalliable verdict from the
+  // same on-chain record. Drop them before any cancellation or weight work (an
+  // invalid definition is not a valid survey to begin with, so invalidity takes
+  // precedence over cancellation). The `definition-validity` rule in
+  // RULESET_DESCRIPTOR pins this gate.
+  const talliable: SurveyRecord[] = [];
+  for (const s of await withOwnerProofs(source, candidates)) {
+    if (!isSurveyTalliable(s)) {
+      console.warn(
+        `finalize: ${refKey(s.ref)} definition is spec-invalid — untalliable, no artifact`,
+      );
+      continue;
+    }
+    // Structural invalidity is decidable without evidence, so it is settled
+    // above; an owner-proof we couldn't read is not, and freezing an artifact on
+    // it would either count a forged survey or bury a real one.
+    if (!s.proof) {
+      console.warn(
+        `finalize: ${refKey(s.ref)} postponed — owner proof unknown (fetch/decode failed)`,
+      );
+      continue;
+    }
+    talliable.push(s);
+  }
   if (talliable.length === 0) return;
 
   // --- cancelled surveys: a cancellation artifact, no weight work ------------
@@ -429,6 +442,40 @@ export async function finalizeClosedSurveys(
 }
 
 /**
+ * Attach each candidate's *defining* transaction evidence, so the talliability
+ * gate can judge CIP-179's "the definition transaction MUST prove ownership of
+ * the `owner` credential". A record whose proof couldn't be established keeps
+ * `proof: null` — unknown, which the caller postpones rather than reads as a
+ * failed proof.
+ *
+ * One transaction can define several surveys, so proofs are fetched per tx and
+ * fanned back out; a native-script owner may not attach its script to that tx
+ * (mechanism A permits chain resolution), hence the same by-hash resolution the
+ * cancellation path uses.
+ */
+async function withOwnerProofs(
+  source: Pick<import("@tessera/koios").KoiosDataSource, "txProofs">,
+  candidates: readonly SurveyRecord[],
+): Promise<SurveyRecord[]> {
+  const neededScripts = new Map<string, string[]>();
+  for (const s of candidates) {
+    const scriptHash = scriptCredentialHash(s.definition.owner);
+    if (!scriptHash) continue;
+    const list = neededScripts.get(s.txHash);
+    if (list) list.push(scriptHash);
+    else neededScripts.set(s.txHash, [scriptHash]);
+  }
+  const proofs = await source.txProofs(
+    [...new Set(candidates.map((s) => s.txHash))],
+    neededScripts,
+  );
+  return candidates.map((s) => ({
+    ...s,
+    proof: proofs.get(s.txHash) ?? null,
+  }));
+}
+
+/**
  * Emit cancellation artifacts for candidates with an owner-proven, in-window
  * cancellation; return the remaining (non-cancelled) candidates to tally.
  *
@@ -499,7 +546,7 @@ async function withCancellations(
         unknown = c;
         break;
       }
-      if (cancellationVerified(s.definition.owner, proof)) {
+      if (mechanismAProven(s.definition.owner, proof)) {
         winning = c;
         break;
       }
