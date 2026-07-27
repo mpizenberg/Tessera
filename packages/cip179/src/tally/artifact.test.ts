@@ -349,4 +349,53 @@ describe("toArtifactResponders", () => {
     const wire = JSON.parse(JSON.stringify(committed));
     expect(responderAnswers(wire)).toEqual(answers);
   });
+
+  // Finding 56 — the blob is foreign input on an exported API; hash
+  // verification is the caller's business and may not have happened.
+  describe("responderAnswers rejects a hostile answers blob", () => {
+    const answers = (blob: unknown): AnswerItem[] | null =>
+      responderAnswers({
+        credential: "key:aa",
+        weight: "1",
+        txHash: "t1",
+        responseIndex: 0,
+        answers: blob,
+      });
+
+    it("rejects a non-array blob", () => {
+      expect(answers({ evil: true })).toBeNull();
+      expect(answers("nope")).toBeNull();
+    });
+
+    it("rejects items that are not well-formed answer items", () => {
+      expect(answers([{ type: "singleChoice" }])).toBeNull(); // missing fields
+      expect(
+        answers([{ type: "notAnAnswerType", questionIndex: 0 }]),
+      ).toBeNull();
+      expect(
+        answers([{ type: "multiSelect", questionIndex: 0, optionIndices: 7 }]),
+      ).toBeNull(); // not a list
+    });
+
+    it("rejects a custom answer whose opaque value is not a metadatum", () => {
+      // `encodeAnswerItem` passes the value through untouched, so this is the
+      // one hostile shape a re-encode alone would not catch.
+      expect(
+        answers([{ type: "custom", questionIndex: 0, value: { plain: 1 } }]),
+      ).toBeNull();
+    });
+
+    it("drops fields the on-chain form has no room for", () => {
+      expect(
+        answers([
+          {
+            type: "singleChoice",
+            questionIndex: 0,
+            optionIndex: 2,
+            injected: "<script>",
+          },
+        ]),
+      ).toEqual([{ type: "singleChoice", questionIndex: 0, optionIndex: 2 }]);
+    });
+  });
 });

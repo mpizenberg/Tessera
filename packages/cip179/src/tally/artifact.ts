@@ -17,6 +17,9 @@
 
 import type { AnswerItem, SurveyDefinition } from "../index.js";
 
+import { decodeAnswerItem } from "../decode.js";
+import { encodeAnswerItem } from "../encode.js";
+import { isMetadatum } from "../metadatum.js";
 import { blake2b256Hex, canonicalJson } from "./canonical.js";
 import { fromJsonSafe, toJsonSafe } from "./wire.js";
 import {
@@ -457,9 +460,29 @@ export function assembleTallyBody(
  * Decode a sealed responder's committed answers back to `AnswerItem[]` — the
  * inverse of the `toJsonSafe` encoding {@link toArtifactResponders} writes under
  * `{ revealedAnswers: true }`. Returns `null` for a public/legacy responder that
- * committed no answers.
+ * committed no answers, and for a blob that does not decode to well-formed
+ * answer items.
+ *
+ * The blob is foreign input: this function is exported, and hash verification
+ * is the caller's business, so a hostile artifact's `answers` can reach here
+ * unverified. Each item is therefore re-encoded to its on-chain metadatum form
+ * and read back through {@link decodeAnswerItem} — the same strict decoder
+ * every label-17 response passes — leaving the result exactly as trustworthy as
+ * decoded chain data, and unable to drift from the decoder.
  */
 export function responderAnswers(r: ArtifactResponder): AnswerItem[] | null {
   if (r.answers === undefined) return null;
-  return fromJsonSafe(r.answers) as AnswerItem[];
+  const decoded = fromJsonSafe(r.answers);
+  if (!Array.isArray(decoded)) return null;
+  try {
+    return decoded.map((item) => {
+      // `encodeAnswerItem` passes a custom answer's opaque value straight
+      // through, so the encoded tree still needs checking before it is decoded.
+      const encoded = encodeAnswerItem(item as AnswerItem);
+      if (!isMetadatum(encoded)) throw new TypeError("not a metadatum");
+      return decodeAnswerItem(encoded);
+    });
+  } catch {
+    return null;
+  }
 }

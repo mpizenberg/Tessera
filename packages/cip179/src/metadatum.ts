@@ -49,6 +49,24 @@ export const isList = (m: Metadatum): m is MetadatumList => Array.isArray(m);
 
 export const isMap = (m: Metadatum): m is MetadatumMap => m instanceof Map;
 
+/**
+ * Is `v` a metadatum tree? The guards above narrow *within* the union; this one
+ * validates foreign input, so anything the union cannot hold — a plain object,
+ * a JS number, `null` — is rejected rather than assumed.
+ */
+export const isMetadatum = (v: unknown): v is Metadatum => {
+  if (typeof v === "bigint" || typeof v === "string") return true;
+  if (v instanceof Uint8Array) return true;
+  if (Array.isArray(v)) return v.every(isMetadatum);
+  if (v instanceof Map) {
+    for (const [k, val] of v as ReadonlyMap<unknown, unknown>) {
+      if (!isMetadatum(k) || !isMetadatum(val)) return false;
+    }
+    return true;
+  }
+  return false;
+};
+
 // ----------------------------------------------------------------------------
 // Constructors (deterministic maps)
 // ----------------------------------------------------------------------------
