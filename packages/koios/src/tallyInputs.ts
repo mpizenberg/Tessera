@@ -276,9 +276,11 @@ export class KoiosTallyInputs implements TallyInputSource {
           // slot from sharing the page with its own irrelevant history.
           `&action_type=in.(registration,deregistration)` +
           `&select=stake_address,action_type,absolute_slot,epoch_no,tx_hash` +
-          // Newest first, then a *total* order: without one PostgREST may
-          // shuffle rows between requests and drop or duplicate one at a page
-          // boundary (finding 2).
+          // Newest first, then a tiebreak deep enough that PostgREST can only
+          // shuffle rows this reader can't tell apart. Rows still tie when one
+          // tx carries two certs of the same type for the same account, but
+          // those agree on every field below — and, being same-slot, can move
+          // across a page boundary without perturbing the cursor.
           `&order=absolute_slot.desc,stake_address.asc,tx_hash.asc,action_type.asc` +
           `&limit=${PAGE_LIMIT}&offset=${page * PAGE_LIMIT}`,
         { _stake_addresses: addresses },
