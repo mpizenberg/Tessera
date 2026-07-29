@@ -638,10 +638,9 @@ describe("finalizeClosedSurveys", () => {
     };
     const recs = records(survey(), [dA, dB]);
 
-    // First run dies fetching B; A's weight is already persisted (resume cursor).
-    await expect(
-      finalizeClosedSurveys(CONFIG, store, inputs, noProofs, recs, TIP),
-    ).rejects.toThrow(/mid-role/);
+    // First run gives up on the epoch fetching B; A's weight is already
+    // persisted, and is the resume cursor.
+    await finalizeClosedSurveys(CONFIG, store, inputs, noProofs, recs, TIP);
     expect(store.weights.size).toBe(1);
     expect([...store.weights.values()][0]!.credential).toBe(KEY_A);
     expect(store.artifacts.size).toBe(0);
@@ -651,6 +650,53 @@ describe("finalizeClosedSurveys", () => {
     await finalizeClosedSurveys(CONFIG, store, inputs, noProofs, recs, TIP);
     expect(store.weights.size).toBe(2);
     expect(store.artifacts.size).toBe(1);
+  });
+
+  // Finding 13 — weights are read per end epoch, before any survey is emitted.
+  // An account whose history the upstream can't resolve used to abort the whole
+  // pass, starving every other epoch of finalization for as long as it lasted.
+  it("skips only the epoch whose weights failed, finalizing the others", async () => {
+    const store = memBackendStore();
+    const s2: SurveyRecord = {
+      txHash: SURVEY_TX2,
+      slot: 100,
+      epochNo: 495,
+      ref: { txId: hexToBytes(SURVEY_TX2), index: 0 },
+      definition: definition({ endEpoch: END_EPOCH + 1 }),
+    };
+    const rA1 = response("11".repeat(32), CRED_A, 0);
+    const rB2 = response("22".repeat(32), CRED_B, 0);
+    await seed(store, [
+      validatedRow(rA1),
+      validatedRow(rB2, { surveyKey: `${SURVEY_TX2}:0` }),
+    ]);
+    const inputs: TallyInputSource = {
+      ...fakeInputs({ [KEY_B]: { weight: 7n, registered: true } }),
+      async stakeholderWeights(epoch, creds) {
+        if (epoch === END_EPOCH) throw new Error("unreadable account history");
+        return new Map(
+          creds.map((c) => [
+            credentialKey(c),
+            { weight: 7n, registered: true } as WeightInfo,
+          ]),
+        );
+      },
+    };
+
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      inputs,
+      noProofs,
+      {
+        surveys: [survey(), s2],
+        responses: [rA1, rB2],
+        cancellations: [],
+      },
+      TIP,
+    );
+    expect(store.artifacts.has(SURVEY_KEY)).toBe(false); // its epoch failed
+    expect(store.artifacts.has(`${SURVEY_TX2}:0`)).toBe(true);
   });
 
   it("is idempotent: an emitted survey is never re-finalized", async () => {

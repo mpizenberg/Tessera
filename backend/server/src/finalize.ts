@@ -194,49 +194,24 @@ export async function finalizeClosedSurveys(
   let sealedDecryptBudget = MAX_SEALED_DECRYPTS_PER_PASS;
 
   for (const [epoch, surveys] of byEpoch) {
-    // Counted rows per survey (rules 1–3 verdicts joined at tally time), plus
-    // whether any counted-candidate row is still awaiting a verdict/block index.
-    const countedBySurvey = new Map<string, CountedRows>();
-    for (const s of surveys) {
-      countedBySurvey.set(
-        refKey(s.ref),
-        await countedRows(store, refKey(s.ref), epoch),
+    // Per-epoch isolation, mirroring the per-survey guard below: the shared
+    // inputs are read from Koios, and an account whose history can't be resolved
+    // (or a store hiccup) must postpone only the surveys ending at this epoch —
+    // not starve every other epoch of finalization for the whole pass.
+    const prepared = await prepareEpoch(
+      store,
+      inputs,
+      epoch,
+      surveys,
+      nowSec,
+    ).catch((err) => {
+      console.warn(
+        `finalize: epoch ${epoch} skipped this pass — ${String(err)}`,
       );
-    }
-
-    // Union of counted credentials per role across all surveys ending at E.
-    // R1 invariant: using the *deduped* `counted` (not `eligible`) is safe even
-    // for sealed surveys, which tally the pre-dedup set. Dedup only collapses
-    // rows sharing a (role, credential); it never removes a credential from the
-    // union, so the set of credentials to snapshot weights for is identical
-    // pre- and post-dedup. Sealed weights frozen here are therefore correct for
-    // the post-reveal counted set (a subset of these credentials).
-    const credsByRole = new Map<number, Set<string>>();
-    for (const { counted } of countedBySurvey.values()) {
-      for (const r of counted) {
-        let set = credsByRole.get(r.role);
-        if (!set) credsByRole.set(r.role, (set = new Set()));
-        set.add(r.credential);
-      }
-    }
-
-    // Fill only missing weight rows; existing rows are the resume cursor.
-    const weightByRole = new Map<number, Map<string, WeightRow>>();
-    for (const [role, creds] of credsByRole) {
-      weightByRole.set(
-        role,
-        await fillWeights(store, inputs, epoch, role, creds, nowSec),
-      );
-    }
-
-    // Fill missing electorate totals (null = upstream can't serve it → retry).
-    const totalByRole = new Map<number, string | null>();
-    for (const role of credsByRole.keys()) {
-      totalByRole.set(
-        role,
-        await fillTotal(store, inputs, epoch, role, nowSec),
-      );
-    }
+      return null;
+    });
+    if (!prepared) continue;
+    const { countedBySurvey, weightByRole, totalByRole } = prepared;
 
     // --- emit, one survey at a time, only when complete -----------------------
     // A counted/eligible row whose tx is no longer in this (complete — see the
@@ -669,6 +644,68 @@ const WEIGHT_CHUNK_BY_ROLE: Record<number, number> = {
   [Role.Stakeholder]: 50,
   [Role.DRep]: 1,
 };
+
+/**
+ * The inputs every survey ending at `epoch` shares: each survey's counted rows,
+ * and — for the union of credentials those rows name — the frozen weights and
+ * electorate totals. Gathered once per epoch rather than per survey, because
+ * weight rows are keyed by (epoch, role, credential) and two surveys closing
+ * together routinely name the same responder.
+ */
+async function prepareEpoch(
+  store: TallyStore,
+  inputs: TallyInputSource,
+  epoch: number,
+  surveys: readonly SurveyRecord[],
+  nowSec: number,
+): Promise<{
+  countedBySurvey: Map<string, CountedRows>;
+  weightByRole: Map<number, Map<string, WeightRow>>;
+  totalByRole: Map<number, string | null>;
+}> {
+  // Counted rows per survey (rules 1–3 verdicts joined at tally time), plus
+  // whether any counted-candidate row is still awaiting a verdict/block index.
+  const countedBySurvey = new Map<string, CountedRows>();
+  for (const s of surveys) {
+    countedBySurvey.set(
+      refKey(s.ref),
+      await countedRows(store, refKey(s.ref), epoch),
+    );
+  }
+
+  // Union of counted credentials per role across all surveys ending at E.
+  // R1 invariant: using the *deduped* `counted` (not `eligible`) is safe even
+  // for sealed surveys, which tally the pre-dedup set. Dedup only collapses
+  // rows sharing a (role, credential); it never removes a credential from the
+  // union, so the set of credentials to snapshot weights for is identical
+  // pre- and post-dedup. Sealed weights frozen here are therefore correct for
+  // the post-reveal counted set (a subset of these credentials).
+  const credsByRole = new Map<number, Set<string>>();
+  for (const { counted } of countedBySurvey.values()) {
+    for (const r of counted) {
+      let set = credsByRole.get(r.role);
+      if (!set) credsByRole.set(r.role, (set = new Set()));
+      set.add(r.credential);
+    }
+  }
+
+  // Fill only missing weight rows; existing rows are the resume cursor.
+  const weightByRole = new Map<number, Map<string, WeightRow>>();
+  for (const [role, creds] of credsByRole) {
+    weightByRole.set(
+      role,
+      await fillWeights(store, inputs, epoch, role, creds, nowSec),
+    );
+  }
+
+  // Fill missing electorate totals (null = upstream can't serve it → retry).
+  const totalByRole = new Map<number, string | null>();
+  for (const role of credsByRole.keys()) {
+    totalByRole.set(role, await fillTotal(store, inputs, epoch, role, nowSec));
+  }
+
+  return { countedBySurvey, weightByRole, totalByRole };
+}
 
 /** Ensure a weight row exists for every credential; return the row map. */
 async function fillWeights(

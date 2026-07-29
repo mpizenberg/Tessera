@@ -17,6 +17,9 @@ const CONFIG: AppConfig = {
   secondsPerEpoch: 86_400,
 };
 
+/** Must match tallyInputs' `PAGE_LIMIT`. */
+const PAGE = 100;
+
 const HASH_A = "aa".repeat(28);
 const HASH_B = "bb".repeat(28);
 const HASH_C = "cc".repeat(28);
@@ -94,35 +97,11 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
     stubFetch((url) => {
       if (url.includes("/account_update_history")) {
         expect(url).toContain("epoch_no=lte.1345");
+        // Newest first, as the query asks for: each account's first row is its
+        // deciding one and everything below it is already overridden.
         return [
-          // A: registered then delegated — registered, has stake.
-          {
-            stake_address: addrA,
-            action_type: "registration",
-            absolute_slot: 10,
-            epoch_no: 1,
-          },
-          {
-            stake_address: addrA,
-            action_type: "delegation_pool",
-            absolute_slot: 20,
-            epoch_no: 1,
-          },
-          // B: registered then deregistered — out.
-          {
-            stake_address: addrB,
-            action_type: "registration",
-            absolute_slot: 10,
-            epoch_no: 1,
-          },
-          {
-            stake_address: addrB,
-            action_type: "deregistration",
-            absolute_slot: 30,
-            epoch_no: 2,
-          },
-          // C: dereg then re-registration (order scrambled in the response —
-          // absolute_slot decides) — registered, but no stake row → weight 0.
+          // C: re-registered after a deregistration — registered, but no stake
+          // row → weight 0.
           {
             stake_address: addrC,
             action_type: "registration",
@@ -134,6 +113,32 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
             action_type: "deregistration",
             absolute_slot: 40,
             epoch_no: 2,
+          },
+          // B: registered then deregistered — out.
+          {
+            stake_address: addrB,
+            action_type: "deregistration",
+            absolute_slot: 30,
+            epoch_no: 2,
+          },
+          // A: registered then delegated — registered, has stake.
+          {
+            stake_address: addrA,
+            action_type: "delegation_pool",
+            absolute_slot: 20,
+            epoch_no: 1,
+          },
+          {
+            stake_address: addrA,
+            action_type: "registration",
+            absolute_slot: 10,
+            epoch_no: 1,
+          },
+          {
+            stake_address: addrB,
+            action_type: "registration",
+            absolute_slot: 10,
+            epoch_no: 1,
           },
           {
             stake_address: addrC,
@@ -175,40 +180,21 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
     });
   });
 
-  it("offset-paginates account_update_history past Koios's row cap (finding 4)", async () => {
+  it("decides a churny account from its newest slot, never reading its history (finding 13)", async () => {
     const addrA = await stakeAddress(cred(HASH_A), "preview");
-    const PAGE = 100; // must match tallyInputs' PAGE_LIMIT
     const seenOffsets: number[] = [];
     stubFetch((url) => {
       if (url.includes("/account_stake_history")) return [];
       if (url.includes("/account_update_history")) {
         // The query is filtered to the two state-changing event types.
         expect(url).toContain("action_type=in.(registration,deregistration)");
-        const offset = Number(new URL(url).searchParams.get("offset"));
-        seenOffsets.push(offset);
-        if (offset === 0) {
-          // A full page of registration events at low slots — each leaves the
-          // account "registered", so without page 2 it looks live.
-          return Array.from({ length: PAGE }, (_, i) => ({
-            stake_address: addrA,
-            action_type: "registration",
-            absolute_slot: i + 1,
-            epoch_no: 1,
-          }));
-        }
-        // The final event — a deregistration at the highest slot — lives only
-        // on the second page; it must win, proving the page was read.
-        if (offset === PAGE) {
-          return [
-            {
-              stake_address: addrA,
-              action_type: "deregistration",
-              absolute_slot: 10_000,
-              epoch_no: 5,
-            },
-          ];
-        }
-        return [];
+        seenOffsets.push(Number(new URL(url).searchParams.get("offset")));
+        // A lifetime of churn, newest first and longer than one page. Only the
+        // top row can decide; the rest must never be paid for.
+        return [
+          dereg(addrA, 10_000),
+          ...Array.from({ length: PAGE - 1 }, (_, i) => reg(addrA, PAGE - i)),
+        ];
       }
       throw new Error(`unexpected ${url}`);
     });
@@ -217,11 +203,65 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
       1345,
       [cred(HASH_A)],
     );
-    expect(seenOffsets).toEqual([0, PAGE]); // followed the offset cursor
+    expect(seenOffsets).toEqual([0]); // stopped as soon as the account was passed
     expect(weights.get(`key:${HASH_A}`)).toEqual({
-      registered: false, // the page-2 deregistration wins
+      registered: false, // the newest slot's deregistration decides
       weight: 0n,
     });
+  });
+
+  it("re-reads the addresses a full pass left unsettled, without the churny one (finding 13)", async () => {
+    const [addrA, addrB] = await Promise.all([
+      stakeAddress(cred(HASH_A), "preview"),
+      stakeAddress(cred(HASH_B), "preview"),
+    ]);
+    const batches: string[][] = [];
+    stubFetch((url, body) => {
+      if (url.includes("/account_stake_history")) return [];
+      if (url.includes("/account_update_history")) {
+        const asked = body?._stake_addresses ?? [];
+        const offset = Number(new URL(url).searchParams.get("offset"));
+        if (offset === 0) batches.push(asked);
+        // A's history is deeper than the page cap, so a pass over both accounts
+        // never reaches B's rows at all.
+        return asked.includes(addrA)
+          ? Array.from({ length: PAGE }, (_, i) =>
+              reg(addrA, 1_000_000 - offset - i),
+            )
+          : [dereg(addrB, 100)];
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+
+    const weights = await new KoiosTallyInputs(CONFIG).stakeholderWeights(
+      1345,
+      [cred(HASH_A), cred(HASH_B)],
+    );
+    // The second pass drops A — settled on page 1 — and asks only about B.
+    expect(batches).toEqual([[addrA, addrB], [addrB]]);
+    expect(weights.get(`key:${HASH_A}`)).toEqual({
+      registered: true,
+      weight: 0n,
+    });
+    expect(weights.get(`key:${HASH_B}`)).toEqual({
+      registered: false,
+      weight: 0n,
+    });
+  });
+
+  it("throws rather than trust a response that ignored the descending order", async () => {
+    const addrA = await stakeAddress(cred(HASH_A), "preview");
+    stubFetch((url) => {
+      if (url.includes("/account_stake_history")) return [];
+      if (url.includes("/account_update_history")) {
+        // Ascending: the early stop would read the *oldest* slot as deciding.
+        return [reg(addrA, 100), dereg(addrA, 200)];
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+    await expect(
+      new KoiosTallyInputs(CONFIG).stakeholderWeights(1345, [cred(HASH_A)]),
+    ).rejects.toThrow(/descending slot order/);
   });
 
   it("covers a credential with no events at all (never registered)", async () => {
@@ -358,8 +398,8 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
     stubFetch((url) => {
       if (url.includes("/account_stake_history")) return [];
       if (url.includes("/account_update_history")) {
-        // Distinct slots: the later one (dereg@200) decides, no ordering needed.
-        return [reg(addrA, 100, "tx1"), dereg(addrA, 200, "tx2")];
+        // Distinct slots: the newest one (dereg@200) decides on its own.
+        return [dereg(addrA, 200, "tx2"), reg(addrA, 100, "tx1")];
       }
       if (url.includes("/tx_info")) {
         txInfoCalls += 1;
@@ -378,7 +418,7 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
     });
   });
 
-  it("orders both paginated reads by a total key so offset pages are stable (finding 2)", async () => {
+  it("orders both reads by a total key so offset pages are stable (finding 2)", async () => {
     const seen: string[] = [];
     stubFetch((url) => {
       seen.push(url);
@@ -388,11 +428,12 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
 
     const updateUrl = seen.find((u) => u.includes("/account_update_history"))!;
     const stakeUrl = seen.find((u) => u.includes("/account_stake_history"))!;
-    // A *unique* tiebreak, not just absolute_slot — otherwise PostgREST can
-    // shuffle tied rows across a page boundary and drop/duplicate one, corrupting
-    // the registration walk that feeds the hashed artifact.
+    // Newest first — the early stop reads the deciding slot off the top — and a
+    // *unique* tiebreak, not just absolute_slot, otherwise PostgREST can shuffle
+    // tied rows across a page boundary and drop/duplicate one, corrupting the
+    // registration verdict that feeds the hashed artifact.
     expect(updateUrl).toContain(
-      "order=absolute_slot.asc,stake_address.asc,tx_hash.asc,action_type.asc",
+      "order=absolute_slot.desc,stake_address.asc,tx_hash.asc,action_type.asc",
     );
     expect(stakeUrl).toContain("order=stake_address.asc");
   });

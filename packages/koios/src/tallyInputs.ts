@@ -15,9 +15,9 @@
  *    `(tx_block_index, cert_index)`, exactly the ledger's within-slot
  *    certificate application order, so the verdict matches the chain with no
  *    convention. The common case (no same-slot reg/dereg mix) needs no
- *    `/tx_info` read. Still offset-paginated (a churny account can
- *    register/deregister many times) so a long history is never silently
- *    truncated at Koios's ~1000 cap.
+ *    `/tx_info` read. Read newest-first and stopped once every address in the
+ *    batch has been passed, so the cost tracks the batch's deciding slots
+ *    rather than its accounts' lifetimes.
  *  - `/account_stake_history?epoch_no=eq.E` — active stake. One row per
  *    account *delegated to a pool* at E; a registered account with no row
  *    counts with weight 0 (§6.1 "registered but empty").
@@ -46,10 +46,9 @@ import { koiosFetchJson } from "./http";
 const ACCOUNT_BATCH = 50;
 
 /**
- * Rows per page when following an unbounded Koios result set. Koios caps a
- * single response at ~1000 rows, so any read that can exceed that (notably
- * `account_update_history` over `lte.E`, which returns *every* lifecycle event
- * for the batch) must offset-paginate or it silently truncates.
+ * Rows per page when following a Koios result set. Koios caps a single response
+ * at ~1000 rows, so any read that can exceed that must offset-paginate or it
+ * silently truncates.
  */
 const PAGE_LIMIT = 100;
 
@@ -71,11 +70,19 @@ const REGISTRATION_CERT_TYPES = new Set(["stake_registration"]);
 const DEREGISTRATION_CERT_TYPES = new Set(["stake_deregistration"]);
 
 /**
- * Runaway guard for `postAll`: only trips if Koios ignores our `offset` (which
- * would loop forever). A million rows for 50 accounts is already absurd, so
- * hitting this means something is wrong — fail loudly rather than truncate.
+ * Runaway guard for {@link KoiosTallyInputs.postAll}: its caller reads a single
+ * short page, so reaching this means Koios ignored our `offset` and the loop
+ * would otherwise never end.
  */
-const MAX_ACCOUNT_PAGES = 50;
+const MAX_PAGES = 10;
+
+/**
+ * How deep one {@link KoiosTallyInputs.decidingSlotPass} reads before narrowing
+ * the batch instead. Only an account's newest slot decides, so an honest batch
+ * settles on the first page however long its accounts' histories are; needing
+ * more is already evidence that one account is crowding out the others.
+ */
+const MAX_DECIDING_PAGES = 20;
 
 interface AccountUpdateRow {
   stake_address: string;
@@ -178,9 +185,9 @@ export class KoiosTallyInputs implements TallyInputSource {
     const sep = path.includes("?") ? "&" : "?";
     const all: T[] = [];
     for (let page = 0; ; page++) {
-      if (page >= MAX_ACCOUNT_PAGES) {
+      if (page >= MAX_PAGES) {
         throw new Error(
-          `Koios POST ${path} exceeded ${MAX_ACCOUNT_PAGES} pages — offset likely ignored`,
+          `Koios POST ${path} exceeded ${MAX_PAGES} pages — offset likely ignored`,
         );
       }
       const rows = await this.post<T[]>(
@@ -191,6 +198,113 @@ export class KoiosTallyInputs implements TallyInputSource {
       if (rows.length < PAGE_LIMIT) break; // short page → exhausted
     }
     return all;
+  }
+
+  /**
+   * Rows at each address's deciding slot — the newest slot it has an event in,
+   * the only one that can settle registration at `epoch`, since every earlier
+   * event is overridden. An address absent from the result has no events at all
+   * and so was never registered.
+   *
+   * Cost tracks the batch's deciding slots, not its accounts' histories: each
+   * pass reads newest-first and stops once every address has been passed, so an
+   * account with a lifetime of registration churn is no dearer than one with a
+   * single registration. Whatever a pass can't settle is re-read as a narrower
+   * batch — the churny account settles first (its own newest slot heads its own
+   * history), so it drops out and stops crowding out the rest.
+   */
+  private async decidingEvents(
+    epoch: number,
+    addresses: readonly string[],
+  ): Promise<Map<string, AccountUpdateRow[]>> {
+    const out = new Map<string, AccountUpdateRow[]>();
+    const queue: string[][] = [[...addresses]];
+    while (queue.length > 0) {
+      const batch = queue.pop()!;
+      const { deciding, unsettled } = await this.decidingSlotPass(epoch, batch);
+      const pending = new Set(unsettled);
+      for (const [address, rows] of deciding) {
+        if (!pending.has(address)) out.set(address, rows);
+      }
+      if (unsettled.length === 0) continue;
+      if (unsettled.length < batch.length) {
+        queue.push([...unsettled]);
+      } else if (batch.length > 1) {
+        // Nothing settled at all: every address's deciding slot is the *same*
+        // slot, so paging deeper can't help — only a narrower batch shortens it.
+        const mid = Math.ceil(batch.length / 2);
+        queue.push(batch.slice(0, mid), batch.slice(mid));
+      } else {
+        throw new Error(
+          `account_update_history: ${batch[0]} has more than ` +
+            `${MAX_DECIDING_PAGES * PAGE_LIMIT} events in its deciding slot`,
+        );
+      }
+    }
+    return out;
+  }
+
+  /**
+   * One newest-first pass over `addresses`, bounded by
+   * {@link MAX_DECIDING_PAGES}: collects each address's rows at its highest slot
+   * and reports the addresses the pass couldn't settle. An address is settled
+   * once the descending cursor drops below its highest slot — no later row can
+   * join that slot — or once the result set runs out, which settles the whole
+   * batch at once.
+   *
+   * The early stop trusts `order=absolute_slot.desc`, so each row is checked
+   * against the cursor: a Koios that ignored the ordering fails loudly instead
+   * of having a truncated history frozen into a hashed artifact.
+   */
+  private async decidingSlotPass(
+    epoch: number,
+    addresses: readonly string[],
+  ): Promise<{
+    deciding: Map<string, AccountUpdateRow[]>;
+    unsettled: readonly string[];
+  }> {
+    const deciding = new Map<string, AccountUpdateRow[]>();
+    const highest = new Map<string, number>();
+    const settled = new Set<string>();
+    let cursor = Number.POSITIVE_INFINITY;
+    for (let page = 0; page < MAX_DECIDING_PAGES; page++) {
+      const rows = await this.post<AccountUpdateRow[]>(
+        `/account_update_history?epoch_no=lte.${epoch}` +
+          // Only registration/deregistration change the state we care about;
+          // delegations and withdrawals imply-but-don't-change registration.
+          // Filtering them server-side keeps a long-lived account's deciding
+          // slot from sharing the page with its own irrelevant history.
+          `&action_type=in.(registration,deregistration)` +
+          `&select=stake_address,action_type,absolute_slot,epoch_no,tx_hash` +
+          // Newest first, then a *total* order: without one PostgREST may
+          // shuffle rows between requests and drop or duplicate one at a page
+          // boundary (finding 2).
+          `&order=absolute_slot.desc,stake_address.asc,tx_hash.asc,action_type.asc` +
+          `&limit=${PAGE_LIMIT}&offset=${page * PAGE_LIMIT}`,
+        { _stake_addresses: addresses },
+      );
+      for (const row of rows) {
+        if (row.absolute_slot > cursor) {
+          throw new Error(
+            "account_update_history rows are not in descending slot order",
+          );
+        }
+        cursor = row.absolute_slot;
+        const known = highest.get(row.stake_address);
+        if (known === undefined) {
+          highest.set(row.stake_address, row.absolute_slot);
+          deciding.set(row.stake_address, [row]);
+        } else if (row.absolute_slot === known) {
+          deciding.get(row.stake_address)!.push(row);
+        }
+      }
+      if (rows.length < PAGE_LIMIT) return { deciding, unsettled: [] };
+      for (const [address, slot] of highest) {
+        if (slot > cursor) settled.add(address);
+      }
+      if (settled.size === addresses.length) break;
+    }
+    return { deciding, unsettled: addresses.filter((a) => !settled.has(a)) };
   }
 
   /**
@@ -295,28 +409,15 @@ export class KoiosTallyInputs implements TallyInputSource {
     const stakeByAddress = new Map<string, bigint>();
     for (let i = 0; i < addresses.length; i += ACCOUNT_BATCH) {
       const batch = addresses.slice(i, i + ACCOUNT_BATCH);
-      // Both reads offset-paginate: `account_update_history` over `lte.E`
-      // returns every lifecycle event for the batch and readily exceeds Koios's
-      // ~1000-row cap on long-lived accounts; losing a row (e.g. a final
-      // deregistration) would corrupt registration state in the hashed artifact.
-      // Each carries a *total* `order=` so pagination is stable across pages —
-      // without it PostgREST may shuffle rows between requests and drop or
-      // duplicate one at a page boundary (finding 2). Direction is irrelevant to
-      // the result (the walk re-derives chain order); only the total order matters.
-      const [updates, stakes] = await Promise.all([
-        this.postAll<AccountUpdateRow>(
-          `/account_update_history?epoch_no=lte.${epoch}` +
-            // Only registration/deregistration change the state we care about;
-            // delegations and withdrawals imply-but-don't-change registration.
-            // Filtering them server-side collapses a long-lived account's event
-            // history from thousands of rows to a handful, so pagination rarely
-            // trips at all (the walk below still tolerates any type defensively).
-            `&action_type=in.(registration,deregistration)` +
-            `&select=stake_address,action_type,absolute_slot,epoch_no,tx_hash` +
-            // Total order for stable pagination (`absolute_slot` alone ties).
-            `&order=absolute_slot.asc,stake_address.asc,tx_hash.asc,action_type.asc`,
-          { _stake_addresses: batch },
-        ),
+      // A credential is registered at E iff the last state-changing cert in
+      // chain order (≤ E) is not a deregistration. One slot holds at most one
+      // block (Praos), so only the account's deciding (newest) slot matters —
+      // earlier slots are overridden, and the read below never fetches them.
+      // The only case that needs more than the deciding slot's event types is a
+      // same-slot *mix* of a registration and a deregistration, resolved further
+      // down to true chain order via the certificate indices.
+      const [decidingByAddress, stakes] = await Promise.all([
+        this.decidingEvents(epoch, batch),
         this.postAll<AccountStakeRow>(
           `/account_stake_history?epoch_no=eq.${epoch}` +
             `&select=stake_address,epoch_no,active_stake` +
@@ -327,28 +428,8 @@ export class KoiosTallyInputs implements TallyInputSource {
         ),
       ]);
 
-      const eventsByAddress = new Map<string, AccountUpdateRow[]>();
-      for (const row of updates) {
-        let list = eventsByAddress.get(row.stake_address);
-        if (!list) eventsByAddress.set(row.stake_address, (list = []));
-        list.push(row);
-      }
-
-      // A credential is registered at E iff the last state-changing cert in
-      // chain order (≤ E) is not a deregistration. One slot holds at most one
-      // block (Praos), so only the account's max slot can decide — earlier slots
-      // are overridden. The only case that needs more than the max-slot event
-      // types is a same-slot *mix* of a registration and a deregistration; that
-      // is resolved below to true chain order via the certificate indices.
-      const decidingByAddress = new Map<string, AccountUpdateRow[]>();
       const conflictTxs = new Set<string>();
-      for (const [address, events] of eventsByAddress) {
-        const maxSlot = events.reduce(
-          (m, e) => Math.max(m, e.absolute_slot),
-          0,
-        );
-        const deciding = events.filter((e) => e.absolute_slot === maxSlot);
-        decidingByAddress.set(address, deciding);
+      for (const deciding of decidingByAddress.values()) {
         const hasDereg = deciding.some(
           (e) => e.action_type === "deregistration",
         );
