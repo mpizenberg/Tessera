@@ -442,12 +442,16 @@ registered, provenance}`, plus per-`(epoch, role)` totals. This table is shared
 - **Reveal is bounded by Worker CPU, not by subrequests.** One
   `decryptWithBeacon` measures ~20 ms on workerd, against the 30 s a cron under
   an hour apart gets on the paid plan (`limits.cpu_ms` cannot raise that; the
-  free plan's 10 ms cannot fit a single decrypt). So a pass shares
-  `MAX_SEALED_DECRYPTS_PER_PASS` across surveys, and one survey may spend up to
-  `MAX_SEALED_DECRYPTS_PER_SURVEY` when it has the pass to itself. **Known gap:**
-  a survey with more in-window responses than that ceiling is postponed every
-  pass and never finalizes — reveal is all-or-nothing, so unlike weights it has
-  no resume cursor to pick up from.
+  free plan's 10 ms cannot fit a single decrypt). A pass therefore spends at most
+  `MAX_SEALED_DECRYPTS_PER_PASS` decryptions across all surveys — and `sealed_reveal`
+  is the cursor that makes that a pacing limit rather than a size limit: each
+  ciphertext's outcome (the decrypted response, or NULL for one that didn't
+  decrypt or decode) is written as it is produced, so a survey larger than the
+  budget finishes over several passes instead of never. Determinism comes from
+  the definition pinning the round and drand beacons being immutable: the same
+  beacon, re-fetched and re-verified each pass, yields the same plaintext. The
+  beacon the artifact commits is the one from the emitting pass, which is why
+  that pass calls reveal even when it has nothing left to decrypt.
 - **Execution.** At PoC scale (stakeholders bulk; DReps small-N single-GET) this
   fits a single Worker invocation. The `(epoch, role, credential)` table **is**
   the resume cursor if it ever doesn't: rows are written only once known, so a

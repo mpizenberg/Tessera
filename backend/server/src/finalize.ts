@@ -10,6 +10,9 @@
  *    all surveys ending at E is fetched once, and `weight_snapshot` rows are
  *    written only when known, so the table is the resume cursor if a run is
  *    cut short (Worker subrequest cap) or a total is temporarily unavailable;
+ *  - sealed reveal has the same cursor in `sealed_reveal`: each ciphertext's
+ *    outcome is written as it is decrypted, so a pass that runs out of decrypt
+ *    budget mid-survey resumes rather than starting the survey over;
  *  - the artifact insert is INSERT-OR-IGNORE keyed by survey.
  *
  * A survey is emitted only when *complete*: every counted-candidate response
@@ -18,8 +21,9 @@
  * still pending postpones emission to a later cron (artifacts are immutable, so
  * emitting early would freeze a legitimately valid response out forever).
  * Sealed surveys additionally wait for their drand round to publish, then
- * decrypt every in-window response and tally the revealed answers (§6.5); a
- * sealed survey on an unsupported (non-quicknet) drand chain is skipped forever.
+ * decrypt their in-window responses — over as many passes as the decrypt budget
+ * needs — and tally the revealed answers (§6.5); a sealed survey on an
+ * unsupported (non-quicknet) drand chain is skipped forever.
  */
 
 import { isSurveyTalliable, Role, type SurveyResponse } from "cip-179";
@@ -46,6 +50,8 @@ import {
   artifactHash,
   assembleTallyBody,
   cancelledTallyBody,
+  fromJsonSafe,
+  toJsonSafe,
   type RoleTally,
   type TallyArtifact,
   type TallyBody,
@@ -56,29 +62,39 @@ import { isQuicknet, roundIsAvailable } from "cip-179/tlock";
 
 import type { ServerConfig } from "./config";
 import { tlockSealedReveal, type SealedRevealFn } from "./sealedReveal";
-import type { TallyStore, ValidatedResponseRow, WeightRow } from "./store";
+import type {
+  SealedRevealRow,
+  TallyStore,
+  ValidatedResponseRow,
+  WeightRow,
+} from "./store";
+import { validationKey } from "./store";
 
 /**
  * Per-pass cap on sealed decryptions across all surveys — the decrypt share of
  * the CPU one cron invocation gets (`wrangler.toml`). One `decryptWithBeacon`
  * measures ~20 ms on workerd, so this is ~3 s there and ~9 s on a core three
  * times slower: under a third of the ceiling, leaving the rest of the pass its
- * parsing, proof checks and hashing. Reveal is all-or-nothing per survey, so
- * this bounds how much a pass spends *sharing* — once it is gone, later surveys
- * wait for a pass where they fit.
+ * parsing, proof checks and hashing. No survey is too big for it — outcomes are
+ * persisted per response as they are decrypted, so spending the cap mid-survey
+ * just resumes next pass.
  */
 const MAX_SEALED_DECRYPTS_PER_PASS = 150;
 
 /**
- * What one survey's reveal may cost when it takes a whole pass to itself (which
- * it does when the budget above is still untouched) — twice the shared budget,
- * since nothing else is decrypting. A survey needing more than this cannot be
- * revealed inside a single invocation at all: attempting it gets the pass killed
- * mid-decrypt, stranding every survey after it in iteration order too, so it is
- * postponed instead. Reveal is not resumable, so that postponement is permanent
- * — the survey never finalizes.
+ * A reveal outcome as the cursor stores it: the decrypted response in the wire
+ * form the artifact commits, or null for a ciphertext that didn't decrypt or
+ * didn't decode.
  */
-const MAX_SEALED_DECRYPTS_PER_SURVEY = 2 * MAX_SEALED_DECRYPTS_PER_PASS;
+function encodeRevealed(response: SurveyResponse | null): string | null {
+  return response === null ? null : JSON.stringify(toJsonSafe(response));
+}
+
+function decodeRevealed(stored: string | null): SurveyResponse | null {
+  return stored === null
+    ? null
+    : (fromJsonSafe(JSON.parse(stored)) as SurveyResponse);
+}
 
 /**
  * Roles artifacts cover — derived from the hashed ruleset descriptor (not a
@@ -294,25 +310,6 @@ export async function finalizeClosedSurveys(
             console.warn(`finalize: ${key} postponed — ${pending}`);
             continue;
           }
-          const need = eligible.length;
-          if (need > MAX_SEALED_DECRYPTS_PER_SURVEY) {
-            console.warn(
-              `finalize: ${key} cannot be revealed — ${need} sealed responses ` +
-                `exceed one invocation's decrypt ceiling (${MAX_SEALED_DECRYPTS_PER_SURVEY})`,
-            );
-            continue;
-          }
-          // Otherwise a survey that doesn't fit what's left of the pass-wide
-          // budget waits for a pass where it does.
-          if (
-            need > sealedDecryptBudget &&
-            sealedDecryptBudget < MAX_SEALED_DECRYPTS_PER_PASS
-          ) {
-            console.log(
-              `finalize: ${key} sealed reveal postponed — decrypt budget exhausted this pass`,
-            );
-            continue;
-          }
           // Join each eligible row to its on-chain response (carrying the sealed
           // ciphertext). A miss means the snapshot dropped it — postpone.
           const inWindow: ResponseRecord[] = [];
@@ -331,10 +328,27 @@ export async function finalizeClosedSurveys(
             );
             continue;
           }
-          sealedDecryptBudget -= need;
+          // Decrypt only what this survey hasn't already recorded, and only as
+          // far as the pass-wide budget reaches. The remainder resumes next
+          // refresh, so no survey is too big to finalize — it just takes as many
+          // passes as its ciphertext count needs.
+          const outcomes = await store.sealedReveals(key);
+          const todo = inWindow.filter(
+            (r) => !outcomes.has(validationKey(r.txHash, r.responseIndex)),
+          );
+          if (todo.length > 0 && sealedDecryptBudget === 0) {
+            console.log(
+              `finalize: ${key} sealed reveal postponed — decrypt budget spent this pass`,
+            );
+            continue;
+          }
+          const batch = todo.slice(0, sealedDecryptBudget);
+          sealedDecryptBudget -= batch.length;
           let result;
           try {
-            result = await reveal(inWindow, { round: mode.round });
+            // Called even with nothing left to decrypt: the beacon it fetches
+            // and BLS-verifies is what the artifact's provenance commits.
+            result = await reveal(batch, { round: mode.round });
           } catch (err) {
             // Transient (beacon fetch, verification) — retry next refresh. Never
             // let it escape and abort the whole finalize pass.
@@ -343,10 +357,34 @@ export async function finalizeClosedSurveys(
             );
             continue;
           }
+          const fresh: SealedRevealRow[] = batch.map((rec, i) => ({
+            txHash: rec.txHash,
+            responseIndex: rec.responseIndex,
+            response: encodeRevealed(result.revealed[i] ?? null),
+          }));
+          await store.putSealedReveals(fresh);
+          if (batch.length < todo.length) {
+            const done = inWindow.length - todo.length + fresh.length;
+            console.log(
+              `finalize: ${key} sealed reveal ${done}/${inWindow.length} — ` +
+                `resuming next refresh`,
+            );
+            continue;
+          }
+          for (const r of fresh) {
+            outcomes.set(validationKey(r.txHash, r.responseIndex), r.response);
+          }
           // Reveal → validate → dedup (§6.5). counted carry decrypted answers.
+          // Answers are read back out of the cursor even when this pass produced
+          // them, so an artifact's bytes never depend on which pass decrypted
+          // which ciphertext.
           const audit = auditRevealedResponses(
             inWindow,
-            result.revealed,
+            inWindow.map((r) =>
+              decodeRevealed(
+                outcomes.get(validationKey(r.txHash, r.responseIndex))!,
+              ),
+            ),
             s.definition,
           );
           const rowByKey = new Map(

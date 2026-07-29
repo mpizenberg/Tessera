@@ -17,9 +17,9 @@ Each refresh cycle does three things, in order:
 3. **Finalize** — for surveys safely past their `end_epoch`, snapshot
    stake/voting-power weights at that epoch, run the stake-weighted tally, and
    emit an immutable, content-addressed **result artifact**
-   (blake2b-256 over canonical JSON). Idempotent and resumable: weight rows
-   already written are never re-fetched, and a temporarily unavailable
-   electorate total just postpones the survey to the next cycle.
+   (blake2b-256 over canonical JSON). Idempotent and resumable: weight rows and
+   sealed-reveal outcomes already written are never recomputed, and a temporarily
+   unavailable electorate total just postpones the survey to the next cycle.
    `packages/verifier` can re-derive any artifact from chain data alone and
    check the hash.
 
@@ -125,7 +125,10 @@ CPU is the tighter limit once sealed surveys are in play: a cron under an hour
 apart gets 30 s on the paid plan and 10 ms on the free one, while a single
 timelock decrypt costs ~20 ms on workerd. Sealed reveal therefore needs the paid
 plan; `finalize.ts` derives its per-pass decrypt budget from that 30 s, and
-`wrangler.toml` pins the same ceiling with `limits.cpu_ms`.
+`wrangler.toml` pins the same ceiling with `limits.cpu_ms`. That budget paces
+reveal rather than capping survey size: each ciphertext's outcome is persisted as
+it is decrypted, so a survey with more sealed responses than one pass affords
+finishes across several crons.
 
 ## Requirements
 

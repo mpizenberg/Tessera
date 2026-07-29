@@ -11,6 +11,7 @@ import type {
   BackendStore,
   RefreshRunRow,
   ResponseRow,
+  SealedRevealRow,
   SnapshotMeta,
   SurveyIndexRow,
   ValidatedResponseRow,
@@ -21,6 +22,8 @@ import { REFRESH_RUN_RETENTION_SECONDS, validationKey } from "./store";
 export interface MemBackendStore extends BackendStore {
   /** Direct row access for assertions. */
   readonly validated: Map<string, ValidatedResponseRow>;
+  /** Reveal outcomes by {@link validationKey}; null = undecryptable. */
+  readonly reveals: Map<string, string | null>;
   readonly weights: Map<string, WeightRow>;
   readonly totals: Map<string, { total: string; endpoint: string }>;
   readonly artifacts: Map<string, ArtifactRow>;
@@ -31,6 +34,7 @@ export interface MemBackendStore extends BackendStore {
 
 export function memBackendStore(): MemBackendStore {
   const validated = new Map<string, ValidatedResponseRow>();
+  const reveals = new Map<string, string | null>();
   const weights = new Map<string, WeightRow>();
   const totals = new Map<string, { total: string; endpoint: string }>();
   const artifacts = new Map<string, ArtifactRow>();
@@ -74,6 +78,7 @@ export function memBackendStore(): MemBackendStore {
 
   return {
     validated,
+    reveals,
     weights,
     totals,
     artifacts,
@@ -101,8 +106,25 @@ export function memBackendStore(): MemBackendStore {
       return [...validated.values()].filter((r) => r.surveyKey === surveyKey);
     },
     async deleteValidatedResponses(keys) {
-      for (const k of keys)
+      for (const k of keys) {
         validated.delete(validationKey(k.txHash, k.responseIndex));
+        reveals.delete(validationKey(k.txHash, k.responseIndex));
+      }
+    },
+    async sealedReveals(surveyKey) {
+      const out = new Map<string, string | null>();
+      for (const r of validated.values()) {
+        if (r.surveyKey !== surveyKey) continue;
+        const key = validationKey(r.txHash, r.responseIndex);
+        if (reveals.has(key)) out.set(key, reveals.get(key)!);
+      }
+      return out;
+    },
+    async putSealedReveals(rows: readonly SealedRevealRow[]) {
+      for (const r of rows) {
+        const key = validationKey(r.txHash, r.responseIndex);
+        if (!reveals.has(key)) reveals.set(key, r.response);
+      }
     },
 
     async weightRows(epoch, role) {

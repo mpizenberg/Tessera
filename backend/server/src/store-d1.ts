@@ -16,6 +16,7 @@ import type {
   RefreshRunRow,
   RefreshTotals,
   ResponseRow,
+  SealedRevealRow,
   SnapshotMeta,
   SurveyBundleRows,
   SurveyIndexRow,
@@ -157,10 +158,53 @@ export function d1BackendStore(db: D1Like): BackendStore {
       keys: readonly { txHash: string; responseIndex: number }[],
     ): Promise<void> {
       if (keys.length === 0) return;
-      const stmt = db.prepare(
+      const validated = db.prepare(
         "DELETE FROM validated_response WHERE tx_hash = ? AND response_index = ?",
       );
-      await db.batch(keys.map((k) => stmt.bind(k.txHash, k.responseIndex)));
+      const reveal = db.prepare(
+        "DELETE FROM sealed_reveal WHERE tx_hash = ? AND response_index = ?",
+      );
+      await db.batch(
+        keys.flatMap((k) => [
+          validated.bind(k.txHash, k.responseIndex),
+          reveal.bind(k.txHash, k.responseIndex),
+        ]),
+      );
+    },
+    async sealedReveals(
+      surveyKey: string,
+    ): Promise<Map<string, string | null>> {
+      const { results } = await db
+        .prepare(
+          `SELECT s.tx_hash AS txHash, s.response_index AS responseIndex,
+                  s.response
+           FROM sealed_reveal s
+           JOIN validated_response v
+             ON v.tx_hash = s.tx_hash AND v.response_index = s.response_index
+           WHERE v.survey_key = ?`,
+        )
+        .bind(surveyKey)
+        .all<{
+          txHash: string;
+          responseIndex: number;
+          response: string | null;
+        }>();
+      return new Map(
+        results.map((r) => [
+          validationKey(r.txHash, r.responseIndex),
+          r.response,
+        ]),
+      );
+    },
+    async putSealedReveals(rows: readonly SealedRevealRow[]): Promise<void> {
+      if (rows.length === 0) return;
+      const stmt = db.prepare(
+        `INSERT OR IGNORE INTO sealed_reveal (tx_hash, response_index, response)
+         VALUES (?, ?, ?)`,
+      );
+      await db.batch(
+        rows.map((r) => stmt.bind(r.txHash, r.responseIndex, r.response)),
+      );
     },
 
     async weightRows(epoch: number, role: number): Promise<WeightRow[]> {

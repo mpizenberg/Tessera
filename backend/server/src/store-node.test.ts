@@ -3,7 +3,8 @@
  * the SQL itself carries logic the in-memory store re-implements in JS, so the
  * two can't silently disagree. That's the `json_extract` predicate behind
  * `finalizedCancelledKeys`, the conditional upsert behind the refresh lease,
- * and the paging keyset (D1 shares the same SQLite dialect).
+ * the join and cascade behind the sealed-reveal cursor, and the paging keyset
+ * (D1 shares the same SQLite dialect).
  */
 
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
@@ -20,6 +21,7 @@ import type {
   ResponseRow,
   SurveyIndexRow,
   SurveyPageQuery,
+  ValidatedResponseRow,
 } from "./store";
 import { REFRESH_RUN_RETENTION_SECONDS } from "./store";
 import { openBackendStore } from "./store-node";
@@ -63,6 +65,70 @@ describe("store-node finalizedCancelledKeys (json_extract)", () => {
   it("is empty with no artifacts", async () => {
     store = openBackendStore(":memory:");
     expect(await store.finalizedCancelledKeys()).toEqual(new Set());
+  });
+});
+
+const validatedRow = (
+  txHash: string,
+  responseIndex: number,
+  surveyKey: string,
+): ValidatedResponseRow => ({
+  txHash,
+  responseIndex,
+  surveyKey,
+  role: 3,
+  credential: "key:aa",
+  slot: 1,
+  epochNo: 499,
+  blockIndex: 0,
+  proofOk: true,
+  linkedActionId: null,
+  wellFormed: true,
+  checkedAt: 1,
+});
+
+describe("store-node sealed reveal cursor", () => {
+  let store: BackendStore;
+  afterEach(() => store.close());
+
+  it("scopes outcomes by survey and drops them with a reorged-out response", async () => {
+    store = openBackendStore(":memory:");
+    await store.upsertValidatedResponses([
+      validatedRow("aa", 0, "s1:0"),
+      validatedRow("aa", 1, "s1:0"),
+      validatedRow("bb", 0, "s2:0"),
+    ]);
+    await store.putSealedReveals([
+      { txHash: "aa", responseIndex: 0, response: `{"answers":1}` },
+      { txHash: "aa", responseIndex: 1, response: null },
+      { txHash: "bb", responseIndex: 0, response: `{"answers":2}` },
+    ]);
+
+    // A row with a null value is "attempted, undecryptable" — distinct from an
+    // absent row, and that distinction is what lets the cursor terminate.
+    expect(await store.sealedReveals("s1:0")).toEqual(
+      new Map([
+        ["aa:0", `{"answers":1}`],
+        ["aa:1", null],
+      ]),
+    );
+
+    // Written once, never revised.
+    await store.putSealedReveals([
+      { txHash: "aa", responseIndex: 1, response: `{"answers":9}` },
+    ]);
+    expect((await store.sealedReveals("s1:0")).get("aa:1")).toBeNull();
+
+    // A reorged-out response takes its outcome with it, so a re-validated tx is
+    // decrypted afresh rather than inheriting the old row by key collision.
+    await store.deleteValidatedResponses([{ txHash: "aa", responseIndex: 0 }]);
+    await store.upsertValidatedResponses([validatedRow("aa", 0, "s1:0")]);
+    expect(await store.sealedReveals("s1:0")).toEqual(
+      new Map([["aa:1", null]]),
+    );
+    expect(await store.sealedReveals("s2:0")).toEqual(
+      new Map([["bb:0", `{"answers":2}`]]),
+    );
   });
 });
 
@@ -154,6 +220,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0008_refresh_lease.sql",
       "0009_snapshot_chunks.sql",
       "0010_response_rows.sql",
+      "0011_sealed_reveal.sql",
     ]);
   });
 });

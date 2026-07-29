@@ -1155,29 +1155,50 @@ describe("finalizeClosedSurveys", () => {
     expect(reveal).not.toHaveBeenCalled();
   });
 
-  // Finding 28 — one timelock decrypt costs ~20 ms of Worker CPU, so the number
-  // of them a pass may do is a real limit, not a formality.
-  it("postpones a sealed survey too large for one invocation's decrypt ceiling", async () => {
+  // Finding 28 — one timelock decrypt costs ~20 ms of Worker CPU, so a big
+  // sealed survey outlives any single invocation; `sealed_reveal` is the cursor
+  // that lets it finish anyway.
+  it("resumes a sealed reveal across passes, re-decrypting nothing", async () => {
     const store = memBackendStore();
-    // One past MAX_SEALED_DECRYPTS_PER_SURVEY (2 × the 150-per-pass budget).
-    const fleet = sealedFleet(301);
+    const fleet = sealedFleet(200); // past MAX_SEALED_DECRYPTS_PER_PASS (150)
     await seed(store, fleet.rows);
-    const reveal = stubReveal({});
+    // The first ciphertext never decrypts. That verdict has to be recorded too,
+    // or the survey re-attempts it every pass and never completes.
+    const reveal = stubReveal(
+      Object.fromEntries(
+        fleet.recs.map((r, i) => [r.txHash, i === 0 ? null : SEALED_ANSWER]),
+      ),
+    );
+    const chain = records(
+      survey(definition({ submissionMode: SEALED_MODE })),
+      fleet.recs,
+    );
+    const pass = () =>
+      finalizeClosedSurveys(
+        CONFIG,
+        store,
+        fakeInputs(fleet.weights),
+        noProofs,
+        chain,
+        TIP,
+        reveal,
+      );
 
-    await finalizeClosedSurveys(
-      CONFIG,
-      store,
-      fakeInputs({}),
-      noProofs,
-      records(survey(definition({ submissionMode: SEALED_MODE })), fleet.recs),
-      TIP,
-      reveal,
+    await pass();
+    expect(reveal.mock.calls[0]![0]).toHaveLength(150);
+    expect(store.artifacts.size).toBe(0); // 50 ciphertexts still sealed
+
+    await pass();
+    // Exactly the leftovers — the 150 already recorded are not decrypted again.
+    expect(reveal.mock.calls[1]![0].map((r) => r.txHash)).toEqual(
+      fleet.recs.slice(150).map((r) => r.txHash),
     );
 
-    // Attempting it would get the invocation killed mid-decrypt, taking every
-    // later survey's finalization with it — so it is never attempted.
-    expect(reveal).not.toHaveBeenCalled();
-    expect(store.artifacts.size).toBe(0);
+    const artifact = JSON.parse(
+      store.artifacts.get(SURVEY_KEY)!.artifact,
+    ) as TallyArtifact;
+    const role3 = artifact.tally.perRole.find((r) => r.role === 3)!;
+    expect(role3.responders).toHaveLength(199); // all but the undecryptable one
   });
 
   it("spends the pass-wide decrypt budget on one sealed survey and defers the next", async () => {
@@ -1217,8 +1238,8 @@ describe("finalizeClosedSurveys", () => {
     expect(reveal).toHaveBeenCalledTimes(1);
     expect(reveal.mock.calls[0]![0]).toHaveLength(150);
     expect(store.artifacts.has(SURVEY_KEY)).toBe(true);
-    // The budget is gone, so the second survey waits for a pass of its own —
-    // reveal is all-or-nothing, so it can't take the remaining zero.
+    // The budget is gone, so the second survey's ciphertext waits for the next
+    // pass rather than pushing this one past its CPU ceiling.
     expect(store.artifacts.has(SURVEY_KEY2)).toBe(false);
   });
 

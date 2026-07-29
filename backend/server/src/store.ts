@@ -69,6 +69,21 @@ export interface WeightRow {
   readonly fetchedAt: number;
 }
 
+/**
+ * One sealed response's reveal outcome (§6.5) — written as each ciphertext is
+ * decrypted, so existing rows are exactly the reveal resume cursor.
+ */
+export interface SealedRevealRow {
+  readonly txHash: string;
+  readonly responseIndex: number;
+  /**
+   * Wire JSON (`toJsonSafe`) of the decrypted `SurveyResponse`, or null when the
+   * ciphertext did not decrypt or did not decode. Both outcomes are final: the
+   * beacon is immutable, so a re-attempt can only reach the same one.
+   */
+  readonly response: string | null;
+}
+
 /** One finalized survey's immutable artifact row. */
 export interface ArtifactRow {
   readonly surveyKey: string;
@@ -94,15 +109,29 @@ export interface TallyStore {
   ): Promise<void>;
   validatedForSurvey(surveyKey: string): Promise<ValidatedResponseRow[]>;
   /**
-   * Prune validated rows by (txHash, responseIndex). Used at finalization when a
-   * counted response has vanished from a *complete* snapshot (reorged out): the
-   * scan floor means it can't age back in and the row is never otherwise pruned,
-   * so leaving it would postpone the survey forever. If the tx later re-appears
-   * it is simply re-validated (the row is uncompleted again).
+   * Prune validated rows — and any reveal outcome recorded for them — by
+   * (txHash, responseIndex). Used at finalization when a counted response has
+   * vanished from a *complete* snapshot (reorged out): the scan floor means it
+   * can't age back in and the row is never otherwise pruned, so leaving it would
+   * postpone the survey forever. If the tx later re-appears it is simply
+   * re-validated and re-revealed.
    */
   deleteValidatedResponses(
     keys: readonly { txHash: string; responseIndex: number }[],
   ): Promise<void>;
+
+  /**
+   * Reveal outcomes recorded for one survey's responses, keyed by
+   * {@link validationKey}. Presence is "already attempted"; the value is the
+   * decrypted response's wire JSON, or null for an undecryptable ciphertext.
+   */
+  sealedReveals(surveyKey: string): Promise<Map<string, string | null>>;
+  /**
+   * Insert-or-ignore: a reveal outcome is written once and never revised. It is
+   * derived from an immutable beacon and an immutable ciphertext, and an
+   * artifact may already have been emitted from it.
+   */
+  putSealedReveals(rows: readonly SealedRevealRow[]): Promise<void>;
 
   /** All snapshotted weights for one (epoch, role). */
   weightRows(epoch: number, role: number): Promise<WeightRow[]>;
