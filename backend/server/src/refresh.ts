@@ -12,13 +12,18 @@
  * would let the slower one write its older scan last, over the newer snapshot.
  */
 
+import type { GovLink, GovLinkScan } from "cip-179/domain";
 import { toJsonSafe } from "cip-179/tally";
 import { KoiosDataSource, KoiosTallyInputs } from "@tessera/koios";
 
 import type { ServerConfig } from "./config";
 import { finalizeClosedSurveys } from "./finalize";
 import { materializeSnapshot, snapshotBytes } from "./materialize";
-import { REFRESH_LEASE_SECONDS, type BackendStore } from "./store";
+import {
+  REFRESH_LEASE_SECONDS,
+  type BackendStore,
+  type SnapshotStore,
+} from "./store";
 import { validateNewResponses } from "./validate";
 
 /** Cap stored failure messages so a pathological error can't bloat the row. */
@@ -36,6 +41,13 @@ export async function refreshSnapshot(
   const countCall = (): void => {
     koiosCalls += 1;
   };
+  // Governance links are best-effort enrichment; a failure must not sink the
+  // snapshot (mirrors the app's behaviour). But an empty list on *failure* means
+  // "unknown", not "none": validation must not freeze a link-dependent verdict
+  // against it, finalization must not stamp it into an artifact, and the
+  // snapshot must not publish it as "no links" — so the failure travels as a
+  // flag, and is recorded on the run for whoever asks how often it happens.
+  let govLinksReliable = true;
   const startedAt = Math.floor(Date.now() / 1000);
   const startedMs = Date.now();
 
@@ -64,6 +76,7 @@ export async function refreshSnapshot(
         startedAt,
         durationMs: Date.now() - startedMs,
         koiosCalls,
+        govLinksOk: govLinksReliable,
         ...(outcome.ok
           ? { ...outcome, error: null }
           : {
@@ -98,11 +111,6 @@ export async function refreshSnapshot(
       source.fetchAll(),
       source.chainTip(),
     ]);
-    // Governance links are best-effort enrichment; a failure must not sink the
-    // snapshot (mirrors the app's behaviour). But an empty list on *failure* means
-    // "unknown", not "none" — validation must not freeze a link-dependent verdict
-    // against it, so the failure is signalled separately.
-    let govLinksReliable = true;
     const { links: govLinks, unresolved: govUnresolved } = await source
       .fetchGovernanceLinks(
         config.app.sinceUnix,
@@ -157,24 +165,14 @@ export async function refreshSnapshot(
     // finalization (a survey finalized as cancelled above flips its row's
     // overlay flag in the same refresh). One transaction publishes the whole
     // snapshot at once: until it commits, every route serves the previous one.
-    //
-    // What the snapshot shows is the one place a failed fetch must NOT read as
-    // "no links": publishing `[]` blanks every link in the app until a refresh
-    // succeeds. The previous snapshot's links go out instead — stale by an
-    // interval, but true when last read — while validation and finalization
-    // above keep seeing the honest empty result behind `govLinksReliable`.
-    // Alignment, haystack and counts are re-derived from the fresh tip, so a
-    // recovered link that no longer aligns simply stops counting.
-    const displayLinks = govLinksReliable
-      ? govLinks
-      : await store.snapshotGovLinks().catch((err) => {
-          console.warn(`gov links recovery failed: ${String(err)}`);
-          return [];
-        });
     const snapshot = materializeSnapshot(
       records,
       tip,
-      displayLinks,
+      await displayGovLinks(
+        store,
+        { links: govLinks, unresolved: govUnresolved },
+        govLinksReliable,
+      ),
       await store.finalizedCancelledKeys(),
     );
     const payloadBytes = snapshotBytes(snapshot);
@@ -210,6 +208,50 @@ export async function refreshSnapshot(
     await store
       .releaseRefreshLease(lease)
       .catch((e) => console.warn(`refresh lease release failed: ${String(e)}`));
+  }
+}
+
+/**
+ * The governance links the snapshot publishes: what this refresh read, plus the
+ * previous snapshot's link for every action it could NOT read.
+ *
+ * An unreadable action is *unknown*, not unlinked, and publishing it as "no
+ * link" is what makes links flicker in the app. Two ways to be unreadable, both
+ * routine: Koios resolves an anchor into `meta_json` lazily and its nodes
+ * disagree about which ones are resolved — the same action comes back a link on
+ * one refresh and a null anchor on the next — or the whole scan failed, which
+ * makes every link unknown at once. A scan classifies each action as one or the
+ * other, never both, so the recovered links never collide with the fresh ones.
+ *
+ * Recovering a link is sound because an action's anchor is hash-fixed at
+ * proposal time: whatever we resolved before is what the action still says. The
+ * links only reach the display snapshot, where epoch alignment, haystack and
+ * counts are re-derived against the fresh tip; validation and finalization see
+ * the honest scan, so no verdict or artifact is ever built on a recovered link.
+ */
+export async function displayGovLinks(
+  store: Pick<SnapshotStore, "snapshotGovLinks">,
+  scan: GovLinkScan,
+  reliable: boolean,
+): Promise<readonly GovLink[]> {
+  const unknown = new Set(scan.unresolved.map((u) => u.actionId));
+  if (reliable && unknown.size === 0) return scan.links;
+  try {
+    const stored = await store.snapshotGovLinks();
+    if (!reliable) {
+      console.warn(`gov links unreadable — republishing ${stored.length}`);
+      return stored;
+    }
+    const recovered = stored.filter((l) => unknown.has(l.actionId));
+    if (recovered.length > 0) {
+      console.log(
+        `gov links: ${recovered.length} anchor(s) unresolved this refresh — kept the stored link`,
+      );
+    }
+    return [...scan.links, ...recovered];
+  } catch (err) {
+    console.warn(`gov links recovery failed: ${String(err)}`);
+    return scan.links;
   }
 }
 

@@ -200,6 +200,12 @@ export interface RefreshRunRow {
   readonly ok: boolean;
   /** Failure message when `ok` is false, else null. */
   readonly error: string | null;
+  /**
+   * No governance-links failure was observed in this run. False means the scan
+   * came back unusable, so the published snapshot carries the *previous* run's
+   * links and no artifact was minted — a state the run's own `ok` can't show.
+   */
+  readonly govLinksOk: boolean;
   /** The stored snapshot's `incomplete` flag (scan paging cap hit). */
   readonly incomplete: boolean;
   readonly surveys: number;

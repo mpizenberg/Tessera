@@ -88,6 +88,12 @@ export interface BackendHealth {
     readonly ok: boolean;
     /** Failure message when `ok` is false, else null. */
     readonly error: string | null;
+    /**
+     * No governance-links failure was observed in this run. False means the
+     * served snapshot carries the previous run's links rather than freshly read
+     * ones — the run is otherwise `ok`, since links are best-effort enrichment.
+     */
+    readonly govLinksOk: boolean;
     /** The scan hit its paging cap — the snapshot is a prefix, not the whole. */
     readonly incomplete: boolean;
     readonly surveys: number;

@@ -256,13 +256,14 @@ export function openBackendStore(path: string): BackendStore {
   );
 
   const refreshRunColumns = `started_at AS startedAt, duration_ms AS durationMs,
-            koios_calls AS koiosCalls, ok, error, incomplete, surveys,
+            koios_calls AS koiosCalls, ok, error,
+            gov_links_ok AS govLinksOk, incomplete, surveys,
             responses, payload_bytes AS payloadBytes`;
   const putRefreshRunStmt = db.prepare(`
     INSERT OR REPLACE INTO refresh_run
-      (started_at, duration_ms, koios_calls, ok, error, incomplete,
-       surveys, responses, payload_bytes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (started_at, duration_ms, koios_calls, ok, error, gov_links_ok,
+       incomplete, surveys, responses, payload_bytes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const pruneRefreshRunStmt = db.prepare(
     "DELETE FROM refresh_run WHERE started_at < ?",
@@ -297,6 +298,15 @@ export function openBackendStore(path: string): BackendStore {
     proofOk: r.proofOk === null ? null : r.proofOk !== 0,
     wellFormed: r.wellFormed !== 0,
   });
+
+  interface DbRefreshRunRow extends Omit<
+    RefreshRunRow,
+    "ok" | "govLinksOk" | "incomplete"
+  > {
+    ok: number;
+    govLinksOk: number;
+    incomplete: number;
+  }
 
   return {
     async completedValidations(): Promise<Map<string, string | null>> {
@@ -544,6 +554,7 @@ export function openBackendStore(path: string): BackendStore {
         row.koiosCalls,
         row.ok ? 1 : 0,
         row.error,
+        row.govLinksOk ? 1 : 0,
         row.incomplete ? 1 : 0,
         row.surveys,
         row.responses,
@@ -552,14 +563,14 @@ export function openBackendStore(path: string): BackendStore {
       pruneRefreshRunStmt.run(row.startedAt - REFRESH_RUN_RETENTION_SECONDS);
     },
     async lastRefreshRun(): Promise<RefreshRunRow | null> {
-      const row = lastRefreshRunStmt.get() as
-        | (Omit<RefreshRunRow, "ok" | "incomplete"> & {
-            ok: number;
-            incomplete: number;
-          })
-        | undefined;
+      const row = lastRefreshRunStmt.get() as DbRefreshRunRow | undefined;
       if (!row) return null;
-      return { ...row, ok: row.ok !== 0, incomplete: row.incomplete !== 0 };
+      return {
+        ...row,
+        ok: row.ok !== 0,
+        govLinksOk: row.govLinksOk !== 0,
+        incomplete: row.incomplete !== 0,
+      };
     },
     async refreshTotalsSince(sinceUnix: number): Promise<RefreshTotals> {
       return refreshTotalsStmt.get(sinceUnix) as unknown as RefreshTotals;

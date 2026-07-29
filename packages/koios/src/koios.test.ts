@@ -6,16 +6,34 @@ import { mechanismAProven, hexToBytes } from "cip-179/domain";
 import { decodeResolvedNativeScript } from "cip-179/txproof";
 import { evolutionCodec } from "cip-179/evolution";
 
-import { KoiosDataSource, parseGovLink, type ProposalRow } from "./koios";
+import {
+  KoiosDataSource,
+  anchorUnresolved,
+  parseGovLink,
+  type ProposalRow,
+} from "./koios";
 
-// One row as the scan projects it: Koios has already evaluated `body.cip179`
-// and `body.title` out of the anchor document server-side.
-function row(cip179: unknown, extra: Partial<ProposalRow> = {}): ProposalRow {
+// A CIP-108 anchor doc where a survey link lives at `body.cip179`, as produced
+// by the LinkActionPanel and described in CIP-179. Sub-objects are spread in so
+// individual fields can be overridden per case.
+function anchor(opts: {
+  title?: unknown;
+  cip179?: Record<string, unknown> | null | undefined;
+}): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  if ("title" in opts) body["title"] = opts.title;
+  if ("cip179" in opts) body["cip179"] = opts.cip179;
+  return { hashAlgorithm: "blake2b-256", body, authors: [] };
+}
+
+function row(
+  meta_json: unknown,
+  extra: Partial<ProposalRow> = {},
+): ProposalRow {
   return {
     proposal_id: "gov_action1abc",
     expiration: 42,
-    cip179,
-    title: null,
+    meta_json,
     ...extra,
   };
 }
@@ -29,11 +47,11 @@ const LINK = {
   surveyIndex: 2,
 };
 
-// The scan's server-side filter asserts only that `body.cip179` is present, so
-// every shape rule below is still this parser's to enforce.
 describe("parseGovLink", () => {
   it("extracts a well-formed link from body.cip179", () => {
-    const link = parseGovLink(row(LINK, { title: "Ratify the budget" }));
+    const link = parseGovLink(
+      row(anchor({ title: "Ratify the budget", cip179: LINK })),
+    );
     expect(link).toEqual({
       surveyKey: `${TXID.toLowerCase()}:2`, // tx id lower-cased, joined with the index
       actionId: "gov_action1abc",
@@ -45,38 +63,78 @@ describe("parseGovLink", () => {
 
   it("returns null when surveyIndex is missing (it is mandatory)", () => {
     const { surveyIndex: _omit, ...noIndex } = LINK;
-    expect(parseGovLink(row(noIndex))).toBeNull();
+    expect(parseGovLink(row(anchor({ cip179: noIndex })))).toBeNull();
   });
 
   it("returns null when surveyIndex is malformed (never silently survey 0)", () => {
-    expect(parseGovLink(row({ ...LINK, surveyIndex: -1 }))).toBeNull();
-    expect(parseGovLink(row({ ...LINK, surveyIndex: 1.5 }))).toBeNull();
-    expect(parseGovLink(row({ ...LINK, surveyIndex: "0" }))).toBeNull();
+    expect(
+      parseGovLink(row(anchor({ cip179: { ...LINK, surveyIndex: -1 } }))),
+    ).toBeNull();
+    expect(
+      parseGovLink(row(anchor({ cip179: { ...LINK, surveyIndex: 1.5 } }))),
+    ).toBeNull();
+    expect(
+      parseGovLink(row(anchor({ cip179: { ...LINK, surveyIndex: "0" } }))),
+    ).toBeNull();
   });
 
   it("title is null when body.title is absent or non-string", () => {
-    expect(parseGovLink(row(LINK))?.title).toBeNull();
-    expect(parseGovLink(row(LINK, { title: 7 }))?.title).toBeNull();
+    expect(parseGovLink(row(anchor({ cip179: LINK })))?.title).toBeNull();
+    expect(
+      parseGovLink(row(anchor({ title: 7, cip179: LINK })))?.title,
+    ).toBeNull();
   });
 
   it("rejects a non-matching or missing kind discriminator", () => {
-    expect(parseGovLink(row({ ...LINK, kind: "something-else" }))).toBeNull();
+    expect(
+      parseGovLink(
+        row(anchor({ cip179: { ...LINK, kind: "something-else" } })),
+      ),
+    ).toBeNull();
     const { kind: _k, ...noKind } = LINK;
-    expect(parseGovLink(row(noKind))).toBeNull();
+    expect(parseGovLink(row(anchor({ cip179: noKind })))).toBeNull();
   });
 
   it("rejects a missing or non-64-hex surveyTxId", () => {
     const { surveyTxId: _t, ...noTx } = LINK;
-    expect(parseGovLink(row(noTx))).toBeNull();
+    expect(parseGovLink(row(anchor({ cip179: noTx })))).toBeNull();
     // A short / malformed id can't address a real tx → not a link.
-    expect(parseGovLink(row({ ...LINK, surveyTxId: "9a1c" }))).toBeNull();
+    expect(
+      parseGovLink(row(anchor({ cip179: { ...LINK, surveyTxId: "9a1c" } }))),
+    ).toBeNull();
   });
 
-  it("rejects a cip179 payload that isn't a link object", () => {
-    expect(parseGovLink(row("survey-link"))).toBeNull();
-    // A JSON `null` is not a SQL NULL, so an anchor spelling out
-    // `"cip179": null` passes the scan's presence filter and lands here.
-    expect(parseGovLink(row(null))).toBeNull();
+  it("rejects an action with no cip179 object in its body", () => {
+    expect(
+      parseGovLink(row(anchor({ title: "Just a normal action" }))),
+    ).toBeNull();
+  });
+
+  it("rejects an anchor with no body, or unresolved meta_json", () => {
+    expect(parseGovLink(row({ hashAlgorithm: "blake2b-256" }))).toBeNull();
+    expect(parseGovLink(row(null))).toBeNull(); // Koios couldn't resolve the doc
+    expect(parseGovLink(row("not an object"))).toBeNull();
+  });
+});
+
+// An anchor Koios couldn't resolve (`meta_json` null) is UNKNOWN, not "no link":
+// `fetchGovernanceLinks` files it under `unresolved` so a mechanism-B verdict it
+// might decide is deferred/surfaced, never silently coerced to unproven
+// (finding 6). This predicate is what draws that line.
+describe("anchorUnresolved", () => {
+  it("is true for a null (or non-object) meta_json — couldn't resolve", () => {
+    expect(anchorUnresolved(null)).toBe(true);
+    expect(anchorUnresolved(undefined)).toBe(true);
+    expect(anchorUnresolved("not an object")).toBe(true);
+  });
+
+  it("is false for a resolved anchor object — parseGovLink then decides", () => {
+    // A resolved doc that happens not to be a survey link is still "resolved".
+    expect(anchorUnresolved(anchor({ title: "Just a normal action" }))).toBe(
+      false,
+    );
+    expect(anchorUnresolved(anchor({ cip179: LINK }))).toBe(false);
+    expect(anchorUnresolved({})).toBe(false);
   });
 });
 
@@ -877,49 +935,32 @@ function captureProposalQueries(
   return queries;
 }
 
-/** Which of the two scan queries this request is (they share an endpoint). */
-const isLinkQuery = (p: URLSearchParams): boolean =>
-  p.get("meta_json->body->cip179") === "not.is.null";
-
-// The scan reads only what it uses: rows carrying a `body.cip179`, and rows
-// whose anchor Koios couldn't resolve — both bounded to the epochs the caller's
-// surveys end in, since epoch alignment is what makes an action relevant at all.
-describe("fetchGovernanceLinks — server-side filtering", () => {
-  it("asks for links and unresolved anchors, bounded by the surveys' epochs", async () => {
+// The scan asks Koios only for the actions that could align with a survey the
+// caller holds — epoch alignment is what makes an action relevant at all — and
+// classifies each row from the response that carried it.
+describe("fetchGovernanceLinks — scope", () => {
+  it("bounds the scan by the surveys' end epochs and the block-time floor", async () => {
     const queries = captureProposalQueries(() => []);
     await new KoiosDataSource(CONFIG).fetchGovernanceLinks(
       1_780_272_000,
       [1395, 1388, 1395],
     );
-    expect(queries).toHaveLength(2);
-    const [links, unresolved] = queries.map((p) => ({
-      select: p.get("select")?.split(",") ?? [],
-      expiration: p.get("expiration"),
-      blockTime: p.get("block_time"),
-      cip179: p.get("meta_json->body->cip179"),
-      metaJson: p.get("meta_json"),
-      proposalType: p.get("proposal_type"),
-    }));
+    expect(queries).toHaveLength(1);
+    const q = queries[0]!;
     // end_epoch + 1 is the action's Koios `expiration`; deduped and ordered.
-    expect(links?.expiration).toBe("in.(1389,1396)");
-    expect(unresolved?.expiration).toBe("in.(1389,1396)");
-    expect(links?.blockTime).toBe("gte.1780272000");
-    expect(unresolved?.blockTime).toBe("gte.1780272000");
+    expect(q.get("expiration")).toBe("in.(1389,1396)");
+    expect(q.get("block_time")).toBe("gte.1780272000");
     // Any action kind may carry a link (v5) — kind is never filtered.
-    expect(links?.proposalType).toBeNull();
-    expect(links?.cip179).toBe("not.is.null");
-    expect(unresolved?.metaJson).toBe("is.null");
-    // Koios drops a filter over a column the projection omits, so each filtered
+    expect(q.get("proposal_type")).toBeNull();
+    // Koios drops a filter over a column the projection omits, so every filtered
     // column is selected — silently unfiltered rows are the failure mode.
-    expect(links?.select).toContain("cip179:meta_json->body->cip179");
-    expect(links?.select).toContain("expiration");
-    expect(links?.select).toContain("block_time");
-    expect(unresolved?.select).toContain("meta_json");
-    expect(unresolved?.select).toContain("expiration");
-    expect(unresolved?.select).toContain("block_time");
-    // The whole anchor document is never fetched — only the two sub-paths used.
-    expect(links?.select).not.toContain("meta_json");
-    expect(links?.select).toContain("title:meta_json->body->title");
+    const select = q.get("select")?.split(",") ?? [];
+    expect(select).toContain("expiration");
+    expect(select).toContain("block_time");
+    // One response classifies each action: `meta_json` present and carrying a
+    // link, or absent (unknown). Splitting those across requests would let a
+    // link Koios happens not to have resolved read as a settled "not linked".
+    expect(select).toContain("meta_json");
   });
 
   it("fetches nothing when no survey could be linked", async () => {
@@ -930,11 +971,13 @@ describe("fetchGovernanceLinks — server-side filtering", () => {
   });
 
   it("keeps resolved links and unresolved anchors apart (finding 6)", async () => {
-    captureProposalQueries((p) =>
-      isLinkQuery(p)
-        ? [row(LINK, { proposal_id: "gov_action1link", expiration: 42 })]
-        : [{ proposal_id: "gov_action1unresolved", expiration: 42 }],
-    );
+    captureProposalQueries(() => [
+      row(anchor({ cip179: LINK }), { proposal_id: "gov_action1link" }),
+      row(anchor({ title: "Not a survey link" }), {
+        proposal_id: "gov_action1plain",
+      }),
+      row(null, { proposal_id: "gov_action1unresolved" }),
+    ]);
     const { links, unresolved } = await new KoiosDataSource(
       CONFIG,
     ).fetchGovernanceLinks(0, [41]);
@@ -946,6 +989,7 @@ describe("fetchGovernanceLinks — server-side filtering", () => {
         title: null,
       },
     ]);
+    // A resolved anchor that simply isn't a link is settled, not unknown.
     expect(unresolved).toEqual([
       { actionId: "gov_action1unresolved", endEpoch: 41 },
     ]);
@@ -959,21 +1003,21 @@ describe("fetchGovernanceLinks — pagination (finding 37)", () => {
   it("offset-paginates proposal_list under a stable unique order", async () => {
     const PAGE = 100;
     const queries = captureProposalQueries((p) => {
-      if (!isLinkQuery(p)) return [];
       const offset = Number(p.get("offset"));
       const count = offset === 0 ? PAGE : 2; // page 0 full → page 1 short
       return Array.from({ length: count }, (_, i) =>
-        row(LINK, { proposal_id: `gov_action1_${offset + i}` }),
+        row(anchor({ title: "T", cip179: LINK }), {
+          proposal_id: `gov_action1_${offset + i}`,
+        }),
       );
     });
     const { links } = await new KoiosDataSource(CONFIG).fetchGovernanceLinks(
       0,
       [41],
     );
-    const linkPages = queries.filter(isLinkQuery);
-    expect(linkPages.map((p) => p.get("offset"))).toEqual(["0", String(PAGE)]);
+    expect(queries.map((p) => p.get("offset"))).toEqual(["0", String(PAGE)]);
     // unique, stable across pages
-    expect(linkPages.every((p) => p.get("order") === "proposal_id.asc")).toBe(
+    expect(queries.every((p) => p.get("order") === "proposal_id.asc")).toBe(
       true,
     );
     expect(links).toHaveLength(PAGE + 2); // both pages' links accumulated

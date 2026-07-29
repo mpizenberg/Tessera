@@ -221,6 +221,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0009_snapshot_chunks.sql",
       "0010_response_rows.sql",
       "0011_sealed_reveal.sql",
+      "0012_refresh_run_gov_links.sql",
     ]);
   });
 });
@@ -610,6 +611,7 @@ describe("store-node refresh_run health metrics", () => {
     koiosCalls: 7,
     ok: true,
     error: null,
+    govLinksOk: true,
     incomplete: false,
     surveys: 3,
     responses: 5,
@@ -633,6 +635,7 @@ describe("store-node refresh_run health metrics", () => {
       koiosCalls: 11,
       ok: true,
       error: null,
+      govLinksOk: true,
       incomplete: true,
     });
 
@@ -647,6 +650,17 @@ describe("store-node refresh_run health metrics", () => {
       runs: 0,
       failures: 0,
       koiosCalls: 0,
+    });
+  });
+
+  // A gov-links failure leaves the run `ok` (the snapshot still publishes, with
+  // the previous run's links), so this flag is the only thing that records it.
+  it("records a gov-links failure on an otherwise successful run", async () => {
+    store = openBackendStore(":memory:");
+    await store.putRefreshRun(run(1000, { govLinksOk: false }));
+    expect(await store.lastRefreshRun()).toMatchObject({
+      ok: true,
+      govLinksOk: false,
     });
   });
 

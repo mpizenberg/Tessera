@@ -77,6 +77,15 @@ const fromDb = (r: DbValidatedRow): ValidatedResponseRow => ({
   wellFormed: r.wellFormed !== 0,
 });
 
+interface DbRefreshRunRow extends Omit<
+  RefreshRunRow,
+  "ok" | "govLinksOk" | "incomplete"
+> {
+  ok: number;
+  govLinksOk: number;
+  incomplete: number;
+}
+
 export function d1BackendStore(db: D1Like): BackendStore {
   return {
     async completedValidations(): Promise<Map<string, string | null>> {
@@ -437,9 +446,9 @@ export function d1BackendStore(db: D1Like): BackendStore {
         db
           .prepare(
             `INSERT OR REPLACE INTO refresh_run
-               (started_at, duration_ms, koios_calls, ok, error, incomplete,
-                surveys, responses, payload_bytes)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               (started_at, duration_ms, koios_calls, ok, error, gov_links_ok,
+                incomplete, surveys, responses, payload_bytes)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .bind(
             row.startedAt,
@@ -447,6 +456,7 @@ export function d1BackendStore(db: D1Like): BackendStore {
             row.koiosCalls,
             row.ok ? 1 : 0,
             row.error,
+            row.govLinksOk ? 1 : 0,
             row.incomplete ? 1 : 0,
             row.surveys,
             row.responses,
@@ -463,14 +473,14 @@ export function d1BackendStore(db: D1Like): BackendStore {
           `SELECT ${REFRESH_RUN_COLUMNS} FROM refresh_run
            ORDER BY started_at DESC LIMIT 1`,
         )
-        .first<
-          Omit<RefreshRunRow, "ok" | "incomplete"> & {
-            ok: number;
-            incomplete: number;
-          }
-        >();
+        .first<DbRefreshRunRow>();
       if (!row) return null;
-      return { ...row, ok: row.ok !== 0, incomplete: row.incomplete !== 0 };
+      return {
+        ...row,
+        ok: row.ok !== 0,
+        govLinksOk: row.govLinksOk !== 0,
+        incomplete: row.incomplete !== 0,
+      };
     },
     async refreshTotalsSince(sinceUnix: number): Promise<RefreshTotals> {
       const row = await db
@@ -519,5 +529,5 @@ const ARTIFACT_COLUMNS = `survey_key AS surveyKey, end_epoch AS endEpoch,
        artifact_hash AS artifactHash, artifact, created_at AS createdAt`;
 
 const REFRESH_RUN_COLUMNS = `started_at AS startedAt, duration_ms AS durationMs,
-       koios_calls AS koiosCalls, ok, error, incomplete, surveys,
-       responses, payload_bytes AS payloadBytes`;
+       koios_calls AS koiosCalls, ok, error, gov_links_ok AS govLinksOk,
+       incomplete, surveys, responses, payload_bytes AS payloadBytes`;

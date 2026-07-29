@@ -500,6 +500,7 @@ describe("GET /api/health", () => {
     koiosCalls: 12,
     ok: true,
     error: null,
+    govLinksOk: true,
     incomplete: false,
     surveys: 2,
     responses: 4,
@@ -532,6 +533,7 @@ describe("GET /api/health", () => {
       startedAt: NOW - 20,
       koiosCalls: 12,
       ok: true,
+      govLinksOk: true,
     });
     expect(body["last24h"]).toEqual({
       runs: 3,

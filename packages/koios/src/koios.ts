@@ -39,6 +39,7 @@ import type {
   SurveyBundle,
   SurveyRecord,
   TxProof,
+  UnresolvedGovAction,
 } from "cip-179/domain";
 import type { TallyArtifact } from "cip-179/tally";
 import type { AppConfig, DataSource, SurveyListPayload } from "@tessera/core";
@@ -121,12 +122,6 @@ interface ScriptInfoRow {
   bytes: string | null;
 }
 
-/**
- * A governance action carrying a survey link, as projected by the scan: Koios
- * (PostgREST) evaluates the `body.cip179` sub-path server-side, so the rest of
- * an anchor document — and every action that isn't a link — never crosses the
- * wire.
- */
 export interface ProposalRow {
   proposal_id: string;
   /**
@@ -140,17 +135,14 @@ export interface ProposalRow {
    * Never null: an `expiration=in.(…)` list matches no NULL.
    */
   expiration: number;
-  /** The anchor's `body.cip179`; its presence is the query's filter, its shape {@link parseGovLink}'s call. */
-  cip179: unknown;
-  /** The action's own CIP-108 `body.title` — any JSON type, as authored. */
-  title: unknown;
-}
-
-/** A governance action whose anchor Koios could not resolve (`meta_json` null). */
-interface UnresolvedProposalRow {
-  proposal_id: string;
-  /** Never null — same `expiration=in.(…)` guarantee as {@link ProposalRow}. */
-  expiration: number;
+  /**
+   * The anchor document, which Koios resolves off-chain and caches — null when
+   * it couldn't. Read whole rather than projected down to its `body.cip179`:
+   * whether an anchor is *unresolved* or merely not-a-link has to be decided
+   * from the same response that carries the link, and Koios's nodes disagree
+   * about which anchors they have resolved.
+   */
+  meta_json: unknown;
 }
 
 /**
@@ -823,17 +815,32 @@ export class KoiosDataSource implements DataSource {
   }
 
   /**
-   * Governance actions linking a survey that ends at one of `endEpochs`, plus
-   * the actions in those same epochs whose anchor Koios couldn't resolve.
+   * Governance actions that could link a survey ending at one of `endEpochs`:
+   * the resolved links, plus the actions whose anchor Koios couldn't resolve —
+   * unknown, not "none" (finding 6).
    *
-   * Both sets are cut server-side, and each cut is lossless. Epoch alignment
+   * The scan is cut server-side to those epochs, losslessly: epoch alignment
    * (`expiration - 1 === end_epoch`) is the join key every consumer applies, so
-   * an action expiring outside the caller's epochs is dead weight in every path;
-   * with no epochs at all there is nothing an action could align to, so there is
-   * nothing to fetch. Any action kind may carry a link (CIP-179 v5), so kind is
-   * not filtered; `sinceUnix` bounds the scan by block time, which additionally
-   * keeps pre-window actions with a coincidentally matching expiration out of the
-   * *unknown* set.
+   * an action expiring outside them is dead weight in every path. With no epochs
+   * there is nothing to align to, so nothing is fetched. Any action kind may
+   * carry a link (CIP-179 v5), so kind is not filtered; `sinceUnix` bounds the
+   * scan by block time, which additionally keeps pre-window actions with a
+   * coincidentally matching expiration out of the *unknown* set. Koios requires
+   * a filtered column to be selected — a filter over an unselected column is
+   * silently ignored, and the rows come back unfiltered.
+   *
+   * One request per page carries both classifications, deliberately: Koios's
+   * nodes disagree about which anchors they have resolved, so splitting "is it a
+   * link?" from "is the anchor readable?" across requests lets an action fall
+   * out of both answers and read as a settled "not linked".
+   *
+   * Offset-paginate like the label scan (finding 37): a single unbounded GET
+   * silently drops rows past Koios's ~1000-row cap, and *which* rows is
+   * undefined — a linked survey could then render standalone, differently across
+   * refreshes. `order=proposal_id.asc` (unique, and selected) makes pagination
+   * stable so no row shuffles across a page boundary (finding 2). Links are
+   * best-effort display enrichment (never a hashed input), so a scan that
+   * somehow exceeds the page cap just logs and returns what it has.
    */
   async fetchGovernanceLinks(
     sinceUnix: number,
@@ -843,65 +850,33 @@ export class KoiosDataSource implements DataSource {
       .sort((a, b) => a - b)
       .map((e) => e + 1);
     if (expirations.length === 0) return { links: [], unresolved: [] };
-    const scope =
-      `&expiration=in.(${expirations.join(",")})` +
-      `&block_time=gte.${Math.floor(sinceUnix)}`;
-    const [linkRows, unresolvedRows] = await Promise.all([
-      this.proposalPages<ProposalRow>(
-        "select=proposal_id,expiration,block_time," +
-          "cip179:meta_json-%3Ebody-%3Ecip179,title:meta_json-%3Ebody-%3Etitle" +
-          "&meta_json-%3Ebody-%3Ecip179=not.is.null" +
-          scope,
-      ),
-      // Koios fills `meta_json` only when it can reach and parse the off-chain
-      // anchor, so a null one means the action's link status is *unknown*, not
-      // "none" — kept apart from the links so a mechanism-B verdict that could
-      // depend on it is never frozen against it (finding 6). Selecting the column
-      // costs nothing here: every matching row's value is null.
-      this.proposalPages<UnresolvedProposalRow>(
-        "select=proposal_id,expiration,block_time,meta_json&meta_json=is.null" +
-          scope,
-      ),
-    ]);
-    return {
-      links: linkRows
-        .map(parseGovLink)
-        .filter((link): link is GovLink => link !== null),
-      unresolved: unresolvedRows.map((row) => ({
-        actionId: row.proposal_id,
-        endEpoch: row.expiration - 1,
-      })),
-    };
-  }
 
-  /**
-   * Every row of one `/proposal_list` query, offset-paginated like the label
-   * scan (finding 37): a single unbounded GET silently drops rows past Koios's
-   * ~1000-row cap, and *which* rows is undefined — a linked survey could then
-   * render standalone, differently across refreshes. `order=proposal_id.asc`
-   * (unique, and selected) makes pagination stable so no row shuffles across a
-   * page boundary (finding 2). Links are best-effort display enrichment (never a
-   * hashed input), so a query that somehow exceeds the page cap just logs and
-   * returns what it has rather than flagging.
-   *
-   * `query` must SELECT every column it filters on: Koios silently ignores a
-   * filter over a column absent from the projection, yielding unfiltered rows
-   * rather than an error.
-   */
-  private async proposalPages<T>(query: string): Promise<T[]> {
-    const rows: T[] = [];
+    const links: GovLink[] = [];
+    const unresolved: UnresolvedGovAction[] = [];
     for (let page = 0; page < MAX_PAGES; page++) {
-      const got = await this.get<T[]>(
-        `/proposal_list?${query}&order=proposal_id.asc` +
+      const rows = await this.get<ProposalRow[]>(
+        `/proposal_list?select=proposal_id,expiration,block_time,meta_json` +
+          `&expiration=in.(${expirations.join(",")})` +
+          `&block_time=gte.${Math.floor(sinceUnix)}` +
+          `&order=proposal_id.asc` +
           `&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`,
       );
-      rows.push(...got);
-      if (got.length < PAGE_SIZE) return rows; // last page reached → exhausted
+      for (const row of rows) {
+        const link = parseGovLink(row);
+        if (link) links.push(link);
+        else if (anchorUnresolved(row.meta_json)) {
+          unresolved.push({
+            actionId: row.proposal_id,
+            endEpoch: row.expiration - 1,
+          });
+        }
+      }
+      if (rows.length < PAGE_SIZE) return { links, unresolved };
     }
     console.warn(
       `proposal_list exceeded ${MAX_PAGES * PAGE_SIZE} rows; governance links may be incomplete`,
     );
-    return rows;
+    return { links, unresolved };
   }
 
   private classify(
@@ -962,6 +937,19 @@ export class KoiosDataSource implements DataSource {
 }
 
 /**
+ * Whether a proposal's anchor is *unresolved* (Koios returned no `meta_json`)
+ * rather than resolved-but-not-a-link. Koios fills `meta_json` only when it can
+ * reach and parse the off-chain anchor, so a null (or non-object) value means
+ * the doc couldn't be resolved — its link status is unknown, not "none", and a
+ * verdict that could depend on it must not be frozen against it (finding 6). A
+ * resolved anchor is a JSON object; we let {@link parseGovLink} decide whether
+ * it actually carries a `body.cip179` survey link.
+ */
+export function anchorUnresolved(metaJson: unknown): boolean {
+  return typeof metaJson !== "object" || metaJson === null;
+}
+
+/**
  * Extract a CIP-179 survey link from a governance action's anchor metadata (any
  * action kind — CIP-179 v5). The link lives in `body.cip179` (so it is part of
  * the CIP-108 canonicalized, author-witnessed body), is tagged
@@ -971,10 +959,8 @@ export class KoiosDataSource implements DataSource {
  */
 export function parseGovLink(row: ProposalRow): GovLink | null {
   // Shared shape validation (single source of truth with the proposal builder);
-  // here we need only the ref — a malformed link yields null. The scan's filter
-  // asserts nothing but presence, so the projected sub-document is validated
-  // exactly as a whole anchor would be.
-  const { surveyRef } = parseCip179Link({ body: { cip179: row.cip179 } });
+  // here we need only the ref — a missing/malformed link yields null.
+  const { surveyRef } = parseCip179Link(row.meta_json);
   if (!surveyRef) return null;
 
   // TODO(govlink-title-trust): `title` is attacker-controlled off-chain anchor
@@ -984,6 +970,10 @@ export function parseGovLink(row: ProposalRow): GovLink | null {
   // authority. The UI currently shows it as "Advertised by {title}". Later:
   // present it as unverified (length-clamp + an explicit caveat) and soften the
   // "Advertised by" wording so it doesn't overstate verification.
+  const meta = row.meta_json as Record<string, unknown>;
+  const body = meta["body"] as Record<string, unknown>;
+  const title = typeof body["title"] === "string" ? body["title"] : null;
+
   return {
     surveyKey: `${surveyRef.txId}:${surveyRef.index}`,
     actionId: row.proposal_id,
@@ -991,6 +981,6 @@ export function parseGovLink(row: ProposalRow): GovLink | null {
     // active epoch); the action's expiry epoch — what a linked survey's
     // `end_epoch` must equal — is `expiration - 1`. See ProposalRow.expiration.
     endEpoch: row.expiration - 1,
-    title: typeof row.title === "string" ? row.title : null,
+    title,
   };
 }
