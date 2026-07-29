@@ -73,9 +73,9 @@ export const HealthFooter: Component = () => {
   );
   onCleanup(() => clearInterval(clock));
 
-  // Live age from the fetch-time stamp: `ageSeconds` was true at fetch time,
-  // and the wall clock has moved since — so tick it forward locally. This is
-  // exactly what makes a wedged backend visible without refetching.
+  // `ageSeconds` was true when the backend answered, and the wall clock has
+  // moved since — so tick it forward locally. This is exactly what makes a
+  // wedged backend visible without refetching.
   const age = (): number | undefined => {
     const snap = health()?.snapshot;
     if (!snap) return undefined;

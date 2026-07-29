@@ -162,7 +162,10 @@ export async function refreshSnapshot(
     await store.replaceSnapshot(snapshot.surveys, snapshot.responses, {
       tip: JSON.stringify(toJsonSafe(tip)),
       incomplete: records.incomplete === true,
-      fetchedAt: Math.floor(Date.now() / 1000),
+      // Stamped with the scan's start, not this write: `tip` was read then, so
+      // the pair describes one instant, and age counts from when the data was
+      // true rather than from when it happened to land.
+      fetchedAt: startedAt,
     });
 
     await recordRun({

@@ -75,6 +75,7 @@ export interface BackendHealth {
   readonly network: string;
   /** Freshness of the served snapshot, or null before the first refresh. */
   readonly snapshot: {
+    /** Unix seconds when the scan behind the snapshot started reading. */
     readonly fetchedAt: number;
     readonly ageSeconds: number;
   } | null;
@@ -91,7 +92,7 @@ export interface BackendHealth {
     readonly incomplete: boolean;
     readonly surveys: number;
     readonly responses: number;
-    /** Serialized snapshot size — the single-blob storage row's growth metric. */
+    /** Total wire JSON across the stored snapshot rows — the growth metric. */
     readonly payloadBytes: number;
   } | null;
   /** Rolling totals over the last 24 hours of refresh runs. */

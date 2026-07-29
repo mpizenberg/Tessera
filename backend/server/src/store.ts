@@ -328,7 +328,12 @@ export interface SnapshotMeta {
   /** Wire JSON of the snapshot's `ChainTip`. */
   readonly tip: string;
   readonly incomplete: boolean;
-  /** Versions every snapshot-derived route's ETag. */
+  /**
+   * Unix seconds when the producing scan started — the instant {@link tip} was
+   * read, so the envelope describes one point in time rather than straddling
+   * the run. Versions every snapshot-derived route's ETag; the refresh lease
+   * serializes runs, so successive snapshots always carry distinct values.
+   */
   readonly fetchedAt: number;
 }
 

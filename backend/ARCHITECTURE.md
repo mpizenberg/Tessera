@@ -196,7 +196,10 @@ secret instead of in each browser.
   (`survey_index`), one per response (`response`), plus a shared envelope
   (`snapshot_meta`: tip, incomplete flag, `fetchedAt`) — written in a single
   transaction, so the whole snapshot becomes visible at once and a reader never
-  sees one run's rows beside another's.
+  sees one run's rows beside another's. `fetchedAt` is the scan's **start**,
+  the instant `tip` was read: the envelope then describes one point in time
+  instead of straddling the run, and reported age never understates staleness
+  by the run's duration.
 - The serving endpoints read only the rows they serve (§5.1) plus that
   freshness stamp; `/tip` and `/tx_status` may stay live passthroughs for
   immediacy.

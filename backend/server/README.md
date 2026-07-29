@@ -63,12 +63,16 @@ port, refresh interval, or db path.
 
 Snapshot-derived routes answer `503` until the first refresh completes, and
 carry an `ETag` versioned by `fetchedAt`, so revalidation between refreshes is
-a bodiless `304`. Payloads use the `@tessera/core` JSON-safe wire form (bytes →
-hex under `$bytes`, big integers → decimal strings under `$bigint`) so they
-round-trip losslessly to the browser. The `/api/*` routes send permissive CORS
-headers (the
-data is public and cookieless), so the browser app can read them cross-origin.
-Bodies are compressed when the client accepts it (hex-heavy JSON shrinks ~4×).
+a bodiless `304`. `fetchedAt` is when the producing scan _started_ reading —
+the instant its `tip` was taken — so `ageSeconds` counts from when the data was
+true, not from when the refresh finished writing it.
+
+Payloads use the `@tessera/core` JSON-safe wire form (bytes → hex under
+`$bytes`, big integers → decimal strings under `$bigint`) so they round-trip
+losslessly to the browser. The `/api/*` routes send permissive CORS headers
+(the data is public and cookieless), so the browser app can read them
+cross-origin. Bodies are compressed when the client accepts it (hex-heavy JSON
+shrinks ~4×).
 
 ## Use from the app
 
