@@ -435,11 +435,19 @@ registered, provenance}`, plus per-`(epoch, role)` totals. This table is shared
 - **Sealed surveys** freeze weights the same way (the credential union is
   identical pre- and post-dedup, so the deadline snapshot is correct), then add
   a reveal step: emission waits until the definition's drand round has published
-  (`roundIsAvailable`), decrypts the **pre-dedup** in-window set (a pass-wide
-  `MAX_SEALED_DECRYPTS_PER_PASS` budget bounds Worker CPU; one BLS-verified
-  `fetchBeacon` per survey), runs reveal→validate→dedup, and emits a
+  (`roundIsAvailable`), decrypts the **pre-dedup** in-window set (one
+  BLS-verified `fetchBeacon` per survey), runs reveal→validate→dedup, and emits a
   `sealed=true` artifact. A transient reveal failure postpones (never aborts)
   the pass; a non-quicknet sealed survey is skipped forever (no artifact).
+- **Reveal is bounded by Worker CPU, not by subrequests.** One
+  `decryptWithBeacon` measures ~20 ms on workerd, against the 30 s a cron under
+  an hour apart gets on the paid plan (`limits.cpu_ms` cannot raise that; the
+  free plan's 10 ms cannot fit a single decrypt). So a pass shares
+  `MAX_SEALED_DECRYPTS_PER_PASS` across surveys, and one survey may spend up to
+  `MAX_SEALED_DECRYPTS_PER_SURVEY` when it has the pass to itself. **Known gap:**
+  a survey with more in-window responses than that ceiling is postponed every
+  pass and never finalizes — reveal is all-or-nothing, so unlike weights it has
+  no resume cursor to pick up from.
 - **Execution.** At PoC scale (stakeholders bulk; DReps small-N single-GET) this
   fits a single Worker invocation. The `(epoch, role, credential)` table **is**
   the resume cursor if it ever doesn't: rows are written only once known, so a

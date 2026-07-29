@@ -59,12 +59,26 @@ import { tlockSealedReveal, type SealedRevealFn } from "./sealedReveal";
 import type { TallyStore, ValidatedResponseRow, WeightRow } from "./store";
 
 /**
- * Per-pass cap on sealed decryptions across all surveys — bounds Worker CPU per
- * cron. A survey needing more than the *full* budget still runs (alone, when the
- * budget is otherwise untouched) so an oversized sealed survey always makes
- * progress; smaller ones that don't fit the remaining budget wait for next pass.
+ * Per-pass cap on sealed decryptions across all surveys — the decrypt share of
+ * the CPU one cron invocation gets (`wrangler.toml`). One `decryptWithBeacon`
+ * measures ~20 ms on workerd, so this is ~3 s there and ~9 s on a core three
+ * times slower: under a third of the ceiling, leaving the rest of the pass its
+ * parsing, proof checks and hashing. Reveal is all-or-nothing per survey, so
+ * this bounds how much a pass spends *sharing* — once it is gone, later surveys
+ * wait for a pass where they fit.
  */
-const MAX_SEALED_DECRYPTS_PER_PASS = 500;
+const MAX_SEALED_DECRYPTS_PER_PASS = 150;
+
+/**
+ * What one survey's reveal may cost when it takes a whole pass to itself (which
+ * it does when the budget above is still untouched) — twice the shared budget,
+ * since nothing else is decrypting. A survey needing more than this cannot be
+ * revealed inside a single invocation at all: attempting it gets the pass killed
+ * mid-decrypt, stranding every survey after it in iteration order too, so it is
+ * postponed instead. Reveal is not resumable, so that postponement is permanent
+ * — the survey never finalizes.
+ */
+const MAX_SEALED_DECRYPTS_PER_SURVEY = 2 * MAX_SEALED_DECRYPTS_PER_PASS;
 
 /**
  * Roles artifacts cover — derived from the hashed ruleset descriptor (not a
@@ -280,10 +294,16 @@ export async function finalizeClosedSurveys(
             console.warn(`finalize: ${key} postponed — ${pending}`);
             continue;
           }
-          // Decrypt budget: a survey larger than the whole budget still runs when
-          // the budget is untouched (progress guaranteed); otherwise a survey that
-          // doesn't fit the remainder waits for next pass.
           const need = eligible.length;
+          if (need > MAX_SEALED_DECRYPTS_PER_SURVEY) {
+            console.warn(
+              `finalize: ${key} cannot be revealed — ${need} sealed responses ` +
+                `exceed one invocation's decrypt ceiling (${MAX_SEALED_DECRYPTS_PER_SURVEY})`,
+            );
+            continue;
+          }
+          // Otherwise a survey that doesn't fit what's left of the pass-wide
+          // budget waits for a pass where it does.
           if (
             need > sealedDecryptBudget &&
             sealedDecryptBudget < MAX_SEALED_DECRYPTS_PER_PASS

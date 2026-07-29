@@ -121,6 +121,12 @@ That sits comfortably inside the free plan's 50-per-invocation cap, and
 finalization is resumable: if a run were ever cut short, already-written weight
 rows are not re-fetched and the next cron picks up where it left off.
 
+CPU is the tighter limit once sealed surveys are in play: a cron under an hour
+apart gets 30 s on the paid plan and 10 ms on the free one, while a single
+timelock decrypt costs ~20 ms on workerd. Sealed reveal therefore needs the paid
+plan; `finalize.ts` derives its per-pass decrypt budget from that 30 s, and
+`wrangler.toml` pins the same ceiling with `limits.cpu_ms`.
+
 ## Requirements
 
 Node ≥ 22.5 (uses the built-in `node:sqlite`, no native dependency).

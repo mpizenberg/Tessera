@@ -18,6 +18,15 @@ compatibility_flags = ["nodejs_compat"]
 # ≈ the Node entry's 180 s REFRESH_SECONDS default (cron floor is 1 minute).
 crons = ["*/3 * * * *"]
 
+# The CPU a refresh may spend, stated because finalize.ts derives its sealed
+# decrypt budget from it. A cron under an hour apart gets 30 s on the paid plan
+# whatever this says (the 5-minute maximum is for HTTP requests), so this pins
+# the fetch path to the same ceiling rather than raising the cron's. The free
+# plan caps both at 10 ms — less than one timelock decrypt, so sealed surveys
+# cannot be revealed there at all.
+[limits]
+cpu_ms = 30000
+
 [vars]
 NETWORK = "preview"
 
@@ -27,7 +36,8 @@ database_name = "tessera-cache-preview"
 database_id = "1d86fdaa-b281-4b9d-8f37-9b540eb4b6dd"
 migrations_dir = "migrations"
 
-# Environments do not inherit [vars] or bindings — redeclare everything.
+# Environments inherit [triggers] and [limits] but not [vars] or bindings —
+# those are redeclared below.
 [env.mainnet]
 name = "tessera-backend-mainnet"
 [env.mainnet.vars]

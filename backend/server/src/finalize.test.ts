@@ -197,6 +197,26 @@ function validatedRow(
   };
 }
 
+/**
+ * `n` sealed responses for one survey, each from its own credential so none
+ * dedups away, numbered from `offset` so two fleets never collide. Returns the
+ * records, their validated rows, and a registered weight for every credential —
+ * enough to make the survey emit if the pass lets it.
+ */
+function sealedFleet(n: number, surveyKey = SURVEY_KEY, offset = 0) {
+  const recs: ResponseRecord[] = [];
+  const rows: ValidatedResponseRow[] = [];
+  const weights: Record<string, WeightInfo> = {};
+  for (let i = offset; i < offset + n; i++) {
+    const cred = keyCred(i.toString(16).padStart(56, "0"));
+    const rec = sealedResponse(i.toString(16).padStart(64, "0"), cred);
+    recs.push(rec);
+    rows.push(validatedRow(rec, { surveyKey }));
+    weights[credentialKey(cred)] = { weight: 1n, registered: true };
+  }
+  return { recs, rows, weights };
+}
+
 function fakeInputs(
   weights: Record<string, WeightInfo>,
   totals: { stakeholder?: bigint | null; drep?: bigint | null } = {},
@@ -1133,6 +1153,73 @@ describe("finalizeClosedSurveys", () => {
     expect(store.weights.size).toBe(1); // frozen this pass
     expect(store.artifacts.size).toBe(0); // no artifact until the round publishes
     expect(reveal).not.toHaveBeenCalled();
+  });
+
+  // Finding 28 — one timelock decrypt costs ~20 ms of Worker CPU, so the number
+  // of them a pass may do is a real limit, not a formality.
+  it("postpones a sealed survey too large for one invocation's decrypt ceiling", async () => {
+    const store = memBackendStore();
+    // One past MAX_SEALED_DECRYPTS_PER_SURVEY (2 × the 150-per-pass budget).
+    const fleet = sealedFleet(301);
+    await seed(store, fleet.rows);
+    const reveal = stubReveal({});
+
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      fakeInputs({}),
+      noProofs,
+      records(survey(definition({ submissionMode: SEALED_MODE })), fleet.recs),
+      TIP,
+      reveal,
+    );
+
+    // Attempting it would get the invocation killed mid-decrypt, taking every
+    // later survey's finalization with it — so it is never attempted.
+    expect(reveal).not.toHaveBeenCalled();
+    expect(store.artifacts.size).toBe(0);
+  });
+
+  it("spends the pass-wide decrypt budget on one sealed survey and defers the next", async () => {
+    const store = memBackendStore();
+    const first = sealedFleet(150); // exactly MAX_SEALED_DECRYPTS_PER_PASS
+    const SURVEY_KEY2 = `${SURVEY_TX2}:0`;
+    const second = sealedFleet(1, SURVEY_KEY2, 200);
+    await seed(store, [...first.rows, ...second.rows]);
+    const reveal = stubReveal(
+      Object.fromEntries(first.recs.map((r) => [r.txHash, SEALED_ANSWER])),
+    );
+    const sealedDef = definition({ submissionMode: SEALED_MODE });
+
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      fakeInputs(first.weights),
+      noProofs,
+      {
+        surveys: [
+          survey(sealedDef),
+          {
+            txHash: SURVEY_TX2,
+            slot: 100,
+            epochNo: 495,
+            ref: { txId: hexToBytes(SURVEY_TX2), index: 0 },
+            definition: sealedDef,
+          },
+        ],
+        responses: [...first.recs, ...second.recs],
+        cancellations: [],
+      },
+      TIP,
+      reveal,
+    );
+
+    expect(reveal).toHaveBeenCalledTimes(1);
+    expect(reveal.mock.calls[0]![0]).toHaveLength(150);
+    expect(store.artifacts.has(SURVEY_KEY)).toBe(true);
+    // The budget is gone, so the second survey waits for a pass of its own —
+    // reveal is all-or-nothing, so it can't take the remaining zero.
+    expect(store.artifacts.has(SURVEY_KEY2)).toBe(false);
   });
 
   it("postpones (does not escape) when the reveal throws", async () => {
