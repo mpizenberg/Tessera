@@ -210,21 +210,21 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
     });
   });
 
-  it("re-reads the addresses a full pass left unsettled, without the churny one (finding 13)", async () => {
+  it("re-asks about the addresses a page left unsettled, without the churny one (finding 13)", async () => {
     const [addrA, addrB] = await Promise.all([
       stakeAddress(cred(HASH_A), "preview"),
       stakeAddress(cred(HASH_B), "preview"),
     ]);
-    const batches: string[][] = [];
+    const asks: { batch: string[]; offset: number }[] = [];
     stubFetch((url, body) => {
       if (url.includes("/account_stake_history")) return [];
       if (url.includes("/account_update_history")) {
-        const asked = body?._stake_addresses ?? [];
+        const batch = body?._stake_addresses ?? [];
         const offset = Number(new URL(url).searchParams.get("offset"));
-        if (offset === 0) batches.push(asked);
-        // A's history is deeper than the page cap, so a pass over both accounts
+        asks.push({ batch, offset });
+        // A's history is deeper than one page, so a page covering both accounts
         // never reaches B's rows at all.
-        return asked.includes(addrA)
+        return batch.includes(addrA)
           ? Array.from({ length: PAGE }, (_, i) =>
               reg(addrA, 1_000_000 - offset - i),
             )
@@ -237,14 +237,46 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
       1345,
       [cred(HASH_A), cred(HASH_B)],
     );
-    // The second pass drops A — settled on page 1 — and asks only about B.
-    expect(batches).toEqual([[addrA, addrB], [addrB]]);
+    // A settles on the first page, so the next ask narrows to B and restarts at
+    // offset 0 — A's remaining history is never paged through.
+    expect(asks).toEqual([
+      { batch: [addrA, addrB], offset: 0 },
+      { batch: [addrB], offset: 0 },
+    ]);
     expect(weights.get(`key:${HASH_A}`)).toEqual({
       registered: true,
       weight: 0n,
     });
     expect(weights.get(`key:${HASH_B}`)).toEqual({
       registered: false,
+      weight: 0n,
+    });
+  });
+
+  it("pages deeper only when a page settles nothing — a deciding slot longer than one page", async () => {
+    const addrA = await stakeAddress(cred(HASH_A), "preview");
+    const seenOffsets: number[] = [];
+    stubFetch((url) => {
+      if (url.includes("/account_stake_history")) return [];
+      if (url.includes("/account_update_history")) {
+        const offset = Number(new URL(url).searchParams.get("offset"));
+        seenOffsets.push(offset);
+        // One block's certificate list, wider than a page: nothing can settle
+        // until the read passes the end of slot 500.
+        return offset === 0
+          ? Array.from({ length: PAGE }, () => reg(addrA, 500))
+          : [reg(addrA, 500), dereg(addrA, 400)];
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+
+    const weights = await new KoiosTallyInputs(CONFIG).stakeholderWeights(
+      1345,
+      [cred(HASH_A)],
+    );
+    expect(seenOffsets).toEqual([0, PAGE]);
+    expect(weights.get(`key:${HASH_A}`)).toEqual({
+      registered: true, // slot 500 is all registrations; the 400 dereg is stale
       weight: 0n,
     });
   });

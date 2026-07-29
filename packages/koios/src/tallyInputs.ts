@@ -77,10 +77,10 @@ const DEREGISTRATION_CERT_TYPES = new Set(["stake_deregistration"]);
 const MAX_PAGES = 10;
 
 /**
- * How deep one {@link KoiosTallyInputs.decidingSlotPass} reads before narrowing
- * the batch instead. Only an account's newest slot decides, so an honest batch
- * settles on the first page however long its accounts' histories are; needing
- * more is already evidence that one account is crowding out the others.
+ * How deep {@link KoiosTallyInputs.decidingSlotPass} reads a batch whose page
+ * settled nothing — which can only mean every row on it shares one slot. Any
+ * other page narrows the batch instead, so this bounds how long a single
+ * block's certificate list may be, not how much history an account may have.
  */
 const MAX_DECIDING_PAGES = 20;
 
@@ -206,12 +206,13 @@ export class KoiosTallyInputs implements TallyInputSource {
    * event is overridden. An address absent from the result has no events at all
    * and so was never registered.
    *
-   * Cost tracks the batch's deciding slots, not its accounts' histories: each
-   * pass reads newest-first and stops once every address has been passed, so an
-   * account with a lifetime of registration churn is no dearer than one with a
-   * single registration. Whatever a pass can't settle is re-read as a narrower
-   * batch — the churny account settles first (its own newest slot heads its own
-   * history), so it drops out and stops crowding out the rest.
+   * Cost tracks the batch's deciding slots, not its accounts' histories: the
+   * read is newest-first and stops at the first page that settles anything, so
+   * an account with a lifetime of registration churn is no dearer than one with
+   * a single registration. Whatever that page left unsettled is re-asked as a
+   * narrower batch — the churny account settles first (its own newest slot
+   * heads its own history), so it drops out of the query and stops crowding out
+   * the rest.
    */
   private async decidingEvents(
     epoch: number,
@@ -230,8 +231,8 @@ export class KoiosTallyInputs implements TallyInputSource {
       if (unsettled.length < batch.length) {
         queue.push([...unsettled]);
       } else if (batch.length > 1) {
-        // Nothing settled at all: every address's deciding slot is the *same*
-        // slot, so paging deeper can't help — only a narrower batch shortens it.
+        // Nothing settled, and the pass already paged as deep as it may: every
+        // row it read shares one slot, so only a narrower batch shortens it.
         const mid = Math.ceil(batch.length / 2);
         queue.push(batch.slice(0, mid), batch.slice(mid));
       } else {
@@ -245,12 +246,17 @@ export class KoiosTallyInputs implements TallyInputSource {
   }
 
   /**
-   * One newest-first pass over `addresses`, bounded by
-   * {@link MAX_DECIDING_PAGES}: collects each address's rows at its highest slot
-   * and reports the addresses the pass couldn't settle. An address is settled
+   * One newest-first pass over `addresses`: collects each address's rows at its
+   * highest slot and reports the ones it couldn't settle. An address is settled
    * once the descending cursor drops below its highest slot — no later row can
    * join that slot — or once the result set runs out, which settles the whole
    * batch at once.
+   *
+   * Returns as soon as a page settles anything, so the caller re-asks about the
+   * remainder from `offset=0` rather than paying for the settled accounts'
+   * older history. A page that settles *nothing* is the one case narrowing
+   * can't improve on: the top row's account would otherwise be settled, so
+   * every row shares one slot and only a deeper page can reach its end.
    *
    * The early stop trusts `order=absolute_slot.desc`, so each row is checked
    * against the cursor: a Koios that ignored the ordering fails loudly instead
@@ -265,7 +271,6 @@ export class KoiosTallyInputs implements TallyInputSource {
   }> {
     const deciding = new Map<string, AccountUpdateRow[]>();
     const highest = new Map<string, number>();
-    const settled = new Set<string>();
     let cursor = Number.POSITIVE_INFINITY;
     for (let page = 0; page < MAX_DECIDING_PAGES; page++) {
       const rows = await this.post<AccountUpdateRow[]>(
@@ -301,12 +306,14 @@ export class KoiosTallyInputs implements TallyInputSource {
         }
       }
       if (rows.length < PAGE_LIMIT) return { deciding, unsettled: [] };
-      for (const [address, slot] of highest) {
-        if (slot > cursor) settled.add(address);
-      }
-      if (settled.size === addresses.length) break;
+      // An address with no row yet sits below everything read so far, so it is
+      // unsettled too — its deciding slot may still be further down.
+      const unsettled = addresses.filter(
+        (a) => (highest.get(a) ?? Number.NEGATIVE_INFINITY) <= cursor,
+      );
+      if (unsettled.length < addresses.length) return { deciding, unsettled };
     }
-    return { deciding, unsettled: addresses.filter((a) => !settled.has(a)) };
+    return { deciding, unsettled: addresses };
   }
 
   /**
