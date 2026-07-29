@@ -310,6 +310,19 @@ export interface ResponseRow {
   readonly record: string;
 }
 
+/**
+ * One survey's serving slice, as stored: wire JSON text throughout, so the
+ * bundle body is assembled by parse-and-concatenate.
+ */
+export interface SurveyBundleRows {
+  /** Wire JSON of the `SurveyRecord`. */
+  readonly record: string;
+  /** Wire JSON of the `CancellationRecord[]` targeting it. */
+  readonly cancellations: string;
+  /** Wire JSON of each `ResponseRecord` targeting it. */
+  readonly responses: string[];
+}
+
 /** The page-independent envelope stored alongside the materialized rows. */
 export interface SnapshotMeta {
   /** Wire JSON of the snapshot's `ChainTip`. */
@@ -351,14 +364,15 @@ export interface SnapshotStore {
   ): Promise<void>;
   /** The envelope, or null before the first refresh — the readiness signal. */
   snapshotMeta(): Promise<SnapshotMeta | null>;
-  /** One survey's row, or null if the snapshot doesn't have that survey. */
-  surveyRow(surveyKey: string): Promise<SurveyIndexRow | null>;
   /**
-   * Wire JSON of every response targeting one survey — all of them, raw and
-   * undeduped: the bundle feeds client-side audit and re-tally. Ordered by
-   * (slot, txHash, responseIndex) so a body is byte-stable between refreshes.
+   * One survey's bundle slice, or null if the snapshot doesn't have it. The
+   * responses are ALL of them, raw and undeduped — client-side audit and
+   * re-tally need the whole set — ordered by (slot, txHash, responseIndex) so
+   * a body is byte-stable between refreshes. Survey and responses are read
+   * together: separately, a refresh landing between the two reads would pair
+   * one run's survey with the next run's responses.
    */
-  responsesForSurvey(surveyKey: string): Promise<string[]>;
+  surveyBundle(surveyKey: string): Promise<SurveyBundleRows | null>;
   /**
    * Survey keys any of `credentials` responded to (`credentialKey` form). Raw
    * membership, no dedupe or validity filter — this feeds "surveys I answered".

@@ -25,6 +25,7 @@ import type {
   RefreshTotals,
   ResponseRow,
   SnapshotMeta,
+  SurveyBundleRows,
   SurveyIndexRow,
   SurveyPageQuery,
   ValidatedResponseRow,
@@ -41,17 +42,15 @@ import {
   RESPONSE_INSERT,
   SNAPSHOT_META_SELECT,
   SNAPSHOT_META_UPSERT,
+  SURVEY_BUNDLE_SELECT,
   SURVEY_INDEX_INSERT,
-  SURVEY_ROW_SELECT,
   countsFromDb,
-  pagedSurveyRowFromDb,
   respondedSql,
   responseInsertParams,
   surveyCountsSql,
   surveyIndexInsertParams,
   surveyIndexRowFromDb,
   surveyPageSql,
-  type DbPagedSurveyRow,
   type DbSurveyIndexRow,
 } from "./snapshotSql";
 
@@ -149,7 +148,7 @@ export function openBackendStore(path: string): BackendStore {
   const putSnapshotMetaStmt = db.prepare(SNAPSHOT_META_UPSERT);
   const insertSurveyStmt = db.prepare(SURVEY_INDEX_INSERT);
   const insertResponseStmt = db.prepare(RESPONSE_INSERT);
-  const surveyRowStmt = db.prepare(SURVEY_ROW_SELECT);
+  const surveyBundleStmt = db.prepare(SURVEY_BUNDLE_SELECT);
   const responsesForSurveyStmt = db.prepare(RESPONSES_FOR_SURVEY);
 
   const completedStmt = db.prepare(
@@ -448,15 +447,15 @@ export function openBackendStore(path: string): BackendStore {
       if (!row) return null;
       return { ...row, incomplete: row.incomplete !== 0 };
     },
-    async surveyRow(surveyKey: string): Promise<SurveyIndexRow | null> {
-      const row = surveyRowStmt.get(surveyKey) as DbSurveyIndexRow | undefined;
-      return row ? surveyIndexRowFromDb(row) : null;
-    },
-    async responsesForSurvey(surveyKey: string): Promise<string[]> {
-      const rows = responsesForSurveyStmt.all(surveyKey) as {
+    async surveyBundle(surveyKey: string): Promise<SurveyBundleRows | null> {
+      const row = surveyBundleStmt.get(surveyKey) as
+        | { record: string; cancellations: string }
+        | undefined;
+      if (!row) return null;
+      const responses = responsesForSurveyStmt.all(surveyKey) as {
         record: string;
       }[];
-      return rows.map((r) => r.record);
+      return { ...row, responses: responses.map((r) => r.record) };
     },
     async respondedSurveyKeys(
       credentials: readonly string[],
@@ -475,8 +474,8 @@ export function openBackendStore(path: string): BackendStore {
       return (
         db
           .prepare(sql)
-          .all(...(params as SqlValue[])) as unknown as DbPagedSurveyRow[]
-      ).map(pagedSurveyRowFromDb);
+          .all(...(params as SqlValue[])) as unknown as DbSurveyIndexRow[]
+      ).map(surveyIndexRowFromDb);
     },
     async surveyIndexCounts(
       tipEpoch: number,

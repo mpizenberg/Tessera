@@ -170,19 +170,22 @@ export function memBackendStore(): MemBackendStore {
     async snapshotMeta() {
       return meta;
     },
-    async surveyRow(surveyKey) {
-      return surveyIndexRows.find((r) => r.surveyKey === surveyKey) ?? null;
-    },
-    async responsesForSurvey(surveyKey) {
-      return responseRows
-        .filter((r) => r.surveyKey === surveyKey)
-        .sort(
-          (a, b) =>
-            a.slot - b.slot ||
-            (a.txHash < b.txHash ? -1 : a.txHash > b.txHash ? 1 : 0) ||
-            a.responseIndex - b.responseIndex,
-        )
-        .map((r) => r.record);
+    async surveyBundle(surveyKey) {
+      const survey = surveyIndexRows.find((r) => r.surveyKey === surveyKey);
+      if (!survey) return null;
+      return {
+        record: survey.record,
+        cancellations: survey.cancellations,
+        responses: responseRows
+          .filter((r) => r.surveyKey === surveyKey)
+          .sort(
+            (a, b) =>
+              a.slot - b.slot ||
+              (a.txHash < b.txHash ? -1 : a.txHash > b.txHash ? 1 : 0) ||
+              a.responseIndex - b.responseIndex,
+          )
+          .map((r) => r.record),
+      };
     },
     async respondedSurveyKeys(credentials) {
       const wanted = new Set(credentials);

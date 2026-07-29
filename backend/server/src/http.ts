@@ -291,15 +291,13 @@ export function createApp(
     if (notModified(c, `W/"survey-${meta.fetchedAt}"`))
       return c.body(null, 304);
     const key = `${txHash}:${index}`;
-    const row = await store.surveyRow(key);
-    if (!row) return c.json({ error: `unknown survey ${key}` }, 404);
+    const bundle = await store.surveyBundle(key);
+    if (!bundle) return c.json({ error: `unknown survey ${key}` }, 404);
     const now = Math.floor(Date.now() / 1000);
     return c.json({
-      survey: JSON.parse(row.record) as unknown,
-      responses: (await store.responsesForSurvey(key)).map(
-        (record) => JSON.parse(record) as unknown,
-      ),
-      cancellations: JSON.parse(row.cancellations) as unknown,
+      survey: JSON.parse(bundle.record) as unknown,
+      responses: bundle.responses.map((r) => JSON.parse(r) as unknown),
+      cancellations: JSON.parse(bundle.cancellations) as unknown,
       tip: JSON.parse(meta.tip) as unknown,
       fetchedAt: meta.fetchedAt,
       ageSeconds: now - meta.fetchedAt,

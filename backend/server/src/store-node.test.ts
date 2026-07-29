@@ -328,19 +328,6 @@ describe("store-node survey_index paging SQL", () => {
     });
   });
 
-  it("reads one row by key, decoding its flags", async () => {
-    store = openBackendStore(":memory:");
-    await store.replaceSnapshot(rows, [], meta);
-
-    expect(await store.surveyRow("cc:0")).toMatchObject({
-      surveyKey: "cc:0",
-      sealed: true,
-      cancelled: false,
-      record: `{"k":"cc:0"}`,
-    });
-    expect(await store.surveyRow("zz:9")).toBeNull();
-  });
-
   it("replace is a full swap", async () => {
     store = openBackendStore(":memory:");
     await store.replaceSnapshot(rows, [], meta);
@@ -381,27 +368,48 @@ describe("store-node response rows", () => {
     resp("cc", "aa:0", "script:22", 950_000, 1),
     resp("ff", "bb:1", "script:22", 956_000),
   ];
+  const surveys = ["aa:0", "bb:1", "empty:0"].map((surveyKey) => ({
+    surveyKey,
+    slot: 900_000,
+    endEpoch: 510,
+    sealed: false,
+    cancelled: false,
+    govLinked: false,
+    owner: "key:11",
+    haystack: surveyKey,
+    record: `{"k":"${surveyKey}"}`,
+    cancellations: `[{"c":"${surveyKey}"}]`,
+    govLinks: "[]",
+    responseCount: 0,
+    finalizedCancelled: false,
+  }));
 
-  it("serves one survey's responses in a stable order", async () => {
+  it("serves one survey's bundle in a stable order", async () => {
     store = openBackendStore(":memory:");
-    await store.replaceSnapshot([], rows, meta);
+    await store.replaceSnapshot(surveys, rows, meta);
 
     // (slot, txHash, responseIndex): the same bytes on every refresh, so the
     // ETag's promise that an unchanged snapshot means an unchanged body holds.
-    expect(await store.responsesForSurvey("aa:0")).toEqual([
-      `{"tx":"cc","i":0}`,
-      `{"tx":"cc","i":1}`,
-      `{"tx":"dd","i":0}`,
-    ]);
-    expect(await store.responsesForSurvey("bb:1")).toEqual([
+    expect(await store.surveyBundle("aa:0")).toEqual({
+      record: `{"k":"aa:0"}`,
+      cancellations: `[{"c":"aa:0"}]`,
+      responses: [
+        `{"tx":"cc","i":0}`,
+        `{"tx":"cc","i":1}`,
+        `{"tx":"dd","i":0}`,
+      ],
+    });
+    expect((await store.surveyBundle("bb:1"))?.responses).toEqual([
       `{"tx":"ff","i":0}`,
     ]);
-    expect(await store.responsesForSurvey("unknown:0")).toEqual([]);
+    // A survey nobody answered still has a bundle; an unknown one has none.
+    expect((await store.surveyBundle("empty:0"))?.responses).toEqual([]);
+    expect(await store.surveyBundle("unknown:0")).toBeNull();
   });
 
   it("maps credentials to the surveys they answered", async () => {
     store = openBackendStore(":memory:");
-    await store.replaceSnapshot([], rows, meta);
+    await store.replaceSnapshot(surveys, rows, meta);
 
     expect(await store.respondedSurveyKeys(["key:11"])).toEqual(["aa:0"]);
     // Union across a wallet's credentials, deduped across several responses.
@@ -415,15 +423,15 @@ describe("store-node response rows", () => {
 
   it("replaces wholesale, so a vanished response stops being served", async () => {
     store = openBackendStore(":memory:");
-    await store.replaceSnapshot([], rows, meta);
+    await store.replaceSnapshot(surveys, rows, meta);
     // A reorg drops the later response; a merging write would keep serving it.
     await store.replaceSnapshot(
-      [],
+      surveys,
       rows.filter((r) => r.txHash !== "dd"),
       { ...meta, fetchedAt: 8 },
     );
 
-    expect(await store.responsesForSurvey("aa:0")).toEqual([
+    expect((await store.surveyBundle("aa:0"))?.responses).toEqual([
       `{"tx":"cc","i":0}`,
       `{"tx":"cc","i":1}`,
     ]);

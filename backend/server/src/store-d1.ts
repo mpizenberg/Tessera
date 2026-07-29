@@ -17,6 +17,7 @@ import type {
   RefreshTotals,
   ResponseRow,
   SnapshotMeta,
+  SurveyBundleRows,
   SurveyIndexRow,
   SurveyPageQuery,
   ValidatedResponseRow,
@@ -33,17 +34,15 @@ import {
   RESPONSE_INSERT,
   SNAPSHOT_META_SELECT,
   SNAPSHOT_META_UPSERT,
+  SURVEY_BUNDLE_SELECT,
   SURVEY_INDEX_INSERT,
-  SURVEY_ROW_SELECT,
   countsFromDb,
-  pagedSurveyRowFromDb,
   respondedSql,
   responseInsertParams,
   surveyCountsSql,
   surveyIndexInsertParams,
   surveyIndexRowFromDb,
   surveyPageSql,
-  type DbPagedSurveyRow,
   type DbSurveyIndexRow,
 } from "./snapshotSql";
 
@@ -57,7 +56,8 @@ interface D1PreparedStatement {
 /** The slice of Cloudflare's `D1Database` this store needs. */
 export interface D1Like {
   prepare(query: string): D1PreparedStatement;
-  batch(statements: D1PreparedStatement[]): Promise<unknown>;
+  /** One round trip, one transaction; results are positional per statement. */
+  batch(statements: D1PreparedStatement[]): Promise<{ results: unknown[] }[]>;
 }
 
 interface DbValidatedRow extends Omit<
@@ -326,19 +326,21 @@ export function d1BackendStore(db: D1Like): BackendStore {
       if (!row) return null;
       return { ...row, incomplete: row.incomplete !== 0 };
     },
-    async surveyRow(surveyKey: string): Promise<SurveyIndexRow | null> {
-      const row = await db
-        .prepare(SURVEY_ROW_SELECT)
-        .bind(surveyKey)
-        .first<DbSurveyIndexRow>();
-      return row ? surveyIndexRowFromDb(row) : null;
-    },
-    async responsesForSurvey(surveyKey: string): Promise<string[]> {
-      const { results } = await db
-        .prepare(RESPONSES_FOR_SURVEY)
-        .bind(surveyKey)
-        .all<{ record: string }>();
-      return results.map((r) => r.record);
+    async surveyBundle(surveyKey: string): Promise<SurveyBundleRows | null> {
+      const [survey, responses] = await db.batch([
+        db.prepare(SURVEY_BUNDLE_SELECT).bind(surveyKey),
+        db.prepare(RESPONSES_FOR_SURVEY).bind(surveyKey),
+      ]);
+      const row = survey?.results[0] as
+        | { record: string; cancellations: string }
+        | undefined;
+      if (!row) return null;
+      return {
+        ...row,
+        responses: ((responses?.results ?? []) as { record: string }[]).map(
+          (r) => r.record,
+        ),
+      };
     },
     async respondedSurveyKeys(
       credentials: readonly string[],
@@ -358,8 +360,8 @@ export function d1BackendStore(db: D1Like): BackendStore {
       const { results } = await db
         .prepare(sql)
         .bind(...params)
-        .all<DbPagedSurveyRow>();
-      return results.map(pagedSurveyRowFromDb);
+        .all<DbSurveyIndexRow>();
+      return results.map(surveyIndexRowFromDb);
     },
     async surveyIndexCounts(
       tipEpoch: number,

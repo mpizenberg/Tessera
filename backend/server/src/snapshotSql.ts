@@ -140,26 +140,17 @@ export interface DbSurveyIndexRow extends Omit<
   readonly cancelled: number;
   readonly govLinked: number;
   readonly finalizedCancelled: number;
-}
-
-/** A paged row carries the bucket the ordering and cursor are computed over. */
-export interface DbPagedSurveyRow extends DbSurveyIndexRow {
   readonly bucket: number;
 }
 
-export const surveyIndexRowFromDb = (r: DbSurveyIndexRow): SurveyIndexRow => ({
+export const surveyIndexRowFromDb = (
+  r: DbSurveyIndexRow,
+): SurveyIndexRow & { bucket: number } => ({
   ...r,
   sealed: r.sealed !== 0,
   cancelled: r.cancelled !== 0,
   govLinked: r.govLinked !== 0,
   finalizedCancelled: r.finalizedCancelled !== 0,
-});
-
-export const pagedSurveyRowFromDb = (
-  r: DbPagedSurveyRow,
-): SurveyIndexRow & { bucket: number } => ({
-  ...surveyIndexRowFromDb(r),
-  bucket: r.bucket,
 });
 
 export const SURVEY_INDEX_INSERT = `
@@ -196,13 +187,9 @@ export const SNAPSHOT_META_UPSERT = `
 export const SNAPSHOT_META_SELECT = `
   SELECT tip, incomplete, fetched_at AS fetchedAt FROM snapshot_meta WHERE id = 1`;
 
-export const SURVEY_ROW_SELECT = `
-  SELECT survey_key AS surveyKey, slot, end_epoch AS endEpoch, sealed,
-         cancelled, gov_linked AS govLinked, owner, haystack, record,
-         cancellations, gov_links AS govLinks,
-         response_count AS responseCount,
-         finalized_cancelled AS finalizedCancelled
-  FROM survey_index WHERE survey_key = ?`;
+/** The survey half of a bundle — only the two columns the body carries. */
+export const SURVEY_BUNDLE_SELECT = `
+  SELECT record, cancellations FROM survey_index WHERE survey_key = ?`;
 
 /**
  * A repeated `(tx_hash, response_index)` names the same immutable on-chain
