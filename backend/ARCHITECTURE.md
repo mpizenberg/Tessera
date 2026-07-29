@@ -192,7 +192,12 @@ secret instead of in each browser.
   two concurrent runs would let the slower one write its older scan last. The
   lease is held for a bounded TTL so a run killed mid-flight, which never
   releases, blocks its successors only until it expires.
-- The serving endpoints slice the cached snapshot per page (§5.1) plus a
+- The refresh stores the snapshot **materialized as rows** — one per survey
+  (`survey_index`), one per response (`response`), plus a shared envelope
+  (`snapshot_meta`: tip, incomplete flag, `fetchedAt`) — written in a single
+  transaction, so the whole snapshot becomes visible at once and a reader never
+  sees one run's rows beside another's.
+- The serving endpoints read only the rows they serve (§5.1) plus that
   freshness stamp; `/tip` and `/tx_status` may stay live passthroughs for
   immediacy.
 - Freshness target: snapshot is interval-old (e.g. 60–120s); acceptable for a
@@ -246,21 +251,21 @@ How it landed (shared with Phase 2's tally work, which is why it waited):
 - The **dedupe rule** (latest-valid-per-credential) lives in `@tessera/core`
   (`dedupe.ts`: `refKey`/`credentialKey`/`dedupeResponses`/`responseCounts`),
   so the server's `responseCount` and the client's audit agree by construction.
-- The store keeps the snapshot as one JSON document; each route decodes and
-  slices it per request (fine at current sizes). If profiling ever disagrees, an
-  in-memory index per isolate (rebuilt when `fetchedAt` changes) or the §6.5
-  tables replace the per-request parse.
-- That document is **stored across rows**, not in one value
-  (`migrations/0009_snapshot_chunks.sql`: `snapshot_chunk` keyed by `seq`, plus a
-  `snapshot_meta` stamp). D1 caps a single value at ~2,000,000 bytes, and the
-  payload grows with sealed participation — each sealed response carries a padded
-  ciphertext — so one value meant a size past which every refresh's write fails,
-  the snapshot freezes at its last good state, and validation/finalization stop
-  advancing while the stale snapshot keeps serving. Chunks are rewritten in one
-  transaction, so a reader never sees two runs' rows concatenated. The remaining
-  bound is per-request parse cost and Worker memory, which the refresh warns
-  about past `SNAPSHOT_WARN_BYTES`; the answer there is per-record rows, not
-  bigger chunks.
+- **Nothing is stored as a whole-snapshot document**
+  (`migrations/0010_response_rows.sql`). Each route reads only the rows it
+  serves: a survey bundle is one `survey_index` row plus that survey's
+  `response` rows, and `/api/responded` is a `credential IN (…)` lookup. The
+  store the routes used to share was a single JSON value, which had two
+  ceilings — D1 caps one value at ~2,000,000 bytes (past that every refresh's
+  write fails and the snapshot silently freezes at its last good state while
+  validation and finalization stop advancing), and every request parsed the
+  entire corpus, including padded sealed ciphertexts that grow with
+  participation, inside a Worker's CPU and memory limits. Rows remove both; what
+  a request costs now scales with the survey it asked for.
+- The rows are **replaced wholesale** each refresh, in one transaction, because
+  a record can leave the snapshot (reorged out, or aged past the scan's floor)
+  and a merging write would keep serving it. `refresh_run.payload_bytes` records
+  the total stored wire JSON as the growth metric behind the health footer.
 - The frontend seam widened: `state.tsx`'s single eager resource became a list
   resource + a lazy per-survey bundle resource, and `DataSource` is now exactly
   `surveyList`/`surveyBundle`/`respondedKeys`/`txStatus` (`KoiosDataSource`

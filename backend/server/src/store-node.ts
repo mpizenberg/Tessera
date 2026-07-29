@@ -21,10 +21,10 @@ import type { SurveyListCounts } from "@tessera/core";
 import type {
   ArtifactRow,
   BackendStore,
-  CachedSnapshot,
   RefreshRunRow,
   RefreshTotals,
-  SurveyIndexMeta,
+  ResponseRow,
+  SnapshotMeta,
   SurveyIndexRow,
   SurveyPageQuery,
   ValidatedResponseRow,
@@ -34,19 +34,26 @@ import {
   REFRESH_LEASE_ACQUIRE,
   REFRESH_LEASE_RELEASE,
   REFRESH_RUN_RETENTION_SECONDS,
-  chunkText,
   validationKey,
 } from "./store";
 import {
+  RESPONSES_FOR_SURVEY,
+  RESPONSE_INSERT,
+  SNAPSHOT_META_SELECT,
+  SNAPSHOT_META_UPSERT,
   SURVEY_INDEX_INSERT,
-  SURVEY_INDEX_META_UPSERT,
+  SURVEY_ROW_SELECT,
   countsFromDb,
+  pagedSurveyRowFromDb,
+  respondedSql,
+  responseInsertParams,
   surveyCountsSql,
   surveyIndexInsertParams,
   surveyIndexRowFromDb,
   surveyPageSql,
+  type DbPagedSurveyRow,
   type DbSurveyIndexRow,
-} from "./surveyIndexSql";
+} from "./snapshotSql";
 
 const MIGRATIONS_DIR = fileURLToPath(new URL("../migrations", import.meta.url));
 
@@ -138,24 +145,12 @@ export function openBackendStore(path: string): BackendStore {
   const db = new DatabaseSync(path);
   applyMigrations(db);
 
-  // Chunks and stamp in one statement: read separately, a refresh landing
-  // between them could pair one run's payload with the other's fetchedAt.
-  const selectStmt = db.prepare(
-    `SELECT c.payload AS payload, m.fetched_at AS fetchedAt
-     FROM snapshot_chunk c JOIN snapshot_meta m ON m.id = 1
-     ORDER BY c.seq`,
-  );
-  const clearChunksStmt = db.prepare("DELETE FROM snapshot_chunk");
-  const insertChunkStmt = db.prepare(
-    "INSERT INTO snapshot_chunk (seq, payload) VALUES (?, ?)",
-  );
-  const putSnapshotMetaStmt = db.prepare(`
-    INSERT INTO snapshot_meta (id, fetched_at) VALUES (1, ?)
-    ON CONFLICT(id) DO UPDATE SET fetched_at = excluded.fetched_at
-  `);
-  const fetchedAtStmt = db.prepare(
-    "SELECT fetched_at AS fetchedAt FROM snapshot_meta WHERE id = 1",
-  );
+  const snapshotMetaStmt = db.prepare(SNAPSHOT_META_SELECT);
+  const putSnapshotMetaStmt = db.prepare(SNAPSHOT_META_UPSERT);
+  const insertSurveyStmt = db.prepare(SURVEY_INDEX_INSERT);
+  const insertResponseStmt = db.prepare(RESPONSE_INSERT);
+  const surveyRowStmt = db.prepare(SURVEY_ROW_SELECT);
+  const responsesForSurveyStmt = db.prepare(RESPONSES_FOR_SURVEY);
 
   const completedStmt = db.prepare(
     `SELECT tx_hash AS txHash, response_index AS responseIndex,
@@ -287,39 +282,6 @@ export function openBackendStore(path: string): BackendStore {
   });
 
   return {
-    async get(): Promise<CachedSnapshot | null> {
-      const rows = selectStmt.all() as unknown as {
-        payload: string;
-        fetchedAt: number;
-      }[];
-      const first = rows[0];
-      if (!first) return null;
-      return {
-        payload: JSON.parse(rows.map((r) => r.payload).join("")),
-        fetchedAt: first.fetchedAt,
-      };
-    },
-    async put(snapshot: CachedSnapshot): Promise<void> {
-      const chunks = chunkText(JSON.stringify(snapshot.payload));
-      // One transaction, so a reader never sees this run's chunks mixed with
-      // the last one's — including the shrinking case, where stale high-seq
-      // rows would otherwise trail the new payload.
-      db.exec("BEGIN");
-      try {
-        clearChunksStmt.run();
-        chunks.forEach((text, seq) => insertChunkStmt.run(seq, text));
-        putSnapshotMetaStmt.run(snapshot.fetchedAt);
-        db.exec("COMMIT");
-      } catch (err) {
-        db.exec("ROLLBACK");
-        throw err;
-      }
-    },
-    async snapshotFetchedAt(): Promise<number | null> {
-      const row = fetchedAtStmt.get() as { fetchedAt: number } | undefined;
-      return row?.fetchedAt ?? null;
-    },
-
     async completedValidations(): Promise<Map<string, string | null>> {
       const rows = completedStmt.all() as {
         txHash: string;
@@ -453,19 +415,22 @@ export function openBackendStore(path: string): BackendStore {
         putTxMetaStmt.run(hash, JSON.stringify(metadata ?? null));
     },
 
-    async replaceSurveyIndex(
-      rows: readonly SurveyIndexRow[],
-      meta: SurveyIndexMeta,
+    async replaceSnapshot(
+      surveys: readonly SurveyIndexRow[],
+      responses: readonly ResponseRow[],
+      meta: SnapshotMeta,
     ): Promise<void> {
       // Full replace in one transaction: the set is scan-sized, and readers
-      // must never observe rows from one refresh with the other's meta.
+      // must never observe one run's rows beside another's.
       db.exec("BEGIN");
       try {
         db.exec("DELETE FROM survey_index");
-        const insert = db.prepare(SURVEY_INDEX_INSERT);
-        for (const r of rows)
-          insert.run(...(surveyIndexInsertParams(r) as SqlValue[]));
-        db.prepare(SURVEY_INDEX_META_UPSERT).run(
+        db.exec("DELETE FROM response");
+        for (const r of surveys)
+          insertSurveyStmt.run(...(surveyIndexInsertParams(r) as SqlValue[]));
+        for (const r of responses)
+          insertResponseStmt.run(...(responseInsertParams(r) as SqlValue[]));
+        putSnapshotMetaStmt.run(
           meta.tip,
           meta.incomplete ? 1 : 0,
           meta.fetchedAt,
@@ -476,17 +441,32 @@ export function openBackendStore(path: string): BackendStore {
         throw err;
       }
     },
-    async surveyIndexMeta(): Promise<SurveyIndexMeta | null> {
-      const row = db
-        .prepare(
-          `SELECT tip, incomplete, fetched_at AS fetchedAt
-           FROM survey_index_meta WHERE id = 1`,
-        )
-        .get() as
+    async snapshotMeta(): Promise<SnapshotMeta | null> {
+      const row = snapshotMetaStmt.get() as
         | { tip: string; incomplete: number; fetchedAt: number }
         | undefined;
       if (!row) return null;
       return { ...row, incomplete: row.incomplete !== 0 };
+    },
+    async surveyRow(surveyKey: string): Promise<SurveyIndexRow | null> {
+      const row = surveyRowStmt.get(surveyKey) as DbSurveyIndexRow | undefined;
+      return row ? surveyIndexRowFromDb(row) : null;
+    },
+    async responsesForSurvey(surveyKey: string): Promise<string[]> {
+      const rows = responsesForSurveyStmt.all(surveyKey) as {
+        record: string;
+      }[];
+      return rows.map((r) => r.record);
+    },
+    async respondedSurveyKeys(
+      credentials: readonly string[],
+    ): Promise<string[]> {
+      if (credentials.length === 0) return [];
+      const { sql, params } = respondedSql(credentials);
+      const rows = db.prepare(sql).all(...(params as SqlValue[])) as {
+        surveyKey: string;
+      }[];
+      return rows.map((r) => r.surveyKey);
     },
     async surveyIndexPage(
       q: SurveyPageQuery,
@@ -495,8 +475,8 @@ export function openBackendStore(path: string): BackendStore {
       return (
         db
           .prepare(sql)
-          .all(...(params as SqlValue[])) as unknown as DbSurveyIndexRow[]
-      ).map(surveyIndexRowFromDb);
+          .all(...(params as SqlValue[])) as unknown as DbPagedSurveyRow[]
+      ).map(pagedSurveyRowFromDb);
     },
     async surveyIndexCounts(
       tipEpoch: number,

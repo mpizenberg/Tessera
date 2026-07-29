@@ -1,7 +1,11 @@
 /**
- * Route tests for the per-page endpoints, against an in-memory SnapshotStore —
- * no Koios, no SQLite. Only the snapshot-derived routes are exercised (the
+ * Route tests for the per-page endpoints, against an in-memory store — no
+ * Koios, no SQLite. Only the snapshot-derived routes are exercised (the
  * passthroughs `/api/tip`, `/api/tx_status`, `/api/pparams` go upstream).
+ *
+ * The fixture is materialized through `materializeSnapshot`, exactly as a
+ * refresh does, so a route test can't pass against rows the refresh would
+ * never write.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -19,44 +23,31 @@ import type {
 
 import { loadConfig } from "./config";
 import { createApp } from "./http";
-import { buildSurveyIndex } from "./listIndex";
-import type { CachedSnapshot } from "./store";
+import { materializeSnapshot } from "./materialize";
 import { memBackendStore, type MemBackendStore } from "./store-mem";
-
-const memStore = (initial: CachedSnapshot | null): MemBackendStore =>
-  memBackendStore(initial);
 
 function appWith(store: MemBackendStore) {
   return createApp(loadConfig({}), store, { compress: false });
 }
 
-/**
- * Materialize the paged-list index from the fixture snapshot, as the refresh
- * does — the list route reads only these rows and the meta envelope.
- */
-async function seedIndex(store: MemBackendStore): Promise<void> {
-  await store.replaceSurveyIndex(
-    buildSurveyIndex(
-      {
-        surveys: [surveyA, surveyB],
-        responses,
-        cancellations: [cancellation],
-      },
-      tip,
-      [],
-      await store.finalizedCancelledKeys(),
-    ),
-    {
-      tip: JSON.stringify(toJsonSafe(tip)),
-      incomplete: false,
-      fetchedAt: FETCHED_AT,
-    },
+/** Materialize the fixture snapshot into the store, as the refresh does. */
+async function seed(store: MemBackendStore): Promise<void> {
+  const snapshot = materializeSnapshot(
+    { surveys: [surveyA, surveyB], responses, cancellations: [cancellation] },
+    tip,
+    [],
+    await store.finalizedCancelledKeys(),
   );
+  await store.replaceSnapshot(snapshot.surveys, snapshot.responses, {
+    tip: JSON.stringify(toJsonSafe(tip)),
+    incomplete: false,
+    fetchedAt: FETCHED_AT,
+  });
 }
 
-async function indexedStore(): Promise<MemBackendStore> {
-  const store = memStore(snapshot);
-  await seedIndex(store);
+async function seededStore(): Promise<MemBackendStore> {
+  const store = memBackendStore();
+  await seed(store);
   return store;
 }
 
@@ -150,23 +141,11 @@ const cancellation: CancellationRecord = {
 };
 
 const FETCHED_AT = 1_750_000_100;
-const snapshot: CachedSnapshot = {
-  payload: toJsonSafe({
-    records: {
-      surveys: [surveyA, surveyB],
-      responses,
-      cancellations: [cancellation],
-    },
-    tip,
-    govLinks: [],
-  }),
-  fetchedAt: FETCHED_AT,
-};
 
 // --- tests -------------------------------------------------------------------
 
 describe("before the first refresh", () => {
-  const app = appWith(memStore(null));
+  const app = appWith(memBackendStore());
   it.each(["/api/surveys", `/api/surveys/${TX_A}/0`, "/api/responded"])(
     "%s answers 503",
     async (path) => {
@@ -177,7 +156,7 @@ describe("before the first refresh", () => {
 
 describe("GET /api/surveys", () => {
   it("serves the list payload with deduped response counts", async () => {
-    const app = appWith(await indexedStore());
+    const app = appWith(await seededStore());
     const res = await app.request("/api/surveys");
     expect(res.status).toBe(200);
     const body = fromJsonSafe(await res.json()) as Record<string, unknown>;
@@ -202,7 +181,7 @@ describe("GET /api/surveys", () => {
   });
 
   it("revalidates by fetchedAt: 304 on matching If-None-Match", async () => {
-    const app = appWith(await indexedStore());
+    const app = appWith(await seededStore());
     const first = await app.request("/api/surveys");
     const etag = first.headers.get("ETag");
     expect(etag).toBe(`W/"surveys-${FETCHED_AT}"`);
@@ -214,7 +193,7 @@ describe("GET /api/surveys", () => {
   });
 
   it("lists finalized-cancelled survey keys, not normally-finalized ones", async () => {
-    const store = memStore(snapshot);
+    const store = await seededStore();
     await store.putArtifact({
       surveyKey: `${TX_A}:0`,
       endEpoch: 510,
@@ -232,14 +211,14 @@ describe("GET /api/surveys", () => {
       createdAt: 1,
     });
     // The overlay is baked into the rows at refresh time.
-    await seedIndex(store);
+    await seed(store);
     const res = await appWith(store).request("/api/surveys");
     const body = fromJsonSafe(await res.json()) as Record<string, unknown>;
     expect(body["finalizedCancelled"]).toEqual([`${TX_B}:1`]);
   });
 
   it("finalizedCancelled is empty with no artifacts", async () => {
-    const app = appWith(await indexedStore());
+    const app = appWith(await seededStore());
     const body = fromJsonSafe(
       await (await app.request("/api/surveys")).json(),
     ) as Record<string, unknown>;
@@ -262,7 +241,7 @@ describe("GET /api/surveys pagination, filters, search", () => {
   };
 
   it("walks pages by cursor: open bucket first, then closed", async () => {
-    const app = appWith(await indexedStore());
+    const app = appWith(await seededStore());
     const page1 = await getBody(app, "?limit=1");
     expect(keysOf(page1)).toEqual([`${TX_A}:0`]); // open bucket sorts first
     expect(page1["nextCursor"]).toBeTypeOf("string");
@@ -280,13 +259,13 @@ describe("GET /api/surveys pagination, filters, search", () => {
   });
 
   it("filters: active excludes the closed survey", async () => {
-    const app = appWith(await indexedStore());
+    const app = appWith(await seededStore());
     const body = await getBody(app, "?filter=active");
     expect(keysOf(body)).toEqual([`${TX_A}:0`]);
   });
 
   it("filters: mine matches owners against the given credentials", async () => {
-    const app = appWith(await indexedStore());
+    const app = appWith(await seededStore());
     const body = await getBody(app, "?filter=mine&credentials=key:11");
     expect(keysOf(body)).toEqual([`${TX_A}:0`]);
     expect((body["counts"] as { mine: number }).mine).toBe(1);
@@ -295,7 +274,7 @@ describe("GET /api/surveys pagination, filters, search", () => {
   });
 
   it("search ANDs terms and scopes counts to matches", async () => {
-    const app = appWith(await indexedStore());
+    const app = appWith(await seededStore());
     const body = await getBody(app, "?q=beta");
     expect(keysOf(body)).toEqual([`${TX_B}:1`]);
     expect((body["counts"] as { all: number }).all).toBe(1);
@@ -304,7 +283,7 @@ describe("GET /api/surveys pagination, filters, search", () => {
   });
 
   it("rejects malformed paging params", async () => {
-    const app = appWith(await indexedStore());
+    const app = appWith(await seededStore());
     expect((await app.request("/api/surveys?limit=0")).status).toBe(400);
     expect((await app.request("/api/surveys?limit=9999")).status).toBe(400);
     expect((await app.request("/api/surveys?limit=abc")).status).toBe(400);
@@ -314,9 +293,8 @@ describe("GET /api/surveys pagination, filters, search", () => {
 });
 
 describe("GET /api/surveys/{txHash}/{index}", () => {
-  const app = appWith(memStore(snapshot));
-
   it("serves a self-contained bundle sliced to that survey", async () => {
+    const app = appWith(await seededStore());
     const res = await app.request(`/api/surveys/${TX_A}/0`);
     expect(res.status).toBe(200);
     const body = fromJsonSafe(await res.json()) as unknown as SurveyBundle;
@@ -333,6 +311,7 @@ describe("GET /api/surveys/{txHash}/{index}", () => {
   });
 
   it("includes the cancellations targeting the survey", async () => {
+    const app = appWith(await seededStore());
     const res = await app.request(`/api/surveys/${TX_B}/1`);
     const body = fromJsonSafe(await res.json()) as unknown as SurveyBundle;
     expect(body.cancellations.map((c) => c.txHash)).toEqual(["99".repeat(32)]);
@@ -340,6 +319,7 @@ describe("GET /api/surveys/{txHash}/{index}", () => {
   });
 
   it("404s an unknown or malformed ref", async () => {
+    const app = appWith(await seededStore());
     expect((await app.request(`/api/surveys/${TX_A}/7`)).status).toBe(404);
     expect(
       (await app.request(`/api/surveys/${"00".repeat(32)}/0`)).status,
@@ -349,6 +329,7 @@ describe("GET /api/surveys/{txHash}/{index}", () => {
   });
 
   it("supports 304 revalidation", async () => {
+    const app = appWith(await seededStore());
     const first = await app.request(`/api/surveys/${TX_A}/0`);
     const again = await app.request(`/api/surveys/${TX_A}/0`, {
       headers: { "If-None-Match": first.headers.get("ETag")! },
@@ -363,9 +344,9 @@ describe("artifact routes", () => {
   // byte-for-byte, never re-serialized.
   const ARTIFACT_TEXT = `{"tally": {"x": 1},  "provenance": {}}`;
 
-  function storeWithArtifact() {
-    const store = memStore(snapshot);
-    void store.putArtifact({
+  async function storeWithArtifact() {
+    const store = await seededStore();
+    await store.putArtifact({
       surveyKey: `${TX_A}:0`,
       endEpoch: 510,
       artifactHash: HASH,
@@ -376,7 +357,7 @@ describe("artifact routes", () => {
   }
 
   it("serves the stored JSON verbatim with a strong immutable ETag", async () => {
-    const app = appWith(storeWithArtifact());
+    const app = appWith(await storeWithArtifact());
     for (const path of [
       `/api/surveys/${TX_A}/0/artifact`,
       `/api/artifacts/${HASH}`,
@@ -393,7 +374,7 @@ describe("artifact routes", () => {
   });
 
   it("answers 304 on a matching If-None-Match", async () => {
-    const app = appWith(storeWithArtifact());
+    const app = appWith(await storeWithArtifact());
     const res = await app.request(`/api/surveys/${TX_A}/0/artifact`, {
       headers: { "If-None-Match": `"${HASH}"` },
     });
@@ -401,7 +382,7 @@ describe("artifact routes", () => {
   });
 
   it("404s when no artifact exists or the ref/hash is malformed", async () => {
-    const app = appWith(storeWithArtifact());
+    const app = appWith(await storeWithArtifact());
     expect((await app.request(`/api/surveys/${TX_B}/1/artifact`)).status).toBe(
       404,
     );
@@ -416,9 +397,8 @@ describe("artifact routes", () => {
 });
 
 describe("GET /api/responded", () => {
-  const app = appWith(memStore(snapshot));
-
   const keysFor = async (credentials: string): Promise<string[]> => {
+    const app = appWith(await seededStore());
     const res = await app.request(
       `/api/responded?credentials=${encodeURIComponent(credentials)}`,
     );
@@ -444,10 +424,23 @@ describe("GET /api/responded", () => {
   });
 
   it("no credentials → no keys", async () => {
+    const app = appWith(await seededStore());
     const res = await app.request("/api/responded");
     expect(((await res.json()) as { surveyKeys: string[] }).surveyKeys).toEqual(
       [],
     );
+  });
+
+  // Both routes bind these into an `IN (…)`, which D1 caps at 100 parameters:
+  // an oversized list is rejected rather than turned into a 500 downstream.
+  it("rejects an abusively long credential list", async () => {
+    const app = appWith(await seededStore());
+    const many = Array.from({ length: 21 }, (_, i) => `key:${i}`).join(",");
+    for (const path of ["/api/responded?", "/api/surveys?filter=mine&"]) {
+      expect((await app.request(`${path}credentials=${many}`)).status).toBe(
+        400,
+      );
+    }
   });
 });
 
@@ -468,7 +461,7 @@ describe("GET /api/health", () => {
   };
 
   it("reports snapshot freshness, last run, totals, and limits", async () => {
-    const store = memStore(snapshot);
+    const store = await seededStore();
     await store.putRefreshRun({ ...runRow, startedAt: NOW - 200 });
     await store.putRefreshRun({
       ...runRow,
@@ -507,7 +500,7 @@ describe("GET /api/health", () => {
   });
 
   it("serves nulls before any refresh, with a default per-refresh limit", async () => {
-    const app = appWith(memStore(null));
+    const app = appWith(memBackendStore());
     const res = await app.request("/api/health");
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
@@ -533,7 +526,7 @@ describe("GET /api/tx_status (finding 15)", () => {
   it("rejects a malformed hash with 400 and never calls Koios", async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
-    const res = await appWith(memStore(null)).request(
+    const res = await appWith(memBackendStore()).request(
       "/api/tx_status?hashes=not-a-hash",
     );
     expect(res.status).toBe(400);
@@ -546,7 +539,7 @@ describe("GET /api/tx_status (finding 15)", () => {
     const many = Array.from({ length: 21 }, (_, i) =>
       i.toString(16).padStart(2, "0").repeat(32),
     ).join(",");
-    const res = await appWith(memStore(null)).request(
+    const res = await appWith(memBackendStore()).request(
       `/api/tx_status?hashes=${many}`,
     );
     expect(res.status).toBe(400);
@@ -564,7 +557,7 @@ describe("GET /api/tx_status (finding 15)", () => {
           ),
       ),
     );
-    const res = await appWith(memStore(null)).request(
+    const res = await appWith(memBackendStore()).request(
       `/api/tx_status?hashes=${H("ab")}`,
     );
     expect(res.status).toBe(200);
@@ -586,7 +579,7 @@ describe("GET /api/tx_status (finding 15)", () => {
     // The critical path's identity is set, but comfort polling must not carry it.
     const app = createApp(
       loadConfig({ KOIOS_TOKEN: "super-secret" }),
-      memStore(null),
+      memBackendStore(),
       {
         compress: false,
       },

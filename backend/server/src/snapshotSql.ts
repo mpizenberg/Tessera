@@ -1,19 +1,19 @@
 /**
- * SQL for the `survey_index` page/count queries, shared verbatim by
- * `store-node.ts` and `store-d1.ts` (same SQLite dialect on both). The
- * semantics mirror `@tessera/core`'s `pageSurveyList` — the executable spec —
- * exactly: bucket 0 gov-linked / 1 open / 2 closed, ordered (bucket ASC,
- * slot DESC, key ASC), AND-of-substrings search, chip counts over the
- * search-matching set.
+ * SQL over the materialized snapshot tables, shared verbatim by `store-node.ts`
+ * and `store-d1.ts` (same SQLite dialect on both). The `survey_index`
+ * page/count semantics mirror `@tessera/core`'s `pageSurveyList` — the
+ * executable spec — exactly: bucket 0 gov-linked / 1 open / 2 closed, ordered
+ * (bucket ASC, slot DESC, key ASC), AND-of-substrings search, chip counts over
+ * the search-matching set.
  *
- * Queries are built per call (the search-term and credential lists vary in
- * arity), so nothing here is a cached prepared statement — the table is
- * scan-sized and these run once per page request.
+ * Queries whose arity varies (search terms, credential lists) are built per
+ * call, so nothing here is a cached prepared statement — the tables are
+ * scan-sized and these run once per request.
  */
 
 import type { SurveyListCounts } from "@tessera/core";
 
-import type { SurveyIndexRow, SurveyPageQuery } from "./store";
+import type { ResponseRow, SurveyIndexRow, SurveyPageQuery } from "./store";
 
 export interface SqlQuery {
   readonly sql: string;
@@ -140,17 +140,26 @@ export interface DbSurveyIndexRow extends Omit<
   readonly cancelled: number;
   readonly govLinked: number;
   readonly finalizedCancelled: number;
+}
+
+/** A paged row carries the bucket the ordering and cursor are computed over. */
+export interface DbPagedSurveyRow extends DbSurveyIndexRow {
   readonly bucket: number;
 }
 
-export const surveyIndexRowFromDb = (
-  r: DbSurveyIndexRow,
-): SurveyIndexRow & { bucket: number } => ({
+export const surveyIndexRowFromDb = (r: DbSurveyIndexRow): SurveyIndexRow => ({
   ...r,
   sealed: r.sealed !== 0,
   cancelled: r.cancelled !== 0,
   govLinked: r.govLinked !== 0,
   finalizedCancelled: r.finalizedCancelled !== 0,
+});
+
+export const pagedSurveyRowFromDb = (
+  r: DbPagedSurveyRow,
+): SurveyIndexRow & { bucket: number } => ({
+  ...surveyIndexRowFromDb(r),
+  bucket: r.bucket,
 });
 
 export const SURVEY_INDEX_INSERT = `
@@ -176,13 +185,56 @@ export const surveyIndexInsertParams = (r: SurveyIndexRow): unknown[] => [
   r.finalizedCancelled ? 1 : 0,
 ];
 
-export const SURVEY_INDEX_META_UPSERT = `
-  INSERT INTO survey_index_meta (id, tip, incomplete, fetched_at)
+export const SNAPSHOT_META_UPSERT = `
+  INSERT INTO snapshot_meta (id, tip, incomplete, fetched_at)
   VALUES (1, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
     tip = excluded.tip,
     incomplete = excluded.incomplete,
     fetched_at = excluded.fetched_at`;
+
+export const SNAPSHOT_META_SELECT = `
+  SELECT tip, incomplete, fetched_at AS fetchedAt FROM snapshot_meta WHERE id = 1`;
+
+export const SURVEY_ROW_SELECT = `
+  SELECT survey_key AS surveyKey, slot, end_epoch AS endEpoch, sealed,
+         cancelled, gov_linked AS govLinked, owner, haystack, record,
+         cancellations, gov_links AS govLinks,
+         response_count AS responseCount,
+         finalized_cancelled AS finalizedCancelled
+  FROM survey_index WHERE survey_key = ?`;
+
+/**
+ * A repeated `(tx_hash, response_index)` names the same immutable on-chain
+ * response, so replacing is a no-op — and cheaper than letting a scan quirk
+ * abort the whole refresh, which is the silent-freeze failure this table exists
+ * to remove.
+ */
+export const RESPONSE_INSERT = `
+  INSERT OR REPLACE INTO response
+    (tx_hash, response_index, survey_key, credential, slot, record)
+  VALUES (?, ?, ?, ?, ?, ?)`;
+
+export const responseInsertParams = (r: ResponseRow): unknown[] => [
+  r.txHash,
+  r.responseIndex,
+  r.surveyKey,
+  r.credential,
+  r.slot,
+  r.record,
+];
+
+/** Ordered so a bundle body is byte-stable across refreshes. */
+export const RESPONSES_FOR_SURVEY = `
+  SELECT record FROM response WHERE survey_key = ?
+  ORDER BY slot, tx_hash, response_index`;
+
+/** Distinct surveys answered by any of `credentials`. */
+export const respondedSql = (credentials: readonly string[]): SqlQuery => ({
+  sql: `SELECT DISTINCT survey_key AS surveyKey FROM response
+        WHERE credential IN (${credentials.map(() => "?").join(", ")})`,
+  params: [...credentials],
+});
 
 /** Counts come back as SQLite integers already shaped like the counts type. */
 export const countsFromDb = (r: Record<string, number>): SurveyListCounts => ({

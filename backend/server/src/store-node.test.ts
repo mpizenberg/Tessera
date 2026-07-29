@@ -17,10 +17,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import type {
   BackendStore,
   RefreshRunRow,
+  ResponseRow,
   SurveyIndexRow,
   SurveyPageQuery,
 } from "./store";
-import { REFRESH_RUN_RETENTION_SECONDS, chunkText } from "./store";
+import { REFRESH_RUN_RETENTION_SECONDS } from "./store";
 import { openBackendStore } from "./store-node";
 
 const artifact = (surveyKey: string, tally: string, hash: string) => ({
@@ -120,8 +121,12 @@ describe("store-node migration of a pre-runner database", () => {
       ]);
       expect((await store.completedValidations()).get("bb:1")).toBe("gov#0");
       // Missing tables were created by their migrations, not the baseline.
-      await store.put({ payload: { surveys: [] }, fetchedAt: 7 });
-      expect((await store.get())?.fetchedAt).toBe(7);
+      await store.replaceSnapshot([], [], {
+        tip: "{}",
+        incomplete: false,
+        fetchedAt: 7,
+      });
+      expect((await store.snapshotMeta())?.fetchedAt).toBe(7);
     } finally {
       store.close();
     }
@@ -148,21 +153,22 @@ describe("store-node migration of a pre-runner database", () => {
       "0007_survey_index.sql",
       "0008_refresh_lease.sql",
       "0009_snapshot_chunks.sql",
+      "0010_response_rows.sql",
     ]);
   });
 });
 
-describe("store-node migration of a single-blob snapshot", () => {
-  it("carries the stored snapshot over as the first chunk", async () => {
+describe("store-node migration to per-response rows", () => {
+  it("drops the blob and reports not-ready until the next refresh", async () => {
     const dir = mkdtempSync(join(tmpdir(), "tessera-store-"));
     const path = join(dir, "cache.sqlite");
-    // Bring a database up to 0008 exactly — the state a deployed backend is in
-    // before this upgrade — with a snapshot already cached.
+    // Bring a database up to 0009 exactly — the state a deployed backend is in
+    // before this upgrade — with a snapshot cached and its index materialized.
     const migrationsDir = fileURLToPath(
       new URL("../migrations", import.meta.url),
     );
     const before = readdirSync(migrationsDir)
-      .filter((f) => f.endsWith(".sql") && f < "0009")
+      .filter((f) => f.endsWith(".sql") && f < "0010")
       .sort();
     const old = new DatabaseSync(path);
     old.exec(`CREATE TABLE schema_migration (
@@ -173,19 +179,29 @@ describe("store-node migration of a single-blob snapshot", () => {
       old.prepare("INSERT INTO schema_migration VALUES (?, 1)").run(file);
     }
     old
+      .prepare("INSERT INTO snapshot_chunk (seq, payload) VALUES (0, ?)")
+      .run(JSON.stringify({ records: { responses: ["stale"] } }));
+    old
       .prepare(
-        "INSERT INTO snapshot_cache (id, payload, fetched_at) VALUES (1, ?, ?)",
+        `INSERT INTO survey_index_meta (id, tip, incomplete, fetched_at)
+         VALUES (1, '{"epoch":500}', 0, 99)`,
       )
-      .run(JSON.stringify({ surveys: ["kept"] }), 99);
+      .run();
     old.close();
 
     const store = openBackendStore(path);
     try {
-      // Serving must not fall to 503 between the deploy and the next refresh.
-      expect(await store.get()).toEqual({
-        payload: { surveys: ["kept"] },
-        fetchedAt: 99,
+      // The rows can't carry over (their keys are derived in TypeScript), so
+      // the envelope is cleared: routes answer "not ready" rather than serving
+      // surveys whose responses have silently vanished.
+      expect(await store.snapshotMeta()).toBeNull();
+      // And the next refresh publishes into the new shape.
+      await store.replaceSnapshot([], [], {
+        tip: "{}",
+        incomplete: false,
+        fetchedAt: 100,
       });
+      expect((await store.snapshotMeta())?.fetchedAt).toBe(100);
     } finally {
       store.close();
       rmSync(dir, { recursive: true, force: true });
@@ -245,8 +261,8 @@ describe("store-node survey_index paging SQL", () => {
 
   it("orders by bucket, slot desc, key — and follows the keyset cursor", async () => {
     store = openBackendStore(":memory:");
-    await store.replaceSurveyIndex(rows, meta);
-    expect(await store.surveyIndexMeta()).toEqual(meta);
+    await store.replaceSnapshot(rows, [], meta);
+    expect(await store.snapshotMeta()).toEqual(meta);
 
     const all = await page({});
     expect(all.map((r) => r.surveyKey)).toEqual([
@@ -266,7 +282,7 @@ describe("store-node survey_index paging SQL", () => {
 
   it("applies filters and search terms", async () => {
     store = openBackendStore(":memory:");
-    await store.replaceSurveyIndex(rows, meta);
+    await store.replaceSnapshot(rows, [], meta);
 
     // Active = not cancelled and deadline not passed; the linked row is
     // active too and still sorts first by bucket.
@@ -293,7 +309,7 @@ describe("store-node survey_index paging SQL", () => {
 
   it("computes global counts over the search-matching set", async () => {
     store = openBackendStore(":memory:");
-    await store.replaceSurveyIndex(rows, meta);
+    await store.replaceSnapshot(rows, [], meta);
     expect(await store.surveyIndexCounts(TIP_EPOCH, ["key:11"], [])).toEqual({
       all: 4,
       linked: 1,
@@ -312,76 +328,105 @@ describe("store-node survey_index paging SQL", () => {
     });
   });
 
+  it("reads one row by key, decoding its flags", async () => {
+    store = openBackendStore(":memory:");
+    await store.replaceSnapshot(rows, [], meta);
+
+    expect(await store.surveyRow("cc:0")).toMatchObject({
+      surveyKey: "cc:0",
+      sealed: true,
+      cancelled: false,
+      record: `{"k":"cc:0"}`,
+    });
+    expect(await store.surveyRow("zz:9")).toBeNull();
+  });
+
   it("replace is a full swap", async () => {
     store = openBackendStore(":memory:");
-    await store.replaceSurveyIndex(rows, meta);
-    await store.replaceSurveyIndex([row("ee:0", 50)], {
+    await store.replaceSnapshot(rows, [], meta);
+    await store.replaceSnapshot([row("ee:0", 50)], [], {
       ...meta,
       fetchedAt: 8,
     });
     expect((await page({})).map((r) => r.surveyKey)).toEqual(["ee:0"]);
-    expect((await store.surveyIndexMeta())?.fetchedAt).toBe(8);
+    expect((await store.snapshotMeta())?.fetchedAt).toBe(8);
   });
 });
 
-describe("store-node chunked snapshot", () => {
+describe("store-node response rows", () => {
   let store: BackendStore;
   afterEach(() => store.close());
 
-  it("round-trips a payload larger than one chunk", async () => {
-    store = openBackendStore(":memory:");
-    expect(await store.get()).toBeNull();
-    expect(await store.snapshotFetchedAt()).toBeNull();
-
-    // Comfortably over the chunk size, so the split is exercised rather than
-    // assumed — a single value this size is what used to hit D1's cap.
-    const payload = {
-      surveys: Array.from({ length: 400 }, (_, i) => ({
-        key: `survey-${i}`,
-        blob: "x".repeat(4_000),
-      })),
-    };
-    await store.put({ payload, fetchedAt: 42 });
-
-    expect(await store.get()).toEqual({ payload, fetchedAt: 42 });
-    expect(await store.snapshotFetchedAt()).toBe(42);
+  const meta = { tip: `{"epoch":500}`, incomplete: false, fetchedAt: 7 };
+  const resp = (
+    txHash: string,
+    surveyKey: string,
+    credential: string,
+    slot: number,
+    responseIndex = 0,
+  ): ResponseRow => ({
+    txHash,
+    responseIndex,
+    surveyKey,
+    credential,
+    slot,
+    record: `{"tx":"${txHash}","i":${responseIndex}}`,
   });
 
-  it("replaces the previous payload rather than trailing its chunks", async () => {
-    store = openBackendStore(":memory:");
-    await store.put({
-      payload: { blob: "y".repeat(2_000_000) },
-      fetchedAt: 1,
-    });
-    // Shrinking is the case a naive per-row upsert gets wrong: the old
-    // payload's high-seq rows would survive and corrupt the concatenation.
-    await store.put({ payload: { blob: "small" }, fetchedAt: 2 });
+  // Two surveys, and one responder answering both — so a per-survey read that
+  // leaked across surveys, or a credential read that didn't, would show.
+  const rows = [
+    resp("dd", "aa:0", "key:11", 960_000),
+    resp("cc", "aa:0", "key:11", 950_000),
+    resp("cc", "aa:0", "script:22", 950_000, 1),
+    resp("ff", "bb:1", "script:22", 956_000),
+  ];
 
-    expect(await store.get()).toEqual({
-      payload: { blob: "small" },
-      fetchedAt: 2,
-    });
+  it("serves one survey's responses in a stable order", async () => {
+    store = openBackendStore(":memory:");
+    await store.replaceSnapshot([], rows, meta);
+
+    // (slot, txHash, responseIndex): the same bytes on every refresh, so the
+    // ETag's promise that an unchanged snapshot means an unchanged body holds.
+    expect(await store.responsesForSurvey("aa:0")).toEqual([
+      `{"tx":"cc","i":0}`,
+      `{"tx":"cc","i":1}`,
+      `{"tx":"dd","i":0}`,
+    ]);
+    expect(await store.responsesForSurvey("bb:1")).toEqual([
+      `{"tx":"ff","i":0}`,
+    ]);
+    expect(await store.responsesForSurvey("unknown:0")).toEqual([]);
   });
 
-  it("survives a multi-byte character on a chunk boundary", async () => {
+  it("maps credentials to the surveys they answered", async () => {
     store = openBackendStore(":memory:");
-    // Astral characters are surrogate pairs in JS; a split between the halves
-    // is not representable in UTF-8 and would not survive a TEXT column.
-    const title = "🎲".repeat(400_000);
-    await store.put({ payload: { title }, fetchedAt: 3 });
+    await store.replaceSnapshot([], rows, meta);
 
-    const back = (await store.get())?.payload as { title: string };
-    expect(back.title).toBe(title);
+    expect(await store.respondedSurveyKeys(["key:11"])).toEqual(["aa:0"]);
+    // Union across a wallet's credentials, deduped across several responses.
+    expect(
+      (await store.respondedSurveyKeys(["key:11", "script:22"])).sort(),
+    ).toEqual(["aa:0", "bb:1"]);
+    // Credential kinds must not cross-match.
+    expect(await store.respondedSurveyKeys(["script:11"])).toEqual([]);
+    expect(await store.respondedSurveyKeys([])).toEqual([]);
   });
-});
 
-describe("chunkText", () => {
-  it("never splits a surrogate pair, and always yields a chunk", () => {
-    // Boundary lands exactly between the halves of the pair → back off one.
-    expect(chunkText("ab🎲cd", 3)).toEqual(["ab", "🎲c", "d"]);
-    expect(chunkText("abcdef", 3)).toEqual(["abc", "def"]);
-    expect(chunkText("", 3)).toEqual([""]);
-    expect(chunkText("🎲", 3)).toEqual(["🎲"]);
+  it("replaces wholesale, so a vanished response stops being served", async () => {
+    store = openBackendStore(":memory:");
+    await store.replaceSnapshot([], rows, meta);
+    // A reorg drops the later response; a merging write would keep serving it.
+    await store.replaceSnapshot(
+      [],
+      rows.filter((r) => r.txHash !== "dd"),
+      { ...meta, fetchedAt: 8 },
+    );
+
+    expect(await store.responsesForSurvey("aa:0")).toEqual([
+      `{"tx":"cc","i":0}`,
+      `{"tx":"cc","i":1}`,
+    ]);
   });
 });
 

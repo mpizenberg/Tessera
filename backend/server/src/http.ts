@@ -28,10 +28,9 @@
  * Transfer economics: responses are compressed (hex-heavy JSON shrinks several
  * fold), and every snapshot-derived route carries an `ETag` versioned by
  * `fetchedAt` — the body only changes when a refresh lands, so a browser
- * revalidation between refreshes is a 304 with no body. The per-page routes
- * slice the cached blob per request (it is ~tens of KB); if that ever shows up
- * in a profile, an in-memory per-isolate index (rebuilt when `fetchedAt`
- * changes) or the §6.5 tables replace it — don't build that early.
+ * revalidation between refreshes is a 304 with no body. Each route reads only
+ * the rows it serves: the refresh materializes the snapshot into `survey_index`
+ * and `response` rows, so no request cost scales with the whole corpus.
  *
  * A plain Hono app: the same object runs under `@hono/node-server` locally
  * (`main.ts`) and on a Cloudflare Worker (`worker.ts`).
@@ -42,14 +41,7 @@ import type { Context } from "hono";
 import { compress } from "hono/compress";
 import { cors } from "hono/cors";
 
-import {
-  credentialKey,
-  refKey,
-  type ChainTip,
-  type Cip179Records,
-  type GovLink,
-} from "cip-179/domain";
-import { fromJsonSafe, toJsonSafe } from "cip-179/tally";
+import { toJsonSafe } from "cip-179/tally";
 import {
   encodeSurveyCursor,
   isSurveyListFilter,
@@ -78,6 +70,14 @@ const MAX_PAGE_LIMIT = 200;
 const MAX_TX_STATUS_HASHES = 20;
 
 /**
+ * Upper bound on credentials one request may filter by. A wallet controls a
+ * payment and a stake credential, so real callers send two; the bound keeps an
+ * abusive list from reaching the store, where it would become an `IN (…)` past
+ * D1's 100-parameter cap.
+ */
+const MAX_CREDENTIALS = 20;
+
+/**
  * Memoize an async producer for `ttlMs`. The in-flight promise is shared, so a
  * burst of concurrent requests triggers a single upstream call; a rejection
  * evicts itself immediately so one failure isn't served for the whole window.
@@ -101,19 +101,24 @@ function ttlCache<T>(
   };
 }
 
-/** The decoded shape of the cached snapshot payload (built in `refresh.ts`). */
-interface SnapshotBody {
-  readonly records: Cip179Records;
-  readonly tip: ChainTip;
-  readonly govLinks: readonly GovLink[];
+/**
+ * The `credentials=` query list in core `credentialKey` form, or null when it
+ * is oversized (the caller answers 400).
+ */
+function credentialsOf(c: Context): string[] | null {
+  const list = (c.req.query("credentials") ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return list.length > MAX_CREDENTIALS ? null : list;
 }
 
 /**
  * Shared conditional-request handling for snapshot-derived routes. The body of
  * each is fully determined by which refresh produced it, so `fetchedAt` is the
  * version: `no-cache` makes the browser revalidate every time, and an unchanged
- * snapshot answers 304 with no body — checked BEFORE the blob is decoded, so a
- * revalidation costs no JSON parse. (`ageSeconds` drifts within a refresh
+ * snapshot answers 304 with no body — checked BEFORE any row is read, so a
+ * revalidation costs one envelope lookup. (`ageSeconds` drifts within a refresh
  * window — clients wanting live staleness should derive it from `fetchedAt`,
  * which is why the ETag deliberately ignores it. The ETag doesn't need to
  * encode the query/path either: caches key entries by full URL.)
@@ -178,17 +183,17 @@ export function createApp(
   // failed refreshes — so this is always served fresh.
   app.get("/api/health", async (c) => {
     const now = Math.floor(Date.now() / 1000);
-    const [fetchedAt, lastRefresh, last24h, validationBacklog] =
-      await Promise.all([
-        store.snapshotFetchedAt(),
-        store.lastRefreshRun(),
-        store.refreshTotalsSince(now - 86_400),
-        store.incompleteValidationCount(),
-      ]);
+    const [meta, lastRefresh, last24h, validationBacklog] = await Promise.all([
+      store.snapshotMeta(),
+      store.lastRefreshRun(),
+      store.refreshTotalsSince(now - 86_400),
+      store.incompleteValidationCount(),
+    ]);
     const body: BackendHealth = {
       network: config.app.network,
-      snapshot:
-        fetchedAt !== null ? { fetchedAt, ageSeconds: now - fetchedAt } : null,
+      snapshot: meta
+        ? { fetchedAt: meta.fetchedAt, ageSeconds: now - meta.fetchedAt }
+        : null,
       lastRefresh,
       last24h,
       validationBacklog,
@@ -202,13 +207,13 @@ export function createApp(
   });
 
   // The paged Explore list, answered from the refresh-materialized
-  // `survey_index` rows (no snapshot-blob decode). Query params mirror
-  // `@tessera/core`'s `SurveyListParams`; semantics (ordering, filters,
-  // counts, cursor) are the core `pageSurveyList` spec, implemented in SQL
-  // (`surveyIndexSql.ts`). The finalized-cancelled overlay is baked into the
-  // rows at refresh time, consistent with the snapshot the ETag versions.
+  // `survey_index` rows. Query params mirror `@tessera/core`'s
+  // `SurveyListParams`; semantics (ordering, filters, counts, cursor) are the
+  // core `pageSurveyList` spec, implemented in SQL (`snapshotSql.ts`). The
+  // finalized-cancelled overlay is baked into the rows at refresh time,
+  // consistent with the snapshot the ETag versions.
   app.get("/api/surveys", async (c) => {
-    const meta = await store.surveyIndexMeta();
+    const meta = await store.snapshotMeta();
     if (!meta) return c.json({ error: "snapshot not ready" }, 503);
     if (notModified(c, `W/"surveys-${meta.fetchedAt}"`))
       return c.body(null, 304);
@@ -222,10 +227,8 @@ export function createApp(
     const cursorRaw = c.req.query("cursor");
     const cursor = cursorRaw ? parseSurveyCursor(cursorRaw) : null;
     if (cursorRaw && !cursor) return c.json({ error: "malformed cursor" }, 400);
-    const credentials = (c.req.query("credentials") ?? "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const credentials = credentialsOf(c);
+    if (!credentials) return c.json({ error: "too many credentials" }, 400);
     const searchTerms = searchTermsOf(c.req.query("q"));
 
     // Stored values are already wire-form JSON text — the body is assembled
@@ -275,59 +278,44 @@ export function createApp(
     });
   });
 
+  // One survey's self-contained bundle. Stored values are already wire-form
+  // JSON text, so the body is assembled by parse-and-concatenate — the survey's
+  // own rows and nothing else are read.
   app.get("/api/surveys/:txHash/:index", async (c) => {
-    const cached = await store.get();
-    if (!cached) return c.json({ error: "snapshot not ready" }, 503);
+    const meta = await store.snapshotMeta();
+    if (!meta) return c.json({ error: "snapshot not ready" }, 503);
     const txHash = c.req.param("txHash").toLowerCase();
     const index = Number(c.req.param("index"));
     if (!/^[0-9a-f]{64}$/.test(txHash) || !Number.isInteger(index) || index < 0)
       return c.json({ error: "malformed survey ref" }, 404);
-    if (notModified(c, `W/"survey-${cached.fetchedAt}"`))
+    if (notModified(c, `W/"survey-${meta.fetchedAt}"`))
       return c.body(null, 304);
-    const { records, tip } = fromJsonSafe(cached.payload) as SnapshotBody;
     const key = `${txHash}:${index}`;
-    const survey = records.surveys.find((s) => refKey(s.ref) === key);
-    if (!survey) return c.json({ error: `unknown survey ${key}` }, 404);
+    const row = await store.surveyRow(key);
+    if (!row) return c.json({ error: `unknown survey ${key}` }, 404);
     const now = Math.floor(Date.now() / 1000);
-    return c.json(
-      toJsonSafe({
-        survey,
-        responses: records.responses.filter(
-          (r) => refKey(r.response.surveyRef) === key,
-        ),
-        cancellations: records.cancellations.filter(
-          (x) => refKey(x.target) === key,
-        ),
-        tip,
-        fetchedAt: cached.fetchedAt,
-        ageSeconds: now - cached.fetchedAt,
-      }) as Record<string, unknown>,
-    );
+    return c.json({
+      survey: JSON.parse(row.record) as unknown,
+      responses: (await store.responsesForSurvey(key)).map(
+        (record) => JSON.parse(record) as unknown,
+      ),
+      cancellations: JSON.parse(row.cancellations) as unknown,
+      tip: JSON.parse(meta.tip) as unknown,
+      fetchedAt: meta.fetchedAt,
+      ageSeconds: now - meta.fetchedAt,
+    });
   });
 
   app.get("/api/responded", async (c) => {
-    const cached = await store.get();
-    if (!cached) return c.json({ error: "snapshot not ready" }, 503);
-    if (notModified(c, `W/"responded-${cached.fetchedAt}"`))
+    const meta = await store.snapshotMeta();
+    if (!meta) return c.json({ error: "snapshot not ready" }, 503);
+    if (notModified(c, `W/"responded-${meta.fetchedAt}"`))
       return c.body(null, 304);
-    const wanted = new Set(
-      (c.req.query("credentials") ?? "")
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean),
-    );
-    // Raw responses, no dedupe/validity filter: this feeds "surveys I answered"
-    // flags, where any response attempt counts (mirrors the seam contract).
-    const { records } = fromJsonSafe(cached.payload) as SnapshotBody;
-    const surveyKeys = new Set<string>();
-    for (const r of records.responses) {
-      if (wanted.has(credentialKey(r.response.credential))) {
-        surveyKeys.add(refKey(r.response.surveyRef));
-      }
-    }
+    const credentials = credentialsOf(c);
+    if (!credentials) return c.json({ error: "too many credentials" }, 400);
     return c.json({
-      surveyKeys: [...surveyKeys],
-      fetchedAt: cached.fetchedAt,
+      surveyKeys: await store.respondedSurveyKeys(credentials),
+      fetchedAt: meta.fetchedAt,
     });
   });
 

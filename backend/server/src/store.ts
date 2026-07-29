@@ -1,69 +1,15 @@
 /**
- * Snapshot cache storage — the repository interface.
+ * Snapshot storage — the repository interface.
  *
  * The read-path snapshot is content the browser used to re-fetch on every load;
- * here it is computed once server-side and cached. Two implementations share
- * this seam and the same SQLite schema (`snapshot_chunk` + `snapshot_meta`):
- * `store-node.ts` (node:sqlite, local process) and `store-d1.ts` (Cloudflare
- * D1, Worker) — see `backend/ARCHITECTURE.md` §3. `get`/`put` are async because
- * D1 is; the node impl just wraps its synchronous calls. The Phase-2 tally
- * tables (§6.5) join this schema too.
+ * here it is computed once server-side and stored, materialized as the rows the
+ * serving routes read directly (`materialize.ts` turns a scan into them). Two
+ * implementations share this seam and the same SQLite schema: `store-node.ts`
+ * (node:sqlite, local process) and `store-d1.ts` (Cloudflare D1, Worker) — see
+ * `backend/ARCHITECTURE.md` §3. Every method is async because D1 is; the node
+ * impl just wraps its synchronous calls. The Phase-2 tally tables (§6.5) join
+ * this schema too.
  */
-
-export interface CachedSnapshot {
-  /** JSON-safe DTO (`@tessera/core` wire form) of `{ records, tip, govLinks }`. */
-  readonly payload: unknown;
-  /** Unix seconds when this snapshot was fetched from Koios. */
-  readonly fetchedAt: number;
-}
-
-/**
- * Characters per stored snapshot chunk. D1 caps a single value at ~2,000,000
- * bytes; a UTF-16 code unit costs at most 3 UTF-8 bytes (4-byte characters
- * arrive as two units), so this bound holds under any payload content with
- * room to spare.
- */
-export const SNAPSHOT_CHUNK_CHARS = 512 * 1024;
-
-/**
- * Payload size past which the snapshot is worth complaining about. Chunking
- * removed the storage cliff, so what remains is per-request cost: every route
- * serving from the blob parses all of it, inside a Worker's memory limit. The
- * answer past this point is per-record rows, not larger chunks.
- */
-export const SNAPSHOT_WARN_BYTES = 8 * 1024 * 1024;
-
-/**
- * Split `text` for storage, never between a surrogate pair — half a pair is
- * not representable in UTF-8, so a split one would not survive the round trip
- * through a TEXT column. Always yields at least one (possibly empty) chunk, so
- * "no chunks stored" means "no snapshot" and nothing else.
- */
-export function chunkText(
-  text: string,
-  size: number = SNAPSHOT_CHUNK_CHARS,
-): string[] {
-  const chunks: string[] = [];
-  for (let i = 0; i < text.length; ) {
-    let end = Math.min(i + size, text.length);
-    const last = text.charCodeAt(end - 1);
-    if (end < text.length && last >= 0xd800 && last <= 0xdbff) end -= 1;
-    chunks.push(text.slice(i, end));
-    i = end;
-  }
-  return chunks.length > 0 ? chunks : [""];
-}
-
-export interface SnapshotStore {
-  get(): Promise<CachedSnapshot | null>;
-  put(snapshot: CachedSnapshot): Promise<void>;
-  /**
-   * The stored snapshot's `fetchedAt` alone, without deserializing the payload
-   * blob — for freshness probes (`/api/health`) that don't need the body.
-   */
-  snapshotFetchedAt(): Promise<number | null>;
-  close(): void;
-}
 
 /**
  * One response's §6.3 validation result (rules 1–3), persisted so each
@@ -227,7 +173,7 @@ export interface RefreshRunRow {
   readonly incomplete: boolean;
   readonly surveys: number;
   readonly responses: number;
-  /** Serialized snapshot payload size — the single-blob row's growth metric. */
+  /** Total wire JSON stored across the materialized rows — the growth metric. */
   readonly payloadBytes: number;
 }
 
@@ -345,12 +291,31 @@ export interface SurveyIndexRow {
   readonly finalizedCancelled: boolean;
 }
 
-/** The page-independent envelope stored alongside the index rows. */
-export interface SurveyIndexMeta {
+/**
+ * One on-chain response, materialized for serving. The `record` column holds
+ * the wire JSON of the `ResponseRecord`, so a bundle body is assembled by
+ * parse-and-concatenate; the other columns are what the two queries over this
+ * table select on — a survey's responses, and a credential's answered surveys.
+ */
+export interface ResponseRow {
+  readonly txHash: string;
+  /** Position within the carrying payload's `responses` array. */
+  readonly responseIndex: number;
+  /** Target survey ("<txHex>:<index>"). */
+  readonly surveyKey: string;
+  /** Responder identity ("key:<hex>" | "script:<hex>"). */
+  readonly credential: string;
+  readonly slot: number;
+  /** Wire JSON of the `ResponseRecord`. */
+  readonly record: string;
+}
+
+/** The page-independent envelope stored alongside the materialized rows. */
+export interface SnapshotMeta {
   /** Wire JSON of the snapshot's `ChainTip`. */
   readonly tip: string;
   readonly incomplete: boolean;
-  /** Versions the list route's ETag; equals the snapshot's `fetchedAt`. */
+  /** Versions every snapshot-derived route's ETag. */
   readonly fetchedAt: number;
 }
 
@@ -368,14 +333,37 @@ export interface SurveyPageQuery {
   readonly limit: number;
 }
 
-/** Paged Explore-list persistence (the `survey_index` tables). */
-export interface SurveyIndexStore {
-  /** Atomically replace all index rows and the meta envelope. */
-  replaceSurveyIndex(
-    rows: readonly SurveyIndexRow[],
-    meta: SurveyIndexMeta,
+/**
+ * The materialized snapshot every serving route reads: survey rows, response
+ * rows, and the envelope shared by both.
+ */
+export interface SnapshotStore {
+  /**
+   * Atomically replace every materialized row and the envelope. Wholesale
+   * replacement, not merge: a record can leave the snapshot (reorged out, or
+   * aged past the scan's floor), and a run's rows must never be served mixed
+   * with the previous run's.
+   */
+  replaceSnapshot(
+    surveys: readonly SurveyIndexRow[],
+    responses: readonly ResponseRow[],
+    meta: SnapshotMeta,
   ): Promise<void>;
-  surveyIndexMeta(): Promise<SurveyIndexMeta | null>;
+  /** The envelope, or null before the first refresh — the readiness signal. */
+  snapshotMeta(): Promise<SnapshotMeta | null>;
+  /** One survey's row, or null if the snapshot doesn't have that survey. */
+  surveyRow(surveyKey: string): Promise<SurveyIndexRow | null>;
+  /**
+   * Wire JSON of every response targeting one survey — all of them, raw and
+   * undeduped: the bundle feeds client-side audit and re-tally. Ordered by
+   * (slot, txHash, responseIndex) so a body is byte-stable between refreshes.
+   */
+  responsesForSurvey(surveyKey: string): Promise<string[]>;
+  /**
+   * Survey keys any of `credentials` responded to (`credentialKey` form). Raw
+   * membership, no dedupe or validity filter — this feeds "surveys I answered".
+   */
+  respondedSurveyKeys(credentials: readonly string[]): Promise<string[]>;
   /**
    * One page in (bucket ASC, slot DESC, key ASC) order, where bucket is
    * 0 gov-linked / 1 open / 2 closed computed against `tipEpoch`. Each row
@@ -390,12 +378,12 @@ export interface SurveyIndexStore {
     credentials: readonly string[],
     searchTerms: readonly string[],
   ): Promise<import("@tessera/core").SurveyListCounts>;
+  close(): void;
 }
 
-/** What the backend wires together: snapshot + tally + scan + health + list. */
+/** What the backend wires together: snapshot + tally + scan + health. */
 export type BackendStore = SnapshotStore &
   TallyStore &
   ScanCacheStore &
   HealthStore &
-  RefreshLeaseStore &
-  SurveyIndexStore;
+  RefreshLeaseStore;

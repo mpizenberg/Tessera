@@ -17,12 +17,8 @@ import { KoiosDataSource, KoiosTallyInputs } from "@tessera/koios";
 
 import type { ServerConfig } from "./config";
 import { finalizeClosedSurveys } from "./finalize";
-import { buildSurveyIndex } from "./listIndex";
-import {
-  REFRESH_LEASE_SECONDS,
-  SNAPSHOT_WARN_BYTES,
-  type BackendStore,
-} from "./store";
+import { materializeSnapshot, snapshotBytes } from "./materialize";
+import { REFRESH_LEASE_SECONDS, type BackendStore } from "./store";
 import { validateNewResponses } from "./validate";
 
 /** Cap stored failure messages so a pathological error can't bloat the row. */
@@ -115,19 +111,6 @@ export async function refreshSnapshot(
         return { links: [], unresolved: [] };
       });
 
-    const payload = toJsonSafe({ records, tip, govLinks });
-    const payloadBytes = JSON.stringify(payload).length;
-    const fetchedAt = Math.floor(Date.now() / 1000);
-    await store.put({ payload, fetchedAt });
-    if (payloadBytes > SNAPSHOT_WARN_BYTES) {
-      // Storage scales (the blob is chunked); per-request parsing does not —
-      // every route serving from the snapshot parses all of it.
-      console.warn(
-        `snapshot payload ${payloadBytes} bytes exceeds ${SNAPSHOT_WARN_BYTES} — ` +
-          `responses belong in their own rows before this grows further`,
-      );
-    }
-
     console.log(
       `snapshot refreshed: ${records.surveys.length} surveys, ` +
         `${records.responses.length} responses, ` +
@@ -165,24 +148,22 @@ export async function refreshSnapshot(
       console.warn(`finalization failed (will retry): ${String(err)}`),
     );
 
-    // Materialize the paged Explore-list rows LAST, so the index reflects
-    // this run's validation/finalization (a survey finalized as cancelled
-    // above flips its row's overlay flag in the same refresh). Sharing the
-    // snapshot's fetchedAt keeps the list route's ETag in step with the
-    // per-survey routes serving the blob.
-    await store.replaceSurveyIndex(
-      buildSurveyIndex(
-        records,
-        tip,
-        govLinks,
-        await store.finalizedCancelledKeys(),
-      ),
-      {
-        tip: JSON.stringify(toJsonSafe(tip)),
-        incomplete: records.incomplete === true,
-        fetchedAt,
-      },
+    // Materialize LAST, so the stored rows reflect this run's validation and
+    // finalization (a survey finalized as cancelled above flips its row's
+    // overlay flag in the same refresh). One transaction publishes the whole
+    // snapshot at once: until it commits, every route serves the previous one.
+    const snapshot = materializeSnapshot(
+      records,
+      tip,
+      govLinks,
+      await store.finalizedCancelledKeys(),
     );
+    const payloadBytes = snapshotBytes(snapshot);
+    await store.replaceSnapshot(snapshot.surveys, snapshot.responses, {
+      tip: JSON.stringify(toJsonSafe(tip)),
+      incomplete: records.incomplete === true,
+      fetchedAt: Math.floor(Date.now() / 1000),
+    });
 
     await recordRun({
       ok: true,

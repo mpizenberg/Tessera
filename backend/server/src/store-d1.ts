@@ -13,10 +13,10 @@ import type { SurveyListCounts } from "@tessera/core";
 import type {
   ArtifactRow,
   BackendStore,
-  CachedSnapshot,
   RefreshRunRow,
   RefreshTotals,
-  SurveyIndexMeta,
+  ResponseRow,
+  SnapshotMeta,
   SurveyIndexRow,
   SurveyPageQuery,
   ValidatedResponseRow,
@@ -26,19 +26,26 @@ import {
   REFRESH_LEASE_ACQUIRE,
   REFRESH_LEASE_RELEASE,
   REFRESH_RUN_RETENTION_SECONDS,
-  chunkText,
   validationKey,
 } from "./store";
 import {
+  RESPONSES_FOR_SURVEY,
+  RESPONSE_INSERT,
+  SNAPSHOT_META_SELECT,
+  SNAPSHOT_META_UPSERT,
   SURVEY_INDEX_INSERT,
-  SURVEY_INDEX_META_UPSERT,
+  SURVEY_ROW_SELECT,
   countsFromDb,
+  pagedSurveyRowFromDb,
+  respondedSql,
+  responseInsertParams,
   surveyCountsSql,
   surveyIndexInsertParams,
   surveyIndexRowFromDb,
   surveyPageSql,
+  type DbPagedSurveyRow,
   type DbSurveyIndexRow,
-} from "./surveyIndexSql";
+} from "./snapshotSql";
 
 interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
@@ -69,51 +76,6 @@ const fromDb = (r: DbValidatedRow): ValidatedResponseRow => ({
 
 export function d1BackendStore(db: D1Like): BackendStore {
   return {
-    async get(): Promise<CachedSnapshot | null> {
-      // Chunks and stamp in one statement: read separately, a refresh landing
-      // between them could pair one run's payload with the other's fetchedAt.
-      const { results } = await db
-        .prepare(
-          `SELECT c.payload AS payload, m.fetched_at AS fetchedAt
-           FROM snapshot_chunk c JOIN snapshot_meta m ON m.id = 1
-           ORDER BY c.seq`,
-        )
-        .all<{ payload: string; fetchedAt: number }>();
-      const first = results[0];
-      if (!first) return null;
-      return {
-        payload: JSON.parse(results.map((r) => r.payload).join("")),
-        fetchedAt: first.fetchedAt,
-      };
-    },
-    async put(snapshot: CachedSnapshot): Promise<void> {
-      const chunks = chunkText(JSON.stringify(snapshot.payload));
-      const insert = db.prepare(
-        "INSERT INTO snapshot_chunk (seq, payload) VALUES (?, ?)",
-      );
-      // One transaction, so a reader never sees this run's chunks mixed with
-      // the last one's — including the shrinking case, where stale high-seq
-      // rows would otherwise trail the new payload.
-      await db.batch([
-        db.prepare("DELETE FROM snapshot_chunk"),
-        ...chunks.map((text, seq) => insert.bind(seq, text)),
-        db
-          .prepare(
-            `INSERT INTO snapshot_meta (id, fetched_at) VALUES (1, ?)
-             ON CONFLICT(id) DO UPDATE SET fetched_at = excluded.fetched_at`,
-          )
-          .bind(snapshot.fetchedAt),
-      ]);
-    },
-    async snapshotFetchedAt(): Promise<number | null> {
-      const row = await db
-        .prepare(
-          "SELECT fetched_at AS fetchedAt FROM snapshot_meta WHERE id = 1",
-        )
-        .first<{ fetchedAt: number }>();
-      return row?.fetchedAt ?? null;
-    },
-
     async completedValidations(): Promise<Map<string, string | null>> {
       const { results } = await db
         .prepare(
@@ -338,30 +300,56 @@ export function d1BackendStore(db: D1Like): BackendStore {
       );
     },
 
-    async replaceSurveyIndex(
-      rows: readonly SurveyIndexRow[],
-      meta: SurveyIndexMeta,
+    async replaceSnapshot(
+      surveys: readonly SurveyIndexRow[],
+      responses: readonly ResponseRow[],
+      meta: SnapshotMeta,
     ): Promise<void> {
-      // db.batch runs as one transaction, so readers never observe rows from
-      // one refresh with the other's meta.
-      const insert = db.prepare(SURVEY_INDEX_INSERT);
+      // db.batch runs as one transaction, so readers never observe one run's
+      // rows beside another's — across both tables and the envelope.
+      const survey = db.prepare(SURVEY_INDEX_INSERT);
+      const response = db.prepare(RESPONSE_INSERT);
       await db.batch([
         db.prepare("DELETE FROM survey_index"),
-        ...rows.map((r) => insert.bind(...surveyIndexInsertParams(r))),
+        db.prepare("DELETE FROM response"),
+        ...surveys.map((r) => survey.bind(...surveyIndexInsertParams(r))),
+        ...responses.map((r) => response.bind(...responseInsertParams(r))),
         db
-          .prepare(SURVEY_INDEX_META_UPSERT)
+          .prepare(SNAPSHOT_META_UPSERT)
           .bind(meta.tip, meta.incomplete ? 1 : 0, meta.fetchedAt),
       ]);
     },
-    async surveyIndexMeta(): Promise<SurveyIndexMeta | null> {
+    async snapshotMeta(): Promise<SnapshotMeta | null> {
       const row = await db
-        .prepare(
-          `SELECT tip, incomplete, fetched_at AS fetchedAt
-           FROM survey_index_meta WHERE id = 1`,
-        )
+        .prepare(SNAPSHOT_META_SELECT)
         .first<{ tip: string; incomplete: number; fetchedAt: number }>();
       if (!row) return null;
       return { ...row, incomplete: row.incomplete !== 0 };
+    },
+    async surveyRow(surveyKey: string): Promise<SurveyIndexRow | null> {
+      const row = await db
+        .prepare(SURVEY_ROW_SELECT)
+        .bind(surveyKey)
+        .first<DbSurveyIndexRow>();
+      return row ? surveyIndexRowFromDb(row) : null;
+    },
+    async responsesForSurvey(surveyKey: string): Promise<string[]> {
+      const { results } = await db
+        .prepare(RESPONSES_FOR_SURVEY)
+        .bind(surveyKey)
+        .all<{ record: string }>();
+      return results.map((r) => r.record);
+    },
+    async respondedSurveyKeys(
+      credentials: readonly string[],
+    ): Promise<string[]> {
+      if (credentials.length === 0) return [];
+      const { sql, params } = respondedSql(credentials);
+      const { results } = await db
+        .prepare(sql)
+        .bind(...params)
+        .all<{ surveyKey: string }>();
+      return results.map((r) => r.surveyKey);
     },
     async surveyIndexPage(
       q: SurveyPageQuery,
@@ -370,8 +358,8 @@ export function d1BackendStore(db: D1Like): BackendStore {
       const { results } = await db
         .prepare(sql)
         .bind(...params)
-        .all<DbSurveyIndexRow>();
-      return results.map(surveyIndexRowFromDb);
+        .all<DbPagedSurveyRow>();
+      return results.map(pagedSurveyRowFromDb);
     },
     async surveyIndexCounts(
       tipEpoch: number,

@@ -9,9 +9,9 @@ import type { SurveyListFilter } from "@tessera/core";
 import type {
   ArtifactRow,
   BackendStore,
-  CachedSnapshot,
   RefreshRunRow,
-  SurveyIndexMeta,
+  ResponseRow,
+  SnapshotMeta,
   SurveyIndexRow,
   ValidatedResponseRow,
   WeightRow,
@@ -29,10 +29,7 @@ export interface MemBackendStore extends BackendStore {
   surveyIndex: readonly SurveyIndexRow[];
 }
 
-export function memBackendStore(
-  initial: CachedSnapshot | null = null,
-): MemBackendStore {
-  let snapshot = initial;
+export function memBackendStore(): MemBackendStore {
   const validated = new Map<string, ValidatedResponseRow>();
   const weights = new Map<string, WeightRow>();
   const totals = new Map<string, { total: string; endpoint: string }>();
@@ -41,9 +38,10 @@ export function memBackendStore(
   const refreshRuns = new Map<number, RefreshRunRow>();
   let lease: { holder: string; expiresAt: number } | null = null;
   let surveyIndexRows: readonly SurveyIndexRow[] = [];
-  let surveyIndexMeta: SurveyIndexMeta | null = null;
+  let responseRows: readonly ResponseRow[] = [];
+  let meta: SnapshotMeta | null = null;
 
-  // Same semantics as the SQL in surveyIndexSql.ts (and core's pageSurveyList).
+  // Same semantics as the SQL in snapshotSql.ts (and core's pageSurveyList).
   const bucketOf = (r: SurveyIndexRow, tipEpoch: number): number =>
     r.govLinked ? 0 : r.cancelled || r.endEpoch < tipEpoch ? 2 : 1;
   const matchesTerms = (r: SurveyIndexRow, terms: readonly string[]) =>
@@ -83,16 +81,6 @@ export function memBackendStore(
     refreshRuns,
     get surveyIndex() {
       return surveyIndexRows;
-    },
-
-    async get() {
-      return snapshot;
-    },
-    async put(s) {
-      snapshot = s;
-    },
-    async snapshotFetchedAt() {
-      return snapshot?.fetchedAt ?? null;
     },
 
     async completedValidations() {
@@ -174,12 +162,37 @@ export function memBackendStore(
         if (!txMetadata.has(h)) txMetadata.set(h, m);
     },
 
-    async replaceSurveyIndex(rows, meta) {
-      surveyIndexRows = [...rows];
-      surveyIndexMeta = meta;
+    async replaceSnapshot(surveys, responses, envelope) {
+      surveyIndexRows = [...surveys];
+      responseRows = [...responses];
+      meta = envelope;
     },
-    async surveyIndexMeta() {
-      return surveyIndexMeta;
+    async snapshotMeta() {
+      return meta;
+    },
+    async surveyRow(surveyKey) {
+      return surveyIndexRows.find((r) => r.surveyKey === surveyKey) ?? null;
+    },
+    async responsesForSurvey(surveyKey) {
+      return responseRows
+        .filter((r) => r.surveyKey === surveyKey)
+        .sort(
+          (a, b) =>
+            a.slot - b.slot ||
+            (a.txHash < b.txHash ? -1 : a.txHash > b.txHash ? 1 : 0) ||
+            a.responseIndex - b.responseIndex,
+        )
+        .map((r) => r.record);
+    },
+    async respondedSurveyKeys(credentials) {
+      const wanted = new Set(credentials);
+      return [
+        ...new Set(
+          responseRows
+            .filter((r) => wanted.has(r.credential))
+            .map((r) => r.surveyKey),
+        ),
+      ];
     },
     async surveyIndexPage(q) {
       const credentials = new Set(q.credentials);
