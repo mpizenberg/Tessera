@@ -882,6 +882,25 @@ describe("finalizeClosedSurveys", () => {
     expect(stored.artifactHash).toBe(artifactHash(artifact.tally));
   });
 
+  // An artifact's provenance is immutable, so "no links" must never be recorded
+  // from a link set this refresh never managed to read.
+  it("emits nothing when the gov-link set is unknown", async () => {
+    const store = memBackendStore();
+    await seed(store, [validatedRow(rA)]);
+    const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
+    await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      inputs,
+      noProofs,
+      records(survey(), [rA]),
+      TIP,
+      undefined,
+      null,
+    );
+    expect(store.artifacts.size).toBe(0);
+  });
+
   it("commits an empty gov-link set for a standalone survey (finding 6)", async () => {
     const store = memBackendStore();
     await seed(store, [validatedRow(rA)]);

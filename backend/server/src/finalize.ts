@@ -121,13 +121,22 @@ export async function finalizeClosedSurveys(
   records: Cip179Records,
   tip: ChainTip,
   reveal: SealedRevealFn = tlockSealedReveal,
-  govLinks: readonly GovLink[] = [],
+  govLinks: readonly GovLink[] | null = [],
 ): Promise<void> {
   // An incomplete snapshot (a dropped metadata batch or the page cap) may be
   // missing a responder tx or a cancellation for *any* survey, and we can't tell
   // which — so no artifact this refresh is safe to hash. Postpone all of them.
   if (records.incomplete) {
     console.warn("finalize: snapshot incomplete — skipping finalization");
+    return;
+  }
+  // Same reasoning, for the link set: `null` is "this refresh couldn't read the
+  // links", and an artifact's provenance is an immutable record of what its
+  // verdicts were built on. Committing "no links" from an unread set would
+  // misreport a linked survey forever, so postpone — one interval, and the pass
+  // is idempotent.
+  if (govLinks === null) {
+    console.warn("finalize: governance links unknown — skipping finalization");
     return;
   }
 

@@ -146,7 +146,9 @@ export async function refreshSnapshot(
       records,
       tip,
       undefined,
-      govLinks,
+      // `null` = unknown, so the pass defers rather than stamping "no links"
+      // into an artifact that outlives this refresh.
+      govLinksReliable ? govLinks : null,
     ).catch((err) =>
       console.warn(`finalization failed (will retry): ${String(err)}`),
     );
