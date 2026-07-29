@@ -104,7 +104,10 @@ export async function refreshSnapshot(
     // against it, so the failure is signalled separately.
     let govLinksReliable = true;
     const { links: govLinks, unresolved: govUnresolved } = await source
-      .fetchGovernanceLinks(config.app.sinceUnix)
+      .fetchGovernanceLinks(
+        config.app.sinceUnix,
+        records.surveys.map((s) => s.definition.endEpoch),
+      )
       .catch((err) => {
         console.warn(`gov links fetch failed: ${String(err)}`);
         govLinksReliable = false;

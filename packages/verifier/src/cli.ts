@@ -225,11 +225,14 @@ async function main(): Promise<void> {
   for (const r of bundle.responses)
     addNeeded(r.txHash, scriptCredentialHash(r.response.credential));
 
+  // Only actions expiring with this survey can link it, or — unresolved — cloud
+  // its mechanism-B verdicts, so the scan reads that one epoch and no more.
+  const endEpoch = bundle.survey.definition.endEpoch;
   let govLinksReliable = true;
   const [blockIndices, proofs, govScan] = await Promise.all([
     source.txBlockIndices(txHashes),
     source.txProofs(txHashes, neededScripts),
-    source.fetchGovernanceLinks(config.sinceUnix).catch((err) => {
+    source.fetchGovernanceLinks(config.sinceUnix, [endEpoch]).catch((err) => {
       // A fetch failure is UNKNOWN, not "no links" — flag it so a mechanism-B
       // proof it might decide comes back INDETERMINATE, never a silent exclude.
       console.warn(
@@ -239,12 +242,7 @@ async function main(): Promise<void> {
       return { links: [], unresolved: [] };
     }),
   ]);
-  // Epoch-aligned actions whose anchor Koios couldn't resolve for us: only those
-  // matching this survey's end epoch can cloud its mechanism-B verdicts.
-  const endEpoch = bundle.survey.definition.endEpoch;
-  const unresolvedActionIds = govScan.unresolved
-    .filter((u) => u.endEpoch === endEpoch)
-    .map((u) => u.actionId);
+  const unresolvedActionIds = govScan.unresolved.map((u) => u.actionId);
 
   // 4. Rebuild + compare.
   const result = await verifyArtifact({
