@@ -5,6 +5,7 @@
  */
 
 import type { SurveyListFilter } from "@tessera/core";
+import type { GovLink } from "cip-179/domain";
 
 import type {
   ArtifactRow,
@@ -191,6 +192,11 @@ export function memBackendStore(): MemBackendStore {
     },
     async snapshotMeta() {
       return meta;
+    },
+    async snapshotGovLinks() {
+      return surveyIndexRows.flatMap(
+        (r) => JSON.parse(r.govLinks) as GovLink[],
+      );
     },
     async surveyBundle(surveyKey) {
       const survey = surveyIndexRows.find((r) => r.surveyKey === surveyKey);

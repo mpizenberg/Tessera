@@ -11,6 +11,8 @@
  * this schema too.
  */
 
+import type { GovLink } from "cip-179/domain";
+
 /**
  * One response's §6.3 validation result (rules 1–3), persisted so each
  * (tx, response) is checked once, not per refresh. `blockIndex`/`proofOk` are
@@ -398,6 +400,14 @@ export interface SnapshotStore {
   ): Promise<void>;
   /** The envelope, or null before the first refresh — the readiness signal. */
   snapshotMeta(): Promise<SnapshotMeta | null>;
+  /**
+   * Every governance link in the stored snapshot, re-parsed from the survey
+   * rows. This is what a refresh whose gov-links fetch failed publishes instead
+   * of an empty list: the links are stale by up to one refresh interval, but
+   * "unknown" displayed as "none" blanks them everywhere until the next good
+   * run. Display only — a stale link must never reach a verdict or an artifact.
+   */
+  snapshotGovLinks(): Promise<GovLink[]>;
   /**
    * One survey's bundle slice, or null if the snapshot doesn't have it. The
    * responses are ALL of them, raw and undeduped — client-side audit and

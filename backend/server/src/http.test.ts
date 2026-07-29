@@ -16,6 +16,7 @@ import { fromJsonSafe, toJsonSafe } from "cip-179/tally";
 import type {
   CancellationRecord,
   ChainTip,
+  GovLink,
   ResponseRecord,
   SurveyBundle,
   SurveyRecord,
@@ -31,11 +32,14 @@ function appWith(store: MemBackendStore) {
 }
 
 /** Materialize the fixture snapshot into the store, as the refresh does. */
-async function seed(store: MemBackendStore): Promise<void> {
+async function seed(
+  store: MemBackendStore,
+  govLinks: readonly GovLink[] = [],
+): Promise<void> {
   const snapshot = materializeSnapshot(
     { surveys: [surveyA, surveyB], responses, cancellations: [cancellation] },
     tip,
-    [],
+    govLinks,
     await store.finalizedCancelledKeys(),
   );
   await store.replaceSnapshot(snapshot.surveys, snapshot.responses, {
@@ -140,6 +144,15 @@ const cancellation: CancellationRecord = {
   proof: null,
 };
 
+// Epoch-aligned with survey A (expiry epoch 510 === its end_epoch), so it counts
+// as a verified link rather than riding along undisplayed.
+const govLinkA: GovLink = {
+  surveyKey: `${TX_A}:0`,
+  actionId: "gov_action1alpha",
+  endEpoch: 510,
+  title: "Fund the alpha budget",
+};
+
 const FETCHED_AT = 1_750_000_100;
 
 // --- tests -------------------------------------------------------------------
@@ -223,6 +236,39 @@ describe("GET /api/surveys", () => {
       await (await app.request("/api/surveys")).json(),
     ) as Record<string, unknown>;
     expect(body["finalizedCancelled"]).toEqual([]);
+  });
+
+  // A refresh whose gov-links fetch failed republishes the links it stored last
+  // time rather than an empty list, so the app doesn't lose them for an
+  // interval. What comes back out of the rows has to survive the round trip
+  // whole — links, flags, counts and searchable text alike.
+  it("keeps the links a failed gov-links fetch would have blanked", async () => {
+    const store = await seededStore();
+    await seed(store, [govLinkA]);
+    const linked = fromJsonSafe(
+      await (await appWith(store).request("/api/surveys")).json(),
+    ) as Record<string, unknown>;
+
+    const recovered = await store.snapshotGovLinks();
+    expect(recovered).toEqual([govLinkA]);
+    await seed(store, recovered); // the next refresh, gov links unreachable
+    const body = fromJsonSafe(
+      await (await appWith(store).request("/api/surveys")).json(),
+    ) as Record<string, unknown>;
+    expect(body["govLinks"]).toEqual([govLinkA]);
+    expect(body["counts"]).toEqual(linked["counts"]);
+    expect(store.surveyIndex.map((r) => [r.surveyKey, r.govLinked])).toEqual([
+      [`${TX_A}:0`, true],
+      [`${TX_B}:1`, false],
+    ]);
+    // The action's id and title stay searchable, as on a good refresh —
+    // neither appears in the on-chain definition.
+    const searched = fromJsonSafe(
+      await (
+        await appWith(store).request("/api/surveys?q=gov_action1alpha")
+      ).json(),
+    ) as Record<string, unknown>;
+    expect((searched["surveys"] as unknown[]).length).toBe(1);
   });
 });
 

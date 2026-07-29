@@ -9,6 +9,7 @@
  */
 
 import type { SurveyListCounts } from "@tessera/core";
+import type { GovLink } from "cip-179/domain";
 
 import type {
   ArtifactRow,
@@ -33,6 +34,7 @@ import {
 import {
   RESPONSES_FOR_SURVEY,
   RESPONSE_INSERT,
+  SNAPSHOT_GOV_LINKS_SELECT,
   SNAPSHOT_META_SELECT,
   SNAPSHOT_META_UPSERT,
   SURVEY_BUNDLE_SELECT,
@@ -369,6 +371,12 @@ export function d1BackendStore(db: D1Like): BackendStore {
         .first<{ tip: string; incomplete: number; fetchedAt: number }>();
       if (!row) return null;
       return { ...row, incomplete: row.incomplete !== 0 };
+    },
+    async snapshotGovLinks(): Promise<GovLink[]> {
+      const { results } = await db
+        .prepare(SNAPSHOT_GOV_LINKS_SELECT)
+        .all<{ govLinks: string }>();
+      return results.flatMap((r) => JSON.parse(r.govLinks) as GovLink[]);
     },
     async surveyBundle(surveyKey: string): Promise<SurveyBundleRows | null> {
       const [survey, responses] = await db.batch([

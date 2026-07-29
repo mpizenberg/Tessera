@@ -155,10 +155,24 @@ export async function refreshSnapshot(
     // finalization (a survey finalized as cancelled above flips its row's
     // overlay flag in the same refresh). One transaction publishes the whole
     // snapshot at once: until it commits, every route serves the previous one.
+    //
+    // What the snapshot shows is the one place a failed fetch must NOT read as
+    // "no links": publishing `[]` blanks every link in the app until a refresh
+    // succeeds. The previous snapshot's links go out instead — stale by an
+    // interval, but true when last read — while validation and finalization
+    // above keep seeing the honest empty result behind `govLinksReliable`.
+    // Alignment, haystack and counts are re-derived from the fresh tip, so a
+    // recovered link that no longer aligns simply stops counting.
+    const displayLinks = govLinksReliable
+      ? govLinks
+      : await store.snapshotGovLinks().catch((err) => {
+          console.warn(`gov links recovery failed: ${String(err)}`);
+          return [];
+        });
     const snapshot = materializeSnapshot(
       records,
       tip,
-      govLinks,
+      displayLinks,
       await store.finalizedCancelledKeys(),
     );
     const payloadBytes = snapshotBytes(snapshot);

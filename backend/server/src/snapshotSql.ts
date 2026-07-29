@@ -191,6 +191,10 @@ export const SNAPSHOT_META_SELECT = `
 export const SURVEY_BUNDLE_SELECT = `
   SELECT record, cancellations FROM survey_index WHERE survey_key = ?`;
 
+/** The stored snapshot's governance links, skipping the rows that carry none. */
+export const SNAPSHOT_GOV_LINKS_SELECT = `
+  SELECT gov_links AS govLinks FROM survey_index WHERE gov_links <> '[]'`;
+
 /**
  * A repeated `(tx_hash, response_index)` names the same immutable on-chain
  * response, so replacing is a no-op — and cheaper than letting a scan quirk

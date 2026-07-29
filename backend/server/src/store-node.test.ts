@@ -405,6 +405,40 @@ describe("store-node survey_index paging SQL", () => {
     expect((await page({})).map((r) => r.surveyKey)).toEqual(["ee:0"]);
     expect((await store.snapshotMeta())?.fetchedAt).toBe(8);
   });
+
+  // What a refresh with an unreachable proposal endpoint republishes instead of
+  // blanking every link (the stored rows are the only copy).
+  it("reads back every stored governance link, across rows", async () => {
+    store = openBackendStore(":memory:");
+    const link = (key: string, action: string) =>
+      `{"surveyKey":"${key}","actionId":"${action}","endEpoch":510,"title":null}`;
+    await store.replaceSnapshot(
+      [
+        row("aa:0", 100, {
+          govLinked: true,
+          govLinks: `[${link("aa:0", "gov_action1a")},${link("aa:0", "gov_action1b")}]`,
+        }),
+        row("bb:0", 300), // no links: contributes nothing, not a parse error
+        row("cc:0", 500, {
+          govLinked: true,
+          govLinks: `[${link("cc:0", "gov_action1c")}]`,
+        }),
+      ],
+      [],
+      meta,
+    );
+    expect((await store.snapshotGovLinks()).map((l) => l.actionId)).toEqual([
+      "gov_action1a",
+      "gov_action1b",
+      "gov_action1c",
+    ]);
+    expect((await store.snapshotGovLinks())[0]).toEqual({
+      surveyKey: "aa:0",
+      actionId: "gov_action1a",
+      endEpoch: 510,
+      title: null,
+    });
+  });
 });
 
 describe("store-node response rows", () => {

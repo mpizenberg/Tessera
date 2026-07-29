@@ -17,6 +17,7 @@ import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
 import type { SurveyListCounts } from "@tessera/core";
+import type { GovLink } from "cip-179/domain";
 
 import type {
   ArtifactRow,
@@ -41,6 +42,7 @@ import {
 import {
   RESPONSES_FOR_SURVEY,
   RESPONSE_INSERT,
+  SNAPSHOT_GOV_LINKS_SELECT,
   SNAPSHOT_META_SELECT,
   SNAPSHOT_META_UPSERT,
   SURVEY_BUNDLE_SELECT,
@@ -150,6 +152,7 @@ export function openBackendStore(path: string): BackendStore {
   const insertSurveyStmt = db.prepare(SURVEY_INDEX_INSERT);
   const insertResponseStmt = db.prepare(RESPONSE_INSERT);
   const surveyBundleStmt = db.prepare(SURVEY_BUNDLE_SELECT);
+  const snapshotGovLinksStmt = db.prepare(SNAPSHOT_GOV_LINKS_SELECT);
   const responsesForSurveyStmt = db.prepare(RESPONSES_FOR_SURVEY);
 
   const completedStmt = db.prepare(
@@ -481,6 +484,10 @@ export function openBackendStore(path: string): BackendStore {
         | undefined;
       if (!row) return null;
       return { ...row, incomplete: row.incomplete !== 0 };
+    },
+    async snapshotGovLinks(): Promise<GovLink[]> {
+      const rows = snapshotGovLinksStmt.all() as { govLinks: string }[];
+      return rows.flatMap((r) => JSON.parse(r.govLinks) as GovLink[]);
     },
     async surveyBundle(surveyKey: string): Promise<SurveyBundleRows | null> {
       const row = surveyBundleStmt.get(surveyKey) as
