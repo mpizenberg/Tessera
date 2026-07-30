@@ -10,8 +10,10 @@ import {
 
 import {
   buildResponse,
+  buildSealedResponse,
   collectAnswers,
   decided,
+  findPriorResponse,
   hasAnyAnswer,
   initDraft,
   prefillDrafts,
@@ -113,6 +115,56 @@ describe("hasAnyAnswer", () => {
 
   it("is guard-safe against a transiently-missing draft", () => {
     expect(hasAnyAnswer(optionals, [])).toBe(false);
+  });
+});
+
+describe("findPriorResponse", () => {
+  const drafts: Draft[] = [
+    { skipped: false, value: { type: "singleChoice", optionIndex: 1 } },
+    { skipped: true, value: { type: "numeric", value: 0n } },
+  ];
+  const other: Credential = {
+    type: "key",
+    keyHash: new Uint8Array(28).fill(9),
+  };
+  const publicPrior = buildResponse(
+    ref,
+    Role.Keyholder,
+    credential,
+    questions,
+    drafts,
+  );
+  const sealedPrior = buildSealedResponse(
+    ref,
+    Role.DRep,
+    credential,
+    new Uint8Array([1, 2, 3]),
+  );
+
+  it("matches on survey ref, role and credential", () => {
+    expect(
+      findPriorResponse([publicPrior], ref, Role.Keyholder, credential),
+    ).toBe(publicPrior);
+    expect(
+      findPriorResponse([publicPrior], ref, Role.DRep, credential),
+    ).toBeUndefined();
+    expect(
+      findPriorResponse([publicPrior], ref, Role.Keyholder, other),
+    ).toBeUndefined();
+    expect(
+      findPriorResponse(
+        [publicPrior],
+        { txId: new Uint8Array(32).fill(1), index: 0 },
+        Role.Keyholder,
+        credential,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("finds a sealed prior: the envelope proves they answered", () => {
+    expect(findPriorResponse([sealedPrior], ref, Role.DRep, credential)).toBe(
+      sealedPrior,
+    );
   });
 });
 

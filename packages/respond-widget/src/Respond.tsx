@@ -44,7 +44,7 @@ import {
   createI18n,
   credentialForRole,
   decided,
-  findExistingResponse,
+  findPriorResponse,
   hasAnyAnswer,
   initDraft,
   prefillDrafts,
@@ -143,16 +143,23 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     return r !== null ? (credentialForRole(r, props.responder) ?? null) : null;
   });
 
-  // The responder's prior public response for the *current* (role, credential),
-  // picked from the host-supplied set. The host passes one per role it answered
-  // as; `findExistingResponse` selects the one matching the chosen role, so
-  // switching roles re-prefills correctly (or clears, when that role is fresh).
-  const existing = createMemo(() => {
+  // The responder's prior response for the *current* (role, credential), picked
+  // from the host-supplied set. The host passes one per role it answered as;
+  // `findPriorResponse` selects the one matching the chosen role, so switching
+  // roles re-prefills correctly (or clears, when that role is fresh).
+  const prior = createMemo(() => {
     const prs = props.priorResponses;
     const r = role();
     const cred = credential();
     if (!prs || prs.length === 0 || r === null || !cred) return undefined;
-    return findExistingResponse(prs, props.surveyRef, r, cred);
+    return findPriorResponse(prs, props.surveyRef, r, cred);
+  });
+
+  // Drafts can only be seeded from a public prior; a sealed one is known to
+  // exist but unreadable, so its form starts pristine.
+  const prefillFrom = createMemo(() => {
+    const p = prior();
+    return p?.answers.type === "public" ? p : undefined;
   });
 
   // Store mirror of Draft with mutable fields so path setters typecheck.
@@ -188,7 +195,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
           role(),
           credential(),
           props.definition,
-          existing(),
+          prefillFrom(),
         ] as const,
       ([k, r, cred], prev) => {
         if (
@@ -215,7 +222,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
         }
         if (touched()) return;
         const def = props.definition;
-        const ex = existing();
+        const ex = prefillFrom();
         setDrafts(
           ex ? prefillDrafts(def.questions, ex) : def.questions.map(initDraft),
         );
@@ -398,7 +405,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
             when={respondable().length > 0}
             fallback={<Ineligible def={props.definition} />}
           >
-            <Show when={existing()}>
+            <Show when={prior()}>
               <RespondedBanner role={role()} />
             </Show>
             <Show when={sealedMode()}>
@@ -458,7 +465,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
               decided={decidedCount()}
               total={total()}
               answered={answered()}
-              replacing={existing() !== undefined}
+              replacing={prior() !== undefined}
               submitting={submitting()}
               blocked={sealedUnsupported()}
               sealed={sealedMode() !== null}

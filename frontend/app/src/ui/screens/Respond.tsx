@@ -39,7 +39,7 @@ import {
   collectAnswers,
   createI18n,
   decided,
-  findExistingResponse,
+  findPriorResponse,
   hasAnyAnswer,
   initDraft,
   prefillDrafts,
@@ -218,8 +218,9 @@ export const Respond: Component = () => {
     return id && r !== null ? (roleCredential(id, r) ?? null) : null;
   });
 
-  // The wallet's prior public response for (this survey, role, credential).
-  const existing = createMemo<SurveyResponse | undefined>(() => {
+  // The wallet's prior response for (this survey, role, credential) — sealed
+  // included, so a sealed survey still says "you already responded".
+  const prior = createMemo<SurveyResponse | undefined>(() => {
     const def = definition();
     const s = survey();
     const r = role();
@@ -227,7 +228,14 @@ export const Respond: Component = () => {
     const b = bundle.error ? undefined : bundle();
     if (!def || !s || r === null || !cred || !b) return undefined;
     const mine = dedupeResponses(b.responses).map((x) => x.response);
-    return findExistingResponse(mine, s.record.ref, r, cred);
+    return findPriorResponse(mine, s.record.ref, r, cred);
+  });
+
+  // Drafts can only be seeded from a public prior; a sealed one is known to
+  // exist but unreadable, so its form starts pristine.
+  const prefillFrom = createMemo<SurveyResponse | undefined>(() => {
+    const p = prior();
+    return p?.answers.type === "public" ? p : undefined;
   });
 
   // Store mirror of Draft with mutable fields so path setters typecheck;
@@ -256,7 +264,7 @@ export const Respond: Component = () => {
   //    from (the credential matters: switching wallets mid-edit must not carry
   //    wallet A's drafts under wallet B's credential)
   //  - definition()            → external-content enrichment swapping labels in
-  //  - existing()              → a prior on-chain response that resolves *after*
+  //  - prefillFrom()           → a prior on-chain response that resolves *after*
   //    the first seed (e.g. once the wallet auto-reconnects)
   // An identity change restores that identity's stashed edits or makes the form
   // pristine again; otherwise we only (re)seed while the user hasn't started
@@ -269,7 +277,7 @@ export const Respond: Component = () => {
           role(),
           credential(),
           definition(),
-          existing(),
+          prefillFrom(),
         ] as const,
       ([k, r, cred], prev) => {
         if (
@@ -299,7 +307,7 @@ export const Respond: Component = () => {
           setDrafts([]);
           return;
         }
-        const ex = existing();
+        const ex = prefillFrom();
         setDrafts(
           ex ? prefillDrafts(def.questions, ex) : def.questions.map(initDraft),
         );
@@ -675,7 +683,7 @@ export const Respond: Component = () => {
               respondable={respondable()}
             >
               {/* The actual form (open + eligible) */}
-              <Show when={existing()}>
+              <Show when={prior()}>
                 <RespondedBanner role={role()} />
               </Show>
               <Show when={sealedMode()}>
@@ -765,7 +773,7 @@ export const Respond: Component = () => {
           decided={decidedCount()}
           total={total()}
           answered={answered()}
-          replacing={existing() !== undefined}
+          replacing={prior() !== undefined}
           submitting={submitting()}
           mismatch={mismatch()}
           blocked={sealedUnsupported()}

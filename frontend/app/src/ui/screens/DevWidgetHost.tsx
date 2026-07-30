@@ -36,7 +36,7 @@ import {
 import { A, useParams } from "@solidjs/router";
 import type { SurveyDefinition, SurveyRef, SurveyResponse } from "cip-179";
 import { dedupeResponses, findSurvey } from "cip-179/domain";
-import { findExistingResponse } from "@tessera/respond-core";
+import { findPriorResponse } from "@tessera/respond-core";
 import type {
   Responder,
   RespondChangeDetail,
@@ -94,8 +94,8 @@ const DevWidgetHost: Component = () => {
     () => indexed() ?? app.optimisticSurveys().find((a) => a.key === key()),
   );
 
-  // The survey's own bundle carries the raw responses — needed only to prefill
-  // an edit/replace flow (a prior public response). Best-effort, like Respond.
+  // The survey's own bundle carries the raw responses — needed only to resolve
+  // the responder's prior response, if any. Best-effort, like Respond.
   const [bundle] = createResource(
     () => indexed()?.record.ref,
     (ref) => app.source.surveyBundle(ref),
@@ -128,8 +128,8 @@ const DevWidgetHost: Component = () => {
     return def && id ? respondableRoles(def, id) : [];
   });
 
-  // The responder's prior public response for *each* role it can claim here, so
-  // the widget re-prefills as the user switches roles. One deduped set, filtered
+  // The responder's prior response for *each* role it can claim here, so the
+  // widget re-prefills as the user switches roles. One deduped set, filtered
   // per role by the wallet's own credential (the built-in Respond screen does
   // the same, just for its single currently-selected role).
   const priorResponses = createMemo<SurveyResponse[]>(() => {
@@ -141,7 +141,7 @@ const DevWidgetHost: Component = () => {
     return respondable().flatMap((r) => {
       const cred = roleCredential(id, r);
       const prior = cred
-        ? findExistingResponse(mine, s.record.ref, r, cred)
+        ? findPriorResponse(mine, s.record.ref, r, cred)
         : undefined;
       return prior ? [prior] : [];
     });

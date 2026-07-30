@@ -280,10 +280,15 @@ export function buildSealedResponse(
 }
 
 /**
- * Find a wallet's prior public response to this survey for the given role +
+ * Find a wallet's prior response to this survey for the given role +
  * credential, if any (caller passes the latest-valid-wins–deduped set).
+ *
+ * Sealed responses match too: the envelope is plaintext on-chain, so *that* a
+ * responder answered is always knowable even when *what* they answered is not.
+ * Only a public one can seed {@link prefillDrafts} — callers that pre-fill
+ * check `answers.type` themselves.
  */
-export function findExistingResponse(
+export function findPriorResponse(
   responses: readonly SurveyResponse[],
   ref: SurveyRef,
   role: Role,
@@ -295,8 +300,7 @@ export function findExistingResponse(
     (r) =>
       r.role === role &&
       refKey(r.surveyRef) === target &&
-      credentialKey(r.credential) === cred &&
-      r.answers.type === "public",
+      credentialKey(r.credential) === cred,
   );
 }
 

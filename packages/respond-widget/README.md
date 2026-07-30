@@ -211,8 +211,8 @@ too (e.g. to decide whether to mount the widget at all).
 
 ## Prior responses (edit/replace)
 
-To prefill an existing answer for an edit/replace flow, pass the responder's prior
-**public** responses in `priorResponses` — **one per role** they've answered as.
+For an edit/replace flow, pass the responder's prior responses in
+`priorResponses` — **one per role** they've answered as.
 
 The role is chosen _inside_ the widget, so the host can't know up front which
 prior response applies: pass them all, and the widget selects the one matching the
@@ -224,16 +224,15 @@ order-independent.
 // One deduped "mine" set, resolved to a prior response per respondable role.
 el.priorResponses = respondableRolesFor(def, responder).flatMap((r) => {
   const cred = credentialForRole(r, responder);
-  const prior = cred
-    ? findExistingResponse(mine, surveyRef, r, cred)
-    : undefined;
+  const prior = cred ? findPriorResponse(mine, surveyRef, r, cred) : undefined;
   return prior ? [prior] : [];
 });
 ```
 
-Public prior responses only — a **sealed** prior response is ciphertext and cannot
-prefill (it's ignored). The reference host `DevWidgetHost.tsx` does exactly this
-against a survey bundle.
+Pass **sealed** priors too. Their ciphertext can't prefill the form, but the
+widget still marks it as a replacement — on a sealed survey that's the only way
+a responder learns they already answered. The reference host `DevWidgetHost.tsx`
+does exactly this against a survey bundle.
 
 ## What the host must do
 
