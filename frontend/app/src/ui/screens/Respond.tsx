@@ -6,6 +6,7 @@ import {
   createResource,
   createSignal,
   on,
+  onCleanup,
   type Component,
   type JSX,
 } from "solid-js";
@@ -31,6 +32,8 @@ import {
   dedupeResponses,
   findSurvey,
   hexToBytes,
+  voteDeadlineUnix,
+  type ChainTip,
   type SurveyAggregate,
 } from "cip-179/domain";
 import {
@@ -169,6 +172,9 @@ export const Respond: Component = () => {
   const survey = createMemo(
     () => indexed() ?? app.optimisticSurveys().find((a) => a.key === key()),
   );
+  const tip = createMemo<ChainTip | undefined>(
+    () => (app.list.error ? undefined : app.list())?.tip,
+  );
 
   // The survey's raw responses ride in its lazily-fetched bundle (the list
   // payload carries only counts); they're needed here solely to pre-fill the
@@ -192,6 +198,38 @@ export const Respond: Component = () => {
   // the signature can't be built against the wrong chain. Mirrors create + propose.
   const mismatch = (): boolean =>
     networkMismatch(app.wallet()?.identity.networkId, app.config.network);
+
+  // Tick once a minute: the survey's open/closed status was computed against the
+  // chain tip when the list loaded, so a tab left open across the deadline would
+  // otherwise keep offering a submit whose fee buys an excluded response.
+  const [nowUnix, setNowUnix] = createSignal(Math.floor(Date.now() / 1000));
+  const clock = setInterval(
+    () => setNowUnix(Math.floor(Date.now() / 1000)),
+    60_000,
+  );
+  onCleanup(() => clearInterval(clock));
+
+  // Unknown while the tip is (a failed list load, an optimistic survey) — then
+  // nothing here gates, and the aggregate's own status is all we have.
+  const deadlineUnix = createMemo<number | undefined>(() => {
+    const def = definition();
+    const chainTip = tip();
+    if (!def || !chainTip) return undefined;
+    return voteDeadlineUnix(def.endEpoch, chainTip, app.config.secondsPerEpoch);
+  });
+  /** Takes its clock explicitly: the display ticks, the submit gate reads live. */
+  const deadlinePassed = (atUnix: number): boolean => {
+    const d = deadlineUnix();
+    return d !== undefined && atUnix >= d;
+  };
+  /** Warning while the deadline is close enough that signing at leisure misses it. */
+  const deadlineWarning = (): string | undefined => {
+    const d = deadlineUnix();
+    if (d === undefined) return undefined;
+    const left = d - nowUnix();
+    if (left <= 0 || left > 10 * 60) return undefined;
+    return t("respond.deadlineSoon", { m: n(Math.ceil(left / 60)) });
+  };
 
   const respondable = createMemo<Role[]>(() => {
     const def = definition();
@@ -342,6 +380,13 @@ export const Respond: Component = () => {
     const m = sealedMode();
     return m !== null && !isQuicknet(m.chainHash);
   });
+
+  /** Why submitting is impossible right now, if it is. */
+  const submitBlocked = (): string | undefined => {
+    if (sealedUnsupported()) return t("respond.sealedUnsupportedNote");
+    if (deadlinePassed(nowUnix())) return t("respond.deadlinePassed");
+    return undefined;
+  };
 
   const [submitting, setSubmitting] = createSignal(false);
   const [busyText, setBusyText] = createSignal(t("respond.submitting"));
@@ -548,6 +593,13 @@ export const Respond: Component = () => {
     const r = role();
     const cred = credential();
     if (!def || !s || r === null || !cred) return;
+
+    // Authoritative deadline check, against the live clock: the submit button
+    // disables itself, but a click can beat the minute tick that disables it.
+    if (deadlinePassed(Math.floor(Date.now() / 1000))) {
+      setProblems([t("respond.deadlinePassed")]);
+      return;
+    }
 
     // Manual rationale anchor (Pro) parsed up front so a bad hash surfaces
     // alongside answer problems, before any signing. The write/pin path is
@@ -776,7 +828,8 @@ export const Respond: Component = () => {
           replacing={prior() !== undefined}
           submitting={submitting()}
           mismatch={mismatch()}
-          blocked={sealedUnsupported()}
+          blocked={submitBlocked()}
+          warning={deadlineWarning()}
           network={app.config.network}
           idleText={
             sealedMode()
@@ -1156,8 +1209,10 @@ const SubmitBar: Component<{
   replacing: boolean;
   submitting: boolean;
   mismatch: boolean;
-  /** Submission is impossible (e.g. a sealed survey on an unsupported chain). */
-  blocked?: boolean;
+  /** Why submitting is impossible, if it is — shown as a note, disables the button. */
+  blocked?: string | undefined;
+  /** Submitting is still possible but time-critical (deadline within minutes). */
+  warning?: string | undefined;
   network: string;
   idleText: string;
   busyText: string;
@@ -1198,9 +1253,10 @@ const SubmitBar: Component<{
             </span>
           </Show>
           <Show when={props.blocked}>
-            <span class={css.mismatchNote}>
-              {t("respond.sealedUnsupportedNote")}
-            </span>
+            {(note) => <span class={css.mismatchNote}>{note()}</span>}
+          </Show>
+          <Show when={props.warning}>
+            {(note) => <span class={css.mismatchNote}>{note()}</span>}
           </Show>
         </div>
         <button

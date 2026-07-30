@@ -81,6 +81,12 @@ const respond: Messages = {
   sealedUnsupportedNote:
     "Chaîne drand non prise en charge — révélation impossible",
 
+  // --- Vote deadline --------------------------------------------------------
+  deadlinePassed:
+    "Le vote s'est clos pendant que cette page était ouverte — une réponse envoyée maintenant serait exclue du dépouillement.",
+  deadlineSoon:
+    "Le vote se clôt dans environ {m} min — envoyez maintenant, sinon votre réponse risque d'arriver trop tard.",
+
   // --- Labels-absent banner -----------------------------------------------
   labelsAbsentTitle: "Libellés de présentation indisponibles",
   labelsAbsentTextBefore: "Le document off-chain (",

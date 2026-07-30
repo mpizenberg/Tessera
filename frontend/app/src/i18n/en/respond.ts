@@ -75,6 +75,13 @@ const respond = {
     "It's pinned to a drand chain Tessera can't decrypt, so a submitted answer could never be revealed. Submission is disabled.",
   sealedUnsupportedNote: "Unsupported drand chain — cannot reveal",
 
+  // --- Vote deadline --------------------------------------------------------
+  deadlinePassed:
+    "Voting closed while this page was open — a response submitted now would be excluded from the tally.",
+  /** {m} is the number of minutes left before responses stop counting. */
+  deadlineSoon:
+    "Voting closes in about {m} min — submit now, or your response may miss the deadline.",
+
   // --- Labels-absent banner -----------------------------------------------
   labelsAbsentTitle: "Presentation labels unavailable",
   /** Wraps an inline short-ref span and a bold "You can still respond" clause. */
