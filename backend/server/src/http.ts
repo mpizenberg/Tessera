@@ -53,7 +53,7 @@ import { KoiosDataSource } from "@tessera/koios";
 
 import type { ServerConfig } from "./config";
 import { upstreamMeter } from "./meter";
-import { sumUpstream, type BackendStore } from "./store";
+import { sumUpstream, validationKey, type BackendStore } from "./store";
 
 /** How long `/api/tip` and `/api/pparams` reuse one upstream Koios call. */
 const UPSTREAM_TTL_MS = 20_000;
@@ -317,9 +317,10 @@ export function createApp(
     });
   });
 
-  // One survey's self-contained bundle. Stored values are already wire-form
-  // JSON text, so the body is assembled by parse-and-concatenate — the survey's
-  // own rows and nothing else are read.
+  // One survey's self-contained bundle, plus the per-response proof verdicts
+  // validation already decided. Stored values are already wire-form JSON text,
+  // so the body is assembled by parse-and-concatenate — the survey's own rows
+  // and nothing else are read.
   app.get("/api/surveys/:txHash/:index", async (c) => {
     const meta = await store.snapshotMeta();
     if (!meta) return c.json({ error: "snapshot not ready" }, 503);
@@ -330,7 +331,10 @@ export function createApp(
     if (notModified(c, `W/"survey-${meta.fetchedAt}"`))
       return c.body(null, 304);
     const key = `${txHash}:${index}`;
-    const bundle = await store.surveyBundle(key);
+    const [bundle, validated] = await Promise.all([
+      store.surveyBundle(key),
+      store.validatedForSurvey(key),
+    ]);
     if (!bundle) return c.json({ error: `unknown survey ${key}` }, 404);
     const now = Math.floor(Date.now() / 1000);
     return c.json({
@@ -338,6 +342,13 @@ export function createApp(
       responses: bundle.responses.map((r) => JSON.parse(r) as unknown),
       cancellations: JSON.parse(bundle.cancellations) as unknown,
       tip: JSON.parse(meta.tip) as unknown,
+      // Decided §6.3 rule-2 verdicts only — an omitted key is *pending*, and
+      // the client must render it as such, never as failed.
+      verdicts: Object.fromEntries(
+        validated
+          .filter((r) => r.proofOk !== null)
+          .map((r) => [validationKey(r.txHash, r.responseIndex), r.proofOk]),
+      ),
       fetchedAt: meta.fetchedAt,
       ageSeconds: now - meta.fetchedAt,
     });

@@ -18,6 +18,7 @@ import type {
   CancellationRecord,
   ChainTip,
   GovLink,
+  ProofVerdicts,
   SurveyBundle,
   SurveyRecord,
 } from "cip-179/domain";
@@ -75,6 +76,20 @@ export interface SurveyListPayload {
    * refresh page one.
    */
   readonly resync?: boolean;
+}
+
+/**
+ * A survey's bundle plus the serving tier's per-response credential-proof
+ * verdicts. The verdicts stay OFF {@link SurveyBundle} itself: that type is
+ * the chain-data contract the verifier re-derives and the direct Koios source
+ * also produces, and the serving tier's opinion must never read as chain data
+ * (same trust posture as {@link SurveyListPayload.finalizedCancelled}). When
+ * present the map is complete over *decided* verdicts — a response key it
+ * lacks is pending, not failed. Absent entirely when the source has no proof
+ * machinery (the direct Koios path).
+ */
+export interface SurveyBundlePayload extends SurveyBundle {
+  readonly verdicts?: ProofVerdicts;
 }
 
 /**
@@ -179,10 +194,12 @@ export interface DataSource {
     params: import("./page").SurveyListParams,
   ): Promise<SurveyListPayload>;
   /**
-   * The self-contained per-survey slice (detail/respond pages, verifiers).
-   * Rejects when the ref matches no known survey.
+   * The self-contained per-survey slice (detail/respond pages, verifiers),
+   * with proof verdicts when the source computes them
+   * ({@link SurveyBundlePayload}). Rejects when the ref matches no known
+   * survey.
    */
-  surveyBundle(ref: SurveyRef): Promise<SurveyBundle>;
+  surveyBundle(ref: SurveyRef): Promise<SurveyBundlePayload>;
   /**
    * Survey keys ("<txHex>:<index>") having at least one response from any of
    * the given credentials, each in the `credentialKey` form

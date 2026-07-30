@@ -27,6 +27,7 @@ import { loadConfig } from "./config";
 import { createApp } from "./http";
 import { materializeSnapshot } from "./materialize";
 import { memBackendStore, type MemBackendStore } from "./store-mem";
+import type { ValidatedResponseRow } from "./store";
 
 function appWith(store: MemBackendStore) {
   return createApp(loadConfig({}), store, { compress: false });
@@ -387,6 +388,46 @@ describe("GET /api/surveys/{txHash}/{index}", () => {
     const body = fromJsonSafe(await res.json()) as unknown as SurveyBundle;
     expect(body.cancellations.map((c) => c.txHash)).toEqual(["99".repeat(32)]);
     expect(body.responses.map((r) => r.txHash)).toEqual(["ff".repeat(32)]);
+  });
+
+  it("ships decided proof verdicts; undecided rows are omitted", async () => {
+    const store = await seededStore();
+    const row = (
+      txHash: string,
+      proofOk: boolean | null,
+    ): ValidatedResponseRow => ({
+      txHash,
+      responseIndex: 0,
+      surveyKey: `${TX_A}:0`,
+      role: 0,
+      credential: "key:11",
+      slot: 999_000,
+      epochNo: 499,
+      blockIndex: 1,
+      proofOk,
+      linkedActionId: null,
+      wellFormed: true,
+      checkedAt: 1,
+    });
+    await store.upsertValidatedResponses([
+      row("cc".repeat(32), true),
+      row("dd".repeat(32), false),
+      row("ee".repeat(32), null), // enrichment pending — must not ship
+    ]);
+    const app = appWith(store);
+    const body = (await (
+      await app.request(`/api/surveys/${TX_A}/0`)
+    ).json()) as { verdicts: Record<string, boolean> };
+    expect(body.verdicts).toEqual({
+      [`${"cc".repeat(32)}:0`]: true,
+      [`${"dd".repeat(32)}:0`]: false,
+    });
+    // Nothing validated yet → present-but-empty: "serving tier, all pending",
+    // distinct from the field's absence on a proof-less source.
+    const other = (await (
+      await app.request(`/api/surveys/${TX_B}/1`)
+    ).json()) as { verdicts: Record<string, boolean> };
+    expect(other.verdicts).toEqual({});
   });
 
   it("404s an unknown or malformed ref", async () => {

@@ -24,10 +24,11 @@ import type {
   BackendHealth,
   DataSource,
   Network,
+  SurveyBundlePayload,
   SurveyListParams,
   SurveyListPayload,
 } from "@tessera/core";
-import { bytesToHex, type SurveyBundle } from "cip-179/domain";
+import { bytesToHex } from "cip-179/domain";
 import { fromJsonSafe, type TallyArtifact } from "cip-179/tally";
 import type { SurveyRef } from "cip-179";
 
@@ -86,14 +87,14 @@ export class IndexerDataSource implements DataSource {
     return fromJsonSafe(raw) as SurveyListPayload;
   }
 
-  async surveyBundle(ref: SurveyRef): Promise<SurveyBundle> {
+  async surveyBundle(ref: SurveyRef): Promise<SurveyBundlePayload> {
     const [raw] = await Promise.all([
       this.getJson<unknown>(
         `${this.baseUrl}/api/surveys/${bytesToHex(ref.txId)}/${ref.index}`,
       ),
       this.assertNetwork(),
     ]);
-    return fromJsonSafe(raw) as SurveyBundle;
+    return fromJsonSafe(raw) as SurveyBundlePayload;
   }
 
   async respondedKeys(credentialKeys: readonly string[]): Promise<string[]> {
