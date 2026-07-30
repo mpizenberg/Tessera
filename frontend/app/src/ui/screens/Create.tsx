@@ -7,7 +7,7 @@ import {
   createSignal,
   type Component,
 } from "solid-js";
-import { createStore, type SetStoreFunction } from "solid-js/store";
+import { createStore, unwrap, type SetStoreFunction } from "solid-js/store";
 import { A, useNavigate } from "@solidjs/router";
 import {
   QuestionTag,
@@ -164,8 +164,9 @@ export const Create: Component = () => {
   });
   const problems = (): CreateProblem[] => built()?.problems ?? [];
   /** Render structured codec problems in the active locale; pass strings through. */
-  const problemStrings = (): string[] =>
-    problems().map((p) => (typeof p === "string" ? p : problemText(p)));
+  const renderProblems = (ps: readonly CreateProblem[]): string[] =>
+    ps.map((p) => (typeof p === "string" ? p : problemText(p)));
+  const problemStrings = (): string[] => renderProblems(problems());
 
   // Pro on-chain preview: the label-17 definition payload, built live. External
   // content uses the same placeholder anchor `built` validates with (the real
@@ -217,8 +218,8 @@ export const Create: Component = () => {
   // least one IPFS provider configured in Settings.
   const hasPinning = (): boolean =>
     IPFS_PROVIDERS.some((p) => app.ipfsTokens[p.id]?.trim());
-  const externalNoTokens = (): boolean =>
-    meta.contentMode === "external" && !hasPinning();
+  const externalNoTokens = (m: DefinitionMeta = meta): boolean =>
+    m.contentMode === "external" && !hasPinning();
   // Block publishing while the wallet is on a different network than the app:
   // the build would otherwise fail deep in evolution-sdk with a confusing error
   // instead of a clear, up-front reason. Mirrors the respond + propose gates.
@@ -236,10 +237,18 @@ export const Create: Component = () => {
     setQuestions((qs) => qs.filter((_, k) => k !== i));
 
   const onPublish = async () => {
-    const b = built();
     const o = owner();
-    if (!b || !o) return;
-    if (b.problems.length > 0 || externalNoTokens()) {
+    if (!o) return;
+    // Publish the form as it was when the button was clicked. Pinning awaits a
+    // network round-trip and the progress overlay blocks the pointer but not the
+    // keyboard, so reading the live stores afterwards could put never-validated
+    // content on chain, or diverge the pinned document from the on-chain counts.
+    const metaNow = structuredClone(unwrap(meta));
+    const questionsNow = structuredClone(unwrap(questions));
+    const b = buildDefinition(o, metaNow, questionsNow, {
+      tipEpoch: app.list()?.tip.epoch,
+    });
+    if (b.problems.length > 0 || externalNoTokens(metaNow)) {
       setShowProblems(true);
       return;
     }
@@ -248,20 +257,26 @@ export const Create: Component = () => {
     setStepKey(submitSteps()[0]?.key ?? "submit");
     try {
       let definition = b.definition;
-      if (meta.contentMode === "external") {
+      if (metaNow.contentMode === "external") {
         // Pin the presentation document, then rebuild the definition with the
         // real anchor (the preview used a placeholder so the codec accepted the
         // count forms). The on-chain payload carries only the anchor + counts.
         setBusyText(t("create.busyPinning"));
         const { pinJson } = await import("~/enrichment/pin");
-        const doc = buildPresentationDoc(meta, questions);
+        const doc = buildPresentationDoc(metaNow, questionsNow);
         const pinned = await pinJson(doc, "survey.json", app.ipfsTokens);
         // Cache the doc we just authored so its survey renders with full labels
         // immediately, without re-fetching it from IPFS.
         app.cachePresentationDoc(pinned.hash, doc);
-        definition = buildDefinition(o, meta, questions, {
+        const rebuilt = buildDefinition(o, metaNow, questionsNow, {
           contentAnchor: { uri: pinned.uri, hash: pinned.hash },
-        }).definition;
+        });
+        // Same inputs as the validated build with only the anchor swapped, so a
+        // problem here is the anchor's — never publish it.
+        if (rebuilt.problems.length > 0) {
+          throw new Error(renderProblems(rebuilt.problems).join(" "));
+        }
+        definition = rebuilt.definition;
       }
       setStepKey("submit");
       setBusyText(t("create.busySubmitting"));
@@ -279,7 +294,7 @@ export const Create: Component = () => {
         txHash: hash,
         kind: "survey",
         surveyKey: `${hash}:0`,
-        title: meta.title.trim() || undefined,
+        title: metaNow.title.trim() || undefined,
       });
       app.addOptimisticSurvey({
         txHash: hash,

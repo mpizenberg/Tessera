@@ -607,12 +607,23 @@ export const Respond: Component = () => {
     const manualRationale = manualRationaleAnchor();
     if (manualRationale === "invalid") return;
 
+    // Everything the submission is built from is captured at click time:
+    // pinning a rationale awaits, and the progress overlay blocks the pointer
+    // but not the keyboard, so reading live state afterwards could submit
+    // something the validation below never saw. Draft values are replaced
+    // immutably on edit, so copying the records detaches them from the store.
+    const sealed = sealedMode();
+    const draftsNow = drafts.map((d) => ({
+      skipped: d.skipped,
+      value: d.value,
+    }));
+
     // Validate the answers as plaintext first — for a sealed survey nobody can
     // check them again until the reveal, so they must be well-formed now. The
     // rationale never affects answer validation, so it's resolved after.
     const found = validateResponse(
       { ...def, submissionMode: { type: "public" } },
-      buildResponse(s.record.ref, r, cred, def.questions, drafts),
+      buildResponse(s.record.ref, r, cred, def.questions, draftsNow),
     );
     setProblems(found.map(problemText));
     if (found.length > 0) return;
@@ -624,13 +635,12 @@ export const Respond: Component = () => {
       // Resolve (and, in write mode, pin) the rationale before building.
       const rationale = await resolveRationale(manualRationale);
 
-      const sealed = sealedMode();
       let response = buildResponse(
         s.record.ref,
         r,
         cred,
         def.questions,
-        drafts,
+        draftsNow,
         rationale,
       );
       if (sealed) {
@@ -642,10 +652,9 @@ export const Respond: Component = () => {
         // the heavy evolution-sdk chunk. cip-179/tlock is already statically
         // imported above (tlock-js itself stays lazy inside its client).
         const { evolutionCodec } = await import("~/wallet/cbor");
-        const answers = collectAnswers(def.questions, drafts);
         const ciphertext = await sealAnswers(
           evolutionCodec,
-          answers,
+          collectAnswers(def.questions, draftsNow),
           sealed.round,
           sealed.paddingSize,
         );
