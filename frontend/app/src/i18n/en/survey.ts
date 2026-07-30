@@ -143,14 +143,21 @@ const survey = {
   // Exclusion panel
   exclHeadTitle: "Why responses weren't counted",
   exclHeadNote: "on-chain checks only",
+  exclHeadNoteProofs: "on-chain checks + indexer proof verdicts",
   /**
    * Footnote split around a mono "end_epoch <n>" run (untranslatable, literal in
    * JSX): exclFootnote1 is the prose before it, exclFootnote2 the prose after.
+   * The Proofs variant renders when the source supplied credential-proof
+   * verdicts, so only the snapshot-side checks remain disclaimed.
    */
   exclFootnote1:
     "Excluded responses stay on-chain but aren't tallied. Eligibility checks that need ledger state — role membership re-verified at the",
   exclFootnote2:
     "snapshot, credential proofs — are resolved by an indexer and aren't reflected here.",
+  exclFootnoteProofs1:
+    "Excluded responses stay on-chain but aren't tallied. Credential proofs shown here are the indexer's verdicts; role membership and voting weights re-verified at the",
+  exclFootnoteProofs2:
+    "snapshot are resolved at finalization and aren't reflected here.",
 
   // Individual responses
   individualResponses: "Individual responses",
@@ -168,6 +175,8 @@ const survey = {
   // Results body — counted/excluded/export
   /** "{n} counted" pill. */
   counted: "{n} counted",
+  /** "{n} awaiting proof verification" pill (serving tier, undecided verdicts). */
+  pendingProofs: "{n} awaiting proof verification",
   /** "{n} excluded" toggle (caret rendered separately). */
   excluded: "{n} excluded",
   exportCsv: "Export CSV",

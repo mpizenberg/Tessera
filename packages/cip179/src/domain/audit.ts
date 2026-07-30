@@ -56,6 +56,13 @@ export type ExclusionKey =
  */
 export type ProofVerdicts = Readonly<Record<string, boolean>>;
 
+/** The {@link ProofVerdicts} key of one response record. */
+export function proofVerdictKey(
+  r: Pick<ResponseRecord, "txHash" | "responseIndex">,
+): string {
+  return `${r.txHash}:${r.responseIndex}`;
+}
+
 /**
  * Whether a response may be counted against its survey: it passes the codec's
  * full {@link validateResponse} (correct submission mode, eligible role,
@@ -119,7 +126,7 @@ export function auditResponses(
       excludedRecords.push({ key: "after-deadline", record: r });
     } else if (!responseIsCountable(definition, r.response)) {
       excludedRecords.push({ key: "invalid", record: r });
-    } else if (verdicts?.[`${r.txHash}:${r.responseIndex}`] === false) {
+    } else if (verdicts?.[proofVerdictKey(r)] === false) {
       excludedRecords.push({ key: "unproven", record: r });
     } else {
       onTime.push(r);

@@ -31,10 +31,12 @@ import {
   dedupeResponses,
   findSurvey,
   humanizeAnswer,
+  proofVerdictKey,
   serializeAnswer,
   type ChainTip,
   type ExcludedRecord,
   type ExclusionKey,
+  type ProofVerdicts,
   type ResponseAudit,
   type ResponseRecord,
   type RevealedAudit,
@@ -153,13 +155,18 @@ export const Survey: Component = () => {
   const def = (): SurveyDefinition | undefined => pres.def();
 
   // Audit the raw responses for this survey: `counted` is the valid, deduped
-  // set to tally; `excluded` is the client-detectable breakdown (after-deadline
-  // + superseded). Ledger-state exclusions (role/credential) are indexer-side.
+  // set to tally; `excluded` is the breakdown. On the serving tier the bundle
+  // carries the backend's decided credential-proof verdicts, so proof failures
+  // are excluded too (pre-dedup — an unproven later ballot must not supersede
+  // a proven earlier one); a response with no verdict yet stays counted. In
+  // direct-Koios mode there are no verdicts and the audit is purely on-chain.
+  const verdicts = (): ProofVerdicts | undefined =>
+    (bundle.error ? undefined : bundle())?.verdicts;
   const audit = createMemo<ResponseAudit>(() => {
     const s = survey();
     const b = bundle.error ? undefined : bundle();
     if (!s || !b) return { counted: [], excludedRecords: [] };
-    return auditResponses(b.responses, s.record.definition);
+    return auditResponses(b.responses, s.record.definition, b.verdicts);
   });
   const records = createMemo<ResponseRecord[]>(() => audit().counted);
 
@@ -359,6 +366,7 @@ export const Survey: Component = () => {
                     keyStr={key()}
                     inWindow={sealedInWindow()}
                     hardExcluded={sealedHardExcluded()}
+                    verdicts={verdicts()}
                     nowUnix={now()}
                   />
                 </Match>
@@ -382,6 +390,7 @@ export const Survey: Component = () => {
                     keyStr={key()}
                     records={records()}
                     excludedRecords={audit().excludedRecords}
+                    verdicts={verdicts()}
                   />
                 </Match>
               </Switch>
@@ -1105,21 +1114,27 @@ function summarizeExclusions(
 }
 
 /**
- * Expandable audit of why responses weren't counted. Only the categories
- * provable from on-chain data alone (after-deadline, superseded) appear here;
- * ledger-state exclusions (role membership re-checked at the snapshot,
- * credential-proof failures) need an indexer and are called out as absent.
+ * Expandable audit of why responses weren't counted. The categories provable
+ * from on-chain data alone are always present; when the serving tier supplies
+ * proof verdicts (`proofChecked`), credential-proof failures join them and the
+ * copy says so — role membership and weights re-checked at the snapshot remain
+ * finalization-side either way, and are called out as absent.
  */
 const ExclusionPanel: Component<{
   excluded: readonly ExclusionSummary[];
   endEpoch: number;
+  proofChecked: boolean;
 }> = (props) => {
   const max = (): number => Math.max(1, ...props.excluded.map((e) => e.count));
   return (
     <div class={css.exclPanel}>
       <div class={css.exclHead}>
         <span class={css.exclHeadTitle}>{t("survey.exclHeadTitle")}</span>
-        <span class={css.exclHeadNote}>{t("survey.exclHeadNote")}</span>
+        <span class={css.exclHeadNote}>
+          {props.proofChecked
+            ? t("survey.exclHeadNoteProofs")
+            : t("survey.exclHeadNote")}
+        </span>
       </div>
       <div class={css.exclBody}>
         <For each={props.excluded}>
@@ -1140,9 +1155,13 @@ const ExclusionPanel: Component<{
           )}
         </For>
         <p class={css.exclFootnote}>
-          {t("survey.exclFootnote1")}{" "}
+          {props.proofChecked
+            ? t("survey.exclFootnoteProofs1")
+            : t("survey.exclFootnote1")}{" "}
           <span class={css.exclFootnoteMono}>end_epoch {props.endEpoch}</span>{" "}
-          {t("survey.exclFootnote2")}
+          {props.proofChecked
+            ? t("survey.exclFootnoteProofs2")
+            : t("survey.exclFootnote2")}
         </p>
       </div>
     </div>
@@ -1642,6 +1661,12 @@ const ResultsBody: Component<{
    * export and the (derived) count breakdown shown in {@link ExclusionPanel}.
    */
   excludedRecords: readonly ExcludedRecord[];
+  /**
+   * The serving tier's decided proof verdicts, when the source ships them —
+   * presence switches the exclusion panel to its proof-checked copy, and
+   * counted records with no verdict yet surface as "awaiting verification".
+   */
+  verdicts?: ProofVerdicts | undefined;
 }> = (props) => {
   const app = useApp();
   // Roles are independent electorates, so there is no "all roles" tally — the
@@ -1664,6 +1689,14 @@ const ResultsBody: Component<{
   const excludedTotal = (): number => props.excludedRecords.length;
   const exclusionSummary = (): ExclusionSummary[] =>
     summarizeExclusions(props.excludedRecords, props.def.endEpoch);
+  // Tallied responses the serving tier hasn't reached a proof verdict on.
+  // Undefined when the source ships no verdicts at all (direct Koios) — then
+  // nothing is claimed either way.
+  const pendingProofs = (): number | undefined =>
+    props.verdicts &&
+    props.records.filter(
+      (r) => props.verdicts![proofVerdictKey(r)] === undefined,
+    ).length;
 
   const publicResponses = createMemo<SurveyResponse[]>(() =>
     props.records
@@ -1760,6 +1793,11 @@ const ResultsBody: Component<{
           <span class={css.countedDot} />
           {t("survey.counted", { n: n(publicResponses().length) })}
         </span>
+        <Show when={(pendingProofs() ?? 0) > 0}>
+          <span class={css.pendingPill}>
+            {t("survey.pendingProofs", { n: n(pendingProofs()!) })}
+          </span>
+        </Show>
         <Show when={excludedTotal() > 0}>
           <button
             onClick={() => setExclOpen((o) => !o)}
@@ -1787,6 +1825,7 @@ const ResultsBody: Component<{
         <ExclusionPanel
           excluded={exclusionSummary()}
           endEpoch={props.def.endEpoch}
+          proofChecked={props.verdicts !== undefined}
         />
       </Show>
 
@@ -1843,8 +1882,14 @@ const SealedResults: Component<{
   keyStr: string;
   /** Pre-dedup in-window structurally-valid responses (dedup happens post-reveal). */
   inWindow: ResponseRecord[];
-  /** Reveal-independent exclusions only (after-deadline + structurally invalid). */
+  /**
+   * Reveal-independent exclusions only (after-deadline, structurally invalid,
+   * proof-failed) — proof is answer-independent, so an unproven sealed
+   * response is excluded without waiting for the reveal.
+   */
   hardExcluded: readonly ExcludedRecord[];
+  /** Forwarded to {@link ResultsBody} for the post-reveal view. */
+  verdicts?: ProofVerdicts | undefined;
   nowUnix: number;
 }> = (props) => {
   const mode = () => {
@@ -1979,6 +2024,7 @@ const SealedResults: Component<{
           keyStr={props.keyStr}
           records={revealed()!.counted}
           excludedRecords={excludedRecordsWithFailures(revealed()!)}
+          verdicts={props.verdicts}
         />
       </Match>
       {/* Reached only when revealable, supported, not cancelled, and the viewer

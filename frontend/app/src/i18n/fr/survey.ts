@@ -126,10 +126,16 @@ const survey: Messages = {
   // Exclusion panel
   exclHeadTitle: "Pourquoi des réponses n'ont pas été comptées",
   exclHeadNote: "vérifications on-chain uniquement",
+  exclHeadNoteProofs:
+    "vérifications on-chain + verdicts de preuve de l'indexeur",
   exclFootnote1:
     "Les réponses exclues restent on-chain mais ne sont pas comptabilisées. Les vérifications d'éligibilité qui nécessitent l'état du registre — appartenance à un rôle revérifiée au snapshot",
   exclFootnote2:
     "et preuves d'identifiant — sont résolues par un indexeur et ne sont pas reflétées ici.",
+  exclFootnoteProofs1:
+    "Les réponses exclues restent on-chain mais ne sont pas comptabilisées. Les preuves d'identifiant affichées ici sont les verdicts de l'indexeur ; l'appartenance à un rôle et les poids de vote revérifiés au snapshot",
+  exclFootnoteProofs2:
+    "sont résolus à la finalisation et ne sont pas reflétés ici.",
 
   // Individual responses
   individualResponses: "Réponses individuelles",
@@ -144,6 +150,7 @@ const survey: Messages = {
 
   // Results body — counted/excluded/export
   counted: "{n} comptée(s)",
+  pendingProofs: "{n} en attente de vérification de preuve",
   excluded: "{n} exclue(s)",
   exportCsv: "Exporter en CSV",
   incomplete:
