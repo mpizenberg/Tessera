@@ -8,6 +8,7 @@
  * full CIP-30-shaped {@link WalletIdentity}:
  * - `claimableRoles` / `roleCredential` / `respondableRoles` — which roles a
  *   wallet can claim and the credential each carries;
+ * - `ownerCredential` — the credential a survey it creates is owned by;
  * - `walletResponder` — the `Responder` map handed to `<tessera-respond>`;
  * - `walletControls` / `walletOwns` — the *ownership* concern (does the wallet
  *   control a given credential), used by `state.tsx` / `Create` / `Survey` /
@@ -40,14 +41,22 @@ export function claimableRoles(identity: WalletIdentity): Role[] {
 }
 
 /**
+ * A wallet credential the app can actually prove control of, as a CIP-179
+ * {@link Credential} — undefined when it can't. The in-browser CIP-179 proof is
+ * a `required_signers` signature, which only a key credential can produce, so a
+ * script credential yields nothing. Every credential the app would have the
+ * wallet prove passes through here, so a script wallet is never offered an
+ * action it would only fail to submit.
+ */
+function provable(cred: WalletCredential | undefined): Credential | undefined {
+  return cred?.kind === "key" ? walletCredToCip179(cred) : undefined;
+}
+
+/**
  * The credential a response carries when the wallet responds as `role`:
  * Keyholder → payment, Stakeholder → stake, DRep → DRep. Undefined for a role
- * the wallet can't act in, including the never-wallet-derivable SPO / CC.
- *
- * Script credentials are undefined too: the in-browser CIP-179 proof is a
- * `required_signers` signature, which only a key credential can produce. This
- * is the single gate every consumer inherits, so a script wallet is never
- * offered a role it would only fail to submit.
+ * the wallet can't act in, including the never-wallet-derivable SPO / CC and
+ * any role a script credential would back (see {@link provable}).
  */
 export function roleCredential(
   identity: WalletIdentity,
@@ -65,7 +74,20 @@ export function roleCredential(
       cred = identity.drep;
       break;
   }
-  return cred?.kind === "key" ? walletCredToCip179(cred) : undefined;
+  return provable(cred);
+}
+
+/**
+ * The credential a survey created by this wallet is owned by: its payment
+ * credential, which signs the funding transaction anyway, so ownership is
+ * proven on publication and provable again on a later cancellation. Undefined
+ * when that credential is script-based (see {@link provable}) — such a wallet
+ * can't author a survey from the browser at all.
+ */
+export function ownerCredential(
+  identity: WalletIdentity,
+): Credential | undefined {
+  return provable(identity.payment);
 }
 
 /** Roles the wallet can respond as to `def`: its eligible roles ∩ claimable. */

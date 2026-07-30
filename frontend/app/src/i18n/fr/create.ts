@@ -191,6 +191,9 @@ const create: Messages = {
   connectTitle: "Connectez un wallet pour créer",
   connectBody:
     "Le sondage est détenu par le credential de votre wallet, qui signe pour le publier et est la seule clé pouvant l'annuler. Utilisez le bouton « Connecter un wallet » dans l'en-tête.",
+  scriptOwnerTitle: "Ce wallet ne peut pas détenir de sondage",
+  scriptOwnerBody:
+    "Publier prouve le credential propriétaire par une signature, et le credential de paiement de ce wallet est à script — rien qu'il puisse signer ne le prouverait. Connectez un wallet dont le credential de paiement est à clé pour créer un sondage.",
 };
 
 export default create;

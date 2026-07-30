@@ -20,7 +20,7 @@ import {
 
 import { useApp } from "~/state";
 import type { Network } from "~/config";
-import { walletCredToCip179 } from "~/domain/roles";
+import { ownerCredential } from "~/domain/roles";
 import {
   QUESTION_TYPES,
   buildDefinition,
@@ -102,9 +102,10 @@ export const Create: Component = () => {
 
   // The survey is owned by the wallet's payment credential — it always signs the
   // funding tx, so ownership is proven automatically here and on a later cancel.
-  const owner = createMemo<Credential | null>(() => {
+  // Undefined for a script-based wallet, which the builder refuses outright.
+  const owner = createMemo<Credential | undefined>(() => {
     const id = identity();
-    return id ? walletCredToCip179(id.payment) : null;
+    return id ? ownerCredential(id) : undefined;
   });
 
   const [meta, setMeta] = createStore<DefinitionMeta>({
@@ -324,11 +325,11 @@ export const Create: Component = () => {
       }
     >
       <Show
-        when={identity()}
+        when={owner()}
         fallback={
           <main class={css.singleColMain}>
             <BackLink />
-            <ConnectPrompt />
+            <NoOwnerPanel connected={identity() !== null} />
           </main>
         }
       >
@@ -1438,10 +1439,21 @@ const SubmittedPanel: Component<{ hash: string }> = (props) => {
   );
 };
 
-const ConnectPrompt: Component = () => (
+/**
+ * Shown instead of the builder when no wallet can own the survey: none
+ * connected, or one whose payment credential is script-based — the only way to
+ * have a wallet but no owner credential.
+ */
+const NoOwnerPanel: Component<{ connected: boolean }> = (props) => (
   <div class={css.connectCard}>
-    <div class={css.connectTitle}>{t("create.connectTitle")}</div>
-    <p class={css.connectBody}>{t("create.connectBody")}</p>
+    <div class={css.connectTitle}>
+      {props.connected
+        ? t("create.scriptOwnerTitle")
+        : t("create.connectTitle")}
+    </div>
+    <p class={css.connectBody}>
+      {props.connected ? t("create.scriptOwnerBody") : t("create.connectBody")}
+    </p>
   </div>
 );
 

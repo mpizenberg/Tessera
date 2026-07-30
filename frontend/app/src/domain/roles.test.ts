@@ -5,6 +5,7 @@ import { bytesToHex } from "cip-179/domain";
 
 import {
   claimableRoles,
+  ownerCredential,
   respondableRoles,
   roleCredential,
   walletCredToCip179,
@@ -132,6 +133,20 @@ describe("roleCredential", () => {
     expect(roleCredential(scripted, Role.DRep)).toEqual(
       walletCredToCip179(drep),
     );
+  });
+});
+
+describe("ownerCredential", () => {
+  it("is the payment credential", () => {
+    expect(ownerCredential(identity({ stake, drep }))).toEqual(
+      walletCredToCip179(payment),
+    );
+  });
+
+  it("is undefined for a script payment credential", () => {
+    expect(
+      ownerCredential(identity({ payment: scriptPayment, stake, drep })),
+    ).toBeUndefined();
   });
 });
 

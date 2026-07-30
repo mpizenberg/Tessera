@@ -202,6 +202,9 @@ const create = {
   connectTitle: "Connect a wallet to create",
   connectBody:
     "The survey is owned by your wallet's credential, which signs to publish it and is the only key that can cancel it. Use the Connect wallet button in the header.",
+  scriptOwnerTitle: "This wallet can't own a survey",
+  scriptOwnerBody:
+    "Publishing proves the owner credential with a signature, and this wallet's payment credential is script-based — nothing it could sign would prove it. Connect a wallet with a key-based payment credential to create a survey.",
 };
 
 export type Messages = typeof create;
