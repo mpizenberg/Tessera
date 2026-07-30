@@ -89,7 +89,7 @@ export async function refreshGovLinks(
   ]);
   const fresh = await resolveGovAnchors(
     proposals.filter((p) => !banked.has(p.anchorHash)),
-    { limit: ANCHOR_ATTEMPTS_PER_REFRESH, ...opts },
+    { ...opts, limit: opts.limit ?? ANCHOR_ATTEMPTS_PER_REFRESH },
   );
   await store.putGovAnchors(fresh);
 
