@@ -27,6 +27,11 @@ const survey: Messages = {
   invalidNoticeRest:
     "La définition on-chain de ce sondage n'est pas conforme à CIP-179 v5 (mauvaise version de spec, ou une contrainte interdite par la spec) : elle est donc non décomptable : aucun résultat n'est produit et répondre est désactivé. La définition reste on-chain à titre de référence.",
 
+  // Avis « pas encore sur la chaîne » (sondage optimiste bloqué)
+  notOnChainNoticeStrong: "Pas encore sur la chaîne.",
+  notOnChainNoticeRest:
+    "La transaction publiant ce sondage n'a pas été observée dans un bloc depuis un moment — elle n'a peut-être pas été acceptée par le réseau. Le sondage n'est visible que dans cette session ; s'il n'atterrit jamais, publiez-le à nouveau.",
+
   // Respond CTA
   respondCta: "Répondre à ce sondage",
 

@@ -235,6 +235,10 @@ export const Survey: Component = () => {
               nowUnix={now()}
             />
 
+            <Show when={!indexed() && app.optimisticStuck().has(key())}>
+              <NotOnChainNotice />
+            </Show>
+
             <Show when={sv().cancellationClaimed}>
               <ClaimedCancellationNotice />
             </Show>
@@ -401,6 +405,19 @@ const ClaimedCancellationNotice: Component = () => (
   <div class={css.claimedNotice}>
     <strong>{t("survey.claimedNoticeStrong")}</strong>{" "}
     {t("survey.claimedNoticeRest")}
+  </div>
+);
+
+/**
+ * Shown on an optimistic survey whose defining tx has stayed unconfirmed past
+ * the slow threshold: mempool eviction means it may never land (finding 61).
+ * The entry is kept — the author needs the receipt to republish — but readers
+ * see the doubt instead of a survey presented as fact.
+ */
+const NotOnChainNotice: Component = () => (
+  <div class={css.claimedNotice}>
+    <strong>{t("survey.notOnChainNoticeStrong")}</strong>{" "}
+    {t("survey.notOnChainNoticeRest")}
   </div>
 );
 

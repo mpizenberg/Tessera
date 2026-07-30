@@ -56,6 +56,7 @@ const explore: Messages = {
   badgeYours: "À vous",
   badgeOffChain: "⚠ libellés off-chain",
   badgeUntalliable: "⚠ définition invalide",
+  badgeNotOnChain: "⚠ pas encore sur la chaîne",
   govLinkedAction: "Action liée {id}",
   govLinkedActionTitle: " · {title}",
   untitled: "Sans titre · contenu externe",

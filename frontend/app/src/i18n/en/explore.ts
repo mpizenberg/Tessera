@@ -63,6 +63,7 @@ const explore = {
   badgeYours: "Yours",
   badgeOffChain: "⚠ labels off-chain",
   badgeUntalliable: "⚠ invalid definition",
+  badgeNotOnChain: "⚠ not yet on-chain",
   /** {id} is the shortened governance action id. */
   govLinkedAction: "Linked action {id}",
   /** Spliced after govLinkedAction when a linked-action title is known; {title} is user content. */

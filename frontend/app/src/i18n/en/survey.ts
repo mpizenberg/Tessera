@@ -24,6 +24,11 @@ const survey = {
   invalidNoticeRest:
     "This survey's on-chain definition doesn't conform to CIP-179 v5 (wrong spec version, or a constraint the spec forbids), so it is untalliable: no results are produced and responding is disabled. The definition stays on-chain for reference.",
 
+  // Not-yet-on-chain notice (stuck optimistic survey). Bold lead + plain rest.
+  notOnChainNoticeStrong: "Not yet on-chain.",
+  notOnChainNoticeRest:
+    "The transaction publishing this survey hasn't been seen in a block for a while — it may not have been accepted by the network. It is only visible in this session; if it never lands, publish it again.",
+
   // Respond CTA
   respondCta: "Respond to this survey",
 

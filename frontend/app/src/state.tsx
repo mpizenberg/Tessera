@@ -226,6 +226,12 @@ interface AppState {
   /** Add a just-published survey to the optimistic set (built from its record). */
   addOptimisticSurvey(record: SurveyRecord): void;
   /**
+   * Keys of optimistic surveys whose defining tx has stayed unconfirmed past
+   * the slow threshold — surfaced as "not yet on-chain" instead of deleted
+   * (mempool eviction means the tx may never land).
+   */
+  readonly optimisticStuck: Accessor<ReadonlySet<string>>;
+  /**
    * Remember a presentation document we just authored, keyed by its content
    * hash, so the survey it describes renders with full labels immediately —
    * without re-fetching our own content from IPFS (which may not have
@@ -398,10 +404,11 @@ export const AppProvider: ParentComponent = (props) => {
     setIpfsTokensStore(id, trimmed || undefined);
   };
 
-  // Pending-tx tracking. A CIP-30-accepted tx will land (no input conflict), so
-  // we poll the data source only to flip the indicator pending → confirmed —
-  // never to refetch the snapshot (the optimistic copy we already show is
-  // on-chain).
+  // Pending-tx tracking. A CIP-30-accepted tx almost always lands (no input
+  // conflict), so we poll the data source only to flip the indicator
+  // pending → confirmed — never to refetch the snapshot. But "almost": mempool
+  // eviction exists, so an optimistic entry is a claim with a deadline, not a
+  // fact — see `optimisticStuck`.
   const [pendingTxs, setPendingTxs] = createStore<PendingTx[]>([]);
   const [optimisticSurveys, setOptimisticSurveys] = createSignal<
     readonly SurveyAggregate[]
@@ -530,6 +537,25 @@ export const AppProvider: ParentComponent = (props) => {
     setOptimisticSurveys((prev) => prev.filter((a) => !realKeys.has(a.key)));
   });
 
+  // Optimistic surveys whose defining tx has been unconfirmed long enough to
+  // look stuck (the tracker's `slow` clock): shown as "not yet on-chain" rather
+  // than silently deleted — the author needs the receipt to retry, and a quiet
+  // disappearance reads as data loss. The mark clears on its own: inclusion
+  // flips the tx to confirmed, and indexing evicts the optimistic twin above.
+  const optimisticStuck = createMemo<ReadonlySet<string>>(() => {
+    const stuck = new Set<string>();
+    for (const p of pendingTxs) {
+      if (
+        p.kind === "survey" &&
+        p.status === "pending" &&
+        p.slow &&
+        p.surveyKey
+      )
+        stuck.add(p.surveyKey);
+    }
+    return stuck;
+  });
+
   // (wallet signal is declared above the list resource — see there.)
   const [connecting, setConnecting] = createSignal(false);
   const [connectError, setConnectError] = createSignal<string | null>(null);
@@ -591,7 +617,10 @@ export const AppProvider: ParentComponent = (props) => {
   };
 
   // Auto-reconnect the last wallet on reload — but only if the dApp is still
-  // authorized for it (CIP-30 `isEnabled`), so this never triggers a prompt.
+  // authorized for it (CIP-30 `isEnabled`), so this never triggers a
+  // *connection* prompt. (A wallet gating the CIP-95 extension behind its own
+  // consent may still prompt for that; refusing it degrades to a DRep-less
+  // session in `connectWallet`, never a failed reconnect.)
   // Wallets inject onto `window.cardano` asynchronously, so poll briefly for the
   // remembered one before giving up (without clearing it — it may just be slow
   // or disabled this session).
@@ -673,6 +702,7 @@ export const AppProvider: ParentComponent = (props) => {
     dismissTx,
     optimisticSurveys,
     addOptimisticSurvey,
+    optimisticStuck,
     cachePresentationDoc,
     cachedPresentationDoc,
     displayDefinition,

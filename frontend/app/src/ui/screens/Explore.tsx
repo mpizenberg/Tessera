@@ -29,10 +29,12 @@ const COLS = "52px 24px 26px minmax(190px,1fr) 122px 100px 52px";
 // Below this width the table gets cramped, so each row reflows into a card.
 const CARD_BREAKPOINT = 800;
 
-/** Per-survey wallet flags. */
+/** Per-survey row flags (wallet relationship + optimistic-entry state). */
 interface Flags {
   readonly mine: boolean;
   readonly responded: boolean;
+  /** Optimistic entry whose defining tx still hasn't been seen in a block. */
+  readonly stuck: boolean;
 }
 
 /** Reactive `(max-width)` media query — true while the viewport is narrow. */
@@ -139,6 +141,7 @@ export const Explore: Component = () => {
     return {
       mine: id ? walletOwns(id, a.record.definition.owner) : false,
       responded: respondedKeys().has(a.key),
+      stuck: app.optimisticStuck().has(a.key),
     };
   };
 
@@ -430,6 +433,11 @@ const InvalidBadge: Component = () => (
   <span class={css.badge}>{t("explore.badgeUntalliable")}</span>
 );
 
+/** Marks an optimistic survey whose defining tx may never land (finding 61). */
+const StuckBadge: Component = () => (
+  <span class={css.badge}>{t("explore.badgeNotOnChain")}</span>
+);
+
 const GovLine: Component<{ actionId: string; title: string | null }> = (
   props,
 ) => (
@@ -497,6 +505,9 @@ const GridRow: Component<EntryProps> = (props) => {
           </Show>
           <Show when={!props.a.talliable}>
             <InvalidBadge />
+          </Show>
+          <Show when={props.flags.stuck}>
+            <StuckBadge />
           </Show>
         </div>
         <div class={css.desc}>
@@ -586,6 +597,9 @@ const CardRow: Component<EntryProps> = (props) => {
           </Show>
           <Show when={!props.a.talliable}>
             <InvalidBadge />
+          </Show>
+          <Show when={props.flags.stuck}>
+            <StuckBadge />
           </Show>
         </div>
       </Show>
