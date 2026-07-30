@@ -226,13 +226,17 @@ async function main(): Promise<void> {
     addNeeded(r.txHash, scriptCredentialHash(r.response.credential));
 
   // Only actions expiring with this survey can link it, or — unresolved — cloud
-  // its mechanism-B verdicts, so the scan reads that one epoch and no more.
+  // its mechanism-B verdicts, so the scan reads that one epoch and no more. Each
+  // action's anchor is dereferenced here and checked against its on-chain hash:
+  // the whole point of this tool is that no input is taken on trust, and an
+  // indexer's own resolution of an anchor can never be re-verified after the
+  // fact. No time budget — a verification may take as long as the anchors do.
   const endEpoch = bundle.survey.definition.endEpoch;
   let govLinksReliable = true;
   const [blockIndices, proofs, govScan] = await Promise.all([
     source.txBlockIndices(txHashes),
     source.txProofs(txHashes, neededScripts),
-    source.fetchGovernanceLinks(config.sinceUnix, [endEpoch]).catch((err) => {
+    source.fetchGovernanceLinks([endEpoch]).catch((err) => {
       // A fetch failure is UNKNOWN, not "no links" — flag it so a mechanism-B
       // proof it might decide comes back INDETERMINATE, never a silent exclude.
       console.warn(

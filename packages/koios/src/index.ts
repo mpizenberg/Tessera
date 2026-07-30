@@ -10,5 +10,6 @@
  */
 
 export * from "./koios";
+export * from "./govLinks";
 export * from "./metadatum";
 export * from "./tallyInputs";

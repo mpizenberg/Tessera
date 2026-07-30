@@ -12,12 +12,13 @@
  * would let the slower one write its older scan last, over the newer snapshot.
  */
 
-import type { GovLink, GovLinkScan } from "cip-179/domain";
+import type { GovLink } from "cip-179/domain";
 import { toJsonSafe } from "cip-179/tally";
 import { KoiosDataSource, KoiosTallyInputs } from "@tessera/koios";
 
 import type { ServerConfig } from "./config";
 import { finalizeClosedSurveys } from "./finalize";
+import { refreshGovLinks } from "./govLinks";
 import { materializeSnapshot, snapshotBytes } from "./materialize";
 import {
   REFRESH_LEASE_SECONDS,
@@ -33,10 +34,11 @@ export async function refreshSnapshot(
   config: ServerConfig,
   store: BackendStore,
 ): Promise<void> {
-  // Every Koios request this run issues (scan + validation + finalization)
-  // ticks this counter — the per-run stats row is the health footer's data,
-  // and on Workers the count tracks headroom against the per-invocation
-  // subrequest cap (50 free / 1000 paid).
+  // Every upstream request this run issues — Koios reads (scan, validation,
+  // finalization) and governance-anchor fetches alike — ticks this counter. The
+  // per-run stats row is the health footer's data, and on Workers the count
+  // tracks headroom against the per-invocation subrequest cap (50 free / 1000
+  // paid), which does not care which host a request went to.
   let koiosCalls = 0;
   const countCall = (): void => {
     koiosCalls += 1;
@@ -111,16 +113,18 @@ export async function refreshSnapshot(
       source.fetchAll(),
       source.chainTip(),
     ]);
-    const { links: govLinks, unresolved: govUnresolved } = await source
-      .fetchGovernanceLinks(
-        config.app.sinceUnix,
-        records.surveys.map((s) => s.definition.endEpoch),
-      )
-      .catch((err) => {
-        console.warn(`gov links fetch failed: ${String(err)}`);
-        govLinksReliable = false;
-        return { links: [], unresolved: [] };
-      });
+    const { links: govLinks, unresolved: govUnresolved } = await refreshGovLinks(
+      store,
+      source,
+      records.surveys.map((s) => s.definition.endEpoch),
+      tip.epoch,
+      startedAt,
+      { onRequest: countCall },
+    ).catch((err) => {
+      console.warn(`gov links fetch failed: ${String(err)}`);
+      govLinksReliable = false;
+      return { links: [], unresolved: [] };
+    });
 
     console.log(
       `snapshot refreshed: ${records.surveys.length} surveys, ` +
@@ -168,11 +172,7 @@ export async function refreshSnapshot(
     const snapshot = materializeSnapshot(
       records,
       tip,
-      await displayGovLinks(
-        store,
-        { links: govLinks, unresolved: govUnresolved },
-        govLinksReliable,
-      ),
+      await displayGovLinks(store, govLinks, govLinksReliable),
       await store.finalizedCancelledKeys(),
     );
     const payloadBytes = snapshotBytes(snapshot);
@@ -212,46 +212,34 @@ export async function refreshSnapshot(
 }
 
 /**
- * The governance links the snapshot publishes: what this refresh read, plus the
- * previous snapshot's link for every action it could NOT read.
+ * The governance links the snapshot publishes: this refresh's, or the previous
+ * snapshot's when the whole read failed.
  *
- * An unreadable action is *unknown*, not unlinked, and publishing it as "no
- * link" is what makes links flicker in the app. Two ways to be unreadable, both
- * routine: Koios resolves an anchor into `meta_json` lazily and its nodes
- * disagree about which ones are resolved — the same action comes back a link on
- * one refresh and a null anchor on the next — or the whole scan failed, which
- * makes every link unknown at once. A scan classifies each action as one or the
- * other, never both, so the recovered links never collide with the fresh ones.
+ * A failed read makes every link *unknown* at once, and publishing unknown as
+ * "no links" would blank the linkage everywhere until the next good run.
+ * Republishing is sound because an action's anchor is hash-fixed at proposal
+ * time: whatever was resolved before is what the action still says. The links
+ * only reach the display snapshot, where epoch alignment, haystack and counts
+ * are re-derived against the fresh tip; validation and finalization see the
+ * honest (empty) read, so no verdict or artifact is built on a stale link.
  *
- * Recovering a link is sound because an action's anchor is hash-fixed at
- * proposal time: whatever we resolved before is what the action still says. The
- * links only reach the display snapshot, where epoch alignment, haystack and
- * counts are re-derived against the fresh tip; validation and finalization see
- * the honest scan, so no verdict or artifact is ever built on a recovered link.
+ * A *successful* read needs no such rescue: classifications come from documents
+ * verified against their on-chain hash and banked, so a link this backend has
+ * seen once stays in the answer until its epoch settles it in for good.
  */
 export async function displayGovLinks(
   store: Pick<SnapshotStore, "snapshotGovLinks">,
-  scan: GovLinkScan,
+  links: readonly GovLink[],
   reliable: boolean,
 ): Promise<readonly GovLink[]> {
-  const unknown = new Set(scan.unresolved.map((u) => u.actionId));
-  if (reliable && unknown.size === 0) return scan.links;
+  if (reliable) return links;
   try {
     const stored = await store.snapshotGovLinks();
-    if (!reliable) {
-      console.warn(`gov links unreadable — republishing ${stored.length}`);
-      return stored;
-    }
-    const recovered = stored.filter((l) => unknown.has(l.actionId));
-    if (recovered.length > 0) {
-      console.log(
-        `gov links: ${recovered.length} anchor(s) unresolved this refresh — kept the stored link`,
-      );
-    }
-    return [...scan.links, ...recovered];
+    console.warn(`gov links unreadable — republishing ${stored.length}`);
+    return stored;
   } catch (err) {
     console.warn(`gov links recovery failed: ${String(err)}`);
-    return scan.links;
+    return links;
   }
 }
 

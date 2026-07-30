@@ -7,13 +7,11 @@
  * otherwise. Because every constraint stays on-chain, the on-chain fallback is
  * always usable — only labels are missing — so screens render immediately and
  * upgrade in place when the document resolves.
- *
- * The content fetcher (and its blake2b/JSON dependencies) is dynamically
- * imported so it stays out of the initial bundle.
  */
 
 import { createResource, type Accessor } from "solid-js";
 import type { SurveyDefinition } from "cip-179";
+import { fetchAnchorJson } from "cip-179/content";
 
 import { useApp } from "~/state";
 import {
@@ -51,7 +49,6 @@ export function usePresentation(
       await app.cacheReady;
       let doc = app.cachedPresentationDoc(anchor.hash);
       if (doc === undefined) {
-        const { fetchAnchorJson } = await import("cip-179/content");
         doc = await fetchAnchorJson(anchor); // fetch + hash-verify; throws → unavailable
         app.cachePresentationDoc(anchor.hash, doc); // persist the verified doc
       }

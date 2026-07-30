@@ -103,6 +103,11 @@ published. Keep adding entries here until release.
   callers on a metered runtime. Also exports `blake2b256`, `IPFS_GATEWAYS` and
   the defaults. This is the second module in the package that does I/O (after
   the tlock beacon fetch); the codec, domain and tally layers stay pure.
+- `parseGovLinkDoc(doc)` and `GovLinkDoc` (`./domain`) — the survey link an
+  anchor document carries (`{surveyKey, title}`), or `null` for a document that
+  carries none. Deliberately document-only: which action carries the link and
+  when it expires are the action's own on-chain identity, so a classification
+  can be addressed (and cached) by anchor hash alone.
 - `isSurveyTalliable(record)` / `surveyErrors(record)` — the read-side
   talliability gate, now taking a `SurveyRecord` because one of its rules needs
   the definition's chain position (`end_epoch` > inclusion `epoch_no`).

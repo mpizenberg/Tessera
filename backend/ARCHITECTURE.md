@@ -276,6 +276,42 @@ How it landed (shared with Phase 2's tally work, which is why it waited):
   direct/power-user path keeps working unchanged; its full-scan reads remain as
   concrete methods for the serving tier's refresh).
 
+### 5.2 Governance links: verified anchors, settled epochs
+
+A CIP-179 survey link lives in a governance action's CIP-108 anchor document,
+which the action commits to on-chain by hash. The refresh **dereferences that
+anchor itself** and checks the bytes against the committed hash
+(`cip-179/content`), rather than reading an indexer's own off-chain resolution:
+a parsed document handed over by an indexer can never be re-verified against the
+hash it came from, and on preview roughly 70% of expired proposals have an
+anchor db-sync permanently gave up fetching. So the scan
+(`/proposal_list?select=proposal_id,expiration,meta_url,meta_hash`) reads only
+on-chain columns — small, immutable, identical across nodes.
+
+Two on-chain facts bound the work (`backend/server/src/govLinks.ts`):
+
+- **An anchor is hash-fixed**, so one verified fetch classifies a document
+  permanently. Classifications are banked by anchor hash (`gov_anchor`) and
+  never re-fetched — including verified *non*-links, which are as final as
+  links. A fetch *failure* is banked nowhere: it is absence of evidence, and the
+  action stays **unresolved** — unknown, not unlinked (finding 6).
+- **A proposal's expiration epoch is in the future when it is proposed**, so
+  once the tip reaches epoch X the set of proposals expiring at X is frozen and
+  its link set can be decided once and for all (`gov_epoch`). A settled epoch
+  leaves the query filter for good and its anchors leave the bank, which is what
+  keeps the pass **O(active surveys)** instead of growing with all-time history.
+
+Settlement waits for every anchor at the epoch, but not forever: after one epoch
+of patience it settles with the links it has and records the rest as given up.
+That bound is load-bearing, not tidiness — validation holds a bindable response's
+verdict at "unknown" while an epoch-aligned action is unresolved, and
+finalization postpones on any unknown verdict, so one permanently dead anchor
+would otherwise postpone that survey's artifact forever.
+
+The direct-Koios path resolves the same anchors the same way, but with no place
+to bank them (each page load is a fresh context), so it runs the whole
+resolution under one wall-clock budget and publishes what resolved.
+
 ---
 
 ## 6. Tally model

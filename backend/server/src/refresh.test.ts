@@ -1,8 +1,8 @@
 /**
- * What a refresh publishes as its governance links. Koios resolves anchors
- * lazily and its nodes disagree about which are resolved, so the scan regularly
- * comes back *missing* a link it returned minutes ago — the flicker this logic
- * exists to absorb.
+ * What a refresh publishes as its governance links. A successful read speaks
+ * for itself — classifications come from hash-verified documents, banked, so
+ * they don't flicker — but a read that failed outright means "unknown", and the
+ * previous snapshot's links are a better answer than none.
  */
 
 import { describe, expect, it } from "vitest";
@@ -29,52 +29,20 @@ const failingStore = {
 };
 
 describe("displayGovLinks", () => {
-  it("publishes the fresh scan when every anchor resolved", async () => {
-    const scan = { links: [link("gov_action1a")], unresolved: [] };
-    expect(await displayGovLinks(storeWith([]), scan, true)).toEqual(
-      scan.links,
-    );
+  it("publishes what the refresh resolved", async () => {
+    const links = [link("gov_action1a")];
+    // Including when an anchor at an unsettled epoch is still unread: that is
+    // this refresh's honest answer, and the stored snapshot knows no more.
+    expect(await displayGovLinks(storeWith([link("gov_action1b")]), links, true))
+      .toEqual(links);
   });
 
-  it("keeps the stored link of an action this scan couldn't read", async () => {
-    const scan = {
-      links: [link("gov_action1a")],
-      unresolved: [{ actionId: "gov_action1b", endEpoch: 510 }],
-    };
+  it("falls back to every stored link when the read failed", async () => {
     const stored = [link("gov_action1a"), link("gov_action1b")];
-    expect(
-      (await displayGovLinks(storeWith(stored), scan, true)).map(
-        (l) => l.actionId,
-      ),
-    ).toEqual(["gov_action1a", "gov_action1b"]);
+    expect(await displayGovLinks(storeWith(stored), [], false)).toEqual(stored);
   });
 
-  it("adds nothing for an unresolved action never seen as a link", async () => {
-    const scan = {
-      links: [],
-      unresolved: [{ actionId: "gov_action1never", endEpoch: 510 }],
-    };
-    expect(
-      await displayGovLinks(storeWith([link("gov_action1a")]), scan, true),
-    ).toEqual([]);
-  });
-
-  it("falls back to every stored link when the scan itself failed", async () => {
-    const stored = [link("gov_action1a"), link("gov_action1b")];
-    expect(
-      await displayGovLinks(
-        storeWith(stored),
-        { links: [], unresolved: [] },
-        false,
-      ),
-    ).toEqual(stored);
-  });
-
-  it("publishes the fresh scan when recovery itself fails", async () => {
-    const scan = {
-      links: [link("gov_action1a")],
-      unresolved: [{ actionId: "gov_action1b", endEpoch: 510 }],
-    };
-    expect(await displayGovLinks(failingStore, scan, true)).toEqual(scan.links);
+  it("publishes the failed read's empty set when the fallback also fails", async () => {
+    expect(await displayGovLinks(failingStore, [], false)).toEqual([]);
   });
 });

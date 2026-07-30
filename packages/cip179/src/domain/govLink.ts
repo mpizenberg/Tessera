@@ -85,7 +85,8 @@ export interface Cip179LinkResult {
 
 /**
  * Validate the `body.cip179` survey link inside an already-parsed CIP-108
- * anchor object (e.g. Koios `meta_json`, or `JSON.parse` of a loaded file).
+ * anchor object (e.g. `JSON.parse` of the fetched document, or an indexer's
+ * own resolved copy of it).
  * Returns the ref only when every required field checks out, alongside any
  * problems for callers that show them. `surveyTxId` must be 64-char hex — a
  * malformed id can never address a real survey, so it's rejected rather than

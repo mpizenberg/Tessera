@@ -4,6 +4,7 @@ import {
   GOV_LINK_KIND,
   anchorContextMapsCip179Terms,
   parseCip179Link,
+  parseGovLinkDoc,
 } from "./govLink.js";
 
 const TXID = "a".repeat(64);
@@ -98,6 +99,55 @@ describe("parseCip179Link", () => {
         expect(r.problems.some((p) => p.includes("specVersion"))).toBe(true);
       }
     });
+  });
+});
+
+// What a reader keeps from a verified anchor document: the survey it names and
+// the title to show. Everything else about a link — which action carries it,
+// when that action expires — is the action's own on-chain identity, so it is
+// deliberately not derivable here.
+describe("parseGovLinkDoc", () => {
+  it("extracts the survey key and title from body.cip179", () => {
+    expect(
+      parseGovLinkDoc(wellFormed({ surveyTxId: "AB".repeat(32) })),
+    ).toEqual({
+      surveyKey: `${"ab".repeat(32)}:3`, // tx id lower-cased, joined with the index
+      title: "A poll",
+    });
+  });
+
+  it("reports no title rather than a non-string one", () => {
+    const doc = wellFormed();
+    doc.body.title = 7 as unknown as string;
+    expect(parseGovLinkDoc(doc)?.title).toBeNull();
+    const untitled = wellFormed();
+    delete (untitled.body as { title?: unknown }).title;
+    expect(parseGovLinkDoc(untitled)?.title).toBeNull();
+  });
+
+  it("is null when the addressing doesn't fully check out", () => {
+    // Each of these can't address a real survey, so it is not a link at all —
+    // never a partial one that would resolve to survey 0 of some transaction.
+    expect(parseGovLinkDoc(wellFormed({ kind: "something-else" }))).toBeNull();
+    expect(parseGovLinkDoc(wellFormed({ surveyTxId: "9a1c" }))).toBeNull();
+    expect(parseGovLinkDoc(wellFormed({ surveyIndex: -1 }))).toBeNull();
+    expect(parseGovLinkDoc(wellFormed({ surveyIndex: 1.5 }))).toBeNull();
+    expect(parseGovLinkDoc(wellFormed({ surveyIndex: "0" }))).toBeNull();
+  });
+
+  // A link at another CIP-179 revision is still a link (the CIP's rules are the
+  // ref resolving, the epoch alignment and the kind), so it must survive here.
+  it("keeps a link declaring a foreign specVersion", () => {
+    expect(parseGovLinkDoc(wellFormed({ specVersion: 99 }))?.surveyKey).toBe(
+      `${TXID}:3`,
+    );
+  });
+
+  it("is null for a document that carries no link at all", () => {
+    expect(parseGovLinkDoc({ body: { title: "Just a normal action" } })).toBeNull();
+    expect(parseGovLinkDoc({ hashAlgorithm: "blake2b-256" })).toBeNull();
+    expect(parseGovLinkDoc(null)).toBeNull();
+    expect(parseGovLinkDoc("not an object")).toBeNull();
   });
 });
 

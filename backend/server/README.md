@@ -8,8 +8,10 @@ Cloudflare Worker (`src/worker.ts`, D1 + Cron trigger). See
 
 Each refresh cycle does three things, in order:
 
-1. **Snapshot** — fetch all label-17 records + chain tip + governance links
-   from Koios and cache the result (what the read endpoints serve).
+1. **Snapshot** — fetch all label-17 records + chain tip from Koios, resolve the
+   governance links (dereferencing each candidate action's anchor and verifying
+   it against the hash committed on-chain — fetched once ever, then banked), and
+   cache the result (what the read endpoints serve).
 2. **Validate** — for responses not seen before, fetch their tx block index
    and proof evidence and persist the §6.3 checks (well-formedness, credential
    proof via required signers / native scripts / vote bindings). Incremental:

@@ -40,9 +40,9 @@ export interface ValidatedResponseRow {
    * `proofOk` was evaluated against: the sorted, comma-joined action ids (bech32
    * CIP-129 `gov_action1…`), or null for a standalone survey. A single linking
    * action stores just that id (the common case). Persisted so the verdict can
-   * be re-evaluated when a survey's link set changes (Koios resolves anchors
-   * lazily; a link can appear, change, or be removed after the first
-   * validation). Meaningful only when `proofOk` is non-null.
+   * be re-evaluated when a survey's link set changes: anchors resolve a few per
+   * refresh, so a link appears the pass its document is first read. Meaningful
+   * only when `proofOk` is non-null.
    */
   readonly linkedActionId: string | null;
   /** Full codec validation against the on-chain definition. */
@@ -202,7 +202,7 @@ export interface SettledGovEpoch {
 }
 
 /**
- * Governance-link resolution state (ARCHITECTURE.md §6.4): the per-anchor bank
+ * Governance-link resolution state (ARCHITECTURE.md §5.2): the per-anchor bank
  * and the per-epoch settlement memo. Both are rebuildable cache — wiping them
  * costs a re-scan, a re-fetch and a re-settle, never a wrong answer.
  *

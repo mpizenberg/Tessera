@@ -186,8 +186,9 @@ export interface GovLink {
 }
 
 /**
- * A governance action whose anchor could not be resolved (the indexer returned
- * no `meta_json`), so whether it links a survey is **unknown**, not "no link".
+ * A governance action whose anchor document could not be read — not fetched, or
+ * not resolved by the indexer asked — so whether it links a survey is
+ * **unknown**, not "no link".
  * Distinguishing the two is what lets a consumer surface an unresolved anchor
  * instead of silently deciding "not linked" (finding 6).
  *
