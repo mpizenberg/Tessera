@@ -30,34 +30,42 @@ export function walletCredToCip179(c: WalletCredential): Credential {
 /**
  * Roles the wallet may claim globally (independent of any survey). Keyholder is
  * listed last so a stake/DRep-capable wallet defaults to its most specific role.
+ * Derived from {@link roleCredential} so a role is offered exactly when the
+ * credential backing it can be proven.
  */
 export function claimableRoles(identity: WalletIdentity): Role[] {
-  const roles: Role[] = [];
-  if (identity.stake) roles.push(Role.Stakeholder);
-  if (identity.drep) roles.push(Role.DRep);
-  roles.push(Role.Keyholder);
-  return roles;
+  return [Role.Stakeholder, Role.DRep, Role.Keyholder].filter(
+    (role) => roleCredential(identity, role) !== undefined,
+  );
 }
 
 /**
  * The credential a response carries when the wallet responds as `role`:
  * Keyholder → payment, Stakeholder → stake, DRep → DRep. Undefined for a role
  * the wallet can't act in, including the never-wallet-derivable SPO / CC.
+ *
+ * Script credentials are undefined too: the in-browser CIP-179 proof is a
+ * `required_signers` signature, which only a key credential can produce. This
+ * is the single gate every consumer inherits, so a script wallet is never
+ * offered a role it would only fail to submit.
  */
 export function roleCredential(
   identity: WalletIdentity,
   role: Role,
 ): Credential | undefined {
+  let cred: WalletCredential | undefined;
   switch (role) {
     case Role.Keyholder:
-      return walletCredToCip179(identity.payment);
+      cred = identity.payment;
+      break;
     case Role.Stakeholder:
-      return identity.stake ? walletCredToCip179(identity.stake) : undefined;
+      cred = identity.stake;
+      break;
     case Role.DRep:
-      return identity.drep ? walletCredToCip179(identity.drep) : undefined;
-    default:
-      return undefined;
+      cred = identity.drep;
+      break;
   }
+  return cred?.kind === "key" ? walletCredToCip179(cred) : undefined;
 }
 
 /** Roles the wallet can respond as to `def`: its eligible roles ∩ claimable. */

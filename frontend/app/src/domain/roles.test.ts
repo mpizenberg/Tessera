@@ -20,12 +20,20 @@ const keyCred = (fill: number): WalletCredential => ({
   hashHex: hex(28, fill),
 });
 
+const scriptCred = (fill: number): WalletCredential => ({
+  kind: "script",
+  hashHex: hex(28, fill),
+});
+
 const payment = keyCred(1);
 const stake = keyCred(2);
 const drep = keyCred(3);
+const scriptPayment = scriptCred(7);
+const scriptStake = scriptCred(8);
 
 /** A {@link WalletIdentity} carrying the given credentials (rest is filler). */
 const identity = (creds: {
+  payment?: WalletCredential;
   stake?: WalletCredential;
   drep?: WalletCredential;
 }): WalletIdentity => ({
@@ -33,7 +41,7 @@ const identity = (creds: {
   walletName: "Demo",
   networkId: 0,
   changeAddressBech32: "addr_test1demo",
-  payment,
+  payment: creds.payment ?? payment,
   stake: creds.stake,
   drepKeyHex: creds.drep ? hex(32, 3) : undefined,
   drep: creds.drep,
@@ -60,6 +68,15 @@ describe("claimableRoles", () => {
       Role.DRep,
       Role.Keyholder,
     ]);
+  });
+
+  it("drops the roles a script credential backs", () => {
+    expect(
+      claimableRoles(identity({ payment: scriptPayment, stake, drep })),
+    ).toEqual([Role.Stakeholder, Role.DRep]);
+    expect(
+      claimableRoles(identity({ payment: scriptPayment, stake: scriptStake })),
+    ).toEqual([]);
   });
 });
 
@@ -103,6 +120,19 @@ describe("roleCredential", () => {
     expect(roleCredential(full, Role.SPO)).toBeUndefined();
     expect(roleCredential(full, Role.CC)).toBeUndefined();
   });
+
+  it("returns undefined for a script credential (unprovable in-browser)", () => {
+    const scripted = identity({
+      payment: scriptPayment,
+      stake: scriptStake,
+      drep,
+    });
+    expect(roleCredential(scripted, Role.Keyholder)).toBeUndefined();
+    expect(roleCredential(scripted, Role.Stakeholder)).toBeUndefined();
+    expect(roleCredential(scripted, Role.DRep)).toEqual(
+      walletCredToCip179(drep),
+    );
+  });
 });
 
 describe("respondableRoles", () => {
@@ -117,6 +147,13 @@ describe("respondableRoles", () => {
   it("is empty when the wallet can't claim any eligible role", () => {
     const def = defWith(Role.SPO, Role.CC);
     expect(respondableRoles(def, identity({ stake, drep }))).toEqual([]);
+  });
+
+  it("excludes an eligible role a script credential would have to prove", () => {
+    const def = defWith(Role.Stakeholder, Role.Keyholder);
+    expect(
+      respondableRoles(def, identity({ payment: scriptPayment, stake })),
+    ).toEqual([Role.Stakeholder]);
   });
 });
 
@@ -134,5 +171,11 @@ describe("walletResponder", () => {
     expect(map[Role.Keyholder]).toEqual(walletCredToCip179(payment));
     expect(map[Role.Stakeholder]).toBeUndefined();
     expect(map[Role.SPO]).toBeUndefined();
+  });
+
+  it("omits script-backed roles", () => {
+    expect(walletResponder(identity({ payment: scriptPayment, drep }))).toEqual(
+      { [Role.DRep]: walletCredToCip179(drep) },
+    );
   });
 });
