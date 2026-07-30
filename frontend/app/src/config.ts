@@ -30,6 +30,15 @@ export function envNetwork(): Network {
   return import.meta.env.VITE_NETWORK === "mainnet" ? "mainnet" : "preview";
 }
 
+/**
+ * The CIP-30 `networkId` a configured {@link Network} expects: `1` for mainnet,
+ * `0` for every testnet (preview/preprod). The single source of truth for the
+ * wallet-vs-app network comparison, on both the display and the submit side.
+ */
+export function expectedNetworkId(network: Network): number {
+  return network === "mainnet" ? 1 : 0;
+}
+
 /** The counterpart network — the one this deployment does *not* serve. */
 export function otherNetwork(): Network {
   return envNetwork() === "mainnet" ? "preview" : "mainnet";

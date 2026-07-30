@@ -40,7 +40,7 @@ import { METADATA_LABEL, type Credential, type Metadatum } from "cip-179";
 
 import { fromJsonSafe } from "cip-179/tally";
 
-import type { AppConfig } from "~/config";
+import { expectedNetworkId, type AppConfig } from "~/config";
 import { toTxMetadatum } from "./cbor";
 import type { Cip30Api } from "./types";
 
@@ -113,8 +113,20 @@ function cip30UtxoToCore(hex: string): UTxO.UTxO {
  * protocol parameters come from it and are passed to `build()` — the build then
  * makes no Koios call at all (the redeemer-free flows here never trigger script
  * evaluation). Sign + submit still go through the wallet at the call site.
+ *
+ * The network is re-read from the wallet here, not taken from the identity read
+ * at connect: switching networks inside a wallet doesn't necessarily invalidate
+ * the handle, and every screen's mismatch gate compares that connect-time
+ * snapshot. This is the last point before a transaction is built, so it is the
+ * one check every submit path shares.
  */
 async function txContext(config: SubmitConfig, api: Cip30Api) {
+  if ((await api.getNetworkId()) !== expectedNetworkId(config.network)) {
+    throw new Error(
+      `Wallet is on a different network than the app (${config.network}). Switch networks in your wallet.`,
+    );
+  }
+
   const chain = config.network === "mainnet" ? mainnet : preview;
   const reader = Client.make(chain).withKoios(
     config.koiosToken

@@ -62,6 +62,20 @@ function drepCredentialFromKey(
 }
 
 /**
+ * Did the wallet throw CIP-30 `APIError` code −3 ("Refused") — i.e. did the user
+ * reject the prompt? Wallets throw loose objects rather than `Error`s, so the
+ * shape is checked defensively.
+ */
+function isRefusal(e: unknown): boolean {
+  return (
+    typeof e === "object" && e !== null && (e as { code?: unknown }).code === -3
+  );
+}
+
+const declined = (): Error =>
+  new Error("Connection declined in the wallet — nothing was connected.");
+
+/**
  * Whether the dApp is already authorized for this wallet (CIP-30 `isEnabled`).
  * When true, {@link connectWallet} can re-enable it without a user prompt — the
  * basis for silent auto-reconnect on reload. Safe (returns false) if the wallet
@@ -82,12 +96,19 @@ export async function connectWallet(key: string): Promise<ConnectedWallet> {
   const entry = window.cardano?.[key];
   if (!entry) throw new Error(`Wallet "${key}" is not installed`);
 
-  // Request CIP-95 (DRep key); fall back to a plain enable if unsupported.
+  // Request CIP-95 (DRep key); fall back to a plain enable if unsupported. A
+  // refusal is the user's answer to the connect prompt, not a missing
+  // extension — asking again would prompt twice for the same thing.
   let api: Cip30Api;
   try {
     api = await entry.enable({ extensions: [{ cip: 95 }] });
-  } catch {
-    api = await entry.enable();
+  } catch (e) {
+    if (isRefusal(e)) throw declined();
+    try {
+      api = await entry.enable();
+    } catch (plain) {
+      throw isRefusal(plain) ? declined() : plain;
+    }
   }
 
   const networkId = await api.getNetworkId();

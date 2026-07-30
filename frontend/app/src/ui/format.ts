@@ -7,7 +7,7 @@ import {
   type SurveyAggregate,
 } from "cip-179/domain";
 import { IPFS_GATEWAYS } from "cip-179/content";
-import type { Network } from "~/config";
+import { expectedNetworkId, type Network } from "~/config";
 import { t, n, type MsgKey } from "~/i18n";
 
 /**
@@ -17,15 +17,6 @@ import { t, n, type MsgKey } from "~/i18n";
 export function explorerTxUrl(network: Network, txHash: string): string {
   const prefix = network === "mainnet" ? "" : `${network}/`;
   return `https://explorer.cardano.org/${prefix}tx/${txHash}`;
-}
-
-/**
- * The CIP-30 `networkId` a configured {@link Network} expects: `1` for mainnet,
- * `0` for every testnet (preview/preprod). The single source of truth for the
- * wallet-vs-app network comparison.
- */
-export function expectedNetworkId(network: Network): number {
-  return network === "mainnet" ? 1 : 0;
 }
 
 /**
