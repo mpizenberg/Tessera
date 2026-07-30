@@ -322,7 +322,8 @@ describe("validateNewResponses", () => {
     const ACTION = "gov_action1unresolved";
     const store = memTallyStore();
     // t1: DRep, no signature — mechanism A fails; it votes the action whose
-    // anchor Koios couldn't resolve, so whether it links this survey is unknown.
+    // anchor document couldn't be read, so whether it links this survey is
+    // unknown.
     // t2: DRep signing a different credential — mechanism A fails and it never
     // voted the unresolved action, so nothing could ever prove it: final false.
     const source = fakeSource(
@@ -348,6 +349,20 @@ describe("validateNewResponses", () => {
     );
     expect(store.rows.get("t1:0")!.proofOk).toBe(null); // unknown → retry
     expect(store.rows.get("t2:0")!.proofOk).toBe(false); // didn't vote it → final
+
+    // Once that action's expiration epoch settles, the anchor leaves the
+    // unresolved set for good and the held verdict finally freezes. Without
+    // that, a permanently dead anchor postpones this survey's artifact forever
+    // — finalization postpones on any null verdict.
+    await validateNewResponses(
+      store,
+      records(response("t1", 1, Role.DRep), response("t2", 2, Role.DRep)),
+      [],
+      source,
+      true,
+      [], // epoch settled: nothing is unknown any more
+    );
+    expect(store.rows.get("t1:0")!.proofOk).toBe(false);
   });
 
   it("an unresolved anchor at a DIFFERENT epoch never clouds the survey (finding 6)", async () => {

@@ -30,10 +30,11 @@ export interface ServerConfig {
   /** SQLite file path, or ":memory:". */
   readonly dbPath: string;
   /**
-   * Koios calls one refresh may reasonably make — the health endpoint's
-   * per-refresh headroom denominator. Defaults to the Cloudflare Worker
-   * free-plan subrequest cap; on the paid plan (or self-hosted Node, where no
-   * platform cap exists) raise it to keep the footer's ratio meaningful.
+   * Upstream requests one refresh may reasonably make — Koios reads and
+   * governance-anchor fetches alike — the health endpoint's per-refresh
+   * headroom denominator. Defaults to the Cloudflare Worker free-plan
+   * subrequest cap; on the paid plan (or self-hosted Node, where no platform
+   * cap exists) raise it to keep the footer's ratio meaningful.
    */
   readonly koiosCallsPerRefreshLimit: number;
   /**

@@ -34,7 +34,7 @@ import {
 } from "@tessera/koios";
 import type { GovLink, GovLinkDoc, GovLinkScan } from "cip-179/domain";
 
-import type { GovLinkStore } from "./store";
+import type { GovLinkStore, SettledGovEpoch } from "./store";
 
 /**
  * Epochs past an expiration epoch we keep trying its unresolved anchors before
@@ -117,10 +117,10 @@ export async function refreshGovLinks(
 }
 
 /**
- * Settle every eligible expiration epoch, prune the anchors that only it needed,
- * and return the epochs settled. An epoch is eligible once the tip has reached
- * it (its proposal set is frozen) and settles when nothing at it is unresolved,
- * or when patience runs out.
+ * Settle every eligible expiration epoch, prune the anchors only those epochs
+ * needed, and return the epochs settled. An epoch is eligible once the tip has
+ * reached it (its proposal set is frozen) and settles when nothing at it is
+ * unresolved, or when patience runs out.
  */
 async function settleEpochs(
   store: GovLinkStore,
@@ -131,12 +131,11 @@ async function settleEpochs(
   tipEpoch: number,
   nowSec: number,
 ): Promise<Set<number>> {
-  const settledNow = new Set<number>();
+  const settling: SettledGovEpoch[] = [];
   for (const expiration of unsettled) {
     if (tipEpoch < expiration) continue; // proposals can still land at it
-    const at = proposals.filter((p) => p.endEpoch + 1 === expiration);
-    const gaveUp = at
-      .filter((p) => !docs.has(p.anchorHash))
+    const gaveUp = proposals
+      .filter((p) => p.endEpoch + 1 === expiration && !docs.has(p.anchorHash))
       .map((p) => p.actionId);
     if (
       gaveUp.length > 0 &&
@@ -144,26 +143,23 @@ async function settleEpochs(
     ) {
       continue; // still worth asking
     }
-    await store.putSettledGovEpoch({
+    settling.push({
       expiration,
       links: links.filter((l) => l.endEpoch + 1 === expiration),
       gaveUp,
       settledAt: nowSec,
     });
-    settledNow.add(expiration);
-    if (gaveUp.length > 0) {
-      console.log(
-        `gov epoch ${expiration} settled with ${gaveUp.length} unresolved anchor(s) given up`,
-      );
-    }
   }
+  const settledNow = new Set(settling.map((e) => e.expiration));
   if (settledNow.size === 0) return settledNow;
 
-  // A settled epoch is never queried again, so this pass is the last moment its
-  // anchors are in hand — and a bank that only ever grows is the linear cost
-  // this design exists to remove. Anchors shared with an epoch still unsettled
-  // stay; over-deleting would only cost a re-fetch, but under-deleting is
-  // permanent.
+  // Prune BEFORE recording the settlements. A settled epoch is never queried
+  // again, so this pass is the last moment its anchors are in hand — and a bank
+  // that only ever grows is the linear cost this design exists to remove. In
+  // this order a run that dies mid-way leaves the epoch unsettled with an empty
+  // bank, which the next refresh re-fetches; the other order would leave banked
+  // anchors nothing ever revisits. Anchors shared with an epoch still unsettled
+  // stay: over-deleting costs a re-fetch, under-deleting is permanent.
   const stillNeeded = new Set(
     proposals
       .filter((p) => !settledNow.has(p.endEpoch + 1))
@@ -177,6 +173,15 @@ async function settleEpochs(
     ),
   ].filter((hash) => !stillNeeded.has(hash));
   await store.deleteGovAnchors(droppable);
+
+  for (const epoch of settling) {
+    await store.putSettledGovEpoch(epoch);
+    if (epoch.gaveUp.length > 0) {
+      console.log(
+        `gov epoch ${epoch.expiration} settled with ${epoch.gaveUp.length} unresolved anchor(s) given up`,
+      );
+    }
+  }
   console.log(
     `gov links: settled epoch(s) ${[...settledNow].join(", ")}, ` +
       `pruned ${droppable.length} banked anchor(s)`,

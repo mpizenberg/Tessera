@@ -259,7 +259,12 @@ export interface RefreshRunRow {
   /** Unix seconds when the run started (primary key; latest-wins on collision). */
   readonly startedAt: number;
   readonly durationMs: number;
-  /** Koios HTTP requests issued by this run (scan + validation + finalization). */
+  /**
+   * Upstream HTTP requests issued by this run: Koios reads (scan, validation,
+   * finalization) plus governance-anchor fetches. What it really measures is
+   * the Worker's per-invocation subrequest budget, which doesn't care which
+   * host a request went to — hence the wider subject than the name suggests.
+   */
   readonly koiosCalls: number;
   readonly ok: boolean;
   /** Failure message when `ok` is false, else null. */

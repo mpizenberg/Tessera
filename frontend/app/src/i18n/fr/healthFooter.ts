@@ -6,11 +6,11 @@ const healthFooter: Messages = {
   updatedTitle: "Âge de l'instantané on-chain servi",
   koiosRefresh: "Koios {calls}/{limit}",
   koiosRefreshTitle:
-    "Appels Koios du dernier rafraîchissement, rapportés au budget par rafraîchissement",
+    "Requêtes du dernier rafraîchissement — lectures Koios et récupérations d'ancres de gouvernance — rapportées au budget par rafraîchissement",
   koiosDaily: "{calls} appels / 24 h",
   koiosDailyWithLimit: "{calls}/{limit} appels / 24 h",
   koiosDailyTitle:
-    "Appels Koios sur l'ensemble des rafraîchissements des dernières 24 heures",
+    "Requêtes sur l'ensemble des rafraîchissements des dernières 24 heures",
   lastFailed: "dernier rafraîchissement en échec",
   failures: "{count} échecs / 24 h",
   failuresTitle: "Rafraîchissements en échec au cours des dernières 24 heures",

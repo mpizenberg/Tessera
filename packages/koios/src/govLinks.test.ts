@@ -8,7 +8,8 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import { hexToBytes } from "cip-179/domain";
+import { blake2b256 } from "cip-179/content";
+import { bytesToHex, hexToBytes } from "cip-179/domain";
 
 import {
   govLinkScan,
@@ -125,6 +126,36 @@ describe("resolveGovAnchors", () => {
     const fetchDoc = vi.fn(async () => linkDoc());
     expect(await resolveGovAnchors([], { fetchDoc })).toEqual(new Map());
     expect(fetchDoc).not.toHaveBeenCalled();
+  });
+
+  // The default path (no injected `fetchDoc`) is the one that matters in
+  // production: a document only classifies an action if it hashes to what that
+  // action committed to on-chain. A served document that doesn't is no evidence
+  // at all — not a non-link, which would be a decision taken on a forgery.
+  it("by default accepts only a document matching the on-chain anchor hash", async () => {
+    const body = new TextEncoder().encode(JSON.stringify(linkDoc(2)));
+    const served: GovProposal = {
+      actionId: "gov_action1a",
+      endEpoch: 41,
+      anchor: { uri: "https://anchor.example/doc.json", hash: blake2b256(body) },
+      anchorHash: bytesToHex(blake2b256(body)),
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(body)));
+    try {
+      expect(
+        (await resolveGovAnchors([served]))?.get(served.anchorHash),
+      ).toEqual({ surveyKey: `${TXID}:2`, title: "Ratify the budget" });
+
+      // Same URL, same action — but the bytes no longer hash to the commitment.
+      const tampered: GovProposal = {
+        ...served,
+        anchor: { ...served.anchor, hash: hexToBytes(HASH_A) },
+        anchorHash: HASH_A,
+      };
+      expect(await resolveGovAnchors([tampered])).toEqual(new Map());
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

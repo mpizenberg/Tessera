@@ -83,7 +83,11 @@ export interface BackendHealth {
   readonly lastRefresh: {
     readonly startedAt: number;
     readonly durationMs: number;
-    /** Koios HTTP requests the run issued (scan + validation + finalization). */
+    /**
+     * Upstream HTTP requests the run issued: Koios reads (scan, validation,
+     * finalization) plus governance-anchor fetches — everything that draws on
+     * the same per-refresh subrequest budget.
+     */
     readonly koiosCalls: number;
     readonly ok: boolean;
     /** Failure message when `ok` is false, else null. */
@@ -111,7 +115,7 @@ export interface BackendHealth {
   readonly validationBacklog: number;
   /** Configured budgets the counts above are compared against. */
   readonly limits: {
-    /** Per-refresh Koios call budget (Worker subrequest cap by default). */
+    /** Per-refresh upstream request budget (Worker subrequest cap by default). */
     readonly koiosCallsPerRefresh: number;
     /** Daily Koios quota when the operator configured one, else null. */
     readonly koiosCallsPerDay: number | null;
