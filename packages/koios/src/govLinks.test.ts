@@ -40,7 +40,10 @@ const proposal = (
 ): GovProposal => ({
   actionId,
   endEpoch,
-  anchor: { uri: `https://anchor.example/${anchorHash}`, hash: hexToBytes(anchorHash) },
+  anchor: {
+    uri: `https://anchor.example/${anchorHash}`,
+    hash: hexToBytes(anchorHash),
+  },
   anchorHash,
 });
 
@@ -60,7 +63,9 @@ describe("resolveGovAnchors", () => {
     );
     expect(fetchDoc).toHaveBeenCalledTimes(1);
     expect(docs).toEqual(
-      new Map([[HASH_A, { surveyKey: `${TXID}:2`, title: "Ratify the budget" }]]),
+      new Map([
+        [HASH_A, { surveyKey: `${TXID}:2`, title: "Ratify the budget" }],
+      ]),
     );
   });
 
@@ -137,10 +142,16 @@ describe("resolveGovAnchors", () => {
     const served: GovProposal = {
       actionId: "gov_action1a",
       endEpoch: 41,
-      anchor: { uri: "https://anchor.example/doc.json", hash: blake2b256(body) },
+      anchor: {
+        uri: "https://anchor.example/doc.json",
+        hash: blake2b256(body),
+      },
       anchorHash: bytesToHex(blake2b256(body)),
     };
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(body)));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(body)),
+    );
     try {
       expect(
         (await resolveGovAnchors([served]))?.get(served.anchorHash),
@@ -198,8 +209,18 @@ describe("govLinkScan", () => {
         docs,
       ).links,
     ).toEqual([
-      { surveyKey: `${TXID}:2`, actionId: "gov_action1a", endEpoch: 41, title: "T" },
-      { surveyKey: `${TXID}:2`, actionId: "gov_action1b", endEpoch: 77, title: "T" },
+      {
+        surveyKey: `${TXID}:2`,
+        actionId: "gov_action1a",
+        endEpoch: 41,
+        title: "T",
+      },
+      {
+        surveyKey: `${TXID}:2`,
+        actionId: "gov_action1b",
+        endEpoch: 77,
+        title: "T",
+      },
     ]);
   });
 });

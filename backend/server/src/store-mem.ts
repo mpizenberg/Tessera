@@ -16,10 +16,17 @@ import type {
   SettledGovEpoch,
   SnapshotMeta,
   SurveyIndexRow,
+  UpstreamKind,
   ValidatedResponseRow,
   WeightRow,
 } from "./store";
-import { REFRESH_RUN_RETENTION_SECONDS, validationKey } from "./store";
+import {
+  OPERATIONAL_RETENTION_SECONDS,
+  tallyBucket,
+  UPSTREAM_KINDS,
+  upstreamTotalsFrom,
+  validationKey,
+} from "./store";
 
 export interface MemBackendStore extends BackendStore {
   /** Direct row access for assertions. */
@@ -47,6 +54,8 @@ export function memBackendStore(): MemBackendStore {
   const govAnchors = new Map<string, GovLinkDoc | null>();
   const govEpochs = new Map<number, SettledGovEpoch>();
   const refreshRuns = new Map<number, RefreshRunRow>();
+  let upstreamTally: { bucket: number; kind: UpstreamKind; calls: number }[] =
+    [];
   let lease: { holder: string; expiresAt: number } | null = null;
   let surveyIndexRows: readonly SurveyIndexRow[] = [];
   let responseRows: readonly ResponseRow[] = [];
@@ -301,7 +310,7 @@ export function memBackendStore(): MemBackendStore {
 
     async putRefreshRun(row) {
       refreshRuns.set(row.startedAt, row);
-      const cutoff = row.startedAt - REFRESH_RUN_RETENTION_SECONDS;
+      const cutoff = row.startedAt - OPERATIONAL_RETENTION_SECONDS;
       for (const at of refreshRuns.keys())
         if (at < cutoff) refreshRuns.delete(at);
     },
@@ -318,8 +327,22 @@ export function memBackendStore(): MemBackendStore {
       return {
         runs: rows.length,
         failures: rows.filter((r) => !r.ok).length,
-        koiosCalls: rows.reduce((sum, r) => sum + r.koiosCalls, 0),
       };
+    },
+    async addUpstreamCalls(nowSec, calls) {
+      const bucket = tallyBucket(nowSec);
+      for (const kind of UPSTREAM_KINDS) {
+        const n = calls[kind];
+        if (n) upstreamTally.push({ bucket, kind, calls: n });
+      }
+    },
+    async upstreamTotalsSince(sinceUnix) {
+      const since = tallyBucket(sinceUnix);
+      return upstreamTotalsFrom(upstreamTally.filter((r) => r.bucket >= since));
+    },
+    async pruneUpstreamTally(beforeUnix) {
+      const before = tallyBucket(beforeUnix);
+      upstreamTally = upstreamTally.filter((r) => r.bucket >= before);
     },
     async incompleteValidationCount() {
       return [...validated.values()].filter(

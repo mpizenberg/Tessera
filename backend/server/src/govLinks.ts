@@ -110,9 +110,7 @@ export async function refreshGovLinks(
     links: [...settledLinks, ...scan.links],
     // An action at an epoch that just settled is no longer unknown: the epoch
     // decided, and every verdict waiting on it can now be frozen.
-    unresolved: scan.unresolved.filter(
-      (u) => !settledNow.has(u.endEpoch + 1),
-    ),
+    unresolved: scan.unresolved.filter((u) => !settledNow.has(u.endEpoch + 1)),
   };
 }
 

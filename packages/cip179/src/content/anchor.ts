@@ -188,7 +188,8 @@ async function fetchVerified(
   const controller = new AbortController();
   const unforward = forwardAbort(outer, controller);
   const timer = setTimeout(
-    () => controller.abort(new Error(`fetch ${url} timed out (${timeoutMs} ms)`)),
+    () =>
+      controller.abort(new Error(`fetch ${url} timed out (${timeoutMs} ms)`)),
     timeoutMs,
   );
   try {

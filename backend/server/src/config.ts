@@ -30,18 +30,19 @@ export interface ServerConfig {
   /** SQLite file path, or ":memory:". */
   readonly dbPath: string;
   /**
-   * Upstream requests one refresh may reasonably make — Koios reads and
-   * governance-anchor fetches alike — the health endpoint's per-refresh
-   * headroom denominator. Defaults to the Cloudflare Worker free-plan
-   * subrequest cap; on the paid plan (or self-hosted Node, where no platform
-   * cap exists) raise it to keep the footer's ratio meaningful.
+   * Upstream requests one refresh may reasonably make, whatever the host — the
+   * health endpoint's per-refresh headroom denominator. Defaults to the
+   * Cloudflare Worker free-plan subrequest cap; on the paid plan (or
+   * self-hosted Node, where no platform cap exists) raise it to keep the
+   * footer's ratio meaningful.
    */
-  readonly koiosCallsPerRefreshLimit: number;
+  readonly upstreamPerRefreshLimit: number;
   /**
    * Koios daily request quota for the configured token tier, if the operator
    * knows it (Koios tiers are account-side, not discoverable via the API).
    * `undefined` = unknown: the health payload then reports the 24 h total
-   * without a limit to compare against.
+   * without a limit to compare against, which is also what it does for every
+   * other upstream service — none of them tell us their number either.
    */
   readonly koiosDailyLimit: number | undefined;
   /**
@@ -74,7 +75,7 @@ export function loadConfig(
     port: Number(env["PORT"] ?? 8787),
     refreshSeconds: Number(env["REFRESH_SECONDS"] ?? 180),
     dbPath: env["DB_PATH"] ?? "./tessera-cache.sqlite",
-    koiosCallsPerRefreshLimit: Number(env["SUBREQUEST_LIMIT"] ?? 50),
+    upstreamPerRefreshLimit: Number(env["SUBREQUEST_LIMIT"] ?? 50),
     koiosDailyLimit:
       Number.isFinite(dailyLimit) && dailyLimit > 0 ? dailyLimit : undefined,
     passthroughKoiosToken: env["KOIOS_PASSTHROUGH_TOKEN"] || undefined,

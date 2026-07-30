@@ -148,7 +148,9 @@ describe("fetchAnchorBytes — ipfs gateway race", () => {
         gateways: ["https://a/", "https://b/"],
         staggerMs: 0,
       }),
-    ).rejects.toThrow(/no IPFS gateway returned a matching document \(tried 2\)/);
+    ).rejects.toThrow(
+      /no IPFS gateway returned a matching document \(tried 2\)/,
+    );
   });
 });
 

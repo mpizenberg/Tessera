@@ -222,9 +222,7 @@ export interface GovLinkStore {
     hashes: readonly string[],
   ): Promise<Map<string, GovLinkDoc | null>>;
   /** Bank verified classifications (insert-or-ignore: a row is terminal). */
-  putGovAnchors(
-    entries: ReadonlyMap<string, GovLinkDoc | null>,
-  ): Promise<void>;
+  putGovAnchors(entries: ReadonlyMap<string, GovLinkDoc | null>): Promise<void>;
   /** Drop banked anchors no unsettled epoch needs any more. */
   deleteGovAnchors(hashes: readonly string[]): Promise<void>;
   /** The settled epochs among `expirations` (absent = still unsettled). */
@@ -260,10 +258,15 @@ export interface RefreshRunRow {
   readonly startedAt: number;
   readonly durationMs: number;
   /**
-   * Upstream HTTP requests issued by this run: Koios reads (scan, validation,
-   * finalization) plus governance-anchor fetches. What it really measures is
-   * the Worker's per-invocation subrequest budget, which doesn't care which
-   * host a request went to — hence the wider subject than the name suggests.
+   * Every upstream HTTP request the run issued, whatever the host — the number
+   * the Worker's per-invocation subrequest cap actually bounds.
+   */
+  readonly upstreamRequests: number;
+  /**
+   * The Koios share of {@link upstreamRequests}. No budget is per-run for
+   * Koios (its quota is daily, tracked in `upstream_tally`), but when a run
+   * trips the subrequest cap this is what says whether paging or anchor
+   * fetches spent it.
    */
   readonly koiosCalls: number;
   readonly ok: boolean;
@@ -283,27 +286,87 @@ export interface RefreshRunRow {
   readonly payloadBytes: number;
 }
 
-/** Keep refresh-run rows this long; older ones are pruned on each insert. */
-export const REFRESH_RUN_RETENTION_SECONDS = 7 * 86_400;
+/** Keep operational history (runs, tally buckets) this long. */
+export const OPERATIONAL_RETENTION_SECONDS = 7 * 86_400;
 
-/** Aggregates over a window of refresh runs (the daily-quota view). */
+/** Outcomes over a window of refresh runs. */
 export interface RefreshTotals {
   readonly runs: number;
   readonly failures: number;
-  readonly koiosCalls: number;
 }
+
+/**
+ * Which budget an upstream request was spent from. The three are metered
+ * separately because they are three quotas: the operator's Koios account, the
+ * segregated comfort account behind `/api/tx_status` (review finding 15), and
+ * whatever hosts serve governance anchor documents.
+ */
+export type UpstreamKind = "koios" | "koios-passthrough" | "anchor";
+
+export const UPSTREAM_KINDS: readonly UpstreamKind[] = [
+  "koios",
+  "koios-passthrough",
+  "anchor",
+];
+
+/** Calls to add to the tally; an absent kind adds nothing. */
+export type UpstreamCalls = Readonly<Partial<Record<UpstreamKind, number>>>;
+
+/** Calls per kind over some window; every kind present, zero when unspent. */
+export type UpstreamTotals = Readonly<Record<UpstreamKind, number>>;
+
+/**
+ * Width of one `upstream_tally` bucket, seconds. Bucketing doesn't change how
+ * many writes the tally costs (one upsert per call either way), so this is only
+ * about how sharply the 24 h window can start and end.
+ */
+export const TALLY_BUCKET_SECONDS = 300;
+
+export const tallyBucket = (nowSec: number): number =>
+  nowSec - (nowSec % TALLY_BUCKET_SECONDS);
+
+/** A fresh per-kind counter. Every kind present, so a reader never sees a hole. */
+export const zeroUpstream = (): Record<UpstreamKind, number> => ({
+  koios: 0,
+  "koios-passthrough": 0,
+  anchor: 0,
+});
+
+export const upstreamTotalsFrom = (
+  rows: Iterable<{ readonly kind: string; readonly calls: number }>,
+): UpstreamTotals => {
+  const totals = zeroUpstream();
+  for (const { kind, calls } of rows) {
+    if (kind in totals) totals[kind as UpstreamKind] += calls;
+  }
+  return totals;
+};
+
+/** Every kind together — what a per-invocation subrequest cap actually bounds. */
+export const sumUpstream = (totals: UpstreamTotals): number =>
+  UPSTREAM_KINDS.reduce((n, kind) => n + totals[kind], 0);
 
 /** Operational-metrics persistence behind `/api/health` (health footer). */
 export interface HealthStore {
   /**
    * Record one run (latest-wins on a same-second collision) and prune rows
-   * older than {@link REFRESH_RUN_RETENTION_SECONDS} before it.
+   * older than {@link OPERATIONAL_RETENTION_SECONDS} before it.
    */
   putRefreshRun(row: RefreshRunRow): Promise<void>;
   /** The most recent run, or null before the first one. */
   lastRefreshRun(): Promise<RefreshRunRow | null>;
   /** Aggregates over runs with `startedAt >= sinceUnix`. */
   refreshTotalsSince(sinceUnix: number): Promise<RefreshTotals>;
+  /**
+   * Add `calls` to the bucket containing `nowSec`. The serving path calls this
+   * once per request that reached upstream, so it stays a single write and
+   * never prunes.
+   */
+  addUpstreamCalls(nowSec: number, calls: UpstreamCalls): Promise<void>;
+  /** Per-kind totals over buckets at or after `sinceUnix`. */
+  upstreamTotalsSince(sinceUnix: number): Promise<UpstreamTotals>;
+  /** Drop tally buckets before `beforeUnix` — the refresh's job, not serving's. */
+  pruneUpstreamTally(beforeUnix: number): Promise<void>;
   /**
    * Validated-response rows still awaiting an enrichment retry (`blockIndex`
    * or `proofOk` null) — a persistently nonzero backlog means something is

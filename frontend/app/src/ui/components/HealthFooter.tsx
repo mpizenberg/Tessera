@@ -1,9 +1,10 @@
 /**
  * Thin operational-health footer for the Explore screen (indexer mode only):
- * snapshot age, last-refresh Koios usage vs its budget, 24 h call volume, and
- * anything alarming (failed refresh, validation backlog). Display-only chrome —
- * it renders nothing in direct-Koios mode (no backend to report on) and hides
- * itself when the health fetch fails rather than adding an error of its own.
+ * snapshot age, the last refresh's upstream usage against its budget, 24 h
+ * volume per upstream identity, and anything alarming (failed refresh,
+ * validation backlog). Display-only chrome — it renders nothing in direct-Koios
+ * mode (no backend to report on) and hides itself when the health fetch fails
+ * rather than adding an error of its own.
  */
 
 import {
@@ -26,7 +27,7 @@ import css from "./HealthFooter.module.css";
  */
 const STALE_AFTER_SECONDS = 900;
 
-/** Warn when the last refresh used this fraction of its Koios budget. */
+/** Warn when the last refresh used this fraction of its request budget. */
 const WARN_RATIO = 0.8;
 
 /** Re-derive the live snapshot age at this cadence. */
@@ -83,10 +84,13 @@ export const HealthFooter: Component = () => {
     return snap.ageSeconds + Math.max(0, fetchedAgo);
   };
 
+  // Against the *upstream* count, not the Koios one: the per-refresh budget is
+  // the Worker's subrequest cap, which every outbound request spends.
   const refreshRatio = (): number | undefined => {
     const h = health();
-    if (!h?.lastRefresh || h.limits.koiosCallsPerRefresh <= 0) return undefined;
-    return h.lastRefresh.koiosCalls / h.limits.koiosCallsPerRefresh;
+    if (!h?.lastRefresh || h.limits.upstreamRequestsPerRefresh <= 0)
+      return undefined;
+    return h.lastRefresh.upstreamRequests / h.limits.upstreamRequestsPerRefresh;
   };
   const usageTone = (ratio: number): "warn" | "danger" | undefined =>
     ratio >= 1 ? "danger" : ratio >= WARN_RATIO ? "warn" : undefined;
@@ -114,11 +118,11 @@ export const HealthFooter: Component = () => {
               <>
                 <Item
                   tone={usageTone(refreshRatio() ?? 0)}
-                  title={t("healthFooter.koiosRefreshTitle")}
+                  title={t("healthFooter.refreshRequestsTitle")}
                 >
-                  {t("healthFooter.koiosRefresh", {
-                    calls: n(run().koiosCalls),
-                    limit: n(h().limits.koiosCallsPerRefresh),
+                  {t("healthFooter.refreshRequests", {
+                    calls: n(run().upstreamRequests),
+                    limit: n(h().limits.upstreamRequestsPerRefresh),
                   })}
                 </Item>
                 <Show when={!run().ok}>
@@ -139,6 +143,23 @@ export const HealthFooter: Component = () => {
               : t("healthFooter.koiosDaily", {
                   calls: n(h().last24h.koiosCalls),
                 })}
+          </Item>
+
+          {/* The comfort identity earns a readout of its own only once it has
+              spent something — it is idle on a backend nobody is submitting to,
+              and a spike there is the one worth noticing. */}
+          <Show when={h().last24h.passthroughCalls > 0}>
+            <Item title={t("healthFooter.passthroughDailyTitle")}>
+              {t("healthFooter.passthroughDaily", {
+                calls: n(h().last24h.passthroughCalls),
+              })}
+            </Item>
+          </Show>
+
+          <Item title={t("healthFooter.upstreamDailyTitle")}>
+            {t("healthFooter.upstreamDaily", {
+              calls: n(h().last24h.upstreamRequests),
+            })}
           </Item>
 
           <Show when={h().last24h.failures > 0}>

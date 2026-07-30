@@ -33,8 +33,9 @@ describe("displayGovLinks", () => {
     const links = [link("gov_action1a")];
     // Including when an anchor at an unsettled epoch is still unread: that is
     // this refresh's honest answer, and the stored snapshot knows no more.
-    expect(await displayGovLinks(storeWith([link("gov_action1b")]), links, true))
-      .toEqual(links);
+    expect(
+      await displayGovLinks(storeWith([link("gov_action1b")]), links, true),
+    ).toEqual(links);
   });
 
   it("falls back to every stored link when the read failed", async () => {

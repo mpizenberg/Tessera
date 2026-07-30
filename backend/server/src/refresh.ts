@@ -20,29 +20,29 @@ import type { ServerConfig } from "./config";
 import { finalizeClosedSurveys } from "./finalize";
 import { refreshGovLinks } from "./govLinks";
 import { materializeSnapshot, snapshotBytes } from "./materialize";
+import { upstreamMeter } from "./meter";
 import {
+  OPERATIONAL_RETENTION_SECONDS,
   REFRESH_LEASE_SECONDS,
+  sumUpstream,
   type BackendStore,
   type SnapshotStore,
+  type UpstreamTotals,
 } from "./store";
 import { validateNewResponses } from "./validate";
 
 /** Cap stored failure messages so a pathological error can't bloat the row. */
 const ERROR_TEXT_MAX = 300;
 
+const callSummary = (calls: UpstreamTotals): string =>
+  `${sumUpstream(calls)} upstream requests (${calls.koios} Koios)`;
+
 export async function refreshSnapshot(
   config: ServerConfig,
   store: BackendStore,
 ): Promise<void> {
-  // Every upstream request this run issues — Koios reads (scan, validation,
-  // finalization) and governance-anchor fetches alike — ticks this counter. The
-  // per-run stats row is the health footer's data, and on Workers the count
-  // tracks headroom against the per-invocation subrequest cap (50 free / 1000
-  // paid), which does not care which host a request went to.
-  let koiosCalls = 0;
-  const countCall = (): void => {
-    koiosCalls += 1;
-  };
+  const meter = upstreamMeter(store);
+  const countKoios = meter.hook("koios");
   // Governance links are best-effort enrichment; a failure must not sink the
   // snapshot (mirrors the app's behaviour). But an empty list on *failure* means
   // "unknown", not "none": validation must not freeze a link-dependent verdict
@@ -72,28 +72,39 @@ export async function refreshSnapshot(
           payloadBytes: number;
         }
       | { ok: false; error: string },
-  ): Promise<void> =>
-    store
-      .putRefreshRun({
-        startedAt,
-        durationMs: Date.now() - startedMs,
-        koiosCalls,
-        govLinksOk: govLinksReliable,
-        ...(outcome.ok
-          ? { ...outcome, error: null }
-          : {
-              ok: false,
-              error: outcome.error.slice(0, ERROR_TEXT_MAX),
-              incomplete: false,
-              surveys: 0,
-              responses: 0,
-              payloadBytes: 0,
-            }),
-      })
-      // Stats are best-effort: recording must never mask the run's own outcome.
-      .catch((err) =>
-        console.warn(`refresh stats write failed: ${String(err)}`),
-      );
+  ): Promise<void> => {
+    const calls = meter.counted();
+    return (
+      Promise.all([
+        store.putRefreshRun({
+          startedAt,
+          durationMs: Date.now() - startedMs,
+          upstreamRequests: sumUpstream(calls),
+          koiosCalls: calls.koios,
+          govLinksOk: govLinksReliable,
+          ...(outcome.ok
+            ? { ...outcome, error: null }
+            : {
+                ok: false,
+                error: outcome.error.slice(0, ERROR_TEXT_MAX),
+                incomplete: false,
+                surveys: 0,
+                responses: 0,
+                payloadBytes: 0,
+              }),
+        }),
+        meter.drain(startedAt),
+        // The tally's only writer that can afford to prune: the serving path adds
+        // to it on requests that must stay one write.
+        store.pruneUpstreamTally(startedAt - OPERATIONAL_RETENTION_SECONDS),
+      ])
+        .then(() => undefined)
+        // Stats are best-effort: recording must never mask the run's own outcome.
+        .catch((err) =>
+          console.warn(`refresh stats write failed: ${String(err)}`),
+        )
+    );
+  };
 
   // The store-backed metadata cache makes the scan resumable: tx metadata is
   // immutable, so each fulfilled /tx_metadata batch is banked and never
@@ -106,25 +117,26 @@ export async function refreshSnapshot(
       get: (hashes) => store.cachedTxMetadata(hashes),
       put: (entries) => store.putTxMetadata(entries),
     },
-    countCall,
+    countKoios,
   );
   try {
     const [records, tip] = await Promise.all([
       source.fetchAll(),
       source.chainTip(),
     ]);
-    const { links: govLinks, unresolved: govUnresolved } = await refreshGovLinks(
-      store,
-      source,
-      records.surveys.map((s) => s.definition.endEpoch),
-      tip.epoch,
-      startedAt,
-      { onRequest: countCall },
-    ).catch((err) => {
-      console.warn(`gov links fetch failed: ${String(err)}`);
-      govLinksReliable = false;
-      return { links: [], unresolved: [] };
-    });
+    const { links: govLinks, unresolved: govUnresolved } =
+      await refreshGovLinks(
+        store,
+        source,
+        records.surveys.map((s) => s.definition.endEpoch),
+        tip.epoch,
+        startedAt,
+        { onRequest: meter.hook("anchor") },
+      ).catch((err) => {
+        console.warn(`gov links fetch failed: ${String(err)}`);
+        govLinksReliable = false;
+        return { links: [], unresolved: [] };
+      });
 
     console.log(
       `snapshot refreshed: ${records.surveys.length} surveys, ` +
@@ -153,7 +165,7 @@ export async function refreshSnapshot(
     await finalizeClosedSurveys(
       config,
       store,
-      new KoiosTallyInputs(config.app, undefined, countCall),
+      new KoiosTallyInputs(config.app, undefined, countKoios),
       source,
       records,
       tip,
@@ -185,6 +197,8 @@ export async function refreshSnapshot(
       fetchedAt: startedAt,
     });
 
+    // Read before recording: recording drains the meter.
+    const summary = callSummary(meter.counted());
     await recordRun({
       ok: true,
       incomplete: records.incomplete === true,
@@ -192,14 +206,12 @@ export async function refreshSnapshot(
       responses: records.responses.length,
       payloadBytes,
     });
-    console.log(
-      `refresh ok: ${koiosCalls} Koios calls, ${Date.now() - startedMs} ms`,
-    );
+    console.log(`refresh ok: ${summary}, ${Date.now() - startedMs} ms`);
   } catch (err) {
+    const summary = callSummary(meter.counted());
     await recordRun({ ok: false, error: String(err) });
     console.error(
-      `refresh failed after ${koiosCalls} Koios calls ` +
-        `(keeping last snapshot): ${String(err)}`,
+      `refresh failed after ${summary} (keeping last snapshot): ${String(err)}`,
     );
     throw err;
   } finally {

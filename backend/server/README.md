@@ -119,6 +119,9 @@ Subrequests (logged on every cron run in `wrangler tail`): a steady-state
 refresh costs ~6 Koios calls; validating new responses and finalizing closing
 surveys add batched calls only when there is new work (a full live cycle —
 refresh + validation + weight snapshotting + artifact emission — measured 18).
+Unresolved governance anchors add up to `ANCHOR_ATTEMPTS_PER_REFRESH` more,
+which is why the log line and the health footer count every upstream request,
+not just the Koios ones.
 That sits comfortably inside the free plan's 50-per-invocation cap, and
 finalization is resumable: if a run were ever cut short, already-written weight
 rows are not re-fetched and the next cron picks up where it left off.

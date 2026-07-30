@@ -292,8 +292,8 @@ Two on-chain facts bound the work (`backend/server/src/govLinks.ts`):
 
 - **An anchor is hash-fixed**, so one verified fetch classifies a document
   permanently. Classifications are banked by anchor hash (`gov_anchor`) and
-  never re-fetched — including verified *non*-links, which are as final as
-  links. A fetch *failure* is banked nowhere: it is absence of evidence, and the
+  never re-fetched — including verified _non_-links, which are as final as
+  links. A fetch _failure_ is banked nowhere: it is absence of evidence, and the
   action stays **unresolved** — unknown, not unlinked (finding 6).
 - **A proposal's expiration epoch is in the future when it is proposed**, so
   once the tip reaches epoch X the set of proposals expiring at X is frozen and
@@ -311,6 +311,38 @@ would otherwise postpone that survey's artifact forever.
 The direct-Koios path resolves the same anchors the same way, but with no place
 to bank them (each page load is a fresh context), so it runs the whole
 resolution under one wall-clock budget and publishes what resolved.
+
+### 5.3 Upstream metering: one counter per budget
+
+Three different meters run on this backend, and each bounds a different set of
+requests:
+
+| Budget                | Metered by                 | Window         | Counts                       |
+| --------------------- | -------------------------- | -------------- | ---------------------------- |
+| Koios tier quota      | Koios, per token identity  | 24 h           | Koios requests on that token |
+| Worker subrequest cap | Cloudflare, per invocation | one invocation | every outbound fetch         |
+| Other service limits  | each upstream service      | 24 h           | requests to that service     |
+
+So requests are counted by the budget they spend (`meter.ts`): `koios` for the
+operator identity, `koios-passthrough` for the segregated identity behind
+`/api/tx_status` (§ finding 15 — a separate account bucket, never summed into
+the first), and `anchor` for governance documents on whatever host serves them.
+One number covering all of them cannot be compared against any of these limits
+without being wrong in one direction or the other.
+
+The counts land in two places, because they answer two questions.
+`refresh_run` carries the per-run totals — a per-_invocation_ cap needs a
+per-invocation number, and when a run trips it, the Koios/anchor split is what
+says which half spent it. `upstream_tally` carries five-minute buckets per kind,
+summed over 24 h for the health footer; refresh runs drain into it at the end of
+each pass, and the serving tier drains after each request, since `/api/tip` and
+`/api/pparams` spend the operator's Koios quota outside any run and a total
+summed from run rows alone would report that identity as quieter than it is.
+
+What the footer reports without a limit to compare against is deliberate:
+Koios's per-tier quota is account-side and not discoverable through the API
+(hence `KOIOS_DAILY_LIMIT`, when the operator knows it), and no upstream service
+publishes its number to us. The volume is still worth showing.
 
 ---
 

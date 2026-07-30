@@ -24,6 +24,8 @@ import type {
   SurveyBundleRows,
   SurveyIndexRow,
   SurveyPageQuery,
+  UpstreamCalls,
+  UpstreamTotals,
   ValidatedResponseRow,
   WeightRow,
 } from "./store";
@@ -31,7 +33,10 @@ import {
   govEpochFromDb,
   REFRESH_LEASE_ACQUIRE,
   REFRESH_LEASE_RELEASE,
-  REFRESH_RUN_RETENTION_SECONDS,
+  OPERATIONAL_RETENTION_SECONDS,
+  tallyBucket,
+  UPSTREAM_KINDS,
+  upstreamTotalsFrom,
   validationKey,
 } from "./store";
 import {
@@ -384,7 +389,9 @@ export function d1BackendStore(db: D1Like): BackendStore {
         "INSERT OR IGNORE INTO gov_anchor (anchor_hash, link) VALUES (?, ?)",
       );
       await db.batch(
-        [...entries].map(([hash, link]) => stmt.bind(hash, JSON.stringify(link))),
+        [...entries].map(([hash, link]) =>
+          stmt.bind(hash, JSON.stringify(link)),
+        ),
       );
     },
     async deleteGovAnchors(hashes: readonly string[]): Promise<void> {
@@ -514,13 +521,15 @@ export function d1BackendStore(db: D1Like): BackendStore {
         db
           .prepare(
             `INSERT OR REPLACE INTO refresh_run
-               (started_at, duration_ms, koios_calls, ok, error, gov_links_ok,
-                incomplete, surveys, responses, payload_bytes)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               (started_at, duration_ms, upstream_requests, koios_calls, ok,
+                error, gov_links_ok, incomplete, surveys, responses,
+                payload_bytes)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .bind(
             row.startedAt,
             row.durationMs,
+            row.upstreamRequests,
             row.koiosCalls,
             row.ok ? 1 : 0,
             row.error,
@@ -532,7 +541,7 @@ export function d1BackendStore(db: D1Like): BackendStore {
           ),
         db
           .prepare("DELETE FROM refresh_run WHERE started_at < ?")
-          .bind(row.startedAt - REFRESH_RUN_RETENTION_SECONDS),
+          .bind(row.startedAt - OPERATIONAL_RETENTION_SECONDS),
       ]);
     },
     async lastRefreshRun(): Promise<RefreshRunRow | null> {
@@ -553,14 +562,44 @@ export function d1BackendStore(db: D1Like): BackendStore {
     async refreshTotalsSince(sinceUnix: number): Promise<RefreshTotals> {
       const row = await db
         .prepare(
-          `SELECT COUNT(*) AS runs,
-                  COALESCE(SUM(ok = 0), 0) AS failures,
-                  COALESCE(SUM(koios_calls), 0) AS koiosCalls
+          `SELECT COUNT(*) AS runs, COALESCE(SUM(ok = 0), 0) AS failures
            FROM refresh_run WHERE started_at >= ?`,
         )
         .bind(sinceUnix)
         .first<RefreshTotals>();
-      return row ?? { runs: 0, failures: 0, koiosCalls: 0 };
+      return row ?? { runs: 0, failures: 0 };
+    },
+    async addUpstreamCalls(
+      nowSec: number,
+      calls: UpstreamCalls,
+    ): Promise<void> {
+      const bucket = tallyBucket(nowSec);
+      const writes = UPSTREAM_KINDS.filter((kind) => calls[kind]).map((kind) =>
+        db
+          .prepare(
+            `INSERT INTO upstream_tally (bucket, kind, calls) VALUES (?, ?, ?)
+             ON CONFLICT (bucket, kind) DO UPDATE
+               SET calls = calls + excluded.calls`,
+          )
+          .bind(bucket, kind, calls[kind]),
+      );
+      if (writes.length > 0) await db.batch(writes);
+    },
+    async upstreamTotalsSince(sinceUnix: number): Promise<UpstreamTotals> {
+      const { results } = await db
+        .prepare(
+          `SELECT kind, SUM(calls) AS calls FROM upstream_tally
+           WHERE bucket >= ? GROUP BY kind`,
+        )
+        .bind(tallyBucket(sinceUnix))
+        .all<{ kind: string; calls: number }>();
+      return upstreamTotalsFrom(results);
+    },
+    async pruneUpstreamTally(beforeUnix: number): Promise<void> {
+      await db
+        .prepare("DELETE FROM upstream_tally WHERE bucket < ?")
+        .bind(tallyBucket(beforeUnix))
+        .run();
     },
     async acquireRefreshLease(
       nowSec: number,
@@ -597,5 +636,6 @@ const ARTIFACT_COLUMNS = `survey_key AS surveyKey, end_epoch AS endEpoch,
        artifact_hash AS artifactHash, artifact, created_at AS createdAt`;
 
 const REFRESH_RUN_COLUMNS = `started_at AS startedAt, duration_ms AS durationMs,
-       koios_calls AS koiosCalls, ok, error, gov_links_ok AS govLinksOk,
-       incomplete, surveys, responses, payload_bytes AS payloadBytes`;
+       upstream_requests AS upstreamRequests, koios_calls AS koiosCalls,
+       ok, error, gov_links_ok AS govLinksOk, incomplete, surveys, responses,
+       payload_bytes AS payloadBytes`;

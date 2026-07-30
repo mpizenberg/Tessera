@@ -129,8 +129,9 @@ describe("refreshGovLinks — fetch once, bank forever", () => {
 
   it("attempts at most a bounded number of anchors per refresh", async () => {
     const store = memBackendStore();
-    const many = Array.from({ length: ANCHOR_ATTEMPTS_PER_REFRESH + 3 }, (_, i) =>
-      proposal(i + 1, 510),
+    const many = Array.from(
+      { length: ANCHOR_ATTEMPTS_PER_REFRESH + 3 },
+      (_, i) => proposal(i + 1, 510),
     );
     const source = sourceOf(many);
     const fetchDoc = docs(
@@ -214,7 +215,10 @@ describe("refreshGovLinks — bank pruning", () => {
     const store = memBackendStore();
     // Anchor 1 is referenced from both epochs (one document, two actions);
     // anchor 2 belongs to the settling epoch alone.
-    const shared: GovProposal = { ...proposal(1, 520), actionId: "gov_action1_1b" };
+    const shared: GovProposal = {
+      ...proposal(1, 520),
+      actionId: "gov_action1_1b",
+    };
     const source = sourceOf([proposal(1, 510), proposal(2, 510), shared]);
     const fetchDoc = docs({ "1": linkDoc(0), "2": PLAIN_DOC });
 

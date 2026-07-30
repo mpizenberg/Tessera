@@ -58,10 +58,10 @@ export default {
   },
   scheduled(_event: unknown, env: Env, ctx: ExecutionContext): void {
     const { config, store } = init(env);
-    // Koios calls are counted (and per-run stats persisted) inside
-    // refreshSnapshot itself; the count tracks headroom against the Worker
-    // subrequest cap (50 on the free plan, 1000 paid) via `wrangler tail`
-    // and the /api/health route. Failures are logged there too.
+    // Upstream requests are metered (and per-run stats persisted) inside
+    // refreshSnapshot itself; the count tracks headroom against this
+    // invocation's subrequest cap (50 on the free plan, 1000 paid) via
+    // `wrangler tail` and the /api/health route. Failures are logged there too.
     ctx.waitUntil(refreshSnapshot(config, store).catch(() => {}));
   },
 };

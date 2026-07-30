@@ -84,10 +84,11 @@ export interface BackendHealth {
     readonly startedAt: number;
     readonly durationMs: number;
     /**
-     * Upstream HTTP requests the run issued: Koios reads (scan, validation,
-     * finalization) plus governance-anchor fetches — everything that draws on
-     * the same per-refresh subrequest budget.
+     * Every upstream request the run issued, whatever the host — what the
+     * per-refresh budget in {@link BackendHealth.limits} bounds.
      */
+    readonly upstreamRequests: number;
+    /** The Koios share of {@link upstreamRequests}; the rest is anchor fetches. */
     readonly koiosCalls: number;
     readonly ok: boolean;
     /** Failure message when `ok` is false, else null. */
@@ -105,18 +106,36 @@ export interface BackendHealth {
     /** Total wire JSON across the stored snapshot rows — the growth metric. */
     readonly payloadBytes: number;
   } | null;
-  /** Rolling totals over the last 24 hours of refresh runs. */
+  /**
+   * Rolling totals over the last 24 hours — the window every upstream service
+   * meters us in, whether or not we know the number it compares against.
+   * Request counts cover the serving path too, not just refresh runs.
+   */
   readonly last24h: {
     readonly runs: number;
     readonly failures: number;
+    /** Every upstream request, all services: refresh and serving alike. */
+    readonly upstreamRequests: number;
+    /** The operator's Koios identity — the one `koiosCallsPerDay` bounds. */
     readonly koiosCalls: number;
+    /**
+     * The segregated Koios identity behind `/api/tx_status`. A separate account
+     * bucket, so it is reported apart rather than summed into `koiosCalls`;
+     * unauthenticated by default, where the applicable limit is per-IP and not
+     * something the operator configures.
+     */
+    readonly passthroughCalls: number;
   };
   /** Validated responses still awaiting an enrichment retry. */
   readonly validationBacklog: number;
   /** Configured budgets the counts above are compared against. */
   readonly limits: {
-    /** Per-refresh upstream request budget (Worker subrequest cap by default). */
-    readonly koiosCallsPerRefresh: number;
+    /**
+     * Upstream requests one refresh may make (the Worker's per-invocation
+     * subrequest cap by default) — the budget `lastRefresh.upstreamRequests`
+     * spends.
+     */
+    readonly upstreamRequestsPerRefresh: number;
     /** Daily Koios quota when the operator configured one, else null. */
     readonly koiosCallsPerDay: number | null;
   };

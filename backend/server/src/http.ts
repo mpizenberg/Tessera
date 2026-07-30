@@ -52,7 +52,8 @@ import {
 import { KoiosDataSource } from "@tessera/koios";
 
 import type { ServerConfig } from "./config";
-import type { BackendStore } from "./store";
+import { upstreamMeter } from "./meter";
+import { sumUpstream, type BackendStore } from "./store";
 
 /** How long `/api/tip` and `/api/pparams` reuse one upstream Koios call. */
 const UPSTREAM_TTL_MS = 20_000;
@@ -165,10 +166,34 @@ export function createApp(
   // unauthenticated): a flood of `/api/tx_status` can only exhaust that isolated
   // quota, never the identity refresh/validate/finalize rely on for artifact
   // *correctness* (review finding 15).
-  const source = new KoiosDataSource(config.app);
+  // Serving-path Koios calls spend the same daily quotas the refresh does, so
+  // they are metered too — a 24 h total summed from refresh runs alone would
+  // report the operator's identity as quieter than it is. The drain runs after
+  // the handler rather than from the hook: only there is there a request still
+  // alive to keep the write from being cancelled.
+  const meter = upstreamMeter(store);
+  app.use(async (_c, next) => {
+    try {
+      await next();
+    } finally {
+      await meter
+        .drain(Math.floor(Date.now() / 1000))
+        .catch((err: unknown) =>
+          console.warn(`upstream tally failed: ${String(err)}`),
+        );
+    }
+  });
+  const source = new KoiosDataSource(
+    config.app,
+    undefined,
+    undefined,
+    meter.hook("koios"),
+  );
   const convenienceSource = new KoiosDataSource(
     config.app,
     () => config.passthroughKoiosToken,
+    undefined,
+    meter.hook("koios-passthrough"),
   );
   const cachedTip = ttlCache(UPSTREAM_TTL_MS, () => source.chainTip());
   const cachedPParams = ttlCache(UPSTREAM_TTL_MS, async () =>
@@ -183,22 +208,29 @@ export function createApp(
   // failed refreshes — so this is always served fresh.
   app.get("/api/health", async (c) => {
     const now = Math.floor(Date.now() / 1000);
-    const [meta, lastRefresh, last24h, validationBacklog] = await Promise.all([
-      store.snapshotMeta(),
-      store.lastRefreshRun(),
-      store.refreshTotalsSince(now - 86_400),
-      store.incompleteValidationCount(),
-    ]);
+    const [meta, lastRefresh, runs, calls, validationBacklog] =
+      await Promise.all([
+        store.snapshotMeta(),
+        store.lastRefreshRun(),
+        store.refreshTotalsSince(now - 86_400),
+        store.upstreamTotalsSince(now - 86_400),
+        store.incompleteValidationCount(),
+      ]);
     const body: BackendHealth = {
       network: config.app.network,
       snapshot: meta
         ? { fetchedAt: meta.fetchedAt, ageSeconds: now - meta.fetchedAt }
         : null,
       lastRefresh,
-      last24h,
+      last24h: {
+        ...runs,
+        upstreamRequests: sumUpstream(calls),
+        koiosCalls: calls.koios,
+        passthroughCalls: calls["koios-passthrough"],
+      },
       validationBacklog,
       limits: {
-        koiosCallsPerRefresh: config.koiosCallsPerRefreshLimit,
+        upstreamRequestsPerRefresh: config.upstreamPerRefreshLimit,
         koiosCallsPerDay: config.koiosDailyLimit ?? null,
       },
     };

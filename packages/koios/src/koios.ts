@@ -174,9 +174,8 @@ export class KoiosDataSource implements DataSource {
    * store-backed one so scans resume across crons; the browser passes none
    * (each page load is a fresh context anyway).
    * `onRequest` fires once per Koios HTTP request issued through this source —
-   * the serving tier counts calls per refresh against its subrequest budget.
-   * (Exception: {@link protocolParameters} delegates to the evolution-sdk
-   * provider, whose internal fetch is not observed here.)
+   * the serving tier meters it against the Koios daily quota and the Worker's
+   * per-invocation subrequest budget.
    */
   constructor(
     private readonly config: AppConfig,
@@ -261,6 +260,9 @@ export class KoiosDataSource implements DataSource {
   async protocolParameters(): Promise<ProtocolParameters> {
     // The SDK's own Koios provider already fetches and maps /epoch_params into
     // this shape — delegate rather than duplicate the field-by-field mapping.
+    // It issues exactly one request per call, so counting it here is exact
+    // unless the SDK retries internally, which this side cannot observe.
+    this.onRequest?.();
     return new Koios(
       this.config.koiosUrl,
       this.getToken(),
@@ -941,4 +943,3 @@ export class KoiosDataSource implements DataSource {
     }
   }
 }
-

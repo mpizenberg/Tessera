@@ -5,15 +5,22 @@ const healthFooter = {
   updated: "data {age} old",
   updatedStale: "data {age} old — refresh may be stuck",
   updatedTitle: "How old the served on-chain snapshot is",
-  // Upstream request usage of the last refresh vs the per-refresh budget.
-  koiosRefresh: "Koios {calls}/{limit}",
-  koiosRefreshTitle:
+  // Everything the last refresh sent upstream, against its per-refresh budget.
+  refreshRequests: "requests {calls}/{limit}",
+  refreshRequestsTitle:
     "Upstream requests made by the last refresh — Koios reads and governance-anchor fetches — against the per-refresh budget",
-  // Rolling 24 h call volume (with or without a configured daily quota).
-  koiosDaily: "{calls} calls / 24 h",
-  koiosDailyWithLimit: "{calls}/{limit} calls / 24 h",
+  // Rolling 24 h volumes, one per upstream identity. Every service meters us
+  // over a day of its own; only Koios has a quota the operator can tell us.
+  koiosDaily: "Koios {calls} / 24 h",
+  koiosDailyWithLimit: "Koios {calls}/{limit} / 24 h",
   koiosDailyTitle:
-    "Upstream requests across all refreshes of the last 24 hours",
+    "Requests on the operator's Koios identity over the last 24 hours — refreshes and served reads alike",
+  passthroughDaily: "polling {calls} / 24 h",
+  passthroughDailyTitle:
+    "Confirmation polling, on its own Koios identity so no flood of it can reach the identity the served data depends on",
+  upstreamDaily: "upstream {calls} / 24 h",
+  upstreamDailyTitle:
+    "Every upstream request of the last 24 hours, all services together",
   // Refresh outcomes.
   lastFailed: "last refresh failed",
   failures: "{count} failed / 24 h",

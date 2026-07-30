@@ -144,7 +144,9 @@ describe("parseGovLinkDoc", () => {
   });
 
   it("is null for a document that carries no link at all", () => {
-    expect(parseGovLinkDoc({ body: { title: "Just a normal action" } })).toBeNull();
+    expect(
+      parseGovLinkDoc({ body: { title: "Just a normal action" } }),
+    ).toBeNull();
     expect(parseGovLinkDoc({ hashAlgorithm: "blake2b-256" })).toBeNull();
     expect(parseGovLinkDoc(null)).toBeNull();
     expect(parseGovLinkDoc("not an object")).toBeNull();

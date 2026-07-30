@@ -497,6 +497,7 @@ describe("GET /api/health", () => {
   const runRow = {
     startedAt: NOW - 20,
     durationMs: 900,
+    upstreamRequests: 15,
     koiosCalls: 12,
     ok: true,
     error: null,
@@ -517,6 +518,13 @@ describe("GET /api/health", () => {
       error: "Koios GET /tip → 502",
     });
     await store.putRefreshRun(runRow);
+    // Serving-path and refresh traffic land in the same tally, which is why the
+    // 24 h totals cannot be summed from run rows alone.
+    await store.addUpstreamCalls(NOW - 50, {
+      koios: 30,
+      "koios-passthrough": 7,
+      anchor: 5,
+    });
     const app = createApp(
       loadConfig({ SUBREQUEST_LIMIT: "40", KOIOS_DAILY_LIMIT: "5000" }),
       store,
@@ -531,6 +539,7 @@ describe("GET /api/health", () => {
     expect(body["snapshot"]).toMatchObject({ fetchedAt: FETCHED_AT });
     expect(body["lastRefresh"]).toMatchObject({
       startedAt: NOW - 20,
+      upstreamRequests: 15,
       koiosCalls: 12,
       ok: true,
       govLinksOk: true,
@@ -538,11 +547,13 @@ describe("GET /api/health", () => {
     expect(body["last24h"]).toEqual({
       runs: 3,
       failures: 1,
-      koiosCalls: 36,
+      upstreamRequests: 42,
+      koiosCalls: 30,
+      passthroughCalls: 7,
     });
     expect(body["validationBacklog"]).toBe(0);
     expect(body["limits"]).toEqual({
-      koiosCallsPerRefresh: 40,
+      upstreamRequestsPerRefresh: 40,
       koiosCallsPerDay: 5000,
     });
   });
@@ -554,10 +565,57 @@ describe("GET /api/health", () => {
     const body = (await res.json()) as Record<string, unknown>;
     expect(body["snapshot"]).toBeNull();
     expect(body["lastRefresh"]).toBeNull();
-    expect(body["last24h"]).toEqual({ runs: 0, failures: 0, koiosCalls: 0 });
+    expect(body["last24h"]).toEqual({
+      runs: 0,
+      failures: 0,
+      upstreamRequests: 0,
+      koiosCalls: 0,
+      passthroughCalls: 0,
+    });
     expect(body["limits"]).toEqual({
-      koiosCallsPerRefresh: 50,
+      upstreamRequestsPerRefresh: 50,
       koiosCallsPerDay: null,
+    });
+  });
+});
+
+// Serving-path calls spend the same daily quotas the refresh does. Nothing
+// summed from refresh runs can see them, which is what the tally is for.
+describe("serving-path metering", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("tallies a passthrough call against its own identity, not the operator's", async () => {
+    const hash = "ab".repeat(32);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify([{ tx_hash: hash, num_confirmations: 2 }]),
+            { status: 200 },
+          ),
+      ),
+    );
+    const store = memBackendStore();
+    const res = await appWith(store).request(`/api/tx_status?hashes=${hash}`);
+    expect(res.status).toBe(200);
+
+    // Written by the time the response resolves: a Worker would cancel a write
+    // started after the request ended.
+    expect(await store.upstreamTotalsSince(0)).toEqual({
+      koios: 0,
+      "koios-passthrough": 1,
+      anchor: 0,
+    });
+  });
+
+  it("costs no storage on a request that reaches nothing upstream", async () => {
+    const store = memBackendStore();
+    await appWith(store).request("/api/health");
+    expect(await store.upstreamTotalsSince(0)).toEqual({
+      koios: 0,
+      "koios-passthrough": 0,
+      anchor: 0,
     });
   });
 });

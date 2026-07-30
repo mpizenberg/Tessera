@@ -32,6 +32,8 @@ import type {
   SurveyBundleRows,
   SurveyIndexRow,
   SurveyPageQuery,
+  UpstreamCalls,
+  UpstreamTotals,
   ValidatedResponseRow,
   WeightRow,
 } from "./store";
@@ -39,7 +41,10 @@ import {
   govEpochFromDb,
   REFRESH_LEASE_ACQUIRE,
   REFRESH_LEASE_RELEASE,
-  REFRESH_RUN_RETENTION_SECONDS,
+  OPERATIONAL_RETENTION_SECONDS,
+  tallyBucket,
+  UPSTREAM_KINDS,
+  upstreamTotalsFrom,
   validationKey,
 } from "./store";
 import {
@@ -277,14 +282,14 @@ export function openBackendStore(path: string): BackendStore {
   );
 
   const refreshRunColumns = `started_at AS startedAt, duration_ms AS durationMs,
-            koios_calls AS koiosCalls, ok, error,
-            gov_links_ok AS govLinksOk, incomplete, surveys,
+            upstream_requests AS upstreamRequests, koios_calls AS koiosCalls,
+            ok, error, gov_links_ok AS govLinksOk, incomplete, surveys,
             responses, payload_bytes AS payloadBytes`;
   const putRefreshRunStmt = db.prepare(`
     INSERT OR REPLACE INTO refresh_run
-      (started_at, duration_ms, koios_calls, ok, error, gov_links_ok,
-       incomplete, surveys, responses, payload_bytes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (started_at, duration_ms, upstream_requests, koios_calls, ok, error,
+       gov_links_ok, incomplete, surveys, responses, payload_bytes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const pruneRefreshRunStmt = db.prepare(
     "DELETE FROM refresh_run WHERE started_at < ?",
@@ -294,10 +299,19 @@ export function openBackendStore(path: string): BackendStore {
      ORDER BY started_at DESC LIMIT 1`,
   );
   const refreshTotalsStmt = db.prepare(
-    `SELECT COUNT(*) AS runs,
-            COALESCE(SUM(ok = 0), 0) AS failures,
-            COALESCE(SUM(koios_calls), 0) AS koiosCalls
+    `SELECT COUNT(*) AS runs, COALESCE(SUM(ok = 0), 0) AS failures
      FROM refresh_run WHERE started_at >= ?`,
+  );
+  const addUpstreamStmt = db.prepare(
+    `INSERT INTO upstream_tally (bucket, kind, calls) VALUES (?, ?, ?)
+     ON CONFLICT (bucket, kind) DO UPDATE SET calls = calls + excluded.calls`,
+  );
+  const upstreamTotalsStmt = db.prepare(
+    `SELECT kind, SUM(calls) AS calls FROM upstream_tally
+     WHERE bucket >= ? GROUP BY kind`,
+  );
+  const pruneUpstreamStmt = db.prepare(
+    "DELETE FROM upstream_tally WHERE bucket < ?",
   );
   const incompleteValidationStmt = db.prepare(
     `SELECT COUNT(*) AS n FROM validated_response
@@ -618,6 +632,7 @@ export function openBackendStore(path: string): BackendStore {
       putRefreshRunStmt.run(
         row.startedAt,
         row.durationMs,
+        row.upstreamRequests,
         row.koiosCalls,
         row.ok ? 1 : 0,
         row.error,
@@ -627,7 +642,7 @@ export function openBackendStore(path: string): BackendStore {
         row.responses,
         row.payloadBytes,
       );
-      pruneRefreshRunStmt.run(row.startedAt - REFRESH_RUN_RETENTION_SECONDS);
+      pruneRefreshRunStmt.run(row.startedAt - OPERATIONAL_RETENTION_SECONDS);
     },
     async lastRefreshRun(): Promise<RefreshRunRow | null> {
       const row = lastRefreshRunStmt.get() as DbRefreshRunRow | undefined;
@@ -641,6 +656,27 @@ export function openBackendStore(path: string): BackendStore {
     },
     async refreshTotalsSince(sinceUnix: number): Promise<RefreshTotals> {
       return refreshTotalsStmt.get(sinceUnix) as unknown as RefreshTotals;
+    },
+    async addUpstreamCalls(
+      nowSec: number,
+      calls: UpstreamCalls,
+    ): Promise<void> {
+      const bucket = tallyBucket(nowSec);
+      for (const kind of UPSTREAM_KINDS) {
+        const n = calls[kind];
+        if (n) addUpstreamStmt.run(bucket, kind, n);
+      }
+    },
+    async upstreamTotalsSince(sinceUnix: number): Promise<UpstreamTotals> {
+      return upstreamTotalsFrom(
+        upstreamTotalsStmt.all(tallyBucket(sinceUnix)) as unknown as {
+          kind: string;
+          calls: number;
+        }[],
+      );
+    },
+    async pruneUpstreamTally(beforeUnix: number): Promise<void> {
+      pruneUpstreamStmt.run(tallyBucket(beforeUnix));
     },
     async incompleteValidationCount(): Promise<number> {
       return (incompleteValidationStmt.get() as { n: number }).n;

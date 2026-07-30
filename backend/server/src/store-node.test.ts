@@ -23,7 +23,11 @@ import type {
   SurveyPageQuery,
   ValidatedResponseRow,
 } from "./store";
-import { REFRESH_RUN_RETENTION_SECONDS } from "./store";
+import {
+  OPERATIONAL_RETENTION_SECONDS,
+  TALLY_BUCKET_SECONDS,
+  tallyBucket,
+} from "./store";
 import { openBackendStore } from "./store-node";
 
 const artifact = (surveyKey: string, tally: string, hash: string) => ({
@@ -223,6 +227,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0011_sealed_reveal.sql",
       "0012_refresh_run_gov_links.sql",
       "0013_gov_links.sql",
+      "0014_upstream_metering.sql",
     ]);
   });
 });
@@ -574,8 +579,9 @@ describe("store-node governance-link resolution state", () => {
     // Content is hash-fixed, so a banked row is terminal — a later write of the
     // same hash cannot revise the classification an artifact may already rest on.
     await store.putGovAnchors(new Map([["aa".repeat(32), doc("other:9")]]));
-    expect((await store.cachedGovAnchors(["aa".repeat(32)])).get("aa".repeat(32)))
-      .toEqual(doc("s1:0"));
+    expect(
+      (await store.cachedGovAnchors(["aa".repeat(32)])).get("aa".repeat(32)),
+    ).toEqual(doc("s1:0"));
 
     await store.deleteGovAnchors(["aa".repeat(32)]);
     expect(
@@ -691,6 +697,7 @@ describe("store-node refresh_run health metrics", () => {
   const run = (startedAt: number, over: Partial<RefreshRunRow> = {}) => ({
     startedAt,
     durationMs: 1200,
+    upstreamRequests: 9,
     koiosCalls: 7,
     ok: true,
     error: null,
@@ -710,11 +717,14 @@ describe("store-node refresh_run health metrics", () => {
     await store.putRefreshRun(
       run(1180, { ok: false, error: "Koios GET /tip → 502", koiosCalls: 2 }),
     );
-    await store.putRefreshRun(run(1360, { koiosCalls: 11, incomplete: true }));
+    await store.putRefreshRun(
+      run(1360, { upstreamRequests: 17, koiosCalls: 11, incomplete: true }),
+    );
 
     const last = await store.lastRefreshRun();
     expect(last).toMatchObject({
       startedAt: 1360,
+      upstreamRequests: 17,
       koiosCalls: 11,
       ok: true,
       error: null,
@@ -726,13 +736,11 @@ describe("store-node refresh_run health metrics", () => {
     expect(await store.refreshTotalsSince(1180)).toEqual({
       runs: 2,
       failures: 1,
-      koiosCalls: 13,
     });
     // Empty window aggregates to zeros, not NULLs.
     expect(await store.refreshTotalsSince(9999)).toEqual({
       runs: 0,
       failures: 0,
-      koiosCalls: 0,
     });
   });
 
@@ -750,11 +758,48 @@ describe("store-node refresh_run health metrics", () => {
   it("prunes rows older than the retention window on insert", async () => {
     store = openBackendStore(":memory:");
     const now = 10_000_000;
-    await store.putRefreshRun(run(now - REFRESH_RUN_RETENTION_SECONDS - 1));
-    await store.putRefreshRun(run(now - REFRESH_RUN_RETENTION_SECONDS + 1));
+    await store.putRefreshRun(run(now - OPERATIONAL_RETENTION_SECONDS - 1));
+    await store.putRefreshRun(run(now - OPERATIONAL_RETENTION_SECONDS + 1));
     await store.putRefreshRun(run(now));
 
     expect(await store.refreshTotalsSince(0)).toMatchObject({ runs: 2 });
+  });
+
+  it("accumulates upstream calls per kind and bucket", async () => {
+    store = openBackendStore(":memory:");
+    const t = tallyBucket(1_000_000);
+    await store.addUpstreamCalls(t, { koios: 4, anchor: 2 });
+    // Same bucket: adds to the existing row rather than replacing it.
+    await store.addUpstreamCalls(t + TALLY_BUCKET_SECONDS - 1, { koios: 1 });
+    await store.addUpstreamCalls(t + TALLY_BUCKET_SECONDS, {
+      "koios-passthrough": 3,
+    });
+
+    expect(await store.upstreamTotalsSince(t)).toEqual({
+      koios: 5,
+      "koios-passthrough": 3,
+      anchor: 2,
+    });
+    // A window starting after the first bucket sees only what followed it.
+    expect(await store.upstreamTotalsSince(t + TALLY_BUCKET_SECONDS)).toEqual({
+      koios: 0,
+      "koios-passthrough": 3,
+      anchor: 0,
+    });
+    // Every kind is reported, zero included, so a reader never sees a hole.
+    expect(
+      await store.upstreamTotalsSince(t + 10 * TALLY_BUCKET_SECONDS),
+    ).toEqual({ koios: 0, "koios-passthrough": 0, anchor: 0 });
+  });
+
+  it("drops tally buckets before the prune point", async () => {
+    store = openBackendStore(":memory:");
+    const t = tallyBucket(1_000_000);
+    await store.addUpstreamCalls(t, { koios: 4 });
+    await store.addUpstreamCalls(t + TALLY_BUCKET_SECONDS, { koios: 6 });
+
+    await store.pruneUpstreamTally(t + TALLY_BUCKET_SECONDS);
+    expect(await store.upstreamTotalsSince(0)).toMatchObject({ koios: 6 });
   });
 
   it("counts validated rows still awaiting enrichment", async () => {
