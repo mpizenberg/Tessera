@@ -222,6 +222,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0010_response_rows.sql",
       "0011_sealed_reveal.sql",
       "0012_refresh_run_gov_links.sql",
+      "0013_gov_links.sql",
     ]);
   });
 });
@@ -537,6 +538,88 @@ describe("store-node response rows", () => {
       `{"tx":"cc","i":0}`,
       `{"tx":"cc","i":1}`,
     ]);
+  });
+});
+
+describe("store-node governance-link resolution state", () => {
+  let store: BackendStore;
+  afterEach(() => store.close());
+
+  const doc = (surveyKey: string) => ({ surveyKey, title: "a title" });
+
+  it("banks a classification per anchor hash, including a verified non-link", async () => {
+    store = openBackendStore(":memory:");
+    await store.putGovAnchors(
+      new Map([
+        ["aa".repeat(32), doc("s1:0")],
+        ["bb".repeat(32), null], // verified: this document is not a link
+      ]),
+    );
+
+    // A cached row and a null row are different answers; an unbanked hash is a
+    // third one (absent), which is what "still unresolved" means.
+    expect(
+      await store.cachedGovAnchors([
+        "aa".repeat(32),
+        "bb".repeat(32),
+        "cc".repeat(32),
+      ]),
+    ).toEqual(
+      new Map<string, unknown>([
+        ["aa".repeat(32), doc("s1:0")],
+        ["bb".repeat(32), null],
+      ]),
+    );
+
+    // Content is hash-fixed, so a banked row is terminal — a later write of the
+    // same hash cannot revise the classification an artifact may already rest on.
+    await store.putGovAnchors(new Map([["aa".repeat(32), doc("other:9")]]));
+    expect((await store.cachedGovAnchors(["aa".repeat(32)])).get("aa".repeat(32)))
+      .toEqual(doc("s1:0"));
+
+    await store.deleteGovAnchors(["aa".repeat(32)]);
+    expect(
+      await store.cachedGovAnchors(["aa".repeat(32), "bb".repeat(32)]),
+    ).toEqual(new Map([["bb".repeat(32), null]]));
+  });
+
+  it("settles an epoch once, with its links and its given-up anchors", async () => {
+    store = openBackendStore(":memory:");
+    const link = {
+      surveyKey: "s1:0",
+      actionId: "gov_action1a",
+      endEpoch: 510,
+      title: null,
+    };
+    await store.putSettledGovEpoch({
+      expiration: 511,
+      links: [link],
+      gaveUp: ["gov_action1dead"],
+      settledAt: 1000,
+    });
+    // A settled epoch leaves the scan for good, so re-settling it must not be
+    // able to drop links a snapshot is already publishing.
+    await store.putSettledGovEpoch({
+      expiration: 511,
+      links: [],
+      gaveUp: [],
+      settledAt: 2000,
+    });
+
+    expect(await store.settledGovEpochs([511, 512])).toEqual(
+      new Map([
+        [
+          511,
+          {
+            expiration: 511,
+            links: [link],
+            gaveUp: ["gov_action1dead"],
+            settledAt: 1000,
+          },
+        ],
+      ]),
+    );
+    expect(await store.settledGovEpochs([512])).toEqual(new Map());
   });
 });
 

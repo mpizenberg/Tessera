@@ -11,7 +11,7 @@
  * this schema too.
  */
 
-import type { GovLink } from "cip-179/domain";
+import type { GovLink, GovLinkDoc } from "cip-179/domain";
 
 /**
  * One response's §6.3 validation result (rules 1–3), persisted so each
@@ -185,6 +185,70 @@ export interface ScanCacheStore {
   /** Persist fetched metadata (insert-or-ignore; values are JSON-safe). */
   putTxMetadata(entries: ReadonlyMap<string, unknown>): Promise<void>;
 }
+
+/** One expiration epoch whose governance-link set is final. */
+export interface SettledGovEpoch {
+  /** Koios `expiration` = the linked survey's `end_epoch` + 1. */
+  readonly expiration: number;
+  /** Every link the actions expiring at this epoch carry. */
+  readonly links: readonly GovLink[];
+  /**
+   * Action ids whose anchor was still unresolved when patience ran out. They
+   * are settled as "not a link" — the only alternative is waiting forever on a
+   * dead anchor — and kept so that verdict stays auditable.
+   */
+  readonly gaveUp: readonly string[];
+  readonly settledAt: number;
+}
+
+/**
+ * Governance-link resolution state (ARCHITECTURE.md §6.4): the per-anchor bank
+ * and the per-epoch settlement memo. Both are rebuildable cache — wiping them
+ * costs a re-scan, a re-fetch and a re-settle, never a wrong answer.
+ *
+ * The bank is keyed by anchor hash because that is what the classification
+ * actually depends on: anchored content is hash-fixed, so a document verified
+ * against its on-chain hash classifies the same way forever, whichever action
+ * points at it. A verified *non*-link is banked too (a null doc) — it is just
+ * as final as a link, and re-fetching it would be the same work for the same
+ * answer.
+ *
+ * Settling an epoch is what keeps the scan O(active surveys): a settled epoch
+ * leaves the query filter for good, and its bank rows are pruned with it.
+ */
+export interface GovLinkStore {
+  /** Banked classifications for the cached subset of the requested hashes. */
+  cachedGovAnchors(
+    hashes: readonly string[],
+  ): Promise<Map<string, GovLinkDoc | null>>;
+  /** Bank verified classifications (insert-or-ignore: a row is terminal). */
+  putGovAnchors(
+    entries: ReadonlyMap<string, GovLinkDoc | null>,
+  ): Promise<void>;
+  /** Drop banked anchors no unsettled epoch needs any more. */
+  deleteGovAnchors(hashes: readonly string[]): Promise<void>;
+  /** The settled epochs among `expirations` (absent = still unsettled). */
+  settledGovEpochs(
+    expirations: readonly number[],
+  ): Promise<Map<number, SettledGovEpoch>>;
+  /** Record an epoch as settled (insert-or-ignore: settlement is once and final). */
+  putSettledGovEpoch(row: SettledGovEpoch): Promise<void>;
+}
+
+/** A `gov_epoch` row as stored: both collections arrive as JSON text. */
+export interface DbGovEpochRow {
+  readonly expiration: number;
+  readonly links: string;
+  readonly gaveUp: string;
+  readonly settledAt: number;
+}
+
+export const govEpochFromDb = (r: DbGovEpochRow): SettledGovEpoch => ({
+  expiration: r.expiration,
+  links: JSON.parse(r.links) as GovLink[],
+  gaveUp: JSON.parse(r.gaveUp) as string[],
+  settledAt: r.settledAt,
+});
 
 /**
  * One refresh run's operational stats (`refresh_run`) — what the health
@@ -445,9 +509,10 @@ export interface SnapshotStore {
   close(): void;
 }
 
-/** What the backend wires together: snapshot + tally + scan + health. */
+/** What the backend wires together: snapshot + tally + scan + links + health. */
 export type BackendStore = SnapshotStore &
   TallyStore &
   ScanCacheStore &
+  GovLinkStore &
   HealthStore &
   RefreshLeaseStore;

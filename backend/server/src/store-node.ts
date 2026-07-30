@@ -17,15 +17,17 @@ import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
 import type { SurveyListCounts } from "@tessera/core";
-import type { GovLink } from "cip-179/domain";
+import type { GovLink, GovLinkDoc } from "cip-179/domain";
 
 import type {
   ArtifactRow,
   BackendStore,
+  DbGovEpochRow,
   RefreshRunRow,
   RefreshTotals,
   ResponseRow,
   SealedRevealRow,
+  SettledGovEpoch,
   SnapshotMeta,
   SurveyBundleRows,
   SurveyIndexRow,
@@ -34,6 +36,7 @@ import type {
   WeightRow,
 } from "./store";
 import {
+  govEpochFromDb,
   REFRESH_LEASE_ACQUIRE,
   REFRESH_LEASE_RELEASE,
   REFRESH_RUN_RETENTION_SECONDS,
@@ -255,6 +258,24 @@ export function openBackendStore(path: string): BackendStore {
     "INSERT OR IGNORE INTO tx_metadata_cache (tx_hash, metadata) VALUES (?, ?)",
   );
 
+  const govAnchorAllStmt = db.prepare(
+    "SELECT anchor_hash AS hash, link FROM gov_anchor",
+  );
+  const putGovAnchorStmt = db.prepare(
+    "INSERT OR IGNORE INTO gov_anchor (anchor_hash, link) VALUES (?, ?)",
+  );
+  const deleteGovAnchorStmt = db.prepare(
+    "DELETE FROM gov_anchor WHERE anchor_hash = ?",
+  );
+  const govEpochAllStmt = db.prepare(
+    `SELECT expiration, links, gave_up AS gaveUp, settled_at AS settledAt
+     FROM gov_epoch`,
+  );
+  const putGovEpochStmt = db.prepare(
+    `INSERT OR IGNORE INTO gov_epoch (expiration, links, gave_up, settled_at)
+     VALUES (?, ?, ?, ?)`,
+  );
+
   const refreshRunColumns = `started_at AS startedAt, duration_ms AS durationMs,
             koios_calls AS koiosCalls, ok, error,
             gov_links_ok AS govLinksOk, incomplete, surveys,
@@ -460,6 +481,52 @@ export function openBackendStore(path: string): BackendStore {
     async putTxMetadata(entries: ReadonlyMap<string, unknown>): Promise<void> {
       for (const [hash, metadata] of entries)
         putTxMetaStmt.run(hash, JSON.stringify(metadata ?? null));
+    },
+
+    async cachedGovAnchors(
+      hashes: readonly string[],
+    ): Promise<Map<string, GovLinkDoc | null>> {
+      // One full-table read filtered in JS, like the metadata cache: settlement
+      // prunes this table down to the anchors of unsettled epochs, so it stays
+      // the same order of magnitude as the request.
+      const wanted = new Set(hashes);
+      const out = new Map<string, GovLinkDoc | null>();
+      const rows = govAnchorAllStmt.all() as { hash: string; link: string }[];
+      for (const row of rows) {
+        if (wanted.has(row.hash))
+          out.set(row.hash, JSON.parse(row.link) as GovLinkDoc | null);
+      }
+      return out;
+    },
+    async putGovAnchors(
+      entries: ReadonlyMap<string, GovLinkDoc | null>,
+    ): Promise<void> {
+      for (const [hash, link] of entries)
+        putGovAnchorStmt.run(hash, JSON.stringify(link));
+    },
+    async deleteGovAnchors(hashes: readonly string[]): Promise<void> {
+      for (const hash of hashes) deleteGovAnchorStmt.run(hash);
+    },
+    async settledGovEpochs(
+      expirations: readonly number[],
+    ): Promise<Map<number, SettledGovEpoch>> {
+      // Rows exist only for epochs some survey asked about, so the table is
+      // already about the size of the request — one read beats chunked `IN (…)`.
+      const wanted = new Set(expirations);
+      const rows = govEpochAllStmt.all() as unknown as DbGovEpochRow[];
+      return new Map(
+        rows
+          .filter((r) => wanted.has(r.expiration))
+          .map((r) => [r.expiration, govEpochFromDb(r)]),
+      );
+    },
+    async putSettledGovEpoch(row: SettledGovEpoch): Promise<void> {
+      putGovEpochStmt.run(
+        row.expiration,
+        JSON.stringify(row.links),
+        JSON.stringify(row.gaveUp),
+        row.settledAt,
+      );
     },
 
     async replaceSnapshot(

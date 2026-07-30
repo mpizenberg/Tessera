@@ -9,15 +9,17 @@
  */
 
 import type { SurveyListCounts } from "@tessera/core";
-import type { GovLink } from "cip-179/domain";
+import type { GovLink, GovLinkDoc } from "cip-179/domain";
 
 import type {
   ArtifactRow,
   BackendStore,
+  DbGovEpochRow,
   RefreshRunRow,
   RefreshTotals,
   ResponseRow,
   SealedRevealRow,
+  SettledGovEpoch,
   SnapshotMeta,
   SurveyBundleRows,
   SurveyIndexRow,
@@ -26,6 +28,7 @@ import type {
   WeightRow,
 } from "./store";
 import {
+  govEpochFromDb,
   REFRESH_LEASE_ACQUIRE,
   REFRESH_LEASE_RELEASE,
   REFRESH_RUN_RETENTION_SECONDS,
@@ -353,6 +356,71 @@ export function d1BackendStore(db: D1Like): BackendStore {
           stmt.bind(hash, JSON.stringify(metadata ?? null)),
         ),
       );
+    },
+
+    async cachedGovAnchors(
+      hashes: readonly string[],
+    ): Promise<Map<string, GovLinkDoc | null>> {
+      // Full-table read filtered in JS — same rationale as store-node: settlement
+      // prunes the bank to the anchors of unsettled epochs, so it stays about the
+      // size of the request, and chunked `IN (…)` would cost one D1 query per 100
+      // hashes (its bound-parameter cap).
+      const wanted = new Set(hashes);
+      const { results } = await db
+        .prepare("SELECT anchor_hash AS hash, link FROM gov_anchor")
+        .all<{ hash: string; link: string }>();
+      const out = new Map<string, GovLinkDoc | null>();
+      for (const r of results) {
+        if (wanted.has(r.hash))
+          out.set(r.hash, JSON.parse(r.link) as GovLinkDoc | null);
+      }
+      return out;
+    },
+    async putGovAnchors(
+      entries: ReadonlyMap<string, GovLinkDoc | null>,
+    ): Promise<void> {
+      if (entries.size === 0) return;
+      const stmt = db.prepare(
+        "INSERT OR IGNORE INTO gov_anchor (anchor_hash, link) VALUES (?, ?)",
+      );
+      await db.batch(
+        [...entries].map(([hash, link]) => stmt.bind(hash, JSON.stringify(link))),
+      );
+    },
+    async deleteGovAnchors(hashes: readonly string[]): Promise<void> {
+      if (hashes.length === 0) return;
+      const stmt = db.prepare("DELETE FROM gov_anchor WHERE anchor_hash = ?");
+      await db.batch(hashes.map((h) => stmt.bind(h)));
+    },
+    async settledGovEpochs(
+      expirations: readonly number[],
+    ): Promise<Map<number, SettledGovEpoch>> {
+      const wanted = new Set(expirations);
+      const { results } = await db
+        .prepare(
+          `SELECT expiration, links, gave_up AS gaveUp, settled_at AS settledAt
+           FROM gov_epoch`,
+        )
+        .all<DbGovEpochRow>();
+      return new Map(
+        results
+          .filter((r) => wanted.has(r.expiration))
+          .map((r) => [r.expiration, govEpochFromDb(r)]),
+      );
+    },
+    async putSettledGovEpoch(row: SettledGovEpoch): Promise<void> {
+      await db
+        .prepare(
+          `INSERT OR IGNORE INTO gov_epoch (expiration, links, gave_up, settled_at)
+           VALUES (?, ?, ?, ?)`,
+        )
+        .bind(
+          row.expiration,
+          JSON.stringify(row.links),
+          JSON.stringify(row.gaveUp),
+          row.settledAt,
+        )
+        .run();
     },
 
     async replaceSnapshot(

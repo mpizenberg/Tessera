@@ -23,7 +23,7 @@ import {
   bytesToHex,
   credentialKey,
   hexToBytes,
-  parseCip179Link,
+  parseGovLinkDoc,
   refKey,
   responseCounts,
   scriptCredentialHash,
@@ -951,36 +951,20 @@ export function anchorUnresolved(metaJson: unknown): boolean {
 
 /**
  * Extract a CIP-179 survey link from a governance action's anchor metadata (any
- * action kind — CIP-179 v5). The link lives in `body.cip179` (so it is part of
- * the CIP-108 canonicalized, author-witnessed body), is tagged
- * `kind: "survey-link"`, and carries the survey's `surveyTxId` / `surveyIndex`.
- * The human title shown is the action's own CIP-108 `body.title`. Returns null
- * for any action whose anchor doesn't carry a (well-formed) link.
+ * action kind — CIP-179 v5), pairing the document's classification with the
+ * action's on-chain identity. Returns null for any action whose anchor doesn't
+ * carry a (well-formed) link.
  */
 export function parseGovLink(row: ProposalRow): GovLink | null {
-  // Shared shape validation (single source of truth with the proposal builder);
-  // here we need only the ref — a missing/malformed link yields null.
-  const { surveyRef } = parseCip179Link(row.meta_json);
-  if (!surveyRef) return null;
-
-  // TODO(govlink-title-trust): `title` is attacker-controlled off-chain anchor
-  // JSON. It's escaped before render (no XSS), and epoch-alignment is enforced,
-  // but the title's *content* is not authenticated — a malicious Info Action can
-  // claim e.g. "Official Cardano Foundation Poll" to lend a survey false
-  // authority. The UI currently shows it as "Advertised by {title}". Later:
-  // present it as unverified (length-clamp + an explicit caveat) and soften the
-  // "Advertised by" wording so it doesn't overstate verification.
-  const meta = row.meta_json as Record<string, unknown>;
-  const body = meta["body"] as Record<string, unknown>;
-  const title = typeof body["title"] === "string" ? body["title"] : null;
-
+  const doc = parseGovLinkDoc(row.meta_json);
+  if (!doc) return null;
   return {
-    surveyKey: `${surveyRef.txId}:${surveyRef.index}`,
+    surveyKey: doc.surveyKey,
     actionId: row.proposal_id,
     // Koios's `expiration` is the epoch the action drops out (one past its last
     // active epoch); the action's expiry epoch — what a linked survey's
     // `end_epoch` must equal — is `expiration - 1`. See ProposalRow.expiration.
     endEpoch: row.expiration - 1,
-    title,
+    title: doc.title,
   };
 }

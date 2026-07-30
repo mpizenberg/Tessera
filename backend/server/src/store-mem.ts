@@ -5,7 +5,7 @@
  */
 
 import type { SurveyListFilter } from "@tessera/core";
-import type { GovLink } from "cip-179/domain";
+import type { GovLink, GovLinkDoc } from "cip-179/domain";
 
 import type {
   ArtifactRow,
@@ -13,6 +13,7 @@ import type {
   RefreshRunRow,
   ResponseRow,
   SealedRevealRow,
+  SettledGovEpoch,
   SnapshotMeta,
   SurveyIndexRow,
   ValidatedResponseRow,
@@ -29,6 +30,9 @@ export interface MemBackendStore extends BackendStore {
   readonly totals: Map<string, { total: string; endpoint: string }>;
   readonly artifacts: Map<string, ArtifactRow>;
   readonly txMetadata: Map<string, unknown>;
+  /** Banked anchor classifications by hash; null = verified non-link. */
+  readonly govAnchors: Map<string, GovLinkDoc | null>;
+  readonly govEpochs: Map<number, SettledGovEpoch>;
   readonly refreshRuns: Map<number, RefreshRunRow>;
   surveyIndex: readonly SurveyIndexRow[];
 }
@@ -40,6 +44,8 @@ export function memBackendStore(): MemBackendStore {
   const totals = new Map<string, { total: string; endpoint: string }>();
   const artifacts = new Map<string, ArtifactRow>();
   const txMetadata = new Map<string, unknown>();
+  const govAnchors = new Map<string, GovLinkDoc | null>();
+  const govEpochs = new Map<number, SettledGovEpoch>();
   const refreshRuns = new Map<number, RefreshRunRow>();
   let lease: { holder: string; expiresAt: number } | null = null;
   let surveyIndexRows: readonly SurveyIndexRow[] = [];
@@ -84,6 +90,8 @@ export function memBackendStore(): MemBackendStore {
     totals,
     artifacts,
     txMetadata,
+    govAnchors,
+    govEpochs,
     refreshRuns,
     get surveyIndex() {
       return surveyIndexRows;
@@ -183,6 +191,29 @@ export function memBackendStore(): MemBackendStore {
     async putTxMetadata(entries) {
       for (const [h, m] of entries)
         if (!txMetadata.has(h)) txMetadata.set(h, m);
+    },
+
+    async cachedGovAnchors(hashes) {
+      const out = new Map<string, GovLinkDoc | null>();
+      for (const h of hashes)
+        if (govAnchors.has(h)) out.set(h, govAnchors.get(h)!);
+      return out;
+    },
+    async putGovAnchors(entries) {
+      for (const [h, link] of entries)
+        if (!govAnchors.has(h)) govAnchors.set(h, link);
+    },
+    async deleteGovAnchors(hashes) {
+      for (const h of hashes) govAnchors.delete(h);
+    },
+    async settledGovEpochs(expirations) {
+      const out = new Map<number, SettledGovEpoch>();
+      for (const e of expirations)
+        if (govEpochs.has(e)) out.set(e, govEpochs.get(e)!);
+      return out;
+    },
+    async putSettledGovEpoch(row) {
+      if (!govEpochs.has(row.expiration)) govEpochs.set(row.expiration, row);
     },
 
     async replaceSnapshot(surveys, responses, envelope) {

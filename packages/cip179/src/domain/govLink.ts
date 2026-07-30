@@ -166,3 +166,48 @@ export function parseCip179Link(parsed: unknown): Cip179LinkResult {
       : null;
   return { surveyRef, specVersion, problems };
 }
+
+/**
+ * What an anchor document contributes to a {@link GovLink}: the survey it
+ * names and the CIP-108 title to show for it. The rest of a link — which
+ * action carries it, and when that action expires — is the action's own
+ * on-chain identity, not the document's.
+ *
+ * Keeping the two apart is what makes a classification addressable by anchor
+ * hash: the same document behind two actions yields the same `GovLinkDoc`, and
+ * a reader that has verified those bytes once never needs to fetch them again.
+ */
+export interface GovLinkDoc {
+  /** Survey ref the document links to ("<txHex>:<index>"). */
+  readonly surveyKey: string;
+  /** The action's title from CIP-108 `body.title`, if present. */
+  readonly title: string | null;
+}
+
+/**
+ * Classify a governance action's anchor document: the survey link it carries,
+ * or `null` for a document that carries none. Callers reach this with a
+ * document they trust — parsed from bytes verified against the anchor hash, or
+ * resolved by an indexer they accept — since nothing here re-checks provenance.
+ */
+export function parseGovLinkDoc(doc: unknown): GovLinkDoc | null {
+  // Shared shape validation (single source of truth with the proposal builder);
+  // here we need only the ref — a missing/malformed link yields null.
+  const { surveyRef } = parseCip179Link(doc);
+  if (!surveyRef) return null;
+
+  // TODO(govlink-title-trust): `title` is attacker-controlled off-chain anchor
+  // JSON. It's escaped before render (no XSS), and epoch-alignment is enforced,
+  // but the title's *content* is not authenticated — a malicious Info Action can
+  // claim e.g. "Official Cardano Foundation Poll" to lend a survey false
+  // authority. The UI currently shows it as "Advertised by {title}". Later:
+  // present it as unverified (length-clamp + an explicit caveat) and soften the
+  // "Advertised by" wording so it doesn't overstate verification.
+  //
+  // A non-null ref means `parseCip179Link` already walked `body.cip179`, so the
+  // body is an object here.
+  const body = (doc as { body: Record<string, unknown> }).body;
+  const title = typeof body["title"] === "string" ? body["title"] : null;
+
+  return { surveyKey: `${surveyRef.txId}:${surveyRef.index}`, title };
+}
