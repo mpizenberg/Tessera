@@ -35,15 +35,22 @@ declared credential through the carrying transaction (see
 The package ships both the TypeScript **source** and a self-contained built **ES
 bundle**, mirroring `cip-179`'s dual exports:
 
-| Import                             | What it is                                                                                  | For                                                         |
-| :--------------------------------- | :------------------------------------------------------------------------------------------ | :---------------------------------------------------------- |
-| `@tessera/respond-widget`          | The public prop/event **types** + the pieces to compose it yourself.                        | Type-only imports in a bundler host.                        |
-| `@tessera/respond-widget/element`  | Side-effect import that **registers** `<tessera-respond>`, re-exports the API.              | Bundler hosts — `import "@tessera/respond-widget/element"`. |
-| `@tessera/respond-widget/artifact` | The built `dist/tessera-respond.es.js` — Solid + `respond-core` + `cip-179` all bundled in. | Plain `<script type="module">` hosts, no bundler.           |
+| Import                             | What it is                                                                                  | For                                                              |
+| :--------------------------------- | :------------------------------------------------------------------------------------------ | :--------------------------------------------------------------- |
+| `@tessera/respond-widget`          | The public prop/event **types** + the pieces to compose it yourself.                        | Type-only imports in a bundler host.                             |
+| `@tessera/respond-widget/element`  | Side-effect import that **registers** `<tessera-respond>`, re-exports the API.              | **Solid** hosts only — raw Solid TSX, needs `vite-plugin-solid`. |
+| `@tessera/respond-widget/artifact` | The built `dist/tessera-respond.es.js` — Solid + `respond-core` + `cip-179` all bundled in. | Everyone else: script-tag hosts **and** non-Solid bundler hosts. |
 
-- **Bundler host** (React/Vue/Svelte/Solid/…): `import "@tessera/respond-widget/element"`
-  once to register the element, then use `<tessera-respond>` in your markup. Under
-  a bundler this consumes the source, so Solid can be deduped to a single instance
+- **Non-Solid bundler host** (React/Vue/Svelte/…):
+  `import "@tessera/respond-widget/artifact"` once for its registration
+  side-effect, then use `<tessera-respond>` in your markup. Do **not** import
+  `/element`: it resolves to uncompiled Solid TSX, which your bundler either
+  refuses (no `.tsx` transform inside `node_modules`) or — worse — compiles
+  with its own JSX runtime, producing components that render once and never
+  react. The artifact carries its own Solid, so none of this applies to it.
+- **Solid bundler host** (`vite-plugin-solid`, configured to compile this
+  package): `import "@tessera/respond-widget/element"` to consume the source,
+  so Solid dedupes to a single runtime instance
   (see [Single Solid instance](#single-solid-instance)).
 - **Script-tag host** (no build step): load the built bundle with
   `<script type="module">`. It's fully self-contained — no peer to install, no
