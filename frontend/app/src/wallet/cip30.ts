@@ -98,12 +98,15 @@ export async function connectWallet(key: string): Promise<ConnectedWallet> {
 
   // Request CIP-95 (DRep key); fall back to a plain enable if unsupported. A
   // refusal is the user's answer to the connect prompt, not a missing
-  // extension — asking again would prompt twice for the same thing.
+  // extension — asking again would prompt twice for the same thing. Unless the
+  // dApp is already authorized: then what was refused is the CIP-95 extension
+  // alone, and a plain enable still runs without prompting (just no DRep key),
+  // so a silent reconnect must not turn that into a disconnect.
   let api: Cip30Api;
   try {
     api = await entry.enable({ extensions: [{ cip: 95 }] });
   } catch (e) {
-    if (isRefusal(e)) throw declined();
+    if (isRefusal(e) && !(await isWalletEnabled(key))) throw declined();
     try {
       api = await entry.enable();
     } catch (plain) {
