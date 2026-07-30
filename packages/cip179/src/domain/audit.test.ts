@@ -248,6 +248,41 @@ describe("auditResponses", () => {
     expect(audit.excludedRecords.map((e) => e.key)).toEqual(["invalid"]);
   });
 
+  it("excludes a proof-failed response as unproven; missing keys stay counted", () => {
+    const raw = [
+      rec("proven", 950, 0, 1),
+      rec("failed", 955, 1, 2),
+      rec("pending", 960, 2, 3), // no verdict yet — must remain counted
+    ];
+    const audit = auditResponses(raw, DEF, {
+      "proven:0": true,
+      "failed:0": false,
+    });
+    expect(audit.counted.map((r) => r.txHash).sort()).toEqual([
+      "pending",
+      "proven",
+    ]);
+    expect(audit.excludedRecords.map((e) => e.key)).toEqual(["unproven"]);
+    expect(audit.excludedRecords[0]!.record.txHash).toBe("failed");
+  });
+
+  it("an unproven later response does not supersede a proven earlier one", () => {
+    // Same role+credential: proof exclusion runs *before* dedup, or the failed
+    // later ballot would silently knock out the proven earlier one.
+    const raw = [rec("early", 950, 0, 1), rec("laterUnproven", 960, 0, 1)];
+    const audit = auditResponses(raw, DEF, { "laterUnproven:0": false });
+    expect(audit.counted.map((r) => r.txHash)).toEqual(["early"]);
+    expect(audit.excludedRecords.map((e) => e.key)).toEqual(["unproven"]);
+  });
+
+  it("without verdicts the audit is unchanged (purely on-chain)", () => {
+    const raw = [rec("a", 950, 0, 1), rec("b", 960, 1, 2)];
+    expect(auditResponses(raw, DEF)).toEqual(
+      auditResponses(raw, DEF, undefined),
+    );
+    expect(auditResponses(raw, DEF).counted).toHaveLength(2);
+  });
+
   it("retains all three exclusion categories together", () => {
     const raw = [
       recWith("a", 940, 0, 1, [sc(0)]), // valid, superseded by b

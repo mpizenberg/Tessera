@@ -115,6 +115,9 @@ const survey: Messages = {
   exclInvalidLabel: "Invalide pour ce sondage",
   exclInvalidHint:
     "réponse hors contrainte, rôle inéligible ou réponse requise manquante",
+  exclUnprovenLabel: "Preuve d'identifiant en échec",
+  exclUnprovenHint:
+    "la transaction de réponse ne prouve pas l'identifiant du rôle revendiqué",
   exclSupersededLabel: "Remplacée par une réponse ultérieure",
   exclSupersededHint: "même rôle + identifiant · la plus récente l'emporte",
   exclUndecryptableLabel: "Impossible à déchiffrer ou à décoder",

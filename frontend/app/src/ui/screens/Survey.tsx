@@ -1064,6 +1064,11 @@ function exclusionMeta(
         label: t("survey.exclInvalidLabel"),
         hint: t("survey.exclInvalidHint"),
       };
+    case "unproven":
+      return {
+        label: t("survey.exclUnprovenLabel"),
+        hint: t("survey.exclUnprovenHint"),
+      };
     case "superseded":
       return {
         label: t("survey.exclSupersededLabel"),
@@ -1080,6 +1085,7 @@ function exclusionMeta(
 const EXCLUSION_ORDER: readonly ExclusionKey[] = [
   "after-deadline",
   "invalid",
+  "unproven",
   "superseded",
   "undecryptable",
 ];

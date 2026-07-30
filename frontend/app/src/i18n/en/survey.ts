@@ -132,6 +132,9 @@ const survey = {
   exclInvalidLabel: "Invalid for this survey",
   exclInvalidHint:
     "out-of-constraint answer, ineligible role, or missing required answer",
+  exclUnprovenLabel: "Credential proof failed",
+  exclUnprovenHint:
+    "the response transaction doesn't prove the claimed role credential",
   exclSupersededLabel: "Superseded by a later response",
   exclSupersededHint: "same role + credential · latest-wins",
   exclUndecryptableLabel: "Couldn't be decrypted or decoded",

@@ -16,9 +16,12 @@
  *
  * Needs ledger state (NOT here — indexer-side): role *membership* re-checked at
  * the end_epoch snapshot (distinct from role *eligibility*, which is on-chain
- * and checked above), credential-proof failures. Those are deliberately absent
- * from this breakdown; the UI says so. Keeping the audit honest about what it
- * can and can't see avoids implying a completeness it doesn't have.
+ * and checked above), credential-proof verdicts. A serving tier that computed
+ * those verdicts can hand them in (the optional `verdicts` argument) and this
+ * audit folds proof failures into the breakdown as `unproven`; without them the
+ * breakdown stays purely on-chain and the UI says so. Keeping the audit honest
+ * about what it can and can't see avoids implying a completeness it doesn't
+ * have.
  */
 
 import {
@@ -39,8 +42,19 @@ export { epochOfSlot };
 export type ExclusionKey =
   | "after-deadline"
   | "invalid"
+  | "unproven"
   | "superseded"
   | "undecryptable";
+
+/**
+ * Externally-computed credential-proof verdicts (§6.3 rule 2), keyed by
+ * `"<txHash>:<responseIndex>"`: true = proven, false = unproven. A missing key
+ * is *pending* — no verdict has been reached — and the response stays counted:
+ * "not yet checked" must never display as "failed". These are an indexer's
+ * opinion, not chain data; they refine the audit's breakdown, they don't
+ * define the on-chain record set.
+ */
+export type ProofVerdicts = Readonly<Record<string, boolean>>;
 
 /**
  * Whether a response may be counted against its survey: it passes the codec's
@@ -84,15 +98,18 @@ export interface ResponseAudit {
 /**
  * Audit the raw responses for one survey. Responses past the deadline are
  * dropped first (the invalid window), then those that fail codec validation
- * (out-of-constraint, ineligible role, …) as `invalid`; latest-valid-wins then
- * picks one per (role, credential) and the leftovers are `superseded`. Excluding
- * invalid responses *before* dedup is essential: otherwise a malformed later
- * response could suppress a valid earlier one. The `counted` set is exactly what
- * should be tallied, so a UI showing both stays consistent.
+ * (out-of-constraint, ineligible role, …) as `invalid`, then — when `verdicts`
+ * are supplied — those whose credential proof failed as `unproven`;
+ * latest-valid-wins then picks one per (role, credential) and the leftovers are
+ * `superseded`. Excluding invalid and unproven responses *before* dedup is
+ * essential: otherwise a malformed or unproven later response could suppress a
+ * valid earlier one. The `counted` set is exactly what should be tallied, so a
+ * UI showing both stays consistent.
  */
 export function auditResponses(
   raw: readonly ResponseRecord[],
   definition: SurveyDefinition,
+  verdicts?: ProofVerdicts,
 ): ResponseAudit {
   const endEpoch = definition.endEpoch;
   const onTime: ResponseRecord[] = [];
@@ -102,6 +119,8 @@ export function auditResponses(
       excludedRecords.push({ key: "after-deadline", record: r });
     } else if (!responseIsCountable(definition, r.response)) {
       excludedRecords.push({ key: "invalid", record: r });
+    } else if (verdicts?.[`${r.txHash}:${r.responseIndex}`] === false) {
+      excludedRecords.push({ key: "unproven", record: r });
     } else {
       onTime.push(r);
     }
