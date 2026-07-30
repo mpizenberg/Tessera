@@ -367,8 +367,23 @@ export const AppProvider: ParentComponent = (props) => {
         });
         // Params changed mid-flight: the reset effect owns the state now.
         if (JSON.stringify(pageParams()) !== key) return;
-        setMoreSurveys((prev) => [...prev, ...aggregateSurveyList(payload)]);
+        // Dedupe by survey key: a row whose bucket changed between pages (or
+        // that an insert pushed across the boundary) would otherwise repeat.
+        const seen = new Set(
+          [
+            ...((list.error ? undefined : list())?.surveys ?? []),
+            ...moreSurveys(),
+          ].map((s) => s.key),
+        );
+        const fresh = aggregateSurveyList(payload).filter(
+          (a) => !seen.has(a.key),
+        );
+        setMoreSurveys((prev) => [...prev, ...fresh]);
         setNextCursor(payload.nextCursor ?? null);
+        // The cursor outlived its snapshot generation: rows may have been
+        // skipped, not just duplicated. Refresh page one; the reset effect
+        // reconciles the accumulated pages.
+        if (payload.resync) safeRefetch();
       } catch (err) {
         // Keep the cursor so the button retries; the first page still shows.
         console.warn(`load more failed: ${String(err)}`);

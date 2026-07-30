@@ -259,6 +259,11 @@ export function createApp(
     const cursorRaw = c.req.query("cursor");
     const cursor = cursorRaw ? parseSurveyCursor(cursorRaw) : null;
     if (cursorRaw && !cursor) return c.json({ error: "malformed cursor" }, 400);
+    // A cursor minted against an older snapshot: still answer it (keyset order
+    // is best-effort across generations), but tell the client to refresh page
+    // one — rows may have crossed the boundary when their bucket changed.
+    const staleCursor =
+      cursor?.generation !== undefined && cursor.generation !== meta.fetchedAt;
     const credentials = credentialsOf(c);
     if (!credentials) return c.json({ error: "too many credentials" }, 400);
     const searchTerms = searchTermsOf(c.req.query("q"));
@@ -296,6 +301,7 @@ export function createApp(
         .map((r) => r.surveyKey)
         .sort(),
       ...(meta.incomplete && { incomplete: true }),
+      ...(staleCursor && { resync: true }),
       counts,
       nextCursor:
         rows.length > limit && last
@@ -303,6 +309,7 @@ export function createApp(
               bucket: last.bucket,
               slot: last.slot,
               key: last.surveyKey,
+              generation: meta.fetchedAt,
             })
           : null,
       fetchedAt: meta.fetchedAt,

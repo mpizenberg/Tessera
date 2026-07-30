@@ -63,6 +63,18 @@ export interface SurveyListPayload {
    * page is the last. Absent on a full unpaged payload.
    */
   readonly nextCursor?: string | null;
+  /**
+   * Unix seconds the snapshot behind this payload was scanned — the paging
+   * generation minted into `nextCursor`. Serving tier only.
+   */
+  readonly fetchedAt?: number;
+  /**
+   * The request's cursor was minted against an older snapshot generation, so
+   * rows may have crossed the cursor boundary (duplicated or skipped). The
+   * page itself is still a best-effort answer; the client should silently
+   * refresh page one.
+   */
+  readonly resync?: boolean;
 }
 
 /**

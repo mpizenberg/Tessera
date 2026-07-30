@@ -96,6 +96,21 @@ describe("cursor wire form", () => {
     expect(parseSurveyCursor("3:1:aa:0")).toBeNull(); // bucket out of range
     expect(parseSurveyCursor("1:x:aa:0")).toBeNull();
   });
+
+  it("round-trips the snapshot generation; generation-less stays valid", () => {
+    const c = {
+      bucket: 0,
+      slot: 7,
+      key: `${"cd".repeat(32)}:0`,
+      generation: 1_785_000_000,
+    };
+    expect(parseSurveyCursor(encodeSurveyCursor(c))).toEqual(c);
+    expect(parseSurveyCursor("1:42:aa:3")).toEqual({
+      bucket: 1,
+      slot: 42,
+      key: "aa:3",
+    });
+  });
 });
 
 describe("pageSurveyList ordering and cursors", () => {
@@ -146,6 +161,37 @@ describe("pageSurveyList ordering and cursors", () => {
       mine: 0,
     });
     expect(page.nextCursor).not.toBeNull();
+  });
+});
+
+describe("pageSurveyList snapshot generations", () => {
+  const s0 = survey(0, 400, { endEpoch: 8 });
+  const s1 = survey(1, 300);
+  const full: SurveyListPayload = { ...payload([s0, s1]), fetchedAt: 111 };
+
+  it("echoes fetchedAt and mints it into nextCursor", () => {
+    const page = pageSurveyList(full, { limit: 1 });
+    expect(page.fetchedAt).toBe(111);
+    expect(parseSurveyCursor(page.nextCursor!)?.generation).toBe(111);
+    expect(page.resync).toBeUndefined();
+  });
+
+  it("flags resync on a cross-generation cursor but still answers", () => {
+    const cursor = pageSurveyList(full, { limit: 1 }).nextCursor!;
+    const stale = pageSurveyList(
+      { ...full, fetchedAt: 222 },
+      {
+        limit: 1,
+        cursor,
+      },
+    );
+    expect(stale.resync).toBe(true);
+    expect(stale.surveys).toHaveLength(1); // best-effort page, not an error
+    // Same generation → no resync; so does a generation-less payload.
+    expect(pageSurveyList(full, { limit: 1, cursor }).resync).toBeUndefined();
+    expect(
+      pageSurveyList(payload([s0, s1]), { limit: 1, cursor }).resync,
+    ).toBeUndefined();
   });
 });
 

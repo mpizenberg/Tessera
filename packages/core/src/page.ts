@@ -12,6 +12,15 @@
  * slot first within a bucket, ref key as the final tiebreak. The keyset cursor
  * carries exactly that triple, so pagination is stable under new inserts (new
  * surveys land at the top of page one, never mid-stream).
+ *
+ * Stability is **per snapshot generation**, not absolute: a row's bucket is
+ * time- and data-dependent (open→closed at epoch rollover, standalone→linked
+ * when a governance link resolves), so a refresh can move rows across a live
+ * cursor's boundary — duplicating or skipping them. The cursor therefore also
+ * carries the generation it was minted against; a later-generation server
+ * answers it best-effort and sets `resync` so the client can silently refresh
+ * page one. Duplicates are the client's to drop (dedupe by survey key on
+ * append).
  */
 
 import type { Question } from "cip-179";
@@ -85,17 +94,30 @@ export interface SurveyCursor {
   readonly bucket: number;
   readonly slot: number;
   readonly key: string;
+  /**
+   * `fetchedAt` of the snapshot the cursor was minted against. Keyset order is
+   * only stable within one generation (see the module header); a mismatch sets
+   * `resync` on the answer. Absent when the paged payload carries no stamp
+   * (direct-Koios mode pages a payload frozen for the whole session).
+   */
+  readonly generation?: number | undefined;
 }
 
-/** Wire form "<bucket>:<slot>:<txHex>:<index>" (the key itself contains ":"). */
+/** Wire form "<bucket>:<slot>:<txHex>:<index>[:<generation>]". */
 export function encodeSurveyCursor(c: SurveyCursor): string {
-  return `${c.bucket}:${c.slot}:${c.key}`;
+  const base = `${c.bucket}:${c.slot}:${c.key}`;
+  return c.generation === undefined ? base : `${base}:${c.generation}`;
 }
 
 export function parseSurveyCursor(s: string): SurveyCursor | null {
-  const m = /^([0-2]):(\d+):([0-9a-f]+:\d+)$/.exec(s);
+  const m = /^([0-2]):(\d+):([0-9a-f]+:\d+)(?::(\d+))?$/.exec(s);
   if (!m) return null;
-  return { bucket: Number(m[1]), slot: Number(m[2]), key: m[3] as string };
+  return {
+    bucket: Number(m[1]),
+    slot: Number(m[2]),
+    key: m[3] as string,
+    ...(m[4] !== undefined && { generation: Number(m[4]) }),
+  };
 }
 
 /**
@@ -207,6 +229,10 @@ export function pageSurveyList(
   const credentials = new Set(params.credentials ?? []);
   const filter = params.filter ?? "all";
   const cursor = params.cursor ? parseSurveyCursor(params.cursor) : null;
+  const staleCursor =
+    cursor?.generation !== undefined &&
+    full.fetchedAt !== undefined &&
+    cursor.generation !== full.fetchedAt;
 
   const rows = aggregateSurveyList(full)
     .map((a) => ({
@@ -254,6 +280,8 @@ export function pageSurveyList(
       keys.has(k),
     ),
     ...(full.incomplete !== undefined && { incomplete: full.incomplete }),
+    ...(full.fetchedAt !== undefined && { fetchedAt: full.fetchedAt }),
+    ...(staleCursor && { resync: true }),
     counts,
     nextCursor:
       matching.length > params.limit && last
@@ -261,6 +289,7 @@ export function pageSurveyList(
             bucket: last.bucket,
             slot: last.a.record.slot,
             key: last.a.key,
+            generation: full.fetchedAt,
           })
         : null,
   };

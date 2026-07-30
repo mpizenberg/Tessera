@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Role, type Credential, type SurveyDefinition } from "cip-179";
 import { hexToBytes } from "cip-179/domain";
 import { fromJsonSafe, toJsonSafe } from "cip-179/tally";
+import { encodeSurveyCursor, parseSurveyCursor } from "@tessera/core";
 import type {
   CancellationRecord,
   ChainTip,
@@ -302,6 +303,30 @@ describe("GET /api/surveys pagination, filters, search", () => {
     expect(keysOf(page2)).toEqual([`${TX_B}:1`]);
     expect((page2["cancellations"] as unknown[]).length).toBe(1);
     expect(page2["nextCursor"]).toBeNull();
+  });
+
+  it("flags resync on a cursor from another snapshot generation", async () => {
+    const app = appWith(await seededStore());
+    const page1 = await getBody(app, "?limit=1");
+    const cursor = parseSurveyCursor(page1["nextCursor"] as string)!;
+    expect(cursor.generation).toBe(page1["fetchedAt"]);
+    // Same generation: no resync.
+    const same = await getBody(
+      app,
+      `?limit=1&cursor=${encodeURIComponent(page1["nextCursor"] as string)}`,
+    );
+    expect(same["resync"]).toBeUndefined();
+    // Older generation: best-effort page + resync.
+    const staleCursor = encodeSurveyCursor({
+      ...cursor,
+      generation: cursor.generation! - 1,
+    });
+    const stale = await getBody(
+      app,
+      `?limit=1&cursor=${encodeURIComponent(staleCursor)}`,
+    );
+    expect(stale["resync"]).toBe(true);
+    expect(keysOf(stale)).toEqual([`${TX_B}:1`]);
   });
 
   it("filters: active excludes the closed survey", async () => {
