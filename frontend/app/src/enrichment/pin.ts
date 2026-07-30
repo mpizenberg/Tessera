@@ -28,7 +28,7 @@ export interface PinResult {
   /** blake2b-256 of the exact bytes pinned — the anchor hash. */
   readonly hash: Uint8Array;
   readonly cid: string;
-  /** Providers that accepted the pin. */
+  /** Providers holding the pin under exactly {@link cid} — the ones that make `uri` resolvable. */
   readonly pinnedBy: ProviderId[];
   /** Providers that failed (non-fatal as long as `pinnedBy` is non-empty). */
   readonly failures: ReadonlyArray<{ id: ProviderId; error: string }>;
@@ -65,14 +65,12 @@ export async function pinBytes(
     enabled.map((p) => pinTo(p.id, tokens[p.id]!.trim(), bytes, name, mime)),
   );
 
-  const pinnedBy: ProviderId[] = [];
-  const cids: string[] = [];
+  const accepted: { id: ProviderId; cid: string }[] = [];
   const failures: { id: ProviderId; error: string }[] = [];
   settled.forEach((r, i) => {
     const id = enabled[i]!.id;
     if (r.status === "fulfilled") {
-      pinnedBy.push(id);
-      cids.push(r.value);
+      accepted.push({ id, cid: r.value });
     } else {
       failures.push({
         id,
@@ -81,12 +79,21 @@ export async function pinBytes(
     }
   });
 
-  const cid = cids[0];
+  const cid = accepted[0]?.cid;
   if (cid === undefined) {
     throw new Error(
       "All IPFS pins failed — " +
         failures.map((f) => `${f.id}: ${f.error}`).join("; "),
     );
+  }
+  // Two CIDs for the same bytes name *different blocks* (CID version, chunker,
+  // raw-leaves all feed the hash), so a provider that pinned under another CID
+  // does not make `cid` resolvable — crediting it would overstate redundancy.
+  const pinnedBy: ProviderId[] = [];
+  for (const a of accepted) {
+    if (a.cid === cid) pinnedBy.push(a.id);
+    else
+      failures.push({ id: a.id, error: `pinned a different CID (${a.cid})` });
   }
   return {
     uri: `ipfs://${cid}`,
@@ -133,10 +140,15 @@ async function pinPinata(
   name: string,
   mime: string,
 ): Promise<string> {
+  const form = fileForm(bytes, name, mime);
+  // Pin CIDv0 explicitly: Pinata's default is undocumented (their newer API
+  // already defaults to CIDv1), while Blockfrost's kubo endpoint and NMKR
+  // return CIDv0 — an unpinned default here would silently fork the CIDs.
+  form.append("pinataOptions", JSON.stringify({ cidVersion: 0 }));
   const res = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
     method: "POST",
     headers: { Authorization: `Bearer ${jwt}` },
-    body: fileForm(bytes, name, mime),
+    body: form,
   });
   if (!res.ok) throw new Error(`Pinata HTTP ${res.status}`);
   const j = (await res.json()) as { IpfsHash?: unknown };
