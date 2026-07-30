@@ -114,7 +114,7 @@ export const Explore: Component = () => {
 
   // Survey ref keys the connected wallet has responded to (any attempt counts).
   // Fetched through the seam's slim projection — the wallet's credentials
-  // (payment + stake, the same set `walletControls` checks) go out as core
+  // (payment + stake, the same set `walletOwns` checks) go out as core
   // `credentialKey` strings, survey keys come back. Joined to one string so the
   // resource only refetches when the credential set genuinely changes.
   const credentialKeys = createMemo<string | undefined>(() => {

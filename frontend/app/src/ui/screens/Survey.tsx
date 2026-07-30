@@ -59,7 +59,7 @@ import {
   tallySurvey,
   type QuestionTally,
 } from "~/domain/displayTally";
-import { walletOwns } from "~/domain/roles";
+import { walletCanProveOwner, walletOwns } from "~/domain/roles";
 import { resultsView } from "~/domain/resultsRouting";
 import { usePresentation } from "~/enrichment/usePresentation";
 import { isQuicknet, revealResponses, roundIsAvailable } from "cip-179/tlock";
@@ -282,7 +282,17 @@ export const Survey: Component = () => {
                 walletOwns(app.wallet()!.identity, sv().record.definition.owner)
               }
             >
-              <OwnerControls s={sv()} />
+              {/* Cancelling proves the owner credential with a signature, so a
+                  script owner this wallet controls can be matched but never
+                  cancelled from here. The linking helper signs nothing. */}
+              <Show
+                when={walletCanProveOwner(
+                  app.wallet()!.identity,
+                  sv().record.definition.owner,
+                )}
+              >
+                <OwnerControls s={sv()} />
+              </Show>
               {/* A survey may be advertised by several governance actions
                   (CIP-179 v5), so the copy-paste linking helper stays available
                   even after one link exists. */}
@@ -412,10 +422,10 @@ const InvalidDefinitionNotice: Component = () => (
 // ----------------------------------------------------------------------------
 
 /**
- * Shown only to the connected wallet that owns an *active* survey. Cancelling
- * publishes a tag-2 cancellation referencing this survey, proving the owner
- * credential via required_signers (CIP-179 mechanism A). The definition stays
- * on-chain; new responses are rejected from then on.
+ * Shown only to the connected wallet that owns an *active* survey and can prove
+ * it. Cancelling publishes a tag-2 cancellation referencing this survey,
+ * proving the owner credential via required_signers (CIP-179 mechanism A). The
+ * definition stays on-chain; new responses are rejected from then on.
  */
 const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
   const app = useApp();

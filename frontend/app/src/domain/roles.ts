@@ -10,9 +10,9 @@
  *   wallet can claim and the credential each carries;
  * - `ownerCredential` — the credential a survey it creates is owned by;
  * - `walletResponder` — the `Responder` map handed to `<tessera-respond>`;
- * - `walletControls` / `walletOwns` — the *ownership* concern (does the wallet
- *   control a given credential), used by `state.tsx` / `Create` / `Survey` /
- *   `Explore`.
+ * - `walletOwns` / `walletCanProveOwner` — the *ownership* concern (does the
+ *   wallet control a given credential, and can it prove that), used by `Survey`
+ *   and `Explore`.
  */
 
 import { Role, type Credential, type SurveyDefinition } from "cip-179";
@@ -126,20 +126,29 @@ function credEquals(a: WalletCredential, b: WalletCredential): boolean {
   return a.kind === b.kind && a.hashHex === b.hashHex;
 }
 
-/** Does the wallet control this credential (payment or stake)? */
-export function walletControls(
-  identity: WalletIdentity,
-  cred: Credential,
-): boolean {
-  const target = toWalletCredential(cred);
-  if (credEquals(identity.payment, target)) return true;
-  return identity.stake !== undefined && credEquals(identity.stake, target);
-}
-
-/** Is the wallet the owner of a survey (its credential matches the owner)? */
+/**
+ * Does the wallet control this credential — its payment or its stake one? Note
+ * that a script credential can match: controlling one and being able to *prove*
+ * control of it are different questions, and this answers the first.
+ */
 export function walletOwns(
   identity: WalletIdentity,
   owner: Credential,
 ): boolean {
-  return walletControls(identity, owner);
+  const target = toWalletCredential(owner);
+  if (credEquals(identity.payment, target)) return true;
+  return identity.stake !== undefined && credEquals(identity.stake, target);
+}
+
+/**
+ * Can the wallet publish a transaction proving it owns this survey — the tag-2
+ * cancellation? Owning it isn't enough: the proof is a `required_signers`
+ * signature (see {@link provable}), so a script owner the wallet controls can
+ * be matched but never proven.
+ */
+export function walletCanProveOwner(
+  identity: WalletIdentity,
+  owner: Credential,
+): boolean {
+  return owner.type === "key" && walletOwns(identity, owner);
 }

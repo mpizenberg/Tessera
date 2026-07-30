@@ -8,7 +8,9 @@ import {
   ownerCredential,
   respondableRoles,
   roleCredential,
+  walletCanProveOwner,
   walletCredToCip179,
+  walletOwns,
   walletResponder,
 } from "./roles";
 import type { WalletCredential, WalletIdentity } from "~/wallet/types";
@@ -169,6 +171,32 @@ describe("respondableRoles", () => {
     expect(
       respondableRoles(def, identity({ payment: scriptPayment, stake })),
     ).toEqual([Role.Stakeholder]);
+  });
+});
+
+describe("walletOwns / walletCanProveOwner", () => {
+  const full = identity({ stake });
+
+  it("matches either the payment or the stake credential", () => {
+    expect(walletOwns(full, walletCredToCip179(payment))).toBe(true);
+    expect(walletOwns(full, walletCredToCip179(stake))).toBe(true);
+    expect(walletOwns(full, walletCredToCip179(keyCred(9)))).toBe(false);
+  });
+
+  it("distinguishes a script credential from a key one of the same hash", () => {
+    const scripted = identity({ payment: scriptPayment });
+    expect(walletOwns(scripted, walletCredToCip179(scriptPayment))).toBe(true);
+    expect(
+      walletOwns(scripted, walletCredToCip179(keyCred(7))), // same hash, key
+    ).toBe(false);
+  });
+
+  it("can't prove a script owner it controls", () => {
+    const scripted = identity({ payment: scriptPayment, stake });
+    expect(
+      walletCanProveOwner(scripted, walletCredToCip179(scriptPayment)),
+    ).toBe(false);
+    expect(walletCanProveOwner(scripted, walletCredToCip179(stake))).toBe(true);
   });
 });
 
