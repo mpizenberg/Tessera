@@ -8,14 +8,14 @@
  * failure). We compute the on-chain anchor hash ourselves as the
  * **blake2b-256 of the exact bytes uploaded** — never trusting a provider — so
  * the resulting `{uri, hash}` reads back and verifies through the gateway race
- * in `content.ts`.
+ * in `cip-179/content`.
  *
  * Best-effort + browser-dependent: provider APIs must allow authenticated CORS
  * uploads. Failures are collected per-provider, not thrown, as long as one pin
  * lands. Lazy-loaded (its own chunk) — only pulled in when a user actually pins.
  */
 
-import { blake2b256 } from "./content";
+import { blake2b256 } from "cip-179/content";
 import {
   IPFS_PROVIDERS,
   type ProviderId,

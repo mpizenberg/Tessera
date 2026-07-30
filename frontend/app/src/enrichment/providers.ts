@@ -1,28 +1,11 @@
 /**
- * IPFS endpoints — read gateways and write (pinning) providers.
+ * IPFS pinning providers — where the app can upload off-chain content.
  *
  * Pure metadata + localStorage helpers, safe to import eagerly (the Settings
- * screen needs the provider list; the read path needs the gateway list). The
- * actual network calls live in the lazy chunks: reads in `content.ts`, pins in
- * `pin.ts`.
+ * screen needs the provider list). The actual uploads live in the lazy `pin.ts`
+ * chunk; the read side (gateways + hash-verified fetch) lives in
+ * `cip-179/content`, shared with the serving tier.
  */
-
-/**
- * Public gateways tried (concurrently, staggered) when resolving an `ipfs://`
- * URI. Content addressing means any gateway serving the CID returns identical
- * bytes, so racing several just buys speed + resilience — the first that returns
- * hash-verified bytes wins and the rest are aborted. Order ≈ preference.
- */
-export const IPFS_GATEWAYS: readonly string[] = [
-  "https://ipfs.io/ipfs/",
-  "https://ipfs.blockfrost.dev/ipfs/",
-  "https://dweb.link/ipfs/",
-  "https://c-ipfs-gw.nmkr.io/ipfs/",
-  "https://gateway.pinata.cloud/ipfs/",
-];
-
-/** Milliseconds between successive gateway attempts (first fires immediately). */
-export const GATEWAY_STAGGER_MS = 1000;
 
 /** Identifier of a pinning provider the app can upload to. */
 export type ProviderId = "pinata" | "blockfrost" | "nmkr";

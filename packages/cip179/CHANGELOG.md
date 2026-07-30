@@ -94,6 +94,15 @@ published. Keep adding entries here until release.
 
 ### Added
 
+- **`cip-179/content` — a new entry point that dereferences content anchors.**
+  `fetchAnchorBytes` / `fetchAnchorJson` fetch a `{uri, hash}` anchor and verify
+  its `blake2b-256` before returning, racing the public IPFS gateways for
+  `ipfs://` and fetching `https://` directly (no other scheme is fetched — an
+  anchor URI is attacker-controlled on-chain data). Every attempt is bounded by
+  a timeout and a response-size cap, and `onRequest` counts HTTP attempts for
+  callers on a metered runtime. Also exports `blake2b256`, `IPFS_GATEWAYS` and
+  the defaults. This is the second module in the package that does I/O (after
+  the tlock beacon fetch); the codec, domain and tally layers stay pure.
 - `isSurveyTalliable(record)` / `surveyErrors(record)` — the read-side
   talliability gate, now taking a `SurveyRecord` because one of its rules needs
   the definition's chain position (`end_epoch` > inclusion `epoch_no`).

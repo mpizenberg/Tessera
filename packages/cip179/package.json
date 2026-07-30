@@ -27,6 +27,10 @@
       "types": "./src/tally/index.ts",
       "import": "./src/tally/index.ts"
     },
+    "./content": {
+      "types": "./src/content/index.ts",
+      "import": "./src/content/index.ts"
+    },
     "./txproof": {
       "types": "./src/txproof/index.ts",
       "import": "./src/txproof/index.ts"
@@ -53,6 +57,10 @@
       "./tally": {
         "types": "./dist/tally/index.d.ts",
         "import": "./dist/tally/index.js"
+      },
+      "./content": {
+        "types": "./dist/content/index.d.ts",
+        "import": "./dist/content/index.js"
       },
       "./txproof": {
         "types": "./dist/txproof/index.d.ts",

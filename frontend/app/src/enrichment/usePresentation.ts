@@ -51,7 +51,7 @@ export function usePresentation(
       await app.cacheReady;
       let doc = app.cachedPresentationDoc(anchor.hash);
       if (doc === undefined) {
-        const { fetchAnchorJson } = await import("./content");
+        const { fetchAnchorJson } = await import("cip-179/content");
         doc = await fetchAnchorJson(anchor); // fetch + hash-verify; throws → unavailable
         app.cachePresentationDoc(anchor.hash, doc); // persist the verified doc
       }

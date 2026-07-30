@@ -6,8 +6,8 @@ import {
   type ChainTip,
   type SurveyAggregate,
 } from "cip-179/domain";
+import { IPFS_GATEWAYS } from "cip-179/content";
 import type { Network } from "~/config";
-import { IPFS_GATEWAYS } from "~/enrichment/providers";
 import { t, n, type MsgKey } from "~/i18n";
 
 /**
@@ -55,7 +55,7 @@ export function networkMismatch(
  * URIs come from on-chain data an attacker controls, so a `javascript:`, `data:`,
  * `file:`, or plain-`http:` URI must never reach an `<a href>`. Callers render
  * the link only when this returns non-null. Mirrors the scheme allow-list that
- * `enrichment/content.ts` enforces on the fetch path.
+ * `cip-179/content` enforces on the fetch path.
  */
 export function safeExternalHref(uri: string): string | null {
   if (uri.startsWith("ipfs://")) {

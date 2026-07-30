@@ -21,6 +21,7 @@ tally artifacts.
 | `cip-179`           | The label-17 codec: encode / decode / validate the metadatum format.                                                                                  | none                       |
 | `cip-179/domain`    | Pure semantics over on-chain records: dedupe, cancellation, credential proof, audit, answer rendering, survey aggregation.                            | none                       |
 | `cip-179/tally`     | The reference count / stake-weighted ruleset and the canonical, content-addressed tally artifact.                                                     | none                       |
+| `cip-179/content`   | Dereferencing content anchors: fetch a `{uri, hash}` document (racing IPFS gateways) and hash-verify it before returning. **Does network I/O.**       | none                       |
 | `cip-179/txproof`   | Transaction CBOR → `TxProof` (mechanism-A/B evidence), over an injected `TxProofCodec`. **Imports no Cardano library itself.**                        | none¹                      |
 | `cip-179/tlock`     | The sealed-submission stack for `sealed_submission_mode`: drand round math, timelock encrypt/decrypt, seal/reveal, over an injected `MetadatumCodec`. | `@mattpiz/tlock-js`        |
 | `cip-179/evolution` | An `@evolution-sdk/evolution`-backed implementation of the `TxProofCodec` and `MetadatumCodec` ports — inject it, or write your own.                  | `@evolution-sdk/evolution` |
@@ -274,6 +275,7 @@ time, and `prepublishOnly` rebuilds it from clean.
 | `src/*.ts`       | `cip-179`           | Codec: metadatum model, constants, types, encode/decode/validate.     |
 | `src/domain/`    | `cip-179/domain`    | On-chain record shapes + pure domain semantics.                       |
 | `src/tally/`     | `cip-179/tally`     | Reference ruleset, wire/canonical codecs, content-addressed artifact. |
+| `src/content/`   | `cip-179/content`   | Content-anchor dereferencing: gateway race, hash verification.        |
 | `src/txproof/`   | `cip-179/txproof`   | `TxProof` interpretation + the `TxProofCodec` port.                   |
 | `src/tlock/`     | `cip-179/tlock`     | Sealed-submission (drand tlock) stack + the `MetadatumCodec` port.    |
 | `src/evolution/` | `cip-179/evolution` | evolution-sdk adapter: `evolutionCodec` implementing both ports.      |
