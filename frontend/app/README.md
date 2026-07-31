@@ -32,6 +32,28 @@ The app reads chain data through one seam (the `DataSource` interface from
   Settings or set as `VITE_KOIOS_TOKEN`. Direct mode shows raw one-per-credential
   counts only; final weighted artifacts are a backend feature.
 
+## Publishing
+
+Everything the user publishes goes through one queue. An action — a survey
+definition, a response, a cancellation, a governance proposal — is queued in the
+**cart**, which is partitioned into transactions: CIP-179 allows one event kind
+per label-17 payload, so same-kind actions batch to save fees and different
+kinds never share a transaction.
+
+An action about a survey whose defining transaction is still in flight _chains_
+onto it — the new transaction spends an output that exists only if the
+definition was included, so no block can carry a response without the survey it
+answers. Submitted transactions are kept with their signed bytes and projected
+as chain state: a UTxO set, so consecutive submits cannot select the same input
+twice, and an optimistic overlay, so a published survey is browsable before the
+indexer has it.
+
+Whoever pays the fee is not whoever proves ownership, so a transaction may need
+witnesses from wallets that cannot be connected at the same time. The chain is
+built once and gathers signatures across as many wallets as it takes, each round
+publishing every transaction it completed. Wallets granting CIP-103 sign the
+whole chain in one prompt.
+
 ## Run it
 
 From the **repository root** (this is a pnpm workspace):
@@ -48,16 +70,16 @@ configuration — every variable is optional and documented there
 
 ## Source layout
 
-| Path             | What lives there                                                                                                                                                                                                            |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/data`       | The `DataSource` seam: backend-served snapshot (`indexer.ts`) vs direct Koios (`@tessera/koios`).                                                                                                                           |
-| `src/domain`     | App-side domain: transaction building (`create.ts`, `respond.ts`, `fee.ts`), role checks, artifact render-model (`artifactView.ts`). Pure read/tally rules are imported directly from `cip-179/domain` and `cip-179/tally`. |
-| `src/wallet`     | CIP-30 wallet discovery, connection, signing, submission.                                                                                                                                                                   |
-| `src/tlock`      | Frontend `Date`-formatting helpers over drand rounds (`drand.ts`); the sealed-mode encryption itself lives in `cip-179/tlock`.                                                                                              |
-| `src/enrichment` | Optional off-chain content: IPFS reads (gateway race) and pinning (per-provider tokens from Settings).                                                                                                                      |
-| `src/ui`         | Screens + components (CSS modules, `theme.css`).                                                                                                                                                                            |
-| `src/i18n`       | English + French catalogs, co-located per screen, zero dependencies.                                                                                                                                                        |
-| `src/state.tsx`  | The app store: snapshot resources, wallet session, settings persistence.                                                                                                                                                    |
+| Path             | What lives there                                                                                                                                                                                                                          |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/data`       | The `DataSource` seam: backend-served snapshot (`indexer.ts`) vs direct Koios (`@tessera/koios`).                                                                                                                                         |
+| `src/domain`     | App-side domain: transaction building (`create.ts`, `respond.ts`, `fee.ts`), role checks, artifact render-model (`artifactView.ts`). Pure read/tally rules are imported directly from `cip-179/domain` and `cip-179/tally`.               |
+| `src/wallet`     | CIP-30 discovery and connection, plus the whole write path: the action cart (`cart.ts`), the pure partitioner (`plan.ts`), building/signing/submission (`submit.ts`, the only evolution-sdk site), and the pending-tx set (`pending.ts`). |
+| `src/tlock`      | Frontend `Date`-formatting helpers over drand rounds (`drand.ts`); the sealed-mode encryption itself lives in `cip-179/tlock`.                                                                                                            |
+| `src/enrichment` | Optional off-chain content: IPFS reads (gateway race) and pinning (per-provider tokens from Settings).                                                                                                                                    |
+| `src/ui`         | Screens + components (CSS modules, `theme.css`).                                                                                                                                                                                          |
+| `src/i18n`       | English + French catalogs, co-located per screen, zero dependencies.                                                                                                                                                                      |
+| `src/state.tsx`  | The app store: snapshot resources, wallet session, the cart and the in-memory signing session, settings persistence.                                                                                                                      |
 
 Notable UI behavior: a finalized survey renders its **content-addressed result
 artifact** (per-role weighted bars, turnout, provenance note, artifact hash —

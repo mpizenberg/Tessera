@@ -1,7 +1,8 @@
 /**
  * CIP-30 wallet implementation of the wallet seam, using evolution-sdk only to
- * parse addresses into credentials. Requests the CIP-95 extension so we can
- * read the wallet's public DRep key when available.
+ * parse addresses into credentials. Asks for two extensions where the wallet
+ * has them: CIP-95 for its public DRep key, CIP-103 for signing a whole chain
+ * of transactions in one prompt.
  */
 
 import { Address, Credential } from "@evolution-sdk/evolution";
