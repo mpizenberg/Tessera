@@ -667,6 +667,50 @@ async function bulkSign(
 }
 
 /**
+ * Broadcast a chain the wallet has just witnessed in one prompt, in one call.
+ * A wallet resolves a transaction's inputs before it will submit it much as
+ * before it will sign it, so handing them over one at a time invites the same
+ * refusal for the same reason: it has not indexed the one before yet. Bulk
+ * submission is offered only to the wallet that witnessed the batch, since it
+ * has already treated it as a chain.
+ *
+ * Answers with what did *not* go out. A partial failure comes back as ids and
+ * errors, positionally, and the successes need not be a prefix — a transaction
+ * later in the list is attempted even after an earlier one fails. Anything else
+ * thrown says nothing about what landed, so nothing is counted: resubmitting is
+ * idempotent, same bytes, same hash.
+ */
+async function bulkSubmit(
+  api: Cip30Api,
+  ready: readonly BuiltTx[],
+  onSubmitted: (tx: BuiltTx) => void,
+): Promise<{
+  readonly remaining: readonly BuiltTx[];
+  readonly error: string | null;
+}> {
+  const bulk = api.cip103;
+  if (!bulk?.submitTxs || ready.length < 2) {
+    return { remaining: ready, error: null };
+  }
+
+  try {
+    await bulk.submitTxs(ready.map((tx) => tx.txCbor));
+    for (const tx of ready) onSubmitted(tx);
+    return { remaining: [], error: null };
+  } catch (e) {
+    if (!Array.isArray(e) || e.length !== ready.length) {
+      return { remaining: ready, error: message(e) };
+    }
+    const landed = (i: number): boolean => typeof e[i] === "string";
+    for (const [i, tx] of ready.entries()) if (landed(i)) onSubmitted(tx);
+    return {
+      remaining: ready.filter((_, i) => !landed(i)),
+      error: message(e.find((_, i) => !landed(i))),
+    };
+  }
+}
+
+/**
  * Sign and publish a chain as far as the connected wallet takes it.
  *
  * One pass, in order: a transaction is offered to the wallet if it still misses
@@ -674,8 +718,8 @@ async function bulkSign(
  * offered. That order is the wallet's requirement, not ours: it resolves every
  * input against its own view of the chain before it will sign, so a transaction
  * funded by its predecessor's change is unsignable until that predecessor has
- * gone out. {@link bulkSign} lifts that constraint where the wallet supports it,
- * and then this pass finds nothing left to ask for.
+ * gone out. {@link bulkSign} and {@link bulkSubmit} lift that constraint where
+ * the wallet supports it, and then this pass finds nothing left to do.
  *
  * The pass stops at the first transaction left incomplete — another wallet owes
  * it a witness, and nothing behind it can be included without it — or at the
@@ -693,10 +737,17 @@ export async function signAndSubmitChain(
   readonly txs: readonly BuiltTx[];
   readonly error: string | null;
 }> {
-  const bulk = await bulkSign(api, built);
-  if (bulk.error !== null) return bulk;
+  const gathered = await bulkSign(api, built);
+  if (gathered.error !== null) return gathered;
 
-  const txs = [...bulk.txs];
+  // Only what stands at the front of the chain can go out together: a
+  // transaction still waiting on another wallet holds back everything behind it.
+  const owed = gathered.txs.findIndex((tx) => tx.missing.length > 0);
+  const ready = owed === -1 ? gathered.txs.length : owed;
+  const head = await bulkSubmit(api, gathered.txs.slice(0, ready), onSubmitted);
+  const txs = [...head.remaining, ...gathered.txs.slice(ready)];
+  if (head.error !== null) return { txs, error: head.error };
+
   let error: string | null = null;
   let sent = 0;
 

@@ -68,6 +68,12 @@ export interface Cip30Api {
     signTxs(
       txs: readonly { cbor: string; partialSign: boolean }[],
     ): Promise<string[]>;
+    /**
+     * Broadcast in the order given, every one attempted even after one fails.
+     * Resolves to their ids; on any failure it *throws* the same array with a
+     * `TxSendError` where an id would have been.
+     */
+    submitTxs?(txs: readonly string[]): Promise<string[]>;
   };
 }
 
