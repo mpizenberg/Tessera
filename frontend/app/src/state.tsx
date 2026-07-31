@@ -217,15 +217,16 @@ interface AppState {
   /** What went wrong in the last round of signing or submitting, if anything. */
   readonly signError: Accessor<string | null>;
   /**
-   * Sign whatever the connected wallet holds keys for, and submit the chain as
-   * soon as nothing is missing. Called again after connecting another wallet:
-   * transactions already witnessed are skipped, so only the outstanding
-   * signatures are prompted for.
+   * Sign whatever the connected wallet holds keys for, publishing each
+   * transaction as soon as it holds every witness it needs. Called again after
+   * connecting another wallet: transactions already witnessed are skipped, so
+   * only the outstanding signatures are prompted for.
    */
   signWithWallet(): Promise<void>;
   /**
-   * Throw away the built chain and the signatures gathered for it. Nothing was
-   * submitted, and what it would publish is still in the cart.
+   * Throw away what is left of the built chain and the signatures gathered for
+   * it. Anything already published has left {@link signing} and the cart with
+   * it; what these transactions would publish is still queued.
    */
   discardSigning(): void;
   /**
@@ -568,47 +569,38 @@ export const AppProvider: ParentComponent = (props) => {
   const [signing, setSigning] = createSignal<readonly BuiltTx[]>([]);
   const [signError, setSignError] = createSignal<string | null>(null);
 
-  // Sign what the connected wallet can, and publish once nothing is missing.
-  // Never throws: a chain that stopped short is recovered from the drawer, so
-  // its errors belong to the session rather than to whoever started it.
+  // Take the chain as far as the connected wallet allows: sign what it holds
+  // keys for, publish each transaction as soon as it is complete. Never throws:
+  // a chain that stopped short is recovered from the drawer, so its errors
+  // belong to the session rather than to whoever started it.
   const advance = async (): Promise<readonly string[]> => {
     const w = wallet();
     if (!w) {
       setSignError("No wallet connected");
       return [];
     }
-    const { signChain, submitChain } = await import("~/wallet/submit");
-    const { txs, error } = await signChain(w.api, signing());
-    setSigning(txs);
-    setSignError(error);
-    if (error !== null || txs.some((tx) => tx.missing.length > 0)) {
-      setCartOpen(true); // the drawer names what is still missing
-      return [];
-    }
+    const { signAndSubmitChain } = await import("~/wallet/submit");
 
     // What a transaction publishes leaves the cart the moment it is submitted,
-    // so a rejection partway leaves the rest of the queue — and the rest of the
-    // signed chain — exactly where they were.
+    // so a chain that stopped partway leaves the rest of the queue exactly
+    // where it was.
     const hashes: string[] = [];
-    try {
-      await submitChain(w.api, txs, (tx) => {
-        hashes.push(tx.txHash);
-        trackTx({
-          txHash: tx.txHash,
-          txCbor: tx.txCbor,
-          actions: tx.planned.actions,
-          submittedAt: Date.now(),
-          status: "pending",
-          stalled: false,
-        });
-        const published = new Set(tx.planned.actions);
-        setCart((prev) => prev.filter((a) => !published.has(a)));
-        setSigning((prev) => prev.filter((s) => s.txHash !== tx.txHash));
+    const { txs, error } = await signAndSubmitChain(w.api, signing(), (tx) => {
+      hashes.push(tx.txHash);
+      trackTx({
+        txHash: tx.txHash,
+        txCbor: tx.txCbor,
+        actions: tx.planned.actions,
+        submittedAt: Date.now(),
+        status: "pending",
+        stalled: false,
       });
-    } catch (e) {
-      setSignError(e instanceof Error ? e.message : String(e));
-      setCartOpen(true);
-    }
+      const published = new Set(tx.planned.actions);
+      setCart((prev) => prev.filter((a) => !published.has(a)));
+    });
+    setSigning(txs);
+    setSignError(error);
+    if (txs.length > 0) setCartOpen(true); // the drawer names what is left
     return hashes;
   };
 

@@ -27,7 +27,7 @@ const cart: Messages = {
   submit: "Signer et publier",
   submitting: "Publication…",
   submitHint:
-    "Chaque transaction est signée à son tour ; rien n'est envoyé tant qu'elles ne le sont pas toutes.",
+    "Chaque transaction est signée puis envoyée à son tour, pour que la suivante puisse s'appuyer dessus.",
   connectWallet:
     "Connectez un portefeuille pour publier ce que vous avez mis en attente.",
 
@@ -37,13 +37,13 @@ const cart: Messages = {
   signHeldHere: "Le portefeuille connecté détient cette clé.",
   signComplete: "Signée.",
   signSwitchWallet:
-    "Connectez le portefeuille qui détient chaque clé et signez à nouveau — vous déconnecter ne perd pas les signatures déjà obtenues. Rien n'est envoyé tant que chaque transaction n'est pas complète.",
+    "Connectez le portefeuille qui détient chaque clé et signez à nouveau — vous déconnecter ne perd pas les signatures déjà obtenues. Chaque transaction part dès qu'elle a toutes les signatures qu'il lui faut, et celles qui la suivent l'attendent.",
   signWithWallet: "Signer avec ce portefeuille",
   signingNow: "Signature…",
   publish: "Publier",
   discard: "Abandonner",
   discardHint:
-    "Abandonner jette les transactions et les signatures obtenues ; rien n'a été envoyé, et ce qu'elles publient reste dans votre panier.",
+    "Abandonner jette les transactions encore en attente et les signatures obtenues pour elles ; ce qu'elles publient reste dans votre panier.",
 
   // What a screen shows once it queued an action instead of publishing it.
   addToCart: "Ajouter au panier",

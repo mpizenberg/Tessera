@@ -6,10 +6,10 @@
  * partitioned by the pure planner — and gets back the bytes; evolution-sdk never
  * leaks past this module.
  *
- * Building, signing and submitting are three calls rather than one because a
- * transaction may need witnesses from wallets that cannot be connected at the
- * same time: {@link buildChain} once, {@link signChain} once per wallet as the
- * user connects them, {@link submitChain} when nothing is missing.
+ * Building is separate from publishing because a transaction may need witnesses
+ * from wallets that cannot be connected at the same time: {@link buildChain}
+ * once, {@link signAndSubmitChain} once per wallet as the user connects them,
+ * each round publishing every transaction it managed to complete.
  *
  * Protocol parameters are the only ledger read a build needs: from the serving
  * tier (`GET /api/pparams`) when one is configured — so the browser needs no
@@ -474,61 +474,81 @@ export async function buildChain(
   return built;
 }
 
+const message = (e: unknown): string =>
+  e instanceof Error ? e.message : String(e);
+
 /**
- * Offer every transaction that still misses a witness to the connected wallet,
- * and merge back what it produces. CIP-30 partial signing has a wallet sign what
- * it holds and ignore the rest, so this is also how a second wallet completes a
- * chain the first could only half-witness — the user connects one wallet after
- * another and calls this again.
+ * Offer one transaction to the connected wallet and merge back what it produces.
+ * CIP-30 partial signing has a wallet sign what it holds and ignore the rest, so
+ * this is also how a second wallet completes a chain the first could only
+ * half-witness.
  *
  * The wallet's network is not re-checked here: a key hash is the same on every
  * network, so a wallet pointed elsewhere still produces the witness this
  * transaction needs.
- *
- * A refusal ends the round but keeps what it already gathered — the prompts run
- * one transaction at a time, and signing again skips whatever is complete.
  */
-export async function signChain(
+async function signOne(
   api: Cip30Api,
-  built: readonly BuiltTx[],
-): Promise<{ readonly txs: BuiltTx[]; readonly error: string | null }> {
-  const txs: BuiltTx[] = [];
-  let error: string | null = null;
-
-  for (const tx of built) {
-    if (error !== null || tx.missing.length === 0) {
-      txs.push(tx);
-      continue;
-    }
-    try {
-      const witnessHex = await api.signTx(tx.txCbor, true);
-      txs.push(
-        withMissing({
-          ...tx,
-          txCbor: Transaction.addVKeyWitnessesHex(tx.txCbor, witnessHex),
-        }),
-      );
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-      txs.push(tx);
-    }
+  tx: BuiltTx,
+): Promise<{ readonly tx: BuiltTx; readonly error: string | null }> {
+  try {
+    const witnessHex = await api.signTx(tx.txCbor, true);
+    return {
+      tx: withMissing({
+        ...tx,
+        txCbor: Transaction.addVKeyWitnessesHex(tx.txCbor, witnessHex),
+      }),
+      error: null,
+    };
+  } catch (e) {
+    return { tx, error: message(e) };
   }
-  return { txs, error };
 }
 
 /**
- * Broadcast a fully witnessed chain, in order. `onSubmitted` fires per
- * transaction as it lands, so a run interrupted partway still records what did
- * go out — those transactions are self-contained by construction, since a chain
- * is only ever built forwards.
+ * Sign and publish a chain as far as the connected wallet takes it.
+ *
+ * One pass, in order: a transaction is offered to the wallet if it still misses
+ * a witness, and broadcast the moment it holds them all — before the next one is
+ * offered. That order is the wallet's requirement, not ours: it resolves every
+ * input against its own view of the chain before it will sign, so a transaction
+ * funded by its predecessor's change is unsignable until that predecessor has
+ * gone out.
+ *
+ * The pass stops at the first transaction left incomplete — another wallet owes
+ * it a witness, and nothing behind it can be included without it — or at the
+ * first the node refuses. What did not go out comes back, witnesses and all, so
+ * the next round picks up exactly there; `onSubmitted` fires per transaction as
+ * it lands, so an interrupted run still records what did go.
+ *
+ * Never throws: a chain that stopped short is recovered from the drawer.
  */
-export async function submitChain(
+export async function signAndSubmitChain(
   api: Cip30Api,
   built: readonly BuiltTx[],
   onSubmitted: (tx: BuiltTx) => void,
-): Promise<void> {
-  for (const tx of built) {
-    await api.submitTx(tx.txCbor);
-    onSubmitted(tx);
+): Promise<{
+  readonly txs: readonly BuiltTx[];
+  readonly error: string | null;
+}> {
+  const txs = [...built];
+  let error: string | null = null;
+  let sent = 0;
+
+  for (; sent < txs.length; sent++) {
+    if (txs[sent]!.missing.length > 0) {
+      const signed = await signOne(api, txs[sent]!);
+      txs[sent] = signed.tx;
+      error = signed.error;
+    }
+    if (error !== null || txs[sent]!.missing.length > 0) break;
+    try {
+      await api.submitTx(txs[sent]!.txCbor);
+    } catch (e) {
+      error = message(e);
+      break;
+    }
+    onSubmitted(txs[sent]!);
   }
+  return { txs: txs.slice(sent), error };
 }

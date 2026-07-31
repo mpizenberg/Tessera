@@ -29,7 +29,7 @@ const cart = {
   submit: "Sign & publish",
   submitting: "Publishing…",
   submitHint:
-    "Each transaction is signed in turn; nothing is submitted until all of them are.",
+    "Each transaction is signed and sent in turn, so the next one can build on it.",
   connectWallet: "Connect a wallet to publish what you queued.",
 
   // Gathering signatures: the chain is built and waits for the keys it needs.
@@ -39,13 +39,13 @@ const cart = {
   signHeldHere: "The connected wallet holds this key.",
   signComplete: "Signed.",
   signSwitchWallet:
-    "Connect the wallet holding each key and sign again — disconnecting keeps the signatures already gathered. Nothing is submitted until every transaction is complete.",
+    "Connect the wallet holding each key and sign again — disconnecting keeps the signatures already gathered. Each transaction is sent as soon as it holds every signature it needs, and the ones behind it wait for it.",
   signWithWallet: "Sign with this wallet",
   signingNow: "Signing…",
   publish: "Publish",
   discard: "Discard",
   discardHint:
-    "Discarding throws away the transactions and the signatures gathered; nothing was submitted, and what they publish stays in your cart.",
+    "Discarding throws away the transactions still waiting and the signatures gathered for them; what they publish stays in your cart.",
 
   // What a screen shows once it queued an action instead of publishing it.
   addToCart: "Add to cart",
