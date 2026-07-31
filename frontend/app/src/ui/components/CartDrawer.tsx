@@ -73,7 +73,7 @@ export const CartBadge: Component = () => {
 
   return (
     <Show when={count() > 0}>
-      <div class={css.anchor}>
+      <>
         <button
           type="button"
           onClick={() => app.setCartOpen(!app.cartOpen())}
@@ -113,7 +113,7 @@ export const CartBadge: Component = () => {
             </Show>
           </div>
         </Show>
-      </div>
+      </>
     </Show>
   );
 };
