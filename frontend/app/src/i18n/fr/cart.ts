@@ -31,12 +31,29 @@ const cart: Messages = {
   connectWallet:
     "Connectez un portefeuille pour publier ce que vous avez mis en attente.",
 
+  // Gathering signatures: the chain is built and waits for the keys it needs.
+  signingHeading: "En cours de publication",
+  signMissing: "En attente d'une signature de {credential}.",
+  signHeldHere: "Le portefeuille connecté détient cette clé.",
+  signComplete: "Signée.",
+  signSwitchWallet:
+    "Connectez le portefeuille qui détient chaque clé et signez à nouveau — vous déconnecter ne perd pas les signatures déjà obtenues. Rien n'est envoyé tant que chaque transaction n'est pas complète.",
+  signWithWallet: "Signer avec ce portefeuille",
+  signingNow: "Signature…",
+  publish: "Publier",
+  discard: "Abandonner",
+  discardHint:
+    "Abandonner jette les transactions et les signatures obtenues ; rien n'a été envoyé, et ce qu'elles publient reste dans votre panier.",
+
   // What a screen shows once it queued an action instead of publishing it.
   addToCart: "Ajouter au panier",
   queuedTitle: "Ajouté à votre panier",
   queuedBody:
     "Ce sera publié avec le reste de votre panier, regroupé en aussi peu de transactions que CIP-179 le permet.",
   queuedOpen: "Ouvrir le panier",
+  signingTitle: "Votre panier est en cours de publication",
+  signingBody:
+    "Ses transactions sont construites et attendent d'être envoyées : le panier n'accepte rien d'autre tant que ce n'est pas fait — ou abandonné. Ouvrez-le pour voir ce qu'il reste à faire.",
 
   // In-flight rows (transactions submitted, chain not yet showing them).
   pendingHeadline: "{label}…",

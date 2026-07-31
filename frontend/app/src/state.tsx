@@ -77,6 +77,7 @@ import {
 import type { Action } from "~/wallet/action";
 import { loadCart, storeCart } from "~/wallet/cart";
 import { plan, type PlannedTx } from "~/wallet/plan";
+import type { BuiltTx } from "~/wallet/submit";
 import type { ConnectedWallet, InstalledWallet } from "~/wallet/types";
 import {
   applyPresentation,
@@ -183,25 +184,54 @@ interface AppState {
   /**
    * Queue `actions` and, when nothing else was waiting, publish them at once —
    * so a single action stays one click. Resolves to the submitted transaction
-   * hashes, or to `null` when the actions were merely queued because the cart
-   * already held something the user hasn't published yet.
+   * hashes, or to `null` when they are in the cart instead: because something
+   * was already queued, or because the chain still wants a signature. Throws
+   * only if the chain could not be built, and then the queue is left as it was.
    */
   submitOrQueue(actions: readonly Action[]): Promise<readonly string[] | null>;
   /**
-   * Partition everything queued into transactions, then build, sign and submit
-   * them with the connected wallet, tracking each as pending. Actions leave the
-   * cart as the transaction publishing them is submitted, so an interrupted run
-   * leaves the rest queued. Throws if no wallet.
+   * Partition everything queued into transactions, build them with the
+   * connected wallet, and sign and submit as far as that wallet allows.
+   * Failures land in {@link signError} rather than throwing, since the drawer is
+   * where a chain that stopped short is recovered.
    *
    * Anything about a survey whose definition is still in flight is chained onto
    * that definition's transaction, so a response can never outlive the survey
    * it answers.
    */
-  submitCart(): Promise<readonly string[]>;
+  submitCart(): Promise<void>;
   /** The transactions the queued actions would be published in. */
   planCart(): Promise<readonly PlannedTx[]>;
   readonly cartOpen: Accessor<boolean>;
   setCartOpen(open: boolean): void;
+
+  // --- the signing session (a built chain gathering its witnesses) ---
+  /**
+   * The chain built from the cart, still gathering signatures; empty when none
+   * is being published. Actions stay in the cart until the transaction carrying
+   * them is submitted, so a session holds no state that a reload would lose —
+   * only the built bytes and the witnesses collected so far.
+   */
+  readonly signing: Accessor<readonly BuiltTx[]>;
+  /** What went wrong in the last round of signing or submitting, if anything. */
+  readonly signError: Accessor<string | null>;
+  /**
+   * Sign whatever the connected wallet holds keys for, and submit the chain as
+   * soon as nothing is missing. Called again after connecting another wallet:
+   * transactions already witnessed are skipped, so only the outstanding
+   * signatures are prompted for.
+   */
+  signWithWallet(): Promise<void>;
+  /**
+   * Throw away the built chain and the signatures gathered for it. Nothing was
+   * submitted, and what it would publish is still in the cart.
+   */
+  discardSigning(): void;
+  /**
+   * True while a chain is being signed: the cart's contents are fixed until it
+   * is published or discarded, since they are what was built.
+   */
+  readonly cartLocked: Accessor<boolean>;
 
   // --- pending transactions (the local chain projection) ---
   /**
@@ -527,43 +557,81 @@ export const AppProvider: ParentComponent = (props) => {
     return map;
   });
 
-  // Publish `actions` as one chain. What a transaction published leaves the
-  // cart the moment that transaction is submitted, so a refused signature or a
-  // rejected submission leaves the rest of the queue untouched. The planner
-  // hands the very action objects back, which is what maps a transaction onto
-  // the queue entries it publishes.
-  const submit = async (
+  // The chain built from the cart while its signatures are gathered. Held in
+  // memory only: the actions it publishes stay in the cart until submission, so
+  // a reload costs the built bytes and nothing durable.
+  const [signing, setSigning] = createSignal<readonly BuiltTx[]>([]);
+  const [signError, setSignError] = createSignal<string | null>(null);
+
+  // Sign what the connected wallet can, and publish once nothing is missing.
+  // Never throws: a chain that stopped short is recovered from the drawer, so
+  // its errors belong to the session rather than to whoever started it.
+  const advance = async (): Promise<readonly string[]> => {
+    const w = wallet();
+    if (!w) {
+      setSignError("No wallet connected");
+      return [];
+    }
+    const { signChain, submitChain } = await import("~/wallet/submit");
+    const { txs, error } = await signChain(w.api, signing());
+    setSigning(txs);
+    setSignError(error);
+    if (error !== null || txs.some((tx) => tx.missing.length > 0)) {
+      setCartOpen(true); // the drawer names what is still missing
+      return [];
+    }
+
+    // What a transaction publishes leaves the cart the moment it is submitted,
+    // so a rejection partway leaves the rest of the queue — and the rest of the
+    // signed chain — exactly where they were.
+    const hashes: string[] = [];
+    try {
+      await submitChain(w.api, txs, (tx) => {
+        hashes.push(tx.txHash);
+        trackTx({
+          txHash: tx.txHash,
+          txCbor: tx.txCbor,
+          actions: tx.planned.actions,
+          submittedAt: Date.now(),
+          status: "pending",
+          stalled: false,
+        });
+        const published = new Set(tx.planned.actions);
+        setCart((prev) => prev.filter((a) => !published.has(a)));
+        setSigning((prev) => prev.filter((s) => s.txHash !== tx.txHash));
+      });
+    } catch (e) {
+      setSignError(e instanceof Error ? e.message : String(e));
+      setCartOpen(true);
+    }
+    return hashes;
+  };
+
+  // Build `actions` into a chain and take it as far as the connected wallet
+  // can. The planner hands the very action objects back, which is what maps a
+  // transaction onto the queue entries it publishes.
+  const startSigning = async (
     actions: readonly Action[],
   ): Promise<readonly string[]> => {
     const w = wallet();
     if (!w) throw new Error("No wallet connected");
     // Lazy-load the evolution-sdk transaction builder so its weight is fetched
     // only when a user actually submits, not on first paint.
-    const { payloadSize, submitChain } = await import("~/wallet/submit");
+    const { payloadSize, buildChain } = await import("~/wallet/submit");
     const txs = plan(actions, {
       definingTx: definingTx(),
       measure: payloadSize,
     });
-    const hashes: string[] = [];
-    await submitChain(
-      { ...config, koiosToken: koiosToken(), indexerUrl },
-      w.api,
-      txs,
-      pendingTxs(),
-      (submitted, planned) => {
-        hashes.push(submitted.txHash);
-        trackTx({
-          ...submitted,
-          actions: planned.actions,
-          submittedAt: Date.now(),
-          status: "pending",
-          stalled: false,
-        });
-        const published = new Set(planned.actions);
-        setCart((prev) => prev.filter((a) => !published.has(a)));
-      },
+    setSignError(null);
+    setSigning(
+      await buildChain(
+        { ...config, koiosToken: koiosToken(), indexerUrl },
+        w.api,
+        txs,
+        pendingTxs(),
+      ),
     );
-    return hashes;
+    return advance();
   };
 
   // The pending set's domain projection. Aggregation needs the tip, so this is
@@ -746,19 +814,43 @@ export const AppProvider: ParentComponent = (props) => {
     removeFromCart: (action) =>
       setCart((prev) => prev.filter((a) => a !== action)),
     submitOrQueue: async (actions) => {
-      if (cart().length > 0) {
-        enqueue(actions);
-        return null;
+      const alone = cart().length === 0;
+      // Queued before it is built, because a chain that stalls waiting for
+      // another wallet's signature has to be recoverable from the drawer. A
+      // failed build never got that far, so it puts the queue back.
+      enqueue(actions);
+      if (!alone) return null;
+      try {
+        const hashes = await startSigning(actions);
+        return signing().length > 0 ? null : hashes;
+      } catch (e) {
+        setCart((prev) => prev.filter((a) => !actions.includes(a)));
+        throw e;
       }
-      return submit(actions);
     },
-    submitCart: () => submit(cart()),
+    submitCart: async () => {
+      try {
+        await startSigning(cart());
+      } catch (e) {
+        setSignError(e instanceof Error ? e.message : String(e));
+      }
+    },
     planCart: async () => {
       const { payloadSize } = await import("~/wallet/submit");
       return plan(cart(), { definingTx: definingTx(), measure: payloadSize });
     },
     cartOpen,
     setCartOpen: (open) => setCartOpen(open),
+    signing,
+    signError,
+    signWithWallet: async () => {
+      await advance();
+    },
+    discardSigning: () => {
+      setSigning([]);
+      setSignError(null);
+    },
+    cartLocked: () => signing().length > 0,
     pendingTxs,
     dismissTx: (txHash) => updateTx(txHash, { status: "done" }),
     resubmitTx: async (txHash) => {

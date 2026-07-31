@@ -18,7 +18,7 @@ import {
 } from "solid-js";
 import { A } from "@solidjs/router";
 
-import { credentialKey } from "cip-179/domain";
+import type { Credential } from "cip-179";
 import { bytesToHex } from "cip-179/domain";
 
 import { useApp } from "~/state";
@@ -30,6 +30,7 @@ import {
   type PendingTx,
 } from "~/wallet/pending";
 import type { PlannedTx } from "~/wallet/plan";
+import type { BuiltTx } from "~/wallet/submit";
 import type { ConnectedWallet } from "~/wallet/types";
 import { TxLink } from "~/ui/components/TxLink";
 import { Spinner } from "~/ui/components/Spinner";
@@ -63,6 +64,12 @@ export const CartBadge: Component = () => {
   const announced = () => app.pendingTxs().filter((p) => p.status !== "done");
   const count = () => app.cart().length + announced().length;
   const anyPending = () => announced().some((p) => p.status === "pending");
+  const glyph = () => {
+    if (anyPending()) return <Spinner size={13} />;
+    if (app.cartLocked()) return <span class={css.badgeSigning}>✎</span>;
+    if (app.cart().length > 0) return <span class={css.badgeQueued}>▤</span>;
+    return <span class={css.badgeDone}>✓</span>;
+  };
 
   return (
     <Show when={count() > 0}>
@@ -75,19 +82,7 @@ export const CartBadge: Component = () => {
           aria-expanded={app.cartOpen()}
           class={css.badge}
         >
-          <Show
-            when={anyPending()}
-            fallback={
-              <Show
-                when={app.cart().length > 0}
-                fallback={<span class={css.badgeDone}>✓</span>}
-              >
-                <span class={css.badgeQueued}>▤</span>
-              </Show>
-            }
-          >
-            <Spinner size={13} />
-          </Show>
+          {glyph()}
           <Show when={count() > 1}>
             <span class={css.badgeCount}>{count()}</span>
           </Show>
@@ -95,8 +90,18 @@ export const CartBadge: Component = () => {
         <Show when={app.cartOpen()}>
           <div class={css.panel}>
             <Show when={app.cart().length > 0}>
-              <div class={css.heading}>{t("cart.queuedHeading")}</div>
-              <QueuedSection />
+              <Show
+                when={app.signing().length > 0}
+                fallback={
+                  <>
+                    <div class={css.heading}>{t("cart.queuedHeading")}</div>
+                    <QueuedSection />
+                  </>
+                }
+              >
+                <div class={css.heading}>{t("cart.signingHeading")}</div>
+                <SigningSection />
+              </Show>
             </Show>
             <Show when={announced().length > 0}>
               <div class={css.heading}>{t("cart.inFlightHeading")}</div>
@@ -154,8 +159,10 @@ const PlannedTxCard: Component<{ tx: PlannedTx; index: number }> = (props) => {
   const missing = () => {
     const w = app.wallet();
     if (!w) return []; // the connect prompt below already says what's needed
-    const held = heldCredentials(w);
-    return props.tx.proveCredentials.filter((c) => !held.has(credentialKey(c)));
+    const held = heldKeyHashes(w);
+    return props.tx.proveCredentials
+      .map(credentialHash)
+      .filter((hex) => !held.has(hex));
   };
 
   return (
@@ -166,15 +173,9 @@ const PlannedTxCard: Component<{ tx: PlannedTx; index: number }> = (props) => {
         <div class={css.txChained}>{t("cart.planChained")}</div>
       </Show>
       <For each={missing()}>
-        {(c) => (
+        {(hex) => (
           <div class={css.txWarn}>
-            {t("cart.planMissingSignature", {
-              credential: shortHash(
-                c.type === "key"
-                  ? bytesToHex(c.keyHash)
-                  : bytesToHex(c.scriptHash),
-              ),
-            })}
+            {t("cart.planMissingSignature", { credential: shortHash(hex) })}
           </div>
         )}
       </For>
@@ -182,8 +183,99 @@ const PlannedTxCard: Component<{ tx: PlannedTx; index: number }> = (props) => {
   );
 };
 
-/** One queued action, with the only edit the cart offers: remove it. */
-const QueuedRow: Component<{ action: Action }> = (props) => {
+/**
+ * The chain as it is being signed: one card per transaction, each naming the
+ * signatures it still waits for. Wallets sign one after another — connect one,
+ * sign what it holds, disconnect, connect the next — so the panel is the same
+ * whichever wallet is connected, and what has been gathered survives the switch.
+ */
+const SigningSection: Component = () => {
+  const app = useApp();
+  const [busy, setBusy] = createSignal(false);
+  const complete = () => app.signing().every((tx) => tx.missing.length === 0);
+
+  const run = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      await app.signWithWallet();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <For each={app.signing()}>
+        {(tx, i) => <SigningTxCard tx={tx} index={i() + 1} />}
+      </For>
+      <Show when={!complete()}>
+        <div class={css.note}>{t("cart.signSwitchWallet")}</div>
+      </Show>
+      <Show when={app.signError()}>
+        <div class={css.error}>{app.signError()}</div>
+      </Show>
+      <div class={css.submitBar}>
+        <Show
+          when={app.wallet()}
+          fallback={<div class={css.note}>{t("cart.connectWallet")}</div>}
+        >
+          <button
+            type="button"
+            class={css.submitBtn}
+            disabled={busy()}
+            onClick={() => void run()}
+          >
+            {busy()
+              ? t(complete() ? "cart.submitting" : "cart.signingNow")
+              : t(complete() ? "cart.publish" : "cart.signWithWallet")}
+          </button>
+        </Show>
+        <button
+          type="button"
+          class={css.discardBtn}
+          onClick={() => app.discardSigning()}
+        >
+          {t("cart.discard")}
+        </button>
+        <div class={css.note}>{t("cart.discardHint")}</div>
+      </div>
+    </>
+  );
+};
+
+/** One built transaction: what it publishes, and whose signature it still needs. */
+const SigningTxCard: Component<{ tx: BuiltTx; index: number }> = (props) => {
+  const app = useApp();
+  const held = () => {
+    const w = app.wallet();
+    return w ? heldKeyHashes(w) : new Set<string>();
+  };
+
+  return (
+    <div class={css.txCard}>
+      <div class={css.txHead}>{t("cart.planTx", { n: props.index })}</div>
+      <For each={props.tx.planned.actions}>
+        {(a) => <QueuedRow action={a} locked />}
+      </For>
+      <Show
+        when={props.tx.missing.length > 0}
+        fallback={<div class={css.txSigned}>{t("cart.signComplete")}</div>}
+      >
+        <For each={props.tx.missing}>
+          {(hex) => (
+            <div class={css.txWarn}>
+              {t("cart.signMissing", { credential: shortHash(hex) })}
+              <Show when={held().has(hex)}> {t("cart.signHeldHere")}</Show>
+            </div>
+          )}
+        </For>
+      </Show>
+    </div>
+  );
+};
+
+/** One queued action; removing it is the only edit, and only before it is built. */
+const QueuedRow: Component<{ action: Action; locked?: boolean }> = (props) => {
   const app = useApp();
   return (
     <div class={css.queuedRow}>
@@ -193,32 +285,30 @@ const QueuedRow: Component<{ action: Action }> = (props) => {
           {(title) => <div class={css.queuedSub}>{title()}</div>}
         </Show>
       </div>
-      <button
-        type="button"
-        onClick={() => app.removeFromCart(props.action)}
-        title={t("cart.remove")}
-        aria-label={t("cart.remove")}
-        class={css.remove}
-      >
-        ×
-      </button>
+      <Show when={!props.locked}>
+        <button
+          type="button"
+          onClick={() => app.removeFromCart(props.action)}
+          title={t("cart.remove")}
+          aria-label={t("cart.remove")}
+          class={css.remove}
+        >
+          ×
+        </button>
+      </Show>
     </div>
   );
 };
 
-/** Sign every planned transaction, then submit them all. */
+/** Build the queue into a chain and take it as far as this wallet can. */
 const SubmitBar: Component = () => {
   const app = useApp();
   const [busy, setBusy] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
 
   const publish = async (): Promise<void> => {
     setBusy(true);
-    setError(null);
     try {
       await app.submitCart();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -240,8 +330,8 @@ const SubmitBar: Component = () => {
         </button>
         <div class={css.note}>{t("cart.submitHint")}</div>
       </Show>
-      <Show when={error()}>
-        <div class={css.error}>{error()}</div>
+      <Show when={app.signError()}>
+        <div class={css.error}>{app.signError()}</div>
       </Show>
     </div>
   );
@@ -348,16 +438,13 @@ const PendingRow: Component<{
   );
 };
 
-/**
- * Shown by a screen that queued an action instead of publishing it — which only
- * happens when the cart already held something the user hasn't published yet.
- */
-export const QueuedNote: Component = () => {
+/** A screen-side panel pointing at the cart, for the two states that need it. */
+const CartNote: Component<{ title: MsgKey; body: MsgKey }> = (props) => {
   const app = useApp();
   return (
     <div class={css.queuedNote}>
-      <div class={css.queuedNoteTitle}>{t("cart.queuedTitle")}</div>
-      <p class={css.queuedNoteBody}>{t("cart.queuedBody")}</p>
+      <div class={css.queuedNoteTitle}>{t(props.title)}</div>
+      <p class={css.queuedNoteBody}>{t(props.body)}</p>
       <button
         type="button"
         class={css.queuedNoteBtn}
@@ -369,14 +456,44 @@ export const QueuedNote: Component = () => {
   );
 };
 
-/** Credentials the connected wallet can produce a witness for. */
-function heldCredentials(w: ConnectedWallet): ReadonlySet<string> {
+/**
+ * Shown in place of a screen's publish controls while a chain is being signed:
+ * the cart is what was built, so it cannot take anything else until that chain
+ * is published or discarded.
+ */
+export const PublishLocked: Component = () => (
+  <CartNote title="cart.signingTitle" body="cart.signingBody" />
+);
+
+/**
+ * Shown by a screen that queued an action instead of publishing it — because
+ * the cart already held something, or because the chain it built is still
+ * waiting for a signature.
+ */
+export const QueuedNote: Component = () => {
+  const app = useApp();
+  return (
+    <Show when={!app.cartLocked()} fallback={<PublishLocked />}>
+      <CartNote title="cart.queuedTitle" body="cart.queuedBody" />
+    </Show>
+  );
+};
+
+/**
+ * Hashes the connected wallet can produce a witness for. The payment key is the
+ * change address's; a wallet spreading its funds over many addresses holds more
+ * than this, so a hash absent here is not proof that the wallet cannot sign it.
+ */
+function heldKeyHashes(w: ConnectedWallet): ReadonlySet<string> {
   const { payment, stake, drep } = w.identity;
   return new Set(
-    [payment, stake, drep]
-      .filter((c) => c !== undefined)
-      .map((c) => `${c.kind}:${c.hashHex}`),
+    [payment, stake, drep].filter((c) => c !== undefined).map((c) => c.hashHex),
   );
+}
+
+/** A credential's hash as hex — how a required witness is named. */
+function credentialHash(c: Credential): string {
+  return bytesToHex(c.type === "key" ? c.keyHash : c.scriptHash);
 }
 
 function shortHash(hex: string): string {

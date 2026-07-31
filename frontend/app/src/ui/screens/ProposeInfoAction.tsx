@@ -25,7 +25,7 @@ import {
 import linkCss from "~/ui/components/LinkAnchorSection.module.css";
 import { TxLink } from "~/ui/components/TxLink";
 import { Note } from "~/ui/components/Note";
-import { QueuedNote } from "~/ui/components/CartDrawer";
+import { PublishLocked, QueuedNote } from "~/ui/components/CartDrawer";
 import { networkMismatch } from "~/ui/format";
 import type { Action } from "~/wallet/action";
 import { t } from "~/i18n";
@@ -154,28 +154,32 @@ export const ProposeInfoAction: Component = () => {
           when={txHash()}
           fallback={
             <Show when={!queued()}>
-              <button
-                onClick={() => (queueing() ? queue() : void submit())}
-                disabled={queueing() ? !canQueue() : !canSubmit()}
-                class={css.submitBtn}
-                classList={{
-                  [css.submitBtnEnabled]: queueing() ? canQueue() : canSubmit(),
-                }}
-              >
-                {busy()
-                  ? t("proposeInfoAction.building")
-                  : queueing()
-                    ? t("cart.addToCart")
-                    : t("proposeInfoAction.submit")}
-              </button>
-              <Show when={!queueing()}>
+              <Show when={!app.cartLocked()} fallback={<PublishLocked />}>
                 <button
-                  onClick={() => queue()}
-                  disabled={!canQueue()}
-                  class={css.queueBtn}
+                  onClick={() => (queueing() ? queue() : void submit())}
+                  disabled={queueing() ? !canQueue() : !canSubmit()}
+                  class={css.submitBtn}
+                  classList={{
+                    [css.submitBtnEnabled]: queueing()
+                      ? canQueue()
+                      : canSubmit(),
+                  }}
                 >
-                  {t("cart.addToCart")}
+                  {busy()
+                    ? t("proposeInfoAction.building")
+                    : queueing()
+                      ? t("cart.addToCart")
+                      : t("proposeInfoAction.submit")}
                 </button>
+                <Show when={!queueing()}>
+                  <button
+                    onClick={() => queue()}
+                    disabled={!canQueue()}
+                    class={css.queueBtn}
+                  >
+                    {t("cart.addToCart")}
+                  </button>
+                </Show>
               </Show>
             </Show>
           }

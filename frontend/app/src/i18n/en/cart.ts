@@ -32,12 +32,30 @@ const cart = {
     "Each transaction is signed in turn; nothing is submitted until all of them are.",
   connectWallet: "Connect a wallet to publish what you queued.",
 
+  // Gathering signatures: the chain is built and waits for the keys it needs.
+  signingHeading: "Being published",
+  /** {credential} is a key hash no witness has been produced for yet. */
+  signMissing: "Waiting for a signature from {credential}.",
+  signHeldHere: "The connected wallet holds this key.",
+  signComplete: "Signed.",
+  signSwitchWallet:
+    "Connect the wallet holding each key and sign again — disconnecting keeps the signatures already gathered. Nothing is submitted until every transaction is complete.",
+  signWithWallet: "Sign with this wallet",
+  signingNow: "Signing…",
+  publish: "Publish",
+  discard: "Discard",
+  discardHint:
+    "Discarding throws away the transactions and the signatures gathered; nothing was submitted, and what they publish stays in your cart.",
+
   // What a screen shows once it queued an action instead of publishing it.
   addToCart: "Add to cart",
   queuedTitle: "Added to your cart",
   queuedBody:
     "It will be published with the rest of what you queued, batched into as few transactions as CIP-179 allows.",
   queuedOpen: "Open the cart",
+  signingTitle: "Your cart is being published",
+  signingBody:
+    "Its transactions are built and waiting to go out, so the cart can't take anything else until they do — or you discard them. Open it to see what is left to do.",
 
   // In-flight rows (transactions submitted, chain not yet showing them).
   /** Appended to an in-flight headline; {label} is the action description. */

@@ -66,7 +66,7 @@ import { OnchainPreview } from "~/ui/components/OnchainPreview";
 import { ErrorBox, ProblemList } from "~/ui/components/Feedback";
 import { SegmentedToggle } from "~/ui/components/SegmentedToggle";
 import { TxLink } from "~/ui/components/TxLink";
-import { QueuedNote } from "~/ui/components/CartDrawer";
+import { PublishLocked, QueuedNote } from "~/ui/components/CartDrawer";
 import {
   SubmitProgressModal,
   type SubmitStep,
@@ -848,26 +848,28 @@ export const Respond: Component = () => {
           role() !== null
         }
       >
-        <SubmitBar
-          decided={decidedCount()}
-          total={total()}
-          answered={answered()}
-          replacing={prior() !== undefined}
-          submitting={submitting()}
-          mismatch={mismatch()}
-          blocked={submitBlocked()}
-          warning={deadlineWarning()}
-          network={app.config.network}
-          idleText={
-            sealedMode()
-              ? t("respond.encryptAndSubmit")
-              : t("respond.signAndSubmit")
-          }
-          busyText={busyText()}
-          queueing={queueing()}
-          onSubmit={() => void onSubmit(false)}
-          onQueue={() => void onSubmit(true)}
-        />
+        <Show when={!app.cartLocked()} fallback={<PublishLocked />}>
+          <SubmitBar
+            decided={decidedCount()}
+            total={total()}
+            answered={answered()}
+            replacing={prior() !== undefined}
+            submitting={submitting()}
+            mismatch={mismatch()}
+            blocked={submitBlocked()}
+            warning={deadlineWarning()}
+            network={app.config.network}
+            idleText={
+              sealedMode()
+                ? t("respond.encryptAndSubmit")
+                : t("respond.signAndSubmit")
+            }
+            busyText={busyText()}
+            queueing={queueing()}
+            onSubmit={() => void onSubmit(false)}
+            onQueue={() => void onSubmit(true)}
+          />
+        </Show>
       </Show>
     </main>
   );

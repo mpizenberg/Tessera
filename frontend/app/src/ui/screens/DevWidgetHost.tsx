@@ -276,7 +276,7 @@ const DevWidgetHost: Component = () => {
         }
       >
         <Show
-          when={txHash() === null && !queued()}
+          when={txHash() === null && !queued() && !app.cartLocked()}
           fallback={
             <Show when={txHash()} fallback={<QueuedNote />}>
               {(hash) => <Submitted hash={hash()} surveyKey={key()} />}

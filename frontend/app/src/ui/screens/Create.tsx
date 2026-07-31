@@ -43,7 +43,7 @@ import { VisGlyph } from "~/ui/components/glyphs";
 import { OnchainPreview } from "~/ui/components/OnchainPreview";
 import { ErrorBox, ProblemList } from "~/ui/components/Feedback";
 import { TxLink } from "~/ui/components/TxLink";
-import { QueuedNote } from "~/ui/components/CartDrawer";
+import { PublishLocked, QueuedNote } from "~/ui/components/CartDrawer";
 import { QUICKNET_CHAIN_HASH_HEX, autoRevealRound } from "cip-179/tlock";
 import { formatEpochEndDate, formatRevealDate } from "~/tlock/drand";
 import { networkMismatch, roleColors, roleLabel, shortRef } from "~/ui/format";
@@ -442,24 +442,26 @@ export const Create: Component = () => {
               <Show when={app.ui.pro}>
                 <OnchainPreview payload={previewPayload()} />
               </Show>
-              <PublishButton
-                problemCount={problems().length}
-                blockedReason={
-                  mismatch()
-                    ? t("create.publishBlockedNetwork", {
-                        network: app.config.network,
-                      })
-                    : externalNoTokens()
-                      ? t("create.publishBlockedNoIpfs")
-                      : null
-                }
-                submitting={submitting()}
-                busyText={busyText()}
-                paymentHashHex={identity()!.payment.hashHex}
-                queueing={queueing()}
-                onPublish={() => void onPublish(false)}
-                onQueue={() => void onPublish(true)}
-              />
+              <Show when={!app.cartLocked()} fallback={<PublishLocked />}>
+                <PublishButton
+                  problemCount={problems().length}
+                  blockedReason={
+                    mismatch()
+                      ? t("create.publishBlockedNetwork", {
+                          network: app.config.network,
+                        })
+                      : externalNoTokens()
+                        ? t("create.publishBlockedNoIpfs")
+                        : null
+                  }
+                  submitting={submitting()}
+                  busyText={busyText()}
+                  paymentHashHex={identity()!.payment.hashHex}
+                  queueing={queueing()}
+                  onPublish={() => void onPublish(false)}
+                  onQueue={() => void onPublish(true)}
+                />
+              </Show>
             </aside>
           </div>
         </main>

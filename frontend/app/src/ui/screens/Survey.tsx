@@ -78,7 +78,7 @@ import {
 import { RoleChips } from "~/ui/components/glyphs";
 import { ResultBarCard } from "~/ui/components/ResultBarCard";
 import { TxLink } from "~/ui/components/TxLink";
-import { QueuedNote } from "~/ui/components/CartDrawer";
+import { PublishLocked, QueuedNote } from "~/ui/components/CartDrawer";
 import type { Action } from "~/wallet/action";
 import { toCsv, downloadCsv, downloadJson } from "~/util/csv";
 import { t, n } from "~/i18n";
@@ -525,47 +525,49 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
           <b class={css.ownerTextStrong}>{t("survey.ownerTextStrong")}</b>{" "}
           {t("survey.ownerText")}
         </span>
-        <Show
-          when={confirming()}
-          fallback={
-            <button
-              onClick={() => setConfirming(true)}
-              disabled={mismatch()}
-              class={css.cancelBtn}
-            >
-              {t("survey.cancelSurvey")}
-            </button>
-          }
-        >
-          <div class={css.confirmRow}>
-            <button
-              onClick={() => void onCancel(queueing())}
-              disabled={cancelling() || (mismatch() && !queueing())}
-              class={css.confirmBtn}
-            >
-              {cancelling()
-                ? t("survey.cancelling")
-                : queueing()
-                  ? t("cart.addToCart")
-                  : t("survey.confirmCancel")}
-            </button>
-            <Show when={!queueing()}>
+        <Show when={!app.cartLocked()} fallback={<PublishLocked />}>
+          <Show
+            when={confirming()}
+            fallback={
               <button
-                onClick={() => void onCancel(true)}
+                onClick={() => setConfirming(true)}
+                disabled={mismatch()}
+                class={css.cancelBtn}
+              >
+                {t("survey.cancelSurvey")}
+              </button>
+            }
+          >
+            <div class={css.confirmRow}>
+              <button
+                onClick={() => void onCancel(queueing())}
+                disabled={cancelling() || (mismatch() && !queueing())}
+                class={css.confirmBtn}
+              >
+                {cancelling()
+                  ? t("survey.cancelling")
+                  : queueing()
+                    ? t("cart.addToCart")
+                    : t("survey.confirmCancel")}
+              </button>
+              <Show when={!queueing()}>
+                <button
+                  onClick={() => void onCancel(true)}
+                  disabled={cancelling()}
+                  class={css.keepBtn}
+                >
+                  {t("cart.addToCart")}
+                </button>
+              </Show>
+              <button
+                onClick={() => setConfirming(false)}
                 disabled={cancelling()}
                 class={css.keepBtn}
               >
-                {t("cart.addToCart")}
+                {t("survey.keep")}
               </button>
-            </Show>
-            <button
-              onClick={() => setConfirming(false)}
-              disabled={cancelling()}
-              class={css.keepBtn}
-            >
-              {t("survey.keep")}
-            </button>
-          </div>
+            </div>
+          </Show>
         </Show>
         <Show when={mismatch()}>
           <div class={css.ownerError}>

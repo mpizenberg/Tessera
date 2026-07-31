@@ -3,8 +3,13 @@
  *
  * This is the only place evolution-sdk builds a transaction. The rest of the app
  * hands it a {@link PlannedTx} chain — library-agnostic CIP-179 domain payloads,
- * partitioned by the pure planner — and gets back the signed bytes;
- * evolution-sdk never leaks past this module.
+ * partitioned by the pure planner — and gets back the bytes; evolution-sdk never
+ * leaks past this module.
+ *
+ * Building, signing and submitting are three calls rather than one because a
+ * transaction may need witnesses from wallets that cannot be connected at the
+ * same time: {@link buildChain} once, {@link signChain} once per wallet as the
+ * user connects them, {@link submitChain} when nothing is missing.
  *
  * Protocol parameters are the only ledger read a build needs: from the serving
  * tier (`GET /api/pparams`) when one is configured — so the browser needs no
@@ -50,7 +55,6 @@ import {
   descendantOutrefs,
   outrefKey,
   projectOutrefs,
-  type PendingTx,
   type TxFlow,
 } from "./pending";
 import type { Cip30Api } from "./types";
@@ -150,7 +154,7 @@ async function ownAddresses(
  */
 function project(
   walletUtxos: readonly UTxO.UTxO[],
-  inFlight: readonly SubmittedTx[],
+  inFlight: readonly TxBytes[],
   own: ReadonlySet<string>,
 ): { readonly utxos: UTxO.UTxO[]; readonly flows: readonly TxFlow[] } {
   const produced = new Map<string, UTxO.UTxO>();
@@ -289,13 +293,30 @@ function buildOpts(ctx: TxContext, availableUtxos: UTxO.UTxO[]) {
 }
 
 /**
- * A transaction the wallet accepted. The signed bytes are returned alongside the
- * hash because they are what the app projects the ledger from and what it
- * rebroadcasts if the transaction stalls — see `./pending.ts`.
+ * A transaction whose bytes we hold — in flight from an earlier run, or built in
+ * this one. Only the body feeds the projection, and witnesses never enter it, so
+ * an unsigned transaction projects exactly like a submitted one.
  */
-export interface SubmittedTx {
+interface TxBytes {
   readonly txHash: string;
   readonly txCbor: string;
+}
+
+/**
+ * A built transaction and the witnesses it still waits for.
+ *
+ * `required` is what the ledger will check: the payment key of every input the
+ * builder selected, plus the credentials the payload proves control of — the
+ * same set the fee already budgets witnesses for. `missing` is re-derived from
+ * the transaction itself, so nothing has to record which wallet signed what: a
+ * witness is either in there or it is not.
+ */
+export interface BuiltTx extends TxBytes {
+  readonly planned: PlannedTx;
+  /** The transaction as it stands; witnesses accumulate into it. */
+  readonly txCbor: string;
+  readonly required: readonly string[];
+  readonly missing: readonly string[];
 }
 
 /**
@@ -385,44 +406,129 @@ function txId(unsignedHex: string): string {
 }
 
 /**
- * Build, sign and submit a planned chain with the connected wallet.
+ * Key hashes that must witness `txCbor`, given the UTxOs it was built against:
+ * the payment key of every input it spends, plus its declared required signers.
+ */
+function requiredWitnesses(
+  txCbor: string,
+  utxos: readonly UTxO.UTxO[],
+): string[] {
+  const { body } = Transaction.fromCBORHex(txCbor);
+  const byOutref = new Map(utxos.map((u) => [utxoOutref(u), u]));
+  const hashes = new Set<string>();
+  for (const input of body.inputs) {
+    const spent = byOutref.get(
+      outrefKey(TransactionHash.toHex(input.transactionId), input.index),
+    );
+    const cred = spent?.address.paymentCredential;
+    if (cred?._tag === "KeyHash") hashes.add(KeyHash.toHex(cred));
+  }
+  for (const signer of body.requiredSigners ?? []) {
+    hashes.add(KeyHash.toHex(signer));
+  }
+  return [...hashes];
+}
+
+/** The same transaction, with `missing` re-read from the witnesses it carries. */
+function withMissing(tx: Omit<BuiltTx, "missing">): BuiltTx {
+  const { witnessSet } = Transaction.fromCBORHex(tx.txCbor);
+  const witnessed = new Set(
+    (witnessSet.vkeyWitnesses ?? []).map((w) =>
+      KeyHash.toHex(KeyHash.fromVKey(w.vkey)),
+    ),
+  );
+  return { ...tx, missing: tx.required.filter((h) => !witnessed.has(h)) };
+}
+
+/**
+ * Build a planned chain with the connected wallet, without signing it.
  *
  * Each transaction is built against the projection including the ones built
  * before it in this run, so the chain funds itself without double-spending, and
- * a planned dependency becomes a real input.
- *
- * Every signature is gathered before anything is submitted: refusing any prompt
- * leaves the whole chain off-chain. `onSubmitted` fires per transaction as it
- * lands, so a run interrupted partway still records what did go out — those
- * transactions are self-contained by construction, since a chain is only ever
- * built forwards.
+ * a planned dependency becomes a real input. The building wallet pays every fee
+ * and spends every input, which is why one wallet builds the whole chain; the
+ * witnesses gathered afterwards prove credentials, they don't pay for anything.
  */
-export async function submitChain(
+export async function buildChain(
   config: SubmitConfig,
   api: Cip30Api,
   txs: readonly PlannedTx[],
-  pending: readonly PendingTx[],
-  onSubmitted: (submitted: SubmittedTx, planned: PlannedTx) => void,
-): Promise<void> {
+  pending: readonly TxBytes[],
+): Promise<BuiltTx[]> {
   const ctx = await txContext(config, api);
-  const inFlight: SubmittedTx[] = [...pending];
-  const signed: { submitted: SubmittedTx; planned: PlannedTx }[] = [];
+  const inFlight: TxBytes[] = [...pending];
+  const built: BuiltTx[] = [];
 
   for (const planned of txs) {
     const { utxos, flows } = project(ctx.walletUtxos, inFlight, ctx.own);
-    const unsignedHex = await buildTx(ctx, api, planned, utxos, flows);
-    // Sign via the wallet (CIP-30), bypassing the provider's own signer.
-    const witnessHex = await api.signTx(unsignedHex, true);
-    const submitted: SubmittedTx = {
-      txHash: txId(unsignedHex),
-      txCbor: Transaction.addVKeyWitnessesHex(unsignedHex, witnessHex),
-    };
-    signed.push({ submitted, planned });
-    inFlight.push(submitted);
+    const txCbor = await buildTx(ctx, api, planned, utxos, flows);
+    const tx = withMissing({
+      planned,
+      txHash: txId(txCbor),
+      txCbor,
+      required: requiredWitnesses(txCbor, utxos),
+    });
+    built.push(tx);
+    inFlight.push(tx);
   }
+  return built;
+}
 
-  for (const { submitted, planned } of signed) {
-    await api.submitTx(submitted.txCbor);
-    onSubmitted(submitted, planned);
+/**
+ * Offer every transaction that still misses a witness to the connected wallet,
+ * and merge back what it produces. CIP-30 partial signing has a wallet sign what
+ * it holds and ignore the rest, so this is also how a second wallet completes a
+ * chain the first could only half-witness — the user connects one wallet after
+ * another and calls this again.
+ *
+ * The wallet's network is not re-checked here: a key hash is the same on every
+ * network, so a wallet pointed elsewhere still produces the witness this
+ * transaction needs.
+ *
+ * A refusal ends the round but keeps what it already gathered — the prompts run
+ * one transaction at a time, and signing again skips whatever is complete.
+ */
+export async function signChain(
+  api: Cip30Api,
+  built: readonly BuiltTx[],
+): Promise<{ readonly txs: BuiltTx[]; readonly error: string | null }> {
+  const txs: BuiltTx[] = [];
+  let error: string | null = null;
+
+  for (const tx of built) {
+    if (error !== null || tx.missing.length === 0) {
+      txs.push(tx);
+      continue;
+    }
+    try {
+      const witnessHex = await api.signTx(tx.txCbor, true);
+      txs.push(
+        withMissing({
+          ...tx,
+          txCbor: Transaction.addVKeyWitnessesHex(tx.txCbor, witnessHex),
+        }),
+      );
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+      txs.push(tx);
+    }
+  }
+  return { txs, error };
+}
+
+/**
+ * Broadcast a fully witnessed chain, in order. `onSubmitted` fires per
+ * transaction as it lands, so a run interrupted partway still records what did
+ * go out — those transactions are self-contained by construction, since a chain
+ * is only ever built forwards.
+ */
+export async function submitChain(
+  api: Cip30Api,
+  built: readonly BuiltTx[],
+  onSubmitted: (tx: BuiltTx) => void,
+): Promise<void> {
+  for (const tx of built) {
+    await api.submitTx(tx.txCbor);
+    onSubmitted(tx);
   }
 }
