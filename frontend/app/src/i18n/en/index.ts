@@ -23,6 +23,7 @@
 import appError from "./appError";
 import bottomNav from "./bottomNav";
 import create from "./create";
+import directBanner from "./directBanner";
 import explore from "./explore";
 import feedback from "./feedback";
 import header from "./header";
@@ -41,6 +42,7 @@ const en = {
   appError,
   bottomNav,
   create,
+  directBanner,
   explore,
   feedback,
   header,

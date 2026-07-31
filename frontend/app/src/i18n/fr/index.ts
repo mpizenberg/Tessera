@@ -10,6 +10,7 @@ import type { Dict } from "../en";
 import appError from "./appError";
 import bottomNav from "./bottomNav";
 import create from "./create";
+import directBanner from "./directBanner";
 import explore from "./explore";
 import feedback from "./feedback";
 import header from "./header";
@@ -28,6 +29,7 @@ const fr: Dict = {
   appError,
   bottomNav,
   create,
+  directBanner,
   explore,
   feedback,
   header,

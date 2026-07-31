@@ -2,6 +2,7 @@ import { ErrorBoundary, lazy, type ParentComponent } from "solid-js";
 import { Route, Router } from "@solidjs/router";
 
 import { AppProvider } from "~/state";
+import { DirectModeBanner } from "~/ui/components/DirectModeBanner";
 import { Header } from "~/ui/components/Header";
 import { LoadError } from "~/ui/components/LoadError";
 import { Explore } from "~/ui/screens/Explore";
@@ -23,6 +24,7 @@ const DevWidgetHost = import.meta.env.DEV
 const Layout: ParentComponent = (props) => (
   <AppProvider>
     <Header />
+    <DirectModeBanner />
     {/* Last-resort safety net: a screen reading the snapshot accessor while it
         is in error state throws (Solid resource semantics). Without a boundary
         that surfaces as an uncaught rejection; here it becomes a recoverable
