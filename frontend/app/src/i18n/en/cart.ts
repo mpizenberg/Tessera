@@ -52,6 +52,8 @@ const cart = {
   queuedTitle: "Added to your cart",
   queuedBody:
     "It will be published with the rest of what you queued, batched into as few transactions as CIP-179 allows.",
+  queuedSurveyBody:
+    "It will be published with the rest of what you queued, batched into as few transactions as CIP-179 allows. A survey has no identity until its transaction is built, so this one cannot be found or answered before you publish it — and once you do, you can answer it straight away, without waiting for it to be confirmed.",
   queuedOpen: "Open the cart",
   signingTitle: "Your cart is being published",
   signingBody:

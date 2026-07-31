@@ -50,6 +50,8 @@ const cart: Messages = {
   queuedTitle: "Ajouté à votre panier",
   queuedBody:
     "Ce sera publié avec le reste de votre panier, regroupé en aussi peu de transactions que CIP-179 le permet.",
+  queuedSurveyBody:
+    "Ce sera publié avec le reste de votre panier, regroupé en aussi peu de transactions que CIP-179 le permet. Un sondage n'a pas d'identité tant que sa transaction n'est pas construite : celui-ci reste donc introuvable, et personne ne peut y répondre, tant que vous ne l'avez pas publié — une fois publié, vous pouvez y répondre aussitôt, sans attendre sa confirmation.",
   queuedOpen: "Ouvrir le panier",
   signingTitle: "Votre panier est en cours de publication",
   signingBody:

@@ -321,7 +321,10 @@ export const Create: Component = () => {
       fallback={
         <main class={css.singleColMain}>
           <BackLink />
-          <Show when={txHash()} fallback={<QueuedNote />}>
+          <Show
+            when={txHash()}
+            fallback={<QueuedNote body="cart.queuedSurveyBody" />}
+          >
             {(hash) => <SubmittedPanel hash={hash()} />}
           </Show>
         </main>

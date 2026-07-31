@@ -468,13 +468,17 @@ export const PublishLocked: Component = () => (
 /**
  * Shown by a screen that queued an action instead of publishing it — because
  * the cart already held something, or because the chain it built is still
- * waiting for a signature.
+ * waiting for a signature. A screen whose queued action needs saying more than
+ * that passes its own `body`.
  */
-export const QueuedNote: Component = () => {
+export const QueuedNote: Component<{ body?: MsgKey }> = (props) => {
   const app = useApp();
   return (
     <Show when={!app.cartLocked()} fallback={<PublishLocked />}>
-      <CartNote title="cart.queuedTitle" body="cart.queuedBody" />
+      <CartNote
+        title="cart.queuedTitle"
+        body={props.body ?? "cart.queuedBody"}
+      />
     </Show>
   );
 };
