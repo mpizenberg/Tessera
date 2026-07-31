@@ -20,6 +20,9 @@ import { For, Show, createSignal, type Component, type JSX } from "solid-js";
 
 import { useApp } from "~/state";
 import {
+  activateDirectMode,
+  deactivateDirectMode,
+  directModeUntil,
   envIndexerUrl,
   otherNetwork,
   otherNetworkUrl,
@@ -28,6 +31,7 @@ import {
   storeIndexerUrl,
   storedKoiosToken,
 } from "~/config";
+import { formatUnixDate } from "~/tlock/drand";
 import { IPFS_PROVIDERS } from "~/enrichment/providers";
 import { SegmentedToggle } from "~/ui/components/SegmentedToggle";
 import { LOCALES, locale, setLocale, t, n } from "~/i18n";
@@ -179,6 +183,21 @@ const KoiosSection: Component = () => {
     location.reload();
   };
 
+  // Emergency direct mode: only meaningful when a backend is configured
+  // underneath the stamp — a build with none is permanently direct and has
+  // nothing to revert to. Like the URL override, the mode is boot-time state,
+  // so both switches reload.
+  const configuredBackend = storedIndexerUrl() ?? envIndexerUrl();
+  const directUntil = directModeUntil();
+  const enterDirect = () => {
+    activateDirectMode();
+    location.reload();
+  };
+  const leaveDirect = () => {
+    deactivateDirectMode();
+    location.reload();
+  };
+
   return (
     <Section head={t("settings.koiosSectionHead")}>
       <h2 class={css.heading}>{t("settings.koiosHeading")}</h2>
@@ -274,6 +293,44 @@ const KoiosSection: Component = () => {
         </button>
       </div>
       <p class={css.prose}>{t("settings.indexerUrlHint")}</p>
+
+      <Show when={configuredBackend}>
+        <label class={css.tokenLabel}>{t("settings.directModeLabel")}</label>
+        <p class={css.prose}>{t("settings.directModeProse")}</p>
+        <Show
+          when={directUntil}
+          fallback={
+            <>
+              <div class={css.tokenRow}>
+                <button
+                  class={css.btnPrimary}
+                  classList={{ [css.btnPrimaryOn]: !!app.koiosToken() }}
+                  disabled={!app.koiosToken()}
+                  onClick={enterDirect}
+                >
+                  {t("settings.directModeActivate")}
+                </button>
+              </div>
+              <Show when={!app.koiosToken()}>
+                <p class={css.prose}>{t("settings.directModeNeedsToken")}</p>
+              </Show>
+            </>
+          }
+        >
+          {(until) => (
+            <div class={css.tokenRow}>
+              <span class={`${css.statusBadge} ${css.statusBadgeWarn}`}>
+                {t("settings.directModeActive", {
+                  time: formatUnixDate(Math.floor(until() / 1000)),
+                })}
+              </span>
+              <button class={css.btnGhost} onClick={leaveDirect}>
+                {t("settings.directModeDeactivate")}
+              </button>
+            </div>
+          )}
+        </Show>
+      </Show>
     </Section>
   );
 };

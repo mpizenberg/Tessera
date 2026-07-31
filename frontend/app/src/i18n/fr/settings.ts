@@ -35,7 +35,7 @@ const settings: Messages = {
   koiosSectionHead: "Réseau et source de données",
   koiosHeading: "Réseau et jeton Koios",
   koiosProse:
-    "La lecture et la construction des transactions passent par le backend Tessera par défaut : aucun jeton Koios n'est nécessaire (les transactions sont tout de même signées par votre portefeuille). Un jeton n'est utile que pour la voie Koios directe, employée en l'absence de backend — il sert alors à lire les données de la chaîne et à construire les transactions. Stocké uniquement dans ce navigateur ; appliqué à l'enregistrement. Chaque déploiement dessert un seul réseau.",
+    "La lecture et la construction des transactions passent par le backend Tessera par défaut : aucun jeton Koios n'est nécessaire (les transactions sont tout de même signées par votre portefeuille). Un jeton n'est utile que pour la voie Koios directe — le mode direct d'urgence ci-dessous, ou une version sans backend configuré — où il sert à lire les données de la chaîne et à construire les transactions. Stocké uniquement dans ce navigateur ; appliqué à l'enregistrement. Chaque déploiement dessert un seul réseau.",
   networkLabel: "Réseau",
   otherNetworkLink: "ouvrir l'application {network} ↗",
   dataSourceLabel: "Source de données",
@@ -55,6 +55,14 @@ const settings: Messages = {
   indexerUrlAria: "URL du backend Tessera",
   indexerUrlHint:
     "Remplace le backend intégré pour ce réseau, uniquement dans ce navigateur. Il doit desservir le même réseau — l'application vérifie et refuse un backend discordant. Enregistrer ou effacer recharge l'application.",
+  directModeLabel: "Mode direct d'urgence",
+  directModeProse:
+    "Si le backend est indisponible, ce navigateur peut continuer à participer en lisant la chaîne et en construisant les transactions directement via Koios, avec votre jeton. Les réponses affichées ainsi sont non vérifiées — les preuves d'identifiant et les poids de vote ne sont contrôlés qu'à la finalisation — et les résultats finalisés sont indisponibles. Le mode expire de lui-même après 24 heures ; votre jeton reste enregistré dans tous les cas.",
+  directModeActivate: "Lire via Koios pendant 24 h",
+  directModeActive: "Actif — retour au backend {time}",
+  directModeDeactivate: "Revenir au backend maintenant",
+  directModeNeedsToken:
+    "Enregistrez d'abord un jeton Koios ci-dessus — la lecture directe est impossible sans jeton.",
 
   // --- Display preferences section ---
   displaySectionHead: "Affichage",

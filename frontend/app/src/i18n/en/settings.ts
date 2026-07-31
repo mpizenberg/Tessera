@@ -31,7 +31,7 @@ const settings = {
   koiosSectionHead: "Network & data source",
   koiosHeading: "Network & Koios token",
   koiosProse:
-    "Reads and transaction-building both go through the Tessera backend by default, so no Koios token is needed (transactions are still signed by your wallet). A token is only for the direct-Koios path, used when no backend is configured — then it reads chain data and builds transactions. Stored only in this browser; applies on save. Each deployment serves a single network.",
+    "Reads and transaction-building both go through the Tessera backend by default, so no Koios token is needed (transactions are still signed by your wallet). A token is only for the direct-Koios path — emergency direct mode below, or a build with no backend configured — where it reads chain data and builds transactions. Stored only in this browser; applies on save. Each deployment serves a single network.",
   networkLabel: "Network",
   /** {network} is a network identifier (preview/mainnet), untranslated. */
   otherNetworkLink: "open the {network} app ↗",
@@ -52,6 +52,15 @@ const settings = {
   indexerUrlAria: "Tessera backend URL",
   indexerUrlHint:
     "Overrides the built-in backend for this network, in this browser only. It must serve the same network — the app checks and refuses a mismatched backend. Saving or clearing reloads the app.",
+  directModeLabel: "Emergency direct mode",
+  directModeProse:
+    "If the backend is down, this browser can keep participating by reading the chain and building transactions via Koios directly, with your token. Responses shown that way are unverified — credential proofs and voting weights are only checked at finalization — and finalized results are unavailable. The mode expires on its own after 24 hours; your token stays saved either way.",
+  directModeActivate: "Read via Koios for 24 h",
+  /** {time} is a local wall-clock datetime, e.g. "Jul 31, 2026, 14:05". */
+  directModeActive: "Active — the backend resumes {time}",
+  directModeDeactivate: "Back to the backend now",
+  directModeNeedsToken:
+    "Save a Koios token above first — direct reads are impossible without one.",
 
   // --- Display preferences section ---
   displaySectionHead: "Display",

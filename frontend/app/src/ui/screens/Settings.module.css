@@ -176,6 +176,13 @@
   border-color: var(--ok-line);
 }
 
+.statusBadgeWarn {
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-color: var(--warn-line);
+  text-transform: none;
+}
+
 /* ---- buttons -------------------------------------------------------------- */
 
 .btnPrimary {
