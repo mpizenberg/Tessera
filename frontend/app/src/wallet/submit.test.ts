@@ -459,6 +459,25 @@ describe("waiting for the wallet to catch up", () => {
     expect(w.calls.map((c) => c.kind)).toEqual(["sign"]);
   });
 
+  test("a wallet slow to answer gets the same deadline, not the same count", async () => {
+    vi.useFakeTimers();
+    let polls = 0;
+    const w = wallet(new Error("could not resolve"));
+    const api = {
+      ...w.api,
+      getUtxos: async () => {
+        polls++;
+        await new Promise((resolve) => setTimeout(resolve, 4_000));
+        return [];
+      },
+    } as unknown as Cip30Api;
+    const round = publish(api, [built([alice.hashHex], TX_B)]);
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect((await round).error).toContain(TX_B);
+    expect(polls).toBe(3); // ~10 s of four-second answers, not 21 of them
+  });
+
   test("a decline is still a decline, however far behind the wallet is", async () => {
     vi.useFakeTimers();
     const w = slowWallet([[]], { code: 2, info: "user declined" });

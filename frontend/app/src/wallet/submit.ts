@@ -510,7 +510,9 @@ const message = (e: unknown): string => {
 
 /**
  * How long a wallet is given to catch up with an input before it is asked to
- * sign anyway, and how often it is asked what it holds meanwhile.
+ * sign anyway, and how long to leave between one answer and the next question.
+ * The gap is not a rate: a wallet slow to answer `getUtxos` is asked less often
+ * rather than piled on, and is given the same ten seconds as a quick one.
  */
 const CATCH_UP_MS = 10_000;
 const CATCH_UP_POLL_MS = 500;
@@ -562,13 +564,13 @@ async function awaitCatchUp(
   const inputs = externalInputs(group);
   if (inputs.size === 0) return new Set();
 
-  const last = Math.ceil(CATCH_UP_MS / CATCH_UP_POLL_MS);
-  for (let poll = 0; ; poll++) {
+  const deadline = Date.now() + CATCH_UP_MS;
+  for (;;) {
     const held = await walletOutrefs(api);
     if (!held) return new Set();
     const behind = [...inputs].filter(([key]) => !held.has(key));
     if (behind.length === 0) return new Set();
-    if (poll === last) return new Set(behind.map(([, hash]) => hash));
+    if (Date.now() >= deadline) return new Set(behind.map(([, hash]) => hash));
     await new Promise((resolve) => setTimeout(resolve, CATCH_UP_POLL_MS));
   }
 }
