@@ -57,6 +57,18 @@ export interface Cip30Api {
   cip95?: {
     getPubDRepKey?(): Promise<string>;
   };
+  /**
+   * CIP-103 bulk signing, when the wallet granted the extension. One prompt for
+   * a list of transactions, which the wallet walks in order — so a transaction
+   * spending what an earlier one in the list produces resolves, before any of
+   * them has been submitted. Witness sets come back positionally; a refusal
+   * anywhere returns none of them.
+   */
+  cip103?: {
+    signTxs(
+      txs: readonly { cbor: string; partialSign: boolean }[],
+    ): Promise<string[]>;
+  };
 }
 
 export interface Cip30WalletEntry {

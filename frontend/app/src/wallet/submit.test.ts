@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import {
   Ed25519Signature,
@@ -89,8 +89,9 @@ function built([first, ...rest]: readonly [string, ...string[]]): BuiltTx {
 
 /** One call a wallet was asked to make, in the order it was asked. */
 interface Call {
-  readonly kind: "sign" | "submit";
-  readonly txCbor: string;
+  readonly kind: "sign" | "bulk" | "submit";
+  /** The transactions the call carried. */
+  readonly txs: readonly string[];
 }
 
 /** A wallet answering each prompt in turn, the last answer standing for the rest. */
@@ -101,17 +102,41 @@ function wallet(...answers: (string | Error)[]): {
   const calls: Call[] = [];
   const api = {
     signTx: async (txCbor: string) => {
-      calls.push({ kind: "sign", txCbor });
+      calls.push({ kind: "sign", txs: [txCbor] });
       const answer = answers.length > 1 ? answers.shift()! : answers[0]!;
       if (answer instanceof Error) throw answer;
       return answer;
     },
     submitTx: async (txCbor: string) => {
-      calls.push({ kind: "submit", txCbor });
+      calls.push({ kind: "submit", txs: [txCbor] });
       return TX_A;
     },
   } as unknown as Cip30Api;
   return { api, calls };
+}
+
+/**
+ * The same wallet, signing in bulk (CIP-103): `answer` is what the one prompt
+ * returns, `perTx` what it falls back to answering one at a time.
+ */
+function bulkWallet(
+  answer: string[] | Error | unknown,
+  ...perTx: (string | Error)[]
+): { api: Cip30Api; calls: Call[] } {
+  const { api, calls } = wallet(...perTx);
+  return {
+    api: {
+      ...api,
+      cip103: {
+        signTxs: async (txs: readonly { cbor: string }[]) => {
+          calls.push({ kind: "bulk", txs: txs.map((t) => t.cbor) });
+          if (Array.isArray(answer)) return answer as string[];
+          throw answer;
+        },
+      },
+    } as unknown as Cip30Api,
+    calls,
+  };
 }
 
 /** A round, with `sent` collecting what went out in the order it did. */
@@ -218,8 +243,8 @@ describe("publishing a chain", () => {
     const w = wallet(witnessSetHex(alice.vkey));
     const { sent } = await publish(w.api, [built([alice.hashHex])]);
 
-    expect(w.calls[1]!.txCbor).toBe(sent[0]!.txCbor);
-    expect(w.calls[1]!.txCbor).not.toBe(w.calls[0]!.txCbor);
+    expect(w.calls[1]!.txs).toEqual([sent[0]!.txCbor]);
+    expect(w.calls[1]!.txs).not.toEqual(w.calls[0]!.txs);
   });
 
   test("a transaction another wallet owes holds back the chain behind it", async () => {
@@ -256,5 +281,93 @@ describe("publishing a chain", () => {
     expect(sent).toEqual([]);
     expect(txs).toHaveLength(2);
     expect(txs[0]!.missing).toEqual([]); // signed, just not out
+  });
+});
+
+describe("signing a chain in bulk", () => {
+  const alice = signer(3);
+  const bob = signer(4);
+  const chain = () => [built([alice.hashHex]), built([bob.hashHex])];
+
+  // Falling back to one prompt per transaction warns; that is not the subject.
+  beforeEach(() => void vi.spyOn(console, "warn").mockImplementation(() => {}));
+  afterEach(() => vi.restoreAllMocks());
+
+  test("the whole chain is one prompt, and each witness finds its own", async () => {
+    const w = bulkWallet([witnessSetHex(alice.vkey), witnessSetHex(bob.vkey)]);
+    const { txs, error, sent } = await publish(w.api, chain());
+
+    expect(error).toBe(null);
+    expect(txs).toEqual([]);
+    expect(sent.map((tx) => tx.missing)).toEqual([[], []]);
+    expect(w.calls.map((c) => c.kind)).toEqual(["bulk", "submit", "submit"]);
+  });
+
+  test("what the wallet already witnessed is left out of the prompt", async () => {
+    const carol = signer(5);
+    const w = bulkWallet([witnessSetHex(alice.vkey), witnessSetHex(bob.vkey)]);
+    const [first, second] = chain();
+    await publish(w.api, [
+      { ...built([carol.hashHex]), missing: [] },
+      first!,
+      second!,
+    ]);
+
+    expect(w.calls[0]!.txs).toEqual([first!.txCbor, second!.txCbor]);
+  });
+
+  test("one outstanding transaction is not worth a bulk prompt", async () => {
+    const w = bulkWallet(new Error("unused"), witnessSetHex(alice.vkey));
+    await publish(w.api, [built([alice.hashHex])]);
+
+    expect(w.calls.map((c) => c.kind)).toEqual(["sign", "submit"]);
+  });
+
+  test("a wallet that cannot deliver is asked one transaction at a time", async () => {
+    const w = bulkWallet(
+      new Error("not implemented"),
+      witnessSetHex(alice.vkey),
+      witnessSetHex(bob.vkey),
+    );
+    const { txs, error } = await publish(w.api, chain());
+
+    expect(error).toBe(null);
+    expect(txs).toEqual([]);
+    expect(w.calls.map((c) => c.kind)).toEqual([
+      "bulk",
+      "sign",
+      "submit",
+      "sign",
+      "submit",
+    ]);
+  });
+
+  test("a short answer is not trusted to line up with the chain", async () => {
+    const w = bulkWallet(
+      [witnessSetHex(alice.vkey)],
+      witnessSetHex(alice.vkey),
+      witnessSetHex(bob.vkey),
+    );
+    const { error, sent } = await publish(w.api, chain());
+
+    expect(error).toBe(null);
+    expect(sent).toHaveLength(2);
+    expect(w.calls.map((c) => c.kind)).toEqual([
+      "bulk",
+      "sign",
+      "submit",
+      "sign",
+      "submit",
+    ]);
+  });
+
+  test("a declined prompt ends the round without asking again", async () => {
+    const w = bulkWallet({ code: 2, info: "user declined" });
+    const { txs, error, sent } = await publish(w.api, chain());
+
+    expect(error).toContain("declined");
+    expect(sent).toEqual([]);
+    expect(txs).toHaveLength(2);
+    expect(w.calls.map((c) => c.kind)).toEqual(["bulk"]);
   });
 });

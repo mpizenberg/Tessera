@@ -10,6 +10,7 @@ import { blake2b } from "@noble/hashes/blake2.js";
 import { bytesToHex, hexToBytes } from "cip-179/domain";
 import type {
   Cip30Api,
+  Cip30WalletEntry,
   ConnectedWallet,
   InstalledWallet,
   WalletCredential,
@@ -62,14 +63,16 @@ function drepCredentialFromKey(
 }
 
 /**
- * Did the wallet throw CIP-30 `APIError` code −3 ("Refused") — i.e. did the user
- * reject the prompt? Wallets throw loose objects rather than `Error`s, so the
- * shape is checked defensively.
+ * Did the wallet report the user saying no — CIP-30 `APIError.Refused` (−3) at
+ * connect, or `TxSignError.UserDeclined` (2) at signing? Neither code means
+ * anything else in the other's enum, so one predicate covers both prompts.
+ * Wallets throw loose objects rather than `Error`s, so the shape is checked
+ * defensively.
  */
-function isRefusal(e: unknown): boolean {
-  return (
-    typeof e === "object" && e !== null && (e as { code?: unknown }).code === -3
-  );
+export function isRefusal(e: unknown): boolean {
+  if (typeof e !== "object" || e === null) return false;
+  const { code } = e as { code?: unknown };
+  return code === -3 || code === 2;
 }
 
 const declined = (): Error =>
@@ -91,29 +94,43 @@ export async function isWalletEnabled(key: string): Promise<boolean> {
   }
 }
 
+/**
+ * Enable a wallet, asking for as many extensions as it will grant: CIP-95 for
+ * the DRep key, CIP-103 to sign a chain in one prompt. A wallet may reject the
+ * whole call over a single extension it doesn't implement, so each rung of the
+ * ladder drops what the one above couldn't get.
+ *
+ * A refusal is the user's answer to the connect prompt, not a verdict on an
+ * extension — asking again would prompt twice for the same thing. Unless the
+ * dApp is already authorized: then what was refused is the extension alone, and
+ * a plainer enable still runs without prompting, so a silent reconnect must not
+ * turn that into a disconnect.
+ */
+async function enableWallet(
+  key: string,
+  entry: Cip30WalletEntry,
+): Promise<Cip30Api> {
+  const ladder = [[{ cip: 95 }, { cip: 103 }], [{ cip: 95 }], []];
+  let last: unknown;
+  for (const extensions of ladder) {
+    try {
+      return await entry.enable(
+        extensions.length > 0 ? { extensions } : undefined,
+      );
+    } catch (e) {
+      last = e;
+      if (isRefusal(e) && !(await isWalletEnabled(key))) throw declined();
+    }
+  }
+  throw isRefusal(last) ? declined() : last;
+}
+
 /** Enable a wallet and read its identity (no signing performed). */
 export async function connectWallet(key: string): Promise<ConnectedWallet> {
   const entry = window.cardano?.[key];
   if (!entry) throw new Error(`Wallet "${key}" is not installed`);
 
-  // Request CIP-95 (DRep key); fall back to a plain enable if unsupported. A
-  // refusal is the user's answer to the connect prompt, not a missing
-  // extension — asking again would prompt twice for the same thing. Unless the
-  // dApp is already authorized: then what was refused is the CIP-95 extension
-  // alone, and a plain enable still runs without prompting (just no DRep key),
-  // so a silent reconnect must not turn that into a disconnect.
-  let api: Cip30Api;
-  try {
-    api = await entry.enable({ extensions: [{ cip: 95 }] });
-  } catch (e) {
-    if (isRefusal(e) && !(await isWalletEnabled(key))) throw declined();
-    try {
-      api = await entry.enable();
-    } catch (plain) {
-      throw isRefusal(plain) ? declined() : plain;
-    }
-  }
-
+  const api = await enableWallet(key, entry);
   const networkId = await api.getNetworkId();
   const changeHex = await api.getChangeAddress();
   const address = Address.fromHex(changeHex);

@@ -50,6 +50,7 @@ import { fromJsonSafe } from "cip-179/tally";
 
 import { expectedNetworkId, type AppConfig } from "~/config";
 import { metadatumToCbor, toTxMetadatum } from "./cbor";
+import { isRefusal } from "./cip30";
 import type { PlannedTx } from "./plan";
 import {
   descendantOutrefs,
@@ -474,8 +475,18 @@ export async function buildChain(
   return built;
 }
 
-const message = (e: unknown): string =>
-  e instanceof Error ? e.message : String(e);
+/**
+ * What a wallet threw, as something worth showing. CIP-30 errors are loose
+ * `{code, info}` objects rather than `Error`s, and stringifying one of those
+ * yields `[object Object]`.
+ */
+const message = (e: unknown): string => {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "object" && e !== null && "info" in e) {
+    return String((e as { info: unknown }).info);
+  }
+  return String(e);
+};
 
 /**
  * Offer one transaction to the connected wallet and merge back what it produces.
@@ -506,6 +517,54 @@ async function signOne(
 }
 
 /**
+ * Offer the whole chain in one prompt, to a wallet that granted CIP-103. It
+ * walks the list in order, so a transaction spending what an earlier one in the
+ * list produces resolves — which is what lets a chain be witnessed before any of
+ * it has been submitted. A single outstanding transaction is left alone: it is
+ * one prompt either way, and `signTx` is what every wallet implements.
+ *
+ * A decline ends the round; anything else falls back to one prompt per
+ * transaction, so a wallet advertising bulk signing it cannot actually perform
+ * is slower rather than unusable.
+ */
+async function bulkSign(
+  api: Cip30Api,
+  built: readonly BuiltTx[],
+): Promise<{
+  readonly txs: readonly BuiltTx[];
+  readonly error: string | null;
+}> {
+  const bulk = api.cip103;
+  const open = built.filter((tx) => tx.missing.length > 0);
+  if (!bulk || open.length < 2) return { txs: built, error: null };
+
+  try {
+    const witnesses = await bulk.signTxs(
+      open.map((tx) => ({ cbor: tx.txCbor, partialSign: true })),
+    );
+    if (witnesses.length !== open.length) {
+      throw new Error(
+        `wallet answered ${open.length} transactions with ${witnesses.length} witness sets`,
+      );
+    }
+    const signed = new Map(
+      open.map((tx, i) => [
+        tx,
+        withMissing({
+          ...tx,
+          txCbor: Transaction.addVKeyWitnessesHex(tx.txCbor, witnesses[i]!),
+        }),
+      ]),
+    );
+    return { txs: built.map((tx) => signed.get(tx) ?? tx), error: null };
+  } catch (e) {
+    if (isRefusal(e)) return { txs: built, error: message(e) };
+    console.warn(`bulk signing failed, falling back: ${message(e)}`);
+    return { txs: built, error: null };
+  }
+}
+
+/**
  * Sign and publish a chain as far as the connected wallet takes it.
  *
  * One pass, in order: a transaction is offered to the wallet if it still misses
@@ -513,7 +572,8 @@ async function signOne(
  * offered. That order is the wallet's requirement, not ours: it resolves every
  * input against its own view of the chain before it will sign, so a transaction
  * funded by its predecessor's change is unsignable until that predecessor has
- * gone out.
+ * gone out. {@link bulkSign} lifts that constraint where the wallet supports it,
+ * and then this pass finds nothing left to ask for.
  *
  * The pass stops at the first transaction left incomplete — another wallet owes
  * it a witness, and nothing behind it can be included without it — or at the
@@ -531,7 +591,10 @@ export async function signAndSubmitChain(
   readonly txs: readonly BuiltTx[];
   readonly error: string | null;
 }> {
-  const txs = [...built];
+  const bulk = await bulkSign(api, built);
+  if (bulk.error !== null) return bulk;
+
+  const txs = [...bulk.txs];
   let error: string | null = null;
   let sent = 0;
 
