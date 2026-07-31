@@ -34,7 +34,7 @@ import {
   type QuestionType,
 } from "~/domain/create";
 import { IPFS_PROVIDERS } from "~/enrichment/providers";
-import { hexToBytes, type ChainTip } from "cip-179/domain";
+import type { ChainTip } from "cip-179/domain";
 import {
   SubmitProgressModal,
   type SubmitStep,
@@ -281,29 +281,17 @@ export const Create: Component = () => {
       }
       setStepKey("submit");
       setBusyText(t("create.busySubmitting"));
-      const payload = encodePayload({
-        type: "definitions",
-        definitions: [definition],
-      });
       // Definitions must prove the owner credential (CIP-179 mechanism A) — the
-      // owner is what authorizes a later cancellation.
-      const hash = await app.submitMetadata(payload, [o]);
-      setTxHash(hash);
-      // Show the survey right away (the wallet accepted it, so it will land) and
-      // track inclusion to confirm. No reload — the optimistic copy is on-chain.
-      app.trackTx({
-        txHash: hash,
-        kind: "survey",
-        surveyKey: `${hash}:0`,
-        title: metaNow.title.trim() || undefined,
-      });
-      app.addOptimisticSurvey({
-        txHash: hash,
-        slot: 0, // unknown until indexed; not surfaced for a fresh survey
-        epochNo: 0, // likewise — replaced by the indexed record
-        ref: { txId: hexToBytes(hash), index: 0 },
-        definition,
-      });
+      // owner is what authorizes a later cancellation. The title is passed for
+      // the pending indicator because an external-content definition carries
+      // none on chain.
+      setTxHash(
+        await app.submitMetadata(
+          { type: "definitions", definitions: [definition] },
+          [o],
+          metaNow.title.trim() || undefined,
+        ),
+      );
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : String(e));
     } finally {

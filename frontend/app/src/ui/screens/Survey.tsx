@@ -15,7 +15,6 @@ import {
 import { A, useParams } from "@solidjs/router";
 import {
   SPEC_VERSION,
-  encodePayload,
   type AnswerItem,
   type Credential,
   type Question,
@@ -470,13 +469,12 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
     setCancelling(true);
     setError(null);
     try {
-      const payload = encodePayload({
-        type: "cancellations",
-        cancellations: [props.s.record.ref],
-      });
-      const h = await app.submitMetadata(payload, [def.owner]);
-      setHash(h);
-      app.trackTx({ txHash: h, kind: "cancel", surveyKey: props.s.key });
+      setHash(
+        await app.submitMetadata(
+          { type: "cancellations", cancellations: [props.s.record.ref] },
+          [def.owner],
+        ),
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

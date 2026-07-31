@@ -8,7 +8,12 @@ import {
 } from "solid-js";
 import { A, useLocation } from "@solidjs/router";
 
-import { useApp, type PendingKind, type PendingTx } from "~/state";
+import { useApp } from "~/state";
+import {
+  pendingKind,
+  type PendingKind,
+  type PendingTx,
+} from "~/wallet/pending";
 import { otherNetwork, otherNetworkUrl } from "~/config";
 import { networkMismatch, roleDescription, roleLabel } from "~/ui/format";
 import { TxLink } from "~/ui/components/TxLink";
@@ -33,7 +38,10 @@ export const Header: Component = () => {
   const loc = useLocation();
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [pendingOpen, setPendingOpen] = createSignal(false);
-  const anyPending = () => app.pendingTxs.some((p) => p.status === "pending");
+  // Entries stay projected after the user has been told about them; the
+  // indicator only shows the ones that are still news.
+  const announced = () => app.pendingTxs().filter((p) => p.status !== "done");
+  const anyPending = () => announced().some((p) => p.status === "pending");
   const active = (href: string) =>
     href === "/" ? loc.pathname === "/" : loc.pathname.startsWith(href);
 
@@ -105,7 +113,7 @@ export const Header: Component = () => {
         </nav>
 
         <div ref={actionsRef} class={`header-actions ${css.actions}`}>
-          <Show when={app.pendingTxs.length > 0}>
+          <Show when={announced().length > 0}>
             <div class={css.pendingAnchor}>
               <button
                 type="button"
@@ -124,8 +132,8 @@ export const Header: Component = () => {
                 >
                   <Spinner size={13} />
                 </Show>
-                <Show when={app.pendingTxs.length > 1}>
-                  <span class={css.pendingCount}>{app.pendingTxs.length}</span>
+                <Show when={announced().length > 1}>
+                  <span class={css.pendingCount}>{announced().length}</span>
                 </Show>
               </button>
               <Show when={pendingOpen()}>
@@ -133,11 +141,10 @@ export const Header: Component = () => {
                   <div class={css.menuHeading}>
                     {t("header.pendingTransactions")}
                   </div>
-                  <For each={app.pendingTxs}>
+                  <For each={announced()}>
                     {(p) => (
                       <PendingRow
                         p={p}
-                        onDismiss={() => app.dismissTx(p.txHash)}
                         onNavigate={() => setPendingOpen(false)}
                       />
                     )}
@@ -357,14 +364,30 @@ const CONFIRMED_TEXT: Record<PendingKind, MsgKey> = {
 /** One row in the pending-transactions dropdown. */
 const PendingRow: Component<{
   p: PendingTx;
-  onDismiss: () => void;
   onNavigate: () => void;
 }> = (props) => {
+  const app = useApp();
+  const [resubmitting, setResubmitting] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
   const confirmed = () => props.p.status === "confirmed";
+  const kind = () => pendingKind(props.p);
   const headline = () =>
     confirmed()
-      ? t(CONFIRMED_TEXT[props.p.kind])
-      : t("header.pendingHeadline", { label: t(PENDING_TEXT[props.p.kind]) });
+      ? t(CONFIRMED_TEXT[kind()])
+      : t("header.pendingHeadline", { label: t(PENDING_TEXT[kind()]) });
+
+  const resubmit = async (): Promise<void> => {
+    setResubmitting(true);
+    setError(null);
+    try {
+      await app.resubmitTx(props.p.txHash);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setResubmitting(false);
+    }
+  };
+
   return (
     <div class={css.pendingRow}>
       <div class={css.pendingRowHead}>
@@ -377,15 +400,19 @@ const PendingRow: Component<{
         >
           {headline()}
         </span>
-        <button
-          type="button"
-          onClick={() => props.onDismiss()}
-          title={t("header.dismiss")}
-          aria-label={t("header.dismiss")}
-          class={css.dismiss}
-        >
-          ×
-        </button>
+        {/* A pending tx holds real inputs, so it can only be rebroadcast or
+            explicitly forgotten below — never quietly waved away. */}
+        <Show when={confirmed()}>
+          <button
+            type="button"
+            onClick={() => app.dismissTx(props.p.txHash)}
+            title={t("header.dismiss")}
+            aria-label={t("header.dismiss")}
+            class={css.dismiss}
+          >
+            ×
+          </button>
+        </Show>
       </div>
       <Show when={props.p.title}>
         <div class={css.pendingRowSub}>{props.p.title}</div>
@@ -393,8 +420,32 @@ const PendingRow: Component<{
       <div class={css.pendingRowHash}>
         <TxLink hash={props.p.txHash} />
       </div>
-      <Show when={!confirmed() && props.p.slow}>
-        <div class={css.pendingRowSlow}>{t("header.pendingSlow")}</div>
+      <Show when={!confirmed() && props.p.stalled}>
+        <div class={css.pendingRowSlow}>
+          {t("header.stalled")} {t("header.stalledChoice")}
+        </div>
+        <div class={css.pendingRowActions}>
+          <button
+            type="button"
+            class={css.pendingAction}
+            disabled={resubmitting() || !app.wallet()}
+            onClick={() => void resubmit()}
+          >
+            {resubmitting()
+              ? t("header.rebroadcasting")
+              : t("header.rebroadcast")}
+          </button>
+          <button
+            type="button"
+            class={css.pendingActionDanger}
+            onClick={() => app.dropTx(props.p.txHash)}
+          >
+            {t("header.forget")}
+          </button>
+        </div>
+        <Show when={error()}>
+          <div class={css.pendingRowError}>{error()}</div>
+        </Show>
       </Show>
       <Show when={props.p.surveyKey}>
         <div class={css.pendingRowLinkWrap}>

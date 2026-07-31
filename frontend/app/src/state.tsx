@@ -57,9 +57,9 @@ import {
 import {
   aggregateSurveys,
   bytesToHex,
+  refKey,
   type ChainTip,
   type SurveyAggregate,
-  type SurveyRecord,
 } from "cip-179/domain";
 import { claimableRoles } from "~/domain/roles";
 import {
@@ -67,13 +67,26 @@ import {
   isWalletEnabled,
   listInstalledWallets,
 } from "~/wallet/cip30";
+import {
+  STALL_AFTER_MS,
+  loadPendingTxs,
+  payloadSurveyKey,
+  pendingSurveyRecords,
+  storePendingTxs,
+  type PendingTx,
+} from "~/wallet/pending";
 import type { ConnectedWallet, InstalledWallet } from "~/wallet/types";
 import {
   applyPresentation,
   parsePresentation,
 } from "~/enrichment/presentation";
 import { loadAllDocs, putDoc } from "~/enrichment/docStore";
-import type { Credential, Metadatum, SurveyDefinition } from "cip-179";
+import {
+  encodePayload,
+  type Cip179Payload,
+  type Credential,
+  type SurveyDefinition,
+} from "cip-179";
 
 /** What the eager list resource holds — the first page Explore renders from. */
 export interface SurveyList {
@@ -100,39 +113,14 @@ export interface UiState {
   pro: boolean;
 }
 
-/** What kind of submission a pending transaction carries. */
-export type PendingKind = "survey" | "response" | "cancel" | "govAction";
-
-/** A submitted transaction we're watching for block inclusion. */
-export interface PendingTx {
-  txHash: string;
-  kind: PendingKind;
-  /** Survey ref this tx concerns, for a contextual "View" link. */
-  surveyKey?: string | undefined;
-  /** Optional human label (e.g. the survey title) shown in the indicator. */
-  title?: string | undefined;
-  submittedAt: number;
-  status: "pending" | "confirmed";
-  /** Set once a tx has stayed unconfirmed long enough to look stuck. */
-  slow: boolean;
-}
-
-/** The caller-supplied fields when starting to track a tx. */
-export type NewPendingTx = Pick<
-  PendingTx,
-  "txHash" | "kind" | "surveyKey" | "title"
->;
-
 /**
  * Poll the data source for inclusion at this cadence while anything is pending.
  * (The `DataSource` seam — the indexer in the default deployment, Koios direct
  * otherwise — not Koios unconditionally.)
  */
 const POLL_INTERVAL_MS = 20_000;
-/** Keep a confirmed tx visible briefly before clearing it. */
+/** Keep a confirmed tx announced briefly before it stops being news. */
 const CONFIRMED_LINGER_MS = 6_000;
-/** After this long unconfirmed, flag a tx as slow (still polling). */
-const SLOW_AFTER_MS = 150_000;
 
 interface AppState {
   readonly config: AppConfig;
@@ -190,45 +178,66 @@ interface AppState {
   setActiveRole(role: number | null): void;
   /**
    * Build, sign, and submit a transaction carrying a label-17 payload using the
-   * connected wallet; resolves to the transaction hash. Throws if no wallet.
+   * connected wallet, and track it as pending; resolves to the transaction
+   * hash. Throws if no wallet.
    *
    * `proveCredentials` are added to `required_signers` for CIP-179 credential
-   * proof (e.g. the responder credential for a response).
+   * proof (e.g. the responder credential for a response). `title` is a display
+   * label for the pending indicator, for payloads whose on-chain form carries
+   * none (an external-content definition holds only an anchor).
    */
   submitMetadata(
-    payload: Metadatum,
+    payload: Cip179Payload,
     proveCredentials?: readonly Credential[],
+    title?: string,
   ): Promise<string>;
   /**
    * Build, sign, and submit a Conway governance **Info Action** proposal whose
    * anchor is the off-chain document at `anchorUrl` with blake2b-256
-   * `anchorDataHash`. Resolves to the transaction hash. Throws if no wallet.
-   * Used to advertise a CIP-179 survey from on-chain governance.
+   * `anchorDataHash`, and track it as pending; resolves to the transaction
+   * hash. Throws if no wallet. Used to advertise a CIP-179 survey from on-chain
+   * governance. The proposal carries no label-17 payload, so what it concerns
+   * has to be passed in for the pending indicator.
    */
   submitInfoAction(
     anchorUrl: string,
     anchorDataHash: Uint8Array,
+    display: {
+      readonly surveyKey: string | undefined;
+      readonly title: string | undefined;
+    },
   ): Promise<string>;
 
-  // --- pending transactions (optimistic confirmation) ---
-  /** Transactions submitted this session, awaiting (or just past) inclusion. */
-  readonly pendingTxs: readonly PendingTx[];
-  /** Start watching a just-submitted tx for block inclusion. */
-  trackTx(tx: NewPendingTx): void;
-  /** Stop showing a tracked tx (e.g. user dismisses it). */
+  // --- pending transactions (the local chain projection) ---
+  /**
+   * Transactions submitted from this browser that the chain hasn't shown yet.
+   * The single source both projections derive from: the wallet's projected UTxO
+   * set (inside `submitMetadata`/`submitInfoAction`) and the optimistic survey
+   * overlay below.
+   */
+  readonly pendingTxs: Accessor<readonly PendingTx[]>;
+  /** Stop announcing a tx; its projections stand until indexed data supersedes them. */
   dismissTx(txHash: string): void;
   /**
-   * Surveys shown immediately on creation, before the indexer catches up. The
-   * wallet already accepted the tx, so the freshly-built definition is what
-   * will be on-chain; entries are pruned once the real record indexes.
+   * Broadcast a stalled transaction's stored bytes again — same signature, same
+   * hash, so a copy still alive in some mempool is unaffected — and restart its
+   * stall clock. Throws what the wallet reports.
+   */
+  resubmitTx(txHash: string): Promise<void>;
+  /**
+   * Forget a transaction, dropping its projections with it. This cancels
+   * nothing: a submitted transaction can still be included afterwards.
+   */
+  dropTx(txHash: string): void;
+  /**
+   * Surveys shown immediately on creation, before the indexer catches up —
+   * decoded from the pending set's own payloads. The wallet already accepted
+   * those transactions, so their definitions are what will be on-chain.
    */
   readonly optimisticSurveys: Accessor<readonly SurveyAggregate[]>;
-  /** Add a just-published survey to the optimistic set (built from its record). */
-  addOptimisticSurvey(record: SurveyRecord): void;
   /**
-   * Keys of optimistic surveys whose defining tx has stayed unconfirmed past
-   * the slow threshold — surfaced as "not yet on-chain" instead of deleted
-   * (mempool eviction means the tx may never land).
+   * Keys of optimistic surveys whose defining tx has stalled — surfaced as
+   * "not yet on-chain" instead of deleted (nothing guarantees the tx lands).
    */
   readonly optimisticStuck: Accessor<ReadonlySet<string>>;
   /**
@@ -419,31 +428,32 @@ export const AppProvider: ParentComponent = (props) => {
     setIpfsTokensStore(id, trimmed || undefined);
   };
 
-  // Pending-tx tracking. A CIP-30-accepted tx almost always lands (no input
-  // conflict), so we poll the data source only to flip the indicator
-  // pending → confirmed — never to refetch the snapshot. But "almost": mempool
-  // eviction exists, so an optimistic entry is a claim with a deadline, not a
-  // fact — see `optimisticStuck`.
-  const [pendingTxs, setPendingTxs] = createStore<PendingTx[]>([]);
-  const [optimisticSurveys, setOptimisticSurveys] = createSignal<
-    readonly SurveyAggregate[]
-  >([]);
-  // Records published before the list (and its tip) has loaded — aggregation
-  // needs the tip, so hold them here and drain once it resolves (finding 14).
-  const [pendingOptimistic, setPendingOptimistic] = createSignal<
-    readonly SurveyRecord[]
-  >([]);
+  // The pending set: transactions this browser submitted and the chain hasn't
+  // shown yet, restored from the last session. A CIP-30-accepted tx almost
+  // always lands, so polling exists only to flip pending → confirmed, never to
+  // refetch the snapshot. But "almost": nothing guarantees inclusion, which is
+  // what the stall clock (`STALL_AFTER_MS`) and `optimisticStuck` are for.
+  const [pendingTxs, setPendingTxs] =
+    createSignal<readonly PendingTx[]>(loadPendingTxs());
+  createEffect(() => storePendingTxs(pendingTxs()));
 
-  const trackTx = (tx: NewPendingTx): void =>
+  const trackTx = (tx: PendingTx): void => {
     setPendingTxs((prev) => [
-      { ...tx, submittedAt: Date.now(), status: "pending", slow: false },
+      tx,
       ...prev.filter((p) => p.txHash !== tx.txHash),
     ]);
-  const dismissTx = (txHash: string): void =>
+  };
+  const updateTx = (txHash: string, patch: Partial<PendingTx>): void => {
+    setPendingTxs((prev) =>
+      prev.map((p) => (p.txHash === txHash ? { ...p, ...patch } : p)),
+    );
+  };
+  const dropTx = (txHash: string): void => {
     setPendingTxs((prev) => prev.filter((p) => p.txHash !== txHash));
+  };
 
   const pollPending = async (): Promise<void> => {
-    const open = pendingTxs.filter((p) => p.status === "pending");
+    const open = pendingTxs().filter((p) => p.status === "pending");
     if (open.length === 0) return;
     let statuses: Map<string, number | null>;
     try {
@@ -455,59 +465,68 @@ export const AppProvider: ParentComponent = (props) => {
     for (const p of open) {
       const conf = statuses.get(p.txHash);
       if (conf != null && conf > 0) {
-        setPendingTxs((x) => x.txHash === p.txHash, "status", "confirmed");
-        setTimeout(() => dismissTx(p.txHash), CONFIRMED_LINGER_MS);
-      } else if (!p.slow && now - p.submittedAt > SLOW_AFTER_MS) {
-        setPendingTxs((x) => x.txHash === p.txHash, "slow", true);
+        updateTx(p.txHash, { status: "confirmed" });
+        setTimeout(
+          () => updateTx(p.txHash, { status: "done" }),
+          CONFIRMED_LINGER_MS,
+        );
+      } else if (!p.stalled && now - p.submittedAt > STALL_AFTER_MS) {
+        updateTx(p.txHash, { stalled: true });
       }
     }
   };
 
-  // A single poller, alive only while something is pending. The effect re-runs
-  // when the list changes (a confirm/dismiss), resetting the interval — fine.
+  // A single poller, alive only while something is pending. It also reconciles
+  // the restored set: a tx that landed while the app was closed is confirmed on
+  // the first tick. The effect re-runs when the set changes, resetting the
+  // interval — fine.
   createEffect(() => {
-    if (!pendingTxs.some((p) => p.status === "pending")) return;
+    if (!pendingTxs().some((p) => p.status === "pending")) return;
     void pollPending();
     const id = setInterval(() => void pollPending(), POLL_INTERVAL_MS);
     onCleanup(() => clearInterval(id));
   });
 
-  const recordKey = (r: SurveyRecord): string =>
-    `${bytesToHex(r.ref.txId)}:${r.ref.index}`;
-
-  const aggregateOptimistic = (record: SurveyRecord, tip: ChainTip): void => {
-    const [agg] = aggregateSurveys(
-      { surveys: [record], responses: [], cancellations: [] },
-      tip,
-    );
-    if (!agg) return;
-    setOptimisticSurveys((prev) => [
-      agg,
-      ...prev.filter((p) => p.key !== agg.key),
-    ]);
-  };
-
-  const addOptimisticSurvey = (record: SurveyRecord): void => {
-    const tip = list()?.tip;
-    if (!tip) {
-      // No tip yet — queue so the success receipt's "View survey" link and
-      // Explore don't miss the just-published survey until the next refresh.
-      setPendingOptimistic((prev) => [
-        record,
-        ...prev.filter((r) => recordKey(r) !== recordKey(record)),
-      ]);
-      return;
-    }
-    aggregateOptimistic(record, tip);
-  };
-
-  // Drain queued optimistic records once the list (and its tip) resolves.
+  // An entry that is done being announced lives exactly as long as its overlay:
+  // a published definition's optimistic survey stands until the indexer serves
+  // the real record. Entries publishing nothing (responses, cancellations,
+  // governance proposals) have no overlay to outlive, so they go at once.
   createEffect(() => {
-    const tip = list()?.tip;
-    if (!tip || pendingOptimistic().length === 0) return;
-    const queued = pendingOptimistic();
-    setPendingOptimistic([]);
-    for (const record of queued) aggregateOptimistic(record, tip);
+    const indexed = new Set(
+      (list.error ? undefined : list())?.surveys.map((s) => s.key) ?? [],
+    );
+    setPendingTxs((prev) => {
+      const kept = prev.filter(
+        (p) =>
+          p.status !== "done" ||
+          pendingSurveyRecords(p).some((r) => !indexed.has(refKey(r.ref))),
+      );
+      return kept.length === prev.length ? prev : kept;
+    });
+  });
+
+  // The pending set's domain projection. Aggregation needs the tip, so this is
+  // empty until the list resolves — and fills itself in when it does, with no
+  // queue of records waiting on a tip that hasn't arrived.
+  const optimisticSurveys = createMemo<readonly SurveyAggregate[]>(() => {
+    const tip: ChainTip | undefined = (list.error ? undefined : list())?.tip;
+    if (!tip) return [];
+    const surveys = pendingTxs().flatMap(pendingSurveyRecords);
+    if (surveys.length === 0) return [];
+    return aggregateSurveys({ surveys, responses: [], cancellations: [] }, tip);
+  });
+
+  // Optimistic surveys whose defining tx has stalled: shown as "not yet
+  // on-chain" rather than silently deleted — the author needs the receipt to
+  // retry, and a quiet disappearance reads as data loss. The mark clears on its
+  // own, since inclusion confirms the tx and indexing evicts the entry.
+  const optimisticStuck = createMemo<ReadonlySet<string>>(() => {
+    const stuck = new Set<string>();
+    for (const p of pendingTxs()) {
+      if (p.status !== "pending" || !p.stalled) continue;
+      for (const r of pendingSurveyRecords(p)) stuck.add(refKey(r.ref));
+    }
+    return stuck;
   });
 
   // Content-addressed document cache (survey presentation docs), in two tiers:
@@ -543,33 +562,6 @@ export const AppProvider: ParentComponent = (props) => {
       return def; // a malformed cached doc never breaks the list
     }
   };
-
-  // Once the real indexed survey appears in the list, drop its optimistic twin.
-  createEffect(() => {
-    const surveys = list()?.surveys;
-    if (!surveys) return;
-    const realKeys = new Set(surveys.map((s) => s.key));
-    setOptimisticSurveys((prev) => prev.filter((a) => !realKeys.has(a.key)));
-  });
-
-  // Optimistic surveys whose defining tx has been unconfirmed long enough to
-  // look stuck (the tracker's `slow` clock): shown as "not yet on-chain" rather
-  // than silently deleted — the author needs the receipt to retry, and a quiet
-  // disappearance reads as data loss. The mark clears on its own: inclusion
-  // flips the tx to confirmed, and indexing evicts the optimistic twin above.
-  const optimisticStuck = createMemo<ReadonlySet<string>>(() => {
-    const stuck = new Set<string>();
-    for (const p of pendingTxs) {
-      if (
-        p.kind === "survey" &&
-        p.status === "pending" &&
-        p.slow &&
-        p.surveyKey
-      )
-        stuck.add(p.surveyKey);
-    }
-    return stuck;
-  });
 
   // (wallet signal is declared above the list resource — see there.)
   const [connecting, setConnecting] = createSignal(false);
@@ -688,35 +680,64 @@ export const AppProvider: ParentComponent = (props) => {
     },
     activeRole,
     setActiveRole,
-    submitMetadata: async (payload, proveCredentials = []) => {
+    submitMetadata: async (payload, proveCredentials = [], title) => {
       const w = wallet();
       if (!w) throw new Error("No wallet connected");
       // Lazy-load the evolution-sdk transaction builder so its weight is fetched
       // only when a user actually submits, not on first paint.
       const { submitMetadataTx } = await import("~/wallet/submit");
-      return submitMetadataTx(
+      const submitted = await submitMetadataTx(
         { ...config, koiosToken: koiosToken(), indexerUrl },
         w.api,
-        payload,
+        encodePayload(payload),
         proveCredentials,
+        pendingTxs(),
       );
+      trackTx({
+        ...submitted,
+        payload,
+        surveyKey: payloadSurveyKey(payload, submitted.txHash),
+        title,
+        submittedAt: Date.now(),
+        status: "pending",
+        stalled: false,
+      });
+      return submitted.txHash;
     },
-    submitInfoAction: async (anchorUrl, anchorDataHash) => {
+    submitInfoAction: async (anchorUrl, anchorDataHash, display) => {
       const w = wallet();
       if (!w) throw new Error("No wallet connected");
       const { submitInfoActionProposal } = await import("~/wallet/submit");
-      return submitInfoActionProposal(
+      const submitted = await submitInfoActionProposal(
         { ...config, koiosToken: koiosToken(), indexerUrl },
         w.api,
         anchorUrl,
         anchorDataHash,
+        pendingTxs(),
       );
+      trackTx({
+        ...submitted,
+        payload: undefined,
+        surveyKey: display.surveyKey,
+        title: display.title,
+        submittedAt: Date.now(),
+        status: "pending",
+        stalled: false,
+      });
+      return submitted.txHash;
     },
     pendingTxs,
-    trackTx,
-    dismissTx,
+    dismissTx: (txHash) => updateTx(txHash, { status: "done" }),
+    resubmitTx: async (txHash) => {
+      const w = wallet();
+      if (!w) throw new Error("No wallet connected");
+      const p = pendingTxs().find((x) => x.txHash === txHash);
+      if (!p) return;
+      await w.api.submitTx(p.txCbor);
+      updateTx(txHash, { submittedAt: Date.now(), stalled: false });
+    },
+    dropTx,
     optimisticSurveys,
-    addOptimisticSurvey,
     optimisticStuck,
     cachePresentationDoc,
     cachedPresentationDoc,

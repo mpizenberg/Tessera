@@ -668,16 +668,14 @@ export const Respond: Component = () => {
       }
       setStepKey("submit");
       setBusyText(t("respond.submitting"));
-      const payload = encodePayload({
-        type: "responses",
-        responses: [response],
-      });
       // Prove control of the responder credential via required_signers (CIP-179
       // credential proof) — e.g. forces the wallet to sign with the stake key
       // when responding as a Stakeholder, not just the payment key.
-      const hash = await app.submitMetadata(payload, [cred]);
-      setTxHash(hash);
-      app.trackTx({ txHash: hash, kind: "response", surveyKey: key() });
+      setTxHash(
+        await app.submitMetadata({ type: "responses", responses: [response] }, [
+          cred,
+        ]),
+      );
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : String(e));
     } finally {

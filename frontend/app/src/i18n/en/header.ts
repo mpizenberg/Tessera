@@ -22,7 +22,12 @@ const header = {
   confirmedResponse: "Response confirmed",
   confirmedCancel: "Survey cancelled",
   confirmedGovAction: "Governance action submitted",
-  pendingSlow: "Taking longer than usual — still pending.",
+  stalled: "No block has included this transaction in the last 10 minutes.",
+  stalledChoice:
+    "Broadcast it again, or forget it — forgetting only stops this app from tracking it, and the transaction can still be included later.",
+  rebroadcast: "Broadcast again",
+  rebroadcasting: "Broadcasting…",
+  forget: "Forget",
   viewSurvey: "View survey →",
 
   // Plain/Pro display-mode toggle.

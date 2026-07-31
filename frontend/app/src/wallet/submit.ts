@@ -27,6 +27,7 @@ import {
   KeyHash,
   RewardAccount,
   Transaction,
+  TransactionHash,
   TransactionInput,
   TransactionOutput,
   Url,
@@ -42,6 +43,7 @@ import { fromJsonSafe } from "cip-179/tally";
 
 import { expectedNetworkId, type AppConfig } from "~/config";
 import { toTxMetadatum } from "./cbor";
+import { outrefKey, projectOutrefs, type PendingTx } from "./pending";
 import type { Cip30Api } from "./types";
 
 /**
@@ -107,8 +109,85 @@ function cip30UtxoToCore(hex: string): UTxO.UTxO {
 }
 
 /**
+ * Addresses whose outputs count as this wallet's when a pending transaction is
+ * projected. Change always lands on `getChangeAddress`; the used-address list
+ * covers a wallet that rotated it between two builds. A wallet that refuses to
+ * enumerate them still gets its change projected.
+ */
+async function ownAddresses(
+  api: Cip30Api,
+  changeAddress: Address.Address,
+): Promise<Set<string>> {
+  const hexes = [Address.toHex(changeAddress)];
+  try {
+    for (const hex of (await api.getUsedAddresses()) ?? []) {
+      hexes.push(Address.toHex(Address.fromHex(hex)));
+    }
+  } catch {
+    // enumeration unsupported or refused — change address alone it is
+  }
+  return new Set(hexes);
+}
+
+/**
+ * The wallet's UTxO set as it will look once every pending transaction lands:
+ * the inputs they consume removed, the outputs they create at this wallet's
+ * addresses added. Two submits in a row therefore cannot select the same input,
+ * and a transaction can be funded from a predecessor's change before that
+ * predecessor confirms — whether or not the wallet tracks its own mempool.
+ */
+function projectUtxos(
+  walletUtxos: readonly UTxO.UTxO[],
+  pending: readonly PendingTx[],
+  own: ReadonlySet<string>,
+): UTxO.UTxO[] {
+  const produced = new Map<string, UTxO.UTxO>();
+  const flows = pending.map((p) => {
+    let body;
+    try {
+      ({ body } = Transaction.fromCBORHex(p.txCbor));
+    } catch {
+      // An entry we can't read projects nothing; the node still rejects a
+      // double spend, so this degrades the guarantee rather than the ledger.
+      console.warn(`pending tx ${p.txHash} is not decodable`);
+      return { spent: [], produced: [] };
+    }
+    const spent = body.inputs.map((i) =>
+      outrefKey(TransactionHash.toHex(i.transactionId), i.index),
+    );
+    const mine: string[] = [];
+    body.outputs.forEach((out, index) => {
+      if (!own.has(Address.toHex(out.address))) return;
+      const key = outrefKey(p.txHash, index);
+      mine.push(key);
+      produced.set(
+        key,
+        new UTxO.UTxO({
+          transactionId: TransactionHash.fromHex(p.txHash),
+          index: BigInt(index),
+          address: out.address,
+          assets: out.assets,
+          datumOption: out.datumOption,
+          scriptRef: undefined,
+        }),
+      );
+    });
+    return { spent, produced: mine };
+  });
+
+  const { drop, add } = projectOutrefs(walletUtxos.map(utxoOutref), flows);
+  return [
+    ...walletUtxos.filter((u) => !drop.has(utxoOutref(u))),
+    ...[...produced].filter(([key]) => add.has(key)).map(([, u]) => u),
+  ];
+}
+
+const utxoOutref = (u: UTxO.UTxO): string =>
+  outrefKey(TransactionHash.toHex(u.transactionId), u.index);
+
+/**
  * Shared build context: an evolution-sdk client wired to Koios and the connected
- * wallet (CIP-30), plus wallet-sourced UTxOs and change address so the build
+ * wallet (CIP-30), plus the projected UTxO set and change address so the build
  * never round-trips Koios for `/address_info`. When a serving tier is configured,
  * protocol parameters come from it and are passed to `build()` — the build then
  * makes no Koios call at all (the redeemer-free flows here never trigger script
@@ -120,7 +199,11 @@ function cip30UtxoToCore(hex: string): UTxO.UTxO {
  * snapshot. This is the last point before a transaction is built, so it is the
  * one check every submit path shares.
  */
-async function txContext(config: SubmitConfig, api: Cip30Api) {
+async function txContext(
+  config: SubmitConfig,
+  api: Cip30Api,
+  pending: readonly PendingTx[],
+) {
   if ((await api.getNetworkId()) !== expectedNetworkId(config.network)) {
     throw new Error(
       `Wallet is on a different network than the app (${config.network}). Switch networks in your wallet.`,
@@ -139,8 +222,12 @@ async function txContext(config: SubmitConfig, api: Cip30Api) {
     api as unknown as Parameters<typeof reader.withCip30>[0],
   );
   const utxoHexes = (await api.getUtxos()) ?? [];
-  const availableUtxos = utxoHexes.map(cip30UtxoToCore);
   const changeAddress = Address.fromHex(await api.getChangeAddress());
+  const availableUtxos = projectUtxos(
+    utxoHexes.map(cip30UtxoToCore),
+    pending,
+    await ownAddresses(api, changeAddress),
+  );
   // Serving-tier pparams (no Koios token needed); without a backend, leave it
   // undefined and the provider fetches them from Koios during build as before.
   const fullProtocolParameters = config.indexerUrl
@@ -163,14 +250,24 @@ function buildOpts(ctx: Awaited<ReturnType<typeof txContext>>) {
   };
 }
 
-/** Sign an unsigned tx with the wallet and submit it; returns the tx hash. */
+/**
+ * A transaction the wallet accepted. The signed bytes are returned alongside the
+ * hash because they are what the app projects the ledger from and what it
+ * rebroadcasts if the transaction stalls — see `./pending.ts`.
+ */
+export interface SubmittedTx {
+  readonly txHash: string;
+  readonly txCbor: string;
+}
+
+/** Sign an unsigned tx with the wallet and submit it. */
 async function signAndSubmit(
   api: Cip30Api,
   unsignedHex: string,
-): Promise<string> {
+): Promise<SubmittedTx> {
   const witnessHex = await api.signTx(unsignedHex, true);
-  const signedHex = Transaction.addVKeyWitnessesHex(unsignedHex, witnessHex);
-  return api.submitTx(signedHex);
+  const txCbor = Transaction.addVKeyWitnessesHex(unsignedHex, witnessHex);
+  return { txHash: await api.submitTx(txCbor), txCbor };
 }
 
 /**
@@ -187,9 +284,10 @@ export async function submitMetadataTx(
   config: SubmitConfig,
   api: Cip30Api,
   payload: Metadatum,
-  proveCredentials: readonly Credential[] = [],
-): Promise<string> {
-  const ctx = await txContext(config, api);
+  proveCredentials: readonly Credential[],
+  pending: readonly PendingTx[],
+): Promise<SubmittedTx> {
+  const ctx = await txContext(config, api, pending);
   const { client } = ctx;
 
   let tx = client.newTx().attachMetadata({
@@ -231,8 +329,9 @@ export async function submitInfoActionProposal(
   api: Cip30Api,
   anchorUrl: string,
   anchorDataHash: Uint8Array,
-): Promise<string> {
-  const ctx = await txContext(config, api);
+  pending: readonly PendingTx[],
+): Promise<SubmittedTx> {
+  const ctx = await txContext(config, api, pending);
   const { client } = ctx;
 
   const rewardHex = (await api.getRewardAddresses())?.[0];

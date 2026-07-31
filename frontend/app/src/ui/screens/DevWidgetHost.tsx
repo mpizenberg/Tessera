@@ -34,7 +34,12 @@ import {
   type JSX,
 } from "solid-js";
 import { A, useParams } from "@solidjs/router";
-import type { SurveyDefinition, SurveyRef, SurveyResponse } from "cip-179";
+import {
+  decodePayload,
+  type SurveyDefinition,
+  type SurveyRef,
+  type SurveyResponse,
+} from "cip-179";
 import { dedupeResponses, findSurvey } from "cip-179/domain";
 import { findPriorResponse } from "@tessera/respond-core";
 import type {
@@ -221,9 +226,9 @@ const DevWidgetHost: Component = () => {
     setSubmitError(null);
     try {
       const creds = r.proveCredentials.map((p) => p.credential);
-      const hash = await app.submitMetadata(r.payload, creds);
-      setTxHash(hash);
-      app.trackTx({ txHash: hash, kind: "response", surveyKey: key() });
+      // The widget emits an encoded metadatum; decoding it here is both what the
+      // pending set needs and a check that the host isn't relaying nonsense.
+      setTxHash(await app.submitMetadata(decodePayload(r.payload), creds));
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : String(e));
     } finally {

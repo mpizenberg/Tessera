@@ -21,7 +21,12 @@ const header: Messages = {
   confirmedResponse: "Réponse confirmée",
   confirmedCancel: "Sondage annulé",
   confirmedGovAction: "Action de gouvernance envoyée",
-  pendingSlow: "Plus long que d'habitude — toujours en attente.",
+  stalled: "Aucun bloc n'a inclus cette transaction depuis 10 minutes.",
+  stalledChoice:
+    "Diffusez-la à nouveau, ou oubliez-la — l'oublier empêche seulement cette application de la suivre, et la transaction peut encore être incluse plus tard.",
+  rebroadcast: "Diffuser à nouveau",
+  rebroadcasting: "Diffusion…",
+  forget: "Oublier",
   viewSurvey: "Voir le sondage →",
 
   // Plain/Pro display-mode toggle.

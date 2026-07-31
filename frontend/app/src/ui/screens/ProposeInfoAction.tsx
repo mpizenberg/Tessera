@@ -63,15 +63,13 @@ export const ProposeInfoAction: Component = () => {
     setBusy(true);
     setError(null);
     try {
-      const hash = await app.submitInfoAction(p.url, p.anchor.hash);
-      setTxHash(hash);
       const ref = p.surveyRef;
-      app.trackTx({
-        txHash: hash,
-        kind: "govAction",
-        surveyKey: ref ? `${ref.txId}:${ref.index}` : undefined,
-        title: p.linkedSurveyTitle,
-      });
+      setTxHash(
+        await app.submitInfoAction(p.url, p.anchor.hash, {
+          surveyKey: ref ? `${ref.txId}:${ref.index}` : undefined,
+          title: p.linkedSurveyTitle,
+        }),
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
