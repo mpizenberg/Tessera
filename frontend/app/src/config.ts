@@ -62,6 +62,7 @@ export function otherNetworkUrl(): string | undefined {
  */
 const koiosTokenKey = (): string => `tessera.koiosToken.${envNetwork()}`;
 const indexerUrlKey = (): string => `tessera.indexerUrl.${envNetwork()}`;
+const directSinceKey = (): string => `tessera.directSince.${envNetwork()}`;
 
 /** The CIP-30 key of the last connected wallet, if one was remembered. */
 export function storedLastWallet(): string | undefined {
@@ -149,13 +150,59 @@ export function storeIndexerUrl(url: string): void {
 }
 
 /**
+ * How long an emergency direct-mode activation lasts. The stamp *is* the
+ * toggle: while fresh the app bypasses the backend entirely; once stale it is
+ * inert and the serving tier resumes at the next load. Nobody lives in
+ * degraded mode by accident.
+ */
+export const DIRECT_MODE_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * When the emergency direct-mode activation expires (epoch ms), if one is
+ * currently in force. Undefined ⇒ no stamp, a stale stamp, or an unreadable
+ * one — all meaning the serving tier applies.
+ */
+export function directModeUntil(): number | undefined {
+  try {
+    const since = Number(localStorage.getItem(directSinceKey()));
+    const until = since + DIRECT_MODE_TTL_MS;
+    return since > 0 && Date.now() < until ? until : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Enter emergency direct mode: stamp now; expires after the TTL. */
+export function activateDirectMode(): void {
+  try {
+    localStorage.setItem(directSinceKey(), String(Date.now()));
+  } catch {
+    // storage unavailable — activation can't outlive the session anyway
+  }
+}
+
+/**
+ * Leave emergency direct mode. Removes only the stamp — the stored Koios
+ * token survives, so re-activating is one click, not a re-paste.
+ */
+export function deactivateDirectMode(): void {
+  try {
+    localStorage.removeItem(directSinceKey());
+  } catch {
+    // storage unavailable — nothing stamped
+  }
+}
+
+/**
  * The active Tier-1 backend URL: localStorage override → `VITE_INDEXER_URL`.
  * When defined, reads flow through the serving tier (`IndexerDataSource`); when
  * undefined, the app talks to Koios directly (`KoiosDataSource`) — the
- * power-user/offline path, and the escape hatch for verifying against chain.
- * A trailing slash is trimmed so route joins stay clean.
+ * emergency-participation path for a down backend, and the only mode of a
+ * build with no backend configured. A fresh emergency stamp overrides any
+ * configured URL. A trailing slash is trimmed so route joins stay clean.
  */
 export function resolveIndexerUrl(): string | undefined {
+  if (directModeUntil() !== undefined) return undefined;
   const url = storedIndexerUrl() ?? envIndexerUrl();
   return url ? url.replace(/\/+$/, "") : undefined;
 }
