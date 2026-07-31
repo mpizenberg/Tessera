@@ -134,8 +134,39 @@ describe("persistence", () => {
     expect(back?.txCbor).toBe("84a4");
   });
 
-  test("inclusion is re-checked, so entries come back pending", () => {
-    storePendingTxs([entry({ status: "confirmed" })]);
+  test("what the chain hadn't shown comes back to be re-checked", () => {
+    storePendingTxs([entry()]);
+    expect(loadPendingTxs(NOW)[0]?.status).toBe("pending");
+  });
+
+  test("what it had comes back done, and past any stall", () => {
+    storePendingTxs([
+      entry({ status: "confirmed", submittedAt: NOW - STALL_AFTER_MS - 1 }),
+    ]);
+    const [back] = loadPendingTxs(NOW);
+    expect(back?.status).toBe("done");
+    expect(back?.stalled).toBe(false);
+  });
+
+  test("an entry stored before inclusion was is re-checked", () => {
+    store.set(
+      KEY,
+      JSON.stringify([
+        {
+          txHash: TX,
+          txCbor: "84a4",
+          submittedAt: NOW,
+          actions: [
+            {
+              kind: "govAction",
+              proveCredentials: [],
+              anchorUrl: "ipfs://doc",
+              anchorDataHash: "00".repeat(32),
+            },
+          ],
+        },
+      ]),
+    );
     expect(loadPendingTxs(NOW)[0]?.status).toBe("pending");
   });
 

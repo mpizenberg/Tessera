@@ -19,6 +19,7 @@ import {
   createSignal,
   onCleanup,
   onMount,
+  untrack,
   useContext,
   type Accessor,
   type ParentComponent,
@@ -517,11 +518,15 @@ export const AppProvider: ParentComponent = (props) => {
 
   // A single poller, alive only while something is pending. It also reconciles
   // the restored set: a tx that landed while the app was closed is confirmed on
-  // the first tick. The effect re-runs when the set changes, resetting the
-  // interval — fine.
+  // the first tick. It tracks *whether* anything is pending and nothing else —
+  // reading the set would restart the interval, and fire another immediate
+  // poll, on every submission and every status flip.
+  const anyPending = createMemo(() =>
+    pendingTxs().some((p) => p.status === "pending"),
+  );
   createEffect(() => {
-    if (!pendingTxs().some((p) => p.status === "pending")) return;
-    void pollPending();
+    if (!anyPending()) return;
+    untrack(() => void pollPending());
     const id = setInterval(() => void pollPending(), POLL_INTERVAL_MS);
     onCleanup(() => clearInterval(id));
   });

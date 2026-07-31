@@ -193,21 +193,25 @@ export function descendantOutrefs(
 const storageKey = (): string => `tessera.pendingTxs.${envNetwork()}`;
 
 /**
- * The durable half of a {@link PendingTx}. Status and the stall flag are not
- * stored: inclusion is re-checked against the chain on the next poll, and the
- * stall clock runs from `submittedAt`.
+ * The durable half of a {@link PendingTx}. The stall flag is not stored — its
+ * clock runs from `submittedAt` — but inclusion is: asking the chain again
+ * about a transaction it has already shown can only get the same answer.
  */
 interface StoredPendingTx {
   readonly txHash: string;
   readonly txCbor: string;
   readonly submittedAt: number;
   readonly actions: readonly unknown[];
+  /** Whether the chain showed it before the app was last closed. */
+  readonly confirmed: boolean;
 }
 
 /**
  * Read the persisted set. Entries that no longer decode, or that are too old to
- * still be coming, are dropped; everything else comes back `pending` with its
- * stall clock still running from the original submission.
+ * still be coming, are dropped. What the chain had not shown comes back
+ * `pending`, with its stall clock still running from the original submission;
+ * what it had comes back `done` — not announced a second time, and not
+ * re-checked, but still projected until the indexer serves what it published.
  */
 export function loadPendingTxs(now: number = Date.now()): PendingTx[] {
   let raw: unknown;
@@ -245,13 +249,16 @@ function revive(entry: unknown, now: number): PendingTx | null {
   }
   if (actions.length === 0) return null;
 
+  // Absent in entries written before confirmation was stored: re-checking those
+  // costs one poll and settles them.
+  const confirmed = s.confirmed === true;
   return {
     txHash: s.txHash,
     txCbor: s.txCbor,
     actions,
     submittedAt: s.submittedAt,
-    status: "pending",
-    stalled: now - s.submittedAt > STALL_AFTER_MS,
+    status: confirmed ? "done" : "pending",
+    stalled: !confirmed && now - s.submittedAt > STALL_AFTER_MS,
   };
 }
 
@@ -271,5 +278,8 @@ function toStored(p: PendingTx): StoredPendingTx {
     txCbor: p.txCbor,
     submittedAt: p.submittedAt,
     actions: p.actions.map(encodeAction),
+    // Every status but `pending` is reached by the chain showing the
+    // transaction — dismissing a row is only offered once it has.
+    confirmed: p.status !== "pending",
   };
 }
