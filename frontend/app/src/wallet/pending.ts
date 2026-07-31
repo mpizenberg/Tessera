@@ -25,9 +25,7 @@ import { hexToBytes, refKey, type SurveyRecord } from "cip-179/domain";
 import { fromJsonSafe, toJsonSafe } from "cip-179/tally";
 
 import { envNetwork } from "~/config";
-
-/** What kind of submission a pending transaction carries. */
-export type PendingKind = "survey" | "response" | "cancel" | "govAction";
+import type { ActionKind } from "./plan";
 
 /**
  * `pending` until the chain shows it, `confirmed` while the user is told, then
@@ -69,7 +67,7 @@ export const STALL_AFTER_MS = 10 * 60_000;
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 /** Which kind of submission this is — a fact about the payload, not a tag. */
-export function pendingKind(p: PendingTx): PendingKind {
+export function pendingKind(p: PendingTx): ActionKind {
   switch (p.payload?.type) {
     case "definitions":
       return "survey";
@@ -129,6 +127,14 @@ export function outrefKey(txHash: string, index: number | bigint): string {
   return `${txHash}#${index}`;
 }
 
+/** What one in-flight transaction does to the wallet's UTxO set. */
+export interface TxFlow {
+  readonly txHash: string;
+  readonly spent: readonly string[];
+  /** Outrefs it creates at the wallet's own addresses — the rest are unspendable here. */
+  readonly produced: readonly string[];
+}
+
 /**
  * How a set of pending transactions rewrites a wallet's UTxO set: `drop` are
  * outrefs they consume, `add` are outrefs they create that the wallet doesn't
@@ -157,6 +163,41 @@ export function projectOutrefs(
     }
   }
   return { drop, add };
+}
+
+/**
+ * Outrefs that can exist only if `parentTxHash` is included: the outputs it
+ * creates, plus what transactions spending those create, and so on. Spending
+ * any one of them ties the spender's fate to the parent's.
+ *
+ * The walk has to be transitive because an intervening submission may already
+ * have consumed the parent's change — that submission then depends on the
+ * parent itself, so its own outputs carry the same guarantee.
+ */
+export function descendantOutrefs(
+  parentTxHash: string,
+  txs: readonly TxFlow[],
+): ReadonlySet<string> {
+  const reachable = new Set<string>();
+  for (const tx of txs) {
+    if (tx.txHash !== parentTxHash) continue;
+    for (const key of tx.produced) reachable.add(key);
+  }
+  // Fixpoint rather than one pass: the set is not held in dependency order.
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const tx of txs) {
+      if (!tx.spent.some((key) => reachable.has(key))) continue;
+      for (const key of tx.produced) {
+        if (!reachable.has(key)) {
+          reachable.add(key);
+          grew = true;
+        }
+      }
+    }
+  }
+  return reachable;
 }
 
 // --- persistence ------------------------------------------------------------

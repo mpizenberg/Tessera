@@ -75,18 +75,14 @@ import {
   storePendingTxs,
   type PendingTx,
 } from "~/wallet/pending";
+import { plan, type Action } from "~/wallet/plan";
 import type { ConnectedWallet, InstalledWallet } from "~/wallet/types";
 import {
   applyPresentation,
   parsePresentation,
 } from "~/enrichment/presentation";
 import { loadAllDocs, putDoc } from "~/enrichment/docStore";
-import {
-  encodePayload,
-  type Cip179Payload,
-  type Credential,
-  type SurveyDefinition,
-} from "cip-179";
+import type { SurveyDefinition } from "cip-179";
 
 /** What the eager list resource holds — the first page Explore renders from. */
 export interface SurveyList {
@@ -177,43 +173,21 @@ interface AppState {
   readonly activeRole: Accessor<number | null>;
   setActiveRole(role: number | null): void;
   /**
-   * Build, sign, and submit a transaction carrying a label-17 payload using the
-   * connected wallet, and track it as pending; resolves to the transaction
-   * hash. Throws if no wallet.
+   * Partition `actions` into transactions, then build, sign and submit them
+   * with the connected wallet, tracking each as pending. Resolves to their
+   * hashes in the order they were submitted. Throws if no wallet.
    *
-   * `proveCredentials` are added to `required_signers` for CIP-179 credential
-   * proof (e.g. the responder credential for a response). `title` is a display
-   * label for the pending indicator, for payloads whose on-chain form carries
-   * none (an external-content definition holds only an anchor).
+   * Anything about a survey whose definition is still in flight is chained onto
+   * that definition's transaction, so a response can never outlive the survey
+   * it answers.
    */
-  submitMetadata(
-    payload: Cip179Payload,
-    proveCredentials?: readonly Credential[],
-    title?: string,
-  ): Promise<string>;
-  /**
-   * Build, sign, and submit a Conway governance **Info Action** proposal whose
-   * anchor is the off-chain document at `anchorUrl` with blake2b-256
-   * `anchorDataHash`, and track it as pending; resolves to the transaction
-   * hash. Throws if no wallet. Used to advertise a CIP-179 survey from on-chain
-   * governance. The proposal carries no label-17 payload, so what it concerns
-   * has to be passed in for the pending indicator.
-   */
-  submitInfoAction(
-    anchorUrl: string,
-    anchorDataHash: Uint8Array,
-    display: {
-      readonly surveyKey: string | undefined;
-      readonly title: string | undefined;
-    },
-  ): Promise<string>;
+  submitActions(actions: readonly Action[]): Promise<readonly string[]>;
 
   // --- pending transactions (the local chain projection) ---
   /**
    * Transactions submitted from this browser that the chain hasn't shown yet.
    * The single source both projections derive from: the wallet's projected UTxO
-   * set (inside `submitMetadata`/`submitInfoAction`) and the optimistic survey
-   * overlay below.
+   * set (inside `submitActions`) and the optimistic survey overlay below.
    */
   readonly pendingTxs: Accessor<readonly PendingTx[]>;
   /** Stop announcing a tx; its projections stand until indexed data supersedes them. */
@@ -505,6 +479,19 @@ export const AppProvider: ParentComponent = (props) => {
     });
   });
 
+  // Surveys whose defining transaction is still in flight, mapped to it. The
+  // planner chains anything about one of them onto that transaction, so a
+  // response, cancellation or proposal cannot be included without the survey it
+  // concerns. Confirmed entries are left out: they are already on chain.
+  const definingTx = createMemo<ReadonlyMap<string, string>>(() => {
+    const map = new Map<string, string>();
+    for (const p of pendingTxs()) {
+      if (p.status !== "pending") continue;
+      for (const r of pendingSurveyRecords(p)) map.set(refKey(r.ref), p.txHash);
+    }
+    return map;
+  });
+
   // The pending set's domain projection. Aggregation needs the tip, so this is
   // empty until the list resolves — and fills itself in when it does, with no
   // queue of records waiting on a tip that hasn't arrived.
@@ -680,51 +667,40 @@ export const AppProvider: ParentComponent = (props) => {
     },
     activeRole,
     setActiveRole,
-    submitMetadata: async (payload, proveCredentials = [], title) => {
+    submitActions: async (actions) => {
       const w = wallet();
       if (!w) throw new Error("No wallet connected");
       // Lazy-load the evolution-sdk transaction builder so its weight is fetched
       // only when a user actually submits, not on first paint.
-      const { submitMetadataTx } = await import("~/wallet/submit");
-      const submitted = await submitMetadataTx(
+      const { payloadSize, submitChain } = await import("~/wallet/submit");
+      const txs = plan(actions, {
+        definingTx: definingTx(),
+        measure: payloadSize,
+      });
+      const hashes: string[] = [];
+      await submitChain(
         { ...config, koiosToken: koiosToken(), indexerUrl },
         w.api,
-        encodePayload(payload),
-        proveCredentials,
+        txs,
         pendingTxs(),
+        (submitted, planned) => {
+          hashes.push(submitted.txHash);
+          const { body } = planned;
+          trackTx({
+            ...submitted,
+            payload: body.type === "metadata" ? body.payload : undefined,
+            surveyKey:
+              body.type === "metadata"
+                ? payloadSurveyKey(body.payload, submitted.txHash)
+                : body.surveyKey,
+            title: planned.title,
+            submittedAt: Date.now(),
+            status: "pending",
+            stalled: false,
+          });
+        },
       );
-      trackTx({
-        ...submitted,
-        payload,
-        surveyKey: payloadSurveyKey(payload, submitted.txHash),
-        title,
-        submittedAt: Date.now(),
-        status: "pending",
-        stalled: false,
-      });
-      return submitted.txHash;
-    },
-    submitInfoAction: async (anchorUrl, anchorDataHash, display) => {
-      const w = wallet();
-      if (!w) throw new Error("No wallet connected");
-      const { submitInfoActionProposal } = await import("~/wallet/submit");
-      const submitted = await submitInfoActionProposal(
-        { ...config, koiosToken: koiosToken(), indexerUrl },
-        w.api,
-        anchorUrl,
-        anchorDataHash,
-        pendingTxs(),
-      );
-      trackTx({
-        ...submitted,
-        payload: undefined,
-        surveyKey: display.surveyKey,
-        title: display.title,
-        submittedAt: Date.now(),
-        status: "pending",
-        stalled: false,
-      });
-      return submitted.txHash;
+      return hashes;
     },
     pendingTxs,
     dismissTx: (txHash) => updateTx(txHash, { status: "done" }),

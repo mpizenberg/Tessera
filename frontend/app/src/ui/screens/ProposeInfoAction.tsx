@@ -64,12 +64,17 @@ export const ProposeInfoAction: Component = () => {
     setError(null);
     try {
       const ref = p.surveyRef;
-      setTxHash(
-        await app.submitInfoAction(p.url, p.anchor.hash, {
+      const [hash] = await app.submitActions([
+        {
+          kind: "govAction",
+          anchorUrl: p.url,
+          anchorDataHash: p.anchor.hash,
           surveyKey: ref ? `${ref.txId}:${ref.index}` : undefined,
           title: p.linkedSurveyTitle,
-        }),
-      );
+          proveCredentials: [],
+        },
+      ]);
+      setTxHash(hash ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

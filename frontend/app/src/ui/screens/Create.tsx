@@ -285,13 +285,15 @@ export const Create: Component = () => {
       // owner is what authorizes a later cancellation. The title is passed for
       // the pending indicator because an external-content definition carries
       // none on chain.
-      setTxHash(
-        await app.submitMetadata(
-          { type: "definitions", definitions: [definition] },
-          [o],
-          metaNow.title.trim() || undefined,
-        ),
-      );
+      const [hash] = await app.submitActions([
+        {
+          kind: "survey",
+          definition,
+          proveCredentials: [o],
+          title: metaNow.title.trim() || undefined,
+        },
+      ]);
+      setTxHash(hash ?? null);
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : String(e));
     } finally {

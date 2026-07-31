@@ -9,6 +9,7 @@ import { bytesToHex } from "cip-179/domain";
 
 import {
   STALL_AFTER_MS,
+  descendantOutrefs,
   loadPendingTxs,
   payloadSurveyKey,
   pendingKind,
@@ -90,6 +91,33 @@ describe("UTxO projection", () => {
     );
     expect(drop.has("t1#0")).toBe(true);
     expect([...add]).toEqual(["t2#0"]);
+  });
+});
+
+describe("what a transaction leaves to build on", () => {
+  const flows = [
+    { txHash: "t1", spent: ["a#0"], produced: ["t1#0"] },
+    { txHash: "t2", spent: ["t1#0"], produced: ["t2#0"] },
+    { txHash: "t3", spent: ["b#0"], produced: ["t3#0"] },
+  ];
+
+  test("its own outputs, and whatever they end up funding", () => {
+    expect([...descendantOutrefs("t1", flows)]).toEqual(["t1#0", "t2#0"]);
+  });
+
+  test("nothing an unrelated transaction made", () => {
+    expect(descendantOutrefs("t3", flows).has("t2#0")).toBe(false);
+  });
+
+  test("a transaction we know nothing about leaves nothing", () => {
+    expect(descendantOutrefs("t9", flows).size).toBe(0);
+  });
+
+  test("order of the set doesn't decide what is reachable", () => {
+    expect([...descendantOutrefs("t1", [...flows].reverse())].sort()).toEqual([
+      "t1#0",
+      "t2#0",
+    ]);
   });
 });
 

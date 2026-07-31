@@ -671,11 +671,10 @@ export const Respond: Component = () => {
       // Prove control of the responder credential via required_signers (CIP-179
       // credential proof) — e.g. forces the wallet to sign with the stake key
       // when responding as a Stakeholder, not just the payment key.
-      setTxHash(
-        await app.submitMetadata({ type: "responses", responses: [response] }, [
-          cred,
-        ]),
-      );
+      const [hash] = await app.submitActions([
+        { kind: "response", response, proveCredentials: [cred] },
+      ]);
+      setTxHash(hash ?? null);
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : String(e));
     } finally {

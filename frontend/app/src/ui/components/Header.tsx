@@ -9,11 +9,8 @@ import {
 import { A, useLocation } from "@solidjs/router";
 
 import { useApp } from "~/state";
-import {
-  pendingKind,
-  type PendingKind,
-  type PendingTx,
-} from "~/wallet/pending";
+import { pendingKind, type PendingTx } from "~/wallet/pending";
+import type { ActionKind } from "~/wallet/plan";
 import { otherNetwork, otherNetworkUrl } from "~/config";
 import { networkMismatch, roleDescription, roleLabel } from "~/ui/format";
 import { TxLink } from "~/ui/components/TxLink";
@@ -348,13 +345,13 @@ const RoleMenu: Component<{
   </>
 );
 
-const PENDING_TEXT: Record<PendingKind, MsgKey> = {
+const PENDING_TEXT: Record<ActionKind, MsgKey> = {
   survey: "header.pendingSurvey",
   response: "header.pendingResponse",
   cancel: "header.pendingCancel",
   govAction: "header.pendingGovAction",
 };
-const CONFIRMED_TEXT: Record<PendingKind, MsgKey> = {
+const CONFIRMED_TEXT: Record<ActionKind, MsgKey> = {
   survey: "header.confirmedSurvey",
   response: "header.confirmedResponse",
   cancel: "header.confirmedCancel",

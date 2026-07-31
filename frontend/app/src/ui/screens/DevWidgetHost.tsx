@@ -10,7 +10,7 @@
  * sole owner of the **real-on-chain** end-to-end test: without a wallet it shows
  * everything up to the emitted payload (logged in the side panel); with a CIP-30
  * wallet on a live network it runs the full sign-and-submit leg via
- * `app.submitMetadata` (the same write path the built-in Respond screen uses).
+ * `app.submitActions` (the same write path the built-in Respond screen uses).
  *
  * Registered only under `import.meta.env.DEV` (see App.tsx), so this second copy
  * of the answering UI never ships to production. The widget itself is consumed
@@ -50,6 +50,7 @@ import type {
 } from "@tessera/respond-widget";
 
 import { useApp } from "~/state";
+import { payloadActions } from "~/wallet/plan";
 import {
   respondableRoles,
   roleCredential,
@@ -228,7 +229,10 @@ const DevWidgetHost: Component = () => {
       const creds = r.proveCredentials.map((p) => p.credential);
       // The widget emits an encoded metadatum; decoding it here is both what the
       // pending set needs and a check that the host isn't relaying nonsense.
-      setTxHash(await app.submitMetadata(decodePayload(r.payload), creds));
+      const [hash] = await app.submitActions(
+        payloadActions(decodePayload(r.payload), creds),
+      );
+      setTxHash(hash ?? null);
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : String(e));
     } finally {

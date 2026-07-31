@@ -172,7 +172,7 @@ you prove them is yours:
 - **Mechanism A** — put the credential in the transaction's `required_signers`
   (or satisfy its native script in the witness set). Works for every role. This is
   the simple, always-available path, and what the reference host does via
-  `frontend/app/src/wallet/submit.ts` (`submitMetadataTx` adds each credential with
+  `frontend/app/src/wallet/submit.ts` (`buildTx` adds each credential with
   `tx.addSigner`).
 - **Mechanism B** (governance-linked surveys only) — the **same transaction**
   casts a qualifying **governance vote** with that very credential on one of the

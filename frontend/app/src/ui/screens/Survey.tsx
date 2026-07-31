@@ -469,12 +469,14 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
     setCancelling(true);
     setError(null);
     try {
-      setHash(
-        await app.submitMetadata(
-          { type: "cancellations", cancellations: [props.s.record.ref] },
-          [def.owner],
-        ),
-      );
+      const [hash] = await app.submitActions([
+        {
+          kind: "cancel",
+          cancellation: props.s.record.ref,
+          proveCredentials: [def.owner],
+        },
+      ]);
+      setHash(hash ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
