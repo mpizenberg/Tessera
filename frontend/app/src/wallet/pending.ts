@@ -15,17 +15,16 @@
  * account for their own in-flight spends.
  */
 
-import {
-  decodePayload,
-  encodePayload,
-  isMetadatum,
-  type Cip179Payload,
-} from "cip-179";
-import { hexToBytes, refKey, type SurveyRecord } from "cip-179/domain";
-import { fromJsonSafe, toJsonSafe } from "cip-179/tally";
+import { hexToBytes, type SurveyRecord } from "cip-179/domain";
 
 import { envNetwork } from "~/config";
-import type { ActionKind } from "./plan";
+import {
+  actionSurveyKey,
+  decodeAction,
+  encodeAction,
+  type Action,
+  type ActionKind,
+} from "./action";
 
 /**
  * `pending` until the chain shows it, `confirmed` while the user is told, then
@@ -39,12 +38,11 @@ export interface PendingTx {
   txHash: string;
   /** The signed transaction — resubmittable byte for byte while it stalls. */
   txCbor: string;
-  /** Its label-17 payload; a governance proposal carries none. */
-  payload: Cip179Payload | undefined;
-  /** Survey this transaction concerns, for a contextual "View" link. */
-  surveyKey: string | undefined;
-  /** Human label (a survey title) shown in the pending indicator. */
-  title: string | undefined;
+  /**
+   * What it publishes, never empty. Forgetting the transaction returns these to
+   * the cart, so they outlive it.
+   */
+  actions: readonly Action[];
   submittedAt: number;
   status: PendingStatus;
   /** Set once the transaction has stayed unconfirmed past {@link STALL_AFTER_MS}. */
@@ -66,60 +64,50 @@ export const STALL_AFTER_MS = 10 * 60_000;
  */
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
-/** Which kind of submission this is — a fact about the payload, not a tag. */
+/** Which kind of submission this is — a transaction carries only one. */
 export function pendingKind(p: PendingTx): ActionKind {
-  switch (p.payload?.type) {
-    case "definitions":
-      return "survey";
-    case "responses":
-      return "response";
-    case "cancellations":
-      return "cancel";
-    case undefined:
-      return "govAction";
-  }
+  return p.actions[0]!.kind;
+}
+
+/** The one action this transaction carries, when it carries exactly one. */
+function loneAction(p: PendingTx): Action | undefined {
+  return p.actions.length === 1 ? p.actions[0] : undefined;
+}
+
+/** Human label for the pending row — only a lone action lends the row its own. */
+export function pendingTitle(p: PendingTx): string | undefined {
+  return loneAction(p)?.title;
 }
 
 /**
- * The survey a payload concerns, when it concerns exactly one — what the
+ * The survey this transaction concerns, when it concerns exactly one — what the
  * pending row's "View survey" link points at. A batch spanning several surveys
- * has no single one to point at.
+ * has no single one to point at; a definition names the transaction publishing
+ * it, which is this one.
  */
-export function payloadSurveyKey(
-  payload: Cip179Payload,
-  txHash: string,
-): string | undefined {
-  switch (payload.type) {
-    case "definitions":
-      return payload.definitions.length === 1 ? `${txHash}:0` : undefined;
-    case "responses": {
-      const only = payload.responses.length === 1 ? payload.responses[0] : null;
-      return only ? refKey(only.surveyRef) : undefined;
-    }
-    case "cancellations": {
-      const only =
-        payload.cancellations.length === 1 ? payload.cancellations[0] : null;
-      return only ? refKey(only) : undefined;
-    }
-  }
+export function pendingSurveyKey(p: PendingTx): string | undefined {
+  const only = loneAction(p);
+  if (!only) return undefined;
+  return only.kind === "survey" ? `${p.txHash}:0` : actionSurveyKey(only);
 }
 
 /**
- * The survey records a pending definitions payload will put on chain — the
- * domain projection Explore and the survey screens overlay on indexed data.
- * Empty for every other kind.
+ * The survey records this transaction will put on chain — the domain projection
+ * Explore and the survey screens overlay on indexed data. Empty for every kind
+ * but a definition.
  */
 export function pendingSurveyRecords(p: PendingTx): SurveyRecord[] {
-  if (p.payload?.type !== "definitions") return [];
-  return p.payload.definitions.map((definition, index) => ({
-    txHash: p.txHash,
-    // Slot and epoch are unknown until the transaction is indexed; neither is
-    // surfaced for a freshly published survey.
-    slot: 0,
-    epochNo: 0,
-    ref: { txId: hexToBytes(p.txHash), index },
-    definition,
-  }));
+  return p.actions
+    .filter((a) => a.kind === "survey")
+    .map((a, index) => ({
+      txHash: p.txHash,
+      // Slot and epoch are unknown until the transaction is indexed; neither is
+      // surfaced for a freshly published survey.
+      slot: 0,
+      epochNo: 0,
+      ref: { txId: hexToBytes(p.txHash), index },
+      definition: a.definition,
+    }));
 }
 
 /** `"<txHash>#<index>"` — how UTxOs are matched across wallet and projection. */
@@ -213,14 +201,7 @@ interface StoredPendingTx {
   readonly txHash: string;
   readonly txCbor: string;
   readonly submittedAt: number;
-  readonly surveyKey?: string;
-  readonly title?: string;
-  /**
-   * The label-17 metadatum as submitted, `toJsonSafe`-encoded. Stored in its
-   * on-chain form rather than as a decoded payload so reading it back runs the
-   * same codec (and the same validation) as reading it off the chain.
-   */
-  readonly payload?: unknown;
+  readonly actions: readonly unknown[];
 }
 
 /**
@@ -252,23 +233,22 @@ function revive(entry: unknown, now: number): PendingTx | null {
   if (typeof s.txHash !== "string" || typeof s.txCbor !== "string") return null;
   if (typeof s.submittedAt !== "number") return null;
   if (now - s.submittedAt > MAX_AGE_MS) return null;
+  if (!Array.isArray(s.actions)) return null;
 
-  let payload: Cip179Payload | undefined;
-  if (s.payload !== undefined) {
-    try {
-      const metadatum = fromJsonSafe(s.payload);
-      if (!isMetadatum(metadatum)) return null;
-      payload = decodePayload(metadatum);
-    } catch {
-      return null;
-    }
+  const actions: Action[] = [];
+  for (const raw of s.actions) {
+    const action = decodeAction(raw);
+    // Half a transaction's contents would misreport what it publishes, and the
+    // half that survived would come back to the cart alone if it were forgotten.
+    if (!action) return null;
+    actions.push(action);
   }
+  if (actions.length === 0) return null;
+
   return {
     txHash: s.txHash,
     txCbor: s.txCbor,
-    payload,
-    surveyKey: typeof s.surveyKey === "string" ? s.surveyKey : undefined,
-    title: typeof s.title === "string" ? s.title : undefined,
+    actions,
     submittedAt: s.submittedAt,
     status: "pending",
     stalled: now - s.submittedAt > STALL_AFTER_MS,
@@ -290,10 +270,6 @@ function toStored(p: PendingTx): StoredPendingTx {
     txHash: p.txHash,
     txCbor: p.txCbor,
     submittedAt: p.submittedAt,
-    ...(p.surveyKey !== undefined && { surveyKey: p.surveyKey }),
-    ...(p.title !== undefined && { title: p.title }),
-    ...(p.payload !== undefined && {
-      payload: toJsonSafe(encodePayload(p.payload)),
-    }),
+    actions: p.actions.map(encodeAction),
   };
 }

@@ -10,7 +10,7 @@
  * sole owner of the **real-on-chain** end-to-end test: without a wallet it shows
  * everything up to the emitted payload (logged in the side panel); with a CIP-30
  * wallet on a live network it runs the full sign-and-submit leg via
- * `app.submitActions` (the same write path the built-in Respond screen uses).
+ * `app.submitOrQueue` (the same write path the built-in Respond screen uses).
  *
  * Registered only under `import.meta.env.DEV` (see App.tsx), so this second copy
  * of the answering UI never ships to production. The widget itself is consumed
@@ -50,7 +50,7 @@ import type {
 } from "@tessera/respond-widget";
 
 import { useApp } from "~/state";
-import { payloadActions } from "~/wallet/plan";
+import { payloadActions } from "~/wallet/action";
 import {
   respondableRoles,
   roleCredential,
@@ -59,6 +59,7 @@ import {
 import { usePresentation } from "~/enrichment/usePresentation";
 import { networkMismatch, shortRef } from "~/ui/format";
 import { TxLink } from "~/ui/components/TxLink";
+import { QueuedNote } from "~/ui/components/CartDrawer";
 import { locale } from "~/i18n";
 import css from "./DevWidgetHost.module.css";
 
@@ -186,6 +187,7 @@ const DevWidgetHost: Component = () => {
   const [invalid, setInvalid] = createSignal<RespondInvalidDetail | null>(null);
   const [result, setResult] = createSignal<RespondResult | null>(null);
   const [txHash, setTxHash] = createSignal<string | null>(null);
+  const [queued, setQueued] = createSignal(false);
   const [submitError, setSubmitError] = createSignal<string | null>(null);
   const [submitting, setSubmitting] = createSignal(false);
 
@@ -229,10 +231,11 @@ const DevWidgetHost: Component = () => {
       const creds = r.proveCredentials.map((p) => p.credential);
       // The widget emits an encoded metadatum; decoding it here is both what the
       // pending set needs and a check that the host isn't relaying nonsense.
-      const [hash] = await app.submitActions(
+      const hashes = await app.submitOrQueue(
         payloadActions(decodePayload(r.payload), creds),
       );
-      setTxHash(hash ?? null);
+      if (hashes) setTxHash(hashes[0] ?? null);
+      else setQueued(true);
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -273,8 +276,12 @@ const DevWidgetHost: Component = () => {
         }
       >
         <Show
-          when={txHash() === null}
-          fallback={<Submitted hash={txHash()!} surveyKey={key()} />}
+          when={txHash() === null && !queued()}
+          fallback={
+            <Show when={txHash()} fallback={<QueuedNote />}>
+              {(hash) => <Submitted hash={hash()} surveyKey={key()} />}
+            </Show>
+          }
         >
           <div class={css.controls}>
             <span class={css.controlsLabel}>Layout</span>

@@ -66,6 +66,7 @@ import { OnchainPreview } from "~/ui/components/OnchainPreview";
 import { ErrorBox, ProblemList } from "~/ui/components/Feedback";
 import { SegmentedToggle } from "~/ui/components/SegmentedToggle";
 import { TxLink } from "~/ui/components/TxLink";
+import { QueuedNote } from "~/ui/components/CartDrawer";
 import {
   SubmitProgressModal,
   type SubmitStep,
@@ -82,6 +83,7 @@ import {
   shortRef,
   viewStatus,
 } from "~/ui/format";
+import type { Action } from "~/wallet/action";
 import { type WalletIdentity } from "~/wallet/types";
 import { locale, t, n } from "~/i18n";
 import { problemText } from "~/i18n/problem";
@@ -394,6 +396,10 @@ export const Respond: Component = () => {
   const [problems, setProblems] = createSignal<string[]>([]);
   const [submitError, setSubmitError] = createSignal<string | null>(null);
   const [txHash, setTxHash] = createSignal<string | null>(null);
+  const [queued, setQueued] = createSignal(false);
+  // With something already waiting, submitting this response would publish that
+  // too — so the button queues instead, and the cart is where it all goes out.
+  const queueing = (): boolean => app.cart().length > 0;
 
   // Optional voter rationale (Pro): an off-chain doc, hash-anchored on the
   // response (CIP-179 key 5). Either *write* it (the app pins it to your IPFS
@@ -587,7 +593,7 @@ export const Respond: Component = () => {
     return steps;
   });
 
-  const onSubmit = async () => {
+  const onSubmit = async (queueOnly: boolean) => {
     const def = definition();
     const s = survey();
     const r = role();
@@ -671,10 +677,20 @@ export const Respond: Component = () => {
       // Prove control of the responder credential via required_signers (CIP-179
       // credential proof) — e.g. forces the wallet to sign with the stake key
       // when responding as a Stakeholder, not just the payment key.
-      const [hash] = await app.submitActions([
-        { kind: "response", response, proveCredentials: [cred] },
-      ]);
-      setTxHash(hash ?? null);
+      const action: Action = {
+        kind: "response",
+        response,
+        proveCredentials: [cred],
+        title: def.title || undefined,
+      };
+      if (queueOnly) {
+        app.enqueue([action]);
+        setQueued(true);
+        return;
+      }
+      const hashes = await app.submitOrQueue([action]);
+      if (hashes) setTxHash(hashes[0] ?? null);
+      else setQueued(true);
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -714,8 +730,12 @@ export const Respond: Component = () => {
       >
         {(s) => (
           <Show
-            when={txHash() === null}
-            fallback={<SubmittedPanel hash={txHash()!} surveyKey={key()} />}
+            when={txHash() === null && !queued()}
+            fallback={
+              <Show when={txHash()} fallback={<QueuedNote />}>
+                {(hash) => <SubmittedPanel hash={hash()} surveyKey={key()} />}
+              </Show>
+            }
           >
             <SurveyHeader
               s={s()}
@@ -822,6 +842,7 @@ export const Respond: Component = () => {
         when={
           survey() &&
           txHash() === null &&
+          !queued() &&
           (viewStatus(survey()!) === "public" ||
             viewStatus(survey()!) === "sealed") &&
           role() !== null
@@ -843,7 +864,9 @@ export const Respond: Component = () => {
               : t("respond.signAndSubmit")
           }
           busyText={busyText()}
-          onSubmit={() => void onSubmit()}
+          queueing={queueing()}
+          onSubmit={() => void onSubmit(false)}
+          onQueue={() => void onSubmit(true)}
         />
       </Show>
     </main>
@@ -1222,7 +1245,10 @@ const SubmitBar: Component<{
   network: string;
   idleText: string;
   busyText: string;
+  /** True when submitting would queue the response rather than sign it now. */
+  queueing: boolean;
   onSubmit: () => void;
+  onQueue: () => void;
 }> = (props) => {
   const ready = () =>
     props.decided >= props.total &&
@@ -1265,15 +1291,32 @@ const SubmitBar: Component<{
             {(note) => <span class={css.mismatchNote}>{note()}</span>}
           </Show>
         </div>
-        <button
-          onClick={() => props.onSubmit()}
-          disabled={!ready() || props.submitting}
-          class={css.submitBtn}
-          classList={{ [css.submitBtnEnabled]: ready() && !props.submitting }}
-        >
-          {props.submitting ? props.busyText : props.idleText}{" "}
-          <span class={css.submitArrow}>→</span>
-        </button>
+        <div class={css.submitActions}>
+          <Show when={!props.queueing}>
+            <button
+              onClick={() => props.onQueue()}
+              disabled={!ready() || props.submitting}
+              class={css.queueBtn}
+            >
+              {t("cart.addToCart")}
+            </button>
+          </Show>
+          <button
+            onClick={() =>
+              props.queueing ? props.onQueue() : props.onSubmit()
+            }
+            disabled={!ready() || props.submitting}
+            class={css.submitBtn}
+            classList={{ [css.submitBtnEnabled]: ready() && !props.submitting }}
+          >
+            {props.submitting
+              ? props.busyText
+              : props.queueing
+                ? t("cart.addToCart")
+                : props.idleText}{" "}
+            <span class={css.submitArrow}>→</span>
+          </button>
+        </div>
       </div>
     </div>
   );

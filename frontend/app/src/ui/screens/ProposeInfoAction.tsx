@@ -25,7 +25,9 @@ import {
 import linkCss from "~/ui/components/LinkAnchorSection.module.css";
 import { TxLink } from "~/ui/components/TxLink";
 import { Note } from "~/ui/components/Note";
+import { QueuedNote } from "~/ui/components/CartDrawer";
 import { networkMismatch } from "~/ui/format";
+import type { Action } from "~/wallet/action";
 import { t } from "~/i18n";
 import css from "./ProposeInfoAction.module.css";
 
@@ -34,6 +36,7 @@ export const ProposeInfoAction: Component = () => {
   const [prepared, setPrepared] = createSignal<PreparedAnchor | null>(null);
   const [busy, setBusy] = createSignal(false);
   const [txHash, setTxHash] = createSignal<string | null>(null);
+  const [queued, setQueued] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
 
   // A different anchor document invalidates a previous submission's outcome —
@@ -41,6 +44,7 @@ export const ProposeInfoAction: Component = () => {
   const onPrepared = (p: PreparedAnchor | null) => {
     if (p?.anchor.hashHex !== prepared()?.anchor.hashHex) {
       setTxHash(null);
+      setQueued(false);
       setError(null);
     }
     setPrepared(p);
@@ -54,8 +58,31 @@ export const ProposeInfoAction: Component = () => {
     return !p || p.blocking || !p.urlValid;
   };
 
-  const canSubmit = () =>
-    !!prepared() && !blocking() && !!app.wallet() && !mismatch() && !busy();
+  // Queuing needs no wallet — only publishing does.
+  const canQueue = () => !!prepared() && !blocking() && !busy();
+  const canSubmit = () => canQueue() && !!app.wallet() && !mismatch();
+  // With something already waiting, publishing would publish that too — so the
+  // button queues instead, and the cart is where it all goes out.
+  const queueing = () => app.cart().length > 0;
+
+  const proposal = (p: PreparedAnchor): Action => {
+    const ref = p.surveyRef;
+    return {
+      kind: "govAction",
+      anchorUrl: p.url,
+      anchorDataHash: p.anchor.hash,
+      surveyKey: ref ? `${ref.txId}:${ref.index}` : undefined,
+      title: p.linkedSurveyTitle,
+      proveCredentials: [],
+    };
+  };
+
+  const queue = () => {
+    const p = prepared();
+    if (!p || !canQueue()) return;
+    app.enqueue([proposal(p)]);
+    setQueued(true);
+  };
 
   const submit = async () => {
     const p = prepared();
@@ -63,18 +90,9 @@ export const ProposeInfoAction: Component = () => {
     setBusy(true);
     setError(null);
     try {
-      const ref = p.surveyRef;
-      const [hash] = await app.submitActions([
-        {
-          kind: "govAction",
-          anchorUrl: p.url,
-          anchorDataHash: p.anchor.hash,
-          surveyKey: ref ? `${ref.txId}:${ref.index}` : undefined,
-          title: p.linkedSurveyTitle,
-          proveCredentials: [],
-        },
-      ]);
-      setTxHash(hash ?? null);
+      const hashes = await app.submitOrQueue([proposal(p)]);
+      if (hashes) setTxHash(hashes[0] ?? null);
+      else setQueued(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -128,19 +146,38 @@ export const ProposeInfoAction: Component = () => {
           <Note kind="danger">{t("proposeInfoAction.resolveIssues")}</Note>
         </Show>
 
+        <Show when={queued()}>
+          <QueuedNote />
+        </Show>
+
         <Show
           when={txHash()}
           fallback={
-            <button
-              onClick={() => void submit()}
-              disabled={!canSubmit()}
-              class={css.submitBtn}
-              classList={{ [css.submitBtnEnabled]: canSubmit() }}
-            >
-              {busy()
-                ? t("proposeInfoAction.building")
-                : t("proposeInfoAction.submit")}
-            </button>
+            <Show when={!queued()}>
+              <button
+                onClick={() => (queueing() ? queue() : void submit())}
+                disabled={queueing() ? !canQueue() : !canSubmit()}
+                class={css.submitBtn}
+                classList={{
+                  [css.submitBtnEnabled]: queueing() ? canQueue() : canSubmit(),
+                }}
+              >
+                {busy()
+                  ? t("proposeInfoAction.building")
+                  : queueing()
+                    ? t("cart.addToCart")
+                    : t("proposeInfoAction.submit")}
+              </button>
+              <Show when={!queueing()}>
+                <button
+                  onClick={() => queue()}
+                  disabled={!canQueue()}
+                  class={css.queueBtn}
+                >
+                  {t("cart.addToCart")}
+                </button>
+              </Show>
+            </Show>
           }
         >
           {(h) => (

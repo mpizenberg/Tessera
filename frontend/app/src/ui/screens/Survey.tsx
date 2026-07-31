@@ -78,6 +78,8 @@ import {
 import { RoleChips } from "~/ui/components/glyphs";
 import { ResultBarCard } from "~/ui/components/ResultBarCard";
 import { TxLink } from "~/ui/components/TxLink";
+import { QueuedNote } from "~/ui/components/CartDrawer";
+import type { Action } from "~/wallet/action";
 import { toCsv, downloadCsv, downloadJson } from "~/util/csv";
 import { t, n } from "~/i18n";
 import css from "./Survey.module.css";
@@ -458,25 +460,38 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
   const [cancelling, setCancelling] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [hash, setHash] = createSignal<string | null>(null);
+  const [queued, setQueued] = createSignal(false);
+  // With something already waiting, cancelling would publish that too — so the
+  // button queues instead, and the cart is where it all goes out.
+  const queueing = (): boolean => app.cart().length > 0;
   // Block cancelling while the wallet is on a different network than the app, so
   // the cancellation isn't broadcast to the wrong chain (a paid no-op that leaves
   // the real survey open). Mirrors the create/respond/propose submit gates.
   const mismatch = (): boolean =>
     networkMismatch(app.wallet()?.identity.networkId, app.config.network);
 
-  const onCancel = async () => {
+  const cancellation = (): Action => {
     const def = props.s.record.definition;
+    return {
+      kind: "cancel",
+      cancellation: props.s.record.ref,
+      proveCredentials: [def.owner],
+      title: def.title || undefined,
+    };
+  };
+
+  const onCancel = async (queueOnly: boolean) => {
+    if (queueOnly) {
+      app.enqueue([cancellation()]);
+      setQueued(true);
+      return;
+    }
     setCancelling(true);
     setError(null);
     try {
-      const [hash] = await app.submitActions([
-        {
-          kind: "cancel",
-          cancellation: props.s.record.ref,
-          proveCredentials: [def.owner],
-        },
-      ]);
-      setHash(hash ?? null);
+      const hashes = await app.submitOrQueue([cancellation()]);
+      if (hashes) setHash(hashes[0] ?? null);
+      else setQueued(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -486,19 +501,23 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
 
   return (
     <Show
-      when={hash() === null}
+      when={hash() === null && !queued()}
       fallback={
-        <div class={css.cancelSubmitted}>
-          <div class={css.cancelSubmittedTitle}>
-            {t("survey.cancelSubmittedTitle")}
-          </div>
-          <div class={css.cancelSubmittedHash}>
-            <TxLink hash={hash()!} color="var(--danger-ink)" />
-          </div>
-          <div class={css.cancelSubmittedBody}>
-            {t("survey.cancelSubmittedBody")}
-          </div>
-        </div>
+        <Show when={hash()} fallback={<QueuedNote />}>
+          {(h) => (
+            <div class={css.cancelSubmitted}>
+              <div class={css.cancelSubmittedTitle}>
+                {t("survey.cancelSubmittedTitle")}
+              </div>
+              <div class={css.cancelSubmittedHash}>
+                <TxLink hash={h()} color="var(--danger-ink)" />
+              </div>
+              <div class={css.cancelSubmittedBody}>
+                {t("survey.cancelSubmittedBody")}
+              </div>
+            </div>
+          )}
+        </Show>
       }
     >
       <div class={css.ownerBar}>
@@ -520,14 +539,25 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
         >
           <div class={css.confirmRow}>
             <button
-              onClick={() => void onCancel()}
-              disabled={cancelling() || mismatch()}
+              onClick={() => void onCancel(queueing())}
+              disabled={cancelling() || (mismatch() && !queueing())}
               class={css.confirmBtn}
             >
               {cancelling()
                 ? t("survey.cancelling")
-                : t("survey.confirmCancel")}
+                : queueing()
+                  ? t("cart.addToCart")
+                  : t("survey.confirmCancel")}
             </button>
+            <Show when={!queueing()}>
+              <button
+                onClick={() => void onCancel(true)}
+                disabled={cancelling()}
+                class={css.keepBtn}
+              >
+                {t("cart.addToCart")}
+              </button>
+            </Show>
             <button
               onClick={() => setConfirming(false)}
               disabled={cancelling()}

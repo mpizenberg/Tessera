@@ -16,101 +16,11 @@
  * encoder, and it is injected, so this module names no serialization library.
  */
 
-import type {
-  Cip179Payload,
-  Credential,
-  SurveyCancellation,
-  SurveyDefinition,
-  SurveyResponse,
-} from "cip-179";
-import { credentialKey, refKey } from "cip-179/domain";
+import type { Cip179Payload, Credential } from "cip-179";
+import { credentialKey } from "cip-179/domain";
 
 import { BASE_TX_BYTES, MAX_TX_BYTES } from "~/domain/fee";
-
-/** What kind of submission an action is. */
-export type ActionKind = "survey" | "response" | "cancel" | "govAction";
-
-interface ActionBase {
-  /**
-   * Credentials the transaction must prove control of (CIP-179 credential
-   * proof, mechanism A) — never a fee-paying wallet identity, since anyone can
-   * pay fees.
-   */
-  readonly proveCredentials: readonly Credential[];
-  /** Human label for the pending indicator, for payloads that carry none. */
-  readonly title?: string | undefined;
-}
-
-/** One queued thing to publish — the unit a transaction batches. */
-export type Action =
-  | (ActionBase & {
-      readonly kind: "survey";
-      readonly definition: SurveyDefinition;
-    })
-  | (ActionBase & {
-      readonly kind: "response";
-      readonly response: SurveyResponse;
-    })
-  | (ActionBase & {
-      readonly kind: "cancel";
-      readonly cancellation: SurveyCancellation;
-    })
-  | (ActionBase & {
-      readonly kind: "govAction";
-      readonly anchorUrl: string;
-      readonly anchorDataHash: Uint8Array;
-      /** Survey the anchor advertises; a proposal carries no payload to read it from. */
-      readonly surveyKey: string | undefined;
-    });
-
-/**
- * The survey an action concerns, where that survey already has a key. A
- * definition's is `<its own transaction hash>:<index>`, so it has none until it
- * is submitted.
- */
-export function actionSurveyKey(action: Action): string | undefined {
-  switch (action.kind) {
-    case "survey":
-      return undefined;
-    case "response":
-      return refKey(action.response.surveyRef);
-    case "cancel":
-      return refKey(action.cancellation);
-    case "govAction":
-      return action.surveyKey;
-  }
-}
-
-/**
- * The actions a label-17 payload publishes — one per item it carries. The
- * inverse of what the planner does, for a payload that arrives already encoded
- * (the embeddable widget emits one) rather than assembled action by action.
- */
-export function payloadActions(
-  payload: Cip179Payload,
-  proveCredentials: readonly Credential[],
-): Action[] {
-  switch (payload.type) {
-    case "definitions":
-      return payload.definitions.map((definition) => ({
-        kind: "survey",
-        definition,
-        proveCredentials,
-      }));
-    case "responses":
-      return payload.responses.map((response) => ({
-        kind: "response",
-        response,
-        proveCredentials,
-      }));
-    case "cancellations":
-      return payload.cancellations.map((cancellation) => ({
-        kind: "cancel",
-        cancellation,
-        proveCredentials,
-      }));
-  }
-}
+import { actionSurveyKey, type Action, type ActionKind } from "./action";
 
 /** What a planned transaction carries — the two transaction shapes we build. */
 export type PlannedBody =
@@ -119,19 +29,19 @@ export type PlannedBody =
       readonly type: "proposal";
       readonly anchorUrl: string;
       readonly anchorDataHash: Uint8Array;
-      readonly surveyKey: string | undefined;
     };
 
 /** One transaction of a plan. */
 export interface PlannedTx {
   readonly body: PlannedBody;
+  /** The queued actions it publishes — how a plan maps back onto the cart. */
+  readonly actions: readonly Action[];
   readonly proveCredentials: readonly Credential[];
   /**
    * Hashes of transactions already in flight that this one must build on. It
    * spends an output of theirs, so no block can include it without them.
    */
   readonly dependsOn: readonly string[];
-  readonly title: string | undefined;
 }
 
 export interface PlanContext {
@@ -184,11 +94,10 @@ export function plan(
           type: "proposal",
           anchorUrl: action.anchorUrl,
           anchorDataHash: action.anchorDataHash,
-          surveyKey: action.surveyKey,
         },
+        actions: [action],
         proveCredentials: action.proveCredentials,
         dependsOn: dependencies([action], ctx),
-        title: action.title,
       }),
     ),
   ];
@@ -210,10 +119,9 @@ function metadataTxs<A extends Action>(
 ): PlannedTx[] {
   return pack(actions, wrap, ctx.measure).map((batch) => ({
     body: { type: "metadata", payload: wrap(batch) },
+    actions: batch,
     proveCredentials: dedupeCredentials(batch),
     dependsOn: dependencies(batch, ctx),
-    // A batch spanning several actions has no single one to label the row with.
-    title: batch.length === 1 ? batch[0]!.title : undefined,
   }));
 }
 

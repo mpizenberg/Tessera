@@ -10,7 +10,8 @@ import {
 } from "cip-179";
 import { hexToBytes } from "cip-179/domain";
 
-import { payloadActions, plan, type Action, type PlanContext } from "./plan";
+import type { Action } from "./action";
+import { plan, type PlanContext } from "./plan";
 
 const TX_A = "aa".repeat(32);
 const TX_B = "bb".repeat(32);
@@ -126,11 +127,12 @@ describe("grouping", () => {
     expect(tx?.proveCredentials).toEqual([owner]);
   });
 
-  test("only a lone action lends the transaction its label", () => {
-    expect(plan([survey("Which way?")], ctx())[0]?.title).toBe("Which way?");
-    expect(plan([survey("Which way?"), survey()], ctx())[0]?.title).toBe(
-      undefined,
-    );
+  test("a transaction carries the actions it publishes", () => {
+    const actions = [survey(), survey(), cancel(`${TX_A}:0`)];
+    expect(plan(actions, ctx()).map((t) => t.actions)).toEqual([
+      [actions[0], actions[1]],
+      [actions[2]],
+    ]);
   });
 });
 
@@ -193,18 +195,5 @@ describe("size splitting", () => {
   test("an action too large for any transaction still gets one", () => {
     const txs = plan([survey(), survey()], ctx({ measure: perItem(20_000) }));
     expect(txs).toHaveLength(2);
-  });
-});
-
-describe("payloadActions", () => {
-  test("a payload comes apart into the actions it publishes", () => {
-    const payload: Cip179Payload = {
-      type: "responses",
-      responses: [responseTo(`${TX_A}:0`), responseTo(`${TX_B}:0`)],
-    };
-    const [tx, ...rest] = plan(payloadActions(payload, [responder]), ctx());
-    expect(rest).toEqual([]);
-    expect(tx?.body.type === "metadata" && tx.body.payload).toEqual(payload);
-    expect(tx?.proveCredentials).toEqual([responder]);
   });
 });

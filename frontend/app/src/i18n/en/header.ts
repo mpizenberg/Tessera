@@ -1,4 +1,4 @@
-/** Sticky top header: nav, network tag, Plain/Pro toggle, wallet identity, pending txs. */
+/** Sticky top header: nav, network tag, Plain/Pro toggle, wallet identity. */
 
 const header = {
   // Primary navigation.
@@ -8,27 +8,6 @@ const header = {
 
   // Network tag in the bar.
   activeNetwork: "Active network",
-
-  // Pending-transactions dropdown.
-  pendingTransactions: "Pending transactions",
-  dismiss: "Dismiss",
-  /** Appended to an in-flight pending headline; {label} is the action description. */
-  pendingHeadline: "{label}…",
-  pendingSurvey: "Publishing survey",
-  pendingResponse: "Submitting response",
-  pendingCancel: "Cancelling survey",
-  pendingGovAction: "Submitting governance action",
-  confirmedSurvey: "Survey published",
-  confirmedResponse: "Response confirmed",
-  confirmedCancel: "Survey cancelled",
-  confirmedGovAction: "Governance action submitted",
-  stalled: "No block has included this transaction in the last 10 minutes.",
-  stalledChoice:
-    "Broadcast it again, or forget it — forgetting only stops this app from tracking it, and the transaction can still be included later.",
-  rebroadcast: "Broadcast again",
-  rebroadcasting: "Broadcasting…",
-  forget: "Forget",
-  viewSurvey: "View survey →",
 
   // Plain/Pro display-mode toggle.
   displayMode: "Display mode",

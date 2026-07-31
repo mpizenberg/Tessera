@@ -113,3 +113,20 @@
   background: var(--gov);
   opacity: 1;
 }
+
+.queueBtn {
+  margin-left: 10px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 11px 16px;
+}
+.queueBtn:disabled {
+  color: var(--faint);
+  cursor: not-allowed;
+}

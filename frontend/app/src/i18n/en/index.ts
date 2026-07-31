@@ -22,6 +22,7 @@
 
 import appError from "./appError";
 import bottomNav from "./bottomNav";
+import cart from "./cart";
 import create from "./create";
 import directBanner from "./directBanner";
 import explore from "./explore";
@@ -41,6 +42,7 @@ import validation from "./validation";
 const en = {
   appError,
   bottomNav,
+  cart,
   create,
   directBanner,
   explore,

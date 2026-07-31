@@ -1,0 +1,257 @@
+.anchor {
+  position: relative;
+}
+
+.badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-input);
+  padding: 7px 9px;
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  font-family: inherit;
+}
+.badgeDone {
+  color: var(--ok);
+  font-size: 13px;
+}
+.badgeQueued {
+  color: var(--accent);
+  font-size: 13px;
+  line-height: 1;
+}
+.badgeCount {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+/* Drawer, anchored under the badge (opens rightward). */
+.panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 330px;
+  max-height: min(70vh, 640px);
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-menu);
+  padding: 5px;
+  z-index: 50;
+}
+
+.heading {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+  padding: 8px 10px 4px;
+}
+
+.note {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.45;
+  padding: 4px 10px 6px;
+}
+
+.error {
+  font-size: 11px;
+  color: var(--danger-ink);
+  margin-top: 4px;
+  line-height: 1.4;
+  word-break: break-word;
+  padding: 0 10px;
+}
+
+/* Queued actions, grouped by the transaction that will publish them. */
+.txCard {
+  border: 1px solid var(--line);
+  border-radius: var(--r-input);
+  margin: 4px 6px;
+  padding: 6px 4px 4px;
+}
+.txHead {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--faint);
+  padding: 0 6px 2px;
+}
+.txChained {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+  padding: 2px 6px 4px;
+}
+.txWarn {
+  font-size: 11px;
+  color: var(--warn);
+  line-height: 1.4;
+  padding: 2px 6px 4px;
+}
+
+.queuedRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 6px;
+}
+.queuedText {
+  flex: 1;
+  min-width: 0;
+}
+.queuedLabel {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.queuedSub {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.remove {
+  background: none;
+  border: none;
+  color: var(--faint);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.submitBar {
+  padding: 4px 6px 8px;
+}
+.submitBtn {
+  width: 100%;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--r-input);
+  padding: 8px 12px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.submitBtn:disabled {
+  background: var(--line);
+  color: var(--faint);
+  cursor: default;
+}
+
+/* In-flight transactions. */
+.pendingRow {
+  padding: 8px 10px;
+}
+.pendingRowHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pendingRowDone {
+  color: var(--ok);
+  font-size: 12px;
+}
+.pendingRowTitle {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+  flex: 1;
+}
+.pendingRowTitle.done {
+  color: var(--ok);
+}
+.pendingRowSub {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pendingRowHash {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
+  margin-top: 4px;
+  word-break: break-all;
+}
+.pendingRowSlow {
+  font-size: 11px;
+  color: var(--warn);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+.pendingRowActions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.pendingAction,
+.pendingActionDanger {
+  flex: 1;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-input);
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+}
+.pendingAction:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+.pendingActionDanger {
+  color: var(--danger-ink);
+}
+.pendingRowLinkWrap {
+  margin-top: 5px;
+}
+.pendingRowLink {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* The note a screen shows once it queued its action instead of publishing it. */
+.queuedNote {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--ok-bg);
+  padding: 14px 16px;
+}
+.queuedNoteTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ok);
+}
+.queuedNoteBody {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 6px 0 10px;
+}
+.queuedNoteBtn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--r-input);
+  padding: 8px 14px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}

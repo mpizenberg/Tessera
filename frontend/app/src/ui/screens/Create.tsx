@@ -43,9 +43,11 @@ import { VisGlyph } from "~/ui/components/glyphs";
 import { OnchainPreview } from "~/ui/components/OnchainPreview";
 import { ErrorBox, ProblemList } from "~/ui/components/Feedback";
 import { TxLink } from "~/ui/components/TxLink";
+import { QueuedNote } from "~/ui/components/CartDrawer";
 import { QUICKNET_CHAIN_HASH_HEX, autoRevealRound } from "cip-179/tlock";
 import { formatEpochEndDate, formatRevealDate } from "~/tlock/drand";
 import { networkMismatch, roleColors, roleLabel, shortRef } from "~/ui/format";
+import type { Action } from "~/wallet/action";
 import type { WalletIdentity } from "~/wallet/types";
 import { t, n } from "~/i18n";
 import { problemText } from "~/i18n/problem";
@@ -200,7 +202,11 @@ export const Create: Component = () => {
   const [stepKey, setStepKey] = createSignal<string | null>(null);
   const [submitError, setSubmitError] = createSignal<string | null>(null);
   const [txHash, setTxHash] = createSignal<string | null>(null);
+  const [queued, setQueued] = createSignal(false);
   const [showProblems, setShowProblems] = createSignal(false);
+  // With something already waiting, publishing this survey would publish that
+  // too — so the button queues instead, and the cart is where it all goes out.
+  const queueing = (): boolean => app.cart().length > 0;
 
   // External-content publishing pins the presentation doc first, so the submit
   // becomes two visible steps (drives the progress overlay); embedded is one.
@@ -237,7 +243,7 @@ export const Create: Component = () => {
   const removeQuestion = (i: number) =>
     setQuestions((qs) => qs.filter((_, k) => k !== i));
 
-  const onPublish = async () => {
+  const onPublish = async (queueOnly: boolean) => {
     const o = owner();
     if (!o) return;
     // Publish the form as it was when the button was clicked. Pinning awaits a
@@ -282,18 +288,23 @@ export const Create: Component = () => {
       setStepKey("submit");
       setBusyText(t("create.busySubmitting"));
       // Definitions must prove the owner credential (CIP-179 mechanism A) — the
-      // owner is what authorizes a later cancellation. The title is passed for
-      // the pending indicator because an external-content definition carries
-      // none on chain.
-      const [hash] = await app.submitActions([
-        {
-          kind: "survey",
-          definition,
-          proveCredentials: [o],
-          title: metaNow.title.trim() || undefined,
-        },
-      ]);
-      setTxHash(hash ?? null);
+      // owner is what authorizes a later cancellation. The title is carried for
+      // the cart and the pending indicator because an external-content
+      // definition carries none on chain.
+      const action: Action = {
+        kind: "survey",
+        definition,
+        proveCredentials: [o],
+        title: metaNow.title.trim() || undefined,
+      };
+      if (queueOnly) {
+        app.enqueue([action]);
+        setQueued(true);
+        return;
+      }
+      const hashes = await app.submitOrQueue([action]);
+      if (hashes) setTxHash(hashes[0] ?? null);
+      else setQueued(true);
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -303,14 +314,16 @@ export const Create: Component = () => {
     }
   };
 
-  // Submitted: full-width receipt. Not connected: full-width prompt.
+  // Published or queued: full-width receipt. Not connected: full-width prompt.
   return (
     <Show
-      when={txHash() === null}
+      when={txHash() === null && !queued()}
       fallback={
         <main class={css.singleColMain}>
           <BackLink />
-          <SubmittedPanel hash={txHash()!} />
+          <Show when={txHash()} fallback={<QueuedNote />}>
+            {(hash) => <SubmittedPanel hash={hash()} />}
+          </Show>
         </main>
       }
     >
@@ -443,7 +456,9 @@ export const Create: Component = () => {
                 submitting={submitting()}
                 busyText={busyText()}
                 paymentHashHex={identity()!.payment.hashHex}
-                onPublish={() => void onPublish()}
+                queueing={queueing()}
+                onPublish={() => void onPublish(false)}
+                onQueue={() => void onPublish(true)}
               />
             </aside>
           </div>
@@ -1361,21 +1376,38 @@ const PublishButton: Component<{
   submitting: boolean;
   busyText: string;
   paymentHashHex: string;
+  /** True when publishing would queue the survey rather than sign it now. */
+  queueing: boolean;
   onPublish: () => void;
+  onQueue: () => void;
 }> = (props) => {
   const ok = () => props.problemCount === 0 && !props.blockedReason;
   return (
     <>
       <button
         type="button"
-        onClick={() => props.onPublish()}
+        onClick={() => (props.queueing ? props.onQueue() : props.onPublish())}
         disabled={props.submitting || !!props.blockedReason}
         class={css.publishBtn}
         classList={{ [css.publishBtnEnabled]: ok() && !props.submitting }}
       >
-        {props.submitting ? props.busyText : t("create.signAndPublish")}{" "}
+        {props.submitting
+          ? props.busyText
+          : props.queueing
+            ? t("cart.addToCart")
+            : t("create.signAndPublish")}{" "}
         <span class={css.publishArrow}>→</span>
       </button>
+      <Show when={!props.queueing}>
+        <button
+          type="button"
+          onClick={() => props.onQueue()}
+          disabled={props.submitting || !!props.blockedReason}
+          class={css.queueBtn}
+        >
+          {t("cart.addToCart")}
+        </button>
+      </Show>
       <p class={css.publishNote} classList={{ [css.publishNoteOk]: ok() }}>
         <Show
           when={ok()}

@@ -1,19 +1,17 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import {
-  SPEC_VERSION,
-  type Cip179Payload,
-  type SurveyDefinition,
-} from "cip-179";
+import { SPEC_VERSION, type SurveyDefinition } from "cip-179";
 import { bytesToHex } from "cip-179/domain";
 
+import type { Action } from "./action";
 import {
   STALL_AFTER_MS,
   descendantOutrefs,
   loadPendingTxs,
-  payloadSurveyKey,
   pendingKind,
+  pendingSurveyKey,
   pendingSurveyRecords,
+  pendingTitle,
   projectOutrefs,
   storePendingTxs,
   type PendingTx,
@@ -46,17 +44,24 @@ const definition: SurveyDefinition = {
   submissionMode: { type: "public" },
   questions: [],
 };
-const definitions: Cip179Payload = {
-  type: "definitions",
-  definitions: [definition],
+const publish: Action = {
+  kind: "survey",
+  definition,
+  proveCredentials: [],
+  title: "Which way?",
+};
+const propose: Action = {
+  kind: "govAction",
+  anchorUrl: "ipfs://doc",
+  anchorDataHash: new Uint8Array(32),
+  surveyKey: undefined,
+  proveCredentials: [],
 };
 
 const entry = (over: Partial<PendingTx> = {}): PendingTx => ({
   txHash: TX,
   txCbor: "84a4",
-  payload: undefined,
-  surveyKey: undefined,
-  title: undefined,
+  actions: [propose],
   submittedAt: NOW,
   status: "pending",
   stalled: false,
@@ -122,19 +127,11 @@ describe("what a transaction leaves to build on", () => {
 });
 
 describe("persistence", () => {
-  test("an entry comes back with its payload decoded", () => {
-    storePendingTxs([
-      entry({
-        payload: definitions,
-        surveyKey: `${TX}:0`,
-        title: "Which way?",
-      }),
-    ]);
+  test("an entry comes back with what it publishes decoded", () => {
+    storePendingTxs([entry({ actions: [publish] })]);
     const [back] = loadPendingTxs(NOW);
-    expect(back?.payload).toEqual(definitions);
+    expect(back?.actions).toEqual([publish]);
     expect(back?.txCbor).toBe("84a4");
-    expect(back?.surveyKey).toBe(`${TX}:0`);
-    expect(back?.title).toBe("Which way?");
   });
 
   test("inclusion is re-checked, so entries come back pending", () => {
@@ -156,8 +153,20 @@ describe("persistence", () => {
     store.set(
       KEY,
       JSON.stringify([
-        { txHash: "bad", txCbor: "00", submittedAt: NOW, payload: { no: 1 } },
-        { txHash: "good", txCbor: "01", submittedAt: NOW },
+        { txHash: "bad", txCbor: "00", submittedAt: NOW, actions: [{ no: 1 }] },
+        {
+          txHash: "good",
+          txCbor: "01",
+          submittedAt: NOW,
+          actions: [
+            {
+              kind: "govAction",
+              proveCredentials: [],
+              anchorUrl: "ipfs://doc",
+              anchorDataHash: "00".repeat(32),
+            },
+          ],
+        },
       ]),
     );
     expect(loadPendingTxs(NOW).map((p) => p.txHash)).toEqual(["good"]);
@@ -171,39 +180,42 @@ describe("persistence", () => {
 });
 
 describe("derivations", () => {
-  test("kind comes off the payload; a proposal carries none", () => {
-    expect(pendingKind(entry({ payload: definitions }))).toBe("survey");
+  test("kind comes off what the transaction publishes", () => {
+    expect(pendingKind(entry({ actions: [publish] }))).toBe("survey");
     expect(pendingKind(entry())).toBe("govAction");
   });
 
-  test("a definitions payload projects one survey record per definition", () => {
-    const records = pendingSurveyRecords(entry({ payload: definitions }));
+  test("each queued definition projects one survey record", () => {
+    const records = pendingSurveyRecords(entry({ actions: [publish] }));
     expect(records).toHaveLength(1);
     expect(bytesToHex(records[0]!.ref.txId)).toBe(TX);
     expect(records[0]?.ref.index).toBe(0);
     expect(records[0]?.definition).toEqual(definition);
   });
 
-  test("nothing but a definitions payload projects a survey", () => {
+  test("nothing but a definition projects a survey", () => {
     expect(pendingSurveyRecords(entry())).toEqual([]);
   });
 
-  test("a cancellation links to the survey it targets", () => {
-    const key = payloadSurveyKey(
-      {
-        type: "cancellations",
-        cancellations: [{ txId: new Uint8Array(32).fill(3), index: 2 }],
-      },
-      TX,
-    );
-    expect(key).toBe(`${"03".repeat(32)}:2`);
+  test("a definition names the transaction publishing it", () => {
+    expect(pendingSurveyKey(entry({ actions: [publish] }))).toBe(`${TX}:0`);
   });
 
-  test("a batch spanning several surveys has no single one to link", () => {
-    const batch: Cip179Payload = {
-      type: "definitions",
-      definitions: [definition, definition],
+  test("a cancellation links to the survey it targets", () => {
+    const cancel: Action = {
+      kind: "cancel",
+      cancellation: { txId: new Uint8Array(32).fill(3), index: 2 },
+      proveCredentials: [],
     };
-    expect(payloadSurveyKey(batch, TX)).toBeUndefined();
+    expect(pendingSurveyKey(entry({ actions: [cancel] }))).toBe(
+      `${"03".repeat(32)}:2`,
+    );
+  });
+
+  test("only a lone action lends the row its survey and its label", () => {
+    const batch = entry({ actions: [publish, publish] });
+    expect(pendingSurveyKey(batch)).toBeUndefined();
+    expect(pendingTitle(batch)).toBeUndefined();
+    expect(pendingTitle(entry({ actions: [publish] }))).toBe("Which way?");
   });
 });

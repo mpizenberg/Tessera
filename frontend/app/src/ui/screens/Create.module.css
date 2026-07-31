@@ -984,3 +984,21 @@
   margin: 8px auto 0;
   max-width: 440px;
 }
+
+.queueBtn {
+  width: 100%;
+  margin-top: 8px;
+  background: #fff;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 10px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.queueBtn:disabled {
+  color: var(--faint);
+  cursor: not-allowed;
+}

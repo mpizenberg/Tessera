@@ -924,7 +924,6 @@
 }
 
 .submitBtn {
-  margin-left: auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1061,4 +1060,27 @@
   border: none;
   border-radius: var(--r-input);
   padding: 9px 16px;
+}
+
+.submitActions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.queueBtn {
+  background: #fff;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 13px 18px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.queueBtn:disabled {
+  color: var(--faint);
+  cursor: not-allowed;
 }

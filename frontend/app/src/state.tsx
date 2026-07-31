@@ -70,12 +70,13 @@ import {
 import {
   STALL_AFTER_MS,
   loadPendingTxs,
-  payloadSurveyKey,
   pendingSurveyRecords,
   storePendingTxs,
   type PendingTx,
 } from "~/wallet/pending";
-import { plan, type Action } from "~/wallet/plan";
+import type { Action } from "~/wallet/action";
+import { loadCart, storeCart } from "~/wallet/cart";
+import { plan, type PlannedTx } from "~/wallet/plan";
 import type { ConnectedWallet, InstalledWallet } from "~/wallet/types";
 import {
   applyPresentation,
@@ -172,37 +173,58 @@ interface AppState {
   readonly claimableRoles: Accessor<number[]>;
   readonly activeRole: Accessor<number | null>;
   setActiveRole(role: number | null): void;
+  // --- the action cart (the one submission path) ---
+  /** Actions waiting to be published, oldest first. */
+  readonly cart: Accessor<readonly Action[]>;
+  /** Queue actions for publication later, alongside whatever is already waiting. */
+  enqueue(actions: readonly Action[]): void;
+  /** Drop a queued action. */
+  removeFromCart(action: Action): void;
   /**
-   * Partition `actions` into transactions, then build, sign and submit them
-   * with the connected wallet, tracking each as pending. Resolves to their
-   * hashes in the order they were submitted. Throws if no wallet.
+   * Queue `actions` and, when nothing else was waiting, publish them at once —
+   * so a single action stays one click. Resolves to the submitted transaction
+   * hashes, or to `null` when the actions were merely queued because the cart
+   * already held something the user hasn't published yet.
+   */
+  submitOrQueue(actions: readonly Action[]): Promise<readonly string[] | null>;
+  /**
+   * Partition everything queued into transactions, then build, sign and submit
+   * them with the connected wallet, tracking each as pending. Actions leave the
+   * cart as the transaction publishing them is submitted, so an interrupted run
+   * leaves the rest queued. Throws if no wallet.
    *
    * Anything about a survey whose definition is still in flight is chained onto
    * that definition's transaction, so a response can never outlive the survey
    * it answers.
    */
-  submitActions(actions: readonly Action[]): Promise<readonly string[]>;
+  submitCart(): Promise<readonly string[]>;
+  /** The transactions the queued actions would be published in. */
+  planCart(): Promise<readonly PlannedTx[]>;
+  readonly cartOpen: Accessor<boolean>;
+  setCartOpen(open: boolean): void;
 
   // --- pending transactions (the local chain projection) ---
   /**
    * Transactions submitted from this browser that the chain hasn't shown yet.
    * The single source both projections derive from: the wallet's projected UTxO
-   * set (inside `submitActions`) and the optimistic survey overlay below.
+   * set (inside `submitCart`) and the optimistic survey overlay below.
    */
   readonly pendingTxs: Accessor<readonly PendingTx[]>;
   /** Stop announcing a tx; its projections stand until indexed data supersedes them. */
   dismissTx(txHash: string): void;
+  /**
+   * Forget a transaction, dropping its projections and returning what it
+   * published to the cart. This cancels nothing: a submitted transaction can
+   * still be included afterwards, in which case publishing the queued actions
+   * again would duplicate it.
+   */
+  dropTx(txHash: string): void;
   /**
    * Broadcast a stalled transaction's stored bytes again — same signature, same
    * hash, so a copy still alive in some mempool is unaffected — and restart its
    * stall clock. Throws what the wallet reports.
    */
   resubmitTx(txHash: string): Promise<void>;
-  /**
-   * Forget a transaction, dropping its projections with it. This cancels
-   * nothing: a submitted transaction can still be included afterwards.
-   */
-  dropTx(txHash: string): void;
   /**
    * Surveys shown immediately on creation, before the indexer catches up —
    * decoded from the pending set's own payloads. The wallet already accepted
@@ -422,8 +444,21 @@ export const AppProvider: ParentComponent = (props) => {
       prev.map((p) => (p.txHash === txHash ? { ...p, ...patch } : p)),
     );
   };
+  // The queue of things to publish. Actions are the durable unit — a
+  // transaction can stall, be forgotten and be rebuilt, but what the user meant
+  // to publish survives all of that, and a reload.
+  const [cart, setCart] = createSignal<readonly Action[]>(loadCart());
+  createEffect(() => storeCart(cart()));
+  const [cartOpen, setCartOpen] = createSignal(false);
+
+  const enqueue = (actions: readonly Action[]): void => {
+    setCart((prev) => [...prev, ...actions]);
+  };
+
   const dropTx = (txHash: string): void => {
+    const forgotten = pendingTxs().find((p) => p.txHash === txHash);
     setPendingTxs((prev) => prev.filter((p) => p.txHash !== txHash));
+    if (forgotten) enqueue(forgotten.actions);
   };
 
   const pollPending = async (): Promise<void> => {
@@ -491,6 +526,45 @@ export const AppProvider: ParentComponent = (props) => {
     }
     return map;
   });
+
+  // Publish `actions` as one chain. What a transaction published leaves the
+  // cart the moment that transaction is submitted, so a refused signature or a
+  // rejected submission leaves the rest of the queue untouched. The planner
+  // hands the very action objects back, which is what maps a transaction onto
+  // the queue entries it publishes.
+  const submit = async (
+    actions: readonly Action[],
+  ): Promise<readonly string[]> => {
+    const w = wallet();
+    if (!w) throw new Error("No wallet connected");
+    // Lazy-load the evolution-sdk transaction builder so its weight is fetched
+    // only when a user actually submits, not on first paint.
+    const { payloadSize, submitChain } = await import("~/wallet/submit");
+    const txs = plan(actions, {
+      definingTx: definingTx(),
+      measure: payloadSize,
+    });
+    const hashes: string[] = [];
+    await submitChain(
+      { ...config, koiosToken: koiosToken(), indexerUrl },
+      w.api,
+      txs,
+      pendingTxs(),
+      (submitted, planned) => {
+        hashes.push(submitted.txHash);
+        trackTx({
+          ...submitted,
+          actions: planned.actions,
+          submittedAt: Date.now(),
+          status: "pending",
+          stalled: false,
+        });
+        const published = new Set(planned.actions);
+        setCart((prev) => prev.filter((a) => !published.has(a)));
+      },
+    );
+    return hashes;
+  };
 
   // The pending set's domain projection. Aggregation needs the tip, so this is
   // empty until the list resolves — and fills itself in when it does, with no
@@ -667,41 +741,24 @@ export const AppProvider: ParentComponent = (props) => {
     },
     activeRole,
     setActiveRole,
-    submitActions: async (actions) => {
-      const w = wallet();
-      if (!w) throw new Error("No wallet connected");
-      // Lazy-load the evolution-sdk transaction builder so its weight is fetched
-      // only when a user actually submits, not on first paint.
-      const { payloadSize, submitChain } = await import("~/wallet/submit");
-      const txs = plan(actions, {
-        definingTx: definingTx(),
-        measure: payloadSize,
-      });
-      const hashes: string[] = [];
-      await submitChain(
-        { ...config, koiosToken: koiosToken(), indexerUrl },
-        w.api,
-        txs,
-        pendingTxs(),
-        (submitted, planned) => {
-          hashes.push(submitted.txHash);
-          const { body } = planned;
-          trackTx({
-            ...submitted,
-            payload: body.type === "metadata" ? body.payload : undefined,
-            surveyKey:
-              body.type === "metadata"
-                ? payloadSurveyKey(body.payload, submitted.txHash)
-                : body.surveyKey,
-            title: planned.title,
-            submittedAt: Date.now(),
-            status: "pending",
-            stalled: false,
-          });
-        },
-      );
-      return hashes;
+    cart,
+    enqueue,
+    removeFromCart: (action) =>
+      setCart((prev) => prev.filter((a) => a !== action)),
+    submitOrQueue: async (actions) => {
+      if (cart().length > 0) {
+        enqueue(actions);
+        return null;
+      }
+      return submit(actions);
     },
+    submitCart: () => submit(cart()),
+    planCart: async () => {
+      const { payloadSize } = await import("~/wallet/submit");
+      return plan(cart(), { definingTx: definingTx(), measure: payloadSize });
+    },
+    cartOpen,
+    setCartOpen: (open) => setCartOpen(open),
     pendingTxs,
     dismissTx: (txHash) => updateTx(txHash, { status: "done" }),
     resubmitTx: async (txHash) => {

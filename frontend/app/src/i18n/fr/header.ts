@@ -9,26 +9,6 @@ const header: Messages = {
   // Network tag in the bar.
   activeNetwork: "Réseau actif",
 
-  // Pending-transactions dropdown.
-  pendingTransactions: "Transactions en attente",
-  dismiss: "Ignorer",
-  pendingHeadline: "{label}…",
-  pendingSurvey: "Publication du sondage",
-  pendingResponse: "Envoi de la réponse",
-  pendingCancel: "Annulation du sondage",
-  pendingGovAction: "Envoi de l'action de gouvernance",
-  confirmedSurvey: "Sondage publié",
-  confirmedResponse: "Réponse confirmée",
-  confirmedCancel: "Sondage annulé",
-  confirmedGovAction: "Action de gouvernance envoyée",
-  stalled: "Aucun bloc n'a inclus cette transaction depuis 10 minutes.",
-  stalledChoice:
-    "Diffusez-la à nouveau, ou oubliez-la — l'oublier empêche seulement cette application de la suivre, et la transaction peut encore être incluse plus tard.",
-  rebroadcast: "Diffuser à nouveau",
-  rebroadcasting: "Diffusion…",
-  forget: "Oublier",
-  viewSurvey: "Voir le sondage →",
-
   // Plain/Pro display-mode toggle.
   displayMode: "Mode d'affichage",
   displayPlain: "Simple",

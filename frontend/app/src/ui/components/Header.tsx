@@ -9,12 +9,9 @@ import {
 import { A, useLocation } from "@solidjs/router";
 
 import { useApp } from "~/state";
-import { pendingKind, type PendingTx } from "~/wallet/pending";
-import type { ActionKind } from "~/wallet/plan";
 import { otherNetwork, otherNetworkUrl } from "~/config";
 import { networkMismatch, roleDescription, roleLabel } from "~/ui/format";
-import { TxLink } from "~/ui/components/TxLink";
-import { Spinner } from "~/ui/components/Spinner";
+import { CartBadge } from "~/ui/components/CartDrawer";
 import { SegmentedToggle } from "~/ui/components/SegmentedToggle";
 import { t, type MsgKey } from "~/i18n";
 import css from "./Header.module.css";
@@ -34,11 +31,6 @@ export const Header: Component = () => {
   const app = useApp();
   const loc = useLocation();
   const [menuOpen, setMenuOpen] = createSignal(false);
-  const [pendingOpen, setPendingOpen] = createSignal(false);
-  // Entries stay projected after the user has been told about them; the
-  // indicator only shows the ones that are still news.
-  const announced = () => app.pendingTxs().filter((p) => p.status !== "done");
-  const anyPending = () => announced().some((p) => p.status === "pending");
   const active = (href: string) =>
     href === "/" ? loc.pathname === "/" : loc.pathname.startsWith(href);
 
@@ -51,10 +43,10 @@ export const Header: Component = () => {
   let actionsRef: HTMLDivElement | undefined;
   const closeMenus = () => {
     setMenuOpen(false);
-    setPendingOpen(false);
+    app.setCartOpen(false);
   };
   createEffect(() => {
-    if (!menuOpen() && !pendingOpen()) return;
+    if (!menuOpen() && !app.cartOpen()) return;
     const onPointerDown = (e: PointerEvent) => {
       if (actionsRef && !actionsRef.contains(e.target as Node)) closeMenus();
     };
@@ -110,46 +102,7 @@ export const Header: Component = () => {
         </nav>
 
         <div ref={actionsRef} class={`header-actions ${css.actions}`}>
-          <Show when={announced().length > 0}>
-            <div class={css.pendingAnchor}>
-              <button
-                type="button"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setPendingOpen((o) => !o);
-                }}
-                title={t("header.pendingTransactions")}
-                aria-label={t("header.pendingTransactions")}
-                aria-expanded={pendingOpen()}
-                class={css.pendingBtn}
-              >
-                <Show
-                  when={anyPending()}
-                  fallback={<span class={css.pendingDone}>✓</span>}
-                >
-                  <Spinner size={13} />
-                </Show>
-                <Show when={announced().length > 1}>
-                  <span class={css.pendingCount}>{announced().length}</span>
-                </Show>
-              </button>
-              <Show when={pendingOpen()}>
-                <div class={css.pendingMenu}>
-                  <div class={css.menuHeading}>
-                    {t("header.pendingTransactions")}
-                  </div>
-                  <For each={announced()}>
-                    {(p) => (
-                      <PendingRow
-                        p={p}
-                        onNavigate={() => setPendingOpen(false)}
-                      />
-                    )}
-                  </For>
-                </div>
-              </Show>
-            </div>
-          </Show>
+          <CartBadge />
 
           <SegmentedToggle
             ariaLabel={t("header.displayMode")}
@@ -170,7 +123,7 @@ export const Header: Component = () => {
                 type="button"
                 aria-expanded={menuOpen()}
                 onClick={() => {
-                  setPendingOpen(false);
+                  app.setCartOpen(false);
                   setMenuOpen((o) => !o);
                 }}
                 class={css.connectBtn}
@@ -186,7 +139,7 @@ export const Header: Component = () => {
                 type="button"
                 aria-expanded={menuOpen()}
                 onClick={() => {
-                  setPendingOpen(false);
+                  app.setCartOpen(false);
                   setMenuOpen((o) => !o);
                 }}
                 class={css.identityBtn}
@@ -344,120 +297,6 @@ const RoleMenu: Component<{
     </button>
   </>
 );
-
-const PENDING_TEXT: Record<ActionKind, MsgKey> = {
-  survey: "header.pendingSurvey",
-  response: "header.pendingResponse",
-  cancel: "header.pendingCancel",
-  govAction: "header.pendingGovAction",
-};
-const CONFIRMED_TEXT: Record<ActionKind, MsgKey> = {
-  survey: "header.confirmedSurvey",
-  response: "header.confirmedResponse",
-  cancel: "header.confirmedCancel",
-  govAction: "header.confirmedGovAction",
-};
-
-/** One row in the pending-transactions dropdown. */
-const PendingRow: Component<{
-  p: PendingTx;
-  onNavigate: () => void;
-}> = (props) => {
-  const app = useApp();
-  const [resubmitting, setResubmitting] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
-  const confirmed = () => props.p.status === "confirmed";
-  const kind = () => pendingKind(props.p);
-  const headline = () =>
-    confirmed()
-      ? t(CONFIRMED_TEXT[kind()])
-      : t("header.pendingHeadline", { label: t(PENDING_TEXT[kind()]) });
-
-  const resubmit = async (): Promise<void> => {
-    setResubmitting(true);
-    setError(null);
-    try {
-      await app.resubmitTx(props.p.txHash);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setResubmitting(false);
-    }
-  };
-
-  return (
-    <div class={css.pendingRow}>
-      <div class={css.pendingRowHead}>
-        <Show when={confirmed()} fallback={<Spinner size={13} />}>
-          <span class={css.pendingRowDone}>✓</span>
-        </Show>
-        <span
-          class={css.pendingRowTitle}
-          classList={{ [css.done]: confirmed() }}
-        >
-          {headline()}
-        </span>
-        {/* A pending tx holds real inputs, so it can only be rebroadcast or
-            explicitly forgotten below — never quietly waved away. */}
-        <Show when={confirmed()}>
-          <button
-            type="button"
-            onClick={() => app.dismissTx(props.p.txHash)}
-            title={t("header.dismiss")}
-            aria-label={t("header.dismiss")}
-            class={css.dismiss}
-          >
-            ×
-          </button>
-        </Show>
-      </div>
-      <Show when={props.p.title}>
-        <div class={css.pendingRowSub}>{props.p.title}</div>
-      </Show>
-      <div class={css.pendingRowHash}>
-        <TxLink hash={props.p.txHash} />
-      </div>
-      <Show when={!confirmed() && props.p.stalled}>
-        <div class={css.pendingRowSlow}>
-          {t("header.stalled")} {t("header.stalledChoice")}
-        </div>
-        <div class={css.pendingRowActions}>
-          <button
-            type="button"
-            class={css.pendingAction}
-            disabled={resubmitting() || !app.wallet()}
-            onClick={() => void resubmit()}
-          >
-            {resubmitting()
-              ? t("header.rebroadcasting")
-              : t("header.rebroadcast")}
-          </button>
-          <button
-            type="button"
-            class={css.pendingActionDanger}
-            onClick={() => app.dropTx(props.p.txHash)}
-          >
-            {t("header.forget")}
-          </button>
-        </div>
-        <Show when={error()}>
-          <div class={css.pendingRowError}>{error()}</div>
-        </Show>
-      </Show>
-      <Show when={props.p.surveyKey}>
-        <div class={css.pendingRowLinkWrap}>
-          <A
-            href={`/survey/${encodeURIComponent(props.p.surveyKey!)}`}
-            onClick={() => props.onNavigate()}
-            class={css.pendingRowLink}
-          >
-            {t("header.viewSurvey")}
-          </A>
-        </div>
-      </Show>
-    </div>
-  );
-};
 
 /**
  * Network section at the top of the identity menu. One deployment serves one
