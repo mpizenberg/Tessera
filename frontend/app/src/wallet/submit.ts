@@ -81,20 +81,40 @@ async function fetchBackendPParams(
   return fromJsonSafe(await res.json()) as ProtocolParameters;
 }
 
+/** The two halves of a CIP-30 UTxO: `[transaction_input, transaction_output]`. */
+function cip30UtxoParts(hex: string): {
+  readonly input: Uint8Array;
+  readonly output: Uint8Array;
+} {
+  const decoded = CBOR.fromCBORHex(hex);
+  if (!Array.isArray(decoded) || decoded.length !== 2) {
+    throw new Error("unexpected CIP-30 UTxO CBOR shape");
+  }
+  return {
+    input: CBOR.toCBORBytes(decoded[0]),
+    output: CBOR.toCBORBytes(decoded[1]),
+  };
+}
+
+/** Which output a CIP-30 UTxO is, without decoding the output itself. */
+function cip30Outref(hex: string): string {
+  const { transactionId, index } = TransactionInput.fromCBORBytes(
+    cip30UtxoParts(hex).input,
+  );
+  return outrefKey(TransactionHash.toHex(transactionId), index);
+}
+
 /**
- * Convert one CIP-30 UTxO (CBOR hex of `[transaction_input, transaction_output]`)
- * into evolution-sdk's `UTxO`, so coin selection can run on wallet-sourced UTxOs.
+ * Convert one CIP-30 UTxO into evolution-sdk's `UTxO`, so coin selection can run
+ * on wallet-sourced UTxOs.
  *
  * Reference scripts are omitted: they are never required to *spend* a UTxO as an
  * input, and dropping them avoids a `ScriptRef → Script` conversion.
  */
 function cip30UtxoToCore(hex: string): UTxO.UTxO {
-  const decoded = CBOR.fromCBORHex(hex);
-  if (!Array.isArray(decoded) || decoded.length !== 2) {
-    throw new Error("unexpected CIP-30 UTxO CBOR shape");
-  }
-  const input = TransactionInput.fromCBORBytes(CBOR.toCBORBytes(decoded[0]));
-  const output = TransactionOutput.fromCBORBytes(CBOR.toCBORBytes(decoded[1]));
+  const parts = cip30UtxoParts(hex);
+  const input = TransactionInput.fromCBORBytes(parts.input);
+  const output = TransactionOutput.fromCBORBytes(parts.output);
 
   const amount = output.amount;
   const assets = Value.hasAssets(amount)
@@ -489,6 +509,82 @@ const message = (e: unknown): string => {
 };
 
 /**
+ * How long a wallet is given to catch up with an input before it is asked to
+ * sign anyway, and how often it is asked what it holds meanwhile.
+ */
+const CATCH_UP_MS = 10_000;
+const CATCH_UP_POLL_MS = 500;
+
+/** The wallet's own UTxOs, or undefined if it will not enumerate them. */
+async function walletOutrefs(
+  api: Cip30Api,
+): Promise<ReadonlySet<string> | undefined> {
+  try {
+    const hexes = await api.getUtxos();
+    return hexes && new Set(hexes.map(cip30Outref));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * What `group` spends without producing it among themselves, each mapped to the
+ * transaction that made it.
+ */
+function externalInputs(group: readonly BuiltTx[]): Map<string, string> {
+  const within = new Set(group.map((tx) => tx.txHash));
+  const inputs = new Map<string, string>();
+  for (const tx of group) {
+    const { body } = Transaction.fromCBORHex(tx.txCbor);
+    for (const input of body.inputs) {
+      const hash = TransactionHash.toHex(input.transactionId);
+      if (!within.has(hash)) inputs.set(outrefKey(hash, input.index), hash);
+    }
+  }
+  return inputs;
+}
+
+/**
+ * Wait until the wallet lists every input `group` spends without producing it,
+ * and answer with the transactions behind whatever it still doesn't.
+ *
+ * A wallet resolves each input against its own view of the chain before it will
+ * sign, so a transaction funded by one submitted seconds ago — every chained
+ * transaction, and every first answer to a freshly published survey — is
+ * unsignable until the wallet has caught up. Bounded: past the deadline it is
+ * asked anyway, so a wallet that never lists what it hasn't seen confirmed is no
+ * worse off than without the wait.
+ */
+async function awaitCatchUp(
+  api: Cip30Api,
+  group: readonly BuiltTx[],
+): Promise<ReadonlySet<string>> {
+  const inputs = externalInputs(group);
+  if (inputs.size === 0) return new Set();
+
+  const last = Math.ceil(CATCH_UP_MS / CATCH_UP_POLL_MS);
+  for (let poll = 0; ; poll++) {
+    const held = await walletOutrefs(api);
+    if (!held) return new Set();
+    const behind = [...inputs].filter(([key]) => !held.has(key));
+    if (behind.length === 0) return new Set();
+    if (poll === last) return new Set(behind.map(([, hash]) => hash));
+    await new Promise((resolve) => setTimeout(resolve, CATCH_UP_POLL_MS));
+  }
+}
+
+/**
+ * What to report when a wallet won't sign. One that never caught up with an
+ * input cannot resolve it, and says so in terms of the CBOR it was handed —
+ * which names neither the transaction it is waiting for nor the wait as the
+ * remedy. The user declining is still the user declining, whatever else is true.
+ */
+function signError(e: unknown, behind: ReadonlySet<string>): string {
+  if (behind.size === 0 || isRefusal(e)) return message(e);
+  return `Your wallet has not caught up with transaction ${[...behind].join(", ")} yet, so it cannot sign one that spends what that transaction produced. Wait a few seconds and sign again.`;
+}
+
+/**
  * Offer one transaction to the connected wallet and merge back what it produces.
  * CIP-30 partial signing has a wallet sign what it holds and ignore the rest, so
  * this is also how a second wallet completes a chain the first could only
@@ -502,6 +598,7 @@ async function signOne(
   api: Cip30Api,
   tx: BuiltTx,
 ): Promise<{ readonly tx: BuiltTx; readonly error: string | null }> {
+  const behind = await awaitCatchUp(api, [tx]);
   try {
     const witnessHex = await api.signTx(tx.txCbor, true);
     return {
@@ -512,7 +609,7 @@ async function signOne(
       error: null,
     };
   } catch (e) {
-    return { tx, error: message(e) };
+    return { tx, error: signError(e, behind) };
   }
 }
 
@@ -538,6 +635,7 @@ async function bulkSign(
   const open = built.filter((tx) => tx.missing.length > 0);
   if (!bulk || open.length < 2) return { txs: built, error: null };
 
+  const behind = await awaitCatchUp(api, open);
   try {
     const witnesses = await bulk.signTxs(
       open.map((tx) => ({ cbor: tx.txCbor, partialSign: true })),
@@ -558,7 +656,9 @@ async function bulkSign(
     );
     return { txs: built.map((tx) => signed.get(tx) ?? tx), error: null };
   } catch (e) {
-    if (isRefusal(e)) return { txs: built, error: message(e) };
+    if (isRefusal(e) || behind.size > 0) {
+      return { txs: built, error: signError(e, behind) };
+    }
     console.warn(`bulk signing failed, falling back: ${message(e)}`);
     return { txs: built, error: null };
   }

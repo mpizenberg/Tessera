@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import {
+  CBOR,
   Ed25519Signature,
   KeyHash,
   Transaction,
@@ -18,6 +19,8 @@ import { signAndSubmitChain, type BuiltTx } from "./submit";
 import type { Cip30Api } from "./types";
 
 const TX_A = "aa".repeat(32);
+const TX_B = "bb".repeat(32);
+const TX_C = "cc".repeat(32);
 
 /** A public key and the hash a witness by it is recognized under. */
 function signer(fill: number): { vkey: VKey.VKey; hashHex: string } {
@@ -56,14 +59,22 @@ const planned: PlannedTx = {
   dependsOn: [],
 };
 
-/** An unsigned transaction declaring `required` as its signers. */
-function built([first, ...rest]: readonly [string, ...string[]]): BuiltTx {
+/**
+ * An unsigned transaction declaring `required` as its signers, spending
+ * `spends#0` and known by `hash`. Both default to the same made-up transaction,
+ * so nothing is spent that the chain did not produce itself.
+ */
+function built(
+  [first, ...rest]: readonly [string, ...string[]],
+  spends: string = TX_A,
+  hash: string = TX_A,
+): BuiltTx {
   const required = [first, ...rest];
   const tx = new Transaction.Transaction({
     body: new TransactionBody.TransactionBody({
       inputs: [
         new TransactionInput.TransactionInput({
-          transactionId: TransactionHash.fromHex(TX_A),
+          transactionId: TransactionHash.fromHex(spends),
           index: 0n,
         }),
       ],
@@ -80,11 +91,23 @@ function built([first, ...rest]: readonly [string, ...string[]]): BuiltTx {
   });
   return {
     planned,
-    txHash: TX_A,
+    txHash: hash,
     txCbor: Transaction.toCBORHex(tx),
     required,
     missing: required,
   };
+}
+
+/** A wallet UTxO as CIP-30 hands it over; nothing reads the output half. */
+function utxoHex(txHash: string, index: number): string {
+  const input = new TransactionInput.TransactionInput({
+    transactionId: TransactionHash.fromHex(txHash),
+    index: BigInt(index),
+  });
+  return CBOR.toCBORHex([
+    CBOR.fromCBORBytes(TransactionInput.toCBORBytes(input)),
+    0,
+  ]);
 }
 
 /** One call a wallet was asked to make, in the order it was asked. */
@@ -94,8 +117,12 @@ interface Call {
   readonly txs: readonly string[];
 }
 
-/** A wallet answering each prompt in turn, the last answer standing for the rest. */
-function wallet(...answers: (string | Error)[]): {
+/**
+ * A wallet answering each prompt in turn, the last answer standing for the rest.
+ * A string is a witness set; anything else is what the prompt throws — CIP-30
+ * wallets throw loose `{code, info}` objects as readily as `Error`s.
+ */
+function wallet(...answers: unknown[]): {
   api: Cip30Api;
   calls: Call[];
 } {
@@ -103,8 +130,8 @@ function wallet(...answers: (string | Error)[]): {
   const api = {
     signTx: async (txCbor: string) => {
       calls.push({ kind: "sign", txs: [txCbor] });
-      const answer = answers.length > 1 ? answers.shift()! : answers[0]!;
-      if (answer instanceof Error) throw answer;
+      const answer = answers.length > 1 ? answers.shift() : answers[0];
+      if (typeof answer !== "string") throw answer;
       return answer;
     },
     submitTx: async (txCbor: string) => {
@@ -120,8 +147,8 @@ function wallet(...answers: (string | Error)[]): {
  * returns, `perTx` what it falls back to answering one at a time.
  */
 function bulkWallet(
-  answer: string[] | Error | unknown,
-  ...perTx: (string | Error)[]
+  answer: unknown,
+  ...perTx: unknown[]
 ): { api: Cip30Api; calls: Call[] } {
   const { api, calls } = wallet(...perTx);
   return {
@@ -369,5 +396,106 @@ describe("signing a chain in bulk", () => {
     expect(sent).toEqual([]);
     expect(txs).toHaveLength(2);
     expect(w.calls.map((c) => c.kind)).toEqual(["bulk"]);
+  });
+});
+
+describe("waiting for the wallet to catch up", () => {
+  const alice = signer(3);
+
+  /** A wallet listing `utxos[n]` on its nth poll, the last answer standing. */
+  function slowWallet(
+    utxos: string[][],
+    ...answers: unknown[]
+  ): { api: Cip30Api; calls: Call[]; polls: () => number } {
+    const w = wallet(...answers);
+    let polls = 0;
+    return {
+      api: {
+        ...w.api,
+        getUtxos: async () => utxos[Math.min(polls++, utxos.length - 1)],
+      } as unknown as Cip30Api,
+      calls: w.calls,
+      polls: () => polls,
+    };
+  }
+
+  afterEach(() => vi.useRealTimers());
+
+  test("an input the wallet already holds is not waited for", async () => {
+    const w = slowWallet([[utxoHex(TX_B, 0)]], witnessSetHex(alice.vkey));
+    const { sent } = await publish(w.api, [built([alice.hashHex], TX_B)]);
+
+    expect(sent).toHaveLength(1);
+    expect(w.polls()).toBe(1);
+  });
+
+  test("the wallet is asked again until it holds it", async () => {
+    vi.useFakeTimers();
+    const w = slowWallet(
+      [[], [], [utxoHex(TX_B, 0)]],
+      witnessSetHex(alice.vkey),
+    );
+    const round = publish(w.api, [built([alice.hashHex], TX_B)]);
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect((await round).sent).toHaveLength(1);
+    expect(w.polls()).toBe(3);
+    expect(w.calls.map((c) => c.kind)).toEqual(["sign", "submit"]);
+  });
+
+  test("one that never does is asked to sign anyway, and says which it lacks", async () => {
+    vi.useFakeTimers();
+    const w = slowWallet(
+      [[]],
+      new Error("txCborInvalid;Could not resolve transaction input UTxOs"),
+    );
+    const round = publish(w.api, [built([alice.hashHex], TX_B)]);
+    await vi.advanceTimersByTimeAsync(10_000);
+    const { error, txs } = await round;
+
+    expect(error).toContain(TX_B);
+    expect(error).not.toContain("txCborInvalid");
+    expect(txs).toHaveLength(1);
+    expect(w.calls.map((c) => c.kind)).toEqual(["sign"]);
+  });
+
+  test("a decline is still a decline, however far behind the wallet is", async () => {
+    vi.useFakeTimers();
+    const w = slowWallet([[]], { code: 2, info: "user declined" });
+    const round = publish(w.api, [built([alice.hashHex], TX_B)]);
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect((await round).error).toBe("user declined");
+  });
+
+  test("a wallet that will not enumerate its UTxOs is asked straight away", async () => {
+    const w = slowWallet([], witnessSetHex(alice.vkey));
+    const { sent } = await publish(w.api, [built([alice.hashHex], TX_B)]);
+
+    expect(sent).toHaveLength(1);
+    expect(w.polls()).toBe(1);
+  });
+
+  test("what the chain produces for itself is nobody else's to hold", async () => {
+    const bob = signer(4);
+    let polls = 0;
+    const bulk = bulkWallet([
+      witnessSetHex(alice.vkey),
+      witnessSetHex(bob.vkey),
+    ]);
+    const api = {
+      ...bulk.api,
+      getUtxos: async () => {
+        polls++;
+        return [utxoHex(TX_B, 0)];
+      },
+    } as unknown as Cip30Api;
+    const { sent } = await publish(api, [
+      built([alice.hashHex], TX_B, TX_C),
+      built([bob.hashHex], TX_C, TX_A),
+    ]);
+
+    expect(sent).toHaveLength(2);
+    expect(polls).toBe(1); // TX_C#0 is the chain's own, and not waited for
   });
 });
