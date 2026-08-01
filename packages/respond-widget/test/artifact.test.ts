@@ -191,6 +191,18 @@ describe("built <tessera-respond> artifact", () => {
     expect(document.getElementById("log")!.textContent).toContain(
       "tessera:change",
     );
+
+    // Submit all the way through: the demo's hard-coded specVersion (it can't
+    // import SPEC_VERSION) must match what the widget builds, or every submit
+    // dies with a specVersionMismatch the render-only checks above never see.
+    click(root, ".stepperNav .stepNavBtn:last-child");
+    click(root, ".skipBtn");
+    const responded = once(el, "tessera:response");
+    click(root, ".submitBtn");
+    await responded;
+    expect(document.getElementById("log")!.textContent).toContain(
+      "tessera:response",
+    );
   });
 
   it("renders every question at once in the list layout", () => {

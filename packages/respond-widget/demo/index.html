@@ -122,7 +122,10 @@
       };
 
       const baseDefinition = {
-        specVersion: 1,
+        // cip-179 SPEC_VERSION (not importable from a bundler-free page) —
+        // the widget refuses to submit under a stale one, and the artifact
+        // test's demo twin submits, so drift here fails CI.
+        specVersion: 5,
         owner: { type: "key", keyHash: hexToBytes("00".repeat(28)) },
         title: "Artifact demo survey",
         description:
