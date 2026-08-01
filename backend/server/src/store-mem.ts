@@ -51,6 +51,7 @@ export function memBackendStore(): MemBackendStore {
   const totals = new Map<string, { total: string; endpoint: string }>();
   const artifacts = new Map<string, ArtifactRow>();
   const txMetadata = new Map<string, unknown>();
+  const txProofCbor = new Map<string, string>();
   const govAnchors = new Map<string, GovLinkDoc | null>();
   const govEpochs = new Map<number, SettledGovEpoch>();
   const refreshRuns = new Map<number, RefreshRunRow>();
@@ -200,6 +201,22 @@ export function memBackendStore(): MemBackendStore {
     async putTxMetadata(entries) {
       for (const [h, m] of entries)
         if (!txMetadata.has(h)) txMetadata.set(h, m);
+    },
+
+    async cachedTxProofCbor(txHashes) {
+      const out = new Map<string, string>();
+      for (const h of txHashes) {
+        const cbor = txProofCbor.get(h);
+        if (cbor !== undefined) out.set(h, cbor);
+      }
+      return out;
+    },
+    async putTxProofCbor(entries) {
+      for (const [h, cbor] of entries)
+        if (!txProofCbor.has(h)) txProofCbor.set(h, cbor);
+    },
+    async deleteTxProofCbor(txHashes) {
+      for (const h of txHashes) txProofCbor.delete(h);
     },
 
     async cachedGovAnchors(hashes) {

@@ -228,6 +228,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0012_refresh_run_gov_links.sql",
       "0013_gov_links.sql",
       "0014_upstream_metering.sql",
+      "0015_tx_proof_cache.sql",
     ]);
   });
 });
@@ -543,6 +544,50 @@ describe("store-node response rows", () => {
       `{"tx":"cc","i":0}`,
       `{"tx":"cc","i":1}`,
     ]);
+  });
+});
+
+describe("store-node tx proof cache", () => {
+  let store: BackendStore;
+  afterEach(() => store.close());
+
+  const hash = (n: number) => n.toString(16).padStart(2, "0").repeat(32);
+
+  it("banks CBOR per tx hash, terminally, and drops what it is told to", async () => {
+    store = openBackendStore(":memory:");
+    await store.putTxProofCbor(
+      new Map([
+        [hash(1), "84a4"],
+        [hash(2), "84a5"],
+      ]),
+    );
+    expect(await store.cachedTxProofCbor([hash(1), hash(2), hash(3)])).toEqual(
+      new Map([
+        [hash(1), "84a4"],
+        [hash(2), "84a5"],
+      ]),
+    );
+
+    // A tx hash content-addresses its bytes, so a second write of the same hash
+    // cannot revise evidence a verdict may already rest on.
+    await store.putTxProofCbor(new Map([[hash(1), "deadbeef"]]));
+    expect((await store.cachedTxProofCbor([hash(1)])).get(hash(1))).toBe(
+      "84a4",
+    );
+
+    await store.deleteTxProofCbor([hash(1)]);
+    expect(await store.cachedTxProofCbor([hash(1), hash(2)])).toEqual(
+      new Map([[hash(2), "84a5"]]),
+    );
+  });
+
+  it("reads more hashes than one statement may bind", async () => {
+    store = openBackendStore(":memory:");
+    const hashes = Array.from({ length: 250 }, (_, i) => hash(i));
+    await store.putTxProofCbor(new Map(hashes.map((h) => [h, `cbor${h}`])));
+    const got = await store.cachedTxProofCbor(hashes);
+    expect(got.size).toBe(250);
+    expect(got.get(hashes[249]!)).toBe(`cbor${hashes[249]!}`);
   });
 });
 

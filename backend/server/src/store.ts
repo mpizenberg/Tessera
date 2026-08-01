@@ -171,19 +171,31 @@ export interface TallyStore {
 }
 
 /**
- * Fetch-once cache of label-17 tx metadata — the snapshot scan's resume state
- * (backs `@tessera/koios`'s `TxMetadataCache`). A tx's metadata is immutable
- * (content-addressed by its hash), so `put` is insert-or-ignore and the table
- * only grows with new on-chain activity; membership in a snapshot is decided
- * by each run's fresh label-index scan, never by this cache. What it buys:
- * a refresh cut short (Worker subrequest cap) keeps the batches it fetched, so
- * repeated over-budget runs converge instead of re-fetching forever.
+ * Fetch-once caches behind the snapshot scan (they back `@tessera/koios`'s
+ * `ScanCache`). Both are keyed by tx hash, which content-addresses what they
+ * hold, so every `put` is insert-or-ignore and no row is ever rewritten.
+ *
+ * Metadata is the scan's resume state: membership in a snapshot is decided by
+ * each run's fresh label-index scan, never by the cache, and a refresh cut
+ * short (Worker subrequest cap) keeps the batches it fetched, so repeated
+ * over-budget runs converge instead of re-fetching forever.
+ *
+ * Proof CBOR is the credential-proof evidence behind every owner-proof and
+ * response proof. It is the one cache here that is *pruned* — its rows are
+ * large and a survey's proof stops being read once its artifact is frozen (see
+ * `proofCache.ts`).
  */
 export interface ScanCacheStore {
   /** Cached metadata JSON for the cached subset of the requested hashes. */
   cachedTxMetadata(txHashes: readonly string[]): Promise<Map<string, unknown>>;
   /** Persist fetched metadata (insert-or-ignore; values are JSON-safe). */
   putTxMetadata(entries: ReadonlyMap<string, unknown>): Promise<void>;
+  /** Cached tx CBOR for the cached subset of the requested hashes. */
+  cachedTxProofCbor(txHashes: readonly string[]): Promise<Map<string, string>>;
+  /** Persist fetched tx CBOR (insert-or-ignore). */
+  putTxProofCbor(entries: ReadonlyMap<string, string>): Promise<void>;
+  /** Drop cached CBOR no live survey bears on any more. */
+  deleteTxProofCbor(txHashes: readonly string[]): Promise<void>;
 }
 
 /** One expiration epoch whose governance-link set is final. */

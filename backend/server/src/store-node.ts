@@ -70,6 +70,9 @@ const MIGRATIONS_DIR = fileURLToPath(new URL("../migrations", import.meta.url));
 /** What node:sqlite accepts as a bound parameter (its SupportedValueType). */
 type SqlValue = string | number | bigint | null | Uint8Array;
 
+/** Hashes per keyed read — D1's bound-parameter cap, matched here. */
+const SQL_PARAM_CHUNK = 100;
+
 /**
  * Databases created before the migration runner existed were built from an
  * inline schema (deleted when the runner landed) with no record of what had
@@ -261,6 +264,12 @@ export function openBackendStore(path: string): BackendStore {
   );
   const putTxMetaStmt = db.prepare(
     "INSERT OR IGNORE INTO tx_metadata_cache (tx_hash, metadata) VALUES (?, ?)",
+  );
+  const putTxProofStmt = db.prepare(
+    "INSERT OR IGNORE INTO tx_proof_cache (tx_hash, cbor) VALUES (?, ?)",
+  );
+  const deleteTxProofStmt = db.prepare(
+    "DELETE FROM tx_proof_cache WHERE tx_hash = ?",
   );
 
   const govAnchorAllStmt = db.prepare(
@@ -495,6 +504,33 @@ export function openBackendStore(path: string): BackendStore {
     async putTxMetadata(entries: ReadonlyMap<string, unknown>): Promise<void> {
       for (const [hash, metadata] of entries)
         putTxMetaStmt.run(hash, JSON.stringify(metadata ?? null));
+    },
+
+    async cachedTxProofCbor(
+      txHashes: readonly string[],
+    ): Promise<Map<string, string>> {
+      // Keyed reads rather than the full-table read its metadata twin does:
+      // these rows carry whole transactions. The statement is built per call
+      // because the hash count varies, and chunked to the same 100 bound
+      // parameters D1 caps at, so both stores issue the same queries.
+      const out = new Map<string, string>();
+      for (let i = 0; i < txHashes.length; i += SQL_PARAM_CHUNK) {
+        const chunk = txHashes.slice(i, i + SQL_PARAM_CHUNK);
+        const rows = db
+          .prepare(
+            `SELECT tx_hash AS txHash, cbor FROM tx_proof_cache
+             WHERE tx_hash IN (${chunk.map(() => "?").join(", ")})`,
+          )
+          .all(...chunk) as { txHash: string; cbor: string }[];
+        for (const row of rows) out.set(row.txHash, row.cbor);
+      }
+      return out;
+    },
+    async putTxProofCbor(entries: ReadonlyMap<string, string>): Promise<void> {
+      for (const [hash, cbor] of entries) putTxProofStmt.run(hash, cbor);
+    },
+    async deleteTxProofCbor(txHashes: readonly string[]): Promise<void> {
+      for (const hash of txHashes) deleteTxProofStmt.run(hash);
     },
 
     async cachedGovAnchors(

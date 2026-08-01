@@ -94,6 +94,9 @@ interface DbRefreshRunRow extends Omit<
   incomplete: number;
 }
 
+/** D1 rejects a statement with more bound parameters than this. */
+const D1_PARAM_CAP = 100;
+
 export function d1BackendStore(db: D1Like): BackendStore {
   return {
     async completedValidations(): Promise<Map<string, string | null>> {
@@ -361,6 +364,39 @@ export function d1BackendStore(db: D1Like): BackendStore {
           stmt.bind(hash, JSON.stringify(metadata ?? null)),
         ),
       );
+    },
+
+    async cachedTxProofCbor(
+      txHashes: readonly string[],
+    ): Promise<Map<string, string>> {
+      // Chunked `IN (…)` rather than the full-table read its metadata twin
+      // does: these rows carry whole transactions, and pruning holds the table
+      // at the live working set, so this is one query in practice.
+      const out = new Map<string, string>();
+      for (let i = 0; i < txHashes.length; i += D1_PARAM_CAP) {
+        const chunk = txHashes.slice(i, i + D1_PARAM_CAP);
+        const { results } = await db
+          .prepare(
+            `SELECT tx_hash AS txHash, cbor FROM tx_proof_cache
+             WHERE tx_hash IN (${chunk.map(() => "?").join(", ")})`,
+          )
+          .bind(...chunk)
+          .all<{ txHash: string; cbor: string }>();
+        for (const r of results) out.set(r.txHash, r.cbor);
+      }
+      return out;
+    },
+    async putTxProofCbor(entries: ReadonlyMap<string, string>): Promise<void> {
+      if (entries.size === 0) return;
+      const stmt = db.prepare(
+        "INSERT OR IGNORE INTO tx_proof_cache (tx_hash, cbor) VALUES (?, ?)",
+      );
+      await db.batch([...entries].map(([hash, cbor]) => stmt.bind(hash, cbor)));
+    },
+    async deleteTxProofCbor(txHashes: readonly string[]): Promise<void> {
+      if (txHashes.length === 0) return;
+      const stmt = db.prepare("DELETE FROM tx_proof_cache WHERE tx_hash = ?");
+      await db.batch(txHashes.map((h) => stmt.bind(h)));
     },
 
     async cachedGovAnchors(
