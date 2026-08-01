@@ -503,7 +503,7 @@ pnpm --filter cardano-tessera-respond test    # builds, then runs the artifact +
 pnpm --filter cardano-tessera-respond type-check
 ```
 
-Two demo/test surfaces cover different failure modes:
+Each demo/test surface covers a different failure mode:
 
 | Path                    | What it drives                                                                                                        |
 | :---------------------- | :-------------------------------------------------------------------------------------------------------------------- |
@@ -511,6 +511,13 @@ Two demo/test surfaces cover different failure modes:
 | `demo/index.html`       | Plain-HTML host for the **built** bundle, fully offline. Shows the sealed chunks lazy-loading in the network tab.     |
 | `test/artifact.test.ts` | The automated twin of `demo/` — mounts the built artifact in happy-dom, offline, asserts the whole prop → event loop. |
 | `test/tokens.test.ts`   | Gate: every `--tessera-*` referenced in the CSS is defined in `theme.css`, and vice-versa.                            |
+| `examples/*`            | React and Svelte host apps (repo root), built in CI so a framework-compat regression fails the build.                 |
+
+What the examples' build does **not** prove is declarative prop-setting: real
+browsers upgrade the element before Svelte assigns its props (its templates go
+through `importNode`), happy-dom does not, so a scripted run falls back to
+attributes and proves nothing. `pnpm --filter example-svelte-host dev` plus one
+click is the only check for that path.
 
 In the workspace the package is consumed straight from `src` (its `exports` map
 points at TypeScript source, like every sibling), so cross-package edits are live

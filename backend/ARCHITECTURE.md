@@ -235,7 +235,14 @@ serve what each page actually reads:
   the detail/respond pages _and_ the standalone verifier — a survey result is
   re-verified from exactly this slice, so **the verifier never needs the full
   snapshot** (which is why `/api/snapshot` could be dropped outright once the
-  app migrated).
+  app migrated). It also carries `verdicts` — the decided §6.3 rule-2 proof
+  verdicts, keyed `"<txHash>:<responseIndex>"` — beside the chain data rather
+  than inside it, for `finalizedCancelled`'s reason: the verifier re-derives
+  `SurveyBundle` and must never read the serving tier's opinion as part of it.
+  A key the map lacks is **pending, not failed**, and stays counted in the live
+  tally (counting only what is proven would make every fresh response vanish
+  until the next refresh decided it); only a decided `false` excludes, applied
+  before latest-wins dedup.
 - **`GET /api/responded?credentials=key:<hex>,script:<hex>`** — slim
   `[surveyKey]` projection so Explore can flag "surveys I answered" without
   downloading responses (the mapping is public on-chain data; it was the only
@@ -768,6 +775,13 @@ Contents (sketch):
   the weighted view; the raw view keeps it) by an honest **provenance + trust**
   note: weights are Koios-sourced at `end_epoch`, re-verifiable, not yet
   trustless — plus the artifact's content hash.
+- **The browser reads the serving tier's proof verdicts (§5.1) instead of
+  re-deriving them.** A complete in-browser audit was considered and rejected:
+  ≈40 Koios requests per survey view (dominated by one GET per DRep), per
+  visitor, with no place to bank them across page loads — and it would be a
+  second implementation of `packages/verifier`, which already _is_ the complete
+  Koios-based audit. Evaluating only the contested subset was rejected in the
+  same breath: an audit deserves more care than the claim it checks, not less.
 - **Standalone verifier** — implemented as the workspace package
   `packages/verifier` (`cardano-tessera-verifier`):
   `pnpm --filter cardano-tessera-verifier verify -- --backend <url> --survey
@@ -853,6 +867,14 @@ Contents (sketch):
   artifact committing each responder's revealed answers plus the reveal beacon
   in provenance (§6.5, §7). The verifier re-reveals with its own beacon.
   Non-quicknet sealed surveys are unsupported and skipped (no artifact).
+- **End-to-end closure of the paths chain timing has never exercised** — sealed
+  reveal against real sealed responses, mechanism-B (governance-vote) proof, and
+  DRep/Stakeholder weights and totals are implemented and unit-tested, but no
+  live survey has yet driven them from response to artifact. Preview survey
+  `e34f46df3410f1e21e25067076fd3129a254c49afee7e3cec8185b3cd42e28b8#0` was
+  created to close them and answered from two Stakeholder credentials; it
+  expires 2026-08-04, after which re-verifying it with `packages/verifier` is
+  the check.
 - **On-chain anchor** of the artifact hash — future, closes the CIP-179 loop.
 - **Two-network split** (mainnet/preview) — resolved: wrangler environments
   (`backend/server/wrangler.toml` — top-level is preview, `[env.mainnet]` its

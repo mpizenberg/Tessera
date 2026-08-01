@@ -32,6 +32,15 @@ The app reads chain data through one seam (the `DataSource` interface from
   Settings or set as `VITE_KOIOS_TOKEN`. Direct mode shows raw one-per-credential
   counts only; final weighted artifacts are a backend feature.
 
+A deployed build can also enter direct mode at runtime from Settings when its
+backend is down — emergency participation, gated on a resolvable Koios token.
+Activation stamps a 24 h expiry that applies at the next app load, so nobody
+lives in the degraded mode by accident and nothing interrupts a response being
+composed; leaving keeps the stored token, so re-entering is one click. While it
+is in force every screen carries a banner: responses are unverified, because the
+serving tier's credential-proof verdicts are what the browser normally reads and
+direct mode has none.
+
 ## Publishing
 
 Everything the user publishes goes through one queue. An action — a survey
