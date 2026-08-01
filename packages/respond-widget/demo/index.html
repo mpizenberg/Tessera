@@ -109,13 +109,13 @@
 
       const surveyRef = { txId: hexToBytes("11".repeat(32)), index: 0 };
 
-      const responder = {
-        identity: {
-          payment: { kind: "key", hashHex: "aa".repeat(28) },
-          stake: { kind: "key", hashHex: "bb".repeat(28) },
-          drep: { kind: "key", hashHex: "cc".repeat(28) },
-        },
-      };
+      // The responder is a role→credential map keyed by cip-179 Role values
+      // (0 DRep, 3 Stakeholder, 4 Keyholder), one cip-179 credential each.
+      const keyCred = (byte) => ({
+        type: "key",
+        keyHash: hexToBytes(byte.repeat(28)),
+      });
+      const responder = { 0: keyCred("cc"), 3: keyCred("bb"), 4: keyCred("aa") };
 
       const baseDefinition = {
         specVersion: 1,

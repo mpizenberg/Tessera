@@ -158,6 +158,42 @@ describe("built <tessera-respond> artifact", () => {
     expect(styled).toBe(true);
   });
 
+  it("stays in lockstep with the plain-HTML demo page", async () => {
+    // Run demo/index.html's own inline module — its DOM, its mock data, its
+    // wiring — against the built bundle, so prop-shape drift in the demo
+    // fails CI instead of silently rendering a not-eligible state.
+    const html = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../demo/index.html"),
+      "utf8",
+    );
+    const body = html.slice(
+      html.indexOf("<body>") + "<body>".length,
+      html.indexOf("</body>"),
+    );
+    // innerHTML never executes scripts; drop the tag and run its code
+    // directly (minus the artifact import — beforeAll already registered).
+    const script = /<script type="module">([\s\S]*?)<\/script>/.exec(html)![1]!;
+    document.body.innerHTML = body.replace(/<script[\s\S]*?<\/script>/, "");
+    new Function(script.replace(/^\s*import\b[^\n]*\n/gm, ""))();
+
+    const el = document.getElementById("widget")!;
+    const root = shadow(el);
+    expect(root.querySelector(".headerTitle")?.textContent).toBe(
+      "Artifact demo survey",
+    );
+    // The demo responder is eligible: an answerable card, not a notice.
+    expect(root.querySelector(".card")).not.toBe(null);
+    expect(root.querySelector(".noticeTitle")).toBe(null);
+
+    // And the demo's own listeners work: answering lands in its on-page log.
+    const changed = once(el, "tessera:change");
+    click(root, ".optionRow");
+    await changed;
+    expect(document.getElementById("log")!.textContent).toContain(
+      "tessera:change",
+    );
+  });
+
   it("renders every question at once in the list layout", () => {
     const el = mount(SAMPLES.public, { layout: "list" });
     const root = shadow(el);
