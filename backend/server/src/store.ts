@@ -194,6 +194,11 @@ export interface ScanCacheStore {
   cachedTxProofCbor(txHashes: readonly string[]): Promise<Map<string, string>>;
   /** Persist fetched tx CBOR (insert-or-ignore). */
   putTxProofCbor(entries: ReadonlyMap<string, string>): Promise<void>;
+  /**
+   * Every banked tx hash. The prune's candidate set, which is what keeps its
+   * cost proportional to the cache rather than to the survey archive.
+   */
+  cachedTxProofHashes(): Promise<readonly string[]>;
   /** Drop cached CBOR no live survey bears on any more. */
   deleteTxProofCbor(txHashes: readonly string[]): Promise<void>;
 }

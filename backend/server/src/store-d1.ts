@@ -393,6 +393,12 @@ export function d1BackendStore(db: D1Like): BackendStore {
       );
       await db.batch([...entries].map(([hash, cbor]) => stmt.bind(hash, cbor)));
     },
+    async cachedTxProofHashes(): Promise<readonly string[]> {
+      const { results } = await db
+        .prepare("SELECT tx_hash AS txHash FROM tx_proof_cache")
+        .all<{ txHash: string }>();
+      return results.map((r) => r.txHash);
+    },
     async deleteTxProofCbor(txHashes: readonly string[]): Promise<void> {
       if (txHashes.length === 0) return;
       const stmt = db.prepare("DELETE FROM tx_proof_cache WHERE tx_hash = ?");

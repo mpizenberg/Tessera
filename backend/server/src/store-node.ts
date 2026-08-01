@@ -268,6 +268,9 @@ export function openBackendStore(path: string): BackendStore {
   const putTxProofStmt = db.prepare(
     "INSERT OR IGNORE INTO tx_proof_cache (tx_hash, cbor) VALUES (?, ?)",
   );
+  const txProofHashesStmt = db.prepare(
+    "SELECT tx_hash AS txHash FROM tx_proof_cache",
+  );
   const deleteTxProofStmt = db.prepare(
     "DELETE FROM tx_proof_cache WHERE tx_hash = ?",
   );
@@ -528,6 +531,10 @@ export function openBackendStore(path: string): BackendStore {
     },
     async putTxProofCbor(entries: ReadonlyMap<string, string>): Promise<void> {
       for (const [hash, cbor] of entries) putTxProofStmt.run(hash, cbor);
+    },
+    async cachedTxProofHashes(): Promise<readonly string[]> {
+      const rows = txProofHashesStmt.all() as { txHash: string }[];
+      return rows.map((r) => r.txHash);
     },
     async deleteTxProofCbor(txHashes: readonly string[]): Promise<void> {
       for (const hash of txHashes) deleteTxProofStmt.run(hash);

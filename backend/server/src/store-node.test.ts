@@ -589,6 +589,22 @@ describe("store-node tx proof cache", () => {
     expect(got.size).toBe(250);
     expect(got.get(hashes[249]!)).toBe(`cbor${hashes[249]!}`);
   });
+
+  it("lists what it holds, so the sweep costs the cache and not the archive", async () => {
+    store = openBackendStore(":memory:");
+    await store.putTxProofCbor(
+      new Map([
+        [hash(1), "84a4"],
+        [hash(2), "84a5"],
+      ]),
+    );
+    expect(new Set(await store.cachedTxProofHashes())).toEqual(
+      new Set([hash(1), hash(2)]),
+    );
+
+    await store.deleteTxProofCbor([hash(1)]);
+    expect(await store.cachedTxProofHashes()).toEqual([hash(2)]);
+  });
 });
 
 describe("store-node governance-link resolution state", () => {

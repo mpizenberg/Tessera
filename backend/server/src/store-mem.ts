@@ -215,6 +215,9 @@ export function memBackendStore(): MemBackendStore {
       for (const [h, cbor] of entries)
         if (!txProofCbor.has(h)) txProofCbor.set(h, cbor);
     },
+    async cachedTxProofHashes() {
+      return [...txProofCbor.keys()];
+    },
     async deleteTxProofCbor(txHashes) {
       for (const h of txHashes) txProofCbor.delete(h);
     },
