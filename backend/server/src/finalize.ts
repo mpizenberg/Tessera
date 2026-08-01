@@ -110,6 +110,9 @@ const COVERED_ROLES: readonly number[] = [...RULESET_DESCRIPTOR.coveredRoles];
  */
 const FINALIZE_MARGIN_SECONDS = 600;
 
+/** Refs named in the untalliable summary before it degrades to a count. */
+const UNTALLIABLE_LOG_REFS = 10;
+
 /** How each covered role's weights were sourced (artifact provenance). */
 const ROLE_ENDPOINTS: Record<number, string> = {
   [Role.DRep]: "drep_voting_power_history",
@@ -173,13 +176,24 @@ export async function finalizeClosedSurveys(
   // proofs are attached. Proving first instead would re-fetch the CBOR of every
   // structurally-invalid survey on every refresh, forever — they produce no
   // artifact, so nothing ever retires them from the candidate set.
+  const untalliable: string[] = [];
   const needEvidence = candidates.filter((s) => {
     if (isSurveyTalliable(s)) return true;
-    console.warn(
-      `finalize: ${refKey(s.ref)} definition is spec-invalid — untalliable, no artifact`,
-    );
+    untalliable.push(refKey(s.ref));
     return false;
   });
+  // One line rather than one per survey: the verdict is permanent and nothing
+  // retires these from the candidate set, so the same list is reported on every
+  // refresh forever. Listing them all would drown the log at archive scale.
+  if (untalliable.length > 0) {
+    const shown = untalliable.slice(0, UNTALLIABLE_LOG_REFS);
+    const rest = untalliable.length - shown.length;
+    console.warn(
+      `finalize: ${untalliable.length} definition(s) spec-invalid — untalliable, no artifact: ` +
+        shown.join(", ") +
+        (rest > 0 ? `, +${rest} more` : ""),
+    );
+  }
   if (needEvidence.length === 0) return;
 
   const talliable: SurveyRecord[] = [];
