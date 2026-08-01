@@ -32,7 +32,7 @@
   "sideEffects": false,
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
-    "prepublishOnly": "pnpm run build",
+    "prepublishOnly": "pnpm run build && node ../../scripts/check-publishable.mjs",
     "type-check": "tsc -p tsconfig.json",
     "test": "pnpm --filter cardano-tessera-respond build && vitest run && vitest run --config vitest.react18.config.ts"
   },

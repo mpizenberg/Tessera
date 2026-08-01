@@ -1,6 +1,6 @@
 {
   "name": "cardano-tessera-respond",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "The embeddable <tessera-respond> custom element: renders the CIP-179 answering UI from a survey definition + responder identity, validates and (for sealed surveys) timelock-encrypts in-widget, and emits a ready-to-attach label-17 payload back to the host. Framework-agnostic; wallets, chain reads, and submission stay host-side.",
   "type": "module",
   "license": "Apache-2.0",
@@ -45,7 +45,7 @@
     "dev": "vite",
     "build": "vite build && pnpm run dts",
     "dts": "pnpm --filter cip-179 build && dts-bundle-generator -o dist/tessera-respond.es.d.ts src/element.tsx --project tsconfig.dts.json --external-inlines cardano-tessera-respond-core --inline-declare-global --no-banner",
-    "prepublishOnly": "pnpm run build",
+    "prepublishOnly": "pnpm run build && node ../../scripts/check-publishable.mjs",
     "type-check": "tsc -p tsconfig.json",
     "test": "pnpm run build && vitest run"
   },

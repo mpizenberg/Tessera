@@ -89,7 +89,7 @@
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
-    "prepublishOnly": "pnpm run build",
+    "prepublishOnly": "pnpm run build && node ../../scripts/check-publishable.mjs",
     "type-check": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
