@@ -19,7 +19,7 @@ are signed and submitted by the user's CIP-30 wallet.
 ## Data modes
 
 The app reads chain data through one seam (the `DataSource` interface from
-`@tessera/core`), with two implementations in `src/data/`:
+`cardano-tessera-core`), with two implementations in `src/data/`:
 
 - **Indexer mode** (default in deployments): `VITE_INDEXER_URL` points at the
   Tier-1 backend (`backend/server`), which serves cached reads, protocol
@@ -60,7 +60,7 @@ From the **repository root** (this is a pnpm workspace):
 
 ```sh
 pnpm install
-pnpm --filter @tessera/backend dev                                     # terminal 1
+pnpm --filter cardano-tessera-backend dev                                     # terminal 1
 VITE_INDEXER_URL=http://localhost:8787 pnpm --filter tessera-app dev   # terminal 2
 ```
 
@@ -72,7 +72,7 @@ configuration — every variable is optional and documented there
 
 | Path             | What lives there                                                                                                                                                                                                                          |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/data`       | The `DataSource` seam: backend-served snapshot (`indexer.ts`) vs direct Koios (`@tessera/koios`).                                                                                                                                         |
+| `src/data`       | The `DataSource` seam: backend-served snapshot (`indexer.ts`) vs direct Koios (`cardano-tessera-koios`).                                                                                                                                  |
 | `src/domain`     | App-side domain: transaction building (`create.ts`, `respond.ts`, `fee.ts`), role checks, artifact render-model (`artifactView.ts`). Pure read/tally rules are imported directly from `cip-179/domain` and `cip-179/tally`.               |
 | `src/wallet`     | CIP-30 discovery and connection, plus the whole write path: the action cart (`cart.ts`), the pure partitioner (`plan.ts`), building/signing/submission (`submit.ts`, the only evolution-sdk site), and the pending-tx set (`pending.ts`). |
 | `src/tlock`      | Frontend `Date`-formatting helpers over drand rounds (`drand.ts`); the sealed-mode encryption itself lives in `cip-179/tlock`.                                                                                                            |
@@ -85,7 +85,7 @@ Notable UI behavior: a finalized survey renders its **content-addressed result
 artifact** (per-role weighted bars, turnout, provenance note, artifact hash —
 recomputed locally from the served bytes), with a toggle back to the raw
 unweighted tally. Anyone can re-derive the artifact from chain data with
-`pnpm --filter @tessera/verifier verify` (see `packages/verifier`).
+`pnpm --filter cardano-tessera-verifier verify` (see `packages/verifier`).
 
 ## Develop
 
@@ -97,7 +97,7 @@ unweighted tally. Anyone can re-derive the artifact from chain data with
 | `pnpm --filter tessera-app build`                                  | Production build to `dist/`. |
 | `pnpm format` / `pnpm format:check` (in `frontend/app`)            | Prettier.                    |
 
-Workspace packages (`@tessera/core`, `@tessera/koios`, `cip-179`) are consumed
+Workspace packages (`cardano-tessera-core`, `cardano-tessera-koios`, `cip-179`) are consumed
 from TypeScript source, so cross-package edits are live in the dev server with
 no build step.
 

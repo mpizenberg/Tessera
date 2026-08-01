@@ -23,7 +23,7 @@ import type {
   DeepPartial,
   Responder,
   RespondMessages,
-} from "@tessera/respond-core";
+} from "cardano-tessera-respond-core";
 
 export type { Responder };
 

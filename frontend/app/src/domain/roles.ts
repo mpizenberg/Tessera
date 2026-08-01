@@ -1,7 +1,7 @@
 /**
  * Wallet role/credential + ownership helpers — all app-side.
  *
- * `@tessera/respond-core` deliberately knows nothing about wallets: its
+ * `cardano-tessera-respond-core` deliberately knows nothing about wallets: its
  * `Responder` is a plain role→credential map it takes verbatim (it never
  * validates a credential — the carrying transaction does, host-side). So the
  * wallet→role derivation lives here, next to the wallet seam, operating on the
@@ -18,7 +18,7 @@
 import { Role, type Credential, type SurveyDefinition } from "cip-179";
 
 import { bytesToHex, hexToBytes } from "cip-179/domain";
-import type { Responder } from "@tessera/respond-core";
+import type { Responder } from "cardano-tessera-respond-core";
 import type { WalletCredential, WalletIdentity } from "~/wallet/types";
 
 /** A wallet credential ({kind, hashHex}) as a CIP-179 {@link Credential}. */

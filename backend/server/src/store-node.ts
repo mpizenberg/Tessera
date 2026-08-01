@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
-import type { SurveyListCounts } from "@tessera/core";
+import type { SurveyListCounts } from "cardano-tessera-core";
 import type { GovLink, GovLinkDoc } from "cip-179/domain";
 
 import type {

@@ -1,5 +1,5 @@
 /**
- * `@tessera/respond-ui` — the shared SolidJS answering UI for CIP-179 surveys.
+ * `cardano-tessera-respond-ui` — the shared SolidJS answering UI for CIP-179 surveys.
  *
  * One implementation of the per-question body components, consumed by both the
  * Tessera app and the `<tessera-respond>` widget so their answering behavior

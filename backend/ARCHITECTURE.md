@@ -54,7 +54,7 @@ owner-proofs of open surveys and of the transactions cancelling them,
    shared cache — cost grows for every user as surveys accumulate, and the
    `MAX_PAGES` cap (`incomplete` flag) is a real ceiling.
 
-The `DataSource` seam (`@tessera/core`'s `source.ts`) was built for exactly this swap:
+The `DataSource` seam (`cardano-tessera-core`'s `source.ts`) was built for exactly this swap:
 _"a future semantic indexer backend can implement the same interface and drop in
 with no change to the domain or UI layers."_
 
@@ -152,7 +152,7 @@ load-bearing for the verifiability story, not just hygiene.
   txproof/tlock stacks inject their Cardano-serialization primitives through
   `TxProofCodec` / `MetadatumCodec` ports, so evolution-sdk is confined to the
   adapter; see `packages/cip179/README.md`.
-- **`@tessera/core`** — extract the **pure** domain from `frontend/app/src`:
+- **`cardano-tessera-core`** — extract the **pure** domain from `frontend/app/src`:
   - **Move:** the data-model **types** from `data/source.ts` (`ChainPos`,
     `ChainTip`, `SurveyRecord`, `ResponseRecord`, `CancellationRecord`,
     `Cip179Records`, `GovLink`, `CancellationProof`, `NativeScriptInfo`), and the
@@ -164,7 +164,7 @@ load-bearing for the verifiability story, not just hygiene.
     helpers stay.
   - **Cut line:** _data-model types + pure validation/tally/aggregation →
     package; anything wallet/CIP-30/runtime → app._
-- `@tessera/core` is authored **BigInt- and rational-ready** from the outset
+- `cardano-tessera-core` is authored **BigInt- and rational-ready** from the outset
   (§6.6): the **weighted, content-addressed** tally (`weightedTally*` → the
   hashed artifact) uses BigInt aggregates and returns ratios as integer
   `{numerator, denominator}` pairs, never floats. Note this applies to the
@@ -173,7 +173,7 @@ load-bearing for the verifiability story, not just hygiene.
   hashed — a presentation helper that happens to live in the package.
 
 `KoiosDataSource` (the concrete Koios reader) stays in the app/serving tier, not
-in `@tessera/core` — the package is pure logic + types only.
+in `cardano-tessera-core` — the package is pure logic + types only.
 
 ---
 
@@ -251,7 +251,7 @@ immutable`; 404 while the survey is open or not yet finalized.
 
 How it landed (shared with Phase 2's tally work, which is why it waited):
 
-- The **dedupe rule** (latest-valid-per-credential) lives in `@tessera/core`
+- The **dedupe rule** (latest-valid-per-credential) lives in `cardano-tessera-core`
   (`dedupe.ts`: `refKey`/`credentialKey`/`dedupeResponses`/`responseCounts`),
   so the server's `responseCount` and the client's audit agree by construction.
 - **Nothing is stored as a whole-snapshot document**
@@ -769,12 +769,12 @@ Contents (sketch):
   note: weights are Koios-sourced at `end_epoch`, re-verifiable, not yet
   trustless — plus the artifact's content hash.
 - **Standalone verifier** — implemented as the workspace package
-  `packages/verifier` (`@tessera/verifier`):
-  `pnpm --filter @tessera/verifier verify -- --backend <url> --survey
+  `packages/verifier` (`cardano-tessera-verifier`):
+  `pnpm --filter cardano-tessera-verifier verify -- --backend <url> --survey
 <txHash>:<index>`. It fetches the bundle + artifact from the backend, refetches
   every verification input straight from Koios (tx proofs, block indices,
   weights, membership, totals, governance links), re-runs the pinned ruleset
-  via the same `@tessera/core` code, and compares content hashes —
+  via the same `cardano-tessera-core` code, and compares content hashes —
   `MATCH`/`MISMATCH` (with a diff), exit 0/1. It never reads the backend's
   validation tables; a total the upstream can't re-serve is taken from the
   artifact with an explicit "not independently confirmed" note.
@@ -803,7 +803,7 @@ Contents (sketch):
 ## 10. Phasing
 
 1. **Phase 1 — security + scale + packaging.**
-   - Promote `cip-179` to a workspace package; extract `@tessera/core`
+   - Promote `cip-179` to a workspace package; extract `cardano-tessera-core`
      (BigInt/rational-ready).
    - Stand up Tier 1 serving (read path moved server-side; token as
      secret/anonymous; SQL snapshot cache; Cron refresh). Frontend swaps to
@@ -816,7 +816,7 @@ Contents (sketch):
      `weightedTally.ts` (+ §6.3 rules 1–3 in `proof.ts`/`audit.ts`/`dedupe.ts`,
      persisted incrementally in `validated_response`).
    - Content-addressed artifacts (§7 — in D1, not R2; **done**); optional IPFS
-     pin from the frontend; standalone verifier reusing `@tessera/core`.
+     pin from the frontend; standalone verifier reusing `cardano-tessera-core`.
    - ~~Split `/api/snapshot` into per-page slices (§5.1): `/api/surveys` list,
      per-survey bundle (also the verifier's input — it never needs the full
      snapshot), `/api/responded` projection; then retire `/api/snapshot`.~~

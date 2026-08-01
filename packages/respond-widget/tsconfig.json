@@ -20,8 +20,8 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
-      "@tessera/respond-core": ["../respond-core/src/index.ts"],
-      "@tessera/respond-ui": ["../respond-ui/src/index.ts"]
+      "cardano-tessera-respond-core": ["../respond-core/src/index.ts"],
+      "cardano-tessera-respond-ui": ["../respond-ui/src/index.ts"]
     }
   },
   "include": ["src", "dev", "test", "vite.config.ts", "vitest.config.ts"]

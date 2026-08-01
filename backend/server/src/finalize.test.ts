@@ -18,7 +18,7 @@ import {
   type SurveyRecord,
   type TxProof,
 } from "cip-179/domain";
-import { verifyArtifact } from "@tessera/verifier";
+import { verifyArtifact } from "cardano-tessera-verifier";
 import {
   artifactHash,
   responderAnswers,

@@ -3,14 +3,18 @@
  * answering controls, consumed by both the Tessera app and the
  * `<tessera-respond>` widget so their behavior cannot drift. Each takes
  * `(q, v, onChange)`; the draft store and `decided()` gating come from
- * `@tessera/respond-core`. Strings come from the injected i18n (`useI18n()`),
+ * `cardano-tessera-respond-core`. Strings come from the injected i18n (`useI18n()`),
  * class names from the injected map (`useClasses()`, identity by default).
  */
 
 import { For, Show, createMemo, type Component } from "solid-js";
 
 import type { Question } from "cip-179";
-import { initDraft, optionCount, type DraftValue } from "@tessera/respond-core";
+import {
+  initDraft,
+  optionCount,
+  type DraftValue,
+} from "cardano-tessera-respond-core";
 
 import { useI18n } from "./i18n-context";
 import { useClasses } from "./classes-context";

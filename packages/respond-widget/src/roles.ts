@@ -9,7 +9,7 @@
  */
 
 import { Role } from "cip-179";
-import type { I18n, MsgKey } from "@tessera/respond-core";
+import type { I18n, MsgKey } from "cardano-tessera-respond-core";
 
 import type { ProofKeyKind } from "./types";
 

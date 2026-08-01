@@ -10,7 +10,7 @@
  */
 
 import { createContext, useContext, type Accessor } from "solid-js";
-import type { I18n } from "@tessera/respond-core";
+import type { I18n } from "cardano-tessera-respond-core";
 
 export const I18nContext = createContext<Accessor<I18n>>();
 

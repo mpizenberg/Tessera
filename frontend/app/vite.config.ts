@@ -11,18 +11,20 @@ export default defineConfig({
       // Resolve the workspace libraries straight from their TypeScript source
       // so edits are live with no separate build step. `cip-179` needs no
       // aliases: its exports map points at src, which Vite resolves directly.
-      "@tessera/core": r("../../packages/core/src/index.ts"),
-      "@tessera/koios": r("../../packages/koios/src/index.ts"),
-      "@tessera/respond-core": r("../../packages/respond-core/src/index.ts"),
-      "@tessera/respond-ui": r("../../packages/respond-ui/src/index.ts"),
+      "cardano-tessera-core": r("../../packages/core/src/index.ts"),
+      "cardano-tessera-koios": r("../../packages/koios/src/index.ts"),
+      "cardano-tessera-respond-core": r(
+        "../../packages/respond-core/src/index.ts",
+      ),
+      "cardano-tessera-respond-ui": r("../../packages/respond-ui/src/index.ts"),
       // The embeddable widget is consumed from source too, so the dev-only
       // reference-host page (`/dev/widget/:key`) drives the very
       // same code the built artifact ships. The `/element` subpath registers
       // the `<tessera-respond>` custom element.
-      "@tessera/respond-widget/element": r(
+      "cardano-tessera-respond/element": r(
         "../../packages/respond-widget/src/element.tsx",
       ),
-      "@tessera/respond-widget": r(
+      "cardano-tessera-respond": r(
         "../../packages/respond-widget/src/index.ts",
       ),
       "~": r("./src"),

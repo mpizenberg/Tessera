@@ -1,4 +1,4 @@
-# @tessera/respond-ui
+# cardano-tessera-respond-ui
 
 The shared SolidJS answering UI for CIP-179 surveys: one implementation of the
 per-question body components (single choice, multi select, ranking, numeric
@@ -6,7 +6,7 @@ range, points allocation, rating, custom), consumed by **both** the Tessera app
 and the `<tessera-respond>` widget so their answering behavior cannot drift.
 
 The behavior-free logic (drafts, validation, eligibility) lives in
-`@tessera/respond-core`; this package is the behavior-bearing view layer on top
+`cardano-tessera-respond-core`; this package is the behavior-bearing view layer on top
 of it. The two host-specific deltas are injected via Solid context:
 
 - **i18n** — `I18nContext` carries an `I18n` accessor. Both hosts provide

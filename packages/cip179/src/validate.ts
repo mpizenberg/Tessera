@@ -10,7 +10,7 @@
  * (credential proofs, role membership, epochs, cancellation, dedup) — that is
  * the responsibility of an indexer with chain access.
  *
- * RULESET-PINNED BEHAVIOR: the "validity" rule in `@tessera/core`'s
+ * RULESET-PINNED BEHAVIOR: the "validity" rule in `cardano-tessera-core`'s
  * `RULESET_DESCRIPTOR` is exactly "the response passes this validation against
  * the on-chain definition", and that descriptor's hash is baked into every
  * tally artifact. The emitter freezes a response's `wellFormed` verdict at

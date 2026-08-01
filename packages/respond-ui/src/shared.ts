@@ -7,7 +7,7 @@
  */
 
 import type { OptionsOrCount, Question, RatingScale } from "cip-179";
-import type { I18n } from "@tessera/respond-core";
+import type { I18n } from "cardano-tessera-respond-core";
 
 export function range(n: number): number[] {
   return Array.from({ length: Math.max(0, n) }, (_, i) => i);

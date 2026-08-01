@@ -14,7 +14,7 @@
 
 import type { GovLink } from "cip-179/domain";
 import { toJsonSafe } from "cip-179/tally";
-import { KoiosDataSource, KoiosTallyInputs } from "@tessera/koios";
+import { KoiosDataSource, KoiosTallyInputs } from "cardano-tessera-koios";
 
 import type { ServerConfig } from "./config";
 import { finalizeClosedSurveys } from "./finalize";

@@ -11,10 +11,12 @@ export default defineConfig({
     alias: {
       // Mirrors vite.config.ts; `cip-179` resolves via its src-pointing
       // exports map, no aliases needed.
-      "@tessera/core": r("../../packages/core/src/index.ts"),
-      "@tessera/koios": r("../../packages/koios/src/index.ts"),
-      "@tessera/respond-core": r("../../packages/respond-core/src/index.ts"),
-      "@tessera/respond-ui": r("../../packages/respond-ui/src/index.ts"),
+      "cardano-tessera-core": r("../../packages/core/src/index.ts"),
+      "cardano-tessera-koios": r("../../packages/koios/src/index.ts"),
+      "cardano-tessera-respond-core": r(
+        "../../packages/respond-core/src/index.ts",
+      ),
+      "cardano-tessera-respond-ui": r("../../packages/respond-ui/src/index.ts"),
       "~": r("./src"),
     },
   },

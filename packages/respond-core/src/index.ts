@@ -1,5 +1,5 @@
 /**
- * `@tessera/respond-core` — the pure, framework-free core for answering CIP-179
+ * `cardano-tessera-respond-core` — the pure, framework-free core for answering CIP-179
  * surveys, shared by the Tessera app and the embeddable `<tessera-respond>`
  * widget.
  *

@@ -49,7 +49,7 @@ import {
   type Draft,
   type DraftValue,
   type I18n,
-} from "@tessera/respond-core";
+} from "cardano-tessera-respond-core";
 import {
   ClassesContext,
   I18nContext,
@@ -58,7 +58,7 @@ import {
   typeMeta,
   useI18n,
   type BodyClasses,
-} from "@tessera/respond-ui";
+} from "cardano-tessera-respond-ui";
 import { respondableRoles, roleCredential } from "~/domain/roles";
 import { usePresentation } from "~/enrichment/usePresentation";
 import { IPFS_PROVIDERS } from "~/enrichment/providers";
@@ -90,7 +90,7 @@ import { problemText } from "~/i18n/problem";
 import css from "./Respond.module.css";
 
 /**
- * The shared question bodies (`@tessera/respond-ui`) render class names through
+ * The shared question bodies (`cardano-tessera-respond-ui`) render class names through
  * {@link ClassesContext}; this maps each one to this screen's CSS module. Keys
  * are checked complete by `BodyClasses`, so a body can't render a class this
  * screen doesn't style.

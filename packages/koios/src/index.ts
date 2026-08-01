@@ -1,5 +1,5 @@
 /**
- * `@tessera/koios` — the Koios-backed `DataSource` and its wire adapters.
+ * `cardano-tessera-koios` — the Koios-backed `DataSource` and its wire adapters.
  *
  * Impure (it does HTTP + CBOR decoding) but portable: it runs in the browser
  * (the direct/power-user path) and in the serving tier (behind a token secret or

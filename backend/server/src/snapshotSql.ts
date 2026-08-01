@@ -1,7 +1,7 @@
 /**
  * SQL over the materialized snapshot tables, shared verbatim by `store-node.ts`
  * and `store-d1.ts` (same SQLite dialect on both). The `survey_index`
- * page/count semantics mirror `@tessera/core`'s `pageSurveyList` — the
+ * page/count semantics mirror `cardano-tessera-core`'s `pageSurveyList` — the
  * executable spec — exactly: bucket 0 gov-linked / 1 open / 2 closed, ordered
  * (bucket ASC, slot DESC, key ASC), AND-of-substrings search, chip counts over
  * the search-matching set.
@@ -11,7 +11,7 @@
  * scan-sized and these run once per request.
  */
 
-import type { SurveyListCounts } from "@tessera/core";
+import type { SurveyListCounts } from "cardano-tessera-core";
 
 import type { ResponseRow, SurveyIndexRow, SurveyPageQuery } from "./store";
 

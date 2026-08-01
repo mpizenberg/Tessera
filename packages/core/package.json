@@ -1,5 +1,5 @@
 {
-  "name": "@tessera/core",
+  "name": "cardano-tessera-core",
   "version": "0.1.0",
   "description": "Tessera application core: the DataSource read seam, the Explore list/health payloads, keyset paging, and portable config. The reusable domain + tally surface lives in cip-179 and is imported directly, never re-exported here. No I/O, no runtime coupling.",
   "type": "module",

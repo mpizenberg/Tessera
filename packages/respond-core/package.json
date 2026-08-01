@@ -1,5 +1,5 @@
 {
-  "name": "@tessera/respond-core",
+  "name": "cardano-tessera-respond-core",
   "version": "0.1.0",
   "description": "Pure, framework-free core for answering CIP-179 surveys: response drafting, role/credential derivation, and eligibility (including host-trusted SPO/CC credentials). Consumed by the Tessera app and the embeddable <tessera-respond> widget. No I/O, no framework.",
   "type": "module",

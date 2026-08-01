@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { I18n } from "@tessera/respond-core";
+import type { I18n } from "cardano-tessera-respond-core";
 
 import { clampStep, labelFor, ratingLevels } from "./shared";
 

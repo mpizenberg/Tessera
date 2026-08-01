@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Role, type Credential, type SurveyDefinition } from "cip-179";
 import { hexToBytes } from "cip-179/domain";
 import { fromJsonSafe, toJsonSafe } from "cip-179/tally";
-import { encodeSurveyCursor, parseSurveyCursor } from "@tessera/core";
+import { encodeSurveyCursor, parseSurveyCursor } from "cardano-tessera-core";
 import type {
   CancellationRecord,
   ChainTip,

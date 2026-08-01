@@ -1,5 +1,5 @@
 {
-  "name": "@tessera/koios",
+  "name": "cardano-tessera-koios",
   "version": "0.1.0",
   "description": "Tessera Koios data-access: the KoiosDataSource read path plus the Koios-JSON and tx-CBOR adapters. Shared by the browser app (power-user/offline path) and the serving tier.",
   "type": "module",
@@ -18,7 +18,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@tessera/core": "workspace:*",
+    "cardano-tessera-core": "workspace:*",
     "cip-179": "workspace:*",
     "@evolution-sdk/evolution": "^0.5.9"
   },

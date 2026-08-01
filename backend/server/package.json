@@ -1,5 +1,5 @@
 {
-  "name": "@tessera/backend",
+  "name": "cardano-tessera-backend",
   "version": "0.1.0",
   "description": "Tessera Tier-1 serving backend: the Koios read-path snapshot, cached in SQLite and served over HTTP. Runs as a local Node process now; the same Hono app + a D1 adapter target Cloudflare Workers later.",
   "type": "module",
@@ -17,8 +17,8 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@tessera/core": "workspace:*",
-    "@tessera/koios": "workspace:*",
+    "cardano-tessera-core": "workspace:*",
+    "cardano-tessera-koios": "workspace:*",
     "cip-179": "workspace:*",
     "@evolution-sdk/evolution": "^0.5.9",
     "@mattpiz/tlock-js": "0.10.0",
@@ -26,7 +26,7 @@
     "hono": "^4.6.0"
   },
   "devDependencies": {
-    "@tessera/verifier": "workspace:*",
+    "cardano-tessera-verifier": "workspace:*",
     "@types/node": "^25.9.3",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",

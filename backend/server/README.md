@@ -1,4 +1,4 @@
-# @tessera/backend
+# cardano-tessera-backend
 
 Tier-1 serving backend for Tessera: runs the CIP-179 Koios read path once per
 interval, caches it in SQLite, and serves it over HTTP. One Hono app, two
@@ -29,7 +29,7 @@ Each refresh cycle does three things, in order:
 
 ```sh
 pnpm install                        # from the repo root, once
-pnpm --filter @tessera/backend dev
+pnpm --filter cardano-tessera-backend dev
 ```
 
 Serves on http://localhost:8787 against **preview** Koios, **tokenless** —
@@ -69,7 +69,7 @@ a bodiless `304`. `fetchedAt` is when the producing scan _started_ reading —
 the instant its `tip` was taken — so `ageSeconds` counts from when the data was
 true, not from when the refresh finished writing it.
 
-Payloads use the `@tessera/core` JSON-safe wire form (bytes → hex under
+Payloads use the `cardano-tessera-core` JSON-safe wire form (bytes → hex under
 `$bytes`, big integers → decimal strings under `$bigint`) so they round-trip
 losslessly to the browser. The `/api/*` routes send permissive CORS headers
 (the data is public and cookieless), so the browser app can read them
@@ -83,7 +83,7 @@ snapshot from here (via `IndexerDataSource`) instead of scanning Koios itself �
 no Koios token needed for reads:
 
 ```sh
-pnpm --filter @tessera/backend dev                              # terminal 1
+pnpm --filter cardano-tessera-backend dev                              # terminal 1
 VITE_INDEXER_URL=http://localhost:8787 pnpm --filter tessera-app dev   # terminal 2
 ```
 
@@ -103,17 +103,17 @@ The Worker entry reuses the same app with a D1 store; the cron trigger
 Miniflare's bundled D1 (no Cloudflare account needed):
 
 ```sh
-pnpm --filter @tessera/backend exec wrangler d1 migrations apply DB --local
-pnpm --filter @tessera/backend dev:cf        # wrangler dev --test-scheduled
+pnpm --filter cardano-tessera-backend exec wrangler d1 migrations apply DB --local
+pnpm --filter cardano-tessera-backend dev:cf        # wrangler dev --test-scheduled
 curl "http://localhost:8787/__scheduled"     # trigger one refresh by hand
 ```
 
 To deploy preview: `wrangler d1 create tessera-cache-preview`, paste the
 database id into `wrangler.toml`, apply migrations with `--remote`, then
-`pnpm --filter @tessera/backend deploy:preview`. Mainnet is a wrangler
+`pnpm --filter cardano-tessera-backend deploy:preview`. Mainnet is a wrangler
 environment — same one-time D1 setup with its own database
 (`tessera-cache-mainnet`) and `--env mainnet` on the migration, then
-`pnpm --filter @tessera/backend deploy:mainnet`.
+`pnpm --filter cardano-tessera-backend deploy:mainnet`.
 
 Subrequests (logged on every cron run in `wrangler tail`): a steady-state
 refresh costs ~6 Koios calls; validating new responses and finalizing closing

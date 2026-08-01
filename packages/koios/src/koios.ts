@@ -40,7 +40,11 @@ import type {
   TxProof,
 } from "cip-179/domain";
 import type { TallyArtifact } from "cip-179/tally";
-import type { AppConfig, DataSource, SurveyListPayload } from "@tessera/core";
+import type {
+  AppConfig,
+  DataSource,
+  SurveyListPayload,
+} from "cardano-tessera-core";
 import { Koios } from "@evolution-sdk/evolution/sdk/provider/Koios";
 import type { ProtocolParameters } from "@evolution-sdk/evolution/sdk/provider/Provider";
 import { koiosJsonToMetadatum, type KoiosJson } from "./metadatum";
@@ -487,7 +491,7 @@ export class KoiosDataSource implements DataSource {
     // "ended". The serving tier covers it from the artifact instead
     // (`finalizedCancelled` in the list payload); direct-Koios mode has no
     // artifacts and accepts the gap. Mirrors `cancellationStates` in
-    // @tessera/core's survey.ts.
+    // cardano-tessera-core's survey.ts.
     const refKeyOf = (ref: SurveyRef): string =>
       `${bytesToHex(ref.txId)}:${ref.index}`;
     const openSurveyKeys = new Set(

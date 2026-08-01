@@ -124,7 +124,7 @@ export async function finalizeClosedSurveys(
   config: ServerConfig,
   store: TallyStore,
   inputs: TallyInputSource,
-  source: Pick<import("@tessera/koios").KoiosDataSource, "txProofs">,
+  source: Pick<import("cardano-tessera-koios").KoiosDataSource, "txProofs">,
   records: Cip179Records,
   tip: ChainTip,
   reveal: SealedRevealFn = tlockSealedReveal,
@@ -528,7 +528,7 @@ export async function finalizeClosedSurveys(
  * cancellation path uses.
  */
 async function withOwnerProofs(
-  source: Pick<import("@tessera/koios").KoiosDataSource, "txProofs">,
+  source: Pick<import("cardano-tessera-koios").KoiosDataSource, "txProofs">,
   candidates: readonly SurveyRecord[],
 ): Promise<SurveyRecord[]> {
   const neededScripts = new Map<string, string[]>();
@@ -565,7 +565,7 @@ async function withOwnerProofs(
 async function withCancellations(
   config: ServerConfig,
   store: TallyStore,
-  source: Pick<import("@tessera/koios").KoiosDataSource, "txProofs">,
+  source: Pick<import("cardano-tessera-koios").KoiosDataSource, "txProofs">,
   records: Cip179Records,
   candidates: readonly SurveyRecord[],
   nowSec: number,

@@ -5,13 +5,13 @@ import {
   SECONDS_PER_EPOCH,
   type AppConfig,
   type Network,
-} from "@tessera/core";
+} from "cardano-tessera-core";
 
 // The config *shape* + endpoint tables are shared with the serving tier and
-// live in `@tessera/core`; this module owns only how the browser *resolves*
+// live in `cardano-tessera-core`; this module owns only how the browser *resolves*
 // them (localStorage overrides + Vite build env). Re-export the types so the
 // many `~/config` consumers keep their import path.
-export type { AppConfig, Network } from "@tessera/core";
+export type { AppConfig, Network } from "cardano-tessera-core";
 
 /** CIP-179 went live around here — ignore older label-17 history. */
 const SURVEYS_SINCE_ISO = "2026-06-01T00:00:00Z";

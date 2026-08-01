@@ -8,7 +8,7 @@
  * declarations clash with `@types/node` in this package's single tsconfig.
  */
 
-import type { SurveyListCounts } from "@tessera/core";
+import type { SurveyListCounts } from "cardano-tessera-core";
 import type { GovLink, GovLinkDoc } from "cip-179/domain";
 
 import type {

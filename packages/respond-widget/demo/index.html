@@ -8,7 +8,7 @@
       A plain-HTML host for the BUILT bundle (no bundler, no framework, fully
       offline): the automated twin lives in test/artifact.test.ts. To view:
 
-        pnpm --filter @tessera/respond-widget build
+        pnpm --filter cardano-tessera-respond build
         python3 -m http.server 3200 --directory packages/respond-widget
         open http://localhost:3200/demo/
 
@@ -115,7 +115,11 @@
         type: "key",
         keyHash: hexToBytes(byte.repeat(28)),
       });
-      const responder = { 0: keyCred("cc"), 3: keyCred("bb"), 4: keyCred("aa") };
+      const responder = {
+        0: keyCred("cc"),
+        3: keyCred("bb"),
+        4: keyCred("aa"),
+      };
 
       const baseDefinition = {
         specVersion: 1,

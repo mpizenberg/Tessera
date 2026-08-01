@@ -48,8 +48,8 @@ import {
   parseSurveyCursor,
   searchTermsOf,
   type BackendHealth,
-} from "@tessera/core";
-import { KoiosDataSource } from "@tessera/koios";
+} from "cardano-tessera-core";
+import { KoiosDataSource } from "cardano-tessera-koios";
 
 import type { ServerConfig } from "./config";
 import { upstreamMeter } from "./meter";
@@ -239,7 +239,7 @@ export function createApp(
   });
 
   // The paged Explore list, answered from the refresh-materialized
-  // `survey_index` rows. Query params mirror `@tessera/core`'s
+  // `survey_index` rows. Query params mirror `cardano-tessera-core`'s
   // `SurveyListParams`; semantics (ordering, filters, counts, cursor) are the
   // core `pageSurveyList` spec, implemented in SQL (`snapshotSql.ts`). The
   // finalized-cancelled overlay is baked into the rows at refresh time,

@@ -14,7 +14,7 @@
     "test": "pnpm -r test",
     "build": "pnpm -r build",
     "build:libs": "pnpm --filter cip-179 build",
-    "backend:dev": "pnpm --filter @tessera/backend dev",
+    "backend:dev": "pnpm --filter cardano-tessera-backend dev",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

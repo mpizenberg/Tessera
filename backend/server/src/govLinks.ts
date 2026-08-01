@@ -31,7 +31,7 @@ import {
   type GovProposal,
   type KoiosDataSource,
   type ResolveAnchorsOptions,
-} from "@tessera/koios";
+} from "cardano-tessera-koios";
 import type { GovLink, GovLinkDoc, GovLinkScan } from "cip-179/domain";
 
 import type { GovLinkStore, SettledGovEpoch } from "./store";

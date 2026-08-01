@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { AppConfig } from "@tessera/core";
+import type { AppConfig } from "cardano-tessera-core";
 import type { Credential } from "cip-179";
 import { mechanismAProven, hexToBytes } from "cip-179/domain";
 import { decodeResolvedNativeScript } from "cip-179/txproof";

@@ -4,7 +4,7 @@
  * semantics as the real stores. Not part of any runtime wiring.
  */
 
-import type { SurveyListFilter } from "@tessera/core";
+import type { SurveyListFilter } from "cardano-tessera-core";
 import type { GovLink, GovLinkDoc } from "cip-179/domain";
 
 import type {

@@ -15,7 +15,7 @@ import {
 } from "cip-179";
 import { hexToBytes } from "cip-179/domain";
 import { QUICKNET_CHAIN_HASH } from "cip-179/tlock";
-import type { Responder } from "@tessera/respond-core";
+import type { Responder } from "cardano-tessera-respond-core";
 
 const keyCred = (hex: string): Credential => ({
   type: "key",

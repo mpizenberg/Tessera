@@ -36,7 +36,7 @@ import type { Credential } from "cip-179";
 
 import { credentialKey } from "cip-179/domain";
 import type { TallyInputSource, WeightInfo } from "cip-179/tally";
-import type { AppConfig } from "@tessera/core";
+import type { AppConfig } from "cardano-tessera-core";
 
 import { evolutionCodec } from "cip-179/evolution";
 

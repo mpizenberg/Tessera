@@ -1,7 +1,7 @@
 /**
  * Verifier CLI:
  *
- *   pnpm --filter @tessera/verifier verify -- \
+ *   pnpm --filter cardano-tessera-verifier verify -- \
  *     --backend https://<backend> --survey <txHash>:<index> \
  *     [--koios <url>] [--token <koios token>] [--since <ISO date>]
  *
@@ -39,8 +39,8 @@ import {
   SECONDS_PER_EPOCH,
   type AppConfig,
   type Network,
-} from "@tessera/core";
-import { KoiosDataSource, KoiosTallyInputs } from "@tessera/koios";
+} from "cardano-tessera-core";
+import { KoiosDataSource, KoiosTallyInputs } from "cardano-tessera-koios";
 import { revealResponses } from "cip-179/tlock";
 import { evolutionCodec } from "cip-179/evolution";
 

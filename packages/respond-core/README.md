@@ -1,4 +1,4 @@
-# @tessera/respond-core
+# cardano-tessera-respond-core
 
 The **pure, framework-free core** for answering [CIP-179](../../frontend/cip-179.md)
 surveys: response drafting, responder eligibility, an instance-scoped i18n
@@ -20,7 +20,7 @@ host-side; if you just embed the widget, you rarely import this package.
 | `i18n.ts`        | `createI18n`, the `I18n` interface, `renderProblem`, catalog types.                                                                                            |
 | `seal.ts`        | `sealResponse` — the lazy tlock + evolution-CBOR wrapper.                                                                                                      |
 
-Everything is re-exported from the package root: `import { … } from "@tessera/respond-core"`.
+Everything is re-exported from the package root: `import { … } from "cardano-tessera-respond-core"`.
 
 ## The responder & eligibility
 
@@ -113,8 +113,8 @@ path never install them.
 
 ```sh
 pnpm install
-pnpm --filter @tessera/respond-core type-check
-pnpm --filter @tessera/respond-core test
+pnpm --filter cardano-tessera-respond-core type-check
+pnpm --filter cardano-tessera-respond-core test
 ```
 
 The package is consumed straight from `src` in the workspace (its `exports` map

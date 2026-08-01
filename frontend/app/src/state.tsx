@@ -43,7 +43,7 @@ import {
   type ProviderId,
   type ProviderTokens,
 } from "~/enrichment/providers";
-import { KoiosDataSource } from "@tessera/koios";
+import { KoiosDataSource } from "cardano-tessera-koios";
 import { IndexerDataSource } from "~/data/indexer";
 import {
   aggregateSurveyList,
@@ -54,7 +54,7 @@ import {
   type SurveyListFilter,
   type SurveyListParams,
   type SurveyListPayload,
-} from "@tessera/core";
+} from "cardano-tessera-core";
 import {
   aggregateSurveys,
   bytesToHex,

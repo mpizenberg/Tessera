@@ -5,7 +5,7 @@
  *
  * The events (`tessera:*`) are `composed: true`, so a listener on the light-DOM
  * host element sees them cross the shadow boundary. Run with
- * `pnpm --filter @tessera/respond-widget dev`.
+ * `pnpm --filter cardano-tessera-respond dev`.
  */
 
 import { render } from "solid-js/web";

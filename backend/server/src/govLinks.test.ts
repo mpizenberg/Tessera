@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ContentAnchor } from "cip-179";
 import { hexToBytes } from "cip-179/domain";
-import type { GovProposal } from "@tessera/koios";
+import type { GovProposal } from "cardano-tessera-koios";
 
 import {
   ANCHOR_ATTEMPTS_PER_REFRESH,

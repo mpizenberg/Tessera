@@ -17,7 +17,7 @@ import {
   SECONDS_PER_EPOCH,
   type AppConfig,
   type Network,
-} from "@tessera/core";
+} from "cardano-tessera-core";
 
 /** CIP-179 went live around here — ignore older label-17 history. */
 const SURVEYS_SINCE_ISO_DEFAULT = "2026-06-01T00:00:00Z";

@@ -1,5 +1,5 @@
 {
-  "name": "@tessera/respond-ui",
+  "name": "cardano-tessera-respond-ui",
   "version": "0.1.0",
   "description": "Shared SolidJS answering UI for CIP-179 surveys: the per-question body components and their helpers, consumed by both the Tessera app (light DOM + CSS modules) and the <tessera-respond> widget (shadow DOM + literal class names). Styling and i18n are injected via context.",
   "type": "module",
@@ -19,7 +19,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@tessera/respond-core": "workspace:*",
+    "cardano-tessera-respond-core": "workspace:*",
     "cip-179": "workspace:*",
     "solid-js": "^1.9.14"
   },

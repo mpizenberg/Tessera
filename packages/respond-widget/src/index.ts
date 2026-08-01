@@ -1,5 +1,5 @@
 /**
- * `@tessera/respond-widget` — the embeddable `<tessera-respond>` answering
+ * `cardano-tessera-respond` — the embeddable `<tessera-respond>` answering
  * widget.
  *
  * The pieces the dev harness and the `solid-element` wrapper compose:
@@ -18,7 +18,7 @@
 
 export { RespondRoot } from "./Respond";
 export { adoptWidgetStyles, cssText } from "./styles";
-export { I18nContext, useI18n } from "@tessera/respond-ui";
+export { I18nContext, useI18n } from "cardano-tessera-respond-ui";
 export { RESPOND_EVENTS } from "./types";
 export type {
   CredentialProof,

@@ -54,14 +54,14 @@ import {
   type Draft,
   type DraftValue,
   type I18n,
-} from "@tessera/respond-core";
+} from "cardano-tessera-respond-core";
 
 import {
   I18nContext,
   QuestionBody,
   typeMeta,
   useI18n,
-} from "@tessera/respond-ui";
+} from "cardano-tessera-respond-ui";
 import {
   keyKindForRole,
   roleBrowserClaimable,

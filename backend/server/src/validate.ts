@@ -26,7 +26,7 @@ import {
   type GovLink,
   type UnresolvedGovAction,
 } from "cip-179/domain";
-import type { KoiosDataSource } from "@tessera/koios";
+import type { KoiosDataSource } from "cardano-tessera-koios";
 
 import type { TallyStore, ValidatedResponseRow } from "./store";
 import { validationKey } from "./store";

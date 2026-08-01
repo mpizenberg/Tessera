@@ -2,7 +2,7 @@
  * `IndexerDataSource` — the browser's read path against the Tier-1 serving
  * backend (`backend/ARCHITECTURE.md` §2, §5, §8).
  *
- * Where {@link import("@tessera/koios").KoiosDataSource} makes every browser
+ * Where {@link import("cardano-tessera-koios").KoiosDataSource} makes every browser
  * re-scan Koios (a shared token baked in the bundle; load scaling with
  * users × refreshes), this fetches a single snapshot the server already
  * assembled once per interval. It speaks the HTTP contract in
@@ -12,7 +12,7 @@
  *   - `GET /api/responded?credentials=`     survey keys a credential answered
  *   - `GET /api/tx_status`                  live confirmation counts
  *
- * Bodies arrive in the `@tessera/core` JSON-safe wire form (bytes → hex,
+ * Bodies arrive in the `cardano-tessera-core` JSON-safe wire form (bytes → hex,
  * bigint → decimal string) and are decoded with {@link fromJsonSafe} back to
  * the exact `Uint8Array`/`bigint`/`Map`-bearing shapes the domain layer
  * expects — so the rest of the app can't tell whether Koios or the indexer
@@ -27,7 +27,7 @@ import type {
   SurveyBundlePayload,
   SurveyListParams,
   SurveyListPayload,
-} from "@tessera/core";
+} from "cardano-tessera-core";
 import { bytesToHex } from "cip-179/domain";
 import { fromJsonSafe, type TallyArtifact } from "cip-179/tally";
 import type { SurveyRef } from "cip-179";

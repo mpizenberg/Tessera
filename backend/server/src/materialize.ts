@@ -16,7 +16,7 @@ import {
   type GovLink,
 } from "cip-179/domain";
 import { toJsonSafe } from "cip-179/tally";
-import { aggregateSurveyList, surveyHaystack } from "@tessera/core";
+import { aggregateSurveyList, surveyHaystack } from "cardano-tessera-core";
 
 import type { ResponseRow, SurveyIndexRow } from "./store";
 

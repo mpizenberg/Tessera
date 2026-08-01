@@ -21,7 +21,7 @@
 
 // Side-effect import: registers the `<tessera-respond>` custom element. Guarded
 // against duplicate definition by component-register, so it is HMR-safe.
-import "@tessera/respond-widget/element";
+import "cardano-tessera-respond/element";
 
 import {
   Show,
@@ -40,14 +40,14 @@ import {
   type SurveyResponse,
 } from "cip-179";
 import { dedupeResponses, findSurvey } from "cip-179/domain";
-import { findPriorResponse } from "@tessera/respond-core";
+import { findPriorResponse } from "cardano-tessera-respond-core";
 import type {
   Responder,
   RespondChangeDetail,
   RespondInvalidDetail,
   RespondResult,
   TesseraRespondElement,
-} from "@tessera/respond-widget";
+} from "cardano-tessera-respond";
 
 import { useApp } from "~/state";
 import { payloadActions } from "~/wallet/action";

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Credential } from "cip-179";
 
 import { hexToBytes } from "cip-179/domain";
-import type { AppConfig } from "@tessera/core";
+import type { AppConfig } from "cardano-tessera-core";
 
 import { evolutionCodec } from "cip-179/evolution";
 import { KoiosTallyInputs } from "./tallyInputs";

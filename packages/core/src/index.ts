@@ -1,5 +1,5 @@
 /**
- * `@tessera/core` — the Tessera-specific application core shared by the browser
+ * `cardano-tessera-core` — the Tessera-specific application core shared by the browser
  * app, the serving tier, and the standalone verifier. Types + pure logic only;
  * no I/O, no wallet/CIP-30, no runtime coupling.
  *

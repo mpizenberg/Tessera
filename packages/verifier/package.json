@@ -1,7 +1,7 @@
 {
-  "name": "@tessera/verifier",
+  "name": "cardano-tessera-verifier",
   "version": "0.1.0",
-  "description": "Standalone re-verifier for Tessera tally artifacts: refetches every input from Koios, re-runs the pure @tessera/core tally, and compares content hashes. Trusts only Koios and the survey bundle — never the backend's own validation tables.",
+  "description": "Standalone re-verifier for Tessera tally artifacts: refetches every input from Koios, re-runs the pure cardano-tessera-core tally, and compares content hashes. Trusts only Koios and the survey bundle — never the backend's own validation tables.",
   "type": "module",
   "private": true,
   "engines": {
@@ -19,8 +19,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@tessera/core": "workspace:*",
-    "@tessera/koios": "workspace:*",
+    "cardano-tessera-core": "workspace:*",
+    "cardano-tessera-koios": "workspace:*",
     "cip-179": "workspace:*",
     "@evolution-sdk/evolution": "^0.5.9",
     "@mattpiz/tlock-js": "0.10.0"

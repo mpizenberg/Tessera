@@ -171,7 +171,7 @@ export interface TallyStore {
 }
 
 /**
- * Fetch-once caches behind the snapshot scan (they back `@tessera/koios`'s
+ * Fetch-once caches behind the snapshot scan (they back `cardano-tessera-koios`'s
  * `ScanCache`). Both are keyed by tx hash, which content-addresses what they
  * hold, so every `put` is insert-or-ignore and no row is ever rewritten.
  *
@@ -449,7 +449,7 @@ export interface RefreshLeaseStore {
  * the refresh from the aggregated snapshot. The `record`/`cancellations`/
  * `govLinks` columns hold each survey's slice of the wire payload as JSON
  * text, so a page body is assembled by parse-and-concatenate. The flag
- * columns mirror the shared pagination semantics in `@tessera/core`'s
+ * columns mirror the shared pagination semantics in `cardano-tessera-core`'s
  * `page.ts` (`pageSurveyList` is the executable spec the SQL follows).
  */
 export interface SurveyIndexRow {
@@ -523,16 +523,16 @@ export interface SnapshotMeta {
   readonly fetchedAt: number;
 }
 
-/** A page query against the survey index (see `@tessera/core` `page.ts`). */
+/** A page query against the survey index (see `cardano-tessera-core` `page.ts`). */
 export interface SurveyPageQuery {
   /** The snapshot tip's epoch — the open/closed boundary. */
   readonly tipEpoch: number;
-  readonly filter: import("@tessera/core").SurveyListFilter;
+  readonly filter: import("cardano-tessera-core").SurveyListFilter;
   /** `credentialKey` strings the `mine` filter matches owners against. */
   readonly credentials: readonly string[];
   /** Lowercased AND search terms. */
   readonly searchTerms: readonly string[];
-  readonly cursor: import("@tessera/core").SurveyCursor | null;
+  readonly cursor: import("cardano-tessera-core").SurveyCursor | null;
   /** Rows to return; callers pass limit+1 to detect a next page. */
   readonly limit: number;
 }
@@ -590,7 +590,7 @@ export interface SnapshotStore {
     tipEpoch: number,
     credentials: readonly string[],
     searchTerms: readonly string[],
-  ): Promise<import("@tessera/core").SurveyListCounts>;
+  ): Promise<import("cardano-tessera-core").SurveyListCounts>;
   close(): void;
 }
 
