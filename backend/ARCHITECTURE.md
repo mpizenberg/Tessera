@@ -584,6 +584,25 @@ and converges over successive crons. Snapshot membership still comes from each
 run's fresh label-index scan, so rolled-back txs age out — their cache entries
 just stop being requested.
 
+Its twin `tx_proof_cache` (`migrations/0015_tx_proof_cache.sql`) banks the tx
+**CBOR** behind every owner-proof and response proof, which an open survey would
+otherwise re-fetch on every scan. The raw bytes are stored, never a decoded
+proof: mechanism-A resolution merges scripts fetched by hash from the chain, and
+a script absent today can be registered tomorrow, so a merged proof is only true
+as of its fetch — decoding and merging therefore run per call. Only bytes Koios
+actually returned are banked; a hash it returned no row for is a node that is
+behind, not an answer.
+
+This is the one cache here that is **evicted** (`proofCache.ts`), because its
+rows are whole transactions and a proof stops being read once nothing can still
+be decided from it. Once per refresh, after finalization, the transactions of
+surveys that are no longer *live* — no artifact yet **and** within 5 epochs of
+their end epoch — are dropped. The artifact is the normal exit; the epoch
+backstop covers surveys that never produce one (a spec-invalid definition is
+untalliable, so finalization emits nothing for it). The droppable set is
+re-derived from the records in hand every run rather than tracked, so a run that
+dies before pruning loses nothing, and over-deleting only ever costs a re-fetch.
+
 ### 6.6 Weighted tally computation (`cip-179/tally`)
 
 Weighting is the mechanical generalization of the existing tally: **replace
