@@ -62,6 +62,14 @@ code-split UMD/IIFE output — a UMD target would force the lazy tlock/evolution
 chunks to inline and defeat the whole point. Script-tag hosts therefore use
 `<script type="module">`; there is no UMD build.
 
+**SSR hosts (SvelteKit, Next.js, …).** Importing the artifact without a DOM is
+a no-op — module evaluation touches no `window`, and registration is guarded —
+so a plain top-level `import "@tessera/respond-widget/artifact"` is safe in
+server-rendered modules; no client-only dynamic import is needed. The server
+serializes `<tessera-respond>` as an unknown (empty) element; it upgrades once
+the bundle runs client-side and renders when your code assigns the required
+props after hydration.
+
 ## Quick start (plain HTML, no bundler)
 
 ```html

@@ -57,28 +57,35 @@ const defaults: TesseraRespondElementProps = {
   initialRole: undefined,
 };
 
-customElement<TesseraRespondElementProps>(
-  "tessera-respond",
-  defaults,
-  (props, { element }) => {
-    adoptWidgetStyles(element.renderRoot as ShadowRoot);
-    const ready = () =>
-      props.definition !== undefined &&
-      props.surveyRef !== undefined &&
-      props.responder !== undefined &&
-      props.tipEpoch !== undefined;
-    // component-register parses a valueless attribute ("") to `undefined`, so
-    // idiomatic HTML `<tessera-respond cancelled>` would silently fail *open*.
-    // Normalize: when the prop is unset, attribute presence means cancelled.
-    const cancelled = () =>
-      props.cancelled ?? element.hasAttribute("cancelled");
-    return (
-      <Show when={ready()}>
-        <RespondRoot
-          {...(props as unknown as TesseraRespondProps)}
-          cancelled={cancelled()}
-        />
-      </Show>
-    );
-  },
-);
+// Registration reaches for `window.customElements`; guarded so an SSR host
+// (SvelteKit, Next) can import this module server-side as a no-op and let the
+// client-side pass register. (The Solid compile keeps the rest of the module
+// window-free: see the delegateEvents note in vite.config.ts.)
+if (typeof window !== "undefined") {
+  customElement<TesseraRespondElementProps>(
+    "tessera-respond",
+    defaults,
+    (props, { element }) => {
+      adoptWidgetStyles(element.renderRoot as ShadowRoot);
+      const ready = () =>
+        props.definition !== undefined &&
+        props.surveyRef !== undefined &&
+        props.responder !== undefined &&
+        props.tipEpoch !== undefined;
+      // component-register parses a valueless attribute ("") to `undefined`,
+      // so idiomatic HTML `<tessera-respond cancelled>` would silently fail
+      // *open*. Normalize: when the prop is unset, attribute presence means
+      // cancelled.
+      const cancelled = () =>
+        props.cancelled ?? element.hasAttribute("cancelled");
+      return (
+        <Show when={ready()}>
+          <RespondRoot
+            {...(props as unknown as TesseraRespondProps)}
+            cancelled={cancelled()}
+          />
+        </Show>
+      );
+    },
+  );
+}

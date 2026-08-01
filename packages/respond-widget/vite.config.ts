@@ -16,7 +16,13 @@ const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 //   answered. CSS ships inside the JS (`?inline` → constructed stylesheet),
 //   so there is no separate .css asset to forget.
 export default defineConfig(({ command }) => ({
-  plugins: [solid()],
+  // Event delegation is off because the compiler emits its
+  // `delegateEvents([...])` registration at module scope, and that call
+  // dereferences `window.document` — which would make merely importing the
+  // artifact crash on a server (SSR hosts must be able to treat the import as
+  // a no-op). Events bind directly on their elements instead; inside a shadow
+  // root that is semantically identical.
+  plugins: [solid({ solid: { delegateEvents: false } })],
   resolve: {
     alias: {
       // Resolve the workspace libraries straight from source so cross-package
