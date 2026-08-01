@@ -1,0 +1,63 @@
+{
+  "name": "cardano-tessera-respond-react",
+  "version": "0.1.0",
+  "description": "React bindings for the <tessera-respond> CIP-179 survey widget: one typed component that registers the element, syncs props as DOM properties, and delivers the tessera:* events as onResponse / onChange / onInvalid callbacks. Works identically on React 18 and 19; SSR-safe.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mpizenberg/Tessera.git",
+    "directory": "packages/respond-react"
+  },
+  "homepage": "https://github.com/mpizenberg/Tessera/tree/main/packages/respond-react#readme",
+  "bugs": "https://github.com/mpizenberg/Tessera/issues",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "prepublishOnly": "pnpm run build",
+    "type-check": "tsc -p tsconfig.json",
+    "test": "pnpm --filter cardano-tessera-respond build && vitest run && vitest run --config vitest.react18.config.ts"
+  },
+  "keywords": [
+    "cardano",
+    "cip-179",
+    "survey",
+    "poll",
+    "react",
+    "custom-element",
+    "governance"
+  ],
+  "peerDependencies": {
+    "cardano-tessera-respond": "^0.1.0",
+    "react": "^18.0.0 || ^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "cardano-tessera-respond": "workspace:*",
+    "happy-dom": "^20.10.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

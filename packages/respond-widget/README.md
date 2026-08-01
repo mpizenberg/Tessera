@@ -45,8 +45,10 @@ The published package is the self-contained built artifact — Solid,
 `respond-core`, and the `cip-179` codec bundled in, with the full TypeScript
 contract rolled up alongside. One side-effect import registers the element;
 there is no peer dependency and no framework requirement (React, Vue, Svelte,
-Solid, or plain HTML all consume the same element). The heavy sealed-encryption
-code splits into lazy chunks fetched only when someone answers a sealed survey.
+Solid, or plain HTML all consume the same element — see
+[Frameworks](#frameworks) for the per-framework wiring). The heavy
+sealed-encryption code splits into lazy chunks fetched only when someone
+answers a sealed survey.
 
 No build step? Load it from an ES-module CDN (the multi-chunk `dist/` resolves
 fine there):
@@ -121,6 +123,68 @@ in the app: [`frontend/app/src/ui/screens/DevWidgetHost.tsx`](../../frontend/app
 It embeds `<tessera-respond>` exactly as a third-party integrator would and closes
 the loop the widget leaves open — proving `proveCredentials` via `required_signers`
 (mechanism A) and signing + submitting through a CIP-30 wallet.
+
+## Frameworks
+
+The element is framework-agnostic; what varies is how each framework writes
+DOM properties and listens to `CustomEvent`s. Minimal host apps for React and
+Svelte live in [`examples/`](../../examples) and are built in CI against the
+current widget.
+
+**React** — use
+[`cardano-tessera-respond-react`](../respond-react#readme): React ≤18 writes
+unknown JSX props as HTML attributes (breaking the object props), and no React
+version subscribes to `CustomEvent`s from JSX, so the bindings do both through
+a ref. Identical on React 18 and 19:
+
+```tsx
+import { TesseraRespond } from "cardano-tessera-respond-react";
+
+<TesseraRespond
+  definition={definition}
+  surveyRef={surveyRef}
+  responder={responder}
+  tipEpoch={tipEpoch}
+  onResponse={(detail) => submit(detail)}
+/>;
+```
+
+**Svelte 5** — no wrapper needed. Svelte sets camelCase props as DOM
+properties on custom elements, and its event attributes take the `tessera:*`
+names directly (the `svelte-ignore` silences a warning about the colon, which
+only guards against confusion with Svelte's own directives):
+
+```svelte
+<!-- svelte-ignore attribute_illegal_colon -->
+<tessera-respond
+  {definition}
+  {surveyRef}
+  {responder}
+  tipEpoch={tipEpoch}
+  ontessera:response={(e) => submit(e.detail)}
+></tessera-respond>
+```
+
+For typed templates, declare the tag once in a `.d.ts` — see
+[`examples/svelte-host/src/tessera.d.ts`](../../examples/svelte-host/src/tessera.d.ts).
+
+**Vue 3** — tell the compiler the tag is a custom element
+(`compilerOptions.isCustomElement: (tag) => tag === "tessera-respond"` in the
+Vite plugin config); Vue then sets props that exist on the element as DOM
+properties and `@` handles the event names:
+
+```vue
+<tessera-respond
+  :definition="definition"
+  :surveyRef="surveyRef"
+  :responder="responder"
+  :tipEpoch="tipEpoch"
+  @tessera:response="(e) => submit(e.detail)"
+></tessera-respond>
+```
+
+**Solid** — consume the workspace `/element` entry in-repo, or add the JSX
+declaration shown in [TypeScript](#typescript) when installing from npm.
 
 ## Props
 

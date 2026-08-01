@@ -20,11 +20,18 @@
       "types": "./src/element.tsx",
       "import": "./src/element.tsx"
     },
-    "./artifact": "./dist/tessera-respond.es.js"
+    "./artifact": {
+      "types": "./dist/tessera-respond.es.d.ts",
+      "import": "./dist/tessera-respond.es.js"
+    }
   },
   "publishConfig": {
     "exports": {
       ".": {
+        "types": "./dist/tessera-respond.es.d.ts",
+        "import": "./dist/tessera-respond.es.js"
+      },
+      "./artifact": {
         "types": "./dist/tessera-respond.es.d.ts",
         "import": "./dist/tessera-respond.es.js"
       }

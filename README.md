@@ -44,7 +44,9 @@ served document matches the on-chain hash.
 | `packages/koios`          | The Koios read path (`KoiosDataSource`, tally inputs), shared by direct mode, backend, and verifier.                                                                                                                  |
 | `packages/respond-core`   | `cardano-tessera-respond-core`: the pure, framework-free answering core (drafting, responder eligibility, i18n factory, lazy sealed wrapper) shared by the app and the widget.                                        |
 | `packages/respond-widget` | `cardano-tessera-respond`: the embeddable `<tessera-respond>` custom element — answer a survey anywhere, emitting a ready-to-attach label-17 payload. Framework-agnostic; wallets/chain stay host-side.               |
+| `packages/respond-react`  | `cardano-tessera-respond-react`: React 18/19 bindings for the widget — typed props synced as DOM properties, `tessera:*` events as callbacks.                                                                         |
 | `packages/verifier`       | Standalone CLI that re-derives a survey's result artifact from chain data and checks its content hash.                                                                                                                |
+| `examples/`               | Minimal React and Svelte host apps for the widget, built in CI so framework compatibility regressions fail a build.                                                                                                   |
 | `backend/server`          | Tier-1 serving backend: cached chain reads, response validation, weight snapshots, artifact finalization. Node or CF+D1.                                                                                              |
 | `backend/deps`            | Indexer submodules (Adder / Yaci Store / Oura) for a future Tier-2; design notes in `backend/*.md`.                                                                                                                   |
 
@@ -101,7 +103,8 @@ entered in Settings, stored only in the browser.
 
 The repo is a pnpm workspace (`frontend/app`, `packages/cip179`,
 `packages/core`, `packages/koios`, `packages/respond-core`,
-`packages/respond-widget`, `packages/verifier`, `backend/server`).
+`packages/respond-react`, `packages/respond-widget`, `packages/verifier`,
+`backend/server`, plus the `examples/` host apps).
 Packages are consumed from TypeScript source (Vite aliases / `exports` pointing
 at `src`), so cross-package edits are live with no build step.
 

@@ -1,0 +1,10 @@
+{
+  "name": "cardano-tessera-respond-react-18-deps",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Dependency anchor: a context where pnpm links react-dom 18 against react 18, so vitest.react18.config.ts can alias to instances whose internal peer links are consistent (the parent package's own react is 19).",
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}

@@ -4,10 +4,14 @@ packages:
   - packages/core
   - packages/koios
   - packages/respond-core
+  - packages/respond-react
+  - packages/respond-react/react18
   - packages/respond-ui
   - packages/respond-widget
   - packages/verifier
   - backend/server
+  - examples/react-host
+  - examples/svelte-host
 
 # `@mattpiz/tlock-js` is the maintainer's own package; its latest release is
 # newer than the global `minimumReleaseAge` supply-chain delay, so allow it
