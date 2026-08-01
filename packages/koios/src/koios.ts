@@ -137,22 +137,35 @@ interface ScriptInfoRow {
 }
 
 /**
- * Fetch-once persistence for label-17 tx metadata, keyed by tx hash. A tx's
- * metadata is immutable — the hash content-addresses it — so once fetched it
- * never needs re-fetching. This is what lets the snapshot scan *converge*
- * across runs instead of re-paying every `/tx_metadata` batch per refresh: a
- * run cut short (Worker subrequest cap, timeout) banks the batches it did
- * fetch, and the next run fetches only the remainder. Snapshot membership
- * still comes from the fresh label-index scan, so a rolled-back tx simply
- * stops being requested — a stale cache entry is inert, never served.
+ * Fetch-once persistence for what a transaction hash content-addresses: its
+ * label-17 metadata and its CBOR. Neither can change under a fixed hash, so
+ * once fetched neither needs re-fetching. Entries are immutable — every `put`
+ * is insert-or-ignore — and every read returns only the cached subset of the
+ * requested hashes.
  *
- * Values are the raw Koios `metadata` JSON per row (`unknown` here: stores
- * just round-trip JSON). Entries are immutable — `put` is insert-or-ignore —
- * and `get` returns only the cached subset of the requested hashes.
+ * Metadata is what lets the snapshot scan *converge* across runs instead of
+ * re-paying every `/tx_metadata` batch per refresh: a run cut short (Worker
+ * subrequest cap, timeout) banks the batches it did fetch, and the next run
+ * fetches only the remainder. Snapshot membership still comes from the fresh
+ * label-index scan, so a rolled-back tx simply stops being requested — a stale
+ * entry is inert, never served.
+ *
+ * Proof CBOR is the credential-proof evidence behind owner-proofs and response
+ * proofs, and saves the `/tx_cbor` batches an open survey would otherwise pay
+ * on every scan. The *bytes* are cached, never the decoded proof: mechanism-A
+ * resolution folds in scripts fetched by hash from the chain, and a script
+ * absent today can be registered tomorrow, so a merged proof is only true as of
+ * its fetch. Decoding and merging therefore run per call.
+ *
+ * The implementation is expected to *evict* proof CBOR (unlike metadata, whose
+ * rows are small and always potentially wanted); a miss only ever costs the
+ * re-fetch it would have cost anyway.
  */
-export interface TxMetadataCache {
-  get(txHashes: readonly string[]): Promise<Map<string, unknown>>;
-  put(entries: ReadonlyMap<string, unknown>): Promise<void>;
+export interface ScanCache {
+  metadata(txHashes: readonly string[]): Promise<Map<string, unknown>>;
+  putMetadata(entries: ReadonlyMap<string, unknown>): Promise<void>;
+  proofCbor(txHashes: readonly string[]): Promise<Map<string, string>>;
+  putProofCbor(entries: ReadonlyMap<string, string>): Promise<void>;
 }
 
 export class KoiosDataSource implements DataSource {
@@ -170,7 +183,7 @@ export class KoiosDataSource implements DataSource {
   /**
    * `getToken` lets the active Koios token change at runtime (Settings override)
    * without rebuilding the source; defaults to the startup-resolved config token.
-   * `cache` is the optional {@link TxMetadataCache} — the serving tier passes a
+   * `cache` is the optional {@link ScanCache} — the serving tier passes a
    * store-backed one so scans resume across crons; the browser passes none
    * (each page load is a fresh context anyway).
    * `onRequest` fires once per Koios HTTP request issued through this source —
@@ -181,7 +194,7 @@ export class KoiosDataSource implements DataSource {
     private readonly config: AppConfig,
     private readonly getToken: () => string | undefined = () =>
       config.koiosToken,
-    private readonly cache?: TxMetadataCache,
+    private readonly cache?: ScanCache,
     private readonly onRequest?: () => void,
   ) {}
 
@@ -350,7 +363,7 @@ export class KoiosDataSource implements DataSource {
     // Best-effort — a cache read failure degrades to a full fetch, never sinks
     // the scan.
     const cached = this.cache
-      ? await this.cache.get(hashes).catch((err) => {
+      ? await this.cache.metadata(hashes).catch((err) => {
           console.warn(`tx metadata cache read failed: ${String(err)}`);
           return new Map<string, unknown>();
         })
@@ -389,7 +402,7 @@ export class KoiosDataSource implements DataSource {
           const byHash = new Map<string, unknown>(batch.map((h) => [h, null]));
           for (const r of rows) byHash.set(r.tx_hash, r.metadata);
           await this.cache
-            .put(byHash)
+            .putMetadata(byHash)
             .catch((err) =>
               console.warn(`tx metadata cache write failed: ${String(err)}`),
             );
@@ -620,7 +633,9 @@ export class KoiosDataSource implements DataSource {
    * of the transactions cancelling them, and for response credential-proofs
    * (§6.3 rule 2) by the serving tier's validation pass. Each unique tx is
    * fetched and decoded once, so a batch that carries several records costs one
-   * row.
+   * row — and where a {@link ScanCache} is present, once across all refreshes.
+   * The decode runs per call even on a cached hit, so the mechanism-A merge
+   * below is never banked and a decoder fix needs no re-fetch.
    *
    * The two map outcomes are semantically distinct and callers MUST NOT conflate
    * them:
@@ -652,15 +667,39 @@ export class KoiosDataSource implements DataSource {
     const proofByHash = new Map<string, TxProof | null>(
       txHashes.map((h) => [h, null]),
     );
-    const cborByHash = new Map<string, string>();
-    for (let i = 0; i < txHashes.length; i += TX_CBOR_BATCH) {
-      const batch = txHashes.slice(i, i + TX_CBOR_BATCH);
+    // Consult the fetch-once cache first (serving tier only): a tx hash
+    // content-addresses its CBOR, so anything banked by an earlier refresh never
+    // hits Koios again. Best-effort — a cache read failure degrades to a full
+    // fetch, never sinks the call.
+    const cborByHash = this.cache
+      ? await this.cache.proofCbor(txHashes).catch((err) => {
+          console.warn(`tx proof cache read failed: ${String(err)}`);
+          return new Map<string, string>();
+        })
+      : new Map<string, string>();
+    const missing = txHashes.filter((h) => !cborByHash.has(h));
+    for (let i = 0; i < missing.length; i += TX_CBOR_BATCH) {
+      const batch = missing.slice(i, i + TX_CBOR_BATCH);
       try {
         const rows = await this.post<TxCborRow[]>(
           "/tx_cbor?select=tx_hash,cbor",
           { _tx_hashes: batch },
         );
-        for (const r of rows) if (r.cbor) cborByHash.set(r.tx_hash, r.cbor);
+        const fetched = new Map<string, string>();
+        for (const r of rows) if (r.cbor) fetched.set(r.tx_hash, r.cbor);
+        // Only bytes Koios actually returned are banked. A hash it returned no
+        // row for is a node that hasn't caught up, not an answer — banking it
+        // as "no evidence" would turn a retryable unknown into a permanent
+        // unproven. (Its metadata twin banks absences precisely because an empty
+        // metadata row *is* an answer.)
+        if (this.cache && fetched.size > 0) {
+          await this.cache
+            .putProofCbor(fetched)
+            .catch((err) =>
+              console.warn(`tx proof cache write failed: ${String(err)}`),
+            );
+        }
+        for (const [hash, cbor] of fetched) cborByHash.set(hash, cbor);
       } catch (err) {
         console.warn(
           `tx_cbor batch failed; its txs stay unproven: ${String(err)}`,

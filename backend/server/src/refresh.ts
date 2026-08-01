@@ -106,16 +106,20 @@ export async function refreshSnapshot(
     );
   };
 
-  // The store-backed metadata cache makes the scan resumable: tx metadata is
-  // immutable, so each fulfilled /tx_metadata batch is banked and never
-  // re-fetched — a refresh cut short (Worker subrequest cap) converges over
-  // successive crons instead of failing identically forever.
+  // The store-backed scan cache banks what a tx hash content-addresses. Its
+  // metadata half makes the scan resumable: each fulfilled /tx_metadata batch is
+  // banked and never re-fetched, so a refresh cut short (Worker subrequest cap)
+  // converges over successive crons instead of failing identically forever. Its
+  // proof half spares an open survey the /tx_cbor batches its owner-proof would
+  // otherwise cost on every single scan.
   const source = new KoiosDataSource(
     config.app,
     undefined,
     {
-      get: (hashes) => store.cachedTxMetadata(hashes),
-      put: (entries) => store.putTxMetadata(entries),
+      metadata: (hashes) => store.cachedTxMetadata(hashes),
+      putMetadata: (entries) => store.putTxMetadata(entries),
+      proofCbor: (hashes) => store.cachedTxProofCbor(hashes),
+      putProofCbor: (entries) => store.putTxProofCbor(entries),
     },
     countKoios,
   );

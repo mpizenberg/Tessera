@@ -425,18 +425,31 @@ describe("fetchAll — chain position", () => {
 
 // --- fetchAll: scan resume via the tx-metadata cache (finding 5) -------------
 
-/** In-memory TxMetadataCache with the stores' insert-or-ignore semantics. */
+/** In-memory ScanCache with the stores' insert-or-ignore semantics. */
 function memCache() {
   const map = new Map<string, unknown>();
+  const cbor = new Map<string, string>();
   return {
     map,
-    async get(hashes: readonly string[]) {
+    cbor,
+    async metadata(hashes: readonly string[]) {
       const out = new Map<string, unknown>();
       for (const h of hashes) if (map.has(h)) out.set(h, map.get(h));
       return out;
     },
-    async put(entries: ReadonlyMap<string, unknown>) {
+    async putMetadata(entries: ReadonlyMap<string, unknown>) {
       for (const [h, m] of entries) if (!map.has(h)) map.set(h, m);
+    },
+    async proofCbor(hashes: readonly string[]) {
+      const out = new Map<string, string>();
+      for (const h of hashes) {
+        const hit = cbor.get(h);
+        if (hit !== undefined) out.set(h, hit);
+      }
+      return out;
+    },
+    async putProofCbor(entries: ReadonlyMap<string, string>) {
+      for (const [h, c] of entries) if (!cbor.has(h)) cbor.set(h, c);
     },
   };
 }
@@ -703,6 +716,134 @@ describe("txProofs — mechanism-A script resolution", () => {
     expect(
       fetchMock.mock.calls.some((c) => String(c[0]).includes("/script_info")),
     ).toBe(false);
+  });
+});
+
+describe("txProofs — tx CBOR cache", () => {
+  const scriptInfoOk = () =>
+    new Response(
+      JSON.stringify([
+        { script_hash: SCRIPT_HASH, type: "multisig", bytes: SIG_SCRIPT_CBOR },
+      ]),
+      { status: 200 },
+    );
+  const cborCalls = (mock: { mock: { calls: unknown[][] } }) =>
+    mock.mock.calls.filter((c) => String(c[0]).includes("/tx_cbor"));
+
+  it("serves a warm cache without any /tx_cbor request", async () => {
+    const cache = memCache();
+    stubProofFetch(scriptInfoOk);
+    const first = await new KoiosDataSource(CONFIG, undefined, cache).txProofs([
+      TX,
+    ]);
+    expect(first.get(TX)).not.toBeNull();
+    expect(cache.cbor.get(TX)).toBe(SIGNED_TX_CBOR);
+
+    const fetchMock = stubProofFetch(scriptInfoOk);
+    const second = await new KoiosDataSource(CONFIG, undefined, cache).txProofs(
+      [TX],
+    );
+    expect(second.get(TX)).toEqual(first.get(TX));
+    expect(cborCalls(fetchMock)).toHaveLength(0);
+  });
+
+  it("re-runs the mechanism-A merge on a cached hit, never banking it", async () => {
+    // The cached bytes carry no script; only the /script_info fetch supplies it.
+    // A run where that fetch fails must still read unknown — which it can only do
+    // if the merge is redone per call rather than frozen into the cache.
+    const cache = memCache();
+    stubProofFetch(scriptInfoOk);
+    const warm = await new KoiosDataSource(CONFIG, undefined, cache).txProofs(
+      [TX],
+      new Map([[TX, [SCRIPT_HASH]]]),
+    );
+    expect(mechanismAProven(scriptOwner(), warm.get(TX)!)).toBe(true);
+
+    stubProofFetch(() => new Response("boom", { status: 500 }));
+    const degraded = await new KoiosDataSource(
+      CONFIG,
+      undefined,
+      cache,
+    ).txProofs([TX], new Map([[TX, [SCRIPT_HASH]]]));
+    expect(degraded.get(TX)).toBeNull();
+
+    // …and the reverse: once /script_info answers again, so does the proof.
+    stubProofFetch(scriptInfoOk);
+    const recovered = await new KoiosDataSource(
+      CONFIG,
+      undefined,
+      cache,
+    ).txProofs([TX], new Map([[TX, [SCRIPT_HASH]]]));
+    expect(mechanismAProven(scriptOwner(), recovered.get(TX)!)).toBe(true);
+  });
+
+  it("banks nothing for a hash Koios returned no row for", async () => {
+    // A tx the node hasn't caught up to is unknown, not "no evidence": banking
+    // it would turn every later refresh's retry into a permanent unproven.
+    const cache = memCache();
+    const OTHER = "88".repeat(32);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) =>
+        String(input).includes("/tx_cbor")
+          ? new Response(
+              JSON.stringify([{ tx_hash: TX, cbor: SIGNED_TX_CBOR }]),
+              { status: 200 },
+            )
+          : new Response("[]", { status: 200 }),
+      ),
+    );
+    const proofs = await new KoiosDataSource(CONFIG, undefined, cache).txProofs(
+      [TX, OTHER],
+    );
+    expect(proofs.get(OTHER)).toBeNull();
+    expect(cache.cbor.has(OTHER)).toBe(false);
+    expect(cache.cbor.has(TX)).toBe(true);
+  });
+
+  it("banks nothing from a batch that threw", async () => {
+    const cache = memCache();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) =>
+        String(input).includes("/tx_cbor")
+          ? new Response("boom", { status: 500 })
+          : new Response("[]", { status: 200 }),
+      ),
+    );
+    const proofs = await new KoiosDataSource(CONFIG, undefined, cache).txProofs(
+      [TX],
+    );
+    expect(proofs.get(TX)).toBeNull();
+    expect(cache.cbor.size).toBe(0);
+  });
+
+  it("requests only the hashes the cache missed", async () => {
+    const cache = memCache();
+    const OTHER = "88".repeat(32);
+    await cache.putProofCbor(new Map([[TX, SIGNED_TX_CBOR]]));
+    const batches: string[][] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL, init?: RequestInit) => {
+        if (!String(input).includes("/tx_cbor"))
+          return new Response("[]", { status: 200 });
+        const { _tx_hashes } = JSON.parse(String(init?.body)) as {
+          _tx_hashes: string[];
+        };
+        batches.push(_tx_hashes);
+        return new Response(
+          JSON.stringify([{ tx_hash: OTHER, cbor: SIGNED_TX_CBOR }]),
+          { status: 200 },
+        );
+      }),
+    );
+    const proofs = await new KoiosDataSource(CONFIG, undefined, cache).txProofs(
+      [TX, OTHER],
+    );
+    expect(batches).toEqual([[OTHER]]);
+    expect(proofs.get(TX)).not.toBeNull();
+    expect(proofs.get(OTHER)).not.toBeNull();
   });
 });
 
