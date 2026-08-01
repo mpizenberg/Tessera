@@ -1,4 +1,4 @@
-# @tessera/respond-widget
+# cardano-tessera-respond
 
 The embeddable **`<tessera-respond>`** custom element: drop it into any web page to
 let a user answer a [CIP-179](../../frontend/cip-179.md) survey. Give it a survey
@@ -30,32 +30,42 @@ are responsible only for attaching it at metadata label 17, **proving** each
 declared credential through the carrying transaction (see
 [Proving credentials](#proving-credentials)), signing, and submitting.
 
-## Two ways to consume it
+## Install
 
-The package ships both the TypeScript **source** and a self-contained built **ES
-bundle**, mirroring `cip-179`'s dual exports:
+```sh
+npm install cardano-tessera-respond
+```
 
-| Import                             | What it is                                                                                  | For                                                              |
-| :--------------------------------- | :------------------------------------------------------------------------------------------ | :--------------------------------------------------------------- |
-| `@tessera/respond-widget`          | The public prop/event **types** + the pieces to compose it yourself.                        | Type-only imports in a bundler host.                             |
-| `@tessera/respond-widget/element`  | Side-effect import that **registers** `<tessera-respond>`, re-exports the API.              | **Solid** hosts only — raw Solid TSX, needs `vite-plugin-solid`. |
-| `@tessera/respond-widget/artifact` | The built `dist/tessera-respond.es.js` — Solid + `respond-core` + `cip-179` all bundled in. | Everyone else: script-tag hosts **and** non-Solid bundler hosts. |
+```ts
+import "cardano-tessera-respond"; // registers <tessera-respond>
+import type { RespondResult } from "cardano-tessera-respond";
+```
 
-- **Non-Solid bundler host** (React/Vue/Svelte/…):
-  `import "@tessera/respond-widget/artifact"` once for its registration
-  side-effect, then use `<tessera-respond>` in your markup. Do **not** import
-  `/element`: it resolves to uncompiled Solid TSX, which your bundler either
-  refuses (no `.tsx` transform inside `node_modules`) or — worse — compiles
-  with its own JSX runtime, producing components that render once and never
-  react. The artifact carries its own Solid, so none of this applies to it.
-- **Solid bundler host** (`vite-plugin-solid`, configured to compile this
-  package): `import "@tessera/respond-widget/element"` to consume the source,
-  so Solid dedupes to a single runtime instance
-  (see [Single Solid instance](#single-solid-instance)).
-- **Script-tag host** (no build step): load the built bundle with
-  `<script type="module">`. It's fully self-contained — no peer to install, no
-  external import. The heavy sealed-encryption code splits into lazy chunks
-  fetched only when someone answers a sealed survey.
+The published package is the self-contained built artifact — Solid,
+`respond-core`, and the `cip-179` codec bundled in, with the full TypeScript
+contract rolled up alongside. One side-effect import registers the element;
+there is no peer dependency and no framework requirement (React, Vue, Svelte,
+Solid, or plain HTML all consume the same element). The heavy sealed-encryption
+code splits into lazy chunks fetched only when someone answers a sealed survey.
+
+No build step? Load it from an ES-module CDN (the multi-chunk `dist/` resolves
+fine there):
+
+```html
+<script type="module">
+  import "https://esm.sh/cardano-tessera-respond@0.1";
+</script>
+```
+
+Inside this repository the workspace exposes two more entries: the root export
+resolves to TypeScript **source** (the composable pieces — `RespondRoot`,
+`adoptWidgetStyles`), and `/element` is the registering Solid TSX entry. They
+are workspace-internal: the app consumes the source so `vite-plugin-solid`
+compiles it against a single Solid instance
+(see [Single Solid instance](#single-solid-instance)); npm installers get only
+the artifact. Don't try to import the raw `/element` TSX from a non-Solid
+bundler — without the Solid transform it either fails to build or renders once
+and never reacts.
 
 **Build format is ES only, by design.** `vite build` runs Rollup, which cannot
 code-split UMD/IIFE output — a UMD target would force the lazy tlock/evolution
@@ -64,7 +74,7 @@ chunks to inline and defeat the whole point. Script-tag hosts therefore use
 
 **SSR hosts (SvelteKit, Next.js, …).** Importing the artifact without a DOM is
 a no-op — module evaluation touches no `window`, and registration is guarded —
-so a plain top-level `import "@tessera/respond-widget/artifact"` is safe in
+so a plain top-level `import "cardano-tessera-respond"` is safe in
 server-rendered modules; no client-only dynamic import is needed. The server
 serializes `<tessera-respond>` as an unknown (empty) element; it upgrades once
 the bundle runs client-side and renders when your code assigns the required
@@ -74,9 +84,9 @@ props after hydration.
 
 ```html
 <script type="module">
-  // Registers <tessera-respond>. Use the package's /artifact bundle, or a
-  // relative path to dist/ as here.
-  import "./node_modules/@tessera/respond-widget/dist/tessera-respond.es.js";
+  // Registers <tessera-respond>. Import the package (bundler), a CDN URL,
+  // or a relative path to its dist/ as here.
+  import "./node_modules/cardano-tessera-respond/dist/tessera-respond.es.js";
 
   const el = document.querySelector("tessera-respond");
 
@@ -204,8 +214,24 @@ Importing anything from the package (even a type) loads global augmentations:
 property — and `HTMLElementEventMap` gains the three `tessera:*` events, so
 `addEventListener("tessera:response", (e) => …)` types `e.detail` as
 `RespondResult` on any element (they bubble composed, so ancestors count).
-Solid hosts importing `/element` also get the tag in JSX. No hand-rolled
-element interface or `IntrinsicElements` entry is needed.
+No hand-rolled element interface or `IntrinsicElements` entry is needed.
+
+The one exception is Solid's JSX: the published types deliberately augment
+nothing framework-specific (a `declare module "solid-js"` block would break
+type-checking for the many hosts that don't have `solid-js` installed). A
+Solid host wanting `<tessera-respond>` in JSX adds the entry itself:
+
+```ts
+declare module "solid-js" {
+  namespace JSX {
+    interface IntrinsicElements {
+      "tessera-respond": JSX.HTMLAttributes<TesseraRespondElement>;
+    }
+  }
+}
+```
+
+(In-workspace, `/element` ships that augmentation from source.)
 
 ## The responder & eligibility
 
@@ -232,9 +258,11 @@ type Responder = Partial<Record<Role, Credential>>;
   The role → signing-key mapping is fixed: Keyholder→`payment`,
   Stakeholder→`stake`, DRep→`drep`, SPO→`pool`, CC→`cc`.
 
-`@tessera/respond-core` exports `respondableRolesFor(def, responder)` and
-`credentialForRole(role, responder)` if you want to compute eligibility host-side
-too (e.g. to decide whether to mount the widget at all).
+In-workspace, `cardano-tessera-respond-core` exports
+`respondableRolesFor(def, responder)` and `credentialForRole(role, responder)`
+to compute eligibility host-side too (e.g. to decide whether to mount the
+widget at all). That package is not published yet — the planned host toolkit
+(`cardano-tessera-host`) will carry these helpers for npm integrators.
 
 ## Prior responses (edit/replace)
 
@@ -392,10 +420,10 @@ versions, dedupe them to one before anything registers the element.
 
 ```sh
 pnpm install
-pnpm --filter @tessera/respond-widget dev    # Vite dev harness (dev/index.html)
-pnpm --filter @tessera/respond-widget build   # emits dist/tessera-respond.es.js + chunks
-pnpm --filter @tessera/respond-widget test    # builds, then runs the artifact + token tests
-pnpm --filter @tessera/respond-widget type-check
+pnpm --filter cardano-tessera-respond dev    # Vite dev harness (dev/index.html)
+pnpm --filter cardano-tessera-respond build   # emits dist/ (bundle + chunks + rolled-up d.ts)
+pnpm --filter cardano-tessera-respond test    # builds, then runs the artifact + token tests
+pnpm --filter cardano-tessera-respond type-check
 ```
 
 Two demo/test surfaces cover different failure modes:
@@ -423,6 +451,6 @@ with no build step.
 | `src/types.ts`    | The public prop/event TypeScript contract.                                |
 
 The per-question body components live in
-[`@tessera/respond-ui`](../respond-ui/README.md), shared with the app; see
-[`@tessera/respond-core`](../respond-core/README.md) for the pure logic both
+[`cardano-tessera-respond-ui`](../respond-ui/README.md), shared with the app; see
+[`cardano-tessera-respond-core`](../respond-core/README.md) for the pure logic both
 share.

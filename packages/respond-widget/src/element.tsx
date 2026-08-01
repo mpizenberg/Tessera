@@ -10,8 +10,12 @@
  * renders nothing — a `<tessera-respond>` written in HTML upgrades (and
  * connects) before the host's script assigns its data.
  *
- * This module is the lib-build entry: importing it registers the element and
- * re-exports the package's public API for module-script hosts.
+ * This module is the lib-build entry and the published package's whole
+ * surface: importing it registers the element; the exports are the prop/event
+ * contract plus {@link RESPOND_EVENTS}. The Solid composables (`RespondRoot`,
+ * `adoptWidgetStyles`, …) stay on the workspace-internal root entry — exposing
+ * them here would put `solid-js` types in the published d.ts and saddle
+ * artifact consumers with a peer they don't have.
  */
 
 import { customElement } from "solid-element";
@@ -25,7 +29,18 @@ import type {
   TesseraRespondProps,
 } from "./types";
 
-export * from "./index";
+export { RESPOND_EVENTS } from "./types";
+export type {
+  CredentialProof,
+  ProofKeyKind,
+  Responder,
+  RespondChangeDetail,
+  RespondInvalidDetail,
+  RespondResult,
+  TesseraRespondElement,
+  TesseraRespondElementProps,
+  TesseraRespondProps,
+} from "./types";
 
 // Solid hosts get the tag in JSX (typed ref included); object props still
 // flow in as DOM properties, so plain HTMLAttributes is the whole surface.

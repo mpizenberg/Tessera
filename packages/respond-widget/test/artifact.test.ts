@@ -27,14 +27,13 @@ import {
 } from "cip-179";
 import { hexToBytes } from "cip-179/domain";
 import { QUICKNET_CHAIN_HASH } from "cip-179/tlock";
-import { buildResponse } from "@tessera/respond-core";
+import { buildResponse } from "cardano-tessera-respond-core";
 
 import { SAMPLES, TIP_EPOCH, responder, surveyRef } from "../dev/samples";
 import type { RespondResult, TesseraRespondElement } from "../src/types";
 
 beforeAll(async () => {
   // Importing the artifact registers <tessera-respond> as a side effect.
-  // @ts-expect-error -- the built dist ships no declarations (yet)
   await import("../dist/tessera-respond.es.js");
 });
 

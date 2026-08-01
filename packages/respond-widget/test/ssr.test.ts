@@ -12,10 +12,11 @@ import { describe, expect, it } from "vitest";
 describe("built artifact under Node (no DOM)", () => {
   it("imports as a no-op and still exposes the API", async () => {
     expect(typeof window).toBe("undefined");
-    // @ts-expect-error -- the built dist ships no declarations (yet)
     const mod = await import("../dist/tessera-respond.es.js");
     expect(mod.RESPOND_EVENTS.response).toBe("tessera:response");
-    expect(typeof mod.adoptWidgetStyles).toBe("function");
-    expect(typeof mod.RespondRoot).toBe("function");
+    // The published surface is the element + the contract, nothing more —
+    // the Solid composables must not leak out of the artifact.
+    expect("RespondRoot" in mod).toBe(false);
+    expect("adoptWidgetStyles" in mod).toBe(false);
   });
 });

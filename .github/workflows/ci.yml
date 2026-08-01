@@ -34,13 +34,16 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       # One install for the whole workspace, then the recursive commands the
-      # README promises. This covers every package — @tessera/core,
-      # @tessera/koios, @tessera/verifier, and @tessera/backend carry the
+      # README promises. This covers every package — cardano-tessera-core,
+      # cardano-tessera-koios, cardano-tessera-verifier, and cardano-tessera-backend carry the
       # correctness-critical, hash-committed logic and previously never ran on
       # a PR (only cip-179 + frontend/app did).
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r type-check
+      # Test before type-check: the respond-widget test script builds the
+      # artifact and its rolled-up d.ts, which the widget's type-checked tests
+      # import from dist/.
       - run: pnpm -r test
+      - run: pnpm -r type-check
       - run: pnpm format:check
       - run: pnpm -r build
 
@@ -49,5 +52,5 @@ jobs:
       # script — so this is the only pre-deploy check of its worker.ts bundle
       # and of both wrangler.toml files. The app's dry-run needs dist/ from
       # the build step above.
-      - run: pnpm --filter @tessera/backend exec wrangler deploy --dry-run
+      - run: pnpm --filter cardano-tessera-backend exec wrangler deploy --dry-run
       - run: pnpm --filter tessera-app exec wrangler deploy --dry-run

@@ -1,0 +1,18 @@
+// Compiler settings for rolling up dist/tessera-respond.es.d.ts
+// (dts-bundle-generator). Differs from the main tsconfig in one way: `cip-179`
+// resolves to its *built* declarations instead of workspace source — cip-179
+// is published, so the rolled-up d.ts imports its types as an external
+// dependency rather than inlining them (run `pnpm --filter cip-179 build`
+// first). The private respond packages still resolve to source and get
+// inlined.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "cip-179": ["../cip179/dist/index.d.ts"],
+      "cardano-tessera-respond-core": ["../respond-core/src/index.ts"],
+      "cardano-tessera-respond-ui": ["../respond-ui/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}

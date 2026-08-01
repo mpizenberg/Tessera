@@ -1,9 +1,16 @@
 {
-  "name": "@tessera/respond-widget",
+  "name": "cardano-tessera-respond",
   "version": "0.1.0",
   "description": "The embeddable <tessera-respond> custom element: renders the CIP-179 answering UI from a survey definition + responder identity, validates and (for sealed surveys) timelock-encrypts in-widget, and emits a ready-to-attach label-17 payload back to the host. Framework-agnostic; wallets, chain reads, and submission stay host-side.",
   "type": "module",
-  "private": true,
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mpizenberg/Tessera.git",
+    "directory": "packages/respond-widget"
+  },
+  "homepage": "https://github.com/mpizenberg/Tessera/tree/main/packages/respond-widget#readme",
+  "bugs": "https://github.com/mpizenberg/Tessera/issues",
   "exports": {
     ".": {
       "types": "./src/index.ts",
@@ -15,23 +22,45 @@
     },
     "./artifact": "./dist/tessera-respond.es.js"
   },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/tessera-respond.es.d.ts",
+        "import": "./dist/tessera-respond.es.js"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": true,
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && pnpm run dts",
+    "dts": "pnpm --filter cip-179 build && dts-bundle-generator -o dist/tessera-respond.es.d.ts src/element.tsx --project tsconfig.dts.json --external-inlines cardano-tessera-respond-core --inline-declare-global --no-banner",
+    "prepublishOnly": "pnpm run build",
     "type-check": "tsc -p tsconfig.json",
     "test": "pnpm run build && vitest run"
   },
-  "dependencies": {
-    "@tessera/respond-core": "workspace:*",
-    "@tessera/respond-ui": "workspace:*",
-    "cip-179": "workspace:*",
-    "solid-element": "^1.9.2",
-    "solid-js": "^1.9.14"
-  },
+  "keywords": [
+    "cardano",
+    "cip-179",
+    "survey",
+    "poll",
+    "custom-element",
+    "web-component",
+    "governance"
+  ],
   "devDependencies": {
     "@evolution-sdk/evolution": "^0.5.9",
+    "cardano-tessera-respond-core": "workspace:*",
+    "cardano-tessera-respond-ui": "workspace:*",
+    "cip-179": "workspace:*",
+    "solid-element": "^1.9.2",
+    "solid-js": "^1.9.14",
     "@mattpiz/tlock-js": "0.10.0",
     "@types/node": "^25.9.3",
+    "dts-bundle-generator": "^9.5.1",
     "happy-dom": "^20.10.6",
     "typescript": "^5.6.0",
     "vite": "^6.0.0",
