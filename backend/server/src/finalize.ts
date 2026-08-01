@@ -167,20 +167,34 @@ export async function finalizeClosedSurveys(
   // invalid definition is not a valid survey to begin with, so invalidity takes
   // precedence over cancellation). The `definition-validity` rule in
   // RULESET_DESCRIPTOR pins this gate.
+  //
+  // The gate runs twice, because only its `owner` rule reads evidence: once on
+  // the bare record to shed what no proof could rescue, then again once the
+  // proofs are attached. Proving first instead would re-fetch the CBOR of every
+  // structurally-invalid survey on every refresh, forever — they produce no
+  // artifact, so nothing ever retires them from the candidate set.
+  const needEvidence = candidates.filter((s) => {
+    if (isSurveyTalliable(s)) return true;
+    console.warn(
+      `finalize: ${refKey(s.ref)} definition is spec-invalid — untalliable, no artifact`,
+    );
+    return false;
+  });
+  if (needEvidence.length === 0) return;
+
   const talliable: SurveyRecord[] = [];
-  for (const s of await withOwnerProofs(source, candidates)) {
-    if (!isSurveyTalliable(s)) {
-      console.warn(
-        `finalize: ${refKey(s.ref)} definition is spec-invalid — untalliable, no artifact`,
-      );
-      continue;
-    }
-    // Structural invalidity is decidable without evidence, so it is settled
-    // above; an owner-proof we couldn't read is not, and freezing an artifact on
-    // it would either count a forged survey or bury a real one.
+  for (const s of await withOwnerProofs(source, needEvidence)) {
+    // An owner-proof we couldn't read is unknown, not disproven, and freezing an
+    // artifact on it would either count a forged survey or bury a real one.
     if (!s.proof) {
       console.warn(
         `finalize: ${refKey(s.ref)} postponed — owner proof unknown (fetch/decode failed)`,
+      );
+      continue;
+    }
+    if (!isSurveyTalliable(s)) {
+      console.warn(
+        `finalize: ${refKey(s.ref)} owner credential unproven — untalliable, no artifact`,
       );
       continue;
     }

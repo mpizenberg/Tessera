@@ -523,6 +523,49 @@ describe("finalizeClosedSurveys", () => {
     expect(store.artifacts.has(SURVEY_KEY2)).toBe(true); // valid → finalized
   });
 
+  it("buys no evidence for a survey the ruleset already rejects without it", async () => {
+    // Such a survey produces no artifact, so nothing ever retires it from the
+    // candidate set. Fetching its proof first would re-read its CBOR on every
+    // refresh for the life of the deployment — the cost is permanent, and no
+    // proof could change the verdict.
+    const store = memBackendStore();
+    const SURVEY_KEY2 = `${SURVEY_TX2}:0`;
+    const invalid: SurveyRecord = {
+      ...survey(),
+      definition: definition({ specVersion: 6 }),
+    };
+    const s2: SurveyRecord = {
+      txHash: SURVEY_TX2,
+      slot: 100,
+      epochNo: 495,
+      ref: { txId: hexToBytes(SURVEY_TX2), index: 0 },
+      definition: definition(),
+    };
+    const rA1 = response("11".repeat(32), CRED_A, 0);
+    const rB2 = response("22".repeat(32), CRED_B, 0);
+    await seed(store, [
+      validatedRow(rA1),
+      validatedRow(rB2, { surveyKey: SURVEY_KEY2 }),
+    ]);
+    const inputs = fakeInputs({
+      [KEY_A]: { weight: 100n, registered: true },
+      [KEY_B]: { weight: 7n, registered: true },
+    });
+    const source = proofsStub();
+    const recs: Cip179Records = {
+      surveys: [invalid, s2],
+      responses: [rA1, rB2],
+      cancellations: [],
+    };
+
+    await finalizeClosedSurveys(CONFIG, store, inputs, source, recs, TIP);
+
+    const asked = source.txProofs.mock.calls.flatMap(([hashes]) => [...hashes]);
+    expect(asked).not.toContain(SURVEY_TX);
+    expect(asked).toContain(SURVEY_TX2);
+    expect(store.artifacts.has(SURVEY_KEY2)).toBe(true);
+  });
+
   // Finding 12 — CIP-179: "The definition transaction MUST prove ownership of
   // the `owner` credential." Nothing checked it, so a survey could name any
   // credential as owner and be tallied under a borrowed name.
