@@ -137,6 +137,35 @@ published. Keep adding entries here until release.
   emit (stable identifiers a UI maps to localized messages).
 - `describeProblem` / `describeProblems` — default English rendering of a
   problem (`{token}` params interpolated); the self-describing fallback.
+- **Native-script owners can be proven via chain resolution.**
+  `scriptCredentialHash` (`./domain`) names the native-script hash a script
+  credential claims; `decodeResolvedNativeScript` (`./txproof`) folds a script
+  resolved off-chain into the proof evidence, and `decodeNativeScript`
+  (`./evolution`) decodes a bare script from its CBOR (e.g. a Koios
+  `/script_info` row). Together they let a data source prove a
+  script-credential owner whose carrying transaction doesn't witness the
+  script. (`nativeScriptSatisfied` itself predates this release.)
+- **The tally-assembly spine is exported** so an emitter and a verifier build
+  byte-identical artifacts from their own data sources: `assembleTallyBody`,
+  `emptyTallyBody`, `cancelledTallyBody`, `TallyBodyIdentity`, and `RoleTally`
+  (`./tally` — the per-role weighted-responder result each side supplies),
+  plus `byCancellationChainOrder` (`./domain`).
+- **Unresolvable governance links surface as unknowns instead of reading as
+  "no link".** `GovLinkScan` (`./domain`) splits the resolved links from the
+  `UnresolvedGovAction`s whose anchor couldn't be fetched; the action's
+  on-chain `endEpoch` scopes the uncertainty to the surveys (and votes) the
+  epoch-alignment rule could bind it to.
+- **Response-level proof verdicts**: `responseCredentialProof` (`./domain`)
+  evaluates a response's credential to `proven` / `unproven` / `unknown` —
+  `unknown` only when an unresolved epoch-aligned anchor could still flip an
+  otherwise-unproven mechanism-B verdict — with `CredentialProof` and
+  `BINDABLE_ROLES` (the roles a governance vote can bind). `ProofVerdicts` /
+  `proofVerdictKey` (`./domain`) carry an indexer's served verdicts; a missing
+  key means _pending_ and the response stays counted.
+- `isMetadatum` — validates a foreign value as a metadatum tree (the existing
+  guards only narrow within the union).
+- `problemSeverity` — a `ValidationProblem`'s severity, defaulting to
+  `"error"` when the field is absent.
 
 ### Fixed
 
@@ -165,13 +194,24 @@ published. Keep adding entries here until release.
   `encodeCredential` (hash 28 B), `encodeSubmissionMode` (chain_hash 32 B,
   round/padding `uint`), and `end_epoch` now throw `Cip179EncodeError` on
   out-of-bounds input. Valid inputs encode byte-for-byte as before.
+- **`maxPlaintextSize` (`./tlock`) sizes a numeric rating off both ends of its
+  scale** — a rating is a CBOR `int`, so a negative `min` can encode wider
+  than a small positive `max` (min −1000 → 3 bytes, max 5 → 1) and the widest
+  answer could overflow the padding the old bound chose. Create-path only (it
+  feeds a new survey's default `padding_size`); reveal and tally never call
+  it, so no artifact's bytes move.
+- **A record at a foreign `spec_version` is blamed for its version, not its
+  shape.** Decoding an alien record used to fail on whatever structural
+  mismatch happened first; the decode error now reports the unsupported
+  `spec_version` itself. Diagnostics only — nothing that previously decoded
+  changed.
 
 ### Notes
 
 - The `validateResponse`/`validateDefinition` change is representation-only: the
   validity _verdict_ is unchanged (the list is empty iff the structure is valid),
   so on its own it needed no `rulesetVersion` bump.
-- The **ruleset bumps** (`rulesetVersion` 4 → 9, above) each updated the golden
+- The **ruleset bumps** (`rulesetVersion` 4 → 12, above) each updated the golden
   `rulesetHash()` test in their own change — that test exists to make an
   unbumped ruleset change fail CI, so it is never updated on its own.
 - The **decode/encode conformance fixes** (under _Fixed_) only reject malformed
