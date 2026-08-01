@@ -21,6 +21,7 @@ import { finalizeClosedSurveys } from "./finalize";
 import { refreshGovLinks } from "./govLinks";
 import { materializeSnapshot, snapshotBytes } from "./materialize";
 import { upstreamMeter } from "./meter";
+import { pruneTxProofCache } from "./proofCache";
 import {
   OPERATIONAL_RETENTION_SECONDS,
   REFRESH_LEASE_SECONDS,
@@ -179,6 +180,18 @@ export async function refreshSnapshot(
       govLinksReliable ? govLinks : null,
     ).catch((err) =>
       console.warn(`finalization failed (will retry): ${String(err)}`),
+    );
+
+    // After finalization, so a survey that just froze its artifact releases its
+    // transactions in the same run rather than a refresh later. Best-effort: a
+    // cache that keeps too much is only a cache that costs storage.
+    await pruneTxProofCache(
+      store,
+      records,
+      tip,
+      await store.finalizedSurveyKeys(),
+    ).catch((err) =>
+      console.warn(`tx proof cache prune failed: ${String(err)}`),
     );
 
     // Materialize LAST, so the stored rows reflect this run's validation and
