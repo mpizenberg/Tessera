@@ -596,13 +596,13 @@ behind, not an answer.
 This is the one cache here that is **evicted** (`proofCache.ts`), because its
 rows are whole transactions and a proof stops being read once nothing can still
 be decided from it. Once per refresh, after finalization, the sweep runs over
-the table's own keys and keeps only what a *live* survey still bears on — no
+the table's own keys and keeps only what a _live_ survey still bears on — no
 artifact yet **and** within 5 epochs of its end epoch. The artifact is the
 normal exit; the epoch backstop covers surveys that never produce one (a
 spec-invalid definition is untalliable, so finalization emits nothing for it).
 
 Sweeping the cache rather than deriving a drop set from the records is what
-keeps each run proportional to the *cache* instead of to the survey archive: the
+keeps each run proportional to the _cache_ instead of to the survey archive: the
 archive only grows, so a records-driven sweep would re-delete every historical
 hash on every refresh until the batch outgrew what D1 accepts — at which point
 eviction would start failing, silently, exactly when the cache first needed it.
