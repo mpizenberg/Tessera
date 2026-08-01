@@ -103,7 +103,11 @@ function decodeRevealed(stored: string | null): SurveyResponse | null {
  */
 const COVERED_ROLES: readonly number[] = [...RULESET_DESCRIPTOR.coveredRoles];
 
-/** Safety margin past the epoch boundary: Koios indexing lag + shallow reorgs. */
+/**
+ * Reorg depth past the vote deadline (~30 blocks). Indexing lag is not this
+ * margin's job: the epoch gate covers it, since the tip cannot outrun the
+ * indexer it is read from.
+ */
 const FINALIZE_MARGIN_SECONDS = 600;
 
 /** How each covered role's weights were sourced (artifact provenance). */
