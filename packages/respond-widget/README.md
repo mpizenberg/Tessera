@@ -322,11 +322,24 @@ type Responder = Partial<Record<Role, Credential>>;
   The role → signing-key mapping is fixed: Keyholder→`payment`,
   Stakeholder→`stake`, DRep→`drep`, SPO→`pool`, CC→`cc`.
 
-In-workspace, `cardano-tessera-respond-core` exports
-`respondableRolesFor(def, responder)` and `credentialForRole(role, responder)`
-to compute eligibility host-side too (e.g. to decide whether to mount the
-widget at all). That package is not published yet — the planned host toolkit
-(`cardano-tessera-host`) will carry these helpers for npm integrators.
+**A wrong entry fails late**, so derive the map carefully. The credential proof
+the carrying transaction supplies establishes only that the credential you
+asserted signed — never that it holds the role you filed it under. A stake
+credential placed under `0` (DRep) is therefore signed by the wallet, accepted
+by the ledger, and dropped only once a tally judges whether that credential
+really holds the claimed role. Mis-derive the _bytes_ and you find out at once
+instead: a key hash that isn't 28 bytes is rejected at encode time, so a raw
+`getPubDRepKey` result throws until you blake2b-224 it into a DRep credential.
+
+To decide host-side whether to mount the widget at all, the two eligibility
+questions are one-liners over the map above — no helper package needed:
+
+```ts
+const respondableRoles = def.eligibleRoles.filter(
+  (r) => responder[r] !== undefined,
+);
+const credential = responder[role];
+```
 
 ## Prior responses (edit/replace)
 
