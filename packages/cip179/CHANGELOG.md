@@ -6,10 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 while `< 1.0.0`, breaking changes bump the **minor** version.
 
-## [Unreleased]
-
-Targeting **0.3.0** — the version is already set in `package.json` but not yet
-published. Keep adding entries here until release.
+## [0.3.0] - 2026-08-01
 
 ### Changed (breaking)
 
