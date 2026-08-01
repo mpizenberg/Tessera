@@ -24,5 +24,5 @@
       "@tessera/respond-ui": ["../respond-ui/src/index.ts"]
     }
   },
-  "include": ["src", "dev", "vite.config.ts", "vitest.config.ts"]
+  "include": ["src", "dev", "test", "vite.config.ts", "vitest.config.ts"]
 }

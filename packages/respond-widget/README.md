@@ -187,6 +187,18 @@ case, add the credential to `required_signers` (mechanism A). `keyKind` is the s
 hint either way — it tells you which key signs, whether that signature lands in
 `required_signers` or in the vote's witness.
 
+## TypeScript
+
+Importing anything from the package (even a type) loads global augmentations:
+`HTMLElementTagNameMap` gains `"tessera-respond"`, so
+`document.createElement("tessera-respond")` and tag-name queries return a
+`TesseraRespondElement` — every prop a writable, possibly-`undefined` DOM
+property — and `HTMLElementEventMap` gains the three `tessera:*` events, so
+`addEventListener("tessera:response", (e) => …)` types `e.detail` as
+`RespondResult` on any element (they bubble composed, so ancestors count).
+Solid hosts importing `/element` also get the tag in JSX. No hand-rolled
+element interface or `IntrinsicElements` entry is needed.
+
 ## The responder & eligibility
 
 `responder` maps each role the user can answer as to the credential that role

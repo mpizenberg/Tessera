@@ -126,3 +126,35 @@ export const RESPOND_EVENTS = {
   change: "tessera:change",
   invalid: "tessera:invalid",
 } as const;
+
+/**
+ * Every public prop as a writable, possibly-unset DOM property — the surface
+ * `solid-element` wires on the element (each prop also has a hyphenated
+ * attribute alias for the string/number ones).
+ */
+export type TesseraRespondElementProps = {
+  [K in keyof Required<TesseraRespondProps>]:
+    | TesseraRespondProps[K]
+    | undefined;
+};
+
+/**
+ * A `<tessera-respond>` element instance. All props start `undefined`; the
+ * element renders nothing until the four required ones are assigned.
+ * `document.createElement("tessera-respond")` and tag-name queries return
+ * this type via the {@link HTMLElementTagNameMap} entry below.
+ */
+export type TesseraRespondElement = HTMLElement & TesseraRespondElementProps;
+
+declare global {
+  interface HTMLElementTagNameMap {
+    "tessera-respond": TesseraRespondElement;
+  }
+  // On the element map (not a per-element overload) because the events bubble
+  // composed — hosts legitimately listen on any ancestor.
+  interface HTMLElementEventMap {
+    "tessera:response": CustomEvent<RespondResult>;
+    "tessera:change": CustomEvent<RespondChangeDetail>;
+    "tessera:invalid": CustomEvent<RespondInvalidDetail>;
+  }
+}

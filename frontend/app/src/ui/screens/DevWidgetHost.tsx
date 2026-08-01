@@ -37,7 +37,6 @@ import { A, useParams } from "@solidjs/router";
 import {
   decodePayload,
   type SurveyDefinition,
-  type SurveyRef,
   type SurveyResponse,
 } from "cip-179";
 import { dedupeResponses, findSurvey } from "cip-179/domain";
@@ -47,6 +46,7 @@ import type {
   RespondChangeDetail,
   RespondInvalidDetail,
   RespondResult,
+  TesseraRespondElement,
 } from "@tessera/respond-widget";
 
 import { useApp } from "~/state";
@@ -62,29 +62,6 @@ import { TxLink } from "~/ui/components/TxLink";
 import { QueuedNote } from "~/ui/components/CartDrawer";
 import { locale } from "~/i18n";
 import css from "./DevWidgetHost.module.css";
-
-// `<tessera-respond>` is a custom element, not a known intrinsic — declare it so
-// JSX type-checks. Object props flow in via `el.*` assignment below, not JSX
-// attributes, so a bare `HTMLAttributes` (which carries `ref`) is all we need.
-declare module "solid-js" {
-  namespace JSX {
-    interface IntrinsicElements {
-      "tessera-respond": JSX.HTMLAttributes<HTMLElement>;
-    }
-  }
-}
-
-/** The subset of `<tessera-respond>` DOM properties this host writes. */
-type RespondElement = HTMLElement & {
-  definition?: SurveyDefinition | undefined;
-  surveyRef?: SurveyRef | undefined;
-  responder?: Responder | undefined;
-  tipEpoch?: number | undefined;
-  cancelled?: boolean | undefined;
-  priorResponses?: readonly SurveyResponse[] | undefined;
-  locale?: string | undefined;
-  layout?: ("one-per-screen" | "list") | undefined;
-};
 
 const DevWidgetHost: Component = () => {
   const app = useApp();
@@ -163,7 +140,7 @@ const DevWidgetHost: Component = () => {
   );
 
   // --- element wiring ------------------------------------------------------
-  const [el, setEl] = createSignal<RespondElement | undefined>();
+  const [el, setEl] = createSignal<TesseraRespondElement | undefined>();
 
   // Reflect every prop onto the element as a DOM property — the same thing a
   // vanilla-JS host does (`el.definition = …`). Re-setting an unchanged object
@@ -194,16 +171,15 @@ const DevWidgetHost: Component = () => {
   createEffect(() => {
     const node = el();
     if (!node) return;
-    const onResponse = (e: Event): void => {
-      const detail = (e as CustomEvent<RespondResult>).detail;
-      setResult(detail);
-      void submit(detail);
+    const onResponse = (e: CustomEvent<RespondResult>): void => {
+      setResult(e.detail);
+      void submit(e.detail);
     };
-    const onChange = (e: Event): void => {
-      setChange((e as CustomEvent<RespondChangeDetail>).detail);
+    const onChange = (e: CustomEvent<RespondChangeDetail>): void => {
+      setChange(e.detail);
     };
-    const onInvalid = (e: Event): void => {
-      setInvalid((e as CustomEvent<RespondInvalidDetail>).detail);
+    const onInvalid = (e: CustomEvent<RespondInvalidDetail>): void => {
+      setInvalid(e.detail);
     };
     node.addEventListener("tessera:response", onResponse);
     node.addEventListener("tessera:change", onChange);

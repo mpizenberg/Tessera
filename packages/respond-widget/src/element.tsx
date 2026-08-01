@@ -19,22 +19,30 @@ import { Show } from "solid-js";
 
 import { RespondRoot } from "./Respond";
 import { adoptWidgetStyles } from "./styles";
-import type { TesseraRespondProps } from "./types";
+import type {
+  TesseraRespondElement,
+  TesseraRespondElementProps,
+  TesseraRespondProps,
+} from "./types";
 
 export * from "./index";
+
+// Solid hosts get the tag in JSX (typed ref included); object props still
+// flow in as DOM properties, so plain HTMLAttributes is the whole surface.
+declare module "solid-js" {
+  namespace JSX {
+    interface IntrinsicElements {
+      "tessera-respond": JSX.HTMLAttributes<TesseraRespondElement>;
+    }
+  }
+}
 
 /**
  * Every public prop, declared up-front with its pre-initialization value —
  * solid-element only wires reactivity (and attribute observation) for keys
  * present in this map.
  */
-type ElementProps = {
-  [K in keyof Required<TesseraRespondProps>]:
-    | TesseraRespondProps[K]
-    | undefined;
-};
-
-const defaults: ElementProps = {
+const defaults: TesseraRespondElementProps = {
   definition: undefined,
   surveyRef: undefined,
   responder: undefined,
@@ -49,7 +57,7 @@ const defaults: ElementProps = {
   initialRole: undefined,
 };
 
-customElement<ElementProps>(
+customElement<TesseraRespondElementProps>(
   "tessera-respond",
   defaults,
   (props, { element }) => {

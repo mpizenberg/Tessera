@@ -30,10 +30,11 @@ import { QUICKNET_CHAIN_HASH } from "cip-179/tlock";
 import { buildResponse } from "@tessera/respond-core";
 
 import { SAMPLES, TIP_EPOCH, responder, surveyRef } from "../dev/samples";
-import type { RespondResult } from "../src/types";
+import type { RespondResult, TesseraRespondElement } from "../src/types";
 
 beforeAll(async () => {
   // Importing the artifact registers <tessera-respond> as a side effect.
+  // @ts-expect-error -- the built dist ships no declarations (yet)
   await import("../dist/tessera-respond.es.js");
 });
 
@@ -65,10 +66,9 @@ function oneQuestionDef(submissionMode: SubmissionMode): SurveyDefinition {
 /** Create the element, assign the host props, connect it. */
 function mount(
   definition: SurveyDefinition,
-  extra: Record<string, unknown> = {},
-): HTMLElement {
-  const el = document.createElement("tessera-respond") as HTMLElement &
-    Record<string, unknown>;
+  extra: Partial<TesseraRespondElement> = {},
+): TesseraRespondElement {
+  const el = document.createElement("tessera-respond");
   el.definition = definition;
   el.surveyRef = surveyRef;
   el.responder = responder;
@@ -251,8 +251,7 @@ describe("built <tessera-respond> artifact", () => {
 
   it("upgrades from HTML markup, waits for props, and honors attributes", () => {
     document.body.innerHTML = `<tessera-respond locale="fr"></tessera-respond>`;
-    const el = document.body.querySelector("tessera-respond") as HTMLElement &
-      Record<string, unknown>;
+    const el = document.body.querySelector("tessera-respond")!;
     // Connected without data: nothing rendered, no crash.
     expect(shadow(el).querySelector(".root")).toBe(null);
     el.definition = SAMPLES.public;
@@ -314,8 +313,7 @@ describe("built <tessera-respond> artifact", () => {
     // the wrapper's hasAttribute fallback this idiomatic form failed *open*,
     // rendering the survey answerable.
     document.body.innerHTML = `<tessera-respond cancelled></tessera-respond>`;
-    const el = document.body.querySelector("tessera-respond") as HTMLElement &
-      Record<string, unknown>;
+    const el = document.body.querySelector("tessera-respond")!;
     el.definition = SAMPLES.public;
     el.surveyRef = surveyRef;
     el.responder = responder;
@@ -399,8 +397,7 @@ describe("built <tessera-respond> artifact", () => {
     );
     // Attribute form (Stakeholder = 3), parsed by the hyphenated alias.
     document.body.innerHTML = `<tessera-respond initial-role="3"></tessera-respond>`;
-    const el2 = document.body.querySelector("tessera-respond") as HTMLElement &
-      Record<string, unknown>;
+    const el2 = document.body.querySelector("tessera-respond")!;
     el2.definition = def;
     el2.surveyRef = surveyRef;
     el2.responder = responder;

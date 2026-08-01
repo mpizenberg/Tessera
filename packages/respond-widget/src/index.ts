@@ -27,5 +27,6 @@ export type {
   RespondChangeDetail,
   RespondInvalidDetail,
   RespondResult,
+  TesseraRespondElement,
   TesseraRespondProps,
 } from "./types";
