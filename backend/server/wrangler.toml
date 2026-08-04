@@ -1,10 +1,11 @@
 # Cloudflare deployment of the Tier-1 backend (src/worker.ts).
 #
-# The top-level config is the default (preview-network) deployment; mainnet is
-# a wrangler environment (`wrangler deploy --env mainnet`) with its own D1
-# database and vars — two deployments of one Worker, no network path segment
-# (ARCHITECTURE.md §11). Create databases with `wrangler d1 create <name>`,
-# paste the ids below, then `wrangler d1 migrations apply DB [--local|--remote]`.
+# Preview and mainnet are explicit Wrangler environments with separate D1
+# databases and vars — two deployments of one Worker, no network path segment
+# (ARCHITECTURE.md §11). The top-level preview values remain as a safe fallback,
+# but deployment scripts always select an environment. Create databases with
+# `wrangler d1 create <name>`, paste the ids below, then run
+# `wrangler d1 migrations apply DB --env <network> [--local|--remote]`.
 
 # Naming rule across the project: the network is always an explicit suffix
 # (tessera-{preview,mainnet} for the app, tessera-backend-{preview,mainnet}
@@ -38,6 +39,17 @@ migrations_dir = "migrations"
 
 # Environments inherit [triggers] and [limits] but not [vars] or bindings —
 # those are redeclared below.
+[env.preview]
+name = "tessera-backend-preview"
+[env.preview.vars]
+NETWORK = "preview"
+
+[[env.preview.d1_databases]]
+binding = "DB"
+database_name = "tessera-cache-preview"
+database_id = "1d86fdaa-b281-4b9d-8f37-9b540eb4b6dd"
+migrations_dir = "migrations"
+
 [env.mainnet]
 name = "tessera-backend-mainnet"
 [env.mainnet.vars]

@@ -104,8 +104,8 @@ The Worker entry reuses the same app with a D1 store; the cron trigger
 Miniflare's bundled D1 (no Cloudflare account needed):
 
 ```sh
-pnpm --filter cardano-tessera-backend exec wrangler d1 migrations apply DB --local
-pnpm --filter cardano-tessera-backend dev:cf        # wrangler dev --test-scheduled
+pnpm --filter cardano-tessera-backend exec wrangler d1 migrations apply DB --env preview --local
+pnpm --filter cardano-tessera-backend dev:cf        # wrangler dev --env preview --test-scheduled
 curl "http://localhost:8787/__scheduled"     # trigger one refresh by hand
 ```
 

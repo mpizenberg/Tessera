@@ -10,8 +10,8 @@
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",
-    "dev:cf": "wrangler dev --test-scheduled",
-    "deploy:preview": "wrangler deploy",
+    "dev:cf": "wrangler dev --env preview --test-scheduled",
+    "deploy:preview": "wrangler deploy --env preview",
     "deploy:mainnet": "wrangler deploy --env mainnet",
     "type-check": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests"
