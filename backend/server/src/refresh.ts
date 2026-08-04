@@ -205,7 +205,7 @@ export async function refreshSnapshot(
       await store.finalizedCancelledKeys(),
     );
     const payloadBytes = snapshotBytes(snapshot);
-    await store.replaceSnapshot(snapshot.surveys, snapshot.responses, {
+    await store.reconcileSnapshot(snapshot.surveys, snapshot.responses, {
       tip: JSON.stringify(toJsonSafe(tip)),
       incomplete: records.incomplete === true,
       // Stamped with the scan's start, not this write: `tip` was read then, so

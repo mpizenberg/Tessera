@@ -13,7 +13,12 @@
 
 import type { SurveyListCounts } from "cardano-tessera-core";
 
-import type { ResponseRow, SurveyIndexRow, SurveyPageQuery } from "./store";
+import type {
+  ResponseRow,
+  SnapshotMeta,
+  SurveyIndexRow,
+  SurveyPageQuery,
+} from "./store";
 
 export interface SqlQuery {
   readonly sql: string;
@@ -153,30 +158,53 @@ export const surveyIndexRowFromDb = (
   finalizedCancelled: r.finalizedCancelled !== 0,
 });
 
-export const SURVEY_INDEX_INSERT = `
+const SURVEY_INDEX_RECONCILE = `
   INSERT INTO survey_index
     (survey_key, slot, end_epoch, sealed, cancelled, gov_linked, owner,
      haystack, record, cancellations, gov_links, response_count,
      finalized_cancelled)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+  SELECT json_extract(value, '$.surveyKey'),
+         json_extract(value, '$.slot'),
+         json_extract(value, '$.endEpoch'),
+         json_extract(value, '$.sealed'),
+         json_extract(value, '$.cancelled'),
+         json_extract(value, '$.govLinked'),
+         json_extract(value, '$.owner'),
+         json_extract(value, '$.haystack'),
+         json_extract(value, '$.record'),
+         json_extract(value, '$.cancellations'),
+         json_extract(value, '$.govLinks'),
+         json_extract(value, '$.responseCount'),
+         json_extract(value, '$.finalizedCancelled')
+  FROM json_each(?)
+  WHERE 1
+  ON CONFLICT(survey_key) DO UPDATE SET
+    slot = excluded.slot,
+    end_epoch = excluded.end_epoch,
+    sealed = excluded.sealed,
+    cancelled = excluded.cancelled,
+    gov_linked = excluded.gov_linked,
+    owner = excluded.owner,
+    haystack = excluded.haystack,
+    record = excluded.record,
+    cancellations = excluded.cancellations,
+    gov_links = excluded.gov_links,
+    response_count = excluded.response_count,
+    finalized_cancelled = excluded.finalized_cancelled
+  WHERE survey_index.slot IS NOT excluded.slot
+     OR survey_index.end_epoch IS NOT excluded.end_epoch
+     OR survey_index.sealed IS NOT excluded.sealed
+     OR survey_index.cancelled IS NOT excluded.cancelled
+     OR survey_index.gov_linked IS NOT excluded.gov_linked
+     OR survey_index.owner IS NOT excluded.owner
+     OR survey_index.haystack IS NOT excluded.haystack
+     OR survey_index.record IS NOT excluded.record
+     OR survey_index.cancellations IS NOT excluded.cancellations
+     OR survey_index.gov_links IS NOT excluded.gov_links
+     OR survey_index.response_count IS NOT excluded.response_count
+     OR survey_index.finalized_cancelled IS NOT excluded.finalized_cancelled`;
 
-export const surveyIndexInsertParams = (r: SurveyIndexRow): unknown[] => [
-  r.surveyKey,
-  r.slot,
-  r.endEpoch,
-  r.sealed ? 1 : 0,
-  r.cancelled ? 1 : 0,
-  r.govLinked ? 1 : 0,
-  r.owner,
-  r.haystack,
-  r.record,
-  r.cancellations,
-  r.govLinks,
-  r.responseCount,
-  r.finalizedCancelled ? 1 : 0,
-];
-
-export const SNAPSHOT_META_UPSERT = `
+const SNAPSHOT_META_UPSERT = `
   INSERT INTO snapshot_meta (id, tip, incomplete, fetched_at)
   VALUES (1, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
@@ -195,25 +223,174 @@ export const SURVEY_BUNDLE_SELECT = `
 export const SNAPSHOT_GOV_LINKS_SELECT = `
   SELECT gov_links AS govLinks FROM survey_index WHERE gov_links <> '[]'`;
 
-/**
- * A repeated `(tx_hash, response_index)` names the same immutable on-chain
- * response, so replacing is a no-op — and cheaper than letting a scan quirk
- * abort the whole refresh, which is the silent-freeze failure this table exists
- * to remove.
- */
-export const RESPONSE_INSERT = `
-  INSERT OR REPLACE INTO response
+/** A repeated coordinate is the same immutable on-chain response. */
+const RESPONSE_RECONCILE = `
+  INSERT OR IGNORE INTO response
     (tx_hash, response_index, survey_key, credential, slot, record)
-  VALUES (?, ?, ?, ?, ?, ?)`;
+  SELECT json_extract(value, '$.txHash'),
+         json_extract(value, '$.responseIndex'),
+         json_extract(value, '$.surveyKey'),
+         json_extract(value, '$.credential'),
+         json_extract(value, '$.slot'),
+         json_extract(value, '$.record')
+  FROM json_each(?)`;
 
-export const responseInsertParams = (r: ResponseRow): unknown[] => [
-  r.txHash,
-  r.responseIndex,
-  r.surveyKey,
-  r.credential,
-  r.slot,
-  r.record,
-];
+const SNAPSHOT_ROWS_PER_CHUNK = 500;
+const SNAPSHOT_KEYS_PER_CHUNK = 5_000;
+const SNAPSHOT_JSON_BYTES_PER_CHUNK = 512 * 1_024;
+const utf8 = new TextEncoder();
+
+interface JsonChunk<T> {
+  readonly values: readonly T[];
+  readonly json: string;
+}
+
+function jsonChunks<T>(values: readonly T[], maxRows: number): JsonChunk<T>[] {
+  const chunks: JsonChunk<T>[] = [];
+  let chunkValues: T[] = [];
+  let encodedValues: string[] = [];
+  let bytes = 2;
+
+  const flush = () => {
+    if (chunkValues.length === 0) return;
+    chunks.push({
+      values: chunkValues,
+      json: `[${encodedValues.join(",")}]`,
+    });
+    chunkValues = [];
+    encodedValues = [];
+    bytes = 2;
+  };
+
+  for (const value of values) {
+    const encoded = JSON.stringify(value);
+    if (encoded === undefined) throw new TypeError("snapshot row is not JSON");
+    const encodedBytes = utf8.encode(encoded).byteLength;
+    const separatorBytes = chunkValues.length === 0 ? 0 : 1;
+    if (
+      chunkValues.length > 0 &&
+      (chunkValues.length >= maxRows ||
+        bytes + separatorBytes + encodedBytes > SNAPSHOT_JSON_BYTES_PER_CHUNK)
+    ) {
+      flush();
+    }
+    chunkValues.push(value);
+    encodedValues.push(encoded);
+    bytes += (chunkValues.length === 1 ? 0 : 1) + encodedBytes;
+  }
+  flush();
+  return chunks;
+}
+
+const compareText = (a: string, b: string): number =>
+  a < b ? -1 : a > b ? 1 : 0;
+
+function surveyDeletionSql(
+  keys: readonly { readonly surveyKey: string }[],
+): SqlQuery[] {
+  if (keys.length === 0)
+    return [{ sql: "DELETE FROM survey_index", params: [] }];
+  const chunks = jsonChunks(keys, SNAPSHOT_KEYS_PER_CHUNK);
+  return chunks.map((chunk, index) => {
+    const lower = index === 0 ? null : chunk.values[0]!.surveyKey;
+    const upper = chunks[index + 1]?.values[0]?.surveyKey ?? null;
+    const bounds: string[] = [];
+    const params: unknown[] = [];
+    if (lower !== null) {
+      bounds.push("survey_key >= ?");
+      params.push(lower);
+    }
+    if (upper !== null) {
+      bounds.push("survey_key < ?");
+      params.push(upper);
+    }
+    params.push(chunk.json);
+    return {
+      sql: `DELETE FROM survey_index
+            WHERE ${bounds.length === 0 ? "1" : bounds.join(" AND ")}
+              AND survey_key NOT IN (
+                SELECT json_extract(value, '$.surveyKey') FROM json_each(?)
+              )`,
+      params,
+    };
+  });
+}
+
+interface ResponseKey {
+  readonly txHash: string;
+  readonly responseIndex: number;
+}
+
+function responseDeletionSql(keys: readonly ResponseKey[]): SqlQuery[] {
+  if (keys.length === 0) return [{ sql: "DELETE FROM response", params: [] }];
+  const chunks = jsonChunks(keys, SNAPSHOT_KEYS_PER_CHUNK);
+  return chunks.map((chunk, index) => {
+    const lower = index === 0 ? null : chunk.values[0]!;
+    const upper = chunks[index + 1]?.values[0] ?? null;
+    const bounds: string[] = [];
+    const params: unknown[] = [];
+    if (lower !== null) {
+      bounds.push("(tx_hash > ? OR (tx_hash = ? AND response_index >= ?))");
+      params.push(lower.txHash, lower.txHash, lower.responseIndex);
+    }
+    if (upper !== null) {
+      bounds.push("(tx_hash < ? OR (tx_hash = ? AND response_index < ?))");
+      params.push(upper.txHash, upper.txHash, upper.responseIndex);
+    }
+    params.push(chunk.json);
+    return {
+      sql: `DELETE FROM response
+            WHERE ${bounds.length === 0 ? "1" : bounds.join(" AND ")}
+              AND (tx_hash, response_index) NOT IN (
+                SELECT json_extract(value, '$.txHash'),
+                       json_extract(value, '$.responseIndex')
+                FROM json_each(?)
+              )`,
+      params,
+    };
+  });
+}
+
+/**
+ * One atomic reconciliation program for either SQLite adapter. JSON table-valued
+ * parameters keep first materialization and large reorgs to bounded set
+ * operations rather than one statement per record.
+ */
+export function snapshotReconciliationSql(
+  surveys: readonly SurveyIndexRow[],
+  responses: readonly ResponseRow[],
+  meta: SnapshotMeta,
+): SqlQuery[] {
+  const sortedSurveys = [...surveys].sort((a, b) =>
+    compareText(a.surveyKey, b.surveyKey),
+  );
+  const sortedResponses = [...responses].sort(
+    (a, b) =>
+      compareText(a.txHash, b.txHash) || a.responseIndex - b.responseIndex,
+  );
+  const surveyKeys = sortedSurveys.map(({ surveyKey }) => ({ surveyKey }));
+  const responseKeys = sortedResponses.map(({ txHash, responseIndex }) => ({
+    txHash,
+    responseIndex,
+  }));
+
+  return [
+    ...jsonChunks(sortedSurveys, SNAPSHOT_ROWS_PER_CHUNK).map((chunk) => ({
+      sql: SURVEY_INDEX_RECONCILE,
+      params: [chunk.json],
+    })),
+    ...surveyDeletionSql(surveyKeys),
+    ...jsonChunks(sortedResponses, SNAPSHOT_ROWS_PER_CHUNK).map((chunk) => ({
+      sql: RESPONSE_RECONCILE,
+      params: [chunk.json],
+    })),
+    ...responseDeletionSql(responseKeys),
+    {
+      sql: SNAPSHOT_META_UPSERT,
+      params: [meta.tip, meta.incomplete ? 1 : 0, meta.fetchedAt],
+    },
+  ];
+}
 
 /** Ordered so a bundle body is byte-stable across refreshes. */
 export const RESPONSES_FOR_SURVEY = `

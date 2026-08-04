@@ -41,17 +41,13 @@ import {
 } from "./store";
 import {
   RESPONSES_FOR_SURVEY,
-  RESPONSE_INSERT,
   SNAPSHOT_GOV_LINKS_SELECT,
   SNAPSHOT_META_SELECT,
-  SNAPSHOT_META_UPSERT,
   SURVEY_BUNDLE_SELECT,
-  SURVEY_INDEX_INSERT,
   countsFromDb,
   respondedSql,
-  responseInsertParams,
+  snapshotReconciliationSql,
   surveyCountsSql,
-  surveyIndexInsertParams,
   surveyIndexRowFromDb,
   surveyPageSql,
   type DbSurveyIndexRow,
@@ -472,24 +468,18 @@ export function d1BackendStore(db: D1Like): BackendStore {
         .run();
     },
 
-    async replaceSnapshot(
+    async reconcileSnapshot(
       surveys: readonly SurveyIndexRow[],
       responses: readonly ResponseRow[],
       meta: SnapshotMeta,
     ): Promise<void> {
-      // db.batch runs as one transaction, so readers never observe one run's
-      // rows beside another's — across both tables and the envelope.
-      const survey = db.prepare(SURVEY_INDEX_INSERT);
-      const response = db.prepare(RESPONSE_INSERT);
-      await db.batch([
-        db.prepare("DELETE FROM survey_index"),
-        db.prepare("DELETE FROM response"),
-        ...surveys.map((r) => survey.bind(...surveyIndexInsertParams(r))),
-        ...responses.map((r) => response.bind(...responseInsertParams(r))),
-        db
-          .prepare(SNAPSHOT_META_UPSERT)
-          .bind(meta.tip, meta.incomplete ? 1 : 0, meta.fetchedAt),
-      ]);
+      // One batch is one transaction: row diffs and their freshness envelope
+      // become visible together, or the previous generation remains intact.
+      await db.batch(
+        snapshotReconciliationSql(surveys, responses, meta).map(
+          ({ sql, params }) => db.prepare(sql).bind(...params),
+        ),
+      );
     },
     async snapshotMeta(): Promise<SnapshotMeta | null> {
       const row = await db

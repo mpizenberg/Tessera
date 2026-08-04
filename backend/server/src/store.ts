@@ -543,12 +543,12 @@ export interface SurveyPageQuery {
  */
 export interface SnapshotStore {
   /**
-   * Atomically replace every materialized row and the envelope. Wholesale
-   * replacement, not merge: a record can leave the snapshot (reorged out, or
-   * aged past the scan's floor), and a run's rows must never be served mixed
-   * with the previous run's.
+   * Atomically reconcile the authoritative scan with the materialized rows and
+   * publish its envelope. New immutable responses are inserted, changed survey
+   * projections are updated, and absent records are deleted; readers see either
+   * the complete previous generation or the complete new one.
    */
-  replaceSnapshot(
+  reconcileSnapshot(
     surveys: readonly SurveyIndexRow[],
     responses: readonly ResponseRow[],
     meta: SnapshotMeta,

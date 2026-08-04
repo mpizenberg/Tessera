@@ -44,7 +44,7 @@ async function seed(
     govLinks,
     await store.finalizedCancelledKeys(),
   );
-  await store.replaceSnapshot(snapshot.surveys, snapshot.responses, {
+  await store.reconcileSnapshot(snapshot.surveys, snapshot.responses, {
     tip: JSON.stringify(toJsonSafe(tip)),
     incomplete: false,
     fetchedAt: FETCHED_AT,

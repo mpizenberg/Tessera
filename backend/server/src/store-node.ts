@@ -49,17 +49,13 @@ import {
 } from "./store";
 import {
   RESPONSES_FOR_SURVEY,
-  RESPONSE_INSERT,
   SNAPSHOT_GOV_LINKS_SELECT,
   SNAPSHOT_META_SELECT,
-  SNAPSHOT_META_UPSERT,
   SURVEY_BUNDLE_SELECT,
-  SURVEY_INDEX_INSERT,
   countsFromDb,
   respondedSql,
-  responseInsertParams,
+  snapshotReconciliationSql,
   surveyCountsSql,
-  surveyIndexInsertParams,
   surveyIndexRowFromDb,
   surveyPageSql,
   type DbSurveyIndexRow,
@@ -159,9 +155,6 @@ export function openBackendStore(path: string): BackendStore {
   applyMigrations(db);
 
   const snapshotMetaStmt = db.prepare(SNAPSHOT_META_SELECT);
-  const putSnapshotMetaStmt = db.prepare(SNAPSHOT_META_UPSERT);
-  const insertSurveyStmt = db.prepare(SURVEY_INDEX_INSERT);
-  const insertResponseStmt = db.prepare(RESPONSE_INSERT);
   const surveyBundleStmt = db.prepare(SURVEY_BUNDLE_SELECT);
   const snapshotGovLinksStmt = db.prepare(SNAPSHOT_GOV_LINKS_SELECT);
   const responsesForSurveyStmt = db.prepare(RESPONSES_FOR_SURVEY);
@@ -586,26 +579,16 @@ export function openBackendStore(path: string): BackendStore {
       );
     },
 
-    async replaceSnapshot(
+    async reconcileSnapshot(
       surveys: readonly SurveyIndexRow[],
       responses: readonly ResponseRow[],
       meta: SnapshotMeta,
     ): Promise<void> {
-      // Full replace in one transaction: the set is scan-sized, and readers
-      // must never observe one run's rows beside another's.
+      const queries = snapshotReconciliationSql(surveys, responses, meta);
       db.exec("BEGIN");
       try {
-        db.exec("DELETE FROM survey_index");
-        db.exec("DELETE FROM response");
-        for (const r of surveys)
-          insertSurveyStmt.run(...(surveyIndexInsertParams(r) as SqlValue[]));
-        for (const r of responses)
-          insertResponseStmt.run(...(responseInsertParams(r) as SqlValue[]));
-        putSnapshotMetaStmt.run(
-          meta.tip,
-          meta.incomplete ? 1 : 0,
-          meta.fetchedAt,
-        );
+        for (const { sql, params } of queries)
+          db.prepare(sql).run(...(params as SqlValue[]));
         db.exec("COMMIT");
       } catch (err) {
         db.exec("ROLLBACK");

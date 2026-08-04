@@ -245,7 +245,7 @@ export function memBackendStore(): MemBackendStore {
       if (!govEpochs.has(row.expiration)) govEpochs.set(row.expiration, row);
     },
 
-    async replaceSnapshot(surveys, responses, envelope) {
+    async reconcileSnapshot(surveys, responses, envelope) {
       surveyIndexRows = [...surveys];
       responseRows = [...responses];
       meta = envelope;

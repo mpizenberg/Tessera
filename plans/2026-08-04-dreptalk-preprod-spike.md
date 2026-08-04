@@ -5,6 +5,8 @@
 - Plan created from DRepTalk maintainer feedback.
 - Increment 1 complete: preprod is strict shared configuration across backend, verifier, transaction building, explorer/storage utilities, and a local/static frontend mode; full repository checks, a preprod build, and a Wrangler dry run pass.
 - Increment 1 follow-up: Preview Wrangler commands now select an explicit named environment, matching preprod and mainnet and eliminating ambiguous-environment warnings.
+- Increment 2 baseline captured before deployment changes: over `2026-08-03T10:19:51.967Z`–`2026-08-04T10:19:51.967Z`, Preview served 494 successful Worker invocations with CPU p50/p90/p99 of 57.4/73.3/109.7 ms and wall-time p50/p90/p99 of 3.09/3.46/5.85 s; D1 processed 96,014 rows read, 186,048 rows written, 4,810 read queries, and 42,720 write queries with 0.18/0.69/5.55 ms batch-latency p50/p90/p99 and 561,152 bytes maximum storage. Tessera reported 480 successful refreshes, 2,400 Koios calls, 24 surveys, 57 responses, and no validation backlog.
+- Increment 2 complete: whole-snapshot replacement is removed in favor of atomic, chunked set reconciliation; no-op refreshes write only `snapshot_meta`, changed refreshes write only affected domain rows, authoritative absence prunes reorged/aged rows, and D1-equivalent rollback plus 10,000-response tests keep statement counts bounded. Full repository checks pass.
 
 ## Decisions
 
@@ -13,7 +15,9 @@
 - **Add preprod to the shared network model, not as a backend-only special case.** The alternative was a second backend network type beside the app/core type. One strict `mainnet | preprod | preview` model prevents testnet confusion across the backend, verifier, transaction builder, explorer links, storage keys, and optional local Tessera app. A deployed preprod backend is required; a public Tessera preprod frontend is optional. Reversible, but splitting network models later would add rather than remove concepts.
 - **Select a named Wrangler environment for Preview as well as preprod and mainnet.** The alternative was to keep Preview implicit in the top-level configuration, which made routine deploy, development, and migration commands emit ambiguous-environment warnings and treated one network differently. The top-level Preview values remain a safe fallback, while project commands consistently pass `--env`; this is cheaply reversible.
 - **Measure Cloudflare resource usage with provider telemetry and keep `/api/health` focused on application health.** The alternative was to approximate Worker CPU, D1 billable rows, and database storage inside Tessera. Cloudflare already exposes the authoritative CPU, wall-time, query, row, latency, and storage metrics; duplicating them would be incomplete and would add writes. Tessera may add phase/change counters where they explain workload, but not a shadow billing system.
+- **Check in a narrow, read-only Preview baseline collector during Increment 2.** The alternative was to leave the operator commands inline in chat or wait for Increment 3's generalized tooling, but this agent cannot access the operator account and the operator requested a file they can run locally. The collector reuses Wrangler's authenticated account and credential rather than requiring a second set of environment variables. Increment 3 may generalize or replace this script rather than retaining two collectors; cheaply reversible.
 - **Replace whole-snapshot D1 rewrites with incremental reconciliation during this spike.** The alternative was to measure the current implementation and defer remediation. Every refresh currently deletes and reinserts every survey and response, so writes grow with total history and the D1 batch approaches the paid-plan 1,000-query invocation limit at roughly 1,000 materialized records. Immutable records and an authoritative full scan permit insert/update/delete diffs while retaining atomic publication. Reversing this would restore a known operating ceiling.
+- **Reconcile snapshot rows with chunked JSON table parameters instead of persistent staging tables or generation columns.** A staging table would rewrite every incoming identity and add schema/lifecycle state, while a generation marker would update every retained row on every refresh. Bulk `json_each` inserts/upserts plus range-scoped absence deletes keep one atomic batch, write only changed domain rows, and bound statement count without a migration. This depends on SQLite's JSON support, which both node:sqlite and D1 already use; switching stores would require a new adapter implementation.
 - **Prove independent key-DRep response submission before any combined governance vote and response.** The alternative was the earlier spike criterion requiring both transaction forms. Independent submission isolates the widget/API/wallet boundary and follows DRepTalk's desired product sequence; combined submission remains an optional later convenience.
 - **Do not add a DRepTalk-specific Tessera endpoint unless the spike identifies a missing capability.** The alternative was an integration projection or webhook. The existing exact-reference survey bundle, artifact, tip, protocol-parameter, transaction-status, health, and CORS contracts cover the proposed first flow, and DRepTalk can cache only its admitted subset while Tessera scans all surveys.
 
@@ -81,9 +85,18 @@ The live Preview `/api/health` response observed at plan creation reported:
 - 67,124 bytes of logical materialized payload;
 - no response-validation backlog.
 
-These are useful application metrics but do not include Worker CPU, D1 rows read/written, query latency, or physical database size.
+The authoritative pre-change Cloudflare baseline over `2026-08-03T10:19:51.967Z`–`2026-08-04T10:19:51.967Z` measured:
 
-The current D1 `replaceSnapshot` executes two table-wide deletes, one insert per survey, one insert per response, and one metadata upsert on every refresh. At the observed 81 domain rows and 480 refreshes per day, the base delete/insert work is about 78,000 changed rows per day before index maintenance and other backend writes. More importantly, the batch contains one SQL statement per materialized record and therefore has a hard paid-plan invocation ceiling near 1,000 records. The spike must remove this total-corpus write/query amplification rather than merely document it.
+- 494 Worker requests, all successful, and 2,450 subrequests;
+- CPU p50/p90/p99 of 57.404/73.318/109.702 ms and wall-time p50/p90/p99 of 3.086/3.460/5.853 seconds;
+- 7,210 D1 batches containing 4,810 read queries and 42,720 write queries;
+- 96,014 rows read and 186,048 rows written;
+- D1 batch latency averaging 0.499 ms, with p50/p90/p99 of 0.18/0.69/5.55 ms;
+- 46,751,047 query-response bytes and a maximum/current database size of 561,152 bytes.
+
+The aligned health report showed 480 refreshes, zero failures, 2,400 Koios calls, 24 surveys, 57 responses, 67,124 logical payload bytes, and no validation backlog. `wrangler d1 insights` identified response and survey reinsertion plus table-wide deletion as the dominant write work, confirming the amplification rather than merely projecting it. The measured 186,048 D1 rows written per day exceeded the Free plan's 100,000-row daily allowance before archive growth.
+
+The old D1 `replaceSnapshot` executed two table-wide deletes, one insert per survey, one insert per response, and one metadata upsert on every refresh. The original 81-row estimate implied about 78,000 base row changes per day, but provider accounting measured more than twice that after actual query and index effects. Its batch also contained one SQL statement per materialized record and therefore had a hard paid-plan invocation ceiling near 1,000 records. Increment 2 removed both total-corpus write amplification and the one-statement-per-record ceiling from normal reconciliation; post-deployment measurements remain part of the workload study.
 
 ## Work plan
 

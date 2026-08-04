@@ -191,7 +191,7 @@ describe("store-node migration of a pre-runner database", () => {
       ]);
       expect((await store.completedValidations()).get("bb:1")).toBe("gov#0");
       // Missing tables were created by their migrations, not the baseline.
-      await store.replaceSnapshot([], [], {
+      await store.reconcileSnapshot([], [], {
         tip: "{}",
         incomplete: false,
         fetchedAt: 7,
@@ -271,7 +271,7 @@ describe("store-node migration to per-response rows", () => {
       // surveys whose responses have silently vanished.
       expect(await store.snapshotMeta()).toBeNull();
       // And the next refresh publishes into the new shape.
-      await store.replaceSnapshot([], [], {
+      await store.reconcileSnapshot([], [], {
         tip: "{}",
         incomplete: false,
         fetchedAt: 100,
@@ -336,7 +336,7 @@ describe("store-node survey_index paging SQL", () => {
 
   it("orders by bucket, slot desc, key — and follows the keyset cursor", async () => {
     store = openBackendStore(":memory:");
-    await store.replaceSnapshot(rows, [], meta);
+    await store.reconcileSnapshot(rows, [], meta);
     expect(await store.snapshotMeta()).toEqual(meta);
 
     const all = await page({});
@@ -357,7 +357,7 @@ describe("store-node survey_index paging SQL", () => {
 
   it("applies filters and search terms", async () => {
     store = openBackendStore(":memory:");
-    await store.replaceSnapshot(rows, [], meta);
+    await store.reconcileSnapshot(rows, [], meta);
 
     // Active = not cancelled and deadline not passed; the linked row is
     // active too and still sorts first by bucket.
@@ -384,7 +384,7 @@ describe("store-node survey_index paging SQL", () => {
 
   it("computes global counts over the search-matching set", async () => {
     store = openBackendStore(":memory:");
-    await store.replaceSnapshot(rows, [], meta);
+    await store.reconcileSnapshot(rows, [], meta);
     expect(await store.surveyIndexCounts(TIP_EPOCH, ["key:11"], [])).toEqual({
       all: 4,
       linked: 1,
@@ -403,10 +403,10 @@ describe("store-node survey_index paging SQL", () => {
     });
   });
 
-  it("replace is a full swap", async () => {
+  it("deletes surveys absent from the authoritative scan", async () => {
     store = openBackendStore(":memory:");
-    await store.replaceSnapshot(rows, [], meta);
-    await store.replaceSnapshot([row("ee:0", 50)], [], {
+    await store.reconcileSnapshot(rows, [], meta);
+    await store.reconcileSnapshot([row("ee:0", 50)], [], {
       ...meta,
       fetchedAt: 8,
     });
@@ -420,7 +420,7 @@ describe("store-node survey_index paging SQL", () => {
     store = openBackendStore(":memory:");
     const link = (key: string, action: string) =>
       `{"surveyKey":"${key}","actionId":"${action}","endEpoch":510,"title":null}`;
-    await store.replaceSnapshot(
+    await store.reconcileSnapshot(
       [
         row("aa:0", 100, {
           govLinked: true,
@@ -451,7 +451,12 @@ describe("store-node survey_index paging SQL", () => {
 
 describe("store-node response rows", () => {
   let store: BackendStore;
-  afterEach(() => store.close());
+  let storeDir: string | null = null;
+  afterEach(() => {
+    store.close();
+    if (storeDir) rmSync(storeDir, { recursive: true, force: true });
+    storeDir = null;
+  });
 
   const meta = { tip: `{"epoch":500}`, incomplete: false, fetchedAt: 7 };
   const resp = (
@@ -493,9 +498,60 @@ describe("store-node response rows", () => {
     finalizedCancelled: false,
   }));
 
+  it("writes only changed domain rows on reconciliation", async () => {
+    storeDir = mkdtempSync(join(tmpdir(), "tessera-reconcile-"));
+    const path = join(storeDir, "store.sqlite");
+    store = openBackendStore(path);
+    await store.reconcileSnapshot(surveys, rows, meta);
+
+    const audit = new DatabaseSync(path);
+    audit.exec(`
+      CREATE TABLE reconcile_audit (event TEXT NOT NULL);
+      CREATE TRIGGER audit_survey_insert AFTER INSERT ON survey_index
+        BEGIN INSERT INTO reconcile_audit VALUES ('survey:insert:' || NEW.survey_key); END;
+      CREATE TRIGGER audit_survey_update AFTER UPDATE ON survey_index
+        BEGIN INSERT INTO reconcile_audit VALUES ('survey:update:' || NEW.survey_key); END;
+      CREATE TRIGGER audit_survey_delete AFTER DELETE ON survey_index
+        BEGIN INSERT INTO reconcile_audit VALUES ('survey:delete:' || OLD.survey_key); END;
+      CREATE TRIGGER audit_response_insert AFTER INSERT ON response
+        BEGIN INSERT INTO reconcile_audit VALUES ('response:insert:' || NEW.tx_hash || ':' || NEW.response_index); END;
+      CREATE TRIGGER audit_response_delete AFTER DELETE ON response
+        BEGIN INSERT INTO reconcile_audit VALUES ('response:delete:' || OLD.tx_hash || ':' || OLD.response_index); END;
+      CREATE TRIGGER audit_meta_update AFTER UPDATE ON snapshot_meta
+        BEGIN INSERT INTO reconcile_audit VALUES ('meta:update'); END;
+    `);
+    audit.close();
+
+    await store.reconcileSnapshot(surveys, rows, { ...meta, fetchedAt: 8 });
+    const check = new DatabaseSync(path);
+    expect(check.prepare("SELECT event FROM reconcile_audit").all()).toEqual([
+      { event: "meta:update" },
+    ]);
+    check.exec("DELETE FROM reconcile_audit");
+    check.close();
+
+    const newResponse = resp("gg", "aa:0", "key:11", 970_000);
+    await store.reconcileSnapshot(
+      surveys.map((survey) =>
+        survey.surveyKey === "aa:0"
+          ? { ...survey, responseCount: survey.responseCount + 1 }
+          : survey,
+      ),
+      [...rows, newResponse],
+      { ...meta, fetchedAt: 9 },
+    );
+    const changed = new DatabaseSync(path);
+    expect(changed.prepare("SELECT event FROM reconcile_audit").all()).toEqual([
+      { event: "survey:update:aa:0" },
+      { event: "response:insert:gg:0" },
+      { event: "meta:update" },
+    ]);
+    changed.close();
+  });
+
   it("serves one survey's bundle in a stable order", async () => {
     store = openBackendStore(":memory:");
-    await store.replaceSnapshot(surveys, rows, meta);
+    await store.reconcileSnapshot(surveys, rows, meta);
 
     // (slot, txHash, responseIndex): the same bytes on every refresh, so the
     // ETag's promise that an unchanged snapshot means an unchanged body holds.
@@ -518,7 +574,7 @@ describe("store-node response rows", () => {
 
   it("maps credentials to the surveys they answered", async () => {
     store = openBackendStore(":memory:");
-    await store.replaceSnapshot(surveys, rows, meta);
+    await store.reconcileSnapshot(surveys, rows, meta);
 
     expect(await store.respondedSurveyKeys(["key:11"])).toEqual(["aa:0"]);
     // Union across a wallet's credentials, deduped across several responses.
@@ -530,11 +586,11 @@ describe("store-node response rows", () => {
     expect(await store.respondedSurveyKeys([])).toEqual([]);
   });
 
-  it("replaces wholesale, so a vanished response stops being served", async () => {
+  it("deletes a response absent from the authoritative scan", async () => {
     store = openBackendStore(":memory:");
-    await store.replaceSnapshot(surveys, rows, meta);
+    await store.reconcileSnapshot(surveys, rows, meta);
     // A reorg drops the later response; a merging write would keep serving it.
-    await store.replaceSnapshot(
+    await store.reconcileSnapshot(
       surveys,
       rows.filter((r) => r.txHash !== "dd"),
       { ...meta, fetchedAt: 8 },

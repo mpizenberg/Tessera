@@ -15,6 +15,7 @@
     "build": "pnpm -r build",
     "build:libs": "pnpm --filter cip-179 build",
     "backend:dev": "pnpm --filter cardano-tessera-backend dev",
+    "baseline:preview": "node scripts/collect-preview-baseline.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

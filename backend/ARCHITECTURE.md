@@ -184,8 +184,9 @@ Tier 1 reproduces today's read path server-side and caches it. The logic in
 degrades gracefully); it simply runs in the Worker/process behind the token
 secret instead of in each browser.
 
-- A **scheduled refresh** (Cron / loop) rebuilds the current label-17 snapshot
-  (surveys, responses, cancellations, tip, governance links) into the SQL store.
+- A **scheduled refresh** (Cron / loop) computes the current authoritative
+  label-17 snapshot (surveys, responses, cancellations, tip, governance links)
+  and reconciles it into the SQL store.
   One run at a time, enforced by a lease row (`migrations/0008_refresh_lease.sql`):
   neither scheduler serializes itself — Cloudflare may start a cron while the
   previous one is still running, and the loop's interval fires regardless — and
@@ -194,9 +195,10 @@ secret instead of in each browser.
   releases, blocks its successors only until it expires.
 - The refresh stores the snapshot **materialized as rows** — one per survey
   (`survey_index`), one per response (`response`), plus a shared envelope
-  (`snapshot_meta`: tip, incomplete flag, `fetchedAt`) — written in a single
-  transaction, so the whole snapshot becomes visible at once and a reader never
-  sees one run's rows beside another's. `fetchedAt` is the scan's **start**,
+  (`snapshot_meta`: tip, incomplete flag, `fetchedAt`). New immutable responses,
+  changed survey projections, absent-row deletions, and the envelope are
+  committed in one transaction, so the whole snapshot becomes visible at once
+  and a reader never sees one run's rows beside another's. `fetchedAt` is the scan's **start**,
   the instant `tip` was read: the envelope then describes one point in time
   instead of straddling the run, and reported age never understates staleness
   by the run's duration.
@@ -272,9 +274,13 @@ How it landed (shared with Phase 2's tally work, which is why it waited):
   entire corpus, including padded sealed ciphertexts that grow with
   participation, inside a Worker's CPU and memory limits. Rows remove both; what
   a request costs now scales with the survey it asked for.
-- The rows are **replaced wholesale** each refresh, in one transaction, because
-  a record can leave the snapshot (reorged out, or aged past the scan's floor)
-  and a merging write would keep serving it. `refresh_run.payload_bytes` records
+- Each refresh **reconciles** the authoritative scan: immutable response
+  coordinates are inserted once, survey projections update only when their
+  stored values change, and rows absent from the scan are deleted (reorged out
+  or aged past the scan floor). Bulk JSON table parameters and range-scoped
+  absence deletes keep first materialization and large reorgs to chunked set
+  operations rather than one statement per record. The entire diff and
+  `snapshot_meta` remain one transaction. `refresh_run.payload_bytes` records
   the total stored wire JSON as the growth metric behind the health footer.
 - The frontend seam widened: `state.tsx`'s single eager resource became a list
   resource + a lazy per-survey bundle resource, and `DataSource` is now exactly

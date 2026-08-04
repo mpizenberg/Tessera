@@ -1,7 +1,7 @@
--- Materialized per-survey rows for the paged Explore list. Rebuilt wholesale
--- by each refresh (a full replace — the set is scan-sized), so the list route
--- answers filter/search/page queries from indexed rows instead of decoding
--- the whole snapshot_cache blob. The JSON columns carry each survey's slice
+-- Materialized per-survey rows for the paged Explore list. Each refresh
+-- reconciles the authoritative scan into these rows, so the list route answers
+-- filter/search/page queries from indexed rows instead of decoding the whole
+-- snapshot_cache blob. The JSON columns carry each survey's slice
 -- of the wire payload (record, its cancellations, its governance links), so a
 -- page body is assembled by concatenation, no re-encoding.
 CREATE TABLE survey_index (
