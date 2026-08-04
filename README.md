@@ -129,11 +129,12 @@ Formatting is Prettier (`pnpm format` / `pnpm format:check` in `frontend/app`).
 
 Both halves deploy to Cloudflare with `wrangler`, one deployment per network:
 the backend as a Worker + D1 + Cron
-(`pnpm --filter cardano-tessera-backend deploy:preview` / `deploy:mainnet`, after the
-one-time D1 setup in `backend/server/README.md`), the app as static Workers
-assets (`pnpm --filter tessera-app deploy:preview` / `deploy:mainnet` — each
-builds with its committed `.env.preview` / `.env.mainnet` and uploads `dist/`;
-see `frontend/app/wrangler.toml`). The `backend/deps` submodules
+(`pnpm --filter cardano-tessera-backend deploy:preview` / `deploy:preprod` /
+`deploy:mainnet`, after the one-time D1 setup in
+`backend/server/OPERATIONS.md`), the app as static Workers assets
+(`pnpm --filter tessera-app deploy:preview` / `deploy:preprod` /
+`deploy:mainnet` — each builds with its committed network mode and uploads
+`dist/`; see `frontend/app/wrangler.toml`). The `backend/deps` submodules
 are not needed for any of this; to fetch them anyway:
 `git submodule update --init --recursive`.
 

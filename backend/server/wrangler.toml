@@ -1,15 +1,16 @@
 # Cloudflare deployment of the Tier-1 backend (src/worker.ts).
 #
-# Preview and mainnet are explicit Wrangler environments with separate D1
-# databases and vars — two deployments of one Worker, no network path segment
-# (ARCHITECTURE.md §11). The top-level preview values remain as a safe fallback,
-# but deployment scripts always select an environment. Create databases with
-# `wrangler d1 create <name>`, paste the ids below, then run
-# `wrangler d1 migrations apply DB --env <network> [--local|--remote]`.
+# Preview, preprod, and mainnet are explicit Wrangler environments with
+# separate D1 databases and vars — three deployments of one Worker, no network
+# path segment (ARCHITECTURE.md §11). The top-level preview values remain as a
+# safe fallback, but project commands always select an environment. Preprod's
+# generated database id stays in the git-ignored wrangler.preprod.toml described
+# in OPERATIONS.md.
 
 # Naming rule across the project: the network is always an explicit suffix
-# (tessera-{preview,mainnet} for the app, tessera-backend-{preview,mainnet}
-# here) — bare pretty names are a custom domain's job, not the workers'.
+# (tessera-{preview,preprod,mainnet} for the app,
+# tessera-backend-{preview,preprod,mainnet} here) — bare pretty names are a
+# custom domain's job, not the workers'.
 name = "tessera-backend-preview"
 main = "src/worker.ts"
 compatibility_date = "2026-06-01"
@@ -38,7 +39,8 @@ database_id = "1d86fdaa-b281-4b9d-8f37-9b540eb4b6dd"
 migrations_dir = "migrations"
 
 # Environments inherit [triggers] and [limits] but not [vars] or bindings —
-# those are redeclared below.
+# those are redeclared below. Preprod also repeats its CPU limit so the
+# deployment-critical sealed-reveal budget is visible in its complete block.
 [env.preview]
 name = "tessera-backend-preview"
 [env.preview.vars]
@@ -48,6 +50,21 @@ NETWORK = "preview"
 binding = "DB"
 database_name = "tessera-cache-preview"
 database_id = "1d86fdaa-b281-4b9d-8f37-9b540eb4b6dd"
+migrations_dir = "migrations"
+
+[env.preprod]
+name = "tessera-backend-preprod"
+
+[env.preprod.limits]
+cpu_ms = 30000
+
+[env.preprod.vars]
+NETWORK = "preprod"
+
+[[env.preprod.d1_databases]]
+binding = "DB"
+database_name = "tessera-cache-preprod"
+database_id = "00000000-0000-0000-0000-000000000000" # replaced only in generated config
 migrations_dir = "migrations"
 
 [env.mainnet]

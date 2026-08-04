@@ -109,12 +109,13 @@ pnpm --filter cardano-tessera-backend dev:cf        # wrangler dev --env preview
 curl "http://localhost:8787/__scheduled"     # trigger one refresh by hand
 ```
 
-To deploy preview: `wrangler d1 create tessera-cache-preview`, paste the
-database id into `wrangler.toml`, apply migrations with `--remote`, then
-`pnpm --filter cardano-tessera-backend deploy:preview`. Mainnet is a wrangler
-environment — same one-time D1 setup with its own database
-(`tessera-cache-mainnet`) and `--env mainnet` on the migration, then
-`pnpm --filter cardano-tessera-backend deploy:mainnet`.
+Preview, preprod, and mainnet are separate named Wrangler environments with
+separate Worker names, D1 databases, and `NETWORK` vars. Preview deploys with
+`pnpm --filter cardano-tessera-backend deploy:preview`; preprod has a generated,
+git-ignored config and deploys with `deploy:preprod`; mainnet deploys with
+`deploy:mainnet`. See [OPERATIONS.md](OPERATIONS.md) for the reproducible
+preprod creation, migration, secrets, deployment, measurement, health gate, and
+rollback commands.
 
 Subrequests (logged on every cron run in `wrangler tail`): a steady-state
 refresh costs ~6 Koios calls; validating new responses and finalizing closing

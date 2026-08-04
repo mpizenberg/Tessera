@@ -43,6 +43,7 @@ jobs:
       # artifact and its rolled-up d.ts, which the widget's type-checked tests
       # import from dist/.
       - run: pnpm -r test
+      - run: pnpm test:operator-scripts
       - run: pnpm -r type-check
       - run: pnpm format:check
       - run: pnpm -r build
@@ -52,5 +53,6 @@ jobs:
       # script — so this is the only pre-deploy check of its worker.ts bundle
       # and of both wrangler.toml files. The app's dry-run needs dist/ from
       # the build step above.
-      - run: pnpm --filter cardano-tessera-backend exec wrangler deploy --dry-run
-      - run: pnpm --filter tessera-app exec wrangler deploy --dry-run
+      - run: pnpm --filter cardano-tessera-backend exec wrangler deploy --env preview --dry-run
+      - run: pnpm --filter cardano-tessera-backend exec wrangler deploy --env preprod --dry-run
+      - run: pnpm --filter tessera-app exec wrangler deploy --env preview --dry-run
