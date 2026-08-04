@@ -2,7 +2,7 @@
  * Co-located styles for Header.tsx.
  *
  * Static chrome lives here as plain classes. Two-state styling (active nav link,
- * selected menu row, network mainnet/preview, wallet network mismatch) uses a
+ * selected menu row, active network, wallet network mismatch) uses a
  * base class plus a modifier toggled with Solid `classList`. Design tokens come
  * from theme.css `:root`.
  *

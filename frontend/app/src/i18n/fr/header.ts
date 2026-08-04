@@ -31,7 +31,7 @@ const header: Messages = {
     "Le portefeuille est sur un réseau différent de celui de l'application ({network}). Changez de réseau dans votre portefeuille.",
   disconnect: "Déconnecter",
 
-  // Network section (one network per deployment; a link opens the other app).
+  // Network section (one network per deployment; links open other apps).
   network: "Réseau",
   oneNetworkNote: "Un seul réseau par déploiement.",
 };

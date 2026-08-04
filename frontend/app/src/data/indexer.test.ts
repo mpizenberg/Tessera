@@ -128,10 +128,10 @@ describe("IndexerDataSource", () => {
     expect(urls.filter((u) => u.endsWith("/health"))).toHaveLength(1);
   });
 
-  it("rejects a backend that serves a different network", async () => {
-    stubFetch(withHealth(() => ({ body: surveyListBody() }), "mainnet"));
-    const src = new IndexerDataSource(BASE, "preview");
-    await expect(src.surveyList()).rejects.toThrow(/mainnet.*preview/s);
+  it("rejects Preview data in a preprod build despite their shared CIP-30 id", async () => {
+    stubFetch(withHealth(() => ({ body: surveyListBody() }), "preview"));
+    const src = new IndexerDataSource(BASE, "preprod");
+    await expect(src.surveyList()).rejects.toThrow(/preview.*preprod/s);
   });
 
   it("fetches a survey bundle by hex ref", async () => {

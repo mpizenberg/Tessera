@@ -34,8 +34,9 @@ pnpm --filter cardano-tessera-backend dev
 
 Serves on http://localhost:8787 against **preview** Koios, **tokenless** —
 server-side `fetch` isn't CORS-bound, so the anonymous tier works and there is no
-shared secret to leak. Copy `.env.example` to `.env` to override network, token,
-port, refresh interval, or db path.
+shared secret to leak. Copy `.env.example` to `.env` to select `mainnet`,
+`preprod`, or `preview` and override the token, port, refresh interval, or db
+path. Unknown network names fail startup rather than falling back to Preview.
 
 ## Endpoints
 

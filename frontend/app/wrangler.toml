@@ -1,8 +1,7 @@
 # Static hosting on Cloudflare Workers (assets-only: no Worker script runs, so
-# asset requests are free and unmetered). Same one-deployment-per-network
-# pattern as the backend's wrangler.toml: top level = preview, [env.mainnet] =
-# the mainnet app. Deploy with `pnpm deploy:preview` / `pnpm deploy:mainnet` —
-# each builds first, baking that network's .env.<mode> file into the bundle.
+# asset requests are free and unmetered). One deployment per network: top level
+# is Preview and the named environments serve preprod and mainnet. Each deploy
+# script first bakes that network's .env.<mode> file into the bundle.
 name = "tessera-preview"
 compatibility_date = "2026-06-01"
 
@@ -10,6 +9,13 @@ compatibility_date = "2026-06-01"
 directory = "./dist"
 # The app routes client-side (survey pages, /propose-info-action, …): unknown
 # paths must serve the app shell, not 404.
+not_found_handling = "single-page-application"
+
+[env.preprod]
+name = "tessera-preprod"
+
+[env.preprod.assets]
+directory = "./dist"
 not_found_handling = "single-page-application"
 
 [env.mainnet]

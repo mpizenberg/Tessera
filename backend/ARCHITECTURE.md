@@ -876,11 +876,11 @@ Contents (sketch):
   expires 2026-08-04, after which re-verifying it with `packages/verifier` is
   the check.
 - **On-chain anchor** of the artifact hash — future, closes the CIP-179 loop.
-- **Two-network split** (mainnet/preview) — resolved: wrangler environments
-  (`backend/server/wrangler.toml` — top-level is preview, `[env.mainnet]` its
-  own D1 + vars), two deployments of one Worker, no network path segment. The
-  frontend mirrors this: **one network per frontend deployment** (`VITE_NETWORK`
-  - `VITE_INDEXER_URL`, no runtime switch), cross-linked via
-    `VITE_OTHER_NETWORK_URL`, and `IndexerDataSource` verifies the backend's
-    network against `/health` so a misconfigured pairing fails loudly instead of
-    mixing networks.
+- **Single-network deployments** (mainnet/preprod/preview) — resolved in the
+  shared runtime model: each backend and frontend serves exactly one strictly
+  parsed network, with no network path segment or runtime switch. The frontend
+  links to explicitly configured deployments through per-network URLs, and
+  `IndexerDataSource` verifies its backend against `/health` so a misconfigured
+  pairing fails loudly instead of mixing networks. Preview and preprod both use
+  CIP-30 network id 0, so wallet selection cannot distinguish them; Koios,
+  storage, explorer, and transaction-builder chain parameters remain separate.

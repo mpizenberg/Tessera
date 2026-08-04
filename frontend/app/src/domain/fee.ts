@@ -6,8 +6,9 @@
  *     fee = txFeePerByte · size + txFeeFixed
  *
  * The two coefficients are protocol parameters, but they've been stable for
- * years and are identical on mainnet and preview, so we inline them rather than
- * round-trip to Koios for a live figure. The serialized size is approximated as
+ * years and are identical on the supported Cardano networks, so we inline them
+ * rather than round-trip to Koios for a live figure. The serialized size is
+ * approximated as
  * the label-17 metadata payload plus a fixed allowance for the rest of a minimal
  * signed transaction (one input, a change output, the tx body, the auxiliary-data
  * wrapper, and a vkey witness). A real transaction's size varies with coin

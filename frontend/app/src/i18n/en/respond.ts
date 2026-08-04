@@ -170,7 +170,7 @@ const respond = {
   /** {decided}/{total} are locale-formatted counts. */
   decidedCount: "{decided} of {total} decided",
   replacesNote: "✓ replaces your previous response",
-  /** {network} is a chain name (e.g. mainnet/preview), shown verbatim. */
+  /** {network} is a chain name, shown verbatim. */
   switchNetwork: "Switch your wallet to {network} to submit",
   encryptAndSubmit: "Encrypt & submit",
   signAndSubmit: "Sign & submit",

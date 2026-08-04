@@ -5,7 +5,20 @@
  * that runtime.
  */
 
-export type Network = "mainnet" | "preview";
+export const NETWORKS = ["mainnet", "preprod", "preview"] as const;
+
+export type Network = (typeof NETWORKS)[number];
+
+/** Parse a network at an environment or HTTP boundary; unknown values fail closed. */
+export function parseNetwork(value: unknown): Network {
+  if (
+    typeof value === "string" &&
+    (NETWORKS as readonly string[]).includes(value)
+  ) {
+    return value as Network;
+  }
+  throw new Error(`Unsupported Cardano network: ${String(value)}`);
+}
 
 export interface AppConfig {
   readonly network: Network;
@@ -23,8 +36,9 @@ export interface AppConfig {
    */
   readonly sinceUnix: number;
   /**
-   * Epoch length in seconds for the active network (mainnet 5 days, preview
-   * 1 day). Used to estimate the wall-clock reveal time of a future end epoch.
+   * Epoch length in seconds for the active network (mainnet/preprod 5 days,
+   * preview 1 day). Used to estimate the wall-clock reveal time of a future end
+   * epoch.
    */
   readonly secondsPerEpoch: number;
 }
@@ -32,11 +46,13 @@ export interface AppConfig {
 /** Koios REST base URL per network. */
 export const KOIOS_URL: Record<Network, string> = {
   mainnet: "https://api.koios.rest/api/v1",
+  preprod: "https://preprod.koios.rest/api/v1",
   preview: "https://preview.koios.rest/api/v1",
 };
 
-/** Epoch length per network, in seconds (mainnet 432000 = 5d, preview 86400 = 1d). */
+/** Epoch length per network, in seconds. */
 export const SECONDS_PER_EPOCH: Record<Network, number> = {
   mainnet: 432000,
+  preprod: 432000,
   preview: 86400,
 };

@@ -2,7 +2,8 @@
 
 ## Progress
 
-- Plan created from DRepTalk maintainer feedback; no implementation increment has started.
+- Plan created from DRepTalk maintainer feedback.
+- Increment 1 complete: preprod is strict shared configuration across backend, verifier, transaction building, explorer/storage utilities, and a local/static frontend mode; full repository checks, a preprod build, and a Wrangler dry run pass.
 
 ## Decisions
 

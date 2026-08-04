@@ -15,8 +15,8 @@
 import {
   KOIOS_URL,
   SECONDS_PER_EPOCH,
+  parseNetwork,
   type AppConfig,
-  type Network,
 } from "cardano-tessera-core";
 
 /** CIP-179 went live around here — ignore older label-17 history. */
@@ -60,7 +60,7 @@ export interface ServerConfig {
 export function loadConfig(
   env: Record<string, string | undefined>,
 ): ServerConfig {
-  const network: Network = env["NETWORK"] === "mainnet" ? "mainnet" : "preview";
+  const network = parseNetwork(env["NETWORK"] || "preview");
   const sinceIso = env["SINCE"] ?? SURVEYS_SINCE_ISO_DEFAULT;
   const app: AppConfig = {
     network,

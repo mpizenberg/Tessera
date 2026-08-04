@@ -40,6 +40,7 @@ import {
   UTxO,
   Value,
   mainnet,
+  preprod,
   preview,
 } from "@evolution-sdk/evolution";
 import type { ProtocolParameters } from "@evolution-sdk/evolution/sdk/provider/Provider";
@@ -68,6 +69,17 @@ import type { Cip30Api } from "./types";
  */
 export interface SubmitConfig extends AppConfig {
   readonly indexerUrl?: string | undefined;
+}
+
+const EVOLUTION_CHAINS: Record<AppConfig["network"], typeof mainnet> = {
+  mainnet,
+  preprod,
+  preview,
+};
+
+/** The ledger parameters Evolution must use for the configured chain. */
+export function evolutionChain(network: AppConfig["network"]): typeof mainnet {
+  return EVOLUTION_CHAINS[network];
 }
 
 /** Full protocol parameters from the serving tier, decoded from the wire form. */
@@ -274,8 +286,7 @@ async function txContext(config: SubmitConfig, api: Cip30Api) {
     );
   }
 
-  const chain = config.network === "mainnet" ? mainnet : preview;
-  const reader = Client.make(chain).withKoios(
+  const reader = Client.make(evolutionChain(config.network)).withKoios(
     config.koiosToken
       ? { baseUrl: config.koiosUrl, token: config.koiosToken }
       : { baseUrl: config.koiosUrl },

@@ -27,12 +27,12 @@ const header = {
   respondAs: "Respond as · 1 wallet",
   noClaimableRole:
     "This wallet holds no claimable role: responding in the browser needs a key-based credential, and this wallet's are script-based.",
-  /** {network} is the app's expected network identifier (preview/mainnet). */
+  /** {network} is the app's expected network identifier. */
   networkMismatch:
     "Wallet is on a different network than the app ({network}). Switch networks in your wallet.",
   disconnect: "Disconnect",
 
-  // Network section (one network per deployment; a link opens the other app).
+  // Network section (one network per deployment; links open other apps).
   network: "Network",
   oneNetworkNote: "One network per deployment.",
 };

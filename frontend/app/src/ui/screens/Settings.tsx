@@ -24,8 +24,7 @@ import {
   deactivateDirectMode,
   directModeUntil,
   envIndexerUrl,
-  otherNetwork,
-  otherNetworkUrl,
+  networkLinks,
   resolveIndexerUrl,
   storedIndexerUrl,
   storeIndexerUrl,
@@ -206,16 +205,16 @@ const KoiosSection: Component = () => {
       <dl class={css.factGrid}>
         <FactRow label={t("settings.networkLabel")}>
           <span class={css.endpoint}>{app.config.network}</span>
-          <Show when={otherNetworkUrl()}>
-            {(url) => (
+          <For each={networkLinks()}>
+            {(link) => (
               <>
                 {" · "}
-                <a href={url()}>
-                  {t("settings.otherNetworkLink", { network: otherNetwork() })}
+                <a href={link.url}>
+                  {t("settings.networkLink", { network: link.network })}
                 </a>
               </>
             )}
-          </Show>
+          </For>
         </FactRow>
         <FactRow label={t("settings.dataSourceLabel")}>
           <span class={css.endpoint}>

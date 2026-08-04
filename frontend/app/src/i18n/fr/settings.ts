@@ -1,6 +1,6 @@
 /**
  * Localization notes: provider/product names (Pinata, Blockfrost, NMKR, Koios,
- * IPFS, Cardano) and network identifiers (Preview, Mainnet) stay untranslated.
+ * IPFS, Cardano) and network identifiers stay untranslated.
  * Prose paragraphs are split around their inline-bold fragments so the bold
  * stays real <b> markup in JSX, matching the English structure.
  */
@@ -37,7 +37,7 @@ const settings: Messages = {
   koiosProse:
     "La lecture et la construction des transactions passent par le backend Tessera par défaut : aucun jeton Koios n'est nécessaire (les transactions sont tout de même signées par votre portefeuille). Un jeton n'est utile que pour la voie Koios directe — le mode direct d'urgence ci-dessous, ou une version sans backend configuré — où il sert à lire les données de la chaîne et à construire les transactions. Stocké uniquement dans ce navigateur ; appliqué à l'enregistrement. Chaque déploiement dessert un seul réseau.",
   networkLabel: "Réseau",
-  otherNetworkLink: "ouvrir l'application {network} ↗",
+  networkLink: "ouvrir l'application {network} ↗",
   dataSourceLabel: "Source de données",
   dataSourceDirect: "Koios direct",
   endpointLabel: "Point d'accès Koios",

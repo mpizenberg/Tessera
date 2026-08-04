@@ -9,7 +9,7 @@ import {
 import { A, useLocation } from "@solidjs/router";
 
 import { useApp } from "~/state";
-import { otherNetwork, otherNetworkUrl } from "~/config";
+import { networkLinks } from "~/config";
 import { networkMismatch, roleDescription, roleLabel } from "~/ui/format";
 import { CartBadge } from "~/ui/components/CartDrawer";
 import { SegmentedToggle } from "~/ui/components/SegmentedToggle";
@@ -301,8 +301,8 @@ const RoleMenu: Component<{
 /**
  * Network section at the top of the identity menu. One deployment serves one
  * network (see `envNetwork` in `config.ts`), so this shows the active network
- * and — when `VITE_OTHER_NETWORK_URL` is configured — links to the counterpart
- * deployment instead of switching in place.
+ * and links to every other explicitly configured deployment instead of
+ * switching in place.
  */
 const NetworkSwitch: Component = () => {
   const app = useApp();
@@ -317,18 +317,18 @@ const NetworkSwitch: Component = () => {
         <span class={css.networkSwitchLabel}>{app.config.network}</span>
         <span class={css.networkSwitchCheck}>✓</span>
       </div>
-      <Show when={otherNetworkUrl()}>
-        {(url) => (
-          <a class={css.menuRow} href={url()}>
+      <For each={networkLinks()}>
+        {(link) => (
+          <a class={css.menuRow} href={link.url}>
             <span
               class={css.networkSwitchDot}
-              classList={{ [css.mainnet]: otherNetwork() === "mainnet" }}
+              classList={{ [css.mainnet]: link.network === "mainnet" }}
             />
-            <span class={css.networkSwitchLabel}>{otherNetwork()}</span>
+            <span class={css.networkSwitchLabel}>{link.network}</span>
             <span class={css.networkSwitchCheck}>↗</span>
           </a>
         )}
-      </Show>
+      </For>
       <div class={css.menuNote}>{t("header.oneNetworkNote")}</div>
     </>
   );

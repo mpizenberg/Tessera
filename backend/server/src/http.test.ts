@@ -159,6 +159,21 @@ const FETCHED_AT = 1_750_000_100;
 
 // --- tests -------------------------------------------------------------------
 
+describe("GET /health", () => {
+  it("reports the exact configured preprod identity", async () => {
+    const app = createApp(
+      loadConfig({ NETWORK: "preprod" }),
+      memBackendStore(),
+      {
+        compress: false,
+      },
+    );
+    const res = await app.request("/health");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, network: "preprod" });
+  });
+});
+
 describe("before the first refresh", () => {
   const app = appWith(memBackendStore());
   it.each(["/api/surveys", `/api/surveys/${TX_A}/0`, "/api/responded"])(

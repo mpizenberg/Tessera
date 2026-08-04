@@ -75,7 +75,7 @@ VITE_INDEXER_URL=http://localhost:8787 pnpm --filter tessera-app dev   # termina
 
 The app serves at http://127.0.0.1:3000. Copy `.env.example` to `.env` for
 configuration — every variable is optional and documented there
-(`VITE_NETWORK`, `VITE_INDEXER_URL`, `VITE_OTHER_NETWORK_URL`, …).
+(`VITE_NETWORK`, `VITE_INDEXER_URL`, `VITE_MAINNET_URL`, …).
 
 ## Source layout
 
@@ -117,11 +117,16 @@ Static assets on Cloudflare Workers, one deployment per network (see
 
 ```sh
 pnpm --filter tessera-app deploy:preview   # builds with .env.preview, uploads dist/
+pnpm --filter tessera-app deploy:preprod   # builds with .env.preprod, --env preprod
 pnpm --filter tessera-app deploy:mainnet   # builds with .env.mainnet, --env mainnet
 ```
 
-Each mode file bakes that network's configuration (backend URL, counterpart
-link) into the bundle at build time.
+Each mode file bakes that network's configuration and links to other configured
+network deployments into the bundle at build time. CIP-30 identifies both
+preprod and Preview as network id `0`; the app cannot distinguish those
+wallet-selected testnets through the standard wallet API, so users must select
+the exact one. Backend identity, Koios, storage, explorer links, and Evolution
+chain parameters remain distinct.
 
 [cip179]: https://github.com/cardano-foundation/CIPs/tree/master/CIP-0179
 [drand]: https://drand.love/

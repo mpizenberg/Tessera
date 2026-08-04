@@ -10,12 +10,15 @@ import {
   TransactionInput,
   TransactionWitnessSet,
   VKey,
+  mainnet,
+  preprod,
+  preview,
 } from "@evolution-sdk/evolution";
 import { hexToBytes } from "cip-179/domain";
 
 import type { Action } from "./action";
 import type { PlannedTx } from "./plan";
-import { signAndSubmitChain, type BuiltTx } from "./submit";
+import { evolutionChain, signAndSubmitChain, type BuiltTx } from "./submit";
 import type { Cip30Api } from "./types";
 
 const TX_A = "aa".repeat(32);
@@ -187,6 +190,15 @@ async function publish(
   );
   return { txs, error, sent };
 }
+
+describe("transaction chain selection", () => {
+  test("keeps Preview and preprod ledger parameters distinct", () => {
+    expect(evolutionChain("mainnet")).toBe(mainnet);
+    expect(evolutionChain("preprod")).toBe(preprod);
+    expect(evolutionChain("preview")).toBe(preview);
+    expect(evolutionChain("preprod")).not.toBe(preview);
+  });
+});
 
 describe("gathering signatures", () => {
   test("a witness clears the signature its transaction waited for", async () => {

@@ -14,6 +14,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "deploy:preview": "vite build --mode preview && wrangler deploy",
+    "deploy:preprod": "vite build --mode preprod && wrangler deploy --env preprod",
     "deploy:mainnet": "vite build --mode mainnet && wrangler deploy --env mainnet",
     "type-check": "tsc --noEmit",
     "test": "vitest run"

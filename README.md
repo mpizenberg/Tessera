@@ -88,12 +88,18 @@ app's **Settings**, or set `VITE_KOIOS_TOKEN` in `frontend/app/.env`.
 Copy `frontend/app/.env.example` to `frontend/app/.env`; every variable is
 optional and documented there. The main ones:
 
-- `VITE_NETWORK` — `preview` (default) or `mainnet`. **One deployment serves
-  one network** (no runtime switch); the header links to the counterpart app
-  when `VITE_OTHER_NETWORK_URL` is set.
+- `VITE_NETWORK` — `mainnet`, `preprod`, or `preview` (default). **One
+  deployment serves one network** (no runtime switch); the header links to any
+  deployments configured through `VITE_MAINNET_URL`, `VITE_PREPROD_URL`, and
+  `VITE_PREVIEW_URL`.
 - `VITE_INDEXER_URL` — the Tier-1 backend for that network. The app verifies
   the backend serves the same network (via its `/health`) and refuses a
   mismatch. Overridable per network in Settings.
+
+CIP-30 reports network id `0` for both preprod and Preview, so a browser app
+cannot distinguish those testnets through the standard wallet API. Tessera
+still keeps their backend, Koios, storage, explorer, and transaction-builder
+configuration separate; users must select the exact testnet in their wallet.
 
 IPFS reads race a built-in list of public gateways (no config); IPFS _pinning_
 (for authoring external content / rationales) uses per-provider API tokens

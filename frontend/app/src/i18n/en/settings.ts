@@ -33,8 +33,8 @@ const settings = {
   koiosProse:
     "Reads and transaction-building both go through the Tessera backend by default, so no Koios token is needed (transactions are still signed by your wallet). A token is only for the direct-Koios path — emergency direct mode below, or a build with no backend configured — where it reads chain data and builds transactions. Stored only in this browser; applies on save. Each deployment serves a single network.",
   networkLabel: "Network",
-  /** {network} is a network identifier (preview/mainnet), untranslated. */
-  otherNetworkLink: "open the {network} app ↗",
+  /** {network} is a network identifier, untranslated. */
+  networkLink: "open the {network} app ↗",
   dataSourceLabel: "Data source",
   dataSourceDirect: "Direct Koios",
   endpointLabel: "Koios endpoint",

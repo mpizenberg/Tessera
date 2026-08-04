@@ -2,7 +2,9 @@
 
 import {
   KOIOS_URL,
+  NETWORKS,
   SECONDS_PER_EPOCH,
+  parseNetwork,
   type AppConfig,
   type Network,
 } from "cardano-tessera-core";
@@ -23,11 +25,11 @@ export const LAST_WALLET_STORAGE_KEY = "tessera.lastWallet";
  * The network this deployment serves, from the build env. **One deployment,
  * one network**: there is no runtime switch — the paired backend (Worker + D1)
  * is single-network too, so switching in place could only mix networks. The
- * mainnet and preview apps are two builds of the same code, cross-linked via
- * {@link otherNetworkUrl}.
+ * network deployments are builds of the same code, cross-linked through
+ * explicit per-network URLs.
  */
 export function envNetwork(): Network {
-  return import.meta.env.VITE_NETWORK === "mainnet" ? "mainnet" : "preview";
+  return parseNetwork(import.meta.env.VITE_NETWORK || "preview");
 }
 
 /**
@@ -39,18 +41,23 @@ export function expectedNetworkId(network: Network): number {
   return network === "mainnet" ? 1 : 0;
 }
 
-/** The counterpart network — the one this deployment does *not* serve. */
-export function otherNetwork(): Network {
-  return envNetwork() === "mainnet" ? "preview" : "mainnet";
+export interface NetworkLink {
+  readonly network: Network;
+  readonly url: string;
 }
 
-/**
- * Where the counterpart-network deployment lives (`VITE_OTHER_NETWORK_URL`),
- * so the UI can link to it instead of switching in place. Optional — without
- * it the UI simply shows the active network with no link.
- */
-export function otherNetworkUrl(): string | undefined {
-  return import.meta.env.VITE_OTHER_NETWORK_URL || undefined;
+/** Configured deployments other than the network this build serves. */
+export function networkLinks(): readonly NetworkLink[] {
+  const urls: Record<Network, string | undefined> = {
+    mainnet: import.meta.env.VITE_MAINNET_URL || undefined,
+    preprod: import.meta.env.VITE_PREPROD_URL || undefined,
+    preview: import.meta.env.VITE_PREVIEW_URL || undefined,
+  };
+  const active = envNetwork();
+  return NETWORKS.flatMap((network) => {
+    const url = urls[network];
+    return network !== active && url ? [{ network, url }] : [];
+  });
 }
 
 /**

@@ -38,12 +38,12 @@ import {
   KOIOS_URL,
   SECONDS_PER_EPOCH,
   type AppConfig,
-  type Network,
 } from "cardano-tessera-core";
 import { KoiosDataSource, KoiosTallyInputs } from "cardano-tessera-koios";
 import { revealResponses } from "cip-179/tlock";
 import { evolutionCodec } from "cip-179/evolution";
 
+import { networkFromHealth } from "./network";
 import { diffResponseSets, linkedActionIdsFor, verifyArtifact } from "./verify";
 
 /**
@@ -98,8 +98,8 @@ async function main(): Promise<void> {
   const base = backend.replace(/\/$/, "");
 
   // The backend's network decides which Koios instance re-verifies it.
-  const health = await getJson<{ network?: string }>(`${base}/health`);
-  const network = (health.network ?? "preview") as Network;
+  const health = await getJson<unknown>(`${base}/health`);
+  const network = networkFromHealth(health);
   const config: AppConfig = {
     network,
     koiosUrl: argOf("koios") ?? KOIOS_URL[network],
