@@ -36,14 +36,6 @@ Apply every committed migration before deploying the Worker:
 pnpm --filter cardano-tessera-backend migrate:preprod
 ```
 
-Both Koios tokens are optional. If the critical path needs keyed quota, enter
-the token interactively so it never appears in shell history or source:
-
-```sh
-pnpm --filter cardano-tessera-backend exec wrangler secret put KOIOS_TOKEN --config wrangler.preprod.toml --env preprod
-pnpm --filter cardano-tessera-backend exec wrangler secret put KOIOS_PASSTHROUGH_TOKEN --config wrangler.preprod.toml --env preprod
-```
-
 Deploy the exact checked-out commit:
 
 ```sh
@@ -55,6 +47,17 @@ pnpm --filter cardano-tessera-backend deploy:preprod
 Record `GIT_COMMIT`, the deployment/version id, and the `workers.dev` URL from
 Wrangler's output. Do not point a client at the service yet.
 
+Both Koios tokens are optional; without them the backend uses Koios's
+unauthenticated per-IP quota. Secrets attach to an existing Worker, so they come
+after the first deploy — each `put` publishes a new version by itself, with no
+redeploy. Use a preprod Koios token, not the Preview one, and enter it
+interactively so it never appears in shell history or source:
+
+```sh
+pnpm --filter cardano-tessera-backend exec wrangler secret put KOIOS_TOKEN --config wrangler.preprod.toml --env preprod
+pnpm --filter cardano-tessera-backend exec wrangler secret put KOIOS_PASSTHROUGH_TOKEN --config wrangler.preprod.toml --env preprod
+```
+
 ## Verify the deployment
 
 Set the origin printed by Wrangler, without a trailing path:
@@ -64,6 +67,12 @@ BACKEND_URL=https://tessera-backend-preprod.<account-subdomain>.workers.dev
 curl --fail --silent --show-error "$BACKEND_URL/health"
 curl --fail --silent --show-error "$BACKEND_URL/api/health"
 ```
+
+A hostname deployed under a `workers.dev` name for the first time can answer
+`error code: 1042` — sometimes with HTTP 404, and inconsistently between edges —
+for a minute or two while the route propagates. That is not a failed deploy;
+retry until it answers rather than redeploying or recreating the Worker. The
+same applies to the app's `tessera-<network>` hostname.
 
 `/health` must return `{"ok":true,"network":"preprod"}`. Wait at least one
 three-minute cron interval for the first scan. `/api/health` must then report
