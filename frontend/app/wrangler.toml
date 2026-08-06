@@ -1,7 +1,7 @@
 # Static hosting on Cloudflare Workers (assets-only: no Worker script runs, so
 # asset requests are free and unmetered). One deployment per network, selected
-# through an explicit named environment. Each deploy script first bakes that
-# network's .env.<mode> file into the bundle.
+# through an explicit named environment. Each deploy script first bakes the
+# deployment values from .env.deploy into the bundle.
 name = "tessera-preview"
 compatibility_date = "2026-06-01"
 

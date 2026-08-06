@@ -46,6 +46,10 @@ jobs:
       - run: pnpm test:operator-scripts
       - run: pnpm -r type-check
       - run: pnpm format:check
+      # The app build reads deployment values from .env.deploy; the committed
+      # template doubles as CI's fixture, so a variable missing from the
+      # template fails the build here.
+      - run: cp frontend/app/.env.deploy.example frontend/app/.env.deploy
       - run: pnpm -r build
 
       # Bundle both Cloudflare Workers without deploying (no credentials

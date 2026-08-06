@@ -21,12 +21,13 @@ are signed and submitted by the user's CIP-30 wallet.
 The app reads chain data through one seam (the `DataSource` interface from
 `cardano-tessera-core`), with two implementations in `src/data/`:
 
-- **Indexer mode** (default in deployments): the deployment's `indexerUrl`
-  (see `deployments.ts`) points at the Tier-1 backend (`backend/server`),
+- **Indexer mode** (default in deployments): the backend URL baked in at
+  build time (`TESSERA_BACKEND_URL_<network>` in `.env.deploy`) points at the
+  Tier-1 backend (`backend/server`),
   which serves cached reads, protocol parameters, and final tally artifacts.
   **No Koios token needed** for anything. The app checks the backend's
   `/health` network against its own and refuses a mismatch.
-- **Direct mode** (power-user/offline path): leave `indexerUrl` unset and
+- **Direct mode** (power-user/offline path): leave that URL empty and
   the browser scans Koios itself. This needs an authenticated Koios token
   (free tier works) — the anonymous tier sends no CORS headers — pasted in
   Settings, which keeps it in the browser and out of the bundle. Direct mode
@@ -74,9 +75,10 @@ pnpm --filter cardano-tessera-backend dev   # terminal 1
 pnpm --filter tessera-app dev               # terminal 2
 ```
 
-The app serves at http://127.0.0.1:3000. All build-time configuration lives
-in the committed table `deployments.ts` — there are no `.env` files, so a
-deployed artifact is a pure function of the repo and the target name.
+The app serves at http://127.0.0.1:3000. Deployment values — backend URL and
+app cross-links per network — come from build-time environment variables
+loaded from the git-ignored `.env.deploy` (copy `.env.deploy.example`); dev
+servers never read that file.
 
 `dev` serves Preview; `dev:preprod` serves preprod — pair it with the
 backend's `dev:preprod`, since the app refuses a backend whose `/health`
@@ -130,8 +132,8 @@ pnpm --filter tessera-app deploy:preprod   # likewise for preprod
 pnpm --filter tessera-app deploy:mainnet   # likewise for mainnet
 ```
 
-Each target's `deployments.ts` entry — network, backend URL, cross-links — is
-baked into the bundle at build time; the target name is simultaneously the
+Each build bakes its network plus the `.env.deploy` values — backend URL,
+cross-links — into the bundle; the network name is simultaneously the
 Vite build mode and the wrangler environment. CIP-30 identifies both
 preprod and Preview as network id `0`; the app cannot distinguish those
 wallet-selected testnets through the standard wallet API, so users must select

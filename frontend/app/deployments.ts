@@ -1,12 +1,19 @@
-import type { Network } from "cardano-tessera-core";
+import { existsSync, readFileSync } from "node:fs";
+import { parseEnv } from "node:util";
+// Relative import, not `cardano-tessera-core`: this file runs inside Vite's
+// bundled config, where the workspace alias (vite.config.ts) doesn't exist
+// and Node cannot load the package's TS source through its bare specifier.
+import { NETWORKS, type Network } from "../../packages/core/src/config";
 
 /**
  * One deployed Tessera app. Everything here is public configuration baked
- * into the bundle — which is why it is committed, typed code rather than env
- * files: a deployed artifact must be a pure function of the repo and the
- * target name, so no git-ignored file or shell variable can change what
- * ships. Vite injects the resolved row as the `__DEPLOYMENT__` global (see
- * vite.config.ts).
+ * into the bundle, but the values are deployment-specific (whose Cloudflare
+ * account, which URLs), so they come from build-time environment variables —
+ * `TESSERA_BACKEND_URL_<NETWORK>` and `TESSERA_APP_URL_<NETWORK>` — loaded
+ * from the git-ignored `.env.deploy` (template: `.env.deploy.example`), with
+ * variables already set in the environment taking precedence. Vite injects
+ * the resolved value as the `__DEPLOYMENT__` global (see vite.config.ts);
+ * nothing else reaches the bundle, and dev servers never read `.env.deploy`.
  */
 export interface Deployment {
   /**
@@ -28,58 +35,91 @@ export interface Deployment {
   readonly appUrls: Partial<Record<Network, string>>;
 }
 
-// Stated once and shared by every row: each build links to the *other*
-// networks' apps. Add a URL when that network's app first deploys, then
-// redeploy the rest so their headers pick it up.
-const APP_URLS: Partial<Record<Network, string>> = {
-  preview: "https://tessera-preview.matthieu-pizenberg.workers.dev",
-};
-
 /**
- * The deploy targets. Each key is simultaneously the Vite build mode and the
- * wrangler environment name (`vite build --mode X && wrangler deploy --env X`).
- */
-export const DEPLOYMENTS: Record<string, Deployment> = {
-  preview: {
-    network: "preview",
-    indexerUrl:
-      "https://tessera-backend-preview.matthieu-pizenberg.workers.dev",
-    appUrls: APP_URLS,
-  },
-  // The preprod and mainnet backends are not deployed yet (see
-  // backend/server/OPERATIONS.md). Until `indexerUrl` is set, those builds
-  // use direct Koios, which needs a token entered in Settings.
-  preprod: { network: "preprod", appUrls: APP_URLS },
-  mainnet: { network: "mainnet", appUrls: APP_URLS },
-};
-
-/**
- * The deployment a Vite invocation bakes in.
+ * The deployment a Vite invocation bakes in. The mode is the network — one
+ * name per deployment, shared with the wrangler environment
+ * (`vite build --mode X && wrangler deploy --env X`).
  *
- * A dev server (`command === "serve"`) takes the target's network but swaps
+ * A dev server (`command === "serve"`) takes the mode's network but swaps
  * the backend for a local one: `TESSERA_BACKEND_URL` if present (empty ⇒
- * direct Koios), else `http://localhost:8787`. That branch is the only place
- * ambient environment is read, and a build can never take it.
+ * direct Koios), else `http://localhost:8787`.
+ *
+ * A build requires its own network's two variables to be *declared* — empty
+ * is a valid, explicit "none" — so a forgotten `.env.deploy` fails the build
+ * instead of silently shipping a direct-Koios app.
  */
 export function resolveDeployment(
   command: "build" | "serve",
   mode: string,
 ): Deployment {
   if (command === "serve") {
-    const network =
-      mode === "development" ? "preview" : requireTarget(mode).network;
+    const network = mode === "development" ? "preview" : requireNetwork(mode);
     const url = process.env.TESSERA_BACKEND_URL ?? "http://localhost:8787";
     return url
       ? { network, indexerUrl: url, appUrls: {} }
       : { network, appUrls: {} };
   }
-  return requireTarget(mode);
+  return buildDeployment(requireNetwork(mode));
 }
 
-function requireTarget(mode: string): Deployment {
-  const deployment = DEPLOYMENTS[mode];
-  if (!deployment) {
-    throw new Error(`No deployment target named "${mode}" in deployments.ts`);
+const backendUrlKey = (network: Network): string =>
+  `TESSERA_BACKEND_URL_${network.toUpperCase()}`;
+const appUrlKey = (network: Network): string =>
+  `TESSERA_APP_URL_${network.toUpperCase()}`;
+
+function buildDeployment(network: Network): Deployment {
+  const env = deployEnv();
+  const backendUrl = requireVar(env, backendUrlKey(network));
+  requireVar(env, appUrlKey(network));
+  const appUrls: Partial<Record<Network, string>> = {};
+  for (const other of NETWORKS) {
+    const url = env[appUrlKey(other)];
+    if (url) appUrls[other] = url;
   }
-  return deployment;
+  const links = Object.entries(appUrls)
+    .map(([net, url]) => `${net}=${url}`)
+    .join(", ");
+  console.log(
+    `[tessera] building ${network}: ` +
+      `backend ${backendUrl || "none (direct Koios)"}; ` +
+      `app links: ${links || "none"}`,
+  );
+  return backendUrl
+    ? { network, indexerUrl: backendUrl, appUrls }
+    : { network, appUrls };
+}
+
+function deployEnv(): Record<string, string> {
+  const fromFile = existsSync(".env.deploy")
+    ? parseEnv(readFileSync(".env.deploy", "utf8"))
+    : {};
+  const env: Record<string, string> = {};
+  for (const source of [fromFile, process.env]) {
+    for (const [key, value] of Object.entries(source)) {
+      if (key.startsWith("TESSERA_") && value !== undefined) env[key] = value;
+    }
+  }
+  return env;
+}
+
+function requireVar(env: Record<string, string>, key: string): string {
+  const value = env[key];
+  if (value === undefined) {
+    throw new Error(
+      `Missing ${key} — declare it (empty is valid) in ` +
+        `frontend/app/.env.deploy (copy .env.deploy.example) ` +
+        `or the environment.`,
+    );
+  }
+  return value;
+}
+
+function requireNetwork(mode: string): Network {
+  const network = NETWORKS.find((candidate) => candidate === mode);
+  if (!network) {
+    throw new Error(
+      `Unknown deploy target "${mode}" — expected one of: ${NETWORKS.join(", ")}`,
+    );
+  }
+  return network;
 }

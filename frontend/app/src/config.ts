@@ -25,7 +25,8 @@ export const LAST_WALLET_STORAGE_KEY = "tessera.lastWallet";
  * The network this deployment serves. **One deployment, one network**: there
  * is no runtime switch — the paired backend (Worker + D1) is single-network
  * too, so switching in place could only mix networks. The network deployments
- * are builds of the same code, cross-linked through explicit per-network URLs.
+ * are builds of the same code, cross-linked through the per-network
+ * `TESSERA_APP_URL_*` values.
  */
 export function envNetwork(): Network {
   return __DEPLOYMENT__.network;
@@ -114,7 +115,7 @@ export function storeKoiosToken(token: string): void {
 }
 
 /**
- * The build-time Tier-1 backend base URL (from deployments.ts), ignoring any
+ * The build-time Tier-1 backend base URL (from `.env.deploy`), ignoring any
  * user override. When set, the app reads its snapshot from this serving tier
  * (`IndexerDataSource`) instead of scanning Koios from the browser; absent ⇒
  * the direct-Koios path. Must serve the deployment's network — the app
@@ -205,7 +206,7 @@ export function resolveIndexerUrl(): string | undefined {
 }
 
 /**
- * The network is fixed at build time (deployments.ts) — see
+ * The network is fixed at build time (the build mode) — see
  * {@link envNetwork} for why there is no runtime override.
  *
  * The Koios token comes only from Settings — never from the build, which would

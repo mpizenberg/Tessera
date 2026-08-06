@@ -99,7 +99,7 @@ power-user/offline path), which then needs a Koios token pasted in the app's
 Settings.
 
 Deployments are single-network on both sides: the app is built for one network
-(`frontend/app/deployments.ts`) and must point at a backend serving the same
+(its Vite build mode) and must point at a backend serving the same
 one — it checks
 this against `/health` (which reports the active network) and refuses a
 mismatched backend rather than mixing networks.

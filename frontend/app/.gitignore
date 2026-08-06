@@ -5,3 +5,6 @@ dist/
 
 # Wrangler local state
 .wrangler/
+
+# Per-deployment build values (template: .env.deploy.example)
+.env.deploy
