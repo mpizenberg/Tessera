@@ -38,6 +38,12 @@ shared secret to leak. Copy `.env.example` to `.env` to select `mainnet`,
 `preprod`, or `preview` and override the token, port, refresh interval, or db
 path. Unknown network names fail startup rather than falling back to Preview.
 
+`dev:preview`, `dev:preprod`, and `dev:mainnet` pin `NETWORK` for the run,
+ignoring whatever `.env` selects; every other `.env` value still applies. Each
+network caches into its own `./tessera-cache-$NETWORK.sqlite` by default, so
+switching between them never mixes two chains' records into one file — but they
+share `PORT`, so run one at a time or override it.
+
 ## Endpoints
 
 - `GET /health` — liveness + active network.

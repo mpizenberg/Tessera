@@ -1,3 +1,4 @@
+import { NETWORKS } from "cardano-tessera-core";
 import { describe, expect, test } from "vitest";
 
 import { loadConfig } from "./config";
@@ -41,4 +42,22 @@ describe("server network configuration", () => {
       );
     },
   );
+
+  test("gives each network its own default cache file", () => {
+    const paths = NETWORKS.map(
+      (network) => loadConfig({ NETWORK: network }).dbPath,
+    );
+    expect(paths).toEqual([
+      "./tessera-cache-mainnet.sqlite",
+      "./tessera-cache-preprod.sqlite",
+      "./tessera-cache-preview.sqlite",
+    ]);
+    expect(new Set(paths).size).toBe(NETWORKS.length);
+  });
+
+  test("preserves an explicit cache path override", () => {
+    expect(loadConfig({ NETWORK: "preprod", DB_PATH: ":memory:" }).dbPath).toBe(
+      ":memory:",
+    );
+  });
 });

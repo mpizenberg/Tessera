@@ -77,6 +77,11 @@ The app serves at http://127.0.0.1:3000. Copy `.env.example` to `.env` for
 configuration — every variable is optional and documented there
 (`VITE_NETWORK`, `VITE_INDEXER_URL`, `VITE_MAINNET_URL`, …).
 
+`dev` runs Vite's `development` mode, which loads no committed network file and
+so serves Preview. `dev:preprod` runs mode `preprod`, taking `VITE_NETWORK` from
+the committed `.env.preprod`; pair it with the backend's `dev:preprod`, since
+the app refuses a backend whose `/health` reports a different network.
+
 ## Source layout
 
 | Path             | What lives there                                                                                                                                                                                                                          |

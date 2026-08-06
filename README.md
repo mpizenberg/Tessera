@@ -77,6 +77,18 @@ VITE_INDEXER_URL=http://localhost:8787
 Without it (a bare `pnpm dev` and no `.env` override), the app falls back to
 Direct mode and browser reads to Koios are CORS-blocked — see below.
 
+Both halves default to Preview. To run the same pair against **preprod**, pin
+the network on each side — the app checks the backend's `/health` and refuses
+one serving a different network:
+
+```sh
+pnpm --filter cardano-tessera-backend dev:preprod   # terminal 1
+pnpm --filter tessera-app dev:preprod               # terminal 2
+```
+
+Each backend network caches into its own `tessera-cache-$NETWORK.sqlite`, so
+switching costs a re-scan but never mixes two chains' records.
+
 Alternatively, skip the backend and let the browser scan [Koios][koios]
 directly (the power-user/offline path) by leaving `VITE_INDEXER_URL` unset.
 That path requires an authenticated Koios token (tier 1 is free): the anonymous
@@ -122,6 +134,8 @@ From the repository root:
 | `pnpm -r test`                                                                       | Run every package's unit tests (Vitest).                                     |
 | `pnpm --filter tessera-app dev`                                                      | Start the app's Vite dev server.                                             |
 | `pnpm --filter cardano-tessera-backend dev`                                          | Run the Tier-1 backend locally (see its [README](backend/server/README.md)). |
+| `pnpm --filter cardano-tessera-backend dev:preprod`                                  | Same, pinned to preprod (`dev:preview` / `dev:mainnet` likewise).            |
+| `pnpm --filter tessera-app dev:preprod`                                              | Start the app's dev server in preprod mode.                                  |
 | `pnpm --filter tessera-app build`                                                    | Production build of the app.                                                 |
 | `pnpm --filter cardano-tessera-verifier verify -- --backend <url> --survey <tx>:<i>` | Re-verify a survey's final result artifact from chain data.                  |
 

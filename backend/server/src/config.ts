@@ -27,7 +27,11 @@ export interface ServerConfig {
   readonly port: number;
   /** Snapshot refresh interval, seconds. */
   readonly refreshSeconds: number;
-  /** SQLite file path, or ":memory:". */
+  /**
+   * SQLite file path, or ":memory:". Defaults per network because the cache
+   * stores no network of its own: one file fed by two networks would reconcile
+   * each one's rows away as absent from the other's authoritative scan.
+   */
   readonly dbPath: string;
   /**
    * Upstream requests one refresh may reasonably make, whatever the host — the
@@ -74,7 +78,7 @@ export function loadConfig(
     app,
     port: Number(env["PORT"] ?? 8787),
     refreshSeconds: Number(env["REFRESH_SECONDS"] ?? 180),
-    dbPath: env["DB_PATH"] ?? "./tessera-cache.sqlite",
+    dbPath: env["DB_PATH"] ?? `./tessera-cache-${network}.sqlite`,
     upstreamPerRefreshLimit: Number(env["SUBREQUEST_LIMIT"] ?? 50),
     koiosDailyLimit:
       Number.isFinite(dailyLimit) && dailyLimit > 0 ? dailyLimit : undefined,

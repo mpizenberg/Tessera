@@ -9,6 +9,9 @@
   },
   "scripts": {
     "dev": "tsx watch src/main.ts",
+    "dev:preview": "NETWORK=preview tsx watch src/main.ts",
+    "dev:preprod": "NETWORK=preprod tsx watch src/main.ts",
+    "dev:mainnet": "NETWORK=mainnet tsx watch src/main.ts",
     "start": "tsx src/main.ts",
     "dev:cf": "wrangler dev --env preview --test-scheduled",
     "configure:preprod": "node ../../scripts/configure-preprod.mjs",
