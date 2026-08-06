@@ -125,10 +125,19 @@ export async function refreshSnapshot(
     countKoios,
   );
   try {
-    const [records, tip] = await Promise.all([
-      source.fetchAll(),
-      source.chainTip(),
-    ]);
+    // The published tip of the previous snapshot, so this run can skip the
+    // `/epoch_params` read whenever the epoch has not turned over — which, at a
+    // three-minute cadence against day-long epochs, is nearly every run.
+    const previous = await store.snapshotMeta();
+    const tip = await source.chainTip(
+      previous
+        ? (JSON.parse(previous.tip) as {
+            epoch: number;
+            govActionLifetime: number;
+          })
+        : null,
+    );
+    const records = await source.fetchAll(tip);
     const { links: govLinks, unresolved: govUnresolved } =
       await refreshGovLinks(
         store,

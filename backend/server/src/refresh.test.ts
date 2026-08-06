@@ -7,7 +7,8 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { GovLink } from "cip-179/domain";
+import type { ChainTip, GovLink } from "cip-179/domain";
+import { toJsonSafe } from "cip-179/tally";
 
 import { displayGovLinks } from "./refresh";
 
@@ -45,5 +46,26 @@ describe("displayGovLinks", () => {
 
   it("publishes the failed read's empty set when the fallback also fails", async () => {
     expect(await displayGovLinks(failingStore, [], false)).toEqual([]);
+  });
+});
+
+describe("the stored tip a refresh banks gov_action_lifetime from", () => {
+  // A refresh skips its /epoch_params read by comparing the previous snapshot's
+  // stored tip against the epoch it just read, parsing that tip as plain JSON.
+  // Both fields must therefore survive the wire encoding unwrapped — a bigint
+  // or bytes field would come back as an object and silently break the reuse.
+  it("keeps epoch and gov_action_lifetime as plain numbers", () => {
+    const tip: ChainTip = {
+      epoch: 511,
+      slot: 1_000,
+      time: 1_750_000_000,
+      epochSlot: 100,
+      govActionLifetime: 6,
+    };
+
+    expect(JSON.parse(JSON.stringify(toJsonSafe(tip)))).toMatchObject({
+      epoch: 511,
+      govActionLifetime: 6,
+    });
   });
 });

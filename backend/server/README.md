@@ -127,9 +127,11 @@ reproducible preprod creation, migration, secrets, deployment, measurement,
 health gate, and rollback commands.
 
 Subrequests (logged on every cron run in `wrangler tail`): a steady-state
-refresh costs ~6 Koios calls; validating new responses and finalizing closing
+refresh costs 3 Koios calls — the tip, the label-17 scan page, and the
+governance proposal scan; validating new responses and finalizing closing
 surveys add batched calls only when there is new work (a full live cycle —
-refresh + validation + weight snapshotting + artifact emission — measured 18).
+refresh + validation + weight snapshotting + artifact emission — measured ~13
+on top of the floor).
 Unresolved governance anchors add up to `ANCHOR_ATTEMPTS_PER_REFRESH` more,
 which is why the log line and the health footer count every upstream request,
 not just the Koios ones.

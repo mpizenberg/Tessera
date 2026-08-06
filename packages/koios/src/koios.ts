@@ -236,14 +236,27 @@ export class KoiosDataSource implements DataSource {
     return tip;
   }
 
-  async chainTip(): Promise<ChainTip> {
+  /**
+   * `banked` is a tip the caller already holds — the serving tier's previous
+   * snapshot. `gov_action_lifetime` is a protocol parameter, fixed for the whole
+   * of an epoch, so when the banked tip names the epoch just read its value is
+   * reused and the `/epoch_params` request is skipped outright. Exact rather
+   * than a TTL: the epoch number *is* the cache key. Callers holding nothing
+   * (the browser, the verifier) pass nothing and pay the read.
+   */
+  async chainTip(
+    banked?: { epoch: number; govActionLifetime: number } | null,
+  ): Promise<ChainTip> {
     const tip = await this.tip();
     return {
       epoch: tip.epoch_no,
       slot: tip.abs_slot,
       time: tip.block_time,
       epochSlot: tip.epoch_slot,
-      govActionLifetime: await this.govActionLifetime(tip.epoch_no),
+      govActionLifetime:
+        banked?.epoch === tip.epoch_no
+          ? banked.govActionLifetime
+          : await this.govActionLifetime(tip.epoch_no),
     };
   }
 
@@ -286,15 +299,24 @@ export class KoiosDataSource implements DataSource {
     ).getProtocolParameters();
   }
 
-  async fetchAll(): Promise<Cip179Records> {
+  /**
+   * `at` is a tip the caller already read. Passing it spares a second `/tip`
+   * and, more than that, keeps the scan cutoff and the tip published beside the
+   * records from straddling a block: two independent reads can land either side
+   * of one. Only the slot and time are used, so any tip will do.
+   */
+  async fetchAll(at?: ChainTip): Promise<Cip179Records> {
     // Filter by absolute_slot (which we already select) rather than
     // tx_timestamp (which we don't): Koios only allows filtering on selected
     // columns. Post-Shelley slots are 1s, so the cutoff slot for `sinceUnix`
     // is derived linearly from the current tip — no per-network genesis math.
-    const tip = await this.tip();
+    const own = at ? null : await this.tip();
+    const tip = own
+      ? { slot: own.abs_slot, time: own.block_time, epoch: own.epoch_no }
+      : { slot: at!.slot, time: at!.time, epoch: at!.epoch };
     const sinceSlot = Math.max(
       0,
-      Math.floor(tip.abs_slot - (tip.block_time - this.config.sinceUnix)),
+      Math.floor(tip.slot - (tip.time - this.config.sinceUnix)),
     );
 
     // Page through every label-17 tx since the cutoff. Koios returns at most
@@ -496,7 +518,7 @@ export class KoiosDataSource implements DataSource {
       `${bytesToHex(ref.txId)}:${ref.index}`;
     const openSurveyKeys = new Set(
       surveys
-        .filter((s) => tip.epoch_no <= s.definition.endEpoch)
+        .filter((s) => tip.epoch <= s.definition.endEpoch)
         .map((s) => refKeyOf(s.ref)),
     );
     const openSurveys = surveys.filter((s) =>
@@ -560,12 +582,18 @@ export class KoiosDataSource implements DataSource {
     };
   }
 
-  /** The current load's scan, starting one if nothing is in flight yet. */
+  /**
+   * The current load's scan, starting one if nothing is in flight yet. The tip
+   * is read first and handed to the scan rather than fetched twice in parallel:
+   * `fetchAll` awaits a tip before paging either way, so one read costs no
+   * latency and the records cannot be cut off at a different block than the tip
+   * published with them.
+   */
   private scan(): Promise<{ records: Cip179Records; tip: ChainTip }> {
-    return (this.currentScan ??= Promise.all([
-      this.fetchAll(),
-      this.chainTip(),
-    ]).then(([records, tip]) => ({ records, tip })));
+    return (this.currentScan ??= this.chainTip().then(async (tip) => ({
+      records: await this.fetchAll(tip),
+      tip,
+    })));
   }
 
   async surveyList(): Promise<SurveyListPayload> {

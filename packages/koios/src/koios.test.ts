@@ -1047,3 +1047,53 @@ describe("fetchGovProposals — pagination (finding 37)", () => {
     expect(proposals).toHaveLength(PAGE + 2); // both pages accumulated
   });
 });
+
+// --- upstream cost: one tip per scan, one epoch_params per epoch -------------
+
+const requested = (
+  mock: { mock: { calls: unknown[][] } },
+  path: string,
+): string[] =>
+  mock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes(path));
+
+describe("chainTip — /epoch_params is read once per epoch, not once per call", () => {
+  it("reuses a banked parameter from the same epoch and re-reads across a boundary", async () => {
+    const fetchMock = stubKoios(); // its /tip sits in epoch 1_346
+    const source = new KoiosDataSource(CONFIG);
+
+    const cold = await source.chainTip();
+    expect(cold.govActionLifetime).toBe(0); // the stub serves no epoch_params row
+    expect(requested(fetchMock, "/epoch_params")).toHaveLength(1);
+
+    const banked = await source.chainTip({
+      epoch: 1_346,
+      govActionLifetime: 6,
+    });
+    expect(banked.govActionLifetime).toBe(6);
+    expect(requested(fetchMock, "/epoch_params")).toHaveLength(1);
+
+    // A parameter can change at an epoch boundary, so a tip banked in the
+    // previous one says nothing about this one.
+    const stale = await source.chainTip({ epoch: 1_345, govActionLifetime: 6 });
+    expect(stale.govActionLifetime).toBe(0);
+    expect(requested(fetchMock, "/epoch_params")).toHaveLength(2);
+  });
+});
+
+describe("scan — the records are cut off at the tip published with them", () => {
+  it("reads /tip once and scans against it", async () => {
+    const fetchMock = stubKoios();
+    const payload = await new KoiosDataSource(CONFIG).surveyList();
+
+    expect(payload.tip.epoch).toBe(1_346);
+    expect(requested(fetchMock, "/tip")).toHaveLength(1);
+  });
+
+  it("still reads its own tip when fetchAll is called alone", async () => {
+    const fetchMock = stubKoios();
+    await new KoiosDataSource(CONFIG).fetchAll();
+
+    expect(requested(fetchMock, "/tip")).toHaveLength(1);
+    expect(requested(fetchMock, "/epoch_params")).toHaveLength(0);
+  });
+});
