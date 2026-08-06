@@ -10,8 +10,8 @@
     "pnpm": ">=10"
   },
   "scripts": {
-    "dev": "vite",
-    "dev:preprod": "vite --mode preprod",
+    "dev": "VITE_INDEXER_URL=${VITE_INDEXER_URL-http://localhost:8787} vite",
+    "dev:preprod": "VITE_INDEXER_URL=${VITE_INDEXER_URL-http://localhost:8787} vite --mode preprod",
     "build": "vite build",
     "preview": "vite preview",
     "deploy:preview": "vite build --mode preview && wrangler deploy --env preview",

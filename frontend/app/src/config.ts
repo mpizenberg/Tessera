@@ -64,8 +64,8 @@ export function networkLinks(): readonly NetworkLink[] {
  * localStorage keys for user overrides are **per network**. Deployed apps get
  * isolation from being on separate origins already; these keys cover the one
  * place origins collide — local dev, where `localhost` serves whichever
- * network `.env` picks — so a preview override never leaks into a mainnet
- * session on the same origin.
+ * network the dev server was started for — so a preview override never leaks
+ * into a mainnet session on the same origin.
  */
 const koiosTokenKey = (): string => `tessera.koiosToken.${envNetwork()}`;
 const indexerUrlKey = (): string => `tessera.indexerUrl.${envNetwork()}`;
@@ -99,12 +99,7 @@ export function clearLastWallet(): void {
   }
 }
 
-/** The build-time Koios token (from env), ignoring any user override. */
-export function envKoiosToken(): string | undefined {
-  return import.meta.env.VITE_KOIOS_TOKEN || undefined;
-}
-
-/** A persisted Koios token override for this network, if the user set one. */
+/** The Koios token for this network, if the user set one in Settings. */
 export function storedKoiosToken(): string | undefined {
   try {
     return localStorage.getItem(koiosTokenKey()) || undefined;
@@ -113,7 +108,7 @@ export function storedKoiosToken(): string | undefined {
   }
 }
 
-/** Persist (or clear, when empty) the Koios token override for this network. */
+/** Persist (or clear, when empty) the Koios token for this network. */
 export function storeKoiosToken(token: string): void {
   const trimmed = token.trim();
   try {
@@ -218,16 +213,17 @@ export function resolveIndexerUrl(): string | undefined {
  * The network is fixed at build time (`VITE_NETWORK`, default Preview) — see
  * {@link envNetwork} for why there is no runtime override.
  *
- * The Koios token resolves localStorage override → `VITE_KOIOS_TOKEN`. The free
- * (anonymous) tier does not send CORS headers, so an authenticated token is
- * required for browser requests; without one, Koios calls will be CORS-blocked.
+ * The Koios token comes only from Settings — never from the build, which would
+ * ship one shared credential to every browser. The free (anonymous) tier does
+ * not send CORS headers, so an authenticated token is required for browser
+ * requests; without one, Koios calls will be CORS-blocked.
  */
 export function loadConfig(): AppConfig {
   const network = envNetwork();
   return {
     network,
     koiosUrl: KOIOS_URL[network],
-    koiosToken: storedKoiosToken() || envKoiosToken(),
+    koiosToken: storedKoiosToken(),
     sinceUnix: Math.floor(Date.parse(SURVEYS_SINCE_ISO) / 1000),
     secondsPerEpoch: SECONDS_PER_EPOCH[network],
   };

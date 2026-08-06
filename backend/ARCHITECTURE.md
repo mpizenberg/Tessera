@@ -46,9 +46,10 @@ running the full read pipeline (`src/data/koios.ts`): paged
 owner-proofs of open surveys and of the transactions cancelling them,
 `/proposal_list` for governance links, `/tip`, and polled `/tx_status`.
 
-1. **Security.** `VITE_KOIOS_TOKEN` is baked into the JS bundle — a shared
-   credential visible to anyone, burnable against one quota. The anonymous tier
-   is CORS-blocked, so today a client-side token is effectively mandatory.
+1. **Security.** A Koios credential has to live in the browser at all: the
+   anonymous tier is CORS-blocked, so a client-side token is effectively
+   mandatory, and any token shipped with the app is visible to everyone and
+   burnable against one quota.
 2. **Scalability.** Koios load scales with _users × refreshes_, all on one quota,
    and each client re-scans the full label-17 history from `sinceUnix` with no
    shared cache — cost grows for every user as surveys accumulate, and the

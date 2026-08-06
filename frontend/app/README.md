@@ -29,8 +29,9 @@ The app reads chain data through one seam (the `DataSource` interface from
 - **Direct mode** (power-user/offline path): leave `VITE_INDEXER_URL` unset and
   the browser scans Koios itself. This needs an authenticated Koios token
   (free tier works) — the anonymous tier sends no CORS headers — pasted in
-  Settings or set as `VITE_KOIOS_TOKEN`. Direct mode shows raw one-per-credential
-  counts only; final weighted artifacts are a backend feature.
+  Settings, which keeps it in the browser and out of the bundle. Direct mode
+  shows raw one-per-credential counts only; final weighted artifacts are a
+  backend feature.
 
 A deployed build can also enter direct mode at runtime from Settings when its
 backend is down — emergency participation, gated on a resolvable Koios token.
@@ -69,8 +70,8 @@ From the **repository root** (this is a pnpm workspace):
 
 ```sh
 pnpm install
-pnpm --filter cardano-tessera-backend dev                                     # terminal 1
-VITE_INDEXER_URL=http://localhost:8787 pnpm --filter tessera-app dev   # terminal 2
+pnpm --filter cardano-tessera-backend dev   # terminal 1
+pnpm --filter tessera-app dev               # terminal 2
 ```
 
 The app serves at http://127.0.0.1:3000. Copy `.env.example` to `.env` for
@@ -81,6 +82,13 @@ configuration — every variable is optional and documented there
 so serves Preview. `dev:preprod` runs mode `preprod`, taking `VITE_NETWORK` from
 the committed `.env.preprod`; pair it with the backend's `dev:preprod`, since
 the app refuses a backend whose `/health` reports a different network.
+
+Both dev scripts set `VITE_INDEXER_URL=http://localhost:8787` themselves rather
+than relying on a `.env.local`, because Vite loads `.env`/`.env.local` in every
+mode — `vite build` included — and a local backend URL must never reach a
+deployed bundle. Each script defers to a `VITE_INDEXER_URL` already present in
+the environment, so prefix the command to point elsewhere — and an empty
+`VITE_INDEXER_URL=` selects direct mode.
 
 ## Source layout
 

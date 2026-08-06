@@ -57,25 +57,15 @@ pnpm workspace — install once at the repository root:
 
 ```sh
 pnpm install
-pnpm --filter cardano-tessera-backend dev                                     # terminal 1
-VITE_INDEXER_URL=http://localhost:8787 pnpm --filter tessera-app dev   # terminal 2
+pnpm --filter cardano-tessera-backend dev   # terminal 1
+pnpm --filter tessera-app dev               # terminal 2
 ```
 
 The app serves at http://127.0.0.1:3000, reading chain data through the local
 backend — **no Koios token needed**, for reads or for building transactions
-(they are signed and submitted by your CIP-30 wallet).
-
-To avoid retyping the prefix every run, put it in a git-ignored
-`frontend/app/.env.local` instead — Vite loads it in every mode, so a plain
-`pnpm --filter tessera-app dev` picks it up:
-
-```sh
-# frontend/app/.env.local
-VITE_INDEXER_URL=http://localhost:8787
-```
-
-Without it (a bare `pnpm dev` and no `.env` override), the app falls back to
-Direct mode and browser reads to Koios are CORS-blocked — see below.
+(they are signed and submitted by your CIP-30 wallet). The app's `dev` scripts
+point at `http://localhost:8787` themselves, and defer to a `VITE_INDEXER_URL`
+already set in the environment if you need another address.
 
 Both halves default to Preview. To run the same pair against **preprod**, pin
 the network on each side — the app checks the backend's `/health` and refuses
@@ -90,10 +80,12 @@ Each backend network caches into its own `tessera-cache-$NETWORK.sqlite`, so
 switching costs a re-scan but never mixes two chains' records.
 
 Alternatively, skip the backend and let the browser scan [Koios][koios]
-directly (the power-user/offline path) by leaving `VITE_INDEXER_URL` unset.
+directly (the power-user/offline path): deployments leave `VITE_INDEXER_URL`
+unset, and a dev server reaches it with an empty
+`VITE_INDEXER_URL= pnpm --filter tessera-app dev`.
 That path requires an authenticated Koios token (tier 1 is free): the anonymous
 tier does not send CORS headers, so browser requests need one. Paste it in the
-app's **Settings**, or set `VITE_KOIOS_TOKEN` in `frontend/app/.env`.
+app's **Settings**; it is stored in the browser and never built into the bundle.
 
 ### Environment
 
@@ -106,7 +98,9 @@ optional and documented there. The main ones:
   `VITE_PREVIEW_URL`.
 - `VITE_INDEXER_URL` — the Tier-1 backend for that network. The app verifies
   the backend serves the same network (via its `/health`) and refuses a
-  mismatch. Overridable per network in Settings.
+  mismatch. Overridable per network in Settings. Set it in a mode file
+  (`.env.preview`, …) or the shell, never in `.env`/`.env.local`: Vite loads
+  those in every mode, so a local value would ship in a deployed bundle.
 
 CIP-30 reports network id `0` for both preprod and Preview, so a browser app
 cannot distinguish those testnets through the standard wallet API. Tessera

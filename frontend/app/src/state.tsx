@@ -31,7 +31,6 @@ import {
   loadConfig,
   resolveIndexerUrl,
   storeKoiosToken,
-  envKoiosToken,
   storedLastWallet,
   storeLastWallet,
   clearLastWallet,
@@ -789,7 +788,7 @@ export const AppProvider: ParentComponent = (props) => {
     koiosToken,
     setKoiosToken: (token) => {
       storeKoiosToken(token);
-      setKoiosTokenSig(token.trim() || envKoiosToken());
+      setKoiosTokenSig(token.trim() || undefined);
       safeRefetch();
     },
     ipfsTokens,
