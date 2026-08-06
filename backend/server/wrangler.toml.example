@@ -36,6 +36,11 @@ cpu_ms = 30000
 
 [vars]
 NETWORK = "preview"
+# The Koios tier's daily request quota, which the API does not expose. Nothing
+# enforces it: the health footer divides the 24 h count by it to show usage, and
+# Koios answers 429 when the real quota runs out. A wrong value here buys a
+# misleading readout, not throttling.
+KOIOS_DAILY_LIMIT = "50000"
 
 [[d1_databases]]
 binding = "DB"
@@ -50,6 +55,7 @@ migrations_dir = "migrations"
 name = "tessera-backend-preview"
 [env.preview.vars]
 NETWORK = "preview"
+KOIOS_DAILY_LIMIT = "50000"
 
 [[env.preview.d1_databases]]
 binding = "DB"
@@ -65,6 +71,7 @@ cpu_ms = 30000
 
 [env.preprod.vars]
 NETWORK = "preprod"
+KOIOS_DAILY_LIMIT = "50000"
 
 [[env.preprod.d1_databases]]
 binding = "DB"
@@ -76,6 +83,7 @@ migrations_dir = "migrations"
 name = "tessera-backend-mainnet"
 [env.mainnet.vars]
 NETWORK = "mainnet"
+KOIOS_DAILY_LIMIT = "50000"
 
 [[env.mainnet.d1_databases]]
 binding = "DB"
