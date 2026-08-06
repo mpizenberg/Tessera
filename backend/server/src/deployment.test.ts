@@ -74,10 +74,10 @@ describe("named Worker deployments", () => {
 
   it("pins preprod's CPU budget and selects environments by name alone", () => {
     expect(wrangler).toMatch(/\[env\.preprod\.limits\]\s+cpu_ms = 30000/);
-    expect(packageJson.scripts["migrate:preprod"]).toBe(
-      "wrangler d1 migrations apply DB --env preprod --remote",
-    );
     for (const network of networks) {
+      expect(packageJson.scripts[`migrate:${network}`]).toBe(
+        `wrangler d1 migrations apply DB --env ${network} --remote`,
+      );
       expect(packageJson.scripts[`deploy:${network}`]).toBe(
         `wrangler deploy --env ${network}`,
       );

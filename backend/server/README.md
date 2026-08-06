@@ -117,8 +117,9 @@ curl "http://localhost:8787/__scheduled"     # trigger one refresh by hand
 ```
 
 Preview, preprod, and mainnet are separate named Wrangler environments with
-separate Worker names, D1 databases, and `NETWORK` vars, deployed with
-`pnpm --filter cardano-tessera-backend deploy:<network>`. Every Wrangler command
+separate Worker names, D1 databases, and `NETWORK` vars, migrated with
+`pnpm --filter cardano-tessera-backend migrate:<network>` and deployed with
+`deploy:<network>`. Every Wrangler command
 here needs a `wrangler.toml`, which is git-ignored because it carries the D1
 database ids of one Cloudflare account: copy `wrangler.toml.example` and fill in
 the ids of the networks you deploy. See [OPERATIONS.md](OPERATIONS.md) for the
