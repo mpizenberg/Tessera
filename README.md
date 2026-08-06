@@ -146,7 +146,7 @@ Formatting is Prettier (`pnpm format` / `pnpm format:check` in `frontend/app`).
 Both halves deploy to Cloudflare with `wrangler`, one deployment per network:
 the backend as a Worker + D1 + Cron
 (`pnpm --filter cardano-tessera-backend deploy:preview` / `deploy:preprod` /
-`deploy:mainnet`, after the one-time D1 setup in
+`deploy:mainnet`, after the one-time `wrangler.toml` and D1 setup in
 `backend/server/OPERATIONS.md`), the app as static Workers assets
 (`pnpm --filter tessera-app deploy:preview` / `deploy:preprod` /
 `deploy:mainnet` — each bakes the values from `frontend/app/.env.deploy` and

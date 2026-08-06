@@ -107,7 +107,7 @@ mismatched backend rather than mixing networks.
 ## Run on Cloudflare
 
 The Worker entry reuses the same app with a D1 store; the cron trigger
-(`*/3 * * * *`, wrangler.toml) replaces the refresh loop. Locally, against
+(`*/3 * * * *`, wrangler.toml.example) replaces the refresh loop. Locally, against
 Miniflare's bundled D1 (no Cloudflare account needed):
 
 ```sh
@@ -117,12 +117,13 @@ curl "http://localhost:8787/__scheduled"     # trigger one refresh by hand
 ```
 
 Preview, preprod, and mainnet are separate named Wrangler environments with
-separate Worker names, D1 databases, and `NETWORK` vars. Preview deploys with
-`pnpm --filter cardano-tessera-backend deploy:preview`; preprod has a generated,
-git-ignored config and deploys with `deploy:preprod`; mainnet deploys with
-`deploy:mainnet`. See [OPERATIONS.md](OPERATIONS.md) for the reproducible
-preprod creation, migration, secrets, deployment, measurement, health gate, and
-rollback commands.
+separate Worker names, D1 databases, and `NETWORK` vars, deployed with
+`pnpm --filter cardano-tessera-backend deploy:<network>`. Every Wrangler command
+here needs a `wrangler.toml`, which is git-ignored because it carries the D1
+database ids of one Cloudflare account: copy `wrangler.toml.example` and fill in
+the ids of the networks you deploy. See [OPERATIONS.md](OPERATIONS.md) for the
+reproducible preprod creation, migration, secrets, deployment, measurement,
+health gate, and rollback commands.
 
 Subrequests (logged on every cron run in `wrangler tail`): a steady-state
 refresh costs ~6 Koios calls; validating new responses and finalizing closing
@@ -139,7 +140,7 @@ CPU is the tighter limit once sealed surveys are in play: a cron under an hour
 apart gets 30 s on the paid plan and 10 ms on the free one, while a single
 timelock decrypt costs ~20 ms on workerd. Sealed reveal therefore needs the paid
 plan; `finalize.ts` derives its per-pass decrypt budget from that 30 s, and
-`wrangler.toml` pins the same ceiling with `limits.cpu_ms`. That budget paces
+`wrangler.toml.example` pins the same ceiling with `limits.cpu_ms`. That budget paces
 reveal rather than capping survey size: each ciphertext's outcome is persisted as
 it is decrypted, so a survey with more sealed responses than one pass affords
 finishes across several crons.

@@ -8,27 +8,32 @@ repository checkout after `pnpm install --frozen-lockfile` and
 
 ## Create and configure preprod
 
-Create the database once:
+Every Wrangler command reads `backend/server/wrangler.toml`, which is git-ignored
+because the D1 database ids in it identify resources in one Cloudflare account.
+Create it once per checkout from the committed template:
+
+```sh
+cp backend/server/wrangler.toml.example backend/server/wrangler.toml
+```
+
+Create the database once per account:
 
 ```sh
 pnpm --filter cardano-tessera-backend exec wrangler d1 create tessera-cache-preprod
 ```
 
-Copy the UUID printed by Wrangler into this command:
-
-```sh
-pnpm --filter cardano-tessera-backend configure:preprod -- <database-uuid>
-```
-
-This generates `backend/server/wrangler.preprod.toml` with mode `0600`. The file
-is git-ignored because the generated resource id belongs to the operator
-account, not portable source. Re-run the command after replacing the checkout
-or whenever the committed `wrangler.toml` changes. An existing database's UUID
+Put the UUID Wrangler prints into the `[[env.preprod.d1_databases]]` block of
+your `wrangler.toml`, replacing the all-zero placeholder. Fill in the networks
+you deploy and leave the others at the placeholder. An existing database's UUID
 is available from:
 
 ```sh
 pnpm --filter cardano-tessera-backend exec wrangler d1 info tessera-cache-preprod --json
 ```
+
+Everything except the ids is project configuration: change it in
+`wrangler.toml.example`, then re-copy and re-fill, so the template a fresh
+checkout deploys never drifts from what you run.
 
 Apply every committed migration before deploying the Worker:
 
@@ -54,8 +59,8 @@ redeploy. Use a preprod Koios token, not the Preview one, and enter it
 interactively so it never appears in shell history or source:
 
 ```sh
-pnpm --filter cardano-tessera-backend exec wrangler secret put KOIOS_TOKEN --config wrangler.preprod.toml --env preprod
-pnpm --filter cardano-tessera-backend exec wrangler secret put KOIOS_PASSTHROUGH_TOKEN --config wrangler.preprod.toml --env preprod
+pnpm --filter cardano-tessera-backend exec wrangler secret put KOIOS_TOKEN --env preprod
+pnpm --filter cardano-tessera-backend exec wrangler secret put KOIOS_PASSTHROUGH_TOKEN --env preprod
 ```
 
 ## Verify the deployment
@@ -100,7 +105,7 @@ NODE
 Use `wrangler tail` to inspect the first refresh and its upstream count:
 
 ```sh
-pnpm --filter cardano-tessera-backend exec wrangler tail --config wrangler.preprod.toml --env preprod
+pnpm --filter cardano-tessera-backend exec wrangler tail --env preprod
 ```
 
 The static Tessera app is optional and is not an integration dependency. If it
@@ -161,8 +166,8 @@ Koios mode supplies its own token and consumes neither backend identity.
 List Worker versions, then roll back to the recorded known-good version:
 
 ```sh
-pnpm --filter cardano-tessera-backend exec wrangler versions list --config wrangler.preprod.toml --env preprod
-pnpm --filter cardano-tessera-backend exec wrangler rollback <version-id> --config wrangler.preprod.toml --env preprod --message 'rollback to known-good Tessera commit'
+pnpm --filter cardano-tessera-backend exec wrangler versions list --env preprod
+pnpm --filter cardano-tessera-backend exec wrangler rollback <version-id> --env preprod --message 'rollback to known-good Tessera commit'
 ```
 
 Migrations are additive and are not reversed by a Worker rollback. If a D1
@@ -170,8 +175,8 @@ migration or write damaged data, first obtain the point-in-time bookmark and
 then perform the destructive restore explicitly:
 
 ```sh
-pnpm --filter cardano-tessera-backend exec wrangler d1 time-travel info DB --config wrangler.preprod.toml --env preprod --timestamp <rfc3339-before-change> --json
-pnpm --filter cardano-tessera-backend exec wrangler d1 time-travel restore DB --config wrangler.preprod.toml --env preprod --bookmark <bookmark>
+pnpm --filter cardano-tessera-backend exec wrangler d1 time-travel info DB --env preprod --timestamp <rfc3339-before-change> --json
+pnpm --filter cardano-tessera-backend exec wrangler d1 time-travel restore DB --env preprod --bookmark <bookmark>
 ```
 
 After either rollback, repeat both health checks and wait for one successful

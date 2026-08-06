@@ -1,6 +1,7 @@
 node_modules/
 .wrangler/
-wrangler.preprod.toml
+# Operator's D1 database ids (template: wrangler.toml.example)
+wrangler.toml
 *.sqlite
 *.sqlite-*
 .env

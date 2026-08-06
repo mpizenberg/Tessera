@@ -55,8 +55,11 @@ jobs:
       # Bundle both Cloudflare Workers without deploying (no credentials
       # needed). `pnpm -r build` never touches the backend — it has no build
       # script — so this is the only pre-deploy check of its worker.ts bundle
-      # and of both wrangler.toml files. The app's dry-run needs dist/ from
+      # and of both wrangler configurations. The backend's holds operator
+      # database ids and is git-ignored, so CI deploys the committed template
+      # exactly as a fresh checkout would. The app's dry-run needs dist/ from
       # the build step above.
+      - run: cp backend/server/wrangler.toml.example backend/server/wrangler.toml
       - run: pnpm --filter cardano-tessera-backend exec wrangler deploy --env preview --dry-run
       - run: pnpm --filter cardano-tessera-backend exec wrangler deploy --env preprod --dry-run
       - run: pnpm --filter tessera-app exec wrangler deploy --env preview --dry-run

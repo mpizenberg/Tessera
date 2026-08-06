@@ -4,7 +4,14 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const wrangler = readFileSync(resolve(packageRoot, "wrangler.toml"), "utf8");
+// The template, not the operator's git-ignored wrangler.toml: it is the only
+// deployment configuration this repository ships, and the copy on any one
+// machine says nothing about what a fresh checkout would deploy.
+const wrangler = readFileSync(
+  resolve(packageRoot, "wrangler.toml.example"),
+  "utf8",
+);
+const PLACEHOLDER_DATABASE_ID = "00000000-0000-0000-0000-000000000000";
 const packageJson = JSON.parse(
   readFileSync(resolve(packageRoot, "package.json"), "utf8"),
 ) as { scripts: Record<string, string> };
@@ -55,22 +62,25 @@ describe("named Worker deployments", () => {
     expect(new Set(configurations.map(({ database }) => database)).size).toBe(
       3,
     );
-    expect(configurations[0].databaseId).not.toBe(configurations[1].databaseId);
-    expect(configurations[1].databaseId).toBe(
-      "00000000-0000-0000-0000-000000000000",
-    );
   });
 
-  it("pins preprod's CPU budget and uses its generated local config", () => {
+  it("ships no account's database ids", () => {
+    const ids = [...wrangler.matchAll(/^database_id = "([^"]+)"/gm)].map(
+      (match) => match[1],
+    );
+    expect(ids).toHaveLength(4);
+    for (const id of ids) expect(id).toBe(PLACEHOLDER_DATABASE_ID);
+  });
+
+  it("pins preprod's CPU budget and selects environments by name alone", () => {
     expect(wrangler).toMatch(/\[env\.preprod\.limits\]\s+cpu_ms = 30000/);
-    expect(packageJson.scripts["configure:preprod"]).toBe(
-      "node ../../scripts/configure-preprod.mjs",
+    expect(packageJson.scripts["migrate:preprod"]).toBe(
+      "wrangler d1 migrations apply DB --env preprod --remote",
     );
-    expect(packageJson.scripts["migrate:preprod"]).toContain(
-      "--config wrangler.preprod.toml --env preprod --remote",
-    );
-    expect(packageJson.scripts["deploy:preprod"]).toContain(
-      "--config wrangler.preprod.toml --env preprod",
-    );
+    for (const network of networks) {
+      expect(packageJson.scripts[`deploy:${network}`]).toBe(
+        `wrangler deploy --env ${network}`,
+      );
+    }
   });
 });

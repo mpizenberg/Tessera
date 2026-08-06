@@ -14,10 +14,9 @@
     "dev:mainnet": "NETWORK=mainnet tsx watch src/main.ts",
     "start": "tsx src/main.ts",
     "dev:cf": "wrangler dev --env preview --test-scheduled",
-    "configure:preprod": "node ../../scripts/configure-preprod.mjs",
-    "migrate:preprod": "wrangler d1 migrations apply DB --config wrangler.preprod.toml --env preprod --remote",
+    "migrate:preprod": "wrangler d1 migrations apply DB --env preprod --remote",
     "deploy:preview": "wrangler deploy --env preview",
-    "deploy:preprod": "wrangler deploy --config wrangler.preprod.toml --env preprod",
+    "deploy:preprod": "wrangler deploy --env preprod",
     "deploy:mainnet": "wrangler deploy --env mainnet",
     "type-check": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests"
