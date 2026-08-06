@@ -25,6 +25,7 @@ import { pruneTxProofCache } from "./proofCache";
 import {
   OPERATIONAL_RETENTION_SECONDS,
   REFRESH_LEASE_SECONDS,
+  snapshotTip,
   sumUpstream,
   type BackendStore,
   type SnapshotStore,
@@ -129,14 +130,7 @@ export async function refreshSnapshot(
     // `/epoch_params` read whenever the epoch has not turned over — which, at a
     // three-minute cadence against day-long epochs, is nearly every run.
     const previous = await store.snapshotMeta();
-    const tip = await source.chainTip(
-      previous
-        ? (JSON.parse(previous.tip) as {
-            epoch: number;
-            govActionLifetime: number;
-          })
-        : null,
-    );
+    const tip = await source.chainTip(previous ? snapshotTip(previous) : null);
     const records = await source.fetchAll(tip);
     const { links: govLinks, unresolved: govUnresolved } =
       await refreshGovLinks(

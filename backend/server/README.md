@@ -60,7 +60,7 @@ share `PORT`, so run one at a time or override it.
   into one Koios call).
 - `GET /api/tx_status?hashes=<h1>,<h2>` — live confirmation counts.
 - `GET /api/pparams` — latest-epoch protocol parameters (evolution-sdk shape,
-  wire-encoded, ~20 s cache). Lets the browser build a transaction without
+  wire-encoded, one Koios read per epoch). Lets the browser build a transaction without
   querying Koios, so the app needs no Koios token even to create
   surveys/responses/actions.
 - `GET /api/surveys/{txHash}/{index}/artifact` — the survey's final tally

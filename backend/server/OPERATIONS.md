@@ -151,7 +151,7 @@ collection command.
 ## Koios quota separation
 
 `KOIOS_TOKEN` is used by operator-critical snapshot scans, proof validation,
-finalization, and the short-cached `/api/tip` and `/api/pparams` routes. Their
+finalization, and the cached `/api/tip` and `/api/pparams` routes. Their
 calls are reported as `koiosCalls` in `/api/health`.
 
 `KOIOS_PASSTHROUGH_TOKEN` is used only by the uncached, frontend-driven

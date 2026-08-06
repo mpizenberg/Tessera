@@ -24,7 +24,7 @@ import type {
 } from "cip-179/domain";
 
 import { loadConfig } from "./config";
-import { createApp } from "./http";
+import { createApp, keyedCache } from "./http";
 import { materializeSnapshot } from "./materialize";
 import { memBackendStore, type MemBackendStore } from "./store-mem";
 import type { ValidatedResponseRow } from "./store";
@@ -773,5 +773,67 @@ describe("GET /api/tx_status (finding 15)", () => {
     );
     await app.request(`/api/tx_status?hashes=${H("cd")}`);
     expect(authHeaders).toEqual([null]);
+  });
+});
+
+// What `/api/pparams` reuses its Koios read on. Protocol parameters are fixed
+// within an epoch, so the key is the epoch of the stored snapshot — the only
+// notion of "now" this tier has that costs no upstream call.
+describe("keyedCache", () => {
+  const cacheOver = (key: () => number | null) => {
+    let produced = 0;
+    const read = keyedCache(
+      () => Promise.resolve(key()),
+      () => Promise.resolve(++produced),
+    );
+    return { read, calls: () => produced };
+  };
+
+  it("reads once per key, however many requests arrive", async () => {
+    let epoch: number | null = 500;
+    const { read, calls } = cacheOver(() => epoch);
+
+    expect(await read()).toBe(1);
+    expect(await read()).toBe(1);
+    expect(calls()).toBe(1);
+
+    epoch = 501;
+    expect(await read()).toBe(2);
+    expect(calls()).toBe(2);
+  });
+
+  // The pre-first-refresh key: unknown, not absent. One read serves until a
+  // snapshot lands and names an epoch.
+  it("treats a null key as a key", async () => {
+    let epoch: number | null = null;
+    const { read, calls } = cacheOver(() => epoch);
+
+    await read();
+    await read();
+    expect(calls()).toBe(1);
+
+    epoch = 500;
+    await read();
+    expect(calls()).toBe(2);
+  });
+
+  it("collapses a concurrent burst into one read", async () => {
+    const { read, calls } = cacheOver(() => 500);
+    expect(await Promise.all([read(), read(), read()])).toEqual([1, 1, 1]);
+    expect(calls()).toBe(1);
+  });
+
+  it("evicts a failure rather than serving it for the whole epoch", async () => {
+    let attempt = 0;
+    const read = keyedCache(
+      () => Promise.resolve(500),
+      () =>
+        ++attempt === 1
+          ? Promise.reject(new Error("koios 502"))
+          : Promise.resolve("params"),
+    );
+
+    await expect(read()).rejects.toThrow("koios 502");
+    expect(await read()).toBe("params");
   });
 });

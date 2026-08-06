@@ -11,6 +11,7 @@ import type { ChainTip, GovLink } from "cip-179/domain";
 import { toJsonSafe } from "cip-179/tally";
 
 import { displayGovLinks } from "./refresh";
+import { snapshotTip } from "./store";
 
 const link = (actionId: string, surveyKey = "aa:0"): GovLink => ({
   surveyKey,
@@ -49,12 +50,13 @@ describe("displayGovLinks", () => {
   });
 });
 
-describe("the stored tip a refresh banks gov_action_lifetime from", () => {
-  // A refresh skips its /epoch_params read by comparing the previous snapshot's
-  // stored tip against the epoch it just read, parsing that tip as plain JSON.
-  // Both fields must therefore survive the wire encoding unwrapped — a bigint
-  // or bytes field would come back as an object and silently break the reuse.
-  it("keeps epoch and gov_action_lifetime as plain numbers", () => {
+describe("snapshotTip", () => {
+  // Two upstream reads are skipped by trusting this round-trip: a refresh
+  // rebanks `gov_action_lifetime` when the stored epoch still holds, and
+  // `/api/pparams` keys its Koios read on that same epoch. Every field must
+  // therefore survive the wire encoding unwrapped — one bigint or bytes field
+  // would come back as an object and silently break both.
+  it("recovers the stored ChainTip as plain numbers", () => {
     const tip: ChainTip = {
       epoch: 511,
       slot: 1_000,
@@ -63,9 +65,12 @@ describe("the stored tip a refresh banks gov_action_lifetime from", () => {
       govActionLifetime: 6,
     };
 
-    expect(JSON.parse(JSON.stringify(toJsonSafe(tip)))).toMatchObject({
-      epoch: 511,
-      govActionLifetime: 6,
-    });
+    const meta = {
+      tip: JSON.stringify(toJsonSafe(tip)),
+      incomplete: false,
+      fetchedAt: 1_750_000_000,
+    };
+
+    expect(snapshotTip(meta)).toEqual(tip);
   });
 });

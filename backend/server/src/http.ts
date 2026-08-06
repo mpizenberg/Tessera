@@ -20,10 +20,10 @@
  *   - GET /api/pparams                    latest-epoch protocol parameters, so
  *                                         the browser builds txs tokenlessly
  *
- * `/api/tip` and `/api/pparams` sit behind a ~20 s memo: a burst of requests
- * (many tabs, a refresh storm) collapses into at most one upstream Koios call
- * per window, while staying fresh enough for their consumers — the tip moves
- * every ~20 s anyway, and pparams change only at epoch boundaries.
+ * `/api/tip` sits behind a ~20 s memo: a burst of requests (many tabs, a refresh
+ * storm) collapses into at most one upstream Koios call per window, and the tip
+ * moves every ~20 s anyway. `/api/pparams` is keyed by epoch instead, because
+ * that is when protocol parameters can change at all.
  *
  * Transfer economics: responses are compressed (hex-heavy JSON shrinks several
  * fold), and every snapshot-derived route carries an `ETag` versioned by
@@ -53,9 +53,14 @@ import { KoiosDataSource } from "cardano-tessera-koios";
 
 import type { ServerConfig } from "./config";
 import { upstreamMeter } from "./meter";
-import { sumUpstream, validationKey, type BackendStore } from "./store";
+import {
+  snapshotTip,
+  sumUpstream,
+  validationKey,
+  type BackendStore,
+} from "./store";
 
-/** How long `/api/tip` and `/api/pparams` reuse one upstream Koios call. */
+/** How long `/api/tip` reuses one upstream Koios call. */
 const UPSTREAM_TTL_MS = 20_000;
 
 /** Default and ceiling page sizes for the paged `/api/surveys` list. */
@@ -94,6 +99,32 @@ function ttlCache<T>(
       const p = produce();
       value = p;
       expiresAt = Date.now() + ttlMs;
+      p.catch(() => {
+        if (value === p) value = null;
+      });
+    }
+    return value;
+  };
+}
+
+/**
+ * Memoize an async producer against a key, recomputing only when the key
+ * changes. Sharing and eviction work as in {@link ttlCache}; what differs is
+ * what makes the value stale — a fact the caller can observe, rather than the
+ * passage of time.
+ */
+export function keyedCache<K, T>(
+  keyOf: () => Promise<K>,
+  produce: () => Promise<T>,
+): () => Promise<T> {
+  let value: Promise<T> | null = null;
+  let cachedKey: K | undefined;
+  return async () => {
+    const key = await keyOf();
+    if (!value || key !== cachedKey) {
+      const p = produce();
+      value = p;
+      cachedKey = key;
       p.catch(() => {
         if (value === p) value = null;
       });
@@ -157,10 +188,10 @@ export function createApp(
   // Compress bodies when the client accepts it. The snapshot is hex-string-heavy
   // JSON, which deflates several fold; on Cloudflare the edge does this instead.
   if (options.compress !== false) app.use(compress());
-  // Passthroughs to Koios. `tip`/`pparams` sit behind the short memo above and
-  // carry the operator's Koios identity (`config.app.koiosToken`) — memoization
-  // caps them at ~one upstream call per window, so they can't burn quota even
-  // though `pparams` feeds the (necessary) submit flow. `tx_status` is uncached
+  // Passthroughs to Koios. `tip`/`pparams` carry the operator's Koios identity
+  // (`config.app.koiosToken`) — the memos above cap them at one upstream call
+  // per window and per epoch respectively, so they can't burn quota even though
+  // `pparams` feeds the (necessary) submit flow. `tx_status` is uncached
   // comfort traffic (post-submit confirmation polling), so it goes through a
   // SEPARATE source with its own token (`config.passthroughKoiosToken`, default
   // unauthenticated): a flood of `/api/tx_status` can only exhaust that isolated
@@ -196,8 +227,18 @@ export function createApp(
     meter.hook("koios-passthrough"),
   );
   const cachedTip = ttlCache(UPSTREAM_TTL_MS, () => source.chainTip());
-  const cachedPParams = ttlCache(UPSTREAM_TTL_MS, async () =>
-    toJsonSafe(await source.protocolParameters()),
+  // Protocol parameters are fixed within an epoch, so the epoch is the cache
+  // key and a second read inside one could only return what is already held.
+  // The epoch is this tier's own — the stored snapshot's — which costs a row
+  // read instead of a Koios call and, for the one refresh interval after a
+  // boundary, holds the previous epoch's parameters. Before the first snapshot
+  // there is no epoch to key on: one read then serves until a refresh lands.
+  const cachedPParams = keyedCache(
+    async () => {
+      const meta = await store.snapshotMeta();
+      return meta ? snapshotTip(meta).epoch : null;
+    },
+    async () => toJsonSafe(await source.protocolParameters()),
   );
 
   app.get("/health", (c) => c.json({ ok: true, network: config.app.network }));
@@ -270,7 +311,7 @@ export function createApp(
 
     // Stored values are already wire-form JSON text — the body is assembled
     // by parse-and-concatenate, never re-encoded through toJsonSafe.
-    const tip = JSON.parse(meta.tip) as { epoch: number };
+    const tip = snapshotTip(meta);
     const [rows, counts] = await Promise.all([
       store.surveyIndexPage({
         tipEpoch: tip.epoch,
@@ -341,7 +382,7 @@ export function createApp(
       survey: JSON.parse(bundle.record) as unknown,
       responses: bundle.responses.map((r) => JSON.parse(r) as unknown),
       cancellations: JSON.parse(bundle.cancellations) as unknown,
-      tip: JSON.parse(meta.tip) as unknown,
+      tip: snapshotTip(meta),
       // Decided §6.3 rule-2 verdicts only — an omitted key is *pending*, and
       // the client must render it as such, never as failed.
       verdicts: Object.fromEntries(

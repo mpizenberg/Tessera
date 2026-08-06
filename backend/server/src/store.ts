@@ -11,7 +11,7 @@
  * this schema too.
  */
 
-import type { GovLink, GovLinkDoc } from "cip-179/domain";
+import type { ChainTip, GovLink, GovLinkDoc } from "cip-179/domain";
 
 /**
  * One response's §6.3 validation result (rules 1–3), persisted so each
@@ -522,6 +522,15 @@ export interface SnapshotMeta {
    */
   readonly fetchedAt: number;
 }
+
+/**
+ * The tip a stored snapshot published. Every field of a `ChainTip` is a plain
+ * number, so the wire form round-trips through `JSON.parse` unwrapped — no
+ * `fromJsonSafe` pass, and the value is usable as banked state rather than only
+ * as body text.
+ */
+export const snapshotTip = (meta: SnapshotMeta): ChainTip =>
+  JSON.parse(meta.tip) as ChainTip;
 
 /** A page query against the survey index (see `cardano-tessera-core` `page.ts`). */
 export interface SurveyPageQuery {
