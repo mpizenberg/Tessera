@@ -3,10 +3,5 @@ dist/
 *.tsbuildinfo
 .DS_Store
 
-# Local env (secrets) — keep .env.example committed
-.env
-.env.local
-.env.*.local
-
 # Wrangler local state
 .wrangler/

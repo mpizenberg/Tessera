@@ -1,11 +1,19 @@
 import { defineConfig } from "vite";
 import solid from "vite-plugin-solid";
 import { fileURLToPath } from "node:url";
+import { resolveDeployment } from "./deployments";
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
-export default defineConfig({
+export default defineConfig(({ command, mode }) => ({
   plugins: [solid()],
+  // All build-time configuration flows through this one constant, resolved
+  // from the committed table in deployments.ts. Unknown build modes throw.
+  define: { __DEPLOYMENT__: JSON.stringify(resolveDeployment(command, mode)) },
+  // No variable carries this prefix — deliberately: nothing from an env file
+  // or the shell can reach import.meta.env, so an artifact is a pure
+  // function of the repo and the mode.
+  envPrefix: "TESSERA_SEALED_",
   resolve: {
     alias: {
       // Resolve the workspace libraries straight from their TypeScript source
@@ -36,4 +44,4 @@ export default defineConfig({
   // Bind IPv4 loopback so `localhost` (which many browsers resolve to
   // 127.0.0.1) connects — Vite's default binds IPv6 `::1` only.
   server: { host: "127.0.0.1", port: 3000 },
-});
+}));

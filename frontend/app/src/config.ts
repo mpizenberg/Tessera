@@ -4,15 +4,15 @@ import {
   KOIOS_URL,
   NETWORKS,
   SECONDS_PER_EPOCH,
-  parseNetwork,
   type AppConfig,
   type Network,
 } from "cardano-tessera-core";
 
 // The config *shape* + endpoint tables are shared with the serving tier and
 // live in `cardano-tessera-core`; this module owns only how the browser *resolves*
-// them (localStorage overrides + Vite build env). Re-export the types so the
-// many `~/config` consumers keep their import path.
+// them (localStorage overrides + the `__DEPLOYMENT__` baked in from
+// deployments.ts). Re-export the types so the many `~/config` consumers keep
+// their import path.
 export type { AppConfig, Network } from "cardano-tessera-core";
 
 /** CIP-179 went live around here — ignore older label-17 history. */
@@ -22,14 +22,13 @@ const SURVEYS_SINCE_ISO = "2026-06-01T00:00:00Z";
 export const LAST_WALLET_STORAGE_KEY = "tessera.lastWallet";
 
 /**
- * The network this deployment serves, from the build env. **One deployment,
- * one network**: there is no runtime switch — the paired backend (Worker + D1)
- * is single-network too, so switching in place could only mix networks. The
- * network deployments are builds of the same code, cross-linked through
- * explicit per-network URLs.
+ * The network this deployment serves. **One deployment, one network**: there
+ * is no runtime switch — the paired backend (Worker + D1) is single-network
+ * too, so switching in place could only mix networks. The network deployments
+ * are builds of the same code, cross-linked through explicit per-network URLs.
  */
 export function envNetwork(): Network {
-  return parseNetwork(import.meta.env.VITE_NETWORK || "preview");
+  return __DEPLOYMENT__.network;
 }
 
 /**
@@ -48,14 +47,9 @@ export interface NetworkLink {
 
 /** Configured deployments other than the network this build serves. */
 export function networkLinks(): readonly NetworkLink[] {
-  const urls: Record<Network, string | undefined> = {
-    mainnet: import.meta.env.VITE_MAINNET_URL || undefined,
-    preprod: import.meta.env.VITE_PREPROD_URL || undefined,
-    preview: import.meta.env.VITE_PREVIEW_URL || undefined,
-  };
   const active = envNetwork();
   return NETWORKS.flatMap((network) => {
-    const url = urls[network];
+    const url = __DEPLOYMENT__.appUrls[network];
     return network !== active && url ? [{ network, url }] : [];
   });
 }
@@ -120,15 +114,15 @@ export function storeKoiosToken(token: string): void {
 }
 
 /**
- * The build-time Tier-1 backend base URL (from env), ignoring any user override.
- * When set, the app reads its snapshot from this serving tier
- * (`IndexerDataSource`) instead of scanning Koios from the browser; empty ⇒ the
- * direct-Koios path. Must serve the same network as `VITE_NETWORK` — the app
- * verifies this against the backend's `/health` and refuses mixed-network data.
- * See `backend/ARCHITECTURE.md` §2/§8.
+ * The build-time Tier-1 backend base URL (from deployments.ts), ignoring any
+ * user override. When set, the app reads its snapshot from this serving tier
+ * (`IndexerDataSource`) instead of scanning Koios from the browser; absent ⇒
+ * the direct-Koios path. Must serve the deployment's network — the app
+ * verifies this against the backend's `/health` and refuses mixed-network
+ * data. See `backend/ARCHITECTURE.md` §2/§8.
  */
 export function envIndexerUrl(): string | undefined {
-  return import.meta.env.VITE_INDEXER_URL || undefined;
+  return __DEPLOYMENT__.indexerUrl;
 }
 
 /** A persisted Tier-1 backend URL override for this network, if the user set one. */
@@ -196,7 +190,8 @@ export function deactivateDirectMode(): void {
 }
 
 /**
- * The active Tier-1 backend URL: localStorage override → `VITE_INDEXER_URL`.
+ * The active Tier-1 backend URL: localStorage override → the deployment's
+ * `indexerUrl`.
  * When defined, reads flow through the serving tier (`IndexerDataSource`); when
  * undefined, the app talks to Koios directly (`KoiosDataSource`) — the
  * emergency-participation path for a down backend, and the only mode of a
@@ -210,7 +205,7 @@ export function resolveIndexerUrl(): string | undefined {
 }
 
 /**
- * The network is fixed at build time (`VITE_NETWORK`, default Preview) — see
+ * The network is fixed at build time (deployments.ts) — see
  * {@link envNetwork} for why there is no runtime override.
  *
  * The Koios token comes only from Settings — never from the build, which would

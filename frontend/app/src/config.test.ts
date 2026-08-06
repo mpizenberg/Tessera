@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
+import type { Deployment } from "../deployments";
 import {
   DIRECT_MODE_TTL_MS,
   activateDirectMode,
@@ -21,6 +22,11 @@ const NOW = 1_800_000_000_000;
 const URL_KEY = "tessera.indexerUrl.preview";
 const BACKEND = "https://backend.example";
 
+// vitest.setup.ts provides the default (preview, no backend); tests needing
+// another deployment swap the global — Vite `define` does not apply here.
+const stubDeployment = (deployment: Deployment) =>
+  vi.stubGlobal("__DEPLOYMENT__", deployment);
+
 beforeEach(() => {
   store.clear();
   store.set(URL_KEY, BACKEND);
@@ -35,28 +41,17 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
-  vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
 
 describe("build network", () => {
   test.each(["mainnet", "preprod", "preview"] as const)(
-    "accepts %s",
+    "reads %s from the injected deployment",
     (network) => {
-      vi.stubEnv("VITE_NETWORK", network);
+      stubDeployment({ network, appUrls: {} });
       expect(envNetwork()).toBe(network);
     },
   );
-
-  test("defaults a missing build value to Preview", () => {
-    vi.stubEnv("VITE_NETWORK", "");
-    expect(envNetwork()).toBe("preview");
-  });
-
-  test("rejects an unknown build value", () => {
-    vi.stubEnv("VITE_NETWORK", "testnet");
-    expect(() => envNetwork()).toThrow(/Unsupported Cardano network/);
-  });
 
   test("maps mainnet to CIP-30 id 1 and both testnets to id 0", () => {
     expect(expectedNetworkId("mainnet")).toBe(1);
@@ -65,17 +60,21 @@ describe("build network", () => {
   });
 
   test("keeps local settings isolated between the two testnets", () => {
-    vi.stubEnv("VITE_NETWORK", "preprod");
+    stubDeployment({ network: "preprod", appUrls: {} });
     storeKoiosToken("preprod-token");
     expect(store.get("tessera.koiosToken.preprod")).toBe("preprod-token");
     expect(store.get("tessera.koiosToken.preview")).toBeUndefined();
   });
 
   test("returns every configured deployment except the active one", () => {
-    vi.stubEnv("VITE_NETWORK", "preprod");
-    vi.stubEnv("VITE_MAINNET_URL", "https://mainnet.example");
-    vi.stubEnv("VITE_PREPROD_URL", "https://preprod.example");
-    vi.stubEnv("VITE_PREVIEW_URL", "https://preview.example");
+    stubDeployment({
+      network: "preprod",
+      appUrls: {
+        mainnet: "https://mainnet.example",
+        preprod: "https://preprod.example",
+        preview: "https://preview.example",
+      },
+    });
     expect(networkLinks()).toEqual([
       { network: "mainnet", url: "https://mainnet.example" },
       { network: "preview", url: "https://preview.example" },
