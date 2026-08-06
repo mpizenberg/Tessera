@@ -303,8 +303,9 @@ export const AppProvider: ParentComponent = (props) => {
   // from Koios (the tx itself is signed and submitted via the CIP-30 wallet).
   const [koiosToken, setKoiosTokenSig] = createSignal(config.koiosToken);
   // Reads flow through the Tier-1 serving backend when one is configured
-  // (`VITE_INDEXER_URL`) — the secure/scalable default — otherwise straight to
-  // Koios (the direct/power-user/offline path). See `backend/ARCHITECTURE.md` §8.
+  // (the deployment's `indexerUrl`) — the secure/scalable default — otherwise
+  // straight to Koios (the direct/power-user/offline path). See
+  // `backend/ARCHITECTURE.md` §8.
   const indexerUrl = resolveIndexerUrl();
   const source: DataSource = indexerUrl
     ? new IndexerDataSource(indexerUrl, config.network)

@@ -85,21 +85,22 @@ shrinks ~4×).
 
 ## Use from the app
 
-Point the frontend at this backend with `VITE_INDEXER_URL`, and it reads the
-snapshot from here (via `IndexerDataSource`) instead of scanning Koios itself —
-no Koios token needed for reads:
+The app's dev server points here (`http://localhost:8787`) by default and
+reads the snapshot from this backend (via `IndexerDataSource`) instead of
+scanning Koios itself — no Koios token needed for reads:
 
 ```sh
-pnpm --filter cardano-tessera-backend dev                              # terminal 1
-VITE_INDEXER_URL=http://localhost:8787 pnpm --filter tessera-app dev   # terminal 2
+pnpm --filter cardano-tessera-backend dev   # terminal 1
+pnpm --filter tessera-app dev               # terminal 2
 ```
 
-Leave `VITE_INDEXER_URL` unset and the app reads from Koios directly (the
+Set `TESSERA_BACKEND_URL` empty and the app reads from Koios directly (the
 power-user/offline path), which then needs a Koios token pasted in the app's
 Settings.
 
 Deployments are single-network on both sides: the app is built for one network
-(`VITE_NETWORK`) and must point at a backend serving the same one — it checks
+(`frontend/app/deployments.ts`) and must point at a backend serving the same
+one — it checks
 this against `/health` (which reports the active network) and refuses a
 mismatched backend rather than mixing networks.
 

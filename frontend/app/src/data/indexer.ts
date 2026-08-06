@@ -158,7 +158,7 @@ export class IndexerDataSource implements DataSource {
           throw new Error(
             `Backend at ${this.baseUrl} serves network "${health.network}", ` +
               `but this app is built for "${this.network}" — fix the backend ` +
-              `URL (VITE_INDEXER_URL or the Settings override).`,
+              `URL (deployments.ts or the Settings override).`,
           );
         }
       })();

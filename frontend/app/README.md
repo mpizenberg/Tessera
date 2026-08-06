@@ -21,12 +21,12 @@ are signed and submitted by the user's CIP-30 wallet.
 The app reads chain data through one seam (the `DataSource` interface from
 `cardano-tessera-core`), with two implementations in `src/data/`:
 
-- **Indexer mode** (default in deployments): `VITE_INDEXER_URL` points at the
-  Tier-1 backend (`backend/server`), which serves cached reads, protocol
-  parameters, and final tally artifacts. **No Koios token needed** for
-  anything. The app checks the backend's `/health` network against its own and
-  refuses a mismatch.
-- **Direct mode** (power-user/offline path): leave `VITE_INDEXER_URL` unset and
+- **Indexer mode** (default in deployments): the deployment's `indexerUrl`
+  (see `deployments.ts`) points at the Tier-1 backend (`backend/server`),
+  which serves cached reads, protocol parameters, and final tally artifacts.
+  **No Koios token needed** for anything. The app checks the backend's
+  `/health` network against its own and refuses a mismatch.
+- **Direct mode** (power-user/offline path): leave `indexerUrl` unset and
   the browser scans Koios itself. This needs an authenticated Koios token
   (free tier works) — the anonymous tier sends no CORS headers — pasted in
   Settings, which keeps it in the browser and out of the bundle. Direct mode
@@ -74,21 +74,17 @@ pnpm --filter cardano-tessera-backend dev   # terminal 1
 pnpm --filter tessera-app dev               # terminal 2
 ```
 
-The app serves at http://127.0.0.1:3000. Copy `.env.example` to `.env` for
-configuration — every variable is optional and documented there
-(`VITE_NETWORK`, `VITE_INDEXER_URL`, `VITE_MAINNET_URL`, …).
+The app serves at http://127.0.0.1:3000. All build-time configuration lives
+in the committed table `deployments.ts` — there are no `.env` files, so a
+deployed artifact is a pure function of the repo and the target name.
 
-`dev` runs Vite's `development` mode, which loads no committed network file and
-so serves Preview. `dev:preprod` runs mode `preprod`, taking `VITE_NETWORK` from
-the committed `.env.preprod`; pair it with the backend's `dev:preprod`, since
-the app refuses a backend whose `/health` reports a different network.
-
-Both dev scripts set `VITE_INDEXER_URL=http://localhost:8787` themselves rather
-than relying on a `.env.local`, because Vite loads `.env`/`.env.local` in every
-mode — `vite build` included — and a local backend URL must never reach a
-deployed bundle. Each script defers to a `VITE_INDEXER_URL` already present in
-the environment, so prefix the command to point elsewhere — and an empty
-`VITE_INDEXER_URL=` selects direct mode.
+`dev` serves Preview; `dev:preprod` serves preprod — pair it with the
+backend's `dev:preprod`, since the app refuses a backend whose `/health`
+reports a different network. Both point at a local backend on
+`http://localhost:8787`. The single dev-only knob is `TESSERA_BACKEND_URL`,
+read by the dev server and never by a build: set it to use another backend
+address, or set it empty (`TESSERA_BACKEND_URL= pnpm dev`) to select direct
+mode.
 
 ## Source layout
 
@@ -129,13 +125,14 @@ Static assets on Cloudflare Workers, one deployment per network (see
 `wrangler.toml`):
 
 ```sh
-pnpm --filter tessera-app deploy:preview   # builds with .env.preview, uploads dist/
-pnpm --filter tessera-app deploy:preprod   # builds with .env.preprod, --env preprod
-pnpm --filter tessera-app deploy:mainnet   # builds with .env.mainnet, --env mainnet
+pnpm --filter tessera-app deploy:preview   # vite build --mode preview && wrangler deploy --env preview
+pnpm --filter tessera-app deploy:preprod   # likewise for preprod
+pnpm --filter tessera-app deploy:mainnet   # likewise for mainnet
 ```
 
-Each mode file bakes that network's configuration and links to other configured
-network deployments into the bundle at build time. CIP-30 identifies both
+Each target's `deployments.ts` entry — network, backend URL, cross-links — is
+baked into the bundle at build time; the target name is simultaneously the
+Vite build mode and the wrangler environment. CIP-30 identifies both
 preprod and Preview as network id `0`; the app cannot distinguish those
 wallet-selected testnets through the standard wallet API, so users must select
 the exact one. Backend identity, Koios, storage, explorer links, and Evolution

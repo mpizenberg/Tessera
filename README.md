@@ -63,9 +63,9 @@ pnpm --filter tessera-app dev               # terminal 2
 
 The app serves at http://127.0.0.1:3000, reading chain data through the local
 backend — **no Koios token needed**, for reads or for building transactions
-(they are signed and submitted by your CIP-30 wallet). The app's `dev` scripts
-point at `http://localhost:8787` themselves, and defer to a `VITE_INDEXER_URL`
-already set in the environment if you need another address.
+(they are signed and submitted by your CIP-30 wallet). The dev server points
+at `http://localhost:8787` by default; set `TESSERA_BACKEND_URL` to use
+another address.
 
 Both halves default to Preview. To run the same pair against **preprod**, pin
 the network on each side — the app checks the backend's `/health` and refuses
@@ -80,27 +80,31 @@ Each backend network caches into its own `tessera-cache-$NETWORK.sqlite`, so
 switching costs a re-scan but never mixes two chains' records.
 
 Alternatively, skip the backend and let the browser scan [Koios][koios]
-directly (the power-user/offline path): deployments leave `VITE_INDEXER_URL`
-unset, and a dev server reaches it with an empty
-`VITE_INDEXER_URL= pnpm --filter tessera-app dev`.
+directly (the power-user/offline path): deployments leave the backend URL
+unset in `frontend/app/deployments.ts`, and a dev server reaches it with an
+empty `TESSERA_BACKEND_URL= pnpm --filter tessera-app dev`.
 That path requires an authenticated Koios token (tier 1 is free): the anonymous
 tier does not send CORS headers, so browser requests need one. Paste it in the
 app's **Settings**; it is stored in the browser and never built into the bundle.
 
-### Environment
+### Configuration
 
-Copy `frontend/app/.env.example` to `frontend/app/.env`; every variable is
-optional and documented there. The main ones:
+All frontend build configuration is public — it ships in the bundle — so it
+lives in one committed, typed table: `frontend/app/deployments.ts`. Each entry
+names a deploy target (`preview`, `preprod`, `mainnet` — simultaneously the
+Vite build mode and the wrangler environment) and carries:
 
-- `VITE_NETWORK` — `mainnet`, `preprod`, or `preview` (default). **One
-  deployment serves one network** (no runtime switch); the header links to any
-  deployments configured through `VITE_MAINNET_URL`, `VITE_PREPROD_URL`, and
-  `VITE_PREVIEW_URL`.
-- `VITE_INDEXER_URL` — the Tier-1 backend for that network. The app verifies
-  the backend serves the same network (via its `/health`) and refuses a
-  mismatch. Overridable per network in Settings. Set it in a mode file
-  (`.env.preview`, …) or the shell, never in `.env`/`.env.local`: Vite loads
-  those in every mode, so a local value would ship in a deployed bundle.
+- `network` — the Cardano network that deployment serves. **One deployment
+  serves one network** (no runtime switch); deployments cross-link through
+  the shared `APP_URLS` record, rendered in the header.
+- `indexerUrl` — the Tier-1 backend for that network; absent ⇒ direct Koios.
+  The app verifies the backend serves the same network (via its `/health`)
+  and refuses a mismatch. Overridable per network in Settings.
+
+There are no `.env` files: builds read nothing from the environment or from
+git-ignored files, so a deployed artifact is a pure function of the repo and
+the target name. The one dev-only knob is `TESSERA_BACKEND_URL`, read by the
+dev server alone and never by a build.
 
 CIP-30 reports network id `0` for both preprod and Preview, so a browser app
 cannot distinguish those testnets through the standard wallet API. Tessera
@@ -130,7 +134,7 @@ From the repository root:
 | `pnpm --filter cardano-tessera-backend dev`                                          | Run the Tier-1 backend locally (see its [README](backend/server/README.md)). |
 | `pnpm --filter cardano-tessera-backend dev:preprod`                                  | Same, pinned to preprod (`dev:preview` / `dev:mainnet` likewise).            |
 | `pnpm --filter tessera-app dev:preprod`                                              | Start the app's dev server in preprod mode.                                  |
-| `pnpm --filter tessera-app build`                                                    | Production build of the app.                                                 |
+| `pnpm --filter tessera-app build`                                                    | Production build of the app (the preview target).                            |
 | `pnpm --filter cardano-tessera-verifier verify -- --backend <url> --survey <tx>:<i>` | Re-verify a survey's final result artifact from chain data.                  |
 
 Formatting is Prettier (`pnpm format` / `pnpm format:check` in `frontend/app`).
@@ -141,8 +145,8 @@ the backend as a Worker + D1 + Cron
 `deploy:mainnet`, after the one-time D1 setup in
 `backend/server/OPERATIONS.md`), the app as static Workers assets
 (`pnpm --filter tessera-app deploy:preview` / `deploy:preprod` /
-`deploy:mainnet` — each builds with its committed network mode and uploads
-`dist/`; see `frontend/app/wrangler.toml`). The `backend/deps` submodules
+`deploy:mainnet` — each bakes its `frontend/app/deployments.ts` entry and
+uploads `dist/`; see `frontend/app/wrangler.toml`). The `backend/deps` submodules
 are not needed for any of this; to fetch them anyway:
 `git submodule update --init --recursive`.
 
