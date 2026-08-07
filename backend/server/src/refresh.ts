@@ -145,11 +145,11 @@ export async function refreshSnapshot(
     const previous = await store.snapshotMeta();
     const tip = await source.chainTip(previous ? snapshotTip(previous) : null);
     const records = await source.fetchAll(tip);
-    // The consumers below (gov links, finalization, proof-cache prune) read
-    // the stored rows, which this run rewrites only at the materialize step —
-    // so they see the previous refresh's corpus. One interval of lag, and
-    // every consumer self-heals: a survey first seen this run links,
-    // finalizes and registers as live next run.
+    // The consumers below (gov links, validation, finalization, proof-cache
+    // prune) read the stored rows, which this run rewrites only at the
+    // materialize step — so they see the previous refresh's corpus. One
+    // interval of lag, and every consumer self-heals: a survey first seen
+    // this run links, finalizes and registers as live next run.
     const { links: govLinks, unresolved: govUnresolved } =
       await refreshGovLinks(
         store,

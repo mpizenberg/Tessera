@@ -24,18 +24,32 @@ import {
   scriptCredentialHash,
   type Cip179Records,
   type GovLink,
+  type ResponseRecord,
   type UnresolvedGovAction,
 } from "cip-179/domain";
+import { fromJsonSafe } from "cip-179/tally";
 import type { KoiosDataSource } from "cardano-tessera-koios";
 
-import type { TallyStore, ValidatedResponseRow } from "./store";
+import type { SnapshotStore, TallyStore, ValidatedResponseRow } from "./store";
 import { validationKey } from "./store";
 
+/** What validation reads and writes: verdict state, plus stored responses. */
+export type ValidateStore = TallyStore &
+  Pick<SnapshotStore, "responseRowsForSurveys">;
+
 /**
- * Validate the snapshot's responses that were never (fully) validated before,
- * plus any whose survey's governance link changed since their last verdict, and
+ * Validate the scan's responses that were never (fully) validated before, plus
+ * any whose survey's governance link changed since their last verdict, and
  * persist the results. Responses referencing a survey outside the snapshot are
  * skipped entirely (no row) — they can't be tallied anyway.
+ *
+ * The input need not carry the whole corpus: stored verdicts that fell out of
+ * date without a new response arriving — a bindable verdict pinned to a link
+ * set that has since changed, or a verdict still awaiting an enrichment retry
+ * — put their survey back on the candidate list, and its responses are revived
+ * from the stored rows. Completed verdicts are then read keyed by exactly the
+ * candidate surveys, so validation's reads scale with what this refresh
+ * touches rather than with every verdict ever recorded.
  *
  * A bindable role's *negative* verdict is never frozen while a link it might
  * depend on is unknown (finding 6). Two flavours of "unknown", both left as a
@@ -54,7 +68,7 @@ import { validationKey } from "./store";
  * into a link shows up as such a change).
  */
 export async function validateNewResponses(
-  store: TallyStore,
+  store: ValidateStore,
   records: Cip179Records,
   govLinks: readonly GovLink[],
   source: Pick<KoiosDataSource, "txBlockIndices" | "txProofs">,
@@ -100,8 +114,34 @@ export async function validateNewResponses(
     else unresolvedByEpoch.set(u.endEpoch, [u.actionId]);
   }
 
-  const completed = await store.completedValidations();
-  const candidates = records.responses.filter((r) => {
+  // A link-set change can't re-evaluate anything while the links themselves
+  // are unknown, so a failed gov-links fetch skips the cursor comparison the
+  // same way it freezes the per-response re-check below.
+  const staleCursors = govLinksReliable
+    ? (await store.validatedLinkCursors()).filter(
+        (c) => c.linkedActionId !== linkSetKey(c.surveyKey),
+      )
+    : [];
+  const revivalKeys = [
+    ...new Set([
+      ...staleCursors.map((c) => c.surveyKey),
+      ...(await store.incompleteValidationSurveys()),
+    ]),
+  ];
+  const inputKeys = new Set(
+    records.responses.map((r) => validationKey(r.txHash, r.responseIndex)),
+  );
+  const revived = (await store.responseRowsForSurveys(revivalKeys))
+    .map((row) => fromJsonSafe(JSON.parse(row.record)) as ResponseRecord)
+    .filter((r) => !inputKeys.has(validationKey(r.txHash, r.responseIndex)));
+  const pool = [...records.responses, ...revived];
+
+  const completed = await store.completedValidationsForSurveys(
+    [...new Set(pool.map((r) => refKey(r.response.surveyRef)))].filter((key) =>
+      defByKey.has(key),
+    ),
+  );
+  const candidates = pool.filter((r) => {
     // Resolve the survey first: a response whose ref isn't in this snapshot
     // (nonexistent survey, or one older than the scan floor) can never be
     // validated or tallied, so it must not contribute to the `/tx_cbor` +

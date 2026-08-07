@@ -37,6 +37,7 @@ import type {
   SurveyPageQuery,
   UpstreamCalls,
   UpstreamTotals,
+  ValidatedLinkCursor,
   ValidatedResponseRow,
   WeightRow,
 } from "./store";
@@ -51,6 +52,7 @@ import {
   validationKey,
 } from "./store";
 import {
+  INCOMPLETE_VALIDATION_SURVEYS,
   RESPONSES_FOR_SURVEY,
   RESPONSES_IN_SLOT_RANGE,
   SCAN_STATE_SELECT,
@@ -60,6 +62,8 @@ import {
   SURVEY_END_EPOCHS,
   SURVEYS_ENDING_AT_OR_AFTER,
   UNFINALIZED_CLOSED_SURVEYS,
+  VALIDATED_LINK_CURSORS,
+  completedValidationsSql,
   countsFromDb,
   ownedCountSql,
   respondedSql,
@@ -195,12 +199,8 @@ export function openBackendStore(path: string): BackendStore {
     }
   };
 
-  const completedStmt = db.prepare(
-    `SELECT tx_hash AS txHash, response_index AS responseIndex,
-            linked_action_id AS linkedActionId
-     FROM validated_response
-     WHERE block_index IS NOT NULL AND proof_ok IS NOT NULL`,
-  );
+  const linkCursorsStmt = db.prepare(VALIDATED_LINK_CURSORS.sql);
+  const incompleteSurveysStmt = db.prepare(INCOMPLETE_VALIDATION_SURVEYS);
   const upsertValidatedStmt = db.prepare(`
     INSERT INTO validated_response
       (tx_hash, response_index, survey_key, role, credential,
@@ -385,17 +385,29 @@ export function openBackendStore(path: string): BackendStore {
   }
 
   return {
-    async completedValidations(): Promise<Map<string, string | null>> {
-      const rows = completedStmt.all() as {
-        txHash: string;
-        responseIndex: number;
-        linkedActionId: string | null;
-      }[];
-      return new Map(
-        rows.map((r) => [
-          validationKey(r.txHash, r.responseIndex),
-          r.linkedActionId,
-        ]),
+    async completedValidationsForSurveys(
+      surveyKeys: readonly string[],
+    ): Promise<Map<string, string | null>> {
+      const out = new Map<string, string | null>();
+      for (const { sql, params } of completedValidationsSql(surveyKeys)) {
+        const rows = db.prepare(sql).all(...(params as SqlValue[])) as {
+          txHash: string;
+          responseIndex: number;
+          linkedActionId: string | null;
+        }[];
+        for (const r of rows)
+          out.set(validationKey(r.txHash, r.responseIndex), r.linkedActionId);
+      }
+      return out;
+    },
+    async validatedLinkCursors(): Promise<ValidatedLinkCursor[]> {
+      return linkCursorsStmt.all(
+        ...(VALIDATED_LINK_CURSORS.params as SqlValue[]),
+      ) as unknown as ValidatedLinkCursor[];
+    },
+    async incompleteValidationSurveys(): Promise<string[]> {
+      return (incompleteSurveysStmt.all() as { surveyKey: string }[]).map(
+        (r) => r.surveyKey,
       );
     },
     async upsertValidatedResponses(

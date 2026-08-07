@@ -5,7 +5,8 @@
  */
 
 import type { SurveyListFilter } from "cardano-tessera-core";
-import type { GovLink, GovLinkDoc } from "cip-179/domain";
+import type { Role } from "cip-179";
+import { BINDABLE_ROLES, type GovLink, type GovLinkDoc } from "cip-179/domain";
 
 import type {
   ArtifactRow,
@@ -18,6 +19,7 @@ import type {
   SnapshotMeta,
   SurveyIndexRow,
   UpstreamKind,
+  ValidatedLinkCursor,
   ValidatedResponseRow,
   WeightRow,
 } from "./store";
@@ -112,15 +114,42 @@ export function memBackendStore(): MemBackendStore {
       return surveyIndexRows;
     },
 
-    async completedValidations() {
+    async completedValidationsForSurveys(surveyKeys) {
+      const wanted = new Set(surveyKeys);
       return new Map(
         [...validated.values()]
-          .filter((r) => r.blockIndex !== null && r.proofOk !== null)
+          .filter(
+            (r) =>
+              wanted.has(r.surveyKey) &&
+              r.blockIndex !== null &&
+              r.proofOk !== null,
+          )
           .map((r) => [
             validationKey(r.txHash, r.responseIndex),
             r.linkedActionId,
           ]),
       );
+    },
+    async validatedLinkCursors() {
+      const out = new Map<string, ValidatedLinkCursor>();
+      for (const r of validated.values()) {
+        if (r.blockIndex === null || r.proofOk === null) continue;
+        if (!BINDABLE_ROLES.has(r.role as Role)) continue;
+        out.set(JSON.stringify([r.surveyKey, r.linkedActionId]), {
+          surveyKey: r.surveyKey,
+          linkedActionId: r.linkedActionId,
+        });
+      }
+      return [...out.values()];
+    },
+    async incompleteValidationSurveys() {
+      return [
+        ...new Set(
+          [...validated.values()]
+            .filter((r) => r.blockIndex === null || r.proofOk === null)
+            .map((r) => r.surveyKey),
+        ),
+      ];
     },
     async upsertValidatedResponses(rows) {
       for (const r of rows)

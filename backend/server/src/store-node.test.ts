@@ -139,6 +139,47 @@ describe("store-node sealed reveal cursor", () => {
   });
 });
 
+describe("store-node validation candidate reads", () => {
+  let store: BackendStore;
+  afterEach(() => store.close());
+
+  it("keys completed verdicts by survey and surfaces stale-cursor and retry surveys", async () => {
+    store = openBackendStore(":memory:");
+    await store.upsertValidatedResponses([
+      // s1: completed bindable verdicts pinned to two distinct link sets.
+      { ...validatedRow("aa", 0, "s1:0"), role: 0, linkedActionId: "gov#1" },
+      { ...validatedRow("aa", 1, "s1:0"), role: 0, linkedActionId: "gov#1" },
+      { ...validatedRow("ab", 0, "s1:0"), role: 2 },
+      // s2: completed but non-bindable — never a link-change candidate.
+      { ...validatedRow("bb", 0, "s2:0"), linkedActionId: "gov#2" },
+      // s3: bindable but enrichment-pending — a retry survey, not a cursor.
+      { ...validatedRow("cc", 0, "s3:0"), role: 0, proofOk: null },
+    ]);
+
+    expect(
+      await store.completedValidationsForSurveys(["s1:0", "s3:0"]),
+    ).toEqual(
+      new Map([
+        ["aa:0", "gov#1"],
+        ["aa:1", "gov#1"],
+        ["ab:0", null],
+      ]),
+    );
+    expect(await store.completedValidationsForSurveys([])).toEqual(new Map());
+
+    // One cursor per distinct (survey, link set) a bindable verdict pinned.
+    expect(
+      (await store.validatedLinkCursors()).sort((a, b) =>
+        (a.linkedActionId ?? "").localeCompare(b.linkedActionId ?? ""),
+      ),
+    ).toEqual([
+      { surveyKey: "s1:0", linkedActionId: null },
+      { surveyKey: "s1:0", linkedActionId: "gov#1" },
+    ]);
+    expect(await store.incompleteValidationSurveys()).toEqual(["s3:0"]);
+  });
+});
+
 describe("store-node migration of a pre-runner database", () => {
   it("baselines existing tables and applies the missing 0004 column", async () => {
     const dir = mkdtempSync(join(tmpdir(), "tessera-store-"));
@@ -172,7 +213,7 @@ describe("store-node migration of a pre-runner database", () => {
     const store = openBackendStore(path);
     try {
       // The pre-existing row survives, with a NULL linked action.
-      expect(await store.completedValidations()).toEqual(
+      expect(await store.completedValidationsForSurveys(["aa:0"])).toEqual(
         new Map([["aa:0", null]]),
       );
       // And writes touching the new column work.
@@ -192,7 +233,9 @@ describe("store-node migration of a pre-runner database", () => {
           checkedAt: 2,
         },
       ]);
-      expect((await store.completedValidations()).get("bb:1")).toBe("gov#0");
+      expect(
+        (await store.completedValidationsForSurveys(["bb:1"])).get("bb:1"),
+      ).toBe("gov#0");
       // Missing tables were created by their migrations, not the baseline.
       await store.reconcileSnapshot([], [], {
         tip: "{}",

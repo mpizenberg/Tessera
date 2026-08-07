@@ -12,6 +12,7 @@
  */
 
 import type { SurveyListCounts } from "cardano-tessera-core";
+import { BINDABLE_ROLES } from "cip-179/domain";
 
 import type {
   ResponseRow,
@@ -594,6 +595,46 @@ export const SURVEYS_ENDING_AT_OR_AFTER = `
   SELECT ${SURVEY_ROW_COLUMNS} FROM survey_index
   WHERE end_epoch >= ?
   ORDER BY survey_key`;
+
+/**
+ * Completed validation verdicts (both enrichments present) of the given
+ * surveys, keyed so a windowed refresh reads only the corner of the table its
+ * candidates touch instead of every verdict ever recorded.
+ */
+export const completedValidationsSql = (
+  surveyKeys: readonly string[],
+): SqlQuery[] =>
+  jsonChunks([...surveyKeys].sort(compareText), SNAPSHOT_KEYS_PER_CHUNK).map(
+    (chunk) => ({
+      sql: `SELECT tx_hash AS txHash, response_index AS responseIndex,
+                   linked_action_id AS linkedActionId
+            FROM validated_response
+            WHERE survey_key IN (SELECT value FROM json_each(?))
+              AND block_index IS NOT NULL AND proof_ok IS NOT NULL`,
+      params: [chunk.json],
+    }),
+  );
+
+const BINDABLE = [...BINDABLE_ROLES].sort((a, b) => a - b);
+
+/**
+ * The distinct link-set cursors completed verdicts are pinned to, per survey.
+ * Only bindable roles: no other verdict re-evaluates on a link change, so no
+ * other row can put a survey back on the candidate list.
+ */
+export const VALIDATED_LINK_CURSORS: SqlQuery = {
+  sql: `SELECT DISTINCT survey_key AS surveyKey,
+               linked_action_id AS linkedActionId
+        FROM validated_response
+        WHERE block_index IS NOT NULL AND proof_ok IS NOT NULL
+          AND role IN (${BINDABLE.map(() => "?").join(", ")})`,
+  params: [...BINDABLE],
+};
+
+/** Surveys with a verdict still awaiting an enrichment retry. */
+export const INCOMPLETE_VALIDATION_SURVEYS = `
+  SELECT DISTINCT survey_key AS surveyKey FROM validated_response
+  WHERE block_index IS NULL OR proof_ok IS NULL`;
 
 /** Counts come back as SQLite integers already shaped like the counts type. */
 export const countsFromDb = (r: Record<string, number>): SurveyListCounts => ({

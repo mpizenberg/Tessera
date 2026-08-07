@@ -29,6 +29,7 @@ import type {
   SurveyPageQuery,
   UpstreamCalls,
   UpstreamTotals,
+  ValidatedLinkCursor,
   ValidatedResponseRow,
   WeightRow,
 } from "./store";
@@ -43,6 +44,7 @@ import {
   validationKey,
 } from "./store";
 import {
+  INCOMPLETE_VALIDATION_SURVEYS,
   RESPONSES_FOR_SURVEY,
   RESPONSES_IN_SLOT_RANGE,
   SCAN_STATE_SELECT,
@@ -52,6 +54,8 @@ import {
   SURVEY_END_EPOCHS,
   SURVEYS_ENDING_AT_OR_AFTER,
   UNFINALIZED_CLOSED_SURVEYS,
+  VALIDATED_LINK_CURSORS,
+  completedValidationsSql,
   countsFromDb,
   ownedCountSql,
   respondedSql,
@@ -113,25 +117,38 @@ const D1_PARAM_CAP = 100;
 
 export function d1BackendStore(db: D1Like): BackendStore {
   return {
-    async completedValidations(): Promise<Map<string, string | null>> {
-      const { results } = await db
-        .prepare(
-          `SELECT tx_hash AS txHash, response_index AS responseIndex,
-                  linked_action_id AS linkedActionId
-           FROM validated_response
-           WHERE block_index IS NOT NULL AND proof_ok IS NOT NULL`,
-        )
-        .all<{
+    async completedValidationsForSurveys(
+      surveyKeys: readonly string[],
+    ): Promise<Map<string, string | null>> {
+      const out = new Map<string, string | null>();
+      if (surveyKeys.length === 0) return out;
+      const batches = await db.batch(
+        completedValidationsSql(surveyKeys).map(({ sql, params }) =>
+          db.prepare(sql).bind(...params),
+        ),
+      );
+      for (const b of batches) {
+        for (const r of b.results as {
           txHash: string;
           responseIndex: number;
           linkedActionId: string | null;
-        }>();
-      return new Map(
-        results.map((r) => [
-          validationKey(r.txHash, r.responseIndex),
-          r.linkedActionId,
-        ]),
-      );
+        }[])
+          out.set(validationKey(r.txHash, r.responseIndex), r.linkedActionId);
+      }
+      return out;
+    },
+    async validatedLinkCursors(): Promise<ValidatedLinkCursor[]> {
+      const { results } = await db
+        .prepare(VALIDATED_LINK_CURSORS.sql)
+        .bind(...VALIDATED_LINK_CURSORS.params)
+        .all<ValidatedLinkCursor>();
+      return results;
+    },
+    async incompleteValidationSurveys(): Promise<string[]> {
+      const { results } = await db
+        .prepare(INCOMPLETE_VALIDATION_SURVEYS)
+        .all<{ surveyKey: string }>();
+      return results.map((r) => r.surveyKey);
     },
     async upsertValidatedResponses(
       rows: readonly ValidatedResponseRow[],

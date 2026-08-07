@@ -4,6 +4,7 @@ import { Role, type Credential, type SurveyDefinition } from "cip-179";
 import {
   bytesToHex,
   hexToBytes,
+  type ChainTip,
   type Cip179Records,
   type GovLink,
   type ResponseRecord,
@@ -11,6 +12,7 @@ import {
   type TxProof,
 } from "cip-179/domain";
 
+import { materializeSnapshot } from "./materialize";
 import type { ValidatedResponseRow } from "./store";
 import { memBackendStore, type MemBackendStore } from "./store-mem";
 import { validateNewResponses } from "./validate";
@@ -113,6 +115,26 @@ const records = (...responses: ResponseRecord[]): Cip179Records => ({
   responses,
   cancellations: [],
 });
+
+const TIP: ChainTip = {
+  epoch: 1341,
+  slot: 500,
+  epochSlot: 0,
+  time: 1_750_000_000,
+  govActionLifetime: 6,
+};
+
+/** Publish `recs` as stored rows — the corpus a windowed input no longer carries. */
+async function publish(store: MemBackendStore, recs: Cip179Records) {
+  const snapshot = materializeSnapshot(recs, TIP, [], new Set());
+  await store.reconcileSnapshot(snapshot.surveys, snapshot.responses, {
+    tip: "{}",
+    incomplete: false,
+    fetchedAt: 1,
+    payloadDigest: null,
+    listCounts: null,
+  });
+}
 
 const signedProof = (b: number): TxProof => ({
   requiredSigners: [hexOf(b)],
@@ -392,6 +414,56 @@ describe("validateNewResponses", () => {
       [{ actionId: ACTION, endEpoch: DEF.endEpoch + 1 }],
     );
     expect(store.rows.get("t1:0")!.proofOk).toBe(false);
+  });
+
+  it("revives a stored response absent from the input when its survey's link set changes", async () => {
+    const ACTION = "gov_action1linked";
+    const store = memTallyStore();
+    const source = fakeSource(
+      {
+        t1: {
+          requiredSigners: [],
+          nativeScripts: [],
+          votes: [
+            { voterTag: 2, credentialHash: hexOf(1), actionIds: [ACTION] },
+          ],
+        },
+      },
+      { t1: 3 },
+    );
+    const full = records(response("t1", 1, Role.DRep));
+    await validateNewResponses(store, full, [], source, true);
+    expect(store.rows.get("t1:0")!.proofOk).toBe(false);
+    await publish(store, full);
+
+    // Next refresh, windowed: the input no longer carries the response, but
+    // the link appearing re-validates it from its stored row.
+    const link: GovLink = {
+      surveyKey: SURVEY_KEY,
+      actionId: ACTION,
+      endEpoch: DEF.endEpoch,
+      title: null,
+    };
+    await validateNewResponses(store, records(), [link], source, true);
+    expect(source.txProofs).toHaveBeenCalledTimes(2);
+    expect(store.rows.get("t1:0")!.proofOk).toBe(true);
+    expect(store.rows.get("t1:0")!.linkedActionId).toBe(ACTION);
+  });
+
+  it("retries an enrichment-pending verdict whose response left the input", async () => {
+    const store = memTallyStore();
+    const full = records(response("t1", 1));
+    await validateNewResponses(store, full, [], fakeSource({ t1: null }, {}));
+    expect(store.rows.get("t1:0")!.proofOk).toBeNull();
+    await publish(store, full);
+
+    const healthy = fakeSource({ t1: signedProof(1) }, { t1: 4 });
+    await validateNewResponses(store, records(), [], healthy);
+    expect(healthy.txProofs).toHaveBeenCalledTimes(1);
+    expect(store.rows.get("t1:0")).toMatchObject({
+      proofOk: true,
+      blockIndex: 4,
+    });
   });
 
   it("marks ill-formed responses (ineligible role) as not well-formed", async () => {

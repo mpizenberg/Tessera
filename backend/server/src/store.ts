@@ -110,16 +110,42 @@ export interface ArtifactKeys {
   readonly cancelled: Set<string>;
 }
 
+/**
+ * One survey's stored link-set cursor, as pinned by a completed bindable-role
+ * verdict: the survey may carry several distinct cursors when its verdicts
+ * were completed under different link sets.
+ */
+export interface ValidatedLinkCursor {
+  readonly surveyKey: string;
+  readonly linkedActionId: string | null;
+}
+
 /** Phase-2 tally persistence (ARCHITECTURE.md §6.5), same database. */
 export interface TallyStore {
   /**
-   * Rows needing no enrichment retry (both `blockIndex` and `proofOk` present),
-   * as a map from {@link validationKey} to the `linkedActionId` cursor (the
-   * canonical epoch-aligned link set) the verdict was evaluated against. A
-   * refresh skips these unless the survey's current link set differs from the
-   * stored one (then the verdict is re-evaluated).
+   * The given surveys' rows needing no enrichment retry (both `blockIndex` and
+   * `proofOk` present), as a map from {@link validationKey} to the
+   * `linkedActionId` cursor (the canonical epoch-aligned link set) the verdict
+   * was evaluated against. A refresh skips these unless the survey's current
+   * link set differs from the stored one (then the verdict is re-evaluated).
+   * Keyed by survey so validation reads only its candidates' verdicts, not
+   * every verdict ever recorded.
    */
-  completedValidations(): Promise<Map<string, string | null>>;
+  completedValidationsForSurveys(
+    surveyKeys: readonly string[],
+  ): Promise<Map<string, string | null>>;
+  /**
+   * Distinct link-set cursors pinned by completed bindable-role verdicts —
+   * the input to "which surveys' link sets changed since their verdicts".
+   * Bounded by the survey count, not the response count.
+   */
+  validatedLinkCursors(): Promise<ValidatedLinkCursor[]>;
+  /**
+   * Surveys with at least one verdict still awaiting an enrichment retry.
+   * Their stored responses re-enter validation even when the scan's input no
+   * longer carries them.
+   */
+  incompleteValidationSurveys(): Promise<string[]>;
   upsertValidatedResponses(
     rows: readonly ValidatedResponseRow[],
   ): Promise<void>;
