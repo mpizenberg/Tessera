@@ -226,7 +226,15 @@ export function createApp(
     undefined,
     meter.hook("koios-passthrough"),
   );
-  const cachedTip = ttlCache(UPSTREAM_TTL_MS, () => source.chainTip());
+  // The near-live fields are read fresh on every miss; only the tip's
+  // `gov_action_lifetime` comes from the stored snapshot, and only while the
+  // chain is still in the epoch that snapshot named. The route would otherwise
+  // spend a second Koios call re-reading a parameter that is fixed for the
+  // epoch — the one part of a "near-live" tip that cannot move.
+  const cachedTip = ttlCache(UPSTREAM_TTL_MS, async () => {
+    const meta = await store.snapshotMeta();
+    return source.chainTip(meta ? snapshotTip(meta) : null);
+  });
   // Protocol parameters are fixed within an epoch, so the epoch is the cache
   // key and a second read inside one could only return what is already held.
   // The epoch is this tier's own — the stored snapshot's — which costs a row

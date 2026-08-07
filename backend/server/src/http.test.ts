@@ -1,7 +1,9 @@
 /**
- * Route tests for the per-page endpoints, against an in-memory store — no
- * Koios, no SQLite. Only the snapshot-derived routes are exercised (the
- * passthroughs `/api/tip`, `/api/tx_status`, `/api/pparams` go upstream).
+ * Route tests against an in-memory store — no SQLite. The snapshot-derived
+ * routes need nothing else; the passthroughs `/api/tip` and `/api/tx_status`
+ * reach Koios through a stubbed `fetch`. `/api/pparams` is not exercised
+ * end-to-end: evolution-sdk maps its response through a schema wanting some
+ * sixty fields, so what it caches on is covered through `keyedCache` instead.
  *
  * The fixture is materialized through `materializeSnapshot`, exactly as a
  * refresh does, so a route test can't pass against rows the refresh would
@@ -773,6 +775,70 @@ describe("GET /api/tx_status (finding 15)", () => {
     );
     await app.request(`/api/tx_status?hashes=${H("cd")}`);
     expect(authHeaders).toEqual([null]);
+  });
+});
+
+// A `ChainTip` is two Koios reads wearing one name: `/tip` for the near-live
+// fields, `/epoch_params` for `gov_action_lifetime`. The second is the one part
+// of a tip that cannot move within an epoch, so the stored snapshot answers it.
+describe("GET /api/tip", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** Serve Koios's tip at `epoch`, recording which endpoints were asked. */
+  const koiosAt = (epoch: number) => {
+    const paths: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        paths.push(url.includes("/epoch_params") ? "epoch_params" : "tip");
+        return new Response(
+          JSON.stringify(
+            url.includes("/epoch_params")
+              ? [{ gov_action_lifetime: 6 }]
+              : [
+                  {
+                    epoch_no: epoch,
+                    abs_slot: 1_100_000,
+                    epoch_slot: 6_000,
+                    block_time: 1_750_000_500,
+                  },
+                ],
+          ),
+          { status: 200 },
+        );
+      }),
+    );
+    return paths;
+  };
+
+  it("reuses the snapshot's gov_action_lifetime inside its epoch", async () => {
+    const paths = koiosAt(tip.epoch);
+    const res = await appWith(await seededStore()).request("/api/tip");
+
+    expect(res.status).toBe(200);
+    expect(paths).toEqual(["tip"]);
+    // Read fresh from Koios, not served from the snapshot: this route is the
+    // near-live one, and the stored tip is a refresh interval behind.
+    expect(await res.json()).toEqual({
+      epoch: tip.epoch,
+      slot: 1_100_000,
+      epochSlot: 6_000,
+      time: 1_750_000_500,
+      govActionLifetime: 6,
+    });
+  });
+
+  it("re-reads the parameter once the chain leaves that epoch", async () => {
+    const paths = koiosAt(tip.epoch + 1);
+    await appWith(await seededStore()).request("/api/tip");
+    expect(paths).toEqual(["tip", "epoch_params"]);
+  });
+
+  it("re-reads it when there is no snapshot to bank from", async () => {
+    const paths = koiosAt(tip.epoch);
+    await appWith(memBackendStore()).request("/api/tip");
+    expect(paths).toEqual(["tip", "epoch_params"]);
   });
 });
 
