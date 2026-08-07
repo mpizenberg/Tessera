@@ -10,8 +10,8 @@ import { describe, expect, it } from "vitest";
 import type { ChainTip, GovLink } from "cip-179/domain";
 import { toJsonSafe } from "cip-179/tally";
 
-import { displayGovLinks } from "./refresh";
-import { snapshotTip } from "./store";
+import { displayGovLinks, publishSnapshot } from "./refresh";
+import { snapshotTip, type SnapshotMeta } from "./store";
 
 const link = (actionId: string, surveyKey = "aa:0"): GovLink => ({
   surveyKey,
@@ -50,6 +50,52 @@ describe("displayGovLinks", () => {
   });
 });
 
+describe("publishSnapshot", () => {
+  const snapshot = { surveys: [], responses: [] };
+  const metaWith = (payloadDigest: string | null): SnapshotMeta => ({
+    tip: "{}",
+    incomplete: false,
+    fetchedAt: 2,
+    payloadDigest,
+  });
+  const spyStore = () => {
+    const calls: string[] = [];
+    return {
+      calls,
+      store: {
+        reconcileSnapshot: async () => void calls.push("reconcile"),
+        publishSnapshotMeta: async () => void calls.push("meta"),
+      },
+    };
+  };
+
+  it("republishes only the envelope when the stored digest matches", async () => {
+    const { calls, store } = spyStore();
+    await publishSnapshot(store, metaWith("d1"), snapshot, metaWith("d1"));
+    expect(calls).toEqual(["meta"]);
+  });
+
+  it("reconciles fully on a digest change", async () => {
+    const { calls, store } = spyStore();
+    await publishSnapshot(store, metaWith("d1"), snapshot, metaWith("d2"));
+    expect(calls).toEqual(["reconcile"]);
+  });
+
+  it("reconciles fully when either digest is unknown", async () => {
+    // No previous envelope, a pre-digest envelope, and an uncomputed digest:
+    // none may match anything, or rows could go permanently unstored.
+    for (const [previous, next] of [
+      [null, metaWith("d1")],
+      [metaWith(null), metaWith("d1")],
+      [metaWith(null), metaWith(null)],
+    ] as const) {
+      const { calls, store } = spyStore();
+      await publishSnapshot(store, previous, snapshot, next);
+      expect(calls).toEqual(["reconcile"]);
+    }
+  });
+});
+
 describe("snapshotTip", () => {
   // Two upstream reads are skipped by trusting this round-trip: a refresh
   // rebanks `gov_action_lifetime` when the stored epoch still holds, and
@@ -69,6 +115,7 @@ describe("snapshotTip", () => {
       tip: JSON.stringify(toJsonSafe(tip)),
       incomplete: false,
       fetchedAt: 1_750_000_000,
+      payloadDigest: null,
     };
 
     expect(snapshotTip(meta)).toEqual(tip);

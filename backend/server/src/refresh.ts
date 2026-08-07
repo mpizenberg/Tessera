@@ -19,7 +19,12 @@ import { KoiosDataSource, KoiosTallyInputs } from "cardano-tessera-koios";
 import type { ServerConfig } from "./config";
 import { finalizeClosedSurveys } from "./finalize";
 import { refreshGovLinks } from "./govLinks";
-import { materializeSnapshot, snapshotBytes } from "./materialize";
+import {
+  materializeSnapshot,
+  snapshotBytes,
+  snapshotDigest,
+  type MaterializedSnapshot,
+} from "./materialize";
 import { upstreamMeter } from "./meter";
 import { pruneTxProofCache } from "./proofCache";
 import {
@@ -28,6 +33,7 @@ import {
   snapshotTip,
   sumUpstream,
   type BackendStore,
+  type SnapshotMeta,
   type SnapshotStore,
   type UpstreamTotals,
 } from "./store";
@@ -64,7 +70,7 @@ export async function refreshSnapshot(
     return;
   }
 
-  const recordRun = (
+  const recordRun = async (
     outcome:
       | {
           ok: true;
@@ -76,6 +82,12 @@ export async function refreshSnapshot(
       | { ok: false; error: string },
   ): Promise<void> => {
     const calls = meter.counted();
+    // Banked on every run (failed ones too — the table's state is a fact
+    // either way) so /api/health serves it from the run row instead of
+    // counting validated_response per request.
+    const validationBacklog = await store
+      .incompleteValidationCount()
+      .catch(() => null);
     return (
       Promise.all([
         store.putRefreshRun({
@@ -84,6 +96,7 @@ export async function refreshSnapshot(
           upstreamRequests: sumUpstream(calls),
           koiosCalls: calls.koios,
           govLinksOk: govLinksReliable,
+          validationBacklog,
           ...(outcome.ok
             ? { ...outcome, error: null }
             : {
@@ -208,13 +221,14 @@ export async function refreshSnapshot(
       await store.finalizedCancelledKeys(),
     );
     const payloadBytes = snapshotBytes(snapshot);
-    await store.reconcileSnapshot(snapshot.surveys, snapshot.responses, {
+    await publishSnapshot(store, previous, snapshot, {
       tip: JSON.stringify(toJsonSafe(tip)),
       incomplete: records.incomplete === true,
       // Stamped with the scan's start, not this write: `tip` was read then, so
       // the pair describes one instant, and age counts from when the data was
       // true rather than from when it happened to land.
       fetchedAt: startedAt,
+      payloadDigest: await snapshotDigest(snapshot),
     });
 
     // Read before recording: recording drains the meter.
@@ -241,6 +255,32 @@ export async function refreshSnapshot(
       .releaseRefreshLease(lease)
       .catch((e) => console.warn(`refresh lease release failed: ${String(e)}`));
   }
+}
+
+/**
+ * Store the materialized snapshot: the full row reconcile, or — when
+ * `previous`'s digest shows the tables already hold exactly these rows — just
+ * the envelope. The skip is what keeps an unchanged corpus from paying the
+ * per-refresh reconcile reads (upsert compare-reads and tombstone sweeps,
+ * both O(corpus)); the envelope must still land every run, because
+ * `fetchedAt` is the freshness contract behind the ETag and the health
+ * footer's age. `previous` was read under this run's lease, so nothing can
+ * have reconciled in between.
+ */
+export async function publishSnapshot(
+  store: Pick<SnapshotStore, "reconcileSnapshot" | "publishSnapshotMeta">,
+  previous: SnapshotMeta | null,
+  snapshot: MaterializedSnapshot,
+  meta: SnapshotMeta,
+): Promise<void> {
+  if (
+    meta.payloadDigest !== null &&
+    previous?.payloadDigest === meta.payloadDigest
+  ) {
+    await store.publishSnapshotMeta(meta);
+    return;
+  }
+  await store.reconcileSnapshot(snapshot.surveys, snapshot.responses, meta);
 }
 
 /**

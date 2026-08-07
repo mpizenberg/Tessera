@@ -205,15 +205,28 @@ const SURVEY_INDEX_RECONCILE = `
      OR survey_index.finalized_cancelled IS NOT excluded.finalized_cancelled`;
 
 const SNAPSHOT_META_UPSERT = `
-  INSERT INTO snapshot_meta (id, tip, incomplete, fetched_at)
-  VALUES (1, ?, ?, ?)
+  INSERT INTO snapshot_meta (id, tip, incomplete, fetched_at, payload_digest)
+  VALUES (1, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
     tip = excluded.tip,
     incomplete = excluded.incomplete,
-    fetched_at = excluded.fetched_at`;
+    fetched_at = excluded.fetched_at,
+    payload_digest = excluded.payload_digest`;
+
+/** The envelope write, alone (the digest-match fast path) or ending a reconcile. */
+export const snapshotMetaUpsertSql = (meta: SnapshotMeta): SqlQuery => ({
+  sql: SNAPSHOT_META_UPSERT,
+  params: [
+    meta.tip,
+    meta.incomplete ? 1 : 0,
+    meta.fetchedAt,
+    meta.payloadDigest,
+  ],
+});
 
 export const SNAPSHOT_META_SELECT = `
-  SELECT tip, incomplete, fetched_at AS fetchedAt FROM snapshot_meta WHERE id = 1`;
+  SELECT tip, incomplete, fetched_at AS fetchedAt, payload_digest AS payloadDigest
+  FROM snapshot_meta WHERE id = 1`;
 
 /** The survey half of a bundle — only the two columns the body carries. */
 export const SURVEY_BUNDLE_SELECT = `
@@ -385,10 +398,7 @@ export function snapshotReconciliationSql(
       params: [chunk.json],
     })),
     ...responseDeletionSql(responseKeys),
-    {
-      sql: SNAPSHOT_META_UPSERT,
-      params: [meta.tip, meta.incomplete ? 1 : 0, meta.fetchedAt],
-    },
+    snapshotMetaUpsertSql(meta),
   ];
 }
 

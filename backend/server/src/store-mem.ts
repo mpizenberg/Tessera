@@ -250,6 +250,9 @@ export function memBackendStore(): MemBackendStore {
       responseRows = [...responses];
       meta = envelope;
     },
+    async publishSnapshotMeta(envelope) {
+      meta = envelope;
+    },
     async snapshotMeta() {
       return meta;
     },

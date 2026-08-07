@@ -94,7 +94,8 @@ const schema = `
     id INTEGER PRIMARY KEY CHECK (id = 1),
     tip TEXT NOT NULL,
     incomplete INTEGER NOT NULL,
-    fetched_at INTEGER NOT NULL
+    fetched_at INTEGER NOT NULL,
+    payload_digest TEXT
   );
   CREATE TABLE response (
     tx_hash TEXT NOT NULL,
@@ -146,6 +147,7 @@ const meta = (fetchedAt: number): SnapshotMeta => ({
   tip: JSON.stringify({ epoch: 500, fetchedAt }),
   incomplete: false,
   fetchedAt,
+  payloadDigest: null,
 });
 
 function fakeStore() {

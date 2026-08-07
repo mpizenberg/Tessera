@@ -301,6 +301,12 @@ export interface RefreshRunRow {
   readonly responses: number;
   /** Total wire JSON stored across the materialized rows — the growth metric. */
   readonly payloadBytes: number;
+  /**
+   * Validated rows still awaiting an enrichment retry when the run recorded
+   * itself — what `/api/health` serves without re-counting the table. Null
+   * when the count failed or the row predates it; health then counts live.
+   */
+  readonly validationBacklog: number | null;
 }
 
 /** Keep operational history (runs, tally buckets) this long. */
@@ -521,6 +527,13 @@ export interface SnapshotMeta {
    * serializes runs, so successive snapshots always carry distinct values.
    */
   readonly fetchedAt: number;
+  /**
+   * `snapshotDigest` of the materialized rows this envelope was published
+   * with, or null when unknown (stored before digests existed). The refresh
+   * compares the next run's digest against it to skip the row reconcile on an
+   * unchanged corpus; null never matches, so unknown reconciles fully.
+   */
+  readonly payloadDigest: string | null;
 }
 
 /**
@@ -562,6 +575,13 @@ export interface SnapshotStore {
     responses: readonly ResponseRow[],
     meta: SnapshotMeta,
   ): Promise<void>;
+  /**
+   * Republish only the envelope, leaving the materialized rows untouched —
+   * the fast path when `meta.payloadDigest` matches the stored one, i.e. the
+   * rows are already exactly what this refresh materialized and only
+   * freshness (tip, fetchedAt) moves.
+   */
+  publishSnapshotMeta(meta: SnapshotMeta): Promise<void>;
   /** The envelope, or null before the first refresh — the readiness signal. */
   snapshotMeta(): Promise<SnapshotMeta | null>;
   /**

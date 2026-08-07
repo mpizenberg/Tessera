@@ -257,14 +257,17 @@ export function createApp(
   // failed refreshes — so this is always served fresh.
   app.get("/api/health", async (c) => {
     const now = Math.floor(Date.now() / 1000);
-    const [meta, lastRefresh, runs, calls, validationBacklog] =
-      await Promise.all([
-        store.snapshotMeta(),
-        store.lastRefreshRun(),
-        store.refreshTotalsSince(now - 86_400),
-        store.upstreamTotalsSince(now - 86_400),
-        store.incompleteValidationCount(),
-      ]);
+    const [meta, lastRefresh, runs, calls] = await Promise.all([
+      store.snapshotMeta(),
+      store.lastRefreshRun(),
+      store.refreshTotalsSince(now - 86_400),
+      store.upstreamTotalsSince(now - 86_400),
+    ]);
+    // Banked by the refresh; the live count only backs up runs that predate
+    // the column (or whose own count failed).
+    const validationBacklog =
+      lastRefresh?.validationBacklog ??
+      (await store.incompleteValidationCount());
     const body: BackendHealth = {
       network: config.app.network,
       commit: config.commit ?? null,

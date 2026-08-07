@@ -195,6 +195,7 @@ describe("store-node migration of a pre-runner database", () => {
         tip: "{}",
         incomplete: false,
         fetchedAt: 7,
+        payloadDigest: null,
       });
       expect((await store.snapshotMeta())?.fetchedAt).toBe(7);
     } finally {
@@ -229,6 +230,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0013_gov_links.sql",
       "0014_upstream_metering.sql",
       "0015_tx_proof_cache.sql",
+      "0016_snapshot_digest_and_backlog.sql",
     ]);
   });
 });
@@ -275,6 +277,7 @@ describe("store-node migration to per-response rows", () => {
         tip: "{}",
         incomplete: false,
         fetchedAt: 100,
+        payloadDigest: null,
       });
       expect((await store.snapshotMeta())?.fetchedAt).toBe(100);
     } finally {
@@ -313,6 +316,7 @@ describe("store-node survey_index paging SQL", () => {
     tip: `{"epoch":${TIP_EPOCH}}`,
     incomplete: false,
     fetchedAt: 7,
+    payloadDigest: null,
   };
 
   // linked (bucket 0), two open (bucket 1, newest slot first), one closed.
@@ -414,6 +418,22 @@ describe("store-node survey_index paging SQL", () => {
     expect((await store.snapshotMeta())?.fetchedAt).toBe(8);
   });
 
+  it("republishes the envelope alone, leaving rows untouched", async () => {
+    store = openBackendStore(":memory:");
+    await store.reconcileSnapshot(rows, [], { ...meta, payloadDigest: "d1" });
+    await store.publishSnapshotMeta({
+      ...meta,
+      fetchedAt: 8,
+      payloadDigest: "d1",
+    });
+    expect(await store.snapshotMeta()).toEqual({
+      ...meta,
+      fetchedAt: 8,
+      payloadDigest: "d1",
+    });
+    expect(await page({})).toHaveLength(rows.length);
+  });
+
   // What a refresh with an unreachable proposal endpoint republishes instead of
   // blanking every link (the stored rows are the only copy).
   it("reads back every stored governance link, across rows", async () => {
@@ -458,7 +478,12 @@ describe("store-node response rows", () => {
     storeDir = null;
   });
 
-  const meta = { tip: `{"epoch":500}`, incomplete: false, fetchedAt: 7 };
+  const meta = {
+    tip: `{"epoch":500}`,
+    incomplete: false,
+    fetchedAt: 7,
+    payloadDigest: null,
+  };
   const resp = (
     txHash: string,
     surveyKey: string,
@@ -823,6 +848,7 @@ describe("store-node refresh_run health metrics", () => {
     surveys: 3,
     responses: 5,
     payloadBytes: 10_000,
+    validationBacklog: 2,
     ...over,
   });
 
@@ -847,6 +873,7 @@ describe("store-node refresh_run health metrics", () => {
       error: null,
       govLinksOk: true,
       incomplete: true,
+      validationBacklog: 2,
     });
 
     // Window covering the two most recent runs only.

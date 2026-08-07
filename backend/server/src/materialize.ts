@@ -86,6 +86,34 @@ export function materializeSnapshot(
   };
 }
 
+const compareText = (a: string, b: string): number =>
+  a < b ? -1 : a > b ? 1 : 0;
+
+/**
+ * Hex SHA-256 identifying the materialized rows, for the refresh's
+ * reconcile-skip: a stored digest equal to this run's means the tables
+ * already hold exactly these rows. Hashed over the *materialized* output, not
+ * the raw scan, so everything baked into rows — epoch-driven flags, the
+ * finalized-cancelled overlay, governance links — is covered by construction.
+ * Rows are sorted by key first: equality must not depend on scan order.
+ */
+export async function snapshotDigest(
+  snapshot: MaterializedSnapshot,
+): Promise<string> {
+  const surveys = [...snapshot.surveys].sort((a, b) =>
+    compareText(a.surveyKey, b.surveyKey),
+  );
+  const responses = [...snapshot.responses].sort(
+    (a, b) =>
+      compareText(a.txHash, b.txHash) || a.responseIndex - b.responseIndex,
+  );
+  const bytes = new TextEncoder().encode(JSON.stringify([surveys, responses]));
+  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(hash)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 /** Stored wire JSON across all rows — the refresh's growth metric. */
 export function snapshotBytes(snapshot: MaterializedSnapshot): number {
   return (

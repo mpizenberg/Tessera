@@ -54,6 +54,7 @@ import {
   SURVEY_BUNDLE_SELECT,
   countsFromDb,
   respondedSql,
+  snapshotMetaUpsertSql,
   snapshotReconciliationSql,
   surveyCountsSql,
   surveyIndexRowFromDb,
@@ -289,12 +290,14 @@ export function openBackendStore(path: string): BackendStore {
   const refreshRunColumns = `started_at AS startedAt, duration_ms AS durationMs,
             upstream_requests AS upstreamRequests, koios_calls AS koiosCalls,
             ok, error, gov_links_ok AS govLinksOk, incomplete, surveys,
-            responses, payload_bytes AS payloadBytes`;
+            responses, payload_bytes AS payloadBytes,
+            validation_backlog AS validationBacklog`;
   const putRefreshRunStmt = db.prepare(`
     INSERT OR REPLACE INTO refresh_run
       (started_at, duration_ms, upstream_requests, koios_calls, ok, error,
-       gov_links_ok, incomplete, surveys, responses, payload_bytes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       gov_links_ok, incomplete, surveys, responses, payload_bytes,
+       validation_backlog)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const pruneRefreshRunStmt = db.prepare(
     "DELETE FROM refresh_run WHERE started_at < ?",
@@ -595,9 +598,18 @@ export function openBackendStore(path: string): BackendStore {
         throw err;
       }
     },
+    async publishSnapshotMeta(meta: SnapshotMeta): Promise<void> {
+      const { sql, params } = snapshotMetaUpsertSql(meta);
+      db.prepare(sql).run(...(params as SqlValue[]));
+    },
     async snapshotMeta(): Promise<SnapshotMeta | null> {
       const row = snapshotMetaStmt.get() as
-        | { tip: string; incomplete: number; fetchedAt: number }
+        | {
+            tip: string;
+            incomplete: number;
+            fetchedAt: number;
+            payloadDigest: string | null;
+          }
         | undefined;
       if (!row) return null;
       return { ...row, incomplete: row.incomplete !== 0 };
@@ -667,6 +679,7 @@ export function openBackendStore(path: string): BackendStore {
         row.surveys,
         row.responses,
         row.payloadBytes,
+        row.validationBacklog,
       );
       pruneRefreshRunStmt.run(row.startedAt - OPERATIONAL_RETENTION_SECONDS);
     },

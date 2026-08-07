@@ -46,6 +46,7 @@ import {
   SURVEY_BUNDLE_SELECT,
   countsFromDb,
   respondedSql,
+  snapshotMetaUpsertSql,
   snapshotReconciliationSql,
   surveyCountsSql,
   surveyIndexRowFromDb,
@@ -481,10 +482,20 @@ export function d1BackendStore(db: D1Like): BackendStore {
         ),
       );
     },
+    async publishSnapshotMeta(meta: SnapshotMeta): Promise<void> {
+      const { sql, params } = snapshotMetaUpsertSql(meta);
+      await db
+        .prepare(sql)
+        .bind(...params)
+        .run();
+    },
     async snapshotMeta(): Promise<SnapshotMeta | null> {
-      const row = await db
-        .prepare(SNAPSHOT_META_SELECT)
-        .first<{ tip: string; incomplete: number; fetchedAt: number }>();
+      const row = await db.prepare(SNAPSHOT_META_SELECT).first<{
+        tip: string;
+        incomplete: number;
+        fetchedAt: number;
+        payloadDigest: string | null;
+      }>();
       if (!row) return null;
       return { ...row, incomplete: row.incomplete !== 0 };
     },
@@ -555,8 +566,8 @@ export function d1BackendStore(db: D1Like): BackendStore {
             `INSERT OR REPLACE INTO refresh_run
                (started_at, duration_ms, upstream_requests, koios_calls, ok,
                 error, gov_links_ok, incomplete, surveys, responses,
-                payload_bytes)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                payload_bytes, validation_backlog)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .bind(
             row.startedAt,
@@ -570,6 +581,7 @@ export function d1BackendStore(db: D1Like): BackendStore {
             row.surveys,
             row.responses,
             row.payloadBytes,
+            row.validationBacklog,
           ),
         db
           .prepare("DELETE FROM refresh_run WHERE started_at < ?")
@@ -670,4 +682,4 @@ const ARTIFACT_COLUMNS = `survey_key AS surveyKey, end_epoch AS endEpoch,
 const REFRESH_RUN_COLUMNS = `started_at AS startedAt, duration_ms AS durationMs,
        upstream_requests AS upstreamRequests, koios_calls AS koiosCalls,
        ok, error, gov_links_ok AS govLinksOk, incomplete, surveys, responses,
-       payload_bytes AS payloadBytes`;
+       payload_bytes AS payloadBytes, validation_backlog AS validationBacklog`;

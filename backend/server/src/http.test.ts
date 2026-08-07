@@ -50,6 +50,7 @@ async function seed(
     tip: JSON.stringify(toJsonSafe(tip)),
     incomplete: false,
     fetchedAt: FETCHED_AT,
+    payloadDigest: null,
   });
 }
 
@@ -589,6 +590,7 @@ describe("GET /api/health", () => {
     surveys: 2,
     responses: 4,
     payloadBytes: 5_000,
+    validationBacklog: 3,
   };
 
   it("reports snapshot freshness, last run, totals, and limits", async () => {
@@ -639,11 +641,37 @@ describe("GET /api/health", () => {
       koiosCalls: 30,
       passthroughCalls: 7,
     });
-    expect(body["validationBacklog"]).toBe(0);
+    // Banked on the latest run row, not counted live per request.
+    expect(body["validationBacklog"]).toBe(3);
     expect(body["limits"]).toEqual({
       upstreamRequestsPerRefresh: 40,
       koiosCallsPerDay: 5000,
     });
+  });
+
+  it("falls back to a live backlog count when the run predates banking", async () => {
+    const store = await seededStore();
+    await store.putRefreshRun({ ...runRow, validationBacklog: null });
+    await store.upsertValidatedResponses([
+      {
+        txHash: "ab".repeat(32),
+        responseIndex: 0,
+        surveyKey: "aa:0",
+        role: 0,
+        credential: "key:11",
+        slot: 1,
+        epochNo: 500,
+        blockIndex: null,
+        proofOk: null,
+        linkedActionId: null,
+        wellFormed: true,
+        checkedAt: NOW,
+      },
+    ]);
+
+    const res = await appWith(store).request("/api/health");
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body["validationBacklog"]).toBe(1);
   });
 
   it("serves nulls before any refresh, with a default per-refresh limit", async () => {
