@@ -236,6 +236,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0015_tx_proof_cache.sql",
       "0016_snapshot_digest_and_backlog.sql",
       "0017_list_counts.sql",
+      "0018_scan_state.sql",
     ]);
   });
 });
@@ -645,6 +646,184 @@ describe("store-node response rows", () => {
       `{"tx":"cc","i":0}`,
       `{"tx":"cc","i":1}`,
     ]);
+  });
+});
+
+describe("store-node scan state", () => {
+  let store: BackendStore;
+  afterEach(() => store.close());
+
+  it("round-trips the walker state, including a generation rewind", async () => {
+    store = openBackendStore(":memory:");
+    // No row yet is the "never walked" signal, distinct from any cursor value.
+    expect(await store.scanState()).toBeNull();
+
+    const walked = {
+      cursor: { slot: 5_000, txHash: "aa".repeat(32) },
+      generation: 3,
+      trickle: { slot: 1_200, txHash: "bb".repeat(32) },
+    };
+    await store.putScanState(walked);
+    expect(await store.scanState()).toEqual(walked);
+
+    // A rewind rewrites the whole row: null cursor, new generation, trickle
+    // reset — nothing of the previous walk may survive by omission.
+    const rewound = { cursor: null, generation: 4, trickle: null };
+    await store.putScanState(rewound);
+    expect(await store.scanState()).toEqual(rewound);
+  });
+});
+
+describe("store-node segment reconciliation", () => {
+  let store: BackendStore;
+  afterEach(() => store.close());
+
+  const meta = (fetchedAt: number) => ({
+    tip: `{"epoch":500}`,
+    incomplete: false,
+    fetchedAt,
+    payloadDigest: null,
+    listCounts: null,
+  });
+  const survey = (
+    surveyKey: string,
+    slot: number,
+    over: Partial<SurveyIndexRow> = {},
+  ): SurveyIndexRow => ({
+    surveyKey,
+    slot,
+    endEpoch: 510,
+    sealed: false,
+    cancelled: false,
+    govLinked: false,
+    owner: "key:11",
+    haystack: surveyKey,
+    record: `{"k":"${surveyKey}"}`,
+    cancellations: "[]",
+    govLinks: "[]",
+    responseCount: 0,
+    finalizedCancelled: false,
+    ...over,
+  });
+  const resp = (
+    txHash: string,
+    surveyKey: string,
+    slot: number,
+    record = `{"tx":"${txHash}"}`,
+  ): ResponseRow => ({
+    txHash,
+    responseIndex: 0,
+    surveyKey,
+    credential: "key:11",
+    slot,
+    record,
+  });
+
+  // A settled corpus spanning the segment on both sides.
+  const seededSurveys = [
+    survey("aa:0", 100),
+    survey("bb:0", 400),
+    survey("cc:0", 800),
+  ];
+  const seededResponses = [
+    resp("r1", "aa:0", 150),
+    resp("r2", "aa:0", 450),
+    resp("r5", "bb:0", 550),
+    resp("r3", "cc:0", 850),
+  ];
+
+  it("sweeps only in-range rows, keeps settled history, honors immutability", async () => {
+    store = openBackendStore(":memory:");
+    await store.reconcileSnapshot(seededSurveys, seededResponses, meta(1));
+
+    // The segment [300, 600] saw: survey bb:0 gone (rolled back), response r2
+    // still there (re-listed, possibly with drifted bytes), r5 gone, r4 new.
+    // aa:0 rides along as a touched survey from outside the range.
+    await store.reconcileSegment(
+      { fromSlot: 300, toSlot: 600 },
+      [survey("aa:0", 100, { responseCount: 2 })],
+      [resp("r2", "aa:0", 450, `{"tx":"drifted"}`), resp("r4", "aa:0", 500)],
+      meta(2),
+    );
+
+    // bb:0 was in range and unlisted → swept; cc:0 out of range → untouched.
+    expect(
+      (await store.surveyRowsByKeys(["aa:0", "bb:0", "cc:0"])).map((r) => [
+        r.surveyKey,
+        r.responseCount,
+      ]),
+    ).toEqual([
+      ["aa:0", 2],
+      ["cc:0", 0],
+    ]);
+    // r5 swept with its survey; r1/r3 outside the range survive; r4 joined;
+    // r2 kept its original bytes (a response row is immutable once stored).
+    expect(
+      (await store.responseRowsForSurveys(["aa:0", "bb:0", "cc:0"])).map(
+        (r) => [r.txHash, r.record],
+      ),
+    ).toEqual([
+      ["r1", `{"tx":"r1"}`],
+      ["r2", `{"tx":"r2"}`],
+      ["r4", `{"tx":"r4"}`],
+      ["r3", `{"tx":"r3"}`],
+    ]);
+    expect((await store.snapshotMeta())?.fetchedAt).toBe(2);
+  });
+
+  it("with nothing listed, empties exactly the segment", async () => {
+    store = openBackendStore(":memory:");
+    await store.reconcileSnapshot(seededSurveys, seededResponses, meta(1));
+    await store.reconcileSegment(
+      { fromSlot: 300, toSlot: 600 },
+      [],
+      [],
+      meta(2),
+    );
+
+    expect(
+      (await store.surveyRowsByKeys(["aa:0", "bb:0", "cc:0"])).map(
+        (r) => r.surveyKey,
+      ),
+    ).toEqual(["aa:0", "cc:0"]);
+    expect(
+      (await store.responseRowsInSlotRange({ fromSlot: 0, toSlot: 1_000 })).map(
+        (r) => r.txHash,
+      ),
+    ).toEqual(["r1", "r3"]);
+  });
+
+  it("reads the pre-sweep window state by inclusive slot bounds", async () => {
+    store = openBackendStore(":memory:");
+    await store.reconcileSnapshot(seededSurveys, seededResponses, meta(1));
+
+    expect(
+      (await store.responseRowsInSlotRange({ fromSlot: 450, toSlot: 550 })).map(
+        (r) => r.txHash,
+      ),
+    ).toEqual(["r2", "r5"]);
+    expect(
+      await store.responseRowsInSlotRange({ fromSlot: 451, toSlot: 549 }),
+    ).toEqual([]);
+  });
+
+  it("serves keyed projection and response reads in stable order", async () => {
+    store = openBackendStore(":memory:");
+    await store.reconcileSnapshot(
+      [...seededSurveys, survey("dd:0", 900, { sealed: true })],
+      seededResponses,
+      meta(1),
+    );
+
+    const rows = await store.surveyRowsByKeys(["dd:0", "aa:0", "unknown:0"]);
+    expect(rows.map((r) => r.surveyKey)).toEqual(["aa:0", "dd:0"]);
+    expect(rows[1]).toMatchObject({ sealed: true, cancelled: false });
+
+    expect(
+      (await store.responseRowsForSurveys(["aa:0"])).map((r) => r.txHash),
+    ).toEqual(["r1", "r2"]);
+    expect(await store.responseRowsForSurveys([])).toEqual([]);
+    expect(await store.surveyRowsByKeys([])).toEqual([]);
   });
 });
 

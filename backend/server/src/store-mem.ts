@@ -12,6 +12,7 @@ import type {
   BackendStore,
   RefreshRunRow,
   ResponseRow,
+  ScanState,
   SealedRevealRow,
   SettledGovEpoch,
   SnapshotMeta,
@@ -61,6 +62,7 @@ export function memBackendStore(): MemBackendStore {
   let surveyIndexRows: readonly SurveyIndexRow[] = [];
   let responseRows: readonly ResponseRow[] = [];
   let meta: SnapshotMeta | null = null;
+  let scanStateRow: ScanState | null = null;
 
   // Same semantics as the SQL in snapshotSql.ts (and core's pageSurveyList).
   const bucketOf = (r: SurveyIndexRow, tipEpoch: number): number =>
@@ -333,6 +335,69 @@ export function memBackendStore(): MemBackendStore {
     async ownedSurveyCount(credentials) {
       const wanted = new Set(credentials);
       return surveyIndexRows.filter((r) => wanted.has(r.owner)).length;
+    },
+    async scanState() {
+      return scanStateRow;
+    },
+    async putScanState(state) {
+      scanStateRow = state;
+    },
+    async reconcileSegment(range, surveys, responses, envelope) {
+      const inRange = (slot: number) =>
+        slot >= range.fromSlot && slot <= range.toSlot;
+      const givenSurveys = new Set(surveys.map((s) => s.surveyKey));
+      surveyIndexRows = [
+        ...surveyIndexRows.filter(
+          (r) => !givenSurveys.has(r.surveyKey) && !inRange(r.slot),
+        ),
+        ...surveys,
+      ];
+      const responseKey = (r: ResponseRow) =>
+        validationKey(r.txHash, r.responseIndex);
+      const givenResponses = new Set(responses.map(responseKey));
+      const kept = responseRows.filter(
+        (r) => givenResponses.has(responseKey(r)) || !inRange(r.slot),
+      );
+      const existing = new Set(kept.map(responseKey));
+      responseRows = [
+        ...kept,
+        ...responses.filter((r) => !existing.has(responseKey(r))),
+      ];
+      meta = envelope;
+    },
+    async surveyRowsByKeys(keys) {
+      const wanted = new Set(keys);
+      return surveyIndexRows
+        .filter((r) => wanted.has(r.surveyKey))
+        .sort((a, b) =>
+          a.surveyKey < b.surveyKey ? -1 : a.surveyKey > b.surveyKey ? 1 : 0,
+        );
+    },
+    async responseRowsForSurveys(surveyKeys) {
+      const wanted = new Set(surveyKeys);
+      return responseRows
+        .filter((r) => wanted.has(r.surveyKey))
+        .sort(
+          (a, b) =>
+            (a.surveyKey < b.surveyKey
+              ? -1
+              : a.surveyKey > b.surveyKey
+                ? 1
+                : 0) ||
+            a.slot - b.slot ||
+            (a.txHash < b.txHash ? -1 : a.txHash > b.txHash ? 1 : 0) ||
+            a.responseIndex - b.responseIndex,
+        );
+    },
+    async responseRowsInSlotRange(range) {
+      return responseRows
+        .filter((r) => r.slot >= range.fromSlot && r.slot <= range.toSlot)
+        .sort(
+          (a, b) =>
+            a.slot - b.slot ||
+            (a.txHash < b.txHash ? -1 : a.txHash > b.txHash ? 1 : 0) ||
+            a.responseIndex - b.responseIndex,
+        );
     },
 
     async putRefreshRun(row) {

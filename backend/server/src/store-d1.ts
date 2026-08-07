@@ -19,8 +19,10 @@ import type {
   RefreshRunRow,
   RefreshTotals,
   ResponseRow,
+  ScanState,
   SealedRevealRow,
   SettledGovEpoch,
+  SlotRange,
   SnapshotMeta,
   SurveyBundleRows,
   SurveyIndexRow,
@@ -42,18 +44,28 @@ import {
 } from "./store";
 import {
   RESPONSES_FOR_SURVEY,
+  RESPONSES_IN_SLOT_RANGE,
+  SCAN_STATE_SELECT,
   SNAPSHOT_GOV_LINKS_SELECT,
   SNAPSHOT_META_SELECT,
   SURVEY_BUNDLE_SELECT,
   countsFromDb,
   ownedCountSql,
   respondedSql,
+  responsesBySurveysSql,
+  scanStateFromDb,
+  scanStateUpsertSql,
+  segmentReconciliationSql,
   snapshotMetaUpsertSql,
   snapshotReconciliationSql,
   surveyCountsSql,
   surveyIndexRowFromDb,
   surveyPageSql,
+  surveyRowFromDb,
+  surveysByKeysSql,
+  type DbScanStateRow,
   type DbSurveyIndexRow,
+  type DbSurveyRow,
 } from "./snapshotSql";
 
 interface D1PreparedStatement {
@@ -569,6 +581,58 @@ export function d1BackendStore(db: D1Like): BackendStore {
         .bind(...params)
         .first<{ n: number }>();
       return row?.n ?? 0;
+    },
+    async scanState(): Promise<ScanState | null> {
+      const row = await db.prepare(SCAN_STATE_SELECT).first<DbScanStateRow>();
+      return row === null ? null : scanStateFromDb(row);
+    },
+    async putScanState(state: ScanState): Promise<void> {
+      const { sql, params } = scanStateUpsertSql(state);
+      await db
+        .prepare(sql)
+        .bind(...params)
+        .run();
+    },
+    async reconcileSegment(
+      range: SlotRange,
+      surveys: readonly SurveyIndexRow[],
+      responses: readonly ResponseRow[],
+      meta: SnapshotMeta,
+    ): Promise<void> {
+      await db.batch(
+        segmentReconciliationSql(range, surveys, responses, meta).map(
+          ({ sql, params }) => db.prepare(sql).bind(...params),
+        ),
+      );
+    },
+    async surveyRowsByKeys(keys: readonly string[]): Promise<SurveyIndexRow[]> {
+      if (keys.length === 0) return [];
+      const batches = await db.batch(
+        surveysByKeysSql(keys).map(({ sql, params }) =>
+          db.prepare(sql).bind(...params),
+        ),
+      );
+      return batches.flatMap((b) =>
+        (b.results as DbSurveyRow[]).map(surveyRowFromDb),
+      );
+    },
+    async responseRowsForSurveys(
+      surveyKeys: readonly string[],
+    ): Promise<ResponseRow[]> {
+      if (surveyKeys.length === 0) return [];
+      const batches = await db.batch(
+        responsesBySurveysSql(surveyKeys).map(({ sql, params }) =>
+          db.prepare(sql).bind(...params),
+        ),
+      );
+      return batches.flatMap((b) => b.results as ResponseRow[]);
+    },
+    async responseRowsInSlotRange(range: SlotRange): Promise<ResponseRow[]> {
+      const { results } = await db
+        .prepare(RESPONSES_IN_SLOT_RANGE)
+        .bind(range.fromSlot, range.toSlot)
+        .all<ResponseRow>();
+      return results;
     },
 
     async putRefreshRun(row: RefreshRunRow): Promise<void> {

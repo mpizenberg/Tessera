@@ -27,8 +27,10 @@ import type {
   RefreshRunRow,
   RefreshTotals,
   ResponseRow,
+  ScanState,
   SealedRevealRow,
   SettledGovEpoch,
+  SlotRange,
   SnapshotMeta,
   SurveyBundleRows,
   SurveyIndexRow,
@@ -50,18 +52,29 @@ import {
 } from "./store";
 import {
   RESPONSES_FOR_SURVEY,
+  RESPONSES_IN_SLOT_RANGE,
+  SCAN_STATE_SELECT,
   SNAPSHOT_GOV_LINKS_SELECT,
   SNAPSHOT_META_SELECT,
   SURVEY_BUNDLE_SELECT,
   countsFromDb,
   ownedCountSql,
   respondedSql,
+  responsesBySurveysSql,
+  scanStateFromDb,
+  scanStateUpsertSql,
+  segmentReconciliationSql,
   snapshotMetaUpsertSql,
   snapshotReconciliationSql,
   surveyCountsSql,
   surveyIndexRowFromDb,
   surveyPageSql,
+  surveyRowFromDb,
+  surveysByKeysSql,
+  type DbScanStateRow,
   type DbSurveyIndexRow,
+  type DbSurveyRow,
+  type SqlQuery,
 } from "./snapshotSql";
 
 const MIGRATIONS_DIR = fileURLToPath(new URL("../migrations", import.meta.url));
@@ -161,6 +174,20 @@ export function openBackendStore(path: string): BackendStore {
   const surveyBundleStmt = db.prepare(SURVEY_BUNDLE_SELECT);
   const snapshotGovLinksStmt = db.prepare(SNAPSHOT_GOV_LINKS_SELECT);
   const responsesForSurveyStmt = db.prepare(RESPONSES_FOR_SURVEY);
+  const scanStateStmt = db.prepare(SCAN_STATE_SELECT);
+  const responsesInRangeStmt = db.prepare(RESPONSES_IN_SLOT_RANGE);
+
+  const runAtomically = (queries: readonly SqlQuery[]): void => {
+    db.exec("BEGIN");
+    try {
+      for (const { sql, params } of queries)
+        db.prepare(sql).run(...(params as SqlValue[]));
+      db.exec("COMMIT");
+    } catch (err) {
+      db.exec("ROLLBACK");
+      throw err;
+    }
+  };
 
   const completedStmt = db.prepare(
     `SELECT tx_hash AS txHash, response_index AS responseIndex,
@@ -591,16 +618,7 @@ export function openBackendStore(path: string): BackendStore {
       responses: readonly ResponseRow[],
       meta: SnapshotMeta,
     ): Promise<void> {
-      const queries = snapshotReconciliationSql(surveys, responses, meta);
-      db.exec("BEGIN");
-      try {
-        for (const { sql, params } of queries)
-          db.prepare(sql).run(...(params as SqlValue[]));
-        db.exec("COMMIT");
-      } catch (err) {
-        db.exec("ROLLBACK");
-        throw err;
-      }
+      runAtomically(snapshotReconciliationSql(surveys, responses, meta));
     },
     async publishSnapshotMeta(meta: SnapshotMeta): Promise<void> {
       const { sql, params } = snapshotMetaUpsertSql(meta);
@@ -674,6 +692,49 @@ export function openBackendStore(path: string): BackendStore {
       const { sql, params } = ownedCountSql(credentials);
       return (db.prepare(sql).get(...(params as SqlValue[])) as { n: number })
         .n;
+    },
+    async scanState(): Promise<ScanState | null> {
+      const row = scanStateStmt.get() as DbScanStateRow | undefined;
+      return row === undefined ? null : scanStateFromDb(row);
+    },
+    async putScanState(state: ScanState): Promise<void> {
+      const { sql, params } = scanStateUpsertSql(state);
+      db.prepare(sql).run(...(params as SqlValue[]));
+    },
+    async reconcileSegment(
+      range: SlotRange,
+      surveys: readonly SurveyIndexRow[],
+      responses: readonly ResponseRow[],
+      meta: SnapshotMeta,
+    ): Promise<void> {
+      runAtomically(segmentReconciliationSql(range, surveys, responses, meta));
+    },
+    async surveyRowsByKeys(keys: readonly string[]): Promise<SurveyIndexRow[]> {
+      if (keys.length === 0) return [];
+      return surveysByKeysSql(keys).flatMap(({ sql, params }) =>
+        (
+          db
+            .prepare(sql)
+            .all(...(params as SqlValue[])) as unknown as DbSurveyRow[]
+        ).map(surveyRowFromDb),
+      );
+    },
+    async responseRowsForSurveys(
+      surveyKeys: readonly string[],
+    ): Promise<ResponseRow[]> {
+      if (surveyKeys.length === 0) return [];
+      return responsesBySurveysSql(surveyKeys).flatMap(
+        ({ sql, params }) =>
+          db
+            .prepare(sql)
+            .all(...(params as SqlValue[])) as unknown as ResponseRow[],
+      );
+    },
+    async responseRowsInSlotRange(range: SlotRange): Promise<ResponseRow[]> {
+      return responsesInRangeStmt.all(
+        range.fromSlot,
+        range.toSlot,
+      ) as unknown as ResponseRow[];
     },
 
     async putRefreshRun(row: RefreshRunRow): Promise<void> {

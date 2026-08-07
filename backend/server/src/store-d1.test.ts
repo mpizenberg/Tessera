@@ -110,6 +110,15 @@ const schema = `
   CREATE INDEX response_survey
     ON response (survey_key, slot, tx_hash, response_index);
   CREATE INDEX response_credential ON response (credential);
+  CREATE INDEX response_slot ON response (slot, tx_hash, response_index);
+  CREATE TABLE scan_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    cursor_slot INTEGER,
+    cursor_tx_hash TEXT,
+    generation INTEGER NOT NULL,
+    trickle_slot INTEGER,
+    trickle_tx_hash TEXT
+  );
 `;
 
 const survey = (
@@ -229,6 +238,56 @@ describe("D1 snapshot reconciliation", () => {
       ).toBeUndefined();
     }
     expect(await store.snapshotMeta()).toEqual(meta(2));
+    sqlite.close();
+  });
+
+  it("sweeps a segment in one bounded batch, sparing rows outside it", async () => {
+    const { d1, sqlite, store } = fakeStore();
+    const responses = Array.from({ length: 10_000 }, (_, n) => response(n));
+    await store.reconcileSnapshot(
+      [survey("survey:0", { slot: 20_000 })],
+      responses,
+      meta(1),
+    );
+
+    // The segment listed nothing: every response with slot in it rolled back.
+    await store.reconcileSegment(
+      { fromSlot: 5_000, toSlot: 5_999 },
+      [],
+      [],
+      meta(2),
+    );
+
+    expect(d1.batchSizes.at(-1)).toBeLessThan(100);
+    expect(sqlite.prepare("SELECT COUNT(*) AS n FROM response").get()).toEqual({
+      n: 9_000,
+    });
+    expect(
+      sqlite
+        .prepare(
+          "SELECT COUNT(*) AS n FROM response WHERE slot >= 5000 AND slot < 6000",
+        )
+        .get(),
+    ).toEqual({ n: 0 });
+    // The survey row sits outside the segment and is not a sweep candidate.
+    expect(
+      sqlite.prepare("SELECT COUNT(*) AS n FROM survey_index").get(),
+    ).toEqual({ n: 1 });
+    expect(await store.snapshotMeta()).toEqual(meta(2));
+    sqlite.close();
+  });
+
+  it("reports no scan state before the walker first banks one", async () => {
+    const { sqlite, store } = fakeStore();
+    expect(await store.scanState()).toBeNull();
+
+    const state = {
+      cursor: { slot: 7_000, txHash: "ab".repeat(32) },
+      generation: 1,
+      trickle: null,
+    };
+    await store.putScanState(state);
+    expect(await store.scanState()).toEqual(state);
     sqlite.close();
   });
 });

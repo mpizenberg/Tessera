@@ -582,6 +582,33 @@ export const snapshotListCounts = (
 export const snapshotTip = (meta: SnapshotMeta): ChainTip =>
   JSON.parse(meta.tip) as ChainTip;
 
+/** A resume point in the ascending `(slot, txHash)` scan order. */
+export interface ScanCursor {
+  readonly slot: number;
+  readonly txHash: string;
+}
+
+/** An inclusive slot interval — the scope of one segment integration. */
+export interface SlotRange {
+  readonly fromSlot: number;
+  readonly toSlot: number;
+}
+
+/**
+ * Banked state of the windowed segment walker. `cursor` is the last chain
+ * position whose slot segment is fully integrated into the materialized rows
+ * — null means "walk from the config floor" (first windowed run, or a
+ * generation rewind). `generation` is the derivation generation the stored
+ * rows were built under; deployed code carrying a different one must rewind
+ * the cursor rather than trust them. `trickle` is where the drift-healing
+ * rescan is in its rotation over the settled prefix.
+ */
+export interface ScanState {
+  readonly cursor: ScanCursor | null;
+  readonly generation: number;
+  readonly trickle: ScanCursor | null;
+}
+
 /** A page query against the survey index (see `cardano-tessera-core` `page.ts`). */
 export interface SurveyPageQuery {
   /** The snapshot tip's epoch — the open/closed boundary. */
@@ -663,6 +690,44 @@ export interface SnapshotStore {
    * `survey_index_owner` index.
    */
   ownedSurveyCount(credentials: readonly string[]): Promise<number>;
+  /** The banked walker state, or null before the first windowed run. */
+  scanState(): Promise<ScanState | null>;
+  /**
+   * Bank the walker state, whole. Written only after the segment it describes
+   * has been reconciled: a banked cursor past unreconciled slots would settle
+   * a gap in for good, while a reconciled segment with an unbanked cursor
+   * only costs an idempotent re-walk.
+   */
+  putScanState(state: ScanState): Promise<void>;
+  /**
+   * Atomically reconcile one slot segment: upsert the given survey
+   * projections (in-window and touched-outside alike), insert the immutable
+   * responses, and delete rows whose slot lies in `range` but whose key the
+   * arguments don't carry — a row the segment listing didn't see has rolled
+   * back. Rows outside `range` are never deletion candidates, so settled
+   * history survives however little the segment covers. Publishes `meta`
+   * in the same transaction, like {@link reconcileSnapshot}.
+   */
+  reconcileSegment(
+    range: SlotRange,
+    surveys: readonly SurveyIndexRow[],
+    responses: readonly ResponseRow[],
+    meta: SnapshotMeta,
+  ): Promise<void>;
+  /** The stored projections of `keys`, in key order; unknown keys are absent. */
+  surveyRowsByKeys(keys: readonly string[]): Promise<SurveyIndexRow[]>;
+  /**
+   * Every stored response of the given surveys — the recount input for a
+   * touched survey: per-survey aggregates are re-derived over these merged
+   * with the segment's own listing, never maintained by deltas.
+   */
+  responseRowsForSurveys(surveyKeys: readonly string[]): Promise<ResponseRow[]>;
+  /**
+   * The stored responses with slot in `range` — the pre-sweep window state.
+   * Read before {@link reconcileSegment}: a row here that the segment listing
+   * lacks is about to be swept, and its survey needs a recount.
+   */
+  responseRowsInSlotRange(range: SlotRange): Promise<ResponseRow[]>;
   close(): void;
 }
 

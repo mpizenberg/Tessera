@@ -15,6 +15,8 @@ import type { SurveyListCounts } from "cardano-tessera-core";
 
 import type {
   ResponseRow,
+  ScanState,
+  SlotRange,
   SnapshotMeta,
   SurveyIndexRow,
   SurveyPageQuery,
@@ -146,7 +148,7 @@ export function surveyCountsSql(
 }
 
 /** As stored: booleans are 0/1 integers. */
-export interface DbSurveyIndexRow extends Omit<
+export interface DbSurveyRow extends Omit<
   SurveyIndexRow,
   "sealed" | "cancelled" | "govLinked" | "finalizedCancelled"
 > {
@@ -154,17 +156,26 @@ export interface DbSurveyIndexRow extends Omit<
   readonly cancelled: number;
   readonly govLinked: number;
   readonly finalizedCancelled: number;
+}
+
+/** A page row additionally carries its computed section bucket. */
+export interface DbSurveyIndexRow extends DbSurveyRow {
   readonly bucket: number;
 }
 
-export const surveyIndexRowFromDb = (
-  r: DbSurveyIndexRow,
-): SurveyIndexRow & { bucket: number } => ({
+export const surveyRowFromDb = (r: DbSurveyRow): SurveyIndexRow => ({
   ...r,
   sealed: r.sealed !== 0,
   cancelled: r.cancelled !== 0,
   govLinked: r.govLinked !== 0,
   finalizedCancelled: r.finalizedCancelled !== 0,
+});
+
+export const surveyIndexRowFromDb = (
+  r: DbSurveyIndexRow,
+): SurveyIndexRow & { bucket: number } => ({
+  ...surveyRowFromDb(r),
+  bucket: r.bucket,
 });
 
 const SURVEY_INDEX_RECONCILE = `
@@ -311,17 +322,30 @@ function jsonChunks<T>(values: readonly T[], maxRows: number): JsonChunk<T>[] {
 const compareText = (a: string, b: string): number =>
   a < b ? -1 : a > b ? 1 : 0;
 
+/** Restricts a deletion's candidates to `range`; unbounded when absent. */
+const slotBound = (range: SlotRange | undefined): SqlQuery =>
+  range === undefined
+    ? { sql: "1", params: [] }
+    : { sql: "slot BETWEEN ? AND ?", params: [range.fromSlot, range.toSlot] };
+
 function surveyDeletionSql(
   keys: readonly { readonly surveyKey: string }[],
+  range?: SlotRange,
 ): SqlQuery[] {
+  const bound = slotBound(range);
   if (keys.length === 0)
-    return [{ sql: "DELETE FROM survey_index", params: [] }];
+    return [
+      {
+        sql: `DELETE FROM survey_index WHERE ${bound.sql}`,
+        params: [...bound.params],
+      },
+    ];
   const chunks = jsonChunks(keys, SNAPSHOT_KEYS_PER_CHUNK);
   return chunks.map((chunk, index) => {
     const lower = index === 0 ? null : chunk.values[0]!.surveyKey;
     const upper = chunks[index + 1]?.values[0]?.surveyKey ?? null;
-    const bounds: string[] = [];
-    const params: unknown[] = [];
+    const bounds: string[] = [bound.sql];
+    const params: unknown[] = [...bound.params];
     if (lower !== null) {
       bounds.push("survey_key >= ?");
       params.push(lower);
@@ -333,7 +357,7 @@ function surveyDeletionSql(
     params.push(chunk.json);
     return {
       sql: `DELETE FROM survey_index
-            WHERE ${bounds.length === 0 ? "1" : bounds.join(" AND ")}
+            WHERE ${bounds.join(" AND ")}
               AND survey_key NOT IN (
                 SELECT json_extract(value, '$.surveyKey') FROM json_each(?)
               )`,
@@ -347,14 +371,24 @@ interface ResponseKey {
   readonly responseIndex: number;
 }
 
-function responseDeletionSql(keys: readonly ResponseKey[]): SqlQuery[] {
-  if (keys.length === 0) return [{ sql: "DELETE FROM response", params: [] }];
+function responseDeletionSql(
+  keys: readonly ResponseKey[],
+  range?: SlotRange,
+): SqlQuery[] {
+  const bound = slotBound(range);
+  if (keys.length === 0)
+    return [
+      {
+        sql: `DELETE FROM response WHERE ${bound.sql}`,
+        params: [...bound.params],
+      },
+    ];
   const chunks = jsonChunks(keys, SNAPSHOT_KEYS_PER_CHUNK);
   return chunks.map((chunk, index) => {
     const lower = index === 0 ? null : chunk.values[0]!;
     const upper = chunks[index + 1]?.values[0] ?? null;
-    const bounds: string[] = [];
-    const params: unknown[] = [];
+    const bounds: string[] = [bound.sql];
+    const params: unknown[] = [...bound.params];
     if (lower !== null) {
       bounds.push("(tx_hash > ? OR (tx_hash = ? AND response_index >= ?))");
       params.push(lower.txHash, lower.txHash, lower.responseIndex);
@@ -366,7 +400,7 @@ function responseDeletionSql(keys: readonly ResponseKey[]): SqlQuery[] {
     params.push(chunk.json);
     return {
       sql: `DELETE FROM response
-            WHERE ${bounds.length === 0 ? "1" : bounds.join(" AND ")}
+            WHERE ${bounds.join(" AND ")}
               AND (tx_hash, response_index) NOT IN (
                 SELECT json_extract(value, '$.txHash'),
                        json_extract(value, '$.responseIndex')
@@ -377,15 +411,11 @@ function responseDeletionSql(keys: readonly ResponseKey[]): SqlQuery[] {
   });
 }
 
-/**
- * One atomic reconciliation program for either SQLite adapter. JSON table-valued
- * parameters keep first materialization and large reorgs to bounded set
- * operations rather than one statement per record.
- */
-export function snapshotReconciliationSql(
+function reconciliationSql(
   surveys: readonly SurveyIndexRow[],
   responses: readonly ResponseRow[],
   meta: SnapshotMeta,
+  range?: SlotRange,
 ): SqlQuery[] {
   const sortedSurveys = [...surveys].sort((a, b) =>
     compareText(a.surveyKey, b.surveyKey),
@@ -405,15 +435,39 @@ export function snapshotReconciliationSql(
       sql: SURVEY_INDEX_RECONCILE,
       params: [chunk.json],
     })),
-    ...surveyDeletionSql(surveyKeys),
+    ...surveyDeletionSql(surveyKeys, range),
     ...jsonChunks(sortedResponses, SNAPSHOT_ROWS_PER_CHUNK).map((chunk) => ({
       sql: RESPONSE_RECONCILE,
       params: [chunk.json],
     })),
-    ...responseDeletionSql(responseKeys),
+    ...responseDeletionSql(responseKeys, range),
     snapshotMetaUpsertSql(meta),
   ];
 }
+
+/**
+ * One atomic reconciliation program for either SQLite adapter. JSON table-valued
+ * parameters keep first materialization and large reorgs to bounded set
+ * operations rather than one statement per record.
+ */
+export const snapshotReconciliationSql = (
+  surveys: readonly SurveyIndexRow[],
+  responses: readonly ResponseRow[],
+  meta: SnapshotMeta,
+): SqlQuery[] => reconciliationSql(surveys, responses, meta);
+
+/**
+ * The slot-bounded sibling of {@link snapshotReconciliationSql}: the same
+ * upserts and insert-or-ignores, but only rows with slot in `range` are
+ * deletion candidates — settled history outside the segment is never swept,
+ * however little of the chain one call covers.
+ */
+export const segmentReconciliationSql = (
+  range: SlotRange,
+  surveys: readonly SurveyIndexRow[],
+  responses: readonly ResponseRow[],
+  meta: SnapshotMeta,
+): SqlQuery[] => reconciliationSql(surveys, responses, meta, range);
 
 /** Ordered so a bundle body is byte-stable across refreshes. */
 export const RESPONSES_FOR_SURVEY = `
@@ -426,6 +480,99 @@ export const respondedSql = (credentials: readonly string[]): SqlQuery => ({
         WHERE credential IN (${credentials.map(() => "?").join(", ")})`,
   params: [...credentials],
 });
+
+const SCAN_STATE_UPSERT = `
+  INSERT INTO scan_state
+    (id, cursor_slot, cursor_tx_hash, generation, trickle_slot,
+     trickle_tx_hash)
+  VALUES (1, ?, ?, ?, ?, ?)
+  ON CONFLICT(id) DO UPDATE SET
+    cursor_slot = excluded.cursor_slot,
+    cursor_tx_hash = excluded.cursor_tx_hash,
+    generation = excluded.generation,
+    trickle_slot = excluded.trickle_slot,
+    trickle_tx_hash = excluded.trickle_tx_hash`;
+
+export const scanStateUpsertSql = (state: ScanState): SqlQuery => ({
+  sql: SCAN_STATE_UPSERT,
+  params: [
+    state.cursor?.slot ?? null,
+    state.cursor?.txHash ?? null,
+    state.generation,
+    state.trickle?.slot ?? null,
+    state.trickle?.txHash ?? null,
+  ],
+});
+
+export const SCAN_STATE_SELECT = `
+  SELECT cursor_slot AS cursorSlot, cursor_tx_hash AS cursorTxHash, generation,
+         trickle_slot AS trickleSlot, trickle_tx_hash AS trickleTxHash
+  FROM scan_state WHERE id = 1`;
+
+/** As stored: each cursor is a pair of columns, NULL together. */
+export interface DbScanStateRow {
+  readonly cursorSlot: number | null;
+  readonly cursorTxHash: string | null;
+  readonly generation: number;
+  readonly trickleSlot: number | null;
+  readonly trickleTxHash: string | null;
+}
+
+export const scanStateFromDb = (r: DbScanStateRow): ScanState => ({
+  cursor:
+    r.cursorSlot === null || r.cursorTxHash === null
+      ? null
+      : { slot: r.cursorSlot, txHash: r.cursorTxHash },
+  generation: r.generation,
+  trickle:
+    r.trickleSlot === null || r.trickleTxHash === null
+      ? null
+      : { slot: r.trickleSlot, txHash: r.trickleTxHash },
+});
+
+const SURVEY_ROW_COLUMNS = `survey_key AS surveyKey, slot,
+       end_epoch AS endEpoch, sealed, cancelled, gov_linked AS govLinked,
+       owner, haystack, record, cancellations, gov_links AS govLinks,
+       response_count AS responseCount,
+       finalized_cancelled AS finalizedCancelled`;
+
+const RESPONSE_ROW_COLUMNS = `tx_hash AS txHash,
+       response_index AS responseIndex, survey_key AS surveyKey, credential,
+       slot, record`;
+
+/**
+ * Stored projections by key. Keys ride as one bound JSON array per chunk (a
+ * key list can exceed D1's 100-parameter cap); sorted first, so concatenated
+ * chunk results come back in key order.
+ */
+export const surveysByKeysSql = (keys: readonly string[]): SqlQuery[] =>
+  jsonChunks([...keys].sort(compareText), SNAPSHOT_KEYS_PER_CHUNK).map(
+    (chunk) => ({
+      sql: `SELECT ${SURVEY_ROW_COLUMNS} FROM survey_index
+            WHERE survey_key IN (SELECT value FROM json_each(?))
+            ORDER BY survey_key`,
+      params: [chunk.json],
+    }),
+  );
+
+/** All stored responses of the given surveys — a recount's stored half. */
+export const responsesBySurveysSql = (
+  surveyKeys: readonly string[],
+): SqlQuery[] =>
+  jsonChunks([...surveyKeys].sort(compareText), SNAPSHOT_KEYS_PER_CHUNK).map(
+    (chunk) => ({
+      sql: `SELECT ${RESPONSE_ROW_COLUMNS} FROM response
+            WHERE survey_key IN (SELECT value FROM json_each(?))
+            ORDER BY survey_key, slot, tx_hash, response_index`,
+      params: [chunk.json],
+    }),
+  );
+
+/** The window's stored responses, in scan order. Binds: (fromSlot, toSlot). */
+export const RESPONSES_IN_SLOT_RANGE = `
+  SELECT ${RESPONSE_ROW_COLUMNS} FROM response
+  WHERE slot BETWEEN ? AND ?
+  ORDER BY slot, tx_hash, response_index`;
 
 /** Counts come back as SQLite integers already shaped like the counts type. */
 export const countsFromDb = (r: Record<string, number>): SurveyListCounts => ({
