@@ -49,6 +49,9 @@ import {
   SNAPSHOT_GOV_LINKS_SELECT,
   SNAPSHOT_META_SELECT,
   SURVEY_BUNDLE_SELECT,
+  SURVEY_END_EPOCHS,
+  SURVEYS_ENDING_AT_OR_AFTER,
+  UNFINALIZED_CLOSED_SURVEYS,
   countsFromDb,
   ownedCountSql,
   respondedSql,
@@ -633,6 +636,30 @@ export function d1BackendStore(db: D1Like): BackendStore {
         .bind(range.fromSlot, range.toSlot)
         .all<ResponseRow>();
       return results;
+    },
+    async surveyEndEpochs(): Promise<number[]> {
+      const { results } = await db
+        .prepare(SURVEY_END_EPOCHS)
+        .all<{ endEpoch: number }>();
+      return results.map((r) => r.endEpoch);
+    },
+    async unfinalizedClosedSurveyRows(
+      tipEpoch: number,
+    ): Promise<SurveyIndexRow[]> {
+      const { results } = await db
+        .prepare(UNFINALIZED_CLOSED_SURVEYS)
+        .bind(tipEpoch)
+        .all<DbSurveyRow>();
+      return results.map(surveyRowFromDb);
+    },
+    async surveyRowsEndingAtOrAfter(
+      minEndEpoch: number,
+    ): Promise<SurveyIndexRow[]> {
+      const { results } = await db
+        .prepare(SURVEYS_ENDING_AT_OR_AFTER)
+        .bind(minEndEpoch)
+        .all<DbSurveyRow>();
+      return results.map(surveyRowFromDb);
     },
 
     async putRefreshRun(row: RefreshRunRow): Promise<void> {

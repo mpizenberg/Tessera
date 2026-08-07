@@ -9,6 +9,7 @@ import {
 import {
   credentialKey,
   hexToBytes,
+  refKey,
   type CancellationRecord,
   type ChainTip,
   type Cip179Records,
@@ -28,8 +29,9 @@ import {
   type WeightInfo,
 } from "cip-179/tally";
 
-import { loadConfig } from "./config";
+import { loadConfig, type ServerConfig } from "./config";
 import { finalizeClosedSurveys } from "./finalize";
+import { materializeSnapshot } from "./materialize";
 import type { SealedRevealFn } from "./sealedReveal";
 import type { ValidatedResponseRow } from "./store";
 import { memBackendStore, type MemBackendStore } from "./store-mem";
@@ -102,6 +104,7 @@ function response(
   optionIndex: number,
   slot = 200,
   role: Role = Role.Stakeholder,
+  surveyTx = SURVEY_TX,
 ): ResponseRecord {
   return {
     txHash,
@@ -110,7 +113,7 @@ function response(
     responseIndex: 0,
     response: {
       specVersion: 5,
-      surveyRef: { txId: hexToBytes(SURVEY_TX), index: 0 },
+      surveyRef: { txId: hexToBytes(surveyTx), index: 0 },
       role,
       credential: cred,
       answers: {
@@ -138,6 +141,7 @@ function sealedResponse(
   cred: Credential,
   slot = 200,
   role: Role = Role.Stakeholder,
+  surveyTx = SURVEY_TX,
 ): ResponseRecord {
   return {
     txHash,
@@ -146,7 +150,7 @@ function sealedResponse(
     responseIndex: 0,
     response: {
       specVersion: 5,
-      surveyRef: { txId: hexToBytes(SURVEY_TX), index: 0 },
+      surveyRef: { txId: hexToBytes(surveyTx), index: 0 },
       role,
       credential: cred,
       answers: { type: "sealed", ciphertext: hexToBytes("ab".repeat(16)) },
@@ -183,7 +187,7 @@ function validatedRow(
   return {
     txHash: r.txHash,
     responseIndex: r.responseIndex,
-    surveyKey: SURVEY_KEY,
+    surveyKey: refKey(r.response.surveyRef),
     role: r.response.role,
     credential: credentialKey(r.response.credential),
     slot: r.slot,
@@ -209,9 +213,15 @@ function sealedFleet(n: number, surveyKey = SURVEY_KEY, offset = 0) {
   const weights: Record<string, WeightInfo> = {};
   for (let i = offset; i < offset + n; i++) {
     const cred = keyCred(i.toString(16).padStart(56, "0"));
-    const rec = sealedResponse(i.toString(16).padStart(64, "0"), cred);
+    const rec = sealedResponse(
+      i.toString(16).padStart(64, "0"),
+      cred,
+      200,
+      Role.Stakeholder,
+      surveyKey.split(":")[0],
+    );
     recs.push(rec);
-    rows.push(validatedRow(rec, { surveyKey }));
+    rows.push(validatedRow(rec));
     weights[credentialKey(cred)] = { weight: 1n, registered: true };
   }
   return { recs, rows, weights };
@@ -325,6 +335,41 @@ function records(
   return { surveys: [s], responses, cancellations };
 }
 
+/**
+ * Publish `recs` as materialized rows, then run the pass — the differential
+ * harness: identical fixtures to the pre-windowed tests, read back through
+ * the store instead of handed over in memory.
+ */
+async function finalizeRecords(
+  config: ServerConfig,
+  store: MemBackendStore,
+  inputs: TallyInputSource,
+  source: Pick<import("cardano-tessera-koios").KoiosDataSource, "txProofs">,
+  recs: Cip179Records,
+  tip: ChainTip,
+  reveal?: SealedRevealFn,
+  govLinks?: readonly GovLink[] | null,
+) {
+  const snapshot = materializeSnapshot(recs, tip, [], new Set());
+  await store.reconcileSnapshot(snapshot.surveys, snapshot.responses, {
+    tip: "{}",
+    incomplete: false,
+    fetchedAt: 1,
+    payloadDigest: null,
+    listCounts: null,
+  });
+  return finalizeClosedSurveys(
+    config,
+    store,
+    inputs,
+    source,
+    recs.incomplete === true,
+    tip,
+    reveal,
+    govLinks,
+  );
+}
+
 // --- tests -----------------------------------------------------------------------
 
 describe("finalizeClosedSurveys", () => {
@@ -339,7 +384,7 @@ describe("finalizeClosedSurveys", () => {
       [KEY_B]: { weight: 7n, registered: true },
     });
 
-    const keys = await finalizeClosedSurveys(
+    const keys = await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -387,7 +432,6 @@ describe("finalizeClosedSurveys", () => {
 
   it("fetches the shared-credential union once across same-epoch surveys (§6.5)", async () => {
     const store = memBackendStore();
-    const SURVEY_KEY2 = `${SURVEY_TX2}:0`;
     const s2: SurveyRecord = {
       txHash: SURVEY_TX2,
       slot: 100,
@@ -400,13 +444,27 @@ describe("finalizeClosedSurveys", () => {
     // survey 1 ← {A, B}; survey 2 ← {A, C} — A responds to both.
     const rA1 = response("11".repeat(32), CRED_A, 0);
     const rB1 = response("22".repeat(32), CRED_B, 0);
-    const rA2 = response("33".repeat(32), CRED_A, 0);
-    const rC2 = response("44".repeat(32), CRED_C, 0);
+    const rA2 = response(
+      "33".repeat(32),
+      CRED_A,
+      0,
+      200,
+      Role.Stakeholder,
+      SURVEY_TX2,
+    );
+    const rC2 = response(
+      "44".repeat(32),
+      CRED_C,
+      0,
+      200,
+      Role.Stakeholder,
+      SURVEY_TX2,
+    );
     await seed(store, [
       validatedRow(rA1),
       validatedRow(rB1),
-      validatedRow(rA2, { surveyKey: SURVEY_KEY2 }),
-      validatedRow(rC2, { surveyKey: SURVEY_KEY2 }),
+      validatedRow(rA2),
+      validatedRow(rC2),
     ]);
 
     const seen: string[][] = [];
@@ -436,7 +494,7 @@ describe("finalizeClosedSurveys", () => {
       cancellations: [],
     };
 
-    await finalizeClosedSurveys(CONFIG, store, inputs, noProofs, recs, TIP);
+    await finalizeRecords(CONFIG, store, inputs, noProofs, recs, TIP);
     // A single stakeholder fetch for the whole epoch — the union {A,B,C}, with
     // the shared A requested once, not once per survey.
     expect(seen).toHaveLength(1);
@@ -455,11 +513,15 @@ describe("finalizeClosedSurveys", () => {
       definition: definition(),
     };
     const rA1 = response("11".repeat(32), CRED_A, 0);
-    const rB2 = response("22".repeat(32), CRED_B, 0);
-    await seed(store, [
-      validatedRow(rA1),
-      validatedRow(rB2, { surveyKey: SURVEY_KEY2 }),
-    ]);
+    const rB2 = response(
+      "22".repeat(32),
+      CRED_B,
+      0,
+      200,
+      Role.Stakeholder,
+      SURVEY_TX2,
+    );
+    await seed(store, [validatedRow(rA1), validatedRow(rB2)]);
     const inputs = fakeInputs({
       [KEY_A]: { weight: 100n, registered: true },
       [KEY_B]: { weight: 7n, registered: true },
@@ -482,7 +544,7 @@ describe("finalizeClosedSurveys", () => {
     };
 
     // The pass completes normally (does not reject) despite survey 1 throwing.
-    const keys = await finalizeClosedSurveys(
+    const keys = await finalizeRecords(
       CONFIG,
       poisoned,
       inputs,
@@ -513,11 +575,15 @@ describe("finalizeClosedSurveys", () => {
       definition: definition(),
     };
     const rA1 = response("11".repeat(32), CRED_A, 0);
-    const rB2 = response("22".repeat(32), CRED_B, 0);
-    await seed(store, [
-      validatedRow(rA1),
-      validatedRow(rB2, { surveyKey: SURVEY_KEY2 }),
-    ]);
+    const rB2 = response(
+      "22".repeat(32),
+      CRED_B,
+      0,
+      200,
+      Role.Stakeholder,
+      SURVEY_TX2,
+    );
+    await seed(store, [validatedRow(rA1), validatedRow(rB2)]);
     const inputs = fakeInputs({
       [KEY_A]: { weight: 100n, registered: true },
       [KEY_B]: { weight: 7n, registered: true },
@@ -528,7 +594,7 @@ describe("finalizeClosedSurveys", () => {
       cancellations: [],
     };
 
-    await finalizeClosedSurveys(CONFIG, store, inputs, noProofs, recs, TIP);
+    await finalizeRecords(CONFIG, store, inputs, noProofs, recs, TIP);
     expect(store.artifacts.has(SURVEY_KEY)).toBe(false); // untalliable → no artifact
     expect(store.artifacts.has(SURVEY_KEY2)).toBe(true); // valid → finalized
   });
@@ -552,11 +618,15 @@ describe("finalizeClosedSurveys", () => {
       definition: definition(),
     };
     const rA1 = response("11".repeat(32), CRED_A, 0);
-    const rB2 = response("22".repeat(32), CRED_B, 0);
-    await seed(store, [
-      validatedRow(rA1),
-      validatedRow(rB2, { surveyKey: SURVEY_KEY2 }),
-    ]);
+    const rB2 = response(
+      "22".repeat(32),
+      CRED_B,
+      0,
+      200,
+      Role.Stakeholder,
+      SURVEY_TX2,
+    );
+    await seed(store, [validatedRow(rA1), validatedRow(rB2)]);
     const inputs = fakeInputs({
       [KEY_A]: { weight: 100n, registered: true },
       [KEY_B]: { weight: 7n, registered: true },
@@ -568,7 +638,7 @@ describe("finalizeClosedSurveys", () => {
       cancellations: [],
     };
 
-    await finalizeClosedSurveys(CONFIG, store, inputs, source, recs, TIP);
+    await finalizeRecords(CONFIG, store, inputs, source, recs, TIP);
 
     const asked = source.txProofs.mock.calls.flatMap(([hashes]) => [...hashes]);
     expect(asked).not.toContain(SURVEY_TX);
@@ -589,11 +659,15 @@ describe("finalizeClosedSurveys", () => {
       definition: definition(),
     };
     const rA1 = response("11".repeat(32), CRED_A, 0);
-    const rB2 = response("22".repeat(32), CRED_B, 0);
-    await seed(store, [
-      validatedRow(rA1),
-      validatedRow(rB2, { surveyKey: `${SURVEY_TX2}:0` }),
-    ]);
+    const rB2 = response(
+      "22".repeat(32),
+      CRED_B,
+      0,
+      200,
+      Role.Stakeholder,
+      SURVEY_TX2,
+    );
+    await seed(store, [validatedRow(rA1), validatedRow(rB2)]);
     const inputs = fakeInputs({
       [KEY_A]: { weight: 100n, registered: true },
       [KEY_B]: { weight: 7n, registered: true },
@@ -601,7 +675,7 @@ describe("finalizeClosedSurveys", () => {
 
     // Survey 1's defining tx is read in full and simply doesn't sign for the
     // owner — a definitive no, unlike a fetch that failed.
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -623,7 +697,7 @@ describe("finalizeClosedSurveys", () => {
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
     // No definition tx proves out and none is listed: every hash reads as a
     // failed fetch — unknown, which must not freeze an artifact either way.
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -634,7 +708,7 @@ describe("finalizeClosedSurveys", () => {
     expect(store.artifacts.has(SURVEY_KEY)).toBe(false);
 
     // Next pass, the fetch succeeds and the survey finalizes normally.
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -653,7 +727,7 @@ describe("finalizeClosedSurveys", () => {
       { stakeholder: null }, // upstream can't serve it yet
     );
 
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -666,7 +740,7 @@ describe("finalizeClosedSurveys", () => {
 
     // Next cron: total now available; weights must come from the cursor.
     const inputs2 = fakeInputs({ [KEY_A]: { weight: 999n, registered: true } });
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs2,
@@ -713,14 +787,14 @@ describe("finalizeClosedSurveys", () => {
 
     // First run gives up on the epoch fetching B; A's weight is already
     // persisted, and is the resume cursor.
-    await finalizeClosedSurveys(CONFIG, store, inputs, noProofs, recs, TIP);
+    await finalizeRecords(CONFIG, store, inputs, noProofs, recs, TIP);
     expect(store.weights.size).toBe(1);
     expect([...store.weights.values()][0]!.credential).toBe(KEY_A);
     expect(store.artifacts.size).toBe(0);
 
     // Next cron: B now resolves, A comes from the cursor → artifact emitted.
     failB = false;
-    await finalizeClosedSurveys(CONFIG, store, inputs, noProofs, recs, TIP);
+    await finalizeRecords(CONFIG, store, inputs, noProofs, recs, TIP);
     expect(store.weights.size).toBe(2);
     expect(store.artifacts.size).toBe(1);
   });
@@ -738,11 +812,15 @@ describe("finalizeClosedSurveys", () => {
       definition: definition({ endEpoch: END_EPOCH + 1 }),
     };
     const rA1 = response("11".repeat(32), CRED_A, 0);
-    const rB2 = response("22".repeat(32), CRED_B, 0);
-    await seed(store, [
-      validatedRow(rA1),
-      validatedRow(rB2, { surveyKey: `${SURVEY_TX2}:0` }),
-    ]);
+    const rB2 = response(
+      "22".repeat(32),
+      CRED_B,
+      0,
+      200,
+      Role.Stakeholder,
+      SURVEY_TX2,
+    );
+    await seed(store, [validatedRow(rA1), validatedRow(rB2)]);
     const inputs: TallyInputSource = {
       ...fakeInputs({ [KEY_B]: { weight: 7n, registered: true } }),
       async stakeholderWeights(epoch, creds) {
@@ -756,7 +834,7 @@ describe("finalizeClosedSurveys", () => {
       },
     };
 
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -778,9 +856,9 @@ describe("finalizeClosedSurveys", () => {
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
     const recs = records(survey(), [rA]);
 
-    await finalizeClosedSurveys(CONFIG, store, inputs, noProofs, recs, TIP);
+    await finalizeRecords(CONFIG, store, inputs, noProofs, recs, TIP);
     const first = store.artifacts.get(SURVEY_KEY)!;
-    await finalizeClosedSurveys(CONFIG, store, inputs, noProofs, recs, TIP);
+    await finalizeRecords(CONFIG, store, inputs, noProofs, recs, TIP);
     expect(store.artifacts.get(SURVEY_KEY)).toBe(first);
     expect(inputs.stakeholderCalls).toBe(1);
   });
@@ -789,7 +867,7 @@ describe("finalizeClosedSurveys", () => {
     const make = async () => {
       const store = memBackendStore();
       await seed(store, [validatedRow(rA), validatedRow(rB)]);
-      await finalizeClosedSurveys(
+      await finalizeRecords(
         CONFIG,
         store,
         fakeInputs({
@@ -812,7 +890,7 @@ describe("finalizeClosedSurveys", () => {
     ) => {
       const store = memBackendStore();
       await seed(store, rows);
-      await finalizeClosedSurveys(
+      await finalizeRecords(
         CONFIG,
         store,
         fakeInputs({
@@ -833,7 +911,7 @@ describe("finalizeClosedSurveys", () => {
   it("emits an artifact the independent verifier reproduces (cross-seam, finding 30)", async () => {
     const store = memBackendStore();
     await seed(store, [validatedRow(rA), validatedRow(rB)]);
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       fakeInputs({
@@ -916,7 +994,7 @@ describe("finalizeClosedSurveys", () => {
       },
     ];
     const before = store.artifacts.get(SURVEY_KEY);
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -941,7 +1019,7 @@ describe("finalizeClosedSurveys", () => {
     const store = memBackendStore();
     await seed(store, [validatedRow(rA)]);
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -958,7 +1036,7 @@ describe("finalizeClosedSurveys", () => {
     const store = memBackendStore();
     await seed(store, [validatedRow(rA)]);
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -985,7 +1063,7 @@ describe("finalizeClosedSurveys", () => {
     const proofs = proofsStub({ [cancellation.txHash]: OWNER_PROOF });
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
 
-    const keys = await finalizeClosedSurveys(
+    const keys = await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -1019,7 +1097,7 @@ describe("finalizeClosedSurveys", () => {
     // The cancelling tx's CBOR couldn't be fetched/decoded this refresh → the
     // proof is `null` (unknown). The pre-fix bug tallied the survey in full and
     // froze that immutable artifact; it must instead postpone.
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -1032,7 +1110,7 @@ describe("finalizeClosedSurveys", () => {
     expect(inputs.stakeholderCalls).toBe(0);
 
     // Next refresh the proof resolves (owner-verified) → cancellation artifact.
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -1056,7 +1134,7 @@ describe("finalizeClosedSurveys", () => {
 
     // A *definitive* negative (fetched + decoded, owner not a signer) must NOT
     // postpone — the survey is genuinely uncancelled and tallies normally.
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -1082,7 +1160,7 @@ describe("finalizeClosedSurveys", () => {
 
     // The earlier unknown could resolve to the winning cancellation, changing
     // the artifact the verifier would rebuild — so freeze nothing yet.
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -1102,7 +1180,7 @@ describe("finalizeClosedSurveys", () => {
     const later = cancellation("c2".repeat(32), 400); // unknown, irrelevant
 
     // The earliest verified cancellation wins; a later unknown can't displace it.
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -1126,7 +1204,7 @@ describe("finalizeClosedSurveys", () => {
     const inputs = fakeInputs({ [KEY_A]: { weight: 100n, registered: true } });
     const reveal = stubReveal({ [rSealed.txHash]: SEALED_ANSWER });
 
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -1177,7 +1255,7 @@ describe("finalizeClosedSurveys", () => {
       [late.txHash]: null,
     });
 
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -1209,7 +1287,7 @@ describe("finalizeClosedSurveys", () => {
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
     const reveal = stubReveal({ [rSealed.txHash]: SEALED_ANSWER });
 
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -1250,7 +1328,7 @@ describe("finalizeClosedSurveys", () => {
       fleet.recs,
     );
     const pass = () =>
-      finalizeClosedSurveys(
+      finalizeRecords(
         CONFIG,
         store,
         fakeInputs(fleet.weights),
@@ -1288,7 +1366,7 @@ describe("finalizeClosedSurveys", () => {
     );
     const sealedDef = definition({ submissionMode: SEALED_MODE });
 
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       fakeInputs(first.weights),
@@ -1331,7 +1409,7 @@ describe("finalizeClosedSurveys", () => {
 
     // Must resolve, not reject — one bad reveal can't abort the whole pass.
     await expect(
-      finalizeClosedSurveys(
+      finalizeRecords(
         CONFIG,
         store,
         inputs,
@@ -1353,7 +1431,7 @@ describe("finalizeClosedSurveys", () => {
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
     const reveal = stubReveal({ [rSealed.txHash]: SEALED_ANSWER });
 
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -1391,7 +1469,7 @@ describe("finalizeClosedSurveys", () => {
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
     const reveal = stubReveal({ [rSealed.txHash]: SEALED_ANSWER });
 
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -1432,7 +1510,7 @@ describe("finalizeClosedSurveys", () => {
       [KEY_B]: { weight: 50n, registered: false },
     });
 
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -1472,7 +1550,7 @@ describe("finalizeClosedSurveys", () => {
     });
     const recs = records(survey(), [rA, rC]);
 
-    await finalizeClosedSurveys(CONFIG, store, inputs, noProofs, recs, TIP);
+    await finalizeRecords(CONFIG, store, inputs, noProofs, recs, TIP);
     // Artifact must NOT be emitted: rC could still resolve to counted, and an
     // immutable artifact would freeze it out forever.
     expect(store.artifacts.size).toBe(0);
@@ -1481,14 +1559,14 @@ describe("finalizeClosedSurveys", () => {
     await store.upsertValidatedResponses([
       validatedRow(rC, { proofOk: true, blockIndex: null }),
     ]);
-    await finalizeClosedSurveys(CONFIG, store, inputs, noProofs, recs, TIP);
+    await finalizeRecords(CONFIG, store, inputs, noProofs, recs, TIP);
     expect(store.artifacts.size).toBe(0);
 
     // Both verdict and block index final → the survey finalizes, rC included.
     await store.upsertValidatedResponses([
       validatedRow(rC, { proofOk: true, blockIndex: 0 }),
     ]);
-    await finalizeClosedSurveys(CONFIG, store, inputs, noProofs, recs, TIP);
+    await finalizeRecords(CONFIG, store, inputs, noProofs, recs, TIP);
     const artifact = JSON.parse(
       store.artifacts.get(SURVEY_KEY)!.artifact,
     ) as TallyArtifact;
@@ -1503,7 +1581,7 @@ describe("finalizeClosedSurveys", () => {
     await seed(store, [validatedRow(rA)]);
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
 
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -1525,7 +1603,7 @@ describe("finalizeClosedSurveys", () => {
     // reorged out and, with a fixed scan floor, can never age back in. This
     // refresh prunes the stale row and postpones (the one-refresh reorg buffer);
     // it must NOT postpone forever the way it once did.
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -1539,7 +1617,7 @@ describe("finalizeClosedSurveys", () => {
     // The tx stays gone. Because the stale row was pruned, the survey now
     // finalizes (no longer blocked by the vanished response) instead of
     // livelocking on it.
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -1556,7 +1634,7 @@ describe("finalizeClosedSurveys", () => {
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
 
     // Refresh 1: absent → pruned, postponed.
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -1569,7 +1647,7 @@ describe("finalizeClosedSurveys", () => {
     // The tx re-appears in the next scan, so validation re-runs and re-writes
     // the row (modelled here by re-seeding). Finalization then counts it.
     await seed(store, [validatedRow(rA)]);
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -1584,7 +1662,7 @@ describe("finalizeClosedSurveys", () => {
     const store = memBackendStore();
     await seed(store, [validatedRow(rA)]);
     const openTip: ChainTip = { ...TIP, epoch: END_EPOCH }; // not yet past
-    await finalizeClosedSurveys(
+    await finalizeRecords(
       CONFIG,
       store,
       fakeInputs({}),

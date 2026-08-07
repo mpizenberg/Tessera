@@ -10,7 +10,9 @@ import {
   type SurveyRecord,
 } from "cip-179/domain";
 
+import { materializeSnapshot } from "./materialize";
 import { pruneTxProofCache } from "./proofCache";
+import { memBackendStore } from "./store-mem";
 
 const tx = (byte: string) => byte.repeat(32);
 
@@ -105,19 +107,51 @@ function fakeCache(banked: readonly string[]) {
   };
 }
 
+/**
+ * Publish `recs` as materialized rows, then run the sweep over `banked` — the
+ * differential harness: the fixtures the prune used to receive in memory,
+ * read back through the store.
+ */
+async function prune(
+  banked: readonly string[],
+  recs: Cip179Records,
+  finalized: ReadonlySet<string>,
+) {
+  const mem = memBackendStore();
+  const snapshot = materializeSnapshot(recs, TIP, [], new Set());
+  await mem.reconcileSnapshot(snapshot.surveys, snapshot.responses, {
+    tip: "{}",
+    incomplete: false,
+    fetchedAt: 1,
+    payloadDigest: null,
+    listCounts: null,
+  });
+  const cache = fakeCache(banked);
+  await pruneTxProofCache(
+    {
+      surveyRowsEndingAtOrAfter: (e) => mem.surveyRowsEndingAtOrAfter(e),
+      responseRowsForSurveys: (keys) => mem.responseRowsForSurveys(keys),
+      cachedTxProofHashes: cache.cachedTxProofHashes,
+      deleteTxProofCbor: cache.deleteTxProofCbor,
+    },
+    recs.incomplete === true,
+    TIP,
+    finalized,
+  );
+  return cache;
+}
+
 describe("pruneTxProofCache", () => {
   it("keeps an open survey's transactions and drops a finalized one's", async () => {
     const open = survey(tx("aa"), 600);
     const done = survey(tx("bb"), 400);
-    const cache = fakeCache([tx("aa"), tx("bb"), tx("c1"), tx("r1"), tx("r2")]);
-    await pruneTxProofCache(
-      cache,
+    const cache = await prune(
+      [tx("aa"), tx("bb"), tx("c1"), tx("r1"), tx("r2")],
       records({
         surveys: [open, done],
         cancellations: [cancellation(tx("c1"), open)],
         responses: [response(tx("r1"), open), response(tx("r2"), done)],
       }),
-      TIP,
       new Set([`${tx("bb")}:0`]),
     );
     expect(cache.deleted).toEqual(new Set([tx("bb"), tx("r2")]));
@@ -128,11 +162,9 @@ describe("pruneTxProofCache", () => {
     // for it — ever. Without the epoch backstop its proofs would be pinned for
     // the life of the deployment.
     const neverFinalized = survey(tx("aa"), TIP.epoch - 6);
-    const cache = fakeCache([tx("aa")]);
-    await pruneTxProofCache(
-      cache,
+    const cache = await prune(
+      [tx("aa")],
       records({ surveys: [neverFinalized] }),
-      TIP,
       new Set(),
     );
     expect(cache.deleted).toEqual(new Set([tx("aa")]));
@@ -142,11 +174,9 @@ describe("pruneTxProofCache", () => {
     // Finalization postpones — an unknown owner-proof, an unread link set — and
     // must not pay for the proofs again when it resumes next refresh.
     const justClosed = survey(tx("aa"), TIP.epoch - 1);
-    const cache = fakeCache([tx("aa")]);
-    await pruneTxProofCache(
-      cache,
+    const cache = await prune(
+      [tx("aa")],
       records({ surveys: [justClosed] }),
-      TIP,
       new Set(),
     );
     expect(cache.calls).toBe(0);
@@ -158,23 +188,19 @@ describe("pruneTxProofCache", () => {
     const shared = tx("aa");
     const live = survey(shared, 600, 0);
     const dead = survey(shared, 400, 1);
-    const cache = fakeCache([shared]);
-    await pruneTxProofCache(
-      cache,
+    const cache = await prune(
+      [shared],
       records({ surveys: [live, dead] }),
-      TIP,
       new Set([`${shared}:1`]),
     );
     expect(cache.calls).toBe(0);
   });
 
-  it("collects a banked transaction no record mentions any more", async () => {
+  it("collects a banked transaction no stored row mentions any more", async () => {
     // A rolled-back tx is claimed by nothing, so nothing keeps it.
-    const cache = fakeCache([tx("aa"), tx("f0")]);
-    await pruneTxProofCache(
-      cache,
+    const cache = await prune(
+      [tx("aa"), tx("f0")],
       records({ surveys: [survey(tx("aa"), 600)] }),
-      TIP,
       new Set(),
     );
     expect(cache.deleted).toEqual(new Set([tx("f0")]));
@@ -182,7 +208,7 @@ describe("pruneTxProofCache", () => {
 
   it("costs nothing per dead survey that was never banked", async () => {
     // The archive grows without bound while the cache tracks the open set. A
-    // sweep sized by the records rather than by the cache would re-delete every
+    // sweep sized by the archive rather than by the cache would re-delete every
     // historical hash on every refresh, until the batch outgrew what the
     // database accepts and eviction failed exactly when it started to matter.
     const nth = (n: number) => n.toString(16).padStart(64, "0");
@@ -190,14 +216,12 @@ describe("pruneTxProofCache", () => {
     const archive = Array.from({ length: 500 }, (_, i) =>
       survey(nth(i), 100, i),
     );
-    const cache = fakeCache([tx("aa")]);
-    await pruneTxProofCache(
-      cache,
+    const cache = await prune(
+      [tx("aa")],
       records({
         surveys: [open, ...archive],
         responses: archive.map((s, i) => response(nth(1000 + i), s)),
       }),
-      TIP,
       new Set(),
     );
     expect(cache.calls).toBe(0);
@@ -205,11 +229,9 @@ describe("pruneTxProofCache", () => {
 
   it("prunes nothing from an incomplete snapshot", async () => {
     const done = survey(tx("bb"), 400);
-    const cache = fakeCache([tx("bb")]);
-    await pruneTxProofCache(
-      cache,
+    const cache = await prune(
+      [tx("bb")],
       records({ surveys: [done], incomplete: true }),
-      TIP,
       new Set([`${tx("bb")}:0`]),
     );
     expect(cache.calls).toBe(0);

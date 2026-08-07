@@ -145,11 +145,16 @@ export async function refreshSnapshot(
     const previous = await store.snapshotMeta();
     const tip = await source.chainTip(previous ? snapshotTip(previous) : null);
     const records = await source.fetchAll(tip);
+    // The consumers below (gov links, finalization, proof-cache prune) read
+    // the stored rows, which this run rewrites only at the materialize step —
+    // so they see the previous refresh's corpus. One interval of lag, and
+    // every consumer self-heals: a survey first seen this run links,
+    // finalizes and registers as live next run.
     const { links: govLinks, unresolved: govUnresolved } =
       await refreshGovLinks(
         store,
         source,
-        records.surveys.map((s) => s.definition.endEpoch),
+        await store.surveyEndEpochs(),
         tip.epoch,
         startedAt,
         { onRequest: meter.hook("anchor") },
@@ -192,7 +197,7 @@ export async function refreshSnapshot(
         store,
         new KoiosTallyInputs(config.app, undefined, countKoios),
         source,
-        records,
+        records.incomplete === true,
         tip,
         undefined,
         // `null` = unknown, so the pass defers rather than stamping "no links"
@@ -206,8 +211,13 @@ export async function refreshSnapshot(
     // After finalization, so a survey that just froze its artifact releases its
     // transactions in the same run rather than a refresh later. Best-effort: a
     // cache that keeps too much is only a cache that costs storage.
-    await pruneTxProofCache(store, records, tip, artifactKeys.finalized).catch(
-      (err) => console.warn(`tx proof cache prune failed: ${String(err)}`),
+    await pruneTxProofCache(
+      store,
+      records.incomplete === true,
+      tip,
+      artifactKeys.finalized,
+    ).catch((err) =>
+      console.warn(`tx proof cache prune failed: ${String(err)}`),
     );
 
     // Materialize LAST, so the stored rows reflect this run's validation and

@@ -574,6 +574,27 @@ export const RESPONSES_IN_SLOT_RANGE = `
   WHERE slot BETWEEN ? AND ?
   ORDER BY slot, tx_hash, response_index`;
 
+/** The governance scan's input: which end epochs any stored survey has. */
+export const SURVEY_END_EPOCHS = `
+  SELECT DISTINCT end_epoch AS endEpoch FROM survey_index
+  ORDER BY end_epoch`;
+
+/**
+ * Finalization's candidate set: closed at the bound epoch, no artifact yet.
+ * Binds: (tipEpoch).
+ */
+export const UNFINALIZED_CLOSED_SURVEYS = `
+  SELECT ${SURVEY_ROW_COLUMNS} FROM survey_index
+  WHERE end_epoch < ?
+    AND survey_key NOT IN (SELECT survey_key FROM tally_artifact)
+  ORDER BY survey_key`;
+
+/** Surveys still inside a caller's end-epoch horizon. Binds: (minEndEpoch). */
+export const SURVEYS_ENDING_AT_OR_AFTER = `
+  SELECT ${SURVEY_ROW_COLUMNS} FROM survey_index
+  WHERE end_epoch >= ?
+  ORDER BY survey_key`;
+
 /** Counts come back as SQLite integers already shaped like the counts type. */
 export const countsFromDb = (r: Record<string, number>): SurveyListCounts => ({
   all: r["all"] ?? 0,

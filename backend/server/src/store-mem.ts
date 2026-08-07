@@ -95,6 +95,9 @@ export function memBackendStore(): MemBackendStore {
   const weightKey = (epoch: number, role: number, credential: string) =>
     `${epoch}|${role}|${credential}`;
 
+  const bySurveyKey = (a: SurveyIndexRow, b: SurveyIndexRow) =>
+    a.surveyKey < b.surveyKey ? -1 : a.surveyKey > b.surveyKey ? 1 : 0;
+
   return {
     validated,
     reveals,
@@ -369,9 +372,7 @@ export function memBackendStore(): MemBackendStore {
       const wanted = new Set(keys);
       return surveyIndexRows
         .filter((r) => wanted.has(r.surveyKey))
-        .sort((a, b) =>
-          a.surveyKey < b.surveyKey ? -1 : a.surveyKey > b.surveyKey ? 1 : 0,
-        );
+        .sort(bySurveyKey);
     },
     async responseRowsForSurveys(surveyKeys) {
       const wanted = new Set(surveyKeys);
@@ -398,6 +399,21 @@ export function memBackendStore(): MemBackendStore {
             (a.txHash < b.txHash ? -1 : a.txHash > b.txHash ? 1 : 0) ||
             a.responseIndex - b.responseIndex,
         );
+    },
+    async surveyEndEpochs() {
+      return [...new Set(surveyIndexRows.map((r) => r.endEpoch))].sort(
+        (a, b) => a - b,
+      );
+    },
+    async unfinalizedClosedSurveyRows(tipEpoch) {
+      return surveyIndexRows
+        .filter((r) => r.endEpoch < tipEpoch && !artifacts.has(r.surveyKey))
+        .sort(bySurveyKey);
+    },
+    async surveyRowsEndingAtOrAfter(minEndEpoch) {
+      return surveyIndexRows
+        .filter((r) => r.endEpoch >= minEndEpoch)
+        .sort(bySurveyKey);
     },
 
     async putRefreshRun(row) {

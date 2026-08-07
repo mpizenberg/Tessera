@@ -728,6 +728,25 @@ export interface SnapshotStore {
    * lacks is about to be swept, and its survey needs a recount.
    */
   responseRowsInSlotRange(range: SlotRange): Promise<ResponseRow[]>;
+  /**
+   * Distinct `end_epoch` values across the stored surveys, ascending — the
+   * governance-link scan's input (its per-epoch settlement memo then decides
+   * which of them still need asking about).
+   */
+  surveyEndEpochs(): Promise<number[]>;
+  /**
+   * Stored surveys with `end_epoch` before `tipEpoch` and no row in
+   * `tally_artifact` — finalization's candidate set, in key order. Bounded by
+   * construction: recent closers plus the slow-growing residue that never
+   * produces an artifact (spec-invalid definitions, unsupported drand chains).
+   */
+  unfinalizedClosedSurveyRows(tipEpoch: number): Promise<SurveyIndexRow[]>;
+  /**
+   * Stored surveys with `end_epoch >= minEndEpoch`, in key order — the open
+   * set plus however many epochs of recent closers the caller's horizon
+   * covers (the proof-cache prune's live candidates).
+   */
+  surveyRowsEndingAtOrAfter(minEndEpoch: number): Promise<SurveyIndexRow[]>;
   close(): void;
 }
 

@@ -825,6 +825,41 @@ describe("store-node segment reconciliation", () => {
     expect(await store.responseRowsForSurveys([])).toEqual([]);
     expect(await store.surveyRowsByKeys([])).toEqual([]);
   });
+
+  it("feeds each refresh consumer its bounded slice of the corpus", async () => {
+    store = openBackendStore(":memory:");
+    await store.reconcileSnapshot(
+      [
+        survey("aa:0", 100, { endEpoch: 490 }), // closed, finalized below
+        survey("bb:0", 200, { endEpoch: 495 }), // closed, artifact-less
+        survey("cc:0", 300, { endEpoch: 500 }), // open at tip 500
+        survey("dd:0", 400, { endEpoch: 495 }), // closed, artifact-less
+      ],
+      [],
+      meta(1),
+    );
+    await store.putArtifact({
+      surveyKey: "aa:0",
+      endEpoch: 490,
+      artifactHash: "h1",
+      artifact: "{}",
+      createdAt: 1,
+    });
+
+    // The governance scan's input: distinct, ascending.
+    expect(await store.surveyEndEpochs()).toEqual([490, 495, 500]);
+    // Finalization candidates: closed at the tip, minus the finalized.
+    expect(
+      (await store.unfinalizedClosedSurveyRows(500)).map((r) => r.surveyKey),
+    ).toEqual(["bb:0", "dd:0"]);
+    // The prune's live horizon is inclusive at its floor.
+    expect(
+      (await store.surveyRowsEndingAtOrAfter(495)).map((r) => r.surveyKey),
+    ).toEqual(["bb:0", "cc:0", "dd:0"]);
+    expect(
+      (await store.surveyRowsEndingAtOrAfter(496)).map((r) => r.surveyKey),
+    ).toEqual(["cc:0"]);
+  });
 });
 
 describe("store-node tx proof cache", () => {

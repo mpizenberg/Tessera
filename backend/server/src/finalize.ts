@@ -38,8 +38,8 @@ import {
   refKey,
   scriptCredentialHash,
   voteDeadlineUnix,
+  type CancellationRecord,
   type ChainTip,
-  type Cip179Records,
   type GovLink,
   type ResponseRecord,
   type SurveyRecord,
@@ -65,11 +65,16 @@ import { tlockSealedReveal, type SealedRevealFn } from "./sealedReveal";
 import type {
   ArtifactKeys,
   SealedRevealRow,
+  SnapshotStore,
   TallyStore,
   ValidatedResponseRow,
   WeightRow,
 } from "./store";
 import { validationKey } from "./store";
+
+/** The tally seam plus the stored-row reads the candidate walk needs. */
+export type FinalizeStore = TallyStore &
+  Pick<SnapshotStore, "unfinalizedClosedSurveyRows" | "responseRowsForSurveys">;
 
 /**
  * Per-pass cap on sealed decryptions across all surveys — the decrypt share of
@@ -122,26 +127,26 @@ const ROLE_ENDPOINTS: Record<number, string> = {
 };
 
 /**
- * Returns the artifact key sets as they stand at the end of the pass — the one
- * `tally_artifact` read of the whole refresh, with this pass's own emissions
+ * Returns the artifact key sets as they stand at the end of the pass — the
+ * refresh's one full `tally_artifact` key read, with this pass's own emissions
  * folded in, so callers (proof-cache prune, materialize) reuse it instead of
  * re-scanning the table.
  */
 export async function finalizeClosedSurveys(
   config: ServerConfig,
-  store: TallyStore,
+  store: FinalizeStore,
   inputs: TallyInputSource,
   source: Pick<import("cardano-tessera-koios").KoiosDataSource, "txProofs">,
-  records: Cip179Records,
+  incomplete: boolean,
   tip: ChainTip,
   reveal: SealedRevealFn = tlockSealedReveal,
   govLinks: readonly GovLink[] | null = [],
 ): Promise<ArtifactKeys> {
   const artifactKeys = await store.finalizedArtifactKeys();
-  // An incomplete snapshot (a dropped metadata batch or the page cap) may be
+  // An incomplete scan (a dropped metadata batch or the page cap) may be
   // missing a responder tx or a cancellation for *any* survey, and we can't tell
   // which — so no artifact this refresh is safe to hash. Postpone all of them.
-  if (records.incomplete) {
+  if (incomplete) {
     console.warn("finalize: snapshot incomplete — skipping finalization");
     return artifactKeys;
   }
@@ -158,14 +163,25 @@ export async function finalizeClosedSurveys(
   const nowSec = Math.floor(Date.now() / 1000);
   const spe = config.app.secondsPerEpoch;
 
-  const candidates = records.surveys.filter(
-    (s) =>
-      tip.epoch > s.definition.endEpoch &&
-      nowSec >=
-        voteDeadlineUnix(s.definition.endEpoch, tip, spe) +
-          FINALIZE_MARGIN_SECONDS &&
-      !artifactKeys.finalized.has(refKey(s.ref)),
+  // Candidates come from the stored rows — closed at this tip, no artifact
+  // yet — revived from their wire JSON. Each row also carries every
+  // cancellation targeting its survey, which is exactly the evidence the
+  // cancellation walk below needs.
+  const candidateRows = await store.unfinalizedClosedSurveyRows(tip.epoch);
+  const cancellationsByKey = new Map(
+    candidateRows.map((r) => [
+      r.surveyKey,
+      fromJsonSafe(JSON.parse(r.cancellations)) as CancellationRecord[],
+    ]),
   );
+  const candidates = candidateRows
+    .map((r) => fromJsonSafe(JSON.parse(r.record)) as SurveyRecord)
+    .filter(
+      (s) =>
+        nowSec >=
+        voteDeadlineUnix(s.definition.endEpoch, tip, spe) +
+          FINALIZE_MARGIN_SECONDS,
+    );
   if (candidates.length === 0) return artifactKeys;
 
   // Spec-invalid surveys are untalliable (findings 10, 11, 45, 12): a non-v5 or
@@ -230,7 +246,7 @@ export async function finalizeClosedSurveys(
     config,
     store,
     source,
-    records,
+    cancellationsByKey,
     talliable,
     nowSec,
     artifactKeys,
@@ -253,11 +269,20 @@ export async function finalizeClosedSurveys(
   });
 
   // A counted row joins back to its full response payload at emit time; if the
-  // snapshot no longer carries that response (it aged out or a batch dropped it)
-  // the artifact would silently omit a counted responder — so postpone instead.
-  const responseByKey = new Map(
-    records.responses.map((r) => [`${r.txHash}:${r.responseIndex}`, r]),
-  );
+  // stored rows no longer carry that response (it was swept or a batch dropped
+  // it) the artifact would silently omit a counted responder — so postpone
+  // instead. Only the surviving candidates' responses are read: membership is
+  // judged per survey, and a validated row can only reference its own survey's
+  // responses (both key the same content-addressed tx).
+  const responseByKey = new Map<string, ResponseRecord>();
+  for (const row of await store.responseRowsForSurveys(
+    open.map((s) => refKey(s.ref)),
+  )) {
+    responseByKey.set(
+      `${row.txHash}:${row.responseIndex}`,
+      fromJsonSafe(JSON.parse(row.record)) as ResponseRecord,
+    );
+  }
   const presentResponses = new Set(responseByKey.keys());
 
   // --- weight snapshotting, per end epoch ------------------------------------
@@ -293,8 +318,8 @@ export async function finalizeClosedSurveys(
     const { countedBySurvey, weightByRole, totalByRole } = prepared;
 
     // --- emit, one survey at a time, only when complete -----------------------
-    // A counted/eligible row whose tx is no longer in this (complete — see the
-    // `records.incomplete` guard above) snapshot was reorged out: the fixed scan
+    // A counted/eligible row whose tx is no longer in the (complete — see the
+    // `incomplete` guard above) stored rows was reorged out: the fixed scan
     // floor means it can't age back in, and validated_response rows are never
     // otherwise pruned, so leaving it would postpone this survey on *every*
     // future refresh, forever (finding 3). Treat snapshot membership as
@@ -494,7 +519,7 @@ export async function finalizeClosedSurveys(
           continue;
         }
         // Rejoin each counted row to its on-chain response (guaranteed present by
-        // the reorg-prune above and the `records.incomplete` guard).
+        // the reorg-prune above and the `incomplete` guard).
         const entries = counted.map((r) => ({
           row: r,
           response: responseByKey.get(`${r.txHash}:${r.responseIndex}`)!
@@ -579,17 +604,16 @@ async function withCancellations(
   config: ServerConfig,
   store: TallyStore,
   source: Pick<import("cardano-tessera-koios").KoiosDataSource, "txProofs">,
-  records: Cip179Records,
+  cancellationsByKey: ReadonlyMap<string, readonly CancellationRecord[]>,
   candidates: readonly SurveyRecord[],
   nowSec: number,
   artifactKeys: ArtifactKeys,
 ): Promise<SurveyRecord[]> {
-  const candidateKeys = new Set(candidates.map((s) => refKey(s.ref)));
   const ownerByKey = new Map(
     candidates.map((s) => [refKey(s.ref), s.definition.owner]),
   );
-  const relevant = records.cancellations.filter((c) =>
-    candidateKeys.has(refKey(c.target)),
+  const relevant = candidates.flatMap(
+    (s) => cancellationsByKey.get(refKey(s.ref)) ?? [],
   );
   if (relevant.length === 0) return [...candidates];
 

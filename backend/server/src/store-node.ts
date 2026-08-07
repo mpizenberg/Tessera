@@ -57,6 +57,9 @@ import {
   SNAPSHOT_GOV_LINKS_SELECT,
   SNAPSHOT_META_SELECT,
   SURVEY_BUNDLE_SELECT,
+  SURVEY_END_EPOCHS,
+  SURVEYS_ENDING_AT_OR_AFTER,
+  UNFINALIZED_CLOSED_SURVEYS,
   countsFromDb,
   ownedCountSql,
   respondedSql,
@@ -176,6 +179,9 @@ export function openBackendStore(path: string): BackendStore {
   const responsesForSurveyStmt = db.prepare(RESPONSES_FOR_SURVEY);
   const scanStateStmt = db.prepare(SCAN_STATE_SELECT);
   const responsesInRangeStmt = db.prepare(RESPONSES_IN_SLOT_RANGE);
+  const surveyEndEpochsStmt = db.prepare(SURVEY_END_EPOCHS);
+  const unfinalizedClosedStmt = db.prepare(UNFINALIZED_CLOSED_SURVEYS);
+  const endingAtOrAfterStmt = db.prepare(SURVEYS_ENDING_AT_OR_AFTER);
 
   const runAtomically = (queries: readonly SqlQuery[]): void => {
     db.exec("BEGIN");
@@ -735,6 +741,25 @@ export function openBackendStore(path: string): BackendStore {
         range.fromSlot,
         range.toSlot,
       ) as unknown as ResponseRow[];
+    },
+    async surveyEndEpochs(): Promise<number[]> {
+      return (surveyEndEpochsStmt.all() as { endEpoch: number }[]).map(
+        (r) => r.endEpoch,
+      );
+    },
+    async unfinalizedClosedSurveyRows(
+      tipEpoch: number,
+    ): Promise<SurveyIndexRow[]> {
+      return (
+        unfinalizedClosedStmt.all(tipEpoch) as unknown as DbSurveyRow[]
+      ).map(surveyRowFromDb);
+    },
+    async surveyRowsEndingAtOrAfter(
+      minEndEpoch: number,
+    ): Promise<SurveyIndexRow[]> {
+      return (
+        endingAtOrAfterStmt.all(minEndEpoch) as unknown as DbSurveyRow[]
+      ).map(surveyRowFromDb);
     },
 
     async putRefreshRun(row: RefreshRunRow): Promise<void> {
