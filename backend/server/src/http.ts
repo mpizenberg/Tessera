@@ -251,23 +251,41 @@ export function createApp(
 
   app.get("/health", (c) => c.json({ ok: true, network: config.app.network }));
 
+  // The 24 h aggregates only move when a refresh run lands (every run writes a
+  // row, failures included — so a string of failed refreshes still re-keys
+  // this) plus the serving-path tally buckets, which are near-zero. The latest
+  // run's start is therefore the version, read for one row per hit instead of
+  // the full 24 h scans. The hour bucket bounds the sliding window's drift for
+  // the one state the run key can't see: a cron that stopped writing rows
+  // entirely would otherwise serve its final 24 h totals forever.
+  const cachedHealthAggregates = keyedCache(
+    async () =>
+      `${(await store.lastRefreshRun())?.startedAt ?? -1}:` +
+      `${Math.floor(Date.now() / 3_600_000)}`,
+    async () => {
+      const now = Math.floor(Date.now() / 1000);
+      const [lastRefresh, runs, calls] = await Promise.all([
+        store.lastRefreshRun(),
+        store.refreshTotalsSince(now - 86_400),
+        store.upstreamTotalsSince(now - 86_400),
+      ]);
+      // Banked by the refresh; the live count only backs up runs that predate
+      // the column (or whose own count failed).
+      const validationBacklog =
+        lastRefresh?.validationBacklog ??
+        (await store.incompleteValidationCount());
+      return { lastRefresh, runs, calls, validationBacklog };
+    },
+  );
+
   // Operational metrics for the app's health footer ({@link BackendHealth}).
-  // Tiny body, no ETag games: refresh outcomes must be visible even when the
-  // snapshot (and so the /api/surveys ETag) hasn't moved — e.g. a string of
-  // failed refreshes — so this is always served fresh.
+  // Tiny body, no ETag games: the snapshot age must stay live even when the
+  // snapshot (and so the /api/surveys ETag) hasn't moved, so this is served
+  // fresh — only the aggregates above are memoized per refresh generation.
   app.get("/api/health", async (c) => {
     const now = Math.floor(Date.now() / 1000);
-    const [meta, lastRefresh, runs, calls] = await Promise.all([
-      store.snapshotMeta(),
-      store.lastRefreshRun(),
-      store.refreshTotalsSince(now - 86_400),
-      store.upstreamTotalsSince(now - 86_400),
-    ]);
-    // Banked by the refresh; the live count only backs up runs that predate
-    // the column (or whose own count failed).
-    const validationBacklog =
-      lastRefresh?.validationBacklog ??
-      (await store.incompleteValidationCount());
+    const [meta, { lastRefresh, runs, calls, validationBacklog }] =
+      await Promise.all([store.snapshotMeta(), cachedHealthAggregates()]);
     const body: BackendHealth = {
       network: config.app.network,
       commit: config.commit ?? null,

@@ -96,6 +96,20 @@ export interface ArtifactRow {
   readonly createdAt: number;
 }
 
+/**
+ * The survey keys holding an artifact, split by outcome. `cancelled` ⊆
+ * `finalized`: a cancellation artifact (its `tally.cancelled` is set, no
+ * per-role tally) appears in both. The cancelled side feeds the list payload's
+ * `finalizedCancelled` overlay so Explore keeps showing "Cancelled" after a
+ * cancelled survey closes. Mutable sets on purpose: `finalizeClosedSurveys`
+ * takes one read as its starting state and folds its own emissions in, so the
+ * whole refresh scans `tally_artifact` once.
+ */
+export interface ArtifactKeys {
+  readonly finalized: Set<string>;
+  readonly cancelled: Set<string>;
+}
+
 /** Phase-2 tally persistence (ARCHITECTURE.md §6.5), same database. */
 export interface TallyStore {
   /**
@@ -157,17 +171,13 @@ export interface TallyStore {
   artifactByHash(artifactHash: string): Promise<ArtifactRow | null>;
   /** Insert-or-ignore: an artifact, once written, is immutable. */
   putArtifact(row: ArtifactRow): Promise<void>;
-  /** Survey keys that already have an artifact. */
-  finalizedSurveyKeys(): Promise<Set<string>>;
   /**
-   * Survey keys whose artifact finalized the survey as **cancelled** (its
-   * `tally.cancelled` is set — no per-role tally). Feeds the list payload's
-   * `finalizedCancelled` overlay so Explore keeps showing "Cancelled" after a
-   * cancelled survey closes. Derived from the stored artifact JSON at query
-   * time (`json_extract`) rather than a denormalized column: artifacts are
-   * immutable and few, and the JSON stays the single source of truth.
+   * Both key sets in one table scan. Cancelled-ness is derived from the stored
+   * artifact JSON at query time (`json_extract`) rather than a denormalized
+   * column: artifacts are immutable and few, and the JSON stays the single
+   * source of truth.
    */
-  finalizedCancelledKeys(): Promise<Set<string>>;
+  finalizedArtifactKeys(): Promise<ArtifactKeys>;
 }
 
 /**

@@ -63,6 +63,7 @@ import { isQuicknet, roundIsAvailable } from "cip-179/tlock";
 import type { ServerConfig } from "./config";
 import { tlockSealedReveal, type SealedRevealFn } from "./sealedReveal";
 import type {
+  ArtifactKeys,
   SealedRevealRow,
   TallyStore,
   ValidatedResponseRow,
@@ -120,6 +121,12 @@ const ROLE_ENDPOINTS: Record<number, string> = {
   [Role.Keyholder]: "local-count",
 };
 
+/**
+ * Returns the artifact key sets as they stand at the end of the pass — the one
+ * `tally_artifact` read of the whole refresh, with this pass's own emissions
+ * folded in, so callers (proof-cache prune, materialize) reuse it instead of
+ * re-scanning the table.
+ */
 export async function finalizeClosedSurveys(
   config: ServerConfig,
   store: TallyStore,
@@ -129,13 +136,14 @@ export async function finalizeClosedSurveys(
   tip: ChainTip,
   reveal: SealedRevealFn = tlockSealedReveal,
   govLinks: readonly GovLink[] | null = [],
-): Promise<void> {
+): Promise<ArtifactKeys> {
+  const artifactKeys = await store.finalizedArtifactKeys();
   // An incomplete snapshot (a dropped metadata batch or the page cap) may be
   // missing a responder tx or a cancellation for *any* survey, and we can't tell
   // which — so no artifact this refresh is safe to hash. Postpone all of them.
   if (records.incomplete) {
     console.warn("finalize: snapshot incomplete — skipping finalization");
-    return;
+    return artifactKeys;
   }
   // Same reasoning, for the link set: `null` is "this refresh couldn't read the
   // links", and an artifact's provenance is an immutable record of what its
@@ -144,12 +152,11 @@ export async function finalizeClosedSurveys(
   // is idempotent.
   if (govLinks === null) {
     console.warn("finalize: governance links unknown — skipping finalization");
-    return;
+    return artifactKeys;
   }
 
   const nowSec = Math.floor(Date.now() / 1000);
   const spe = config.app.secondsPerEpoch;
-  const finalized = await store.finalizedSurveyKeys();
 
   const candidates = records.surveys.filter(
     (s) =>
@@ -157,9 +164,9 @@ export async function finalizeClosedSurveys(
       nowSec >=
         voteDeadlineUnix(s.definition.endEpoch, tip, spe) +
           FINALIZE_MARGIN_SECONDS &&
-      !finalized.has(refKey(s.ref)),
+      !artifactKeys.finalized.has(refKey(s.ref)),
   );
-  if (candidates.length === 0) return;
+  if (candidates.length === 0) return artifactKeys;
 
   // Spec-invalid surveys are untalliable (findings 10, 11, 45, 12): a non-v5 or
   // structurally-invalid definition, one whose end_epoch is not past its own
@@ -194,7 +201,7 @@ export async function finalizeClosedSurveys(
         (rest > 0 ? `, +${rest} more` : ""),
     );
   }
-  if (needEvidence.length === 0) return;
+  if (needEvidence.length === 0) return artifactKeys;
 
   const talliable: SurveyRecord[] = [];
   for (const s of await withOwnerProofs(source, needEvidence)) {
@@ -214,7 +221,7 @@ export async function finalizeClosedSurveys(
     }
     talliable.push(s);
   }
-  if (talliable.length === 0) return;
+  if (talliable.length === 0) return artifactKeys;
 
   // --- cancelled surveys: a cancellation artifact, no weight work ------------
   // The snapshot keeps `proof: null` for cancellations of closed surveys (the
@@ -226,6 +233,7 @@ export async function finalizeClosedSurveys(
     records,
     talliable,
     nowSec,
+    artifactKeys,
   );
 
   // A sealed survey on a drand chain the bundled tlock can't decrypt is
@@ -468,6 +476,7 @@ export async function finalizeClosedSurveys(
             artifact: artifact.json,
             createdAt: nowSec,
           });
+          artifactKeys.finalized.add(key);
           console.log(
             `finalize: ${key} → sealed artifact ${artifact.hash} ` +
               `(counted ${audit.counted.length}, superseded ${audit.superseded.length}, ` +
@@ -507,12 +516,14 @@ export async function finalizeClosedSurveys(
           artifact: artifact.json,
           createdAt: nowSec,
         });
+        artifactKeys.finalized.add(key);
         console.log(`finalize: ${key} → artifact ${artifact.hash}`);
       } catch (err) {
         console.warn(`finalize: ${key} skipped this pass — ${String(err)}`);
       }
     }
   }
+  return artifactKeys;
 }
 
 /**
@@ -561,6 +572,8 @@ async function withOwnerProofs(
  * emitting on incomplete evidence risks freezing the wrong immutable artifact —
  * a genuinely-cancelled survey tallied in full, or a winner the verifier will
  * refetch to a different (earlier) one → false MISMATCH.
+ *
+ * Each emitted cancellation artifact is folded into `artifactKeys` (both sets).
  */
 async function withCancellations(
   config: ServerConfig,
@@ -569,6 +582,7 @@ async function withCancellations(
   records: Cip179Records,
   candidates: readonly SurveyRecord[],
   nowSec: number,
+  artifactKeys: ArtifactKeys,
 ): Promise<SurveyRecord[]> {
   const candidateKeys = new Set(candidates.map((s) => refKey(s.ref)));
   const ownerByKey = new Map(
@@ -665,6 +679,8 @@ async function withCancellations(
       artifact: JSON.stringify(artifact),
       createdAt: nowSec,
     });
+    artifactKeys.finalized.add(key);
+    artifactKeys.cancelled.add(key);
     console.log(`finalize: ${key} cancelled by ${winning.txHash}`);
   }
   return open;

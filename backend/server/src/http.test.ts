@@ -44,7 +44,7 @@ async function seed(
     { surveys: [surveyA, surveyB], responses, cancellations: [cancellation] },
     tip,
     govLinks,
-    await store.finalizedCancelledKeys(),
+    (await store.finalizedArtifactKeys()).cancelled,
   );
   await store.reconcileSnapshot(snapshot.surveys, snapshot.responses, {
     tip: JSON.stringify(toJsonSafe(tip)),
@@ -672,6 +672,31 @@ describe("GET /api/health", () => {
     const res = await appWith(store).request("/api/health");
     const body = (await res.json()) as Record<string, unknown>;
     expect(body["validationBacklog"]).toBe(1);
+  });
+
+  it("memoizes the aggregates until a new run lands", async () => {
+    const store = await seededStore();
+    await store.putRefreshRun(runRow);
+    let scans = 0;
+    const counting = {
+      ...store,
+      refreshTotalsSince: (since: number) => {
+        scans++;
+        return store.refreshTotalsSince(since);
+      },
+    };
+    const app = appWith(counting);
+
+    await app.request("/api/health");
+    await app.request("/api/health");
+    expect(scans).toBe(1);
+
+    // A new run row (failures write one too) re-keys the memo.
+    await store.putRefreshRun({ ...runRow, startedAt: NOW - 10 });
+    const res = await app.request("/api/health");
+    expect(scans).toBe(2);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body["lastRefresh"]).toMatchObject({ startedAt: NOW - 10 });
   });
 
   it("serves nulls before any refresh, with a default per-refresh limit", async () => {

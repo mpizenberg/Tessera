@@ -182,32 +182,32 @@ export async function refreshSnapshot(
 
     // Finalization (§6.5/§7) runs last, on the freshly validated state: weight
     // snapshotting + artifact emission for safely-closed surveys. Idempotent and
-    // resumable, so a failure here just retries next refresh.
-    await finalizeClosedSurveys(
-      config,
-      store,
-      new KoiosTallyInputs(config.app, undefined, countKoios),
-      source,
-      records,
-      tip,
-      undefined,
-      // `null` = unknown, so the pass defers rather than stamping "no links"
-      // into an artifact that outlives this refresh.
-      govLinksReliable ? govLinks : null,
-    ).catch((err) =>
-      console.warn(`finalization failed (will retry): ${String(err)}`),
-    );
+    // resumable, so a failure here just retries next refresh. Its returned key
+    // sets carry this pass's emissions, so the prune and materialize below need
+    // no `tally_artifact` scan of their own; a pass that died mid-way may still
+    // have emitted, so only then is the store re-read.
+    const artifactKeys =
+      (await finalizeClosedSurveys(
+        config,
+        store,
+        new KoiosTallyInputs(config.app, undefined, countKoios),
+        source,
+        records,
+        tip,
+        undefined,
+        // `null` = unknown, so the pass defers rather than stamping "no links"
+        // into an artifact that outlives this refresh.
+        govLinksReliable ? govLinks : null,
+      ).catch((err) => {
+        console.warn(`finalization failed (will retry): ${String(err)}`);
+        return null;
+      })) ?? (await store.finalizedArtifactKeys());
 
     // After finalization, so a survey that just froze its artifact releases its
     // transactions in the same run rather than a refresh later. Best-effort: a
     // cache that keeps too much is only a cache that costs storage.
-    await pruneTxProofCache(
-      store,
-      records,
-      tip,
-      await store.finalizedSurveyKeys(),
-    ).catch((err) =>
-      console.warn(`tx proof cache prune failed: ${String(err)}`),
+    await pruneTxProofCache(store, records, tip, artifactKeys.finalized).catch(
+      (err) => console.warn(`tx proof cache prune failed: ${String(err)}`),
     );
 
     // Materialize LAST, so the stored rows reflect this run's validation and
@@ -218,7 +218,7 @@ export async function refreshSnapshot(
       records,
       tip,
       await displayGovLinks(store, govLinks, govLinksReliable),
-      await store.finalizedCancelledKeys(),
+      artifactKeys.cancelled,
     );
     const payloadBytes = snapshotBytes(snapshot);
     await publishSnapshot(store, previous, snapshot, {

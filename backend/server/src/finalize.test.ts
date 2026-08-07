@@ -339,7 +339,7 @@ describe("finalizeClosedSurveys", () => {
       [KEY_B]: { weight: 7n, registered: true },
     });
 
-    await finalizeClosedSurveys(
+    const keys = await finalizeClosedSurveys(
       CONFIG,
       store,
       inputs,
@@ -347,6 +347,10 @@ describe("finalizeClosedSurveys", () => {
       records(survey(), [rA, rB]),
       TIP,
     );
+    // The pass's own emission rides back on the returned key sets, so the
+    // refresh needs no second tally_artifact read.
+    expect(keys.finalized).toEqual(new Set([SURVEY_KEY]));
+    expect(keys.cancelled).toEqual(new Set());
 
     const row = store.artifacts.get(SURVEY_KEY);
     expect(row).toBeDefined();
@@ -478,9 +482,15 @@ describe("finalizeClosedSurveys", () => {
     };
 
     // The pass completes normally (does not reject) despite survey 1 throwing.
-    await expect(
-      finalizeClosedSurveys(CONFIG, poisoned, inputs, noProofs, recs, TIP),
-    ).resolves.toBeUndefined();
+    const keys = await finalizeClosedSurveys(
+      CONFIG,
+      poisoned,
+      inputs,
+      noProofs,
+      recs,
+      TIP,
+    );
+    expect(keys.finalized).toEqual(new Set([SURVEY_KEY2]));
 
     expect(store.artifacts.has(SURVEY_KEY)).toBe(false); // poisoned → skipped
     expect(store.artifacts.has(SURVEY_KEY2)).toBe(true); // healthy → finalized
@@ -975,7 +985,7 @@ describe("finalizeClosedSurveys", () => {
     const proofs = proofsStub({ [cancellation.txHash]: OWNER_PROOF });
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
 
-    await finalizeClosedSurveys(
+    const keys = await finalizeClosedSurveys(
       CONFIG,
       store,
       inputs,
@@ -983,6 +993,10 @@ describe("finalizeClosedSurveys", () => {
       records(survey(), [rA], [cancellation]),
       TIP,
     );
+    // A cancellation emission lands in both returned sets — materialize reads
+    // the cancelled one for the same-refresh overlay flip.
+    expect(keys.finalized).toEqual(new Set([SURVEY_KEY]));
+    expect(keys.cancelled).toEqual(new Set([SURVEY_KEY]));
 
     const artifact = JSON.parse(
       store.artifacts.get(SURVEY_KEY)!.artifact,
@@ -1326,7 +1340,7 @@ describe("finalizeClosedSurveys", () => {
         TIP,
         reveal,
       ),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ finalized: new Set(), cancelled: new Set() });
 
     expect(reveal).toHaveBeenCalledTimes(1);
     expect(store.artifacts.size).toBe(0); // retried next refresh

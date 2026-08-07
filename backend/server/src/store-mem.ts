@@ -176,20 +176,20 @@ export function memBackendStore(): MemBackendStore {
     async putArtifact(row) {
       if (!artifacts.has(row.surveyKey)) artifacts.set(row.surveyKey, row);
     },
-    async finalizedSurveyKeys() {
-      return new Set(artifacts.keys());
-    },
-    async finalizedCancelledKeys() {
-      return new Set(
-        [...artifacts.values()]
-          .filter((a) => {
-            const body = JSON.parse(a.artifact) as {
-              tally?: { cancelled?: unknown };
-            };
-            return body.tally?.cancelled != null;
-          })
-          .map((a) => a.surveyKey),
-      );
+    async finalizedArtifactKeys() {
+      return {
+        finalized: new Set(artifacts.keys()),
+        cancelled: new Set(
+          [...artifacts.values()]
+            .filter((a) => {
+              const body = JSON.parse(a.artifact) as {
+                tally?: { cancelled?: unknown };
+              };
+              return body.tally?.cancelled != null;
+            })
+            .map((a) => a.surveyKey),
+        ),
+      };
     },
 
     async cachedTxMetadata(txHashes) {

@@ -2,7 +2,7 @@
  * `store-node.ts` against a real (in-memory) SQLite database — exercised where
  * the SQL itself carries logic the in-memory store re-implements in JS, so the
  * two can't silently disagree. That's the `json_extract` predicate behind
- * `finalizedCancelledKeys`, the conditional upsert behind the refresh lease,
+ * `finalizedArtifactKeys`, the conditional upsert behind the refresh lease,
  * the join and cascade behind the sealed-reveal cursor, and the paging keyset
  * (D1 shares the same SQLite dialect).
  */
@@ -38,11 +38,11 @@ const artifact = (surveyKey: string, tally: string, hash: string) => ({
   createdAt: 1,
 });
 
-describe("store-node finalizedCancelledKeys (json_extract)", () => {
+describe("store-node finalizedArtifactKeys (json_extract)", () => {
   let store: BackendStore;
   afterEach(() => store.close());
 
-  it("selects only artifacts whose tally.cancelled is set", async () => {
+  it("marks cancelled only artifacts whose tally.cancelled is set", async () => {
     store = openBackendStore(":memory:");
     await store.putArtifact(
       artifact("aa:0", `{"perRole":[{"role":3}]}`, "a1".repeat(32)),
@@ -60,15 +60,18 @@ describe("store-node finalizedCancelledKeys (json_extract)", () => {
       artifact("cc:2", `{"cancelled":null,"perRole":[]}`, "c3".repeat(32)),
     );
 
-    expect(await store.finalizedCancelledKeys()).toEqual(new Set(["bb:1"]));
-    expect(await store.finalizedSurveyKeys()).toEqual(
-      new Set(["aa:0", "bb:1", "cc:2"]),
-    );
+    expect(await store.finalizedArtifactKeys()).toEqual({
+      finalized: new Set(["aa:0", "bb:1", "cc:2"]),
+      cancelled: new Set(["bb:1"]),
+    });
   });
 
   it("is empty with no artifacts", async () => {
     store = openBackendStore(":memory:");
-    expect(await store.finalizedCancelledKeys()).toEqual(new Set());
+    expect(await store.finalizedArtifactKeys()).toEqual({
+      finalized: new Set(),
+      cancelled: new Set(),
+    });
   });
 });
 

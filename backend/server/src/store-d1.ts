@@ -12,6 +12,7 @@ import type { SurveyListCounts } from "cardano-tessera-core";
 import type { GovLink, GovLinkDoc } from "cip-179/domain";
 
 import type {
+  ArtifactKeys,
   ArtifactRow,
   BackendStore,
   DbGovEpochRow,
@@ -316,22 +317,23 @@ export function d1BackendStore(db: D1Like): BackendStore {
         )
         .run();
     },
-    async finalizedSurveyKeys(): Promise<Set<string>> {
-      const { results } = await db
-        .prepare("SELECT survey_key AS surveyKey FROM tally_artifact")
-        .all<{ surveyKey: string }>();
-      return new Set(results.map((r) => r.surveyKey));
-    },
-    async finalizedCancelledKeys(): Promise<Set<string>> {
+    async finalizedArtifactKeys(): Promise<ArtifactKeys> {
       // Same `IS NOT NULL` note as store-node: json_extract yields SQL NULL
       // for both an absent path and a JSON null.
       const { results } = await db
         .prepare(
-          `SELECT survey_key AS surveyKey FROM tally_artifact
-           WHERE json_extract(artifact, '$.tally.cancelled') IS NOT NULL`,
+          `SELECT survey_key AS surveyKey,
+                  json_extract(artifact, '$.tally.cancelled') IS NOT NULL
+                    AS cancelled
+           FROM tally_artifact`,
         )
-        .all<{ surveyKey: string }>();
-      return new Set(results.map((r) => r.surveyKey));
+        .all<{ surveyKey: string; cancelled: number }>();
+      return {
+        finalized: new Set(results.map((r) => r.surveyKey)),
+        cancelled: new Set(
+          results.filter((r) => r.cancelled).map((r) => r.surveyKey),
+        ),
+      };
     },
 
     async cachedTxMetadata(
