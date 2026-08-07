@@ -95,7 +95,8 @@ const schema = `
     tip TEXT NOT NULL,
     incomplete INTEGER NOT NULL,
     fetched_at INTEGER NOT NULL,
-    payload_digest TEXT
+    payload_digest TEXT,
+    list_counts TEXT
   );
   CREATE TABLE response (
     tx_hash TEXT NOT NULL,
@@ -148,6 +149,7 @@ const meta = (fetchedAt: number): SnapshotMeta => ({
   incomplete: false,
   fetchedAt,
   payloadDigest: null,
+  listCounts: null,
 });
 
 function fakeStore() {

@@ -544,7 +544,34 @@ export interface SnapshotMeta {
    * unchanged corpus; null never matches, so unknown reconciles fully.
    */
   readonly payloadDigest: string | null;
+  /**
+   * Wire JSON of the banked {@link BankedListCounts}, or null when unknown
+   * (stored before the counts existed) — the list route then falls back to
+   * the live aggregate until the next refresh publishes.
+   */
+  readonly listCounts: string | null;
 }
+
+/**
+ * The chip counts that depend on neither the caller's credentials nor a
+ * search — every chip but `mine`. The refresh computes them over the rows it
+ * materializes and banks them with the envelope, so a no-search list request
+ * reads them from the envelope it already holds instead of aggregating the
+ * whole `survey_index`. They ride the envelope, not the digest gate:
+ * `active`/`sealed`/`public` move at epoch turnover even when the rows do
+ * not, and the envelope lands every run.
+ */
+export type BankedListCounts = Omit<
+  import("cardano-tessera-core").SurveyListCounts,
+  "mine"
+>;
+
+export const snapshotListCounts = (
+  meta: SnapshotMeta,
+): BankedListCounts | null =>
+  meta.listCounts === null
+    ? null
+    : (JSON.parse(meta.listCounts) as BankedListCounts);
 
 /**
  * The tip a stored snapshot published. Every field of a `ChainTip` is a plain
@@ -630,6 +657,12 @@ export interface SnapshotStore {
     credentials: readonly string[],
     searchTerms: readonly string[],
   ): Promise<import("cardano-tessera-core").SurveyListCounts>;
+  /**
+   * Surveys owned by any of `credentials` — the `mine` chip, the one count
+   * the banked {@link BankedListCounts} cannot carry. O(owned) via the
+   * `survey_index_owner` index.
+   */
+  ownedSurveyCount(credentials: readonly string[]): Promise<number>;
   close(): void;
 }
 

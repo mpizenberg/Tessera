@@ -199,6 +199,7 @@ describe("store-node migration of a pre-runner database", () => {
         incomplete: false,
         fetchedAt: 7,
         payloadDigest: null,
+        listCounts: null,
       });
       expect((await store.snapshotMeta())?.fetchedAt).toBe(7);
     } finally {
@@ -234,6 +235,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0014_upstream_metering.sql",
       "0015_tx_proof_cache.sql",
       "0016_snapshot_digest_and_backlog.sql",
+      "0017_list_counts.sql",
     ]);
   });
 });
@@ -281,6 +283,7 @@ describe("store-node migration to per-response rows", () => {
         incomplete: false,
         fetchedAt: 100,
         payloadDigest: null,
+        listCounts: null,
       });
       expect((await store.snapshotMeta())?.fetchedAt).toBe(100);
     } finally {
@@ -320,6 +323,7 @@ describe("store-node survey_index paging SQL", () => {
     incomplete: false,
     fetchedAt: 7,
     payloadDigest: null,
+    listCounts: null,
   };
 
   // linked (bucket 0), two open (bucket 1, newest slot first), one closed.
@@ -410,6 +414,15 @@ describe("store-node survey_index paging SQL", () => {
     });
   });
 
+  it("counts owned surveys alone via the owner index", async () => {
+    store = openBackendStore(":memory:");
+    await store.reconcileSnapshot(rows, [], meta);
+    expect(await store.ownedSurveyCount(["key:11"])).toBe(4);
+    expect(await store.ownedSurveyCount(["key:11", "key:99"])).toBe(4);
+    expect(await store.ownedSurveyCount(["key:99"])).toBe(0);
+    expect(await store.ownedSurveyCount([])).toBe(0);
+  });
+
   it("deletes surveys absent from the authoritative scan", async () => {
     store = openBackendStore(":memory:");
     await store.reconcileSnapshot(rows, [], meta);
@@ -423,16 +436,19 @@ describe("store-node survey_index paging SQL", () => {
 
   it("republishes the envelope alone, leaving rows untouched", async () => {
     store = openBackendStore(":memory:");
+    const counts = `{"all":4,"linked":1,"active":3,"sealed":1,"public":2}`;
     await store.reconcileSnapshot(rows, [], { ...meta, payloadDigest: "d1" });
     await store.publishSnapshotMeta({
       ...meta,
       fetchedAt: 8,
       payloadDigest: "d1",
+      listCounts: counts,
     });
     expect(await store.snapshotMeta()).toEqual({
       ...meta,
       fetchedAt: 8,
       payloadDigest: "d1",
+      listCounts: counts,
     });
     expect(await page({})).toHaveLength(rows.length);
   });
@@ -486,6 +502,7 @@ describe("store-node response rows", () => {
     incomplete: false,
     fetchedAt: 7,
     payloadDigest: null,
+    listCounts: null,
   };
   const resp = (
     txHash: string,

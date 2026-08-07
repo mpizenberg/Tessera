@@ -54,6 +54,7 @@ import { KoiosDataSource } from "cardano-tessera-koios";
 import type { ServerConfig } from "./config";
 import { upstreamMeter } from "./meter";
 import {
+  snapshotListCounts,
   snapshotTip,
   sumUpstream,
   validationKey,
@@ -342,6 +343,11 @@ export function createApp(
     // Stored values are already wire-form JSON text — the body is assembled
     // by parse-and-concatenate, never re-encoded through toJsonSafe.
     const tip = snapshotTip(meta);
+    // Without a search, every chip but `mine` comes banked in the envelope
+    // already in hand, so the request pays only the indexed owner count — or
+    // no counting query at all without credentials. A search (counts scope to
+    // the matching set) or an unbanked envelope aggregates live.
+    const banked = searchTerms.length === 0 ? snapshotListCounts(meta) : null;
     const [rows, counts] = await Promise.all([
       store.surveyIndexPage({
         tipEpoch: tip.epoch,
@@ -352,7 +358,13 @@ export function createApp(
         // One extra row decides `nextCursor` without a second query.
         limit: limit + 1,
       }),
-      store.surveyIndexCounts(tip.epoch, credentials, searchTerms),
+      banked === null
+        ? store.surveyIndexCounts(tip.epoch, credentials, searchTerms)
+        : credentials.length === 0
+          ? { ...banked, mine: 0 }
+          : store
+              .ownedSurveyCount(credentials)
+              .then((mine) => ({ ...banked, mine })),
     ]);
     const page = rows.slice(0, limit);
     const last = page[page.length - 1];

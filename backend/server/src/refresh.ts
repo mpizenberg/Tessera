@@ -229,6 +229,7 @@ export async function refreshSnapshot(
       // true rather than from when it happened to land.
       fetchedAt: startedAt,
       payloadDigest: await snapshotDigest(snapshot),
+      listCounts: JSON.stringify(snapshot.listCounts),
     });
 
     // Read before recording: recording drains the meter.
@@ -270,7 +271,7 @@ export async function refreshSnapshot(
 export async function publishSnapshot(
   store: Pick<SnapshotStore, "reconcileSnapshot" | "publishSnapshotMeta">,
   previous: SnapshotMeta | null,
-  snapshot: MaterializedSnapshot,
+  snapshot: Pick<MaterializedSnapshot, "surveys" | "responses">,
   meta: SnapshotMeta,
 ): Promise<void> {
   if (

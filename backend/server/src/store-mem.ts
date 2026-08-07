@@ -330,6 +330,10 @@ export function memBackendStore(): MemBackendStore {
         mine: by("mine"),
       };
     },
+    async ownedSurveyCount(credentials) {
+      const wanted = new Set(credentials);
+      return surveyIndexRows.filter((r) => wanted.has(r.owner)).length;
+    },
 
     async putRefreshRun(row) {
       refreshRuns.set(row.startedAt, row);

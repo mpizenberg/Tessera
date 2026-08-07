@@ -57,6 +57,7 @@ describe("publishSnapshot", () => {
     incomplete: false,
     fetchedAt: 2,
     payloadDigest,
+    listCounts: null,
   });
   const spyStore = () => {
     const calls: string[] = [];
@@ -116,6 +117,7 @@ describe("snapshotTip", () => {
       incomplete: false,
       fetchedAt: 1_750_000_000,
       payloadDigest: null,
+      listCounts: null,
     };
 
     expect(snapshotTip(meta)).toEqual(tip);

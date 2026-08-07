@@ -115,6 +115,15 @@ export function surveyPageSql(q: SurveyPageQuery): SqlQuery {
   };
 }
 
+/** The `mine` chip alone — the one count the banked envelope can't carry. */
+export const ownedCountSql = (credentials: readonly string[]): SqlQuery => {
+  const mine = mineSql(credentials);
+  return {
+    sql: `SELECT COUNT(*) AS n FROM survey_index WHERE ${mine.sql}`,
+    params: mine.params,
+  };
+};
+
 export function surveyCountsSql(
   tipEpoch: number,
   credentials: readonly string[],
@@ -205,13 +214,15 @@ const SURVEY_INDEX_RECONCILE = `
      OR survey_index.finalized_cancelled IS NOT excluded.finalized_cancelled`;
 
 const SNAPSHOT_META_UPSERT = `
-  INSERT INTO snapshot_meta (id, tip, incomplete, fetched_at, payload_digest)
-  VALUES (1, ?, ?, ?, ?)
+  INSERT INTO snapshot_meta (id, tip, incomplete, fetched_at, payload_digest,
+                             list_counts)
+  VALUES (1, ?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
     tip = excluded.tip,
     incomplete = excluded.incomplete,
     fetched_at = excluded.fetched_at,
-    payload_digest = excluded.payload_digest`;
+    payload_digest = excluded.payload_digest,
+    list_counts = excluded.list_counts`;
 
 /** The envelope write, alone (the digest-match fast path) or ending a reconcile. */
 export const snapshotMetaUpsertSql = (meta: SnapshotMeta): SqlQuery => ({
@@ -221,11 +232,13 @@ export const snapshotMetaUpsertSql = (meta: SnapshotMeta): SqlQuery => ({
     meta.incomplete ? 1 : 0,
     meta.fetchedAt,
     meta.payloadDigest,
+    meta.listCounts,
   ],
 });
 
 export const SNAPSHOT_META_SELECT = `
-  SELECT tip, incomplete, fetched_at AS fetchedAt, payload_digest AS payloadDigest
+  SELECT tip, incomplete, fetched_at AS fetchedAt,
+         payload_digest AS payloadDigest, list_counts AS listCounts
   FROM snapshot_meta WHERE id = 1`;
 
 /** The survey half of a bundle — only the two columns the body carries. */

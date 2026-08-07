@@ -18,11 +18,17 @@ import {
 import { toJsonSafe } from "cip-179/tally";
 import { aggregateSurveyList, surveyHaystack } from "cardano-tessera-core";
 
-import type { ResponseRow, SurveyIndexRow } from "./store";
+import type { BankedListCounts, ResponseRow, SurveyIndexRow } from "./store";
 
 export interface MaterializedSnapshot {
   readonly surveys: SurveyIndexRow[];
   readonly responses: ResponseRow[];
+  /**
+   * Credential-free chip counts over all rows, against this snapshot's tip —
+   * banked with the envelope so the list route serves them without
+   * aggregating. Mirrors core `pageSurveyList`'s counts with no search terms.
+   */
+  readonly listCounts: BankedListCounts;
 }
 
 export function materializeSnapshot(
@@ -57,7 +63,15 @@ export function materializeSnapshot(
     finalizedCancelled: [...finalizedCancelled],
   });
 
+  const active = aggregates.filter((a) => a.status === "active");
   return {
+    listCounts: {
+      all: aggregates.length,
+      linked: aggregates.filter((a) => a.govLinks.length > 0).length,
+      active: active.length,
+      sealed: active.filter((a) => a.sealed).length,
+      public: active.filter((a) => !a.sealed).length,
+    },
     surveys: aggregates.map((a) => ({
       surveyKey: a.key,
       slot: a.record.slot,
@@ -96,9 +110,11 @@ const compareText = (a: string, b: string): number =>
  * the raw scan, so everything baked into rows — epoch-driven flags, the
  * finalized-cancelled overlay, governance links — is covered by construction.
  * Rows are sorted by key first: equality must not depend on scan order.
+ * The banked counts are deliberately outside the digest: they are derived
+ * from the rows and the tip, and the envelope carrying them lands every run.
  */
 export async function snapshotDigest(
-  snapshot: MaterializedSnapshot,
+  snapshot: Pick<MaterializedSnapshot, "surveys" | "responses">,
 ): Promise<string> {
   const surveys = [...snapshot.surveys].sort((a, b) =>
     compareText(a.surveyKey, b.surveyKey),

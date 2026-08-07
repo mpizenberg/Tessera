@@ -54,6 +54,7 @@ import {
   SNAPSHOT_META_SELECT,
   SURVEY_BUNDLE_SELECT,
   countsFromDb,
+  ownedCountSql,
   respondedSql,
   snapshotMetaUpsertSql,
   snapshotReconciliationSql,
@@ -612,6 +613,7 @@ export function openBackendStore(path: string): BackendStore {
             incomplete: number;
             fetchedAt: number;
             payloadDigest: string | null;
+            listCounts: string | null;
           }
         | undefined;
       if (!row) return null;
@@ -667,6 +669,11 @@ export function openBackendStore(path: string): BackendStore {
           number
         >,
       );
+    },
+    async ownedSurveyCount(credentials: readonly string[]): Promise<number> {
+      const { sql, params } = ownedCountSql(credentials);
+      return (db.prepare(sql).get(...(params as SqlValue[])) as { n: number })
+        .n;
     },
 
     async putRefreshRun(row: RefreshRunRow): Promise<void> {

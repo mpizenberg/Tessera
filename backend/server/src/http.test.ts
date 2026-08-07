@@ -51,6 +51,7 @@ async function seed(
     incomplete: false,
     fetchedAt: FETCHED_AT,
     payloadDigest: null,
+    listCounts: JSON.stringify(snapshot.listCounts),
   });
 }
 
@@ -361,6 +362,53 @@ describe("GET /api/surveys pagination, filters, search", () => {
     expect((body["counts"] as { mine: number }).mine).toBe(1);
     const none = await getBody(app, "?filter=mine");
     expect(none["surveys"]).toEqual([]);
+  });
+
+  it("serves banked counts without aggregating; a search aggregates live", async () => {
+    const store = await seededStore();
+    let aggregates = 0;
+    const counting = {
+      ...store,
+      surveyIndexCounts: (
+        tipEpoch: number,
+        credentials: readonly string[],
+        searchTerms: readonly string[],
+      ) => {
+        aggregates++;
+        return store.surveyIndexCounts(tipEpoch, credentials, searchTerms);
+      },
+    };
+    const app = appWith(counting);
+
+    // No search: the counts come from the envelope, and they must be exactly
+    // what the live aggregate would have said.
+    const body = await getBody(app, "");
+    expect(aggregates).toBe(0);
+    expect(body["counts"]).toEqual(
+      await store.surveyIndexCounts(tip.epoch, [], []),
+    );
+    // Credentials add only the indexed owner count, never the aggregate.
+    const mine = await getBody(app, "?credentials=key:11");
+    expect(aggregates).toBe(0);
+    expect((mine["counts"] as { mine: number }).mine).toBe(1);
+    // A search scopes counts to the matching set — banked counts can't.
+    await getBody(app, "?q=alpha");
+    expect(aggregates).toBe(1);
+  });
+
+  it("aggregates live when the envelope predates the banked counts", async () => {
+    const store = await seededStore();
+    const meta = await store.snapshotMeta();
+    await store.publishSnapshotMeta({ ...meta!, listCounts: null });
+    const body = await getBody(appWith(store), "");
+    expect(body["counts"]).toEqual({
+      all: 2,
+      linked: 0,
+      active: 1,
+      sealed: 0,
+      public: 1,
+      mine: 0,
+    });
   });
 
   it("search ANDs terms and scopes counts to matches", async () => {
