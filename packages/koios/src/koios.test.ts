@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AppConfig } from "cardano-tessera-core";
 import type { Credential } from "cip-179";
+import type { ChainTip } from "cip-179/domain";
 import { mechanismAProven, hexToBytes } from "cip-179/domain";
 import { decodeResolvedNativeScript } from "cip-179/txproof";
 import { evolutionCodec } from "cip-179/evolution";
@@ -420,6 +421,180 @@ describe("fetchAll — chain position", () => {
     // RESP_TX was seen 101 times across two pages but classified once.
     expect(records.responses).toHaveLength(2);
     expect(records.incomplete).toBe(false);
+  });
+});
+
+// --- fetchSegment: the windowed refresh's slot-bounded scan ------------------
+//
+// Ascending (absolute_slot, tx_hash) order over an explicit slot range, so a
+// budget-capped run covers a contiguous prefix and its cursor resumes it —
+// unlike fetchAll's newest-first one-shot. The classification pipeline behind
+// the listing is shared with fetchAll, so only the listing shape and coverage
+// reporting need pinning here.
+
+const SEGMENT_TIP: ChainTip = {
+  epoch: 1_346,
+  slot: 10_000,
+  time: 1_750_000_000,
+  epochSlot: 100,
+  govActionLifetime: 6,
+};
+
+describe("fetchSegment — slot-bounded ascending scan", () => {
+  const labelScanParams = (mock: {
+    mock: { calls: unknown[][] };
+  }): URLSearchParams =>
+    new URL(
+      mock.mock.calls
+        .map((c) => String(c[0]))
+        .find((u) => u.includes("/tx_by_metalabel"))!,
+    ).searchParams;
+
+  it("lists ascending between an inclusive floor and ceiling, against the given tip", async () => {
+    const fetchMock = stubKoios();
+    const scan = await new KoiosDataSource(CONFIG).fetchSegment(
+      { from: { slot: 4_000 }, toSlot: 9_000 },
+      SEGMENT_TIP,
+    );
+    const params = labelScanParams(fetchMock);
+    expect(params.getAll("absolute_slot")).toEqual(["gte.4000", "lte.9000"]);
+    expect(params.get("order")).toBe("absolute_slot.asc,tx_hash.asc");
+    // The caller's tip is trusted — no /tip read of its own.
+    expect(
+      fetchMock.mock.calls.some((c) => String(c[0]).includes("/tip")),
+    ).toBe(false);
+    // The shared pipeline classified the listed tx as usual.
+    expect(scan.records.responses).toHaveLength(2);
+    expect(scan.records.incomplete).toBe(false);
+    expect(scan.cursor).toEqual({ slot: 5_000, txHash: RESP_TX });
+    expect(scan.exhausted).toBe(true);
+  });
+
+  it("resumes strictly after a (slot, txHash) cursor, re-listing nothing", async () => {
+    const fetchMock = stubKoios();
+    await new KoiosDataSource(CONFIG).fetchSegment(
+      { from: { slot: 5_000, txHash: RESP_TX } },
+      SEGMENT_TIP,
+    );
+    const params = labelScanParams(fetchMock);
+    expect(params.get("or")).toBe(
+      `(absolute_slot.gt.5000,and(absolute_slot.eq.5000,tx_hash.gt.${RESP_TX}))`,
+    );
+    // The keyset filter replaces the slot floor; no ceiling was asked for.
+    expect(params.getAll("absolute_slot")).toEqual([]);
+  });
+
+  it("spends at most the page budget and hands back the resume cursor", async () => {
+    const T = (i: number) => i.toString(16).padStart(64, "0");
+    const offsets: number[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes("/tx_by_metalabel")) {
+          const offset = Number(new URL(url).searchParams.get("offset"));
+          offsets.push(offset);
+          // Every page is full: the index holds more than the budget covers.
+          const rows = Array.from({ length: 100 }, (_, i) => ({
+            tx_hash: T(offset + i),
+            absolute_slot: 1_000 + offset + i,
+            epoch_no: 1_340,
+          }));
+          return new Response(JSON.stringify(rows), { status: 200 });
+        }
+        return new Response("[]", { status: 200 });
+      }),
+    );
+    const scan = await new KoiosDataSource(CONFIG).fetchSegment(
+      { from: { slot: 1_000 }, pageBudget: 2 },
+      SEGMENT_TIP,
+    );
+    expect(offsets).toEqual([0, 100]);
+    expect(scan.exhausted).toBe(false);
+    // A spent budget is expected catch-up behaviour, not a failure.
+    expect(scan.records.incomplete).toBe(false);
+    expect(scan.cursor).toEqual({ slot: 1_199, txHash: T(199) });
+  });
+
+  it("dedups a tx re-listed across an ascending page boundary", async () => {
+    const T2 = "ef".repeat(32);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes("/tx_by_metalabel")) {
+          const offset = Number(new URL(url).searchParams.get("offset"));
+          // Page 0 is full (all RESP_TX); page 1 re-lists RESP_TX (a tx landing
+          // mid-scan shifted the rows) then ends short.
+          const rows =
+            offset === 0
+              ? Array.from({ length: 100 }, () => ({
+                  tx_hash: RESP_TX,
+                  absolute_slot: 5_000,
+                  epoch_no: 1_340,
+                }))
+              : [
+                  { tx_hash: RESP_TX, absolute_slot: 5_000, epoch_no: 1_340 },
+                  { tx_hash: T2, absolute_slot: 6_000, epoch_no: 1_341 },
+                ];
+          return new Response(JSON.stringify(rows), { status: 200 });
+        }
+        if (url.includes("/tx_metadata")) {
+          return new Response(
+            JSON.stringify([
+              { tx_hash: RESP_TX, metadata: responsesMetadata() },
+            ]),
+            { status: 200 },
+          );
+        }
+        return new Response("[]", { status: 200 });
+      }),
+    );
+    const scan = await new KoiosDataSource(CONFIG).fetchSegment(
+      { from: { slot: 4_000 } },
+      SEGMENT_TIP,
+    );
+    // RESP_TX was listed 101 times across the boundary but classified once.
+    expect(scan.records.responses).toHaveLength(2);
+    expect(scan.exhausted).toBe(true);
+    expect(scan.cursor).toEqual({ slot: 6_000, txHash: T2 });
+  });
+
+  it("flags the records incomplete on a failed page, keeping the covered prefix", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes("/tx_by_metalabel")) {
+          const offset = Number(new URL(url).searchParams.get("offset"));
+          if (offset > 0) return new Response("boom", { status: 500 });
+          const rows = Array.from({ length: 100 }, () => ({
+            tx_hash: RESP_TX,
+            absolute_slot: 5_000,
+            epoch_no: 1_340,
+          }));
+          return new Response(JSON.stringify(rows), { status: 200 });
+        }
+        if (url.includes("/tx_metadata")) {
+          return new Response(
+            JSON.stringify([
+              { tx_hash: RESP_TX, metadata: responsesMetadata() },
+            ]),
+            { status: 200 },
+          );
+        }
+        return new Response("[]", { status: 200 });
+      }),
+    );
+    const scan = await new KoiosDataSource(CONFIG).fetchSegment(
+      { from: { slot: 4_000 } },
+      SEGMENT_TIP,
+    );
+    // The fulfilled prefix still classifies; the flag tells the walker a tx in
+    // the listed range may be missing, so the cursor must not be banked.
+    expect(scan.records.incomplete).toBe(true);
+    expect(scan.records.responses).toHaveLength(2);
+    expect(scan.exhausted).toBe(false);
   });
 });
 

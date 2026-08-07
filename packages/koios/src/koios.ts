@@ -172,6 +172,34 @@ export interface ScanCache {
   putProofCbor(entries: ReadonlyMap<string, string>): Promise<void>;
 }
 
+/**
+ * A slot-bounded slice of the label-17 scan
+ * ({@link KoiosDataSource.fetchSegment}).
+ *
+ * `from` is the resume point, in two shapes. Without `txHash`, an inclusive
+ * slot floor (`absolute_slot ≥ slot`) — for re-deriving a settled margin,
+ * where re-listing already-integrated txs is the point. With `txHash`,
+ * strictly after the `(slot, txHash)` pair in scan order — for continuing a
+ * budget-capped walk without re-listing anything, exact because the scan
+ * orders by that same pair.
+ */
+export interface ScanSegment {
+  readonly from: { readonly slot: number; readonly txHash?: string };
+  /** Inclusive slot ceiling; omitted, the segment runs to the tip. */
+  readonly toSlot?: number;
+  /** Listing pages this call may spend; defaults to the `MAX_PAGES` backstop. */
+  readonly pageBudget?: number;
+}
+
+/** What one segment walk covered — see {@link KoiosDataSource.fetchSegment}. */
+export interface SegmentScan {
+  readonly records: Cip179Records;
+  /** The last row listed — the next run's `from`; null when nothing was listed. */
+  readonly cursor: { readonly slot: number; readonly txHash: string } | null;
+  /** A short page was reached: nothing in the segment is left unlisted. */
+  readonly exhausted: boolean;
+}
+
 export class KoiosDataSource implements DataSource {
   /**
    * The full scan (records + tip) for the current load. `surveyList()` starts a
@@ -319,46 +347,110 @@ export class KoiosDataSource implements DataSource {
       Math.floor(tip.slot - (tip.time - this.config.sinceUnix)),
     );
 
-    // Page through every label-17 tx since the cutoff. Koios returns at most
-    // PAGE_SIZE rows per request, so a single fixed `limit` would silently drop
-    // older records on a busy network — and responses live in the same index as
-    // definitions, so the loss would undercount tallies, not just the survey
-    // list. Offset-paginate newest-first until a short page (exhausted) or the
-    // page cap, which flags the snapshot `incomplete` instead of lying. Keyed by
-    // tx_hash in a Map so a row re-seen across pages (a tx landing mid-scan) is
-    // deduped rather than fetched twice.
-    //
-    // `order` breaks slot ties on `tx_hash` too (finding 17): `absolute_slot`
-    // alone is a *partial* order, so several label-17 txs sharing a slot across
-    // a page boundary could shuffle between the successive page requests and let
-    // a row slip through unseen — a response missed by the scan, which would read
-    // as a false MISMATCH, not a truncation. `tx_hash` is unique and already
-    // selected, so `(absolute_slot, tx_hash)` is a total order stable across
-    // pages. (Same discipline as `tallyInputs.postAll`.)
-    //
-    // A failed page flags the snapshot `incomplete` and stops the scan rather
-    // than rejecting the whole `fetchAll` (finding 39): a transient blip on one
-    // page shouldn't blank an otherwise-good snapshot — the pages already fetched
-    // (the newest) stand, and finalization postpones on `incomplete` anyway. The
-    // fetch itself already absorbs a single transient failure with one retry.
+    // Page through every label-17 tx since the cutoff — responses live in the
+    // same index as definitions, so a truncated listing would undercount
+    // tallies, not just the survey list. Newest-first, so a scan cut off at
+    // the page cap keeps the newest txs; the cap (like a failed page) flags
+    // the snapshot `incomplete` instead of lying, and finalization postpones
+    // on `incomplete`.
+    const { posByHash, failed, exhausted } = await this.listLabelTxs(
+      `&absolute_slot=gte.${sinceSlot}`,
+      "desc",
+      MAX_PAGES,
+    );
+    if (!failed && !exhausted) {
+      console.warn(
+        `tx_by_metalabel exceeded ${MAX_PAGES * PAGE_SIZE} rows; snapshot is incomplete`,
+      );
+    }
+    return this.recordsFrom(posByHash, tip.epoch, failed || !exhausted);
+  }
+
+  /**
+   * One slot segment of the label-17 index — the serving tier's windowed
+   * refresh primitive. Ascending `(absolute_slot, tx_hash)` order, so a run
+   * that stops early (page budget) has covered a contiguous prefix and the
+   * returned cursor resumes it exactly; the newest-first `fetchAll` keeps the
+   * newest rows instead, which suits a one-shot browser scan but cannot
+   * resume.
+   *
+   * The caller advances its banked cursor to `cursor` only when
+   * `records.incomplete` is false: a failed listing page or a dropped metadata
+   * batch means a tx inside the listed range may be missing its record, and a
+   * cursor advanced past it would settle the gap in. The segment is fully
+   * covered (nothing left to list below `toSlot`/the tip) only when
+   * `exhausted` is also true.
+   *
+   * A rollback landing mid-listing can shift ascending offsets and hide a row
+   * from this pass; segment integration is idempotent re-derivation, so the
+   * next run's re-scan of the settled margin picks it up.
+   */
+  async fetchSegment(segment: ScanSegment, at: ChainTip): Promise<SegmentScan> {
+    const { from, toSlot, pageBudget } = segment;
+    const floor =
+      from.txHash === undefined
+        ? `&absolute_slot=gte.${from.slot}`
+        : `&or=(absolute_slot.gt.${from.slot},` +
+          `and(absolute_slot.eq.${from.slot},tx_hash.gt.${from.txHash}))`;
+    const ceiling = toSlot === undefined ? "" : `&absolute_slot=lte.${toSlot}`;
+    const { posByHash, last, failed, exhausted } = await this.listLabelTxs(
+      floor + ceiling,
+      "asc",
+      pageBudget ?? MAX_PAGES,
+    );
+    return {
+      records: await this.recordsFrom(posByHash, at.epoch, failed),
+      cursor: last && { slot: last.absolute_slot, txHash: last.tx_hash },
+      exhausted,
+    };
+  }
+
+  /**
+   * Offset-paginate the label-17 index under `filter`, deduping rows by tx
+   * hash (a tx landing mid-scan shifts its neighbours across a page boundary,
+   * so a row can be listed twice).
+   *
+   * The order breaks slot ties on `tx_hash` (finding 17): `absolute_slot`
+   * alone is a *partial* order, so several label-17 txs sharing a slot across
+   * a page boundary could shuffle between the successive page requests and let
+   * a row slip through unseen — a response missed by the scan, which would
+   * read as a false MISMATCH, not a truncation. `tx_hash` is unique and
+   * already selected, so `(absolute_slot, tx_hash)` is a total order stable
+   * across pages. (Same discipline as `tallyInputs.postAll`.)
+   *
+   * A failed page returns what was already listed with `failed` set rather
+   * than throwing (finding 39): a transient blip on one page shouldn't blank
+   * an otherwise-good snapshot, and the fetch itself already absorbs a single
+   * transient failure with one retry. `exhausted` means a short page was
+   * reached — everything under `filter` was listed; false when `maxPages` ran
+   * out first or a page failed. `last` is the final row of the last fulfilled
+   * page, in the requested order.
+   */
+  private async listLabelTxs(
+    filter: string,
+    order: "asc" | "desc",
+    maxPages: number,
+  ): Promise<{
+    posByHash: Map<string, { slot: number; epochNo: number }>;
+    last: TxByLabel | null;
+    failed: boolean;
+    exhausted: boolean;
+  }> {
     const posByHash = new Map<string, { slot: number; epochNo: number }>();
-    let incomplete = false;
-    for (let page = 0; page < MAX_PAGES; page++) {
+    let last: TxByLabel | null = null;
+    for (let page = 0; page < maxPages; page++) {
       let rows: TxByLabel[];
       try {
         rows = await this.get<TxByLabel[]>(
           `/tx_by_metalabel?_label=${METADATA_LABEL}` +
             `&select=tx_hash,absolute_slot,epoch_no` +
-            `&absolute_slot=gte.${sinceSlot}` +
-            `&order=absolute_slot.desc,tx_hash.desc` +
+            filter +
+            `&order=absolute_slot.${order},tx_hash.${order}` +
             `&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`,
         );
       } catch (err) {
-        incomplete = true;
-        console.warn(
-          `tx_by_metalabel page ${page} failed (snapshot incomplete): ${String(err)}`,
-        );
-        break;
+        console.warn(`tx_by_metalabel page ${page} failed: ${String(err)}`);
+        return { posByHash, last, failed: true, exhausted: false };
       }
       for (const s of rows) {
         if (!posByHash.has(s.tx_hash))
@@ -367,15 +459,26 @@ export class KoiosDataSource implements DataSource {
             epochNo: s.epoch_no,
           });
       }
-      if (rows.length < PAGE_SIZE) break; // last page reached → exhausted
-      if (page === MAX_PAGES - 1) {
-        // A full final page means there may be more we won't fetch.
-        incomplete = true;
-        console.warn(
-          `tx_by_metalabel exceeded ${MAX_PAGES * PAGE_SIZE} rows; snapshot is incomplete`,
-        );
-      }
+      if (rows.length > 0) last = rows[rows.length - 1]!;
+      if (rows.length < PAGE_SIZE)
+        return { posByHash, last, failed: false, exhausted: true };
     }
+    return { posByHash, last, failed: false, exhausted: false };
+  }
+
+  /**
+   * Turn listed label-17 txs into the three record sets: consult the metadata
+   * cache, fetch the remainder in batches, decode and classify, then attach
+   * owner-proof evidence for surveys still open at `tipEpoch`.
+   * `listingIncomplete` seeds the flag for failures the listing already
+   * suffered; a dropped metadata batch adds to it.
+   */
+  private async recordsFrom(
+    posByHash: ReadonlyMap<string, { slot: number; epochNo: number }>,
+    tipEpoch: number,
+    listingIncomplete: boolean,
+  ): Promise<Cip179Records> {
+    let incomplete = listingIncomplete;
     const hashes = [...posByHash.keys()];
 
     const surveys: SurveyRecord[] = [];
@@ -518,7 +621,7 @@ export class KoiosDataSource implements DataSource {
       `${bytesToHex(ref.txId)}:${ref.index}`;
     const openSurveyKeys = new Set(
       surveys
-        .filter((s) => tip.epoch <= s.definition.endEpoch)
+        .filter((s) => tipEpoch <= s.definition.endEpoch)
         .map((s) => refKeyOf(s.ref)),
     );
     const openSurveys = surveys.filter((s) =>
