@@ -32,7 +32,6 @@ test("derives strict resource names and canonicalizes the window", () => {
     endIso: "2026-08-02T00:00:00.000Z",
     cronCadence: "*/3 * * * *",
     workload: "steady refresh",
-    gitCommit: "HEAD",
     output: undefined,
   });
 });

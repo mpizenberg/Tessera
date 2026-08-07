@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -47,7 +47,6 @@ export function parseOptions(argv) {
     "worker",
     "database",
     "account-id",
-    "git-commit",
     "output",
   ]);
   for (const key of values.keys()) {
@@ -115,7 +114,6 @@ export function parseOptions(argv) {
     endIso: end.toISOString(),
     cronCadence: values.get("cron-cadence"),
     workload: values.get("workload"),
-    gitCommit: values.get("git-commit") ?? "HEAD",
     output: values.get("output"),
   };
 }
@@ -144,7 +142,6 @@ Options:
   --worker <name>       Defaults to tessera-backend-<network>.
   --database <name>     Defaults to tessera-cache-<network>.
   --account-id <id>     Required only to disambiguate accounts.
-  --git-commit <ref>    Deployed source commit; defaults to HEAD.
   --output <path>       Defaults to a timestamped file under /tmp.
 
 Wrangler must be authenticated. The report contains the Cloudflare account id
@@ -153,11 +150,6 @@ and should remain local unless normalized for publication.`);
   }
 
   const options = parseOptions(process.argv.slice(2));
-  const gitCommit = git([
-    "rev-parse",
-    "--verify",
-    `${options.gitCommit}^{commit}`,
-  ]);
   const identity = wranglerJson(["whoami", "--json"]);
   const credential = wranglerJson(["auth", "token", "--json"]);
   const authHeaders = cloudflareAuthHeaders(credential);
@@ -213,8 +205,9 @@ and should remain local unless normalized for publication.`);
       databaseId: options.databaseId,
       network: options.network,
       backendUrl: options.backendUrl,
-      gitCommit,
-      workingTreeDirty: git(["status", "--porcelain"]) !== "",
+      // Reported by the deployment itself, so it names the code that produced
+      // the figures even when the local checkout has moved on.
+      gitCommit: operationalHealth.commit ?? null,
     },
     worker: {
       overall: accountAnalytics[0].workerOverall,
@@ -441,13 +434,6 @@ function wranglerJson(args, accountId) {
       `Wrangler returned non-JSON output for ${args.join(" ")}:\n${result.stdout}\n${result.stderr}`,
     );
   }
-}
-
-function git(args) {
-  return execFileSync("git", args, {
-    cwd: repoRoot,
-    encoding: "utf8",
-  }).trim();
 }
 
 const invokedPath = process.argv[1]

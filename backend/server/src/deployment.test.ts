@@ -78,8 +78,9 @@ describe("named Worker deployments", () => {
       expect(packageJson.scripts[`migrate:${network}`]).toBe(
         `wrangler d1 migrations apply DB --env ${network} --remote`,
       );
+      // Deploys stamp the checked-out commit so /api/health can report it.
       expect(packageJson.scripts[`deploy:${network}`]).toBe(
-        `wrangler deploy --env ${network}`,
+        `wrangler deploy --env ${network} --var GIT_COMMIT:$(git rev-parse HEAD)`,
       );
     }
   });

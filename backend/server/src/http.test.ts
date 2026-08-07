@@ -609,7 +609,11 @@ describe("GET /api/health", () => {
       anchor: 5,
     });
     const app = createApp(
-      loadConfig({ SUBREQUEST_LIMIT: "40", KOIOS_DAILY_LIMIT: "5000" }),
+      loadConfig({
+        SUBREQUEST_LIMIT: "40",
+        KOIOS_DAILY_LIMIT: "5000",
+        GIT_COMMIT: "f2b86aa",
+      }),
       store,
       { compress: false },
     );
@@ -619,6 +623,7 @@ describe("GET /api/health", () => {
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     const body = (await res.json()) as Record<string, unknown>;
     expect(body["network"]).toBe("preview");
+    expect(body["commit"]).toBe("f2b86aa");
     expect(body["snapshot"]).toMatchObject({ fetchedAt: FETCHED_AT });
     expect(body["lastRefresh"]).toMatchObject({
       startedAt: NOW - 20,
@@ -646,6 +651,7 @@ describe("GET /api/health", () => {
     const res = await app.request("/api/health");
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
+    expect(body["commit"]).toBeNull();
     expect(body["snapshot"]).toBeNull();
     expect(body["lastRefresh"]).toBeNull();
     expect(body["last24h"]).toEqual({

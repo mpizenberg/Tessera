@@ -8,29 +8,29 @@ the backend's decode path over that file — so the recorded values cannot drift
 from the published codec unnoticed. A consumer proving "we decode the same
 bytes the same way" diffs its own decode of `label17` against `expected`.
 
-## Deployment identity
+`generate-fixtures.mjs` rebuilds the JSON from live sources — Koios for the
+raw metadata, the deployed backend's own bundles for the expected wire forms.
+Run `node interop/generate-fixtures.mjs && pnpm format` after adding a fixture
+transaction there or intentionally changing the wire format, and review the
+diff.
 
-- Network: `preprod` (Koios `https://preprod.koios.rest/api/v1`)
-- Backend: Worker `tessera-backend-preprod` at
-  `https://tessera-backend-preprod.matthieu-pizenberg.workers.dev`
-- Deployed commit: `f2b86aa` (Worker version
-  `2cdc2701-73b6-4dc1-a78f-9ce9f4d60f7d`, deployed `2026-08-06T16:24Z`)
-- Cron cadence `*/3 * * * *`; a steady-state refresh spends 3 Koios calls.
+## Endpoint
 
-Update this block whenever a new commit is deployed to preprod, so the figures
-and fixtures here always name the code that produced them. Endpoint shapes are
-documented in `backend/server/README.md`; D1 and account identifiers are
-operator state and deliberately absent here.
+The preprod backend serves
+`https://tessera-backend-preprod.matthieu-pizenberg.workers.dev`; endpoint
+shapes are documented in `backend/server/README.md`. `GET /api/health` reports
+the deployed git commit in its `commit` field, so which code produced a
+response is a live query rather than a figure recorded here.
 
-## Published packages
+## Packages
 
-A host pins exactly these versions:
-
-- `cip-179@0.3.0` — metadatum codec, domain model, and validation rules.
-- `cardano-tessera-respond@0.1.2` — the framework-free `<tessera-respond>`
-  answering widget.
-- `cardano-tessera-respond-react@0.1.0` — React wrapper around the widget
-  (see `examples/react-host`; a Svelte host lives in `examples/svelte-host`).
+A host reaches the widget and codec through the published packages `cip-179`
+(metadatum codec, domain model, and validation rules),
+`cardano-tessera-respond` (the framework-free `<tessera-respond>` answering
+widget), and `cardano-tessera-respond-react` (React wrapper — see
+`examples/react-host`; a Svelte host lives in `examples/svelte-host`). Pin the
+versions current on npm when the test run starts and record them with its
+results.
 
 ## Fixtures
 
@@ -75,32 +75,14 @@ sealed ciphertext for the sealed survey. Tessera has validated both
   validation verdict and counted state are read back from the bundle's
   `verdicts` and the list's `responseCounts`.
 
-## Interoperability checklist
+## Interoperability test sequence
 
-1. Read the fixture by exact reference — **passing**; this record was produced
-   from those responses.
-2. Render all fixture questions through `<tessera-respond>` — pending the
-   DRepTalk development client.
-3. Submit an independent key-DRep response — **blocked on a DRep-eligible
-   fixture** (see gaps below).
-4. Poll confirmation — pending step 3.
-5. Observe a decided positive proof verdict and counted response — pending
-   step 3.
-6. Submit a valid replacement and observe latest-valid-response-wins — pending
-   step 3.
+1. Read the fixture surveys by exact reference.
+2. Render all fixture questions through `<tessera-respond>`.
+3. Submit an independent key-DRep response to a DRep-eligible survey.
+4. Poll confirmation through `/api/tx_status`.
+5. Observe a decided positive proof verdict and a counted response.
+6. Submit a valid replacement and observe latest-valid-response-wins.
 7. Verify both applications decode the same role, credential, reference, and
-   answers — `preprod-fixtures.json` is the diff basis; pending the DRepTalk
-   side of the comparison.
-
-## Known gaps
-
-- **No DRep-eligible survey exists yet.** Both fixtures admit only role 3
-  (Stakeholder), and both counted responses are stakeholder responses. The
-  key-DRep proof needs one more public survey with eligible roles including 0
-  (DRep) — an owner-wallet action. Add it to this record and
-  `preprod-fixtures.json` when it lands.
-- **Finalization is not yet observable.** Both fixtures end at epoch 306, so
-  `GET /api/surveys/{txHash}/{index}/artifact` correctly answers 404 while
-  they are open. Tally artifacts, and the sealed survey's reveal-cost
-  measurement, wait for the chain to pass epoch 306 (preprod epochs are five
-  days; roughly 2026-08-14).
+   answers — diff each side's decode of `preprod-fixtures.json`'s `label17`
+   against `expected`.

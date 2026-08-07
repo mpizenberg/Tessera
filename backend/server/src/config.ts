@@ -59,6 +59,13 @@ export interface ServerConfig {
    * `KOIOS_PASSTHROUGH_TOKEN` to give comfort traffic its own keyed tier.
    */
   readonly passthroughKoiosToken: string | undefined;
+  /**
+   * Git commit of the running code, stamped by the deploy scripts
+   * (`--var GIT_COMMIT:$(git rev-parse HEAD)`) and reported by `/api/health`,
+   * so a deployment names the code that produced its responses. `undefined`
+   * for local runs and builds deployed outside those scripts.
+   */
+  readonly commit: string | undefined;
 }
 
 export function loadConfig(
@@ -83,5 +90,6 @@ export function loadConfig(
     koiosDailyLimit:
       Number.isFinite(dailyLimit) && dailyLimit > 0 ? dailyLimit : undefined,
     passthroughKoiosToken: env["KOIOS_PASSTHROUGH_TOKEN"] || undefined,
+    commit: env["GIT_COMMIT"] || undefined,
   };
 }

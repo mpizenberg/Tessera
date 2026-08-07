@@ -41,16 +41,17 @@ Apply every committed migration before deploying the Worker:
 pnpm --filter cardano-tessera-backend migrate:preprod
 ```
 
-Deploy the exact checked-out commit:
+Deploy the exact checked-out commit — the working tree must be clean, because
+the deploy script stamps `HEAD` into the Worker (`--var GIT_COMMIT`), and
+`/api/health` reports it as `commit`:
 
 ```sh
 git status --short
-GIT_COMMIT=$(git rev-parse HEAD)
 pnpm --filter cardano-tessera-backend deploy:preprod
 ```
 
-Record `GIT_COMMIT`, the deployment/version id, and the `workers.dev` URL from
-Wrangler's output. Do not point a client at the service yet.
+Record the `workers.dev` URL from Wrangler's output. Do not point a client at
+the service yet.
 
 Both Koios tokens are optional; without them the backend uses Koios's
 unauthenticated per-IP quota. Secrets attach to an existing Worker, so they come
@@ -72,6 +73,9 @@ BACKEND_URL=https://tessera-backend-preprod.<account-subdomain>.workers.dev
 curl --fail --silent --show-error "$BACKEND_URL/health"
 curl --fail --silent --show-error "$BACKEND_URL/api/health"
 ```
+
+`/api/health` must name the network you expect and report the commit you just
+deployed in `commit`.
 
 A hostname deployed under a `workers.dev` name for the first time can answer
 `error code: 1042` — sometimes with HTTP 404, and inconsistently between edges —
@@ -129,7 +133,6 @@ pnpm metrics:collect -- \
   --end 2026-08-06T00:00:00Z \
   --cron-cadence '*/3 * * * *' \
   --workload 'steady refresh; no label-17 ingestion' \
-  --git-commit "$GIT_COMMIT" \
   --output /tmp/tessera-preprod-steady.json
 ```
 

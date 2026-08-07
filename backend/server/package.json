@@ -17,9 +17,9 @@
     "migrate:preview": "wrangler d1 migrations apply DB --env preview --remote",
     "migrate:preprod": "wrangler d1 migrations apply DB --env preprod --remote",
     "migrate:mainnet": "wrangler d1 migrations apply DB --env mainnet --remote",
-    "deploy:preview": "wrangler deploy --env preview",
-    "deploy:preprod": "wrangler deploy --env preprod",
-    "deploy:mainnet": "wrangler deploy --env mainnet",
+    "deploy:preview": "wrangler deploy --env preview --var GIT_COMMIT:$(git rev-parse HEAD)",
+    "deploy:preprod": "wrangler deploy --env preprod --var GIT_COMMIT:$(git rev-parse HEAD)",
+    "deploy:mainnet": "wrangler deploy --env mainnet --var GIT_COMMIT:$(git rev-parse HEAD)",
     "type-check": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests"
   },

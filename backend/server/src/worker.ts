@@ -26,6 +26,7 @@ interface Env {
   readonly SINCE?: string;
   readonly SUBREQUEST_LIMIT?: string;
   readonly KOIOS_DAILY_LIMIT?: string;
+  readonly GIT_COMMIT?: string;
 }
 
 interface Wiring {

@@ -267,6 +267,7 @@ export function createApp(
       ]);
     const body: BackendHealth = {
       network: config.app.network,
+      commit: config.commit ?? null,
       snapshot: meta
         ? { fetchedAt: meta.fetchedAt, ageSeconds: now - meta.fetchedAt }
         : null,

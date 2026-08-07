@@ -100,6 +100,8 @@ export interface SurveyBundlePayload extends SurveyBundle {
  */
 export interface BackendHealth {
   readonly network: string;
+  /** Git commit of the deployed code, or null when the deploy didn't stamp one. */
+  readonly commit: string | null;
   /** Freshness of the served snapshot, or null before the first refresh. */
   readonly snapshot: {
     /** Unix seconds when the scan behind the snapshot started reading. */
