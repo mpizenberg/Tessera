@@ -1,0 +1,197 @@
+{
+  "network": "preprod",
+  "metadataLabel": 17,
+  "transactions": [
+    {
+      "txHash": "5910e44ca9bb9a41625280a1335a4a59941a15716d6959901c9b8e20a058649d",
+      "kind": "definitions",
+      "label17": [
+        0,
+        [
+          {
+            "0": 5,
+            "1": [
+              0,
+              "0x0ffd51f55075cc221d9e842943ef426e2d870e56366a111643765ba2"
+            ],
+            "2": "First Preprod Public Survey",
+            "3": "",
+            "4": [3],
+            "5": 306,
+            "6": [0],
+            "7": [[1, "First question", ["A", "B"]]]
+          },
+          {
+            "0": 5,
+            "1": [
+              0,
+              "0x0ffd51f55075cc221d9e842943ef426e2d870e56366a111643765ba2"
+            ],
+            "2": "First Preprod Sealed Survey",
+            "3": "",
+            "4": [3],
+            "5": 306,
+            "6": [
+              1,
+              "0x52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971",
+              31287452,
+              5
+            ],
+            "7": [[1, "First question", ["Alpha", "Beta"]]]
+          }
+        ]
+      ],
+      "expected": [
+        {
+          "specVersion": 5,
+          "owner": {
+            "type": "key",
+            "keyHash": {
+              "$bytes": "0ffd51f55075cc221d9e842943ef426e2d870e56366a111643765ba2"
+            }
+          },
+          "title": "First Preprod Public Survey",
+          "description": "",
+          "eligibleRoles": [3],
+          "endEpoch": 306,
+          "submissionMode": {
+            "type": "public"
+          },
+          "questions": [
+            {
+              "type": "singleChoice",
+              "prompt": "First question",
+              "options": {
+                "type": "options",
+                "labels": ["A", "B"]
+              }
+            }
+          ]
+        },
+        {
+          "specVersion": 5,
+          "owner": {
+            "type": "key",
+            "keyHash": {
+              "$bytes": "0ffd51f55075cc221d9e842943ef426e2d870e56366a111643765ba2"
+            }
+          },
+          "title": "First Preprod Sealed Survey",
+          "description": "",
+          "eligibleRoles": [3],
+          "endEpoch": 306,
+          "submissionMode": {
+            "type": "sealed",
+            "chainHash": {
+              "$bytes": "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971"
+            },
+            "round": 31287452,
+            "paddingSize": 5
+          },
+          "questions": [
+            {
+              "type": "singleChoice",
+              "prompt": "First question",
+              "options": {
+                "type": "options",
+                "labels": ["Alpha", "Beta"]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "txHash": "2811d86267bbf2108a153b1598bb6a02460ca007d456ae2c0fa3f6f67c1fcb14",
+      "kind": "responses",
+      "label17": [
+        1,
+        [
+          {
+            "0": 5,
+            "1": [
+              "0x5910e44ca9bb9a41625280a1335a4a59941a15716d6959901c9b8e20a058649d",
+              0
+            ],
+            "2": 3,
+            "3": [
+              0,
+              "0x308ee9a8f22dcb1672a7334e811f8173c7c38eeef16ddb6fe2601f8f"
+            ],
+            "4": [[1, 0, 0]]
+          },
+          {
+            "0": 5,
+            "1": [
+              "0x5910e44ca9bb9a41625280a1335a4a59941a15716d6959901c9b8e20a058649d",
+              1
+            ],
+            "2": 3,
+            "3": [
+              0,
+              "0x308ee9a8f22dcb1672a7334e811f8173c7c38eeef16ddb6fe2601f8f"
+            ],
+            "4": [
+              "0x6167652d656e6372797074696f6e2e6f72672f76310a2d3e20746c6f636b20333132383734353220353264623962613730653063633066366561663738303364",
+              "0x643037343437613166353437373733356664336636363137393262613934363030633834653937310a6f6359783246653969562b46446474625450387379307a",
+              "0x5939334750755347465973733457396e37545862747851354c4f4262664e2f674b4a565a31636735410a46634e54564369324a394a6857366a686b3148347948",
+              "0x67424f546739504d49594c4b47582b52326232634861585a456d6a7756694674512b55585275613056460a34324b71566c552b7843654363415647536d716d6e",
+              "0x31584f617546462f706836456c326b70554b454a714d0a2d2d2d2036633262685365735a5548456a4a3366674e4775462f2b43574971575a4553574858675167",
+              "0x3157474465410a170f04b974b87a51630efefdffa2b0c5e6a3625c30e1dfb9e5eb4c014d6ef9c0b7dcd2dfef"
+            ]
+          }
+        ]
+      ],
+      "expected": [
+        {
+          "specVersion": 5,
+          "surveyRef": {
+            "txId": {
+              "$bytes": "5910e44ca9bb9a41625280a1335a4a59941a15716d6959901c9b8e20a058649d"
+            },
+            "index": 0
+          },
+          "role": 3,
+          "credential": {
+            "type": "key",
+            "keyHash": {
+              "$bytes": "308ee9a8f22dcb1672a7334e811f8173c7c38eeef16ddb6fe2601f8f"
+            }
+          },
+          "answers": {
+            "type": "public",
+            "answers": [
+              {
+                "type": "singleChoice",
+                "questionIndex": 0,
+                "optionIndex": 0
+              }
+            ]
+          }
+        },
+        {
+          "specVersion": 5,
+          "surveyRef": {
+            "txId": {
+              "$bytes": "5910e44ca9bb9a41625280a1335a4a59941a15716d6959901c9b8e20a058649d"
+            },
+            "index": 1
+          },
+          "role": 3,
+          "credential": {
+            "type": "key",
+            "keyHash": {
+              "$bytes": "308ee9a8f22dcb1672a7334e811f8173c7c38eeef16ddb6fe2601f8f"
+            }
+          },
+          "answers": {
+            "type": "sealed",
+            "ciphertext": {
+              "$bytes": "6167652d656e6372797074696f6e2e6f72672f76310a2d3e20746c6f636b20333132383734353220353264623962613730653063633066366561663738303364643037343437613166353437373733356664336636363137393262613934363030633834653937310a6f6359783246653969562b46446474625450387379307a5939334750755347465973733457396e37545862747851354c4f4262664e2f674b4a565a31636735410a46634e54564369324a394a6857366a686b314834794867424f546739504d49594c4b47582b52326232634861585a456d6a7756694674512b55585275613056460a34324b71566c552b7843654363415647536d716d6e31584f617546462f706836456c326b70554b454a714d0a2d2d2d2036633262685365735a5548456a4a3366674e4775462f2b43574971575a45535748586751673157474465410a170f04b974b87a51630efefdffa2b0c5e6a3625c30e1dfb9e5eb4c014d6ef9c0b7dcd2dfef"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
