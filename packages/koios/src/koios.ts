@@ -99,7 +99,7 @@ interface TxByLabel {
 
 interface TxInfoRow {
   tx_hash: string;
-  /** Position of the tx within its block (§6.3 same-slot ordering). */
+  /** Position of the tx within its block (same-slot ordering). */
   tx_block_index: number | null;
 }
 
@@ -312,7 +312,7 @@ export class KoiosDataSource implements DataSource {
    * transaction builder can pass them as `build({ fullProtocolParameters })` and
    * skip the provider's own pparams fetch — the one Koios read that tx building
    * otherwise needs, letting the client build without a Koios token
-   * (`backend/ARCHITECTURE.md` §7). Deposits, execution budgets, and
+   * (`backend/ARCHITECTURE.md` §5). Deposits, execution budgets, and
    * coins-per-UTxO-byte are BigInt; cost models are index-keyed per language.
    */
   async protocolParameters(): Promise<ProtocolParameters> {
@@ -765,10 +765,10 @@ export class KoiosDataSource implements DataSource {
    * Credential-proof evidence per transaction: fetch each tx's CBOR
    * (`/tx_cbor`, batched) and decode required signers, native scripts, and
    * vote bindings. Used at scan time for the owner-proofs of open surveys and
-   * of the transactions cancelling them, and for response credential-proofs
-   * (§6.3 rule 2) by the serving tier's validation pass. Each unique tx is
-   * fetched and decoded once, so a batch that carries several records costs one
-   * row — and where a {@link ScanCache} is present, once across all refreshes.
+   * of the transactions cancelling them, and for response credential-proofs by
+   * the serving tier's validation pass. Each unique tx is fetched and decoded
+   * once, so a batch that carries several records costs one row — and where a
+   * {@link ScanCache} is present, once across all refreshes.
    * The decode runs per call even on a cached hit, so the mechanism-A merge
    * below is never banked and a decoder fix needs no re-fetch.
    *
@@ -943,8 +943,8 @@ export class KoiosDataSource implements DataSource {
 
   /**
    * `tx_block_index` (position within the block) per transaction, via
-   * `/tx_info` — the §6.3 same-slot ordering input. A failed batch just leaves
-   * its hashes out of the map (callers treat missing as "retry next refresh").
+   * `/tx_info` — the same-slot ordering input. A failed batch just leaves its
+   * hashes out of the map (callers treat missing as "retry next refresh").
    */
   async txBlockIndices(
     txHashes: readonly string[],
@@ -1091,7 +1091,7 @@ export class KoiosDataSource implements DataSource {
           index: responseIndex,
           value: response,
         } of payload.responses) {
-          // The payload index is part of the §6.3 chain order (same-tx ties).
+          // The payload index is part of the chain order (same-tx ties).
           out.responses.push({
             txHash,
             slot,

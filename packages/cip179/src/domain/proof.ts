@@ -1,5 +1,5 @@
 /**
- * Pure credential-proof evaluation for CIP-179 survey responses — §6.3 rule 2,
+ * Pure credential-proof evaluation for CIP-179 survey responses — the rule
  * "not deferrable past the first tally": without it, anyone can publish a
  * response claiming any credential.
  *

@@ -20,7 +20,7 @@
  *    rather than its accounts' lifetimes.
  *  - `/account_stake_history?epoch_no=eq.E` — active stake. One row per
  *    account *delegated to a pool* at E; a registered account with no row
- *    counts with weight 0 (§6.1 "registered but empty").
+ *    counts with weight 0 ("registered but empty").
  *
  * DReps (role 0) resolve per credential (small-N by nature):
  *  - `/drep_voting_power_history?_drep_id=…&epoch_no=eq.E` — a row iff the

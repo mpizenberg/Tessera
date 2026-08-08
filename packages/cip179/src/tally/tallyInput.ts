@@ -1,8 +1,8 @@
 /**
- * The weight-input seam for stake-weighted tallies (§6.1/§6.5): everything
- * finalization needs to ask a chain indexer about role membership and weights
- * at a survey's `end_epoch`, expressed role-semantically (not per endpoint) so
- * a Tier-2 indexer can implement it behind the same interface.
+ * The weight-input seam for stake-weighted tallies: everything finalization
+ * needs to ask a chain indexer about role membership and weights at a survey's
+ * `end_epoch`, expressed role-semantically (not per endpoint) so a Tier-2
+ * indexer can implement it behind the same interface.
  *
  * Weights are exact lovelace BigInts. All methods snapshot **at the given
  * epoch** — never "current" values.
@@ -12,7 +12,7 @@ import type { Credential } from "../index.js";
 
 /** One credential's membership + weight at the snapshot epoch. */
 export interface WeightInfo {
-  /** Exact weight in lovelace; `0n` for registered-but-empty (§6.1). */
+  /** Exact weight in lovelace; `0n` for registered-but-empty. */
   readonly weight: bigint;
   /** Whether the credential was registered for the role at that epoch. */
   readonly registered: boolean;

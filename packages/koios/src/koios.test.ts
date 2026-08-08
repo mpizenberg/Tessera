@@ -89,7 +89,7 @@ describe("fetchAll — chain position", () => {
       expect(r.slot).toBe(5_000);
       expect(r.epochNo).toBe(1_340); // authoritative, straight from the index
     }
-    // The payload position is preserved — the §6.3 same-tx tiebreak.
+    // The payload position is preserved — the same-tx tiebreak.
     expect(records.responses.map((r) => r.responseIndex)).toEqual([0, 1]);
     expect(records.responses.map((r) => r.blockIndex)).toEqual([
       undefined,

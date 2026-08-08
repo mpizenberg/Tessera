@@ -173,7 +173,7 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
       registered: false,
       weight: 0n,
     });
-    // Registered-but-empty counts with weight 0 (§6.1).
+    // Registered-but-empty counts with weight 0.
     expect(weights.get(`key:${HASH_C}`)).toEqual({
       registered: true,
       weight: 0n,

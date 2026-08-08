@@ -1,4 +1,4 @@
--- Per-response sealed-reveal outcomes: the resume cursor for §6.5 reveal, the
+-- Per-response sealed-reveal outcomes: the resume cursor for sealed reveal, the
 -- way weight_snapshot is the one for weights.
 --
 -- One timelock decrypt costs ~20 ms of Worker CPU against a 30 s cron ceiling,

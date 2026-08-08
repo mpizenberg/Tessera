@@ -445,7 +445,7 @@ export function cancelledTallyBody(
 
 /**
  * One covered role's contribution to a weighted tally: its already
- * §6.1-membership-filtered weighted responders and its electorate `total`. The
+ * membership-filtered weighted responders and its electorate `total`. The
  * membership filter and weight/total sourcing are inherently data-source-specific
  * (the emitter reads its frozen snapshot rows; the verifier re-fetches from
  * Koios), so they stay on each side; only the *result* flows through

@@ -133,7 +133,7 @@ export type CancellationState = "verified" | "claimed";
 /**
  * Per-survey cancellation state, keyed by survey ref. A cancellation counts
  * only when it lands within the survey's window (`epochNo ≤ end_epoch`); a
- * later one is invalid per CIP-179 §6.3 and ignored.
+ * later one is invalid and ignored.
  *
  * `verified` (owner-proven, CIP-179 mechanism A) is only ever assigned while
  * the survey is **still open** (tip at/before `end_epoch`): the scan fetches
@@ -161,7 +161,7 @@ export function cancellationStates(
     const key = refKey(c.target);
     const def = defByKey.get(key);
     if (!def) continue; // references an unknown survey — ignore
-    if (c.epochNo > def.endEpoch) continue; // after the window — invalid (§6.3)
+    if (c.epochNo > def.endEpoch) continue; // after the window — invalid
     // Verification is attempted only while the survey is open; a closed
     // survey's cancellation ships with `proof: null` (see above), so it can
     // only ever reach the `claimed` branch here, never `verified`.

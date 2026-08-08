@@ -140,7 +140,7 @@ describe("aggregateSurveys — cancellation tri-state", () => {
 
   it("ignores a cancellation published after the survey's window closed", () => {
     // endEpoch 8, cancellation in epoch 9 (slot 950) → after the window, so
-    // invalid per §6.3 and not even a claim.
+    // invalid, and not even a claim.
     const a = agg1(
       recs(
         [survey(0, def(keyOwner(1), 8))],

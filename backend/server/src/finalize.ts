@@ -24,8 +24,8 @@
  * exactly "the oldest epoch still holding something to decide".
  * Sealed surveys additionally wait for their drand round to publish, then
  * decrypt their in-window responses — over as many passes as the decrypt budget
- * needs — and tally the revealed answers (§6.5); a sealed survey on an
- * unsupported (non-quicknet) drand chain is skipped forever.
+ * needs — and tally the revealed answers; a sealed survey on an unsupported
+ * (non-quicknet) drand chain is skipped forever.
  */
 
 import { isSurveyTalliable, Role, type SurveyResponse } from "cip-179";
@@ -524,7 +524,7 @@ export async function finalizeClosedSurveys(
           for (const r of fresh) {
             outcomes.set(validationKey(r.txHash, r.responseIndex), r.response);
           }
-          // Reveal → validate → dedup (§6.5). counted carry decrypted answers.
+          // Reveal → validate → dedup. counted carry decrypted answers.
           // Answers are read back out of the cursor even when this pass produced
           // them, so an artifact's bytes never depend on which pass decrypted
           // which ciphertext.
@@ -800,7 +800,8 @@ interface CountedRows {
 }
 
 /**
- * The §6.3 counted set for one survey: valid, proven, in-window, deduped.
+ * The counted set (TALLY-SPEC §3) for one survey: valid, proven, in-window,
+ * deduped.
  *
  * A candidate row (well-formed, in-window, covered role) whose proof verdict or
  * block index is still pending forces the whole survey to postpone: a null
@@ -1071,8 +1072,8 @@ function buildArtifact(
   const rolesPresent = [...new Set(entries.map((e) => e.row.role))].sort(
     (a, b) => a - b,
   );
-  // §6.1-filter each role's responders here (against the frozen weight snapshot,
-  // with the emitter's own drop-logging), then hand the result to the SHARED
+  // Membership-filter each role's responders here (against the frozen weight
+  // snapshot, with the emitter's own drop-logging), then hand it to the SHARED
   // assembler — the verifier calls the same `assembleTallyBody`, so role
   // ordering, per-role artifact shaping, and the base body stay identical by
   // construction (finding 29).
@@ -1093,7 +1094,7 @@ function buildArtifact(
         );
       }
       if (!weight.registered) {
-        // §6.1: membership at end_epoch is a hard filter (weight-0 registered
+        // Membership at end_epoch is a hard filter (weight-0 registered
         // credentials stay counted; unregistered ones don't).
         console.warn(
           `finalize: ${refKey(s.ref)} drops unregistered ${r.credential}`,

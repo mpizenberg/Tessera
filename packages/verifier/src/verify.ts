@@ -214,8 +214,8 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
     };
   }
 
-  // §6.3 rules 1–3 from scratch: window (authoritative epochNo), validity
-  // (full codec validation), credential proof (mechanism A/B), then
+  // TALLY-SPEC §3 rules 1–3 from scratch: window (authoritative epochNo),
+  // validity (full codec validation), credential proof (mechanism A/B), then
   // latest-in-chain-order per (role, credential).
   const unresolvedActionIds = inputs.unresolvedActionIds ?? [];
   const govLinksReliable = inputs.govLinksReliable ?? true;
@@ -343,10 +343,11 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
   }
 
   // Per role ascending: weights + membership at end_epoch, then hand the
-  // §6.1-filtered responders + total to the SHARED assembler (the emitter uses
-  // the same `assembleTallyBody`, so role ordering, per-role artifact shaping,
-  // and the base body can't drift — finding 29). Weight/total sourcing and the
-  // membership filter are inherently data-source-specific, so they stay here.
+  // membership-filtered responders + total to the SHARED assembler (the emitter
+  // uses the same `assembleTallyBody`, so role ordering, per-role artifact
+  // shaping, and the base body can't drift — finding 29). Weight/total sourcing
+  // and the membership filter are inherently data-source-specific, so they stay
+  // here.
   const rolesPresent = [...new Set(counted.map((r) => r.response.role))].sort(
     (a, b) => a - b,
   );
@@ -378,7 +379,7 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
         const key = credentialKey(r.response.credential);
         const info = infos.get(key);
         if (!info) throw new Error(`no weight info for ${key}`);
-        if (!info.registered) continue; // §6.1 membership filter
+        if (!info.registered) continue; // membership filter (TALLY-SPEC §1)
         responders.push({
           credentialKey: key,
           weight: info.weight,

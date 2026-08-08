@@ -5,10 +5,10 @@
  * Results widget renders (bar fill fractions, means/medians, capped samples,
  * "Option N" fallback labels). It intentionally uses floats and is **never
  * content-addressed**: the hashed artifact comes from the weighted BigInt path
- * (`cip-179`'s `weightedTally*`), which the ARCHITECTURE §4 "integer pairs,
- * never floats" guarantee is about. Presentation is not part of the codec, so
- * this helper lives in the frontend with its one consumer (the Results screen),
- * not in the `cip-179` package.
+ * (`cip-179`'s `weightedTally*`), which the "integer pairs, never floats"
+ * guarantee in `backend/TALLY-SPEC.md` §4 is about. Presentation is not part of
+ * the codec, so this helper lives in the frontend with its one consumer (the
+ * Results screen), not in the `cip-179` package.
  *
  * Sealed responses are opaque until their drand round publishes, so they are
  * not tallied here — the UI shows a "reveals in …" placeholder instead.

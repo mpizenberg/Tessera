@@ -452,9 +452,9 @@ export async function refreshSnapshot(
     const coveredThroughUnix =
       cursor === null ? null : tip.time + (cursor.slot - tip.slot);
 
-    // §6.3 validation rides the same refresh (Node loop + Worker cron alike):
-    // incremental, so already-validated responses cost nothing. Best-effort —
-    // the rows above are already stored either way.
+    // Response validation (TALLY-SPEC §3) rides the same refresh (Node loop +
+    // Worker cron alike): incremental, so already-validated responses cost
+    // nothing. Best-effort — the rows above are already stored either way.
     await validateNewResponses(
       store,
       records.responses,
@@ -465,7 +465,7 @@ export async function refreshSnapshot(
       console.warn(`response validation failed (will retry): ${String(err)}`),
     );
 
-    // Finalization (§6.5/§7) runs on the freshly validated state: weight
+    // Finalization (ARCHITECTURE §6.2) runs on freshly validated state: weight
     // snapshotting + artifact emission for safely-closed surveys. Idempotent and
     // resumable, so a failure here just retries next refresh. Its returned key
     // sets carry this pass's emissions, so the prune and overlay update below

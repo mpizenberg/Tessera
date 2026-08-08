@@ -439,7 +439,7 @@ describe("finalizeClosedSurveys", () => {
     ]);
   });
 
-  it("fetches the shared-credential union once across same-epoch surveys (§6.5)", async () => {
+  it("fetches the shared-credential union once across same-epoch surveys", async () => {
     const store = memBackendStore();
     const s2: SurveyRecord = {
       txHash: SURVEY_TX2,

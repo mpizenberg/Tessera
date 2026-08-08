@@ -1,6 +1,6 @@
 /**
  * The HTTP contract `IndexerDataSource` speaks (`backend/ARCHITECTURE.md`
- * §2, §5.1, §8). Routes mirror the `DataSource` seam one-to-one:
+ * §2, §5.1, §7). Routes mirror the `DataSource` seam one-to-one:
  *   - GET /api/surveys                    Explore-list payload: surveys + tip +
  *                                         gov links + raw cancellations +
  *                                         deduped per-survey response counts +
@@ -430,8 +430,8 @@ export function createApp(
       responses: bundle.responses.map((r) => JSON.parse(r) as unknown),
       cancellations: JSON.parse(bundle.cancellations) as unknown,
       tip: snapshotTip(meta),
-      // Decided §6.3 rule-2 verdicts only — an omitted key is *pending*, and
-      // the client must render it as such, never as failed.
+      // Decided credential-proof verdicts only — an omitted key is *pending*,
+      // and the client must render it as such, never as failed.
       verdicts: Object.fromEntries(
         validated
           .filter((r) => r.proofOk !== null)
@@ -455,9 +455,9 @@ export function createApp(
     });
   });
 
-  // Final tally artifacts (§7): immutable, content-addressed. The stored JSON
-  // text is served verbatim (byte identity with the hash), with a strong ETag
-  // and immutable caching — once emitted, the body never changes.
+  // Final tally artifacts (TALLY-SPEC §5): immutable, content-addressed. The
+  // stored JSON text is served verbatim (byte identity with the hash), with a
+  // strong ETag and immutable caching — once emitted, the body never changes.
   const serveArtifact = (
     c: Context,
     row: { artifact: string; artifactHash: string } | null,

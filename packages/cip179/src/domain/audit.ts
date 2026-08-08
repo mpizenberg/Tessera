@@ -47,7 +47,7 @@ export type ExclusionKey =
   | "undecryptable";
 
 /**
- * Externally-computed credential-proof verdicts (§6.3 rule 2), keyed by
+ * Externally-computed credential-proof verdicts, keyed by
  * `"<txHash>:<responseIndex>"`: true = proven, false = unproven. A missing key
  * is *pending* — no verdict has been reached — and the response stays counted:
  * "not yet checked" must never display as "failed". These are an indexer's

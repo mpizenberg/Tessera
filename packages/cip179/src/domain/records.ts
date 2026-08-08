@@ -22,8 +22,8 @@ export interface ChainPos {
   readonly slot: number;
   /**
    * Epoch of the containing block, as reported by the chain indexer — the
-   * authoritative input to the §6.3 deadline rule (`epochNo ≤ end_epoch`),
-   * unlike the tip-relative `epochOfSlot` estimate.
+   * authoritative input to the deadline rule (`epochNo ≤ end_epoch`), unlike
+   * the tip-relative `epochOfSlot` estimate.
    */
   readonly epochNo: number;
 }

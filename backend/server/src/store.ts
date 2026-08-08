@@ -7,14 +7,14 @@
  * implementations share this seam and the same SQLite schema: `store-node.ts`
  * (node:sqlite, local process) and `store-d1.ts` (Cloudflare D1, Worker) — see
  * `backend/ARCHITECTURE.md` §3. Every method is async because D1 is; the node
- * impl just wraps its synchronous calls. The Phase-2 tally tables (§6.5) join
+ * impl just wraps its synchronous calls. The tally tables (§6.2) join
  * this schema too.
  */
 
 import type { ChainTip, GovLink, GovLinkDoc } from "cip-179/domain";
 
 /**
- * One response's §6.3 validation result (rules 1–3), persisted so each
+ * One response's validation result (TALLY-SPEC.md §3), persisted so each
  * (tx, response) is checked once, not per refresh. `blockIndex`/`proofOk` are
  * `null` when their enrichment fetch failed — the row is then incomplete and
  * retried on a later refresh.
@@ -57,7 +57,7 @@ export function validationKey(txHash: string, responseIndex: number): string {
 }
 
 /**
- * One credential's snapshotted weight at an epoch (§6.5) — written only once
+ * One credential's snapshotted weight at an epoch (§6.2) — written only once
  * fetched, so existing rows are exactly the finalization resume cursor.
  */
 export interface WeightRow {
@@ -72,7 +72,7 @@ export interface WeightRow {
 }
 
 /**
- * One sealed response's reveal outcome (§6.5) — written as each ciphertext is
+ * One sealed response's reveal outcome (§6.2) — written as each ciphertext is
  * decrypted, so existing rows are exactly the reveal resume cursor.
  */
 export interface SealedRevealRow {

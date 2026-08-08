@@ -47,8 +47,8 @@ export function parseCredentialKey(key: string): Credential {
 }
 
 /**
- * The fields the §6.3 chain order reads. `ResponseRecord` satisfies it, as do
- * the serving tier's persisted validation rows (whose missing `blockIndex` is
+ * The fields the chain order reads. `ResponseRecord` satisfies it, as do the
+ * serving tier's persisted validation rows (whose missing `blockIndex` is
  * `null` rather than absent).
  */
 export interface ChainOrderKey {
@@ -58,8 +58,8 @@ export interface ChainOrderKey {
 }
 
 /**
- * Chain order for responses (§6.3): by slot, then position of the tx within
- * its block (`tx_block_index`, −1 when the source didn't enrich it — a
+ * Chain order for responses: by slot, then position of the tx within its
+ * block (`tx_block_index`, −1 when the source didn't enrich it — a
  * one-refresh transient on the serving tier), then position within the
  * payload's responses array. Returns true iff `a` is strictly later than `b`.
  * This is THE ordering "latest wins" refers to — tally emitters and verifiers
