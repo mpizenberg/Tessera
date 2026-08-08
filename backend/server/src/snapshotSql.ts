@@ -791,7 +791,7 @@ export const completedValidationsSql = (
   jsonChunks([...surveyKeys].sort(compareText), SNAPSHOT_KEYS_PER_CHUNK).map(
     (chunk) => ({
       sql: `SELECT tx_hash AS txHash, response_index AS responseIndex,
-                   linked_action_id AS linkedActionId
+                   linked_action_id AS linkedActionId, slot, epoch_no AS epochNo
             FROM validated_response
             WHERE survey_key IN (SELECT value FROM json_each(?))
               AND block_index IS NOT NULL AND proof_ok IS NOT NULL`,

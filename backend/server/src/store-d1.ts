@@ -16,6 +16,7 @@ import type {
   ArtifactRow,
   BackendStore,
   CancellationRow,
+  CompletedValidation,
   DbGovEpochRow,
   RefreshRunRow,
   RefreshTotals,
@@ -133,8 +134,8 @@ export function d1BackendStore(db: D1Like): BackendStore {
   return {
     async completedValidationsForSurveys(
       surveyKeys: readonly string[],
-    ): Promise<Map<string, string | null>> {
-      const out = new Map<string, string | null>();
+    ): Promise<Map<string, CompletedValidation>> {
+      const out = new Map<string, CompletedValidation>();
       if (surveyKeys.length === 0) return out;
       const batches = await db.batch(
         completedValidationsSql(surveyKeys).map(({ sql, params }) =>
@@ -142,12 +143,15 @@ export function d1BackendStore(db: D1Like): BackendStore {
         ),
       );
       for (const b of batches) {
-        for (const r of b.results as {
+        for (const r of b.results as ({
           txHash: string;
           responseIndex: number;
-          linkedActionId: string | null;
-        }[])
-          out.set(validationKey(r.txHash, r.responseIndex), r.linkedActionId);
+        } & CompletedValidation)[])
+          out.set(validationKey(r.txHash, r.responseIndex), {
+            linkedActionId: r.linkedActionId,
+            slot: r.slot,
+            epochNo: r.epochNo,
+          });
       }
       return out;
     },

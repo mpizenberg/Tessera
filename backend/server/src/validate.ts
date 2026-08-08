@@ -163,12 +163,19 @@ export async function validateNewResponses(
     // is still uncompleted and re-enters here, so nothing is lost by dropping.
     if (!defByKey.has(refKey(r.response.surveyRef))) return false;
     const key = validationKey(r.txHash, r.responseIndex);
-    if (!completed.has(key)) return true; // never validated / enrichment pending
+    const verdict = completed.get(key);
+    if (!verdict) return true; // never validated / enrichment pending
+    // A rolled-back response that re-landed elsewhere carries the same
+    // (txHash, responseIndex) but a new chain position, and the verdict holds
+    // the old one: its `epochNo` decides the on-time rule and its slot and
+    // block index decide the dedup winner. Re-judging also re-reads the block
+    // index, which moved with the transaction.
+    if (verdict.slot !== r.slot || verdict.epochNo !== r.epochNo) return true;
     if (!BINDABLE_ROLES.has(r.response.role)) return false; // link-independent
     // Re-validate when the survey's current link set differs from the one this
     // verdict was pinned to (a link appeared, changed, or was removed).
     const currentLinks = linkSetKey(refKey(r.response.surveyRef));
-    return currentLinks !== completed.get(key);
+    return currentLinks !== verdict.linkedActionId;
   });
   if (candidates.length === 0) return;
 

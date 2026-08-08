@@ -213,6 +213,36 @@ describe("validateNewResponses", () => {
     expect(source.txBlockIndices).toHaveBeenCalledTimes(1);
   });
 
+  it("re-judges a response that rolled back and re-landed elsewhere", async () => {
+    const store = memTallyStore();
+    const landed = response("t1", 1);
+    await validatePass(
+      store,
+      records(landed),
+      [],
+      fakeSource({ t1: signedProof(1) }, { t1: 4 }),
+    );
+    expect(store.rows.get("t1:0")).toMatchObject({ slot: 200, blockIndex: 4 });
+
+    // The same content-addressed transaction, re-included past an epoch
+    // boundary: a verdict left at its old coordinates would window the response
+    // against the wrong epoch and order it by a block index that moved.
+    const source = fakeSource({ t1: signedProof(1) }, { t1: 9 });
+    await validatePass(
+      store,
+      records({ ...landed, slot: 260, epochNo: 1342 }),
+      [],
+      source,
+    );
+
+    expect(source.txBlockIndices).toHaveBeenCalledTimes(1);
+    expect(store.rows.get("t1:0")).toMatchObject({
+      slot: 260,
+      epochNo: 1342,
+      blockIndex: 9,
+    });
+  });
+
   it("retries rows whose enrichment failed (NULLs) on the next refresh", async () => {
     const store = memTallyStore();
     const failing = fakeSource({ t1: null }, {}); // cbor + tx_info both failed

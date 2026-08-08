@@ -130,7 +130,11 @@ export function memBackendStore(): MemBackendStore {
           )
           .map((r) => [
             validationKey(r.txHash, r.responseIndex),
-            r.linkedActionId,
+            {
+              linkedActionId: r.linkedActionId,
+              slot: r.slot,
+              epochNo: r.epochNo,
+            },
           ]),
       );
     },

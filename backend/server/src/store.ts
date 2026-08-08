@@ -120,20 +120,29 @@ export interface ValidatedLinkCursor {
   readonly linkedActionId: string | null;
 }
 
+/**
+ * What a completed verdict was decided against, so a refresh can tell whether
+ * it still holds: the canonical epoch-aligned link set (`linkedActionId`) and
+ * the chain position the response occupied when it was judged.
+ */
+export interface CompletedValidation {
+  readonly linkedActionId: string | null;
+  readonly slot: number;
+  readonly epochNo: number;
+}
+
 /** Phase-2 tally persistence (ARCHITECTURE.md §6.5), same database. */
 export interface TallyStore {
   /**
    * The given surveys' rows needing no enrichment retry (both `blockIndex` and
-   * `proofOk` present), as a map from {@link validationKey} to the
-   * `linkedActionId` cursor (the canonical epoch-aligned link set) the verdict
-   * was evaluated against. A refresh skips these unless the survey's current
-   * link set differs from the stored one (then the verdict is re-evaluated).
-   * Keyed by survey so validation reads only its candidates' verdicts, not
-   * every verdict ever recorded.
+   * `proofOk` present), keyed by {@link validationKey}. A refresh skips these
+   * unless what they were decided against has moved since. Keyed by survey so
+   * validation reads only its candidates' verdicts, not every verdict ever
+   * recorded.
    */
   completedValidationsForSurveys(
     surveyKeys: readonly string[],
-  ): Promise<Map<string, string | null>>;
+  ): Promise<Map<string, CompletedValidation>>;
   /**
    * Distinct link-set cursors pinned by completed bindable-role verdicts —
    * the input to "which surveys' link sets changed since their verdicts".

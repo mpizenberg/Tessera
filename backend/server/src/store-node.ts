@@ -24,6 +24,7 @@ import type {
   ArtifactRow,
   BackendStore,
   CancellationRow,
+  CompletedValidation,
   DbGovEpochRow,
   RefreshRunRow,
   RefreshTotals,
@@ -403,16 +404,22 @@ export function openBackendStore(path: string): BackendStore {
   return {
     async completedValidationsForSurveys(
       surveyKeys: readonly string[],
-    ): Promise<Map<string, string | null>> {
-      const out = new Map<string, string | null>();
+    ): Promise<Map<string, CompletedValidation>> {
+      const out = new Map<string, CompletedValidation>();
       for (const { sql, params } of completedValidationsSql(surveyKeys)) {
         const rows = db.prepare(sql).all(...(params as SqlValue[])) as {
           txHash: string;
           responseIndex: number;
           linkedActionId: string | null;
+          slot: number;
+          epochNo: number;
         }[];
         for (const r of rows)
-          out.set(validationKey(r.txHash, r.responseIndex), r.linkedActionId);
+          out.set(validationKey(r.txHash, r.responseIndex), {
+            linkedActionId: r.linkedActionId,
+            slot: r.slot,
+            epochNo: r.epochNo,
+          });
       }
       return out;
     },

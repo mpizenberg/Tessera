@@ -160,9 +160,9 @@ describe("store-node validation candidate reads", () => {
       await store.completedValidationsForSurveys(["s1:0", "s3:0"]),
     ).toEqual(
       new Map([
-        ["aa:0", "gov#1"],
-        ["aa:1", "gov#1"],
-        ["ab:0", null],
+        ["aa:0", { linkedActionId: "gov#1", slot: 1, epochNo: 499 }],
+        ["aa:1", { linkedActionId: "gov#1", slot: 1, epochNo: 499 }],
+        ["ab:0", { linkedActionId: null, slot: 1, epochNo: 499 }],
       ]),
     );
     expect(await store.completedValidationsForSurveys([])).toEqual(new Map());
@@ -214,7 +214,7 @@ describe("store-node migration of a pre-runner database", () => {
     try {
       // The pre-existing row survives, with a NULL linked action.
       expect(await store.completedValidationsForSurveys(["aa:0"])).toEqual(
-        new Map([["aa:0", null]]),
+        new Map([["aa:0", { linkedActionId: null, slot: 10, epochNo: 500 }]]),
       );
       // And writes touching the new column work.
       await store.upsertValidatedResponses([
@@ -235,7 +235,7 @@ describe("store-node migration of a pre-runner database", () => {
       ]);
       expect(
         (await store.completedValidationsForSurveys(["bb:1"])).get("bb:1"),
-      ).toBe("gov#0");
+      ).toMatchObject({ linkedActionId: "gov#0" });
       // Missing tables were created by their migrations, not the baseline.
       await store.reconcileSnapshot([], [], [], {
         tip: "{}",
