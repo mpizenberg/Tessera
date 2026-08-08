@@ -14,11 +14,12 @@ Each refresh cycle does three things, in order:
    governance links for the epochs whose links can still move (dereferencing
    each candidate action's anchor and verifying it against the hash committed
    on-chain — fetched once ever, then banked). The rows are what the read
-   endpoints serve; see `backend/ARCHITECTURE.md` §5.4.
+   endpoints serve; `backend/ARCHITECTURE.md` covers the windowed refresh.
 2. **Validate** — for responses not seen before, fetch their tx block index
-   and proof evidence and persist the §6.3 checks (well-formedness, credential
-   proof via required signers / native scripts / vote bindings). Incremental:
-   already-validated responses cost zero further Koios calls.
+   and proof evidence and persist the verdicts (well-formedness, deadline,
+   credential proof via required signers / native scripts / vote bindings —
+   the rules are `backend/TALLY-SPEC.md`). Incremental: already-validated
+   responses cost zero further Koios calls.
 3. **Finalize** — for surveys safely past their `end_epoch`, snapshot
    stake/voting-power weights at that epoch, run the stake-weighted tally, and
    emit an immutable, content-addressed **result artifact**
@@ -49,10 +50,18 @@ share `PORT`, so run one at a time or override it.
 
 ## Endpoints
 
-- `GET /health` — liveness + active network.
-- `GET /api/surveys` — the Explore-list payload: survey records + tip + gov
-  links + raw cancellations + server-deduped `responseCounts` per survey, plus
-  `fetchedAt` / `ageSeconds`. Bounded regardless of participation volume.
+- `GET /health` — liveness + active network. The app checks this before
+  trusting a backend.
+- `GET /api/health` — operational metrics behind the app's health footer: the
+  snapshot's age, the last refresh, 24 h upstream-request and run totals, the
+  validation backlog, the scan cursor, and the configured limits.
+- `GET /api/surveys` — the Explore-list payload, **keyset-paginated**
+  (`filter`/`q`/`cursor`/`limit`): survey records + tip + gov links + raw
+  cancellations + server-deduped `responseCounts` per survey, plus
+  `fetchedAt` / `ageSeconds`. Filter chip counts are global over the matching
+  set, not per page. A cursor records the snapshot it was minted against; one
+  from an older snapshot is still answered, with `resync` set so the client
+  refreshes page one.
 - `GET /api/surveys/{txHash}/{index}` — one survey's self-contained bundle:
   its definition record, ALL of its responses (sealed ciphertexts included),
   the cancellations targeting it, and the tip. `404` for an unknown ref.
@@ -99,13 +108,8 @@ pnpm --filter tessera-app dev               # terminal 2
 
 Set `TESSERA_BACKEND_URL` empty and the app reads from Koios directly (the
 power-user/offline path), which then needs a Koios token pasted in the app's
-Settings.
-
-Deployments are single-network on both sides: the app is built for one network
-(its Vite build mode) and must point at a backend serving the same
-one — it checks
-this against `/health` (which reports the active network) and refuses a
-mismatched backend rather than mixing networks.
+Settings. Pair the two on the same network — the app checks `/health` and
+refuses a backend serving a different one.
 
 ## Run on Cloudflare
 
@@ -129,19 +133,16 @@ the ids of the networks you deploy. See [OPERATIONS.md](OPERATIONS.md) for the
 reproducible preprod creation, migration, secrets, deployment, measurement,
 health gate, and rollback commands.
 
-Subrequests (logged on every cron run in `wrangler tail`): a steady-state
-refresh costs 4 Koios calls — the tip, the segment listing page, the
-drift-healing rescan's page, and the governance proposal scan; validating new
-responses and finalizing closing surveys add batched calls only when there is
-new work (a full live cycle — refresh + validation + weight snapshotting +
-artifact emission — measured ~13 on top of the floor). None of that grows with
-the size of the archive.
-Unresolved governance anchors add up to `ANCHOR_ATTEMPTS_PER_REFRESH` more,
-which is why the log line and the health footer count every upstream request,
-not just the Koios ones.
-That sits comfortably inside the free plan's 50-per-invocation cap, and
-finalization is resumable: if a run were ever cut short, already-written weight
-rows are not re-fetched and the next cron picks up where it left off.
+Subrequests are logged on every cron run (`wrangler tail`) and counted in the
+health footer — every upstream request, not just the Koios ones, since a
+governance-anchor fetch costs a subrequest too. **The per-run floor is flat:
+it is set by the settlement window, not by how much history the deployment has
+accumulated**, and validation, weight snapshotting and artifact emission add
+batched calls only when there is new work. A run sits comfortably inside the
+free plan's 50-per-invocation cap; `OPERATIONS.md` carries the measured
+breakdown and the daily-quota arithmetic. Finalization is resumable: if a run
+were cut short, already-written weight rows are not re-fetched and the next
+cron picks up where it left off.
 
 CPU is the tighter limit once sealed surveys are in play: a cron under an hour
 apart gets 30 s on the paid plan and 10 ms on the free one, while a single

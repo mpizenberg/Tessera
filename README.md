@@ -10,15 +10,12 @@ backend required to read them. Responses can be **public** or **sealed**
 scoped by on-chain **role** (DRep, SPO, CC, Stakeholder, Keyholder), and tallies are
 computed client-side directly from chain data.
 
-> **Status:** active development. The frontend (explore, results, wallet,
-> respond, create, cancel, sealed mode, IPFS enrichment, governance linkage) is
-> functional, as is the Tier-1 serving backend (Koios read path cached
-> server-side; runs as a Node process or a Cloudflare Worker). The backend also
-> validates responses (deadline, credential proof, dedup), snapshots
+> **Status:** active development, end to end. The app covers the whole survey
+> lifecycle, and the Tier-1 serving backend validates responses, snapshots
 > stake/voting-power weights at each survey's end epoch, and finalizes closed
-> surveys into **content-addressed, re-verifiable result artifacts** that the
-> app renders as final weighted results; `packages/verifier` re-derives any
-> artifact from chain data and checks the hash. See `backend/ARCHITECTURE.md`.
+> surveys into **content-addressed result artifacts** that anyone can re-derive
+> from chain data with `packages/verifier`. See `backend/ARCHITECTURE.md` for
+> the design and `backend/TALLY-SPEC.md` for the counting rules.
 
 ## Governance linkage
 
@@ -43,6 +40,7 @@ served document matches the on-chain hash.
 | `packages/core`           | Tessera app core (`cardano-tessera-core`): the `DataSource` seam, Explore list/health payloads, keyset paging, the survey-list aggregation adapter, and config. The reusable domain/tally surface lives in `cip-179`. |
 | `packages/koios`          | The Koios read path (`KoiosDataSource`, tally inputs), shared by direct mode, backend, and verifier.                                                                                                                  |
 | `packages/respond-core`   | `cardano-tessera-respond-core`: the pure, framework-free answering core (drafting, responder eligibility, i18n factory, lazy sealed wrapper) shared by the app and the widget.                                        |
+| `packages/respond-ui`     | `cardano-tessera-respond-ui`: the shared SolidJS per-question body components, so the app and the widget cannot drift in answering behavior.                                                                          |
 | `packages/respond-widget` | `cardano-tessera-respond`: the embeddable `<tessera-respond>` custom element — answer a survey anywhere, emitting a ready-to-attach label-17 payload. Framework-agnostic; wallets/chain stay host-side.               |
 | `packages/respond-react`  | `cardano-tessera-respond-react`: React 18/19 bindings for the widget — typed props synced as DOM properties, `tessera:*` events as callbacks.                                                                         |
 | `packages/verifier`       | Standalone CLI that re-derives a survey's result artifact from chain data and checks its content hash.                                                                                                                |
@@ -80,40 +78,23 @@ Each backend network caches into its own `tessera-cache-$NETWORK.sqlite`, so
 switching costs a re-scan but never mixes two chains' records.
 
 Alternatively, skip the backend and let the browser scan [Koios][koios]
-directly (the power-user/offline path): deployed builds do this when their
-`TESSERA_BACKEND_URL_<network>` is empty (see below), and a dev server with an
-empty `TESSERA_BACKEND_URL= pnpm --filter tessera-app dev`.
+directly (the power-user/offline path): a dev server does this with an empty
+`TESSERA_BACKEND_URL= pnpm --filter tessera-app dev`, a deployed build when
+its backend URL is configured empty.
 That path requires an authenticated Koios token (tier 1 is free): the anonymous
 tier does not send CORS headers, so browser requests need one. Paste it in the
 app's **Settings**; it is stored in the browser and never built into the bundle.
 
 ### Configuration
 
-All frontend build configuration is public — it ships in the bundle — but the
-values are deployment-specific (whose Cloudflare account, which URLs), so they
-come from build-time environment variables rather than committed code. A build
-targets one network — `vite build --mode <network>`, the mode doubling as the
-wrangler environment; **one deployment serves one network** (no runtime
-switch) — and bakes in two variables per network:
-
-- `TESSERA_BACKEND_URL_<NETWORK>` — the Tier-1 backend that network's app
-  reads from; empty ⇒ direct Koios (token in Settings). The app verifies the
-  backend serves the same network (via its `/health`) and refuses a mismatch.
-  Overridable per network in Settings.
-- `TESSERA_APP_URL_<NETWORK>` — where each network's app is served, rendered
-  as header cross-links (self filtered out at runtime); empty ⇒ no link.
-
-Builds load these from the git-ignored `frontend/app/.env.deploy` (copy
-`.env.deploy.example`), with variables already set in the environment taking
-precedence; no other env file is ever read. A build fails if its own
-network's two variables are missing — empty is a valid, explicit value — so a
-forgotten `.env.deploy` cannot silently ship a misconfigured app. Dev servers
-never read `.env.deploy`; their one knob is `TESSERA_BACKEND_URL`.
-
-CIP-30 reports network id `0` for both preprod and Preview, so a browser app
-cannot distinguish those testnets through the standard wallet API. Tessera
-still keeps their backend, Koios, storage, explorer, and transaction-builder
-configuration separate; users must select the exact testnet in their wallet.
+**One deployment serves one network**, on both halves and with no runtime
+switch: the app is built for a network and refuses a backend whose `/health`
+reports a different one. Frontend build configuration is public — it ships in
+the bundle — but deployment-specific, so it comes from build-time environment
+variables (the git-ignored `frontend/app/.env.deploy`) rather than committed
+code; the backend's Cloudflare bindings likewise live in a git-ignored
+`wrangler.toml`. Both have a committed `.example` to copy. The variables and
+their rules are in each half's README.
 
 IPFS reads race a built-in list of public gateways (no config); IPFS _pinning_
 (for authoring external content / rationales) uses per-provider API tokens
@@ -121,12 +102,9 @@ entered in Settings, stored only in the browser.
 
 ## Development
 
-The repo is a pnpm workspace (`frontend/app`, `packages/cip179`,
-`packages/core`, `packages/koios`, `packages/respond-core`,
-`packages/respond-react`, `packages/respond-widget`, `packages/verifier`,
-`backend/server`, plus the `examples/` host apps).
-Packages are consumed from TypeScript source (Vite aliases / `exports` pointing
-at `src`), so cross-package edits are live with no build step.
+The repo is a pnpm workspace over the paths above, plus the `examples/` host
+apps. Packages are consumed from TypeScript source (Vite aliases / `exports`
+pointing at `src`), so cross-package edits are live with no build step.
 
 From the repository root:
 
@@ -141,7 +119,8 @@ From the repository root:
 | `pnpm --filter tessera-app build`                                                    | Production build of the app (the preview target).                            |
 | `pnpm --filter cardano-tessera-verifier verify -- --backend <url> --survey <tx>:<i>` | Re-verify a survey's final result artifact from chain data.                  |
 
-Formatting is Prettier (`pnpm format` / `pnpm format:check` in `frontend/app`).
+Formatting is Prettier over the whole repo: `pnpm format` / `pnpm format:check`
+at the root.
 
 Both halves deploy to Cloudflare with `wrangler`, one deployment per network:
 the backend as a Worker + D1 + Cron
@@ -159,9 +138,11 @@ are not needed for any of this; to fetch them anyway:
 Contributions are welcome. Until a `CONTRIBUTING.md` lands, the basics:
 
 - Open an issue to discuss substantial changes before investing in a PR.
-- Keep the build green: `pnpm -r type-check`, `pnpm -r test`, and
-  `pnpm format:check` (in `frontend/app`) should all pass (CI runs these on
-  every PR).
+- Keep the build green — CI runs these on every PR, in this order:
+  `pnpm -r test`, `pnpm test:operator-scripts`, `pnpm -r type-check`,
+  `pnpm format:check`. Tests come before type-check because the widget's test
+  script builds the rolled-up `d.ts` its typed tests need. CI then runs
+  `pnpm -r build`, which needs a `frontend/app/.env.deploy` to exist.
 - Match the existing code style — Prettier is the source of truth for formatting.
 
 ## License
@@ -175,4 +156,3 @@ The **code** in this repository is licensed under the [Apache License
 [vite]: https://vite.dev/
 [pnpm]: https://pnpm.io/installation
 [koios]: https://koios.rest/
-[ccby]: https://creativecommons.org/licenses/by/4.0/

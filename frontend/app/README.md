@@ -115,11 +115,12 @@ unweighted tally. Anyone can re-derive the artifact from chain data with
 | `pnpm --filter tessera-app test`                                   | Unit tests (Vitest).         |
 | `pnpm --filter tessera-app type-check`                             | `tsc --noEmit`.              |
 | `pnpm --filter tessera-app build`                                  | Production build to `dist/`. |
-| `pnpm format` / `pnpm format:check` (in `frontend/app`)            | Prettier.                    |
 
-Workspace packages (`cardano-tessera-core`, `cardano-tessera-koios`, `cip-179`) are consumed
-from TypeScript source, so cross-package edits are live in the dev server with
-no build step.
+Prettier runs over the whole repo from the root: `pnpm format` /
+`pnpm format:check`.
+
+Every workspace package the app depends on is consumed from TypeScript source,
+so cross-package edits are live in the dev server with no build step.
 
 ## Deploy
 
@@ -132,13 +133,24 @@ pnpm --filter tessera-app deploy:preprod   # likewise for preprod
 pnpm --filter tessera-app deploy:mainnet   # likewise for mainnet
 ```
 
-Each build bakes its network plus the `.env.deploy` values — backend URL,
-cross-links — into the bundle; the network name is simultaneously the
-Vite build mode and the wrangler environment. CIP-30 identifies both
-preprod and Preview as network id `0`; the app cannot distinguish those
-wallet-selected testnets through the standard wallet API, so users must select
-the exact one. Backend identity, Koios, storage, explorer links, and Evolution
-chain parameters remain distinct.
+The network name is simultaneously the Vite build mode and the wrangler
+environment, and each build bakes in two `.env.deploy` variables:
+
+- `TESSERA_BACKEND_URL_<NETWORK>` — the Tier-1 backend that network's app
+  reads from; empty ⇒ direct Koios (token in Settings). Overridable per
+  network in Settings.
+- `TESSERA_APP_URL_<NETWORK>` — where that network's app is served, rendered
+  as header cross-links (self filtered out at runtime); empty ⇒ no link.
+
+Variables already set in the environment win over `.env.deploy`, and no other
+env file is read. A build fails when its own network's two are missing — empty
+is a valid, explicit value — so a forgotten `.env.deploy` cannot silently ship
+a misconfigured app.
+
+CIP-30 identifies both preprod and Preview as network id `0`; the app cannot
+distinguish those wallet-selected testnets through the standard wallet API, so
+users must select the exact one. Backend identity, Koios, storage, explorer
+links, and Evolution chain parameters remain distinct.
 
 [cip179]: https://github.com/cardano-foundation/CIPs/tree/master/CIP-0179
 [drand]: https://drand.love/

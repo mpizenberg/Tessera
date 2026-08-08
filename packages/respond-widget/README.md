@@ -523,7 +523,7 @@ In the workspace the package is consumed straight from `src` (its `exports` map
 points at TypeScript source, like every sibling), so cross-package edits are live
 with no build step.
 
-## Layout
+## Source layout
 
 | Path              | Purpose                                                                   |
 | :---------------- | :------------------------------------------------------------------------ |
