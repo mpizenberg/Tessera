@@ -180,29 +180,30 @@ in `cardano-tessera-core` — the package is pure logic + types only.
 
 ## 5. Read path (the snapshot)
 
-Tier 1 reproduces today's read path server-side and caches it. The logic in
-`src/data/koios.ts` is reused largely as-is (it already paginates, batches, and
-degrades gracefully); it simply runs in the Worker/process behind the token
-secret instead of in each browser.
+Tier 1 reproduces the browser's read path server-side and stores it. The Koios
+reader itself is shared code (`packages/koios`), so the same paging, batching and
+graceful degradation runs in the Worker/process behind the token secret as in the
+direct browser path — the difference is that the backend walks the index in
+resumable slot segments and keeps what it derived (§5.4), while the browser
+re-scans from the floor on every load.
 
-- A **scheduled refresh** (Cron / loop) computes the current authoritative
-  label-17 snapshot (surveys, responses, cancellations, tip, governance links)
-  and reconciles it into the SQL store.
+- A **scheduled refresh** (Cron / loop) integrates one _slot segment_ of the
+  label-17 index into the SQL store — the stored rows are the durable truth for
+  settled history, and each run re-derives only what can still move (§5.4).
   One run at a time, enforced by a lease row (`migrations/0008_refresh_lease.sql`):
   neither scheduler serializes itself — Cloudflare may start a cron while the
   previous one is still running, and the loop's interval fires regardless — and
   two concurrent runs would let the slower one write its older scan last. The
   lease is held for a bounded TTL so a run killed mid-flight, which never
   releases, blocks its successors only until it expires.
-- The refresh stores the snapshot **materialized as rows** — one per survey
-  (`survey_index`), one per response (`response`), plus a shared envelope
-  (`snapshot_meta`: tip, incomplete flag, `fetchedAt`). New immutable responses,
-  changed survey projections, absent-row deletions, and the envelope are
-  committed in one transaction, so the whole snapshot becomes visible at once
-  and a reader never sees one run's rows beside another's. `fetchedAt` is the scan's **start**,
-  the instant `tip` was read: the envelope then describes one point in time
-  instead of straddling the run, and reported age never understates staleness
-  by the run's duration.
+- The store holds the corpus **materialized as rows** — one per survey
+  (`survey_index`), one per response (`response`), one per cancellation
+  (`cancellation`), plus a shared envelope (`snapshot_meta`: tip, incomplete
+  flag, `fetchedAt`). A run's upserts, its slot-range deletions and the envelope
+  are committed in one transaction, so a reader never sees half of one segment's
+  integration. `fetchedAt` is the scan's **start**, the instant `tip` was read:
+  the envelope then describes one point in time instead of straddling the run,
+  and reported age never understates staleness by the run's duration.
 - The serving endpoints read only the rows they serve (§5.1) plus that
   freshness stamp; `/tip` and `/tx_status` may stay live passthroughs for
   immediacy.
@@ -275,14 +276,16 @@ How it landed (shared with Phase 2's tally work, which is why it waited):
   entire corpus, including padded sealed ciphertexts that grow with
   participation, inside a Worker's CPU and memory limits. Rows remove both; what
   a request costs now scales with the survey it asked for.
-- Each refresh **reconciles** the authoritative scan: immutable response
-  coordinates are inserted once, survey projections update only when their
-  stored values change, and rows absent from the scan are deleted (reorged out
-  or aged past the scan floor). Bulk JSON table parameters and range-scoped
-  absence deletes keep first materialization and large reorgs to chunked set
-  operations rather than one statement per record. The entire diff and
-  `snapshot_meta` remain one transaction. `refresh_run.payload_bytes` records
-  the total stored wire JSON as the growth metric behind the health footer.
+- Each refresh **reconciles its segment**: rows derived from the segment are
+  upserted (changed values only), and a row whose slot lies inside the range the
+  scan covered but which the scan did not list is deleted — it rolled back.
+  Settled rows outside the segment are never deletion candidates, which is what
+  makes the reconcile O(window) instead of O(corpus). Bulk JSON table parameters
+  keep a large segment to chunked set operations rather than one statement per
+  record, and the whole diff plus `snapshot_meta` remains one transaction.
+  `refresh_run.surveys`/`responses`/`payload_bytes` describe what the run
+  _integrated_, not the corpus: a per-refresh corpus count would reintroduce
+  exactly the cost §5.4 removes.
 - The frontend seam widened: `state.tsx`'s single eager resource became a list
   resource + a lazy per-survey bundle resource, and `DataSource` is now exactly
   `surveyList`/`surveyBundle`/`respondedKeys`/`txStatus` (`KoiosDataSource`
@@ -314,6 +317,14 @@ Two on-chain facts bound the work (`backend/server/src/govLinks.ts`):
   its link set can be decided once and for all (`gov_epoch`). A settled epoch
   leaves the query filter for good and its anchors leave the bank, which is what
   keeps the pass **O(active surveys)** instead of growing with all-time history.
+  The filter is a banked **settlement floor** — the lowest expiration not yet
+  settled, kept on the scan-state row — rather than a fixed `tipEpoch − K`
+  horizon: a deployment down for longer than K would otherwise let unsettled
+  epochs fall out under the horizon and never settle them, stamping those
+  surveys' artifacts with whatever partial links the last refresh saw. Below the
+  floor a survey's own `gov_links` slice **is** the frozen answer, so
+  integration, validation and finalization read links from the rows they were
+  projected into instead of re-deriving them.
 
 Settlement waits for every anchor at the epoch, but not forever: after one epoch
 of patience it settles with the links it has and records the rest as given up.
@@ -357,6 +368,88 @@ What the footer reports without a limit to compare against is deliberate:
 Koios's per-tier quota is account-side and not discoverable through the API
 (hence `KOIOS_DAILY_LIMIT`, when the operator knows it), and no upstream service
 publishes its number to us. The volume is still worth showing.
+
+### 5.4 The windowed refresh: one segment per run
+
+The refresh used to re-derive the world on every cron: list every label-17 tx
+since the configured `SINCE` floor, read every cached metadata row, rebuild every
+record in memory, reconcile every stored row. Five costs grew with corpus age
+from that one root — the offset-paged listing (+1 Koios call per 100 corpus txs
+_per refresh_), the `MAX_PAGES` truncation wall at 5,000 txs (past which every
+snapshot is permanently `incomplete` and the oldest rows get swept out of
+serving), the reconcile's compare-and-sweep reads, the full-table metadata read,
+and the whole corpus as JSON inside a 128 MB isolate.
+
+What the full rebuild bought was that _any_ divergence between stored rows and
+chain truth self-corrected within one cron. Decomposed, that splits three ways:
+
+- **chain-caused** — rollbacks removing or repositioning a tx, indexer lag and
+  backfill, this app's own truncated scans. Continuous, but nothing deeper than
+  the stability window (36 h on mainnet/preprod) can roll back;
+- **event-caused** — a deploy that changes derivation, a restore, manual
+  surgery, an upstream data correction. Rare and observable;
+- **not healed by a rebuild either** — an out-of-band `validated_response`
+  deletion, a mutated `tally_artifact` row.
+
+Only the first class is why the scan runs continuously, and it is bounded by
+_settlement_, not by corpus age. That is the whole design.
+
+**The segment walker.** Banked state lives on one row (`scan_state`): the main
+cursor (the last `(slot, tx_hash)` whose segment is fully integrated), whether
+that walk was caught up, the derivation generation, the trickle cursor, and the
+two frontiers (§5.2, §6.5). Every refresh integrates one segment:
+
+- **steady state** — `[cursor − SETTLEMENT_MARGIN, tip]`, listed ascending by
+  `(absolute_slot, tx_hash)`, normally one page. The margin is ~3 days
+  (259,200 slots), about twice the stability window, one constant for all
+  networks;
+- **catch-up** — after downtime or a rewind, the same walk capped at a page
+  budget per run; the cursor advances to the last fully covered slot and the next
+  cron continues from the pair. Serving keeps the existing rows meanwhile;
+- **generation rewind** — the deployed code carries a generation constant, and a
+  mismatch with the banked one resets the cursor to the config floor so the
+  ordinary walker re-derives everything forward. This is the escape hatch for a
+  deploy that changes how records project into rows;
+- **trickle rescan** — a caught-up run additionally spends one listing page
+  re-deriving a page of the _settled prefix_, rotating oldest→newest and wrapping.
+  Integration is idempotent, so a row that never moved changes nothing and a
+  nonzero change count _is_ the drift signal. This is what heals the
+  event-caused class without operator discipline, in ~corpus/100 refreshes.
+
+Integration is **idempotent re-derivation**, never a delta: list the segment,
+fetch the metadata it is missing (keyed by hash, chunked), classify, then
+reconcile that slot range. A survey is _touched_ — its projection rebuilt from
+scratch, every aggregate recomputed over stored rows merged with the segment's
+records — when the segment carries its definition or something targeting it, when
+a stored response/cancellation in the swept range is about to vanish, when its
+governance link set differs from the stored one, or when its verified-while-open
+cancellation expired at close. Sweep bounds exclude uncovered boundary slots: a
+keyset continuation never sweeps the cursor's own slot (rows at-or-before the
+cursor hash were not re-listed) and a budget-capped walk stops one slot below its
+last listed one (that slot may hold further unlisted txs). A failed page or a
+dropped metadata batch flags the envelope `incomplete`, banks no cursor and
+sweeps nothing — an unfetched tx is indistinguishable from a vanished one.
+
+A settled survey row can still change, and every cause has a bounded driver:
+
+| change                              | driver                                                                                  |
+| ----------------------------------- | --------------------------------------------------------------------------------------- |
+| response / cancellation arrives     | segment tx targeting it → touched-survey re-projection                                  |
+| response / cancellation rolls back  | segment sweep removes it → same re-projection                                           |
+| open → closed                       | nothing — computed at query time from `end_epoch` vs tip                                |
+| governance links resolve or settle  | the pass's epoch set (§5.2) → link-change diff → touched                                |
+| `finalized_cancelled` overlay flips | this run's finalization → one idempotent targeted UPDATE                                |
+| banked chip counts move             | any run that changed rows, flipped the overlay, or crossed an epoch → one SQL aggregate |
+
+**What is traded away.** Retroactive semantics changes stop being free: a deploy
+that changes derivation must bump the generation, or old rows keep the old
+derivation until the trickle passes them. Silent corruption or a restore heals
+via rewind or trickle rather than within three minutes. And the all-in-memory
+purity of the full rebuild is gone — that is the real complexity cost. The
+mitigation is that the pure rebuild is **kept as a test oracle**: differential
+tests replay seeded-random event sequences (new txs, rollbacks, link changes,
+epoch turnover, overlays) through segment integration and assert the rows stay
+identical to what a from-scratch rebuild would produce, after every step.
 
 ---
 
@@ -507,13 +600,26 @@ The key efficiency rule: **aggregate by epoch, not by survey.**
 registered, provenance}`, plus per-`(epoch, role)` totals. This table is shared
   by every survey ending at `E`.
 - **Finalization** (implemented in `backend/server/src/finalize.ts`, run at the
-  end of every refresh): a survey is a candidate once `tip.epoch > end_epoch`
-  **and** `now ≥ voteDeadlineUnix(end_epoch) + 600 s` (the margin absorbing
-  Koios indexing lag / shallow reorg near the boundary) and it has no artifact
-  row yet. Fill any missing snapshot rows from Koios, then emit each survey's
-  artifact once complete: every counted responder has a weight row **and**
-  every covered role has its electorate total (a flaky `/epoch_info` postpones
-  emission to a later cron, never fails it).
+  end of every refresh): a survey is a candidate once `tip.epoch > end_epoch`,
+  it has no artifact row yet, and **the integrated prefix has covered its vote
+  deadline plus 600 s** — the reorg margin, measured on the chain the scan has
+  actually banked rather than on the wall clock, so a survey whose window a
+  catch-up has not reached yet cannot finalize early. Its governance epoch must
+  also be settled (§5.2): an artifact's provenance is immutable, so it may only
+  ever commit a link set that can no longer move. Fill any missing snapshot rows
+  from Koios, then emit each survey's artifact once complete: every counted
+  responder has a weight row **and** every covered role has its electorate total
+  (a flaky `/epoch_info` postpones emission to a later cron, never fails it).
+- **The candidate read has its own frontier.** "Closed, no artifact yet" is a
+  predicate over the whole archive, so it is bounded by a banked **finalization
+  floor** — the lowest end epoch still holding a survey the pass expects to
+  decide — kept beside the settlement floor on the scan-state row, with the
+  artifact anti-join scoped to the same bound. A survey the pass declares
+  permanently untalliable (spec-invalid definition, unproven owner credential,
+  a sealed survey on an unsupported drand chain) counts as _decided_ and stops
+  holding the floor down: without that, one junk label-17 transaction would pin
+  it at its epoch forever. The consequence is that such a survey is never looked
+  at again — a generation rewind, which resets the floor to 0, is the way back.
 - **Sealed surveys** freeze weights the same way (the credential union is
   identical pre- and post-dedup, so the deadline snapshot is correct), then add
   a reveal step: emission waits until the definition's drand round has published
@@ -540,10 +646,11 @@ registered, provenance}`, plus per-`(epoch, role)` totals. This table is shared
   run cut short (Worker subrequest cap) just resumes next cron — fill missing
   weights idempotently, emit artifacts when complete (INSERT-OR-IGNORE), no
   separate job orchestration.
-- **Known caveat (PoC):** the refresh only scans transactions since the
-  configured `SINCE` floor. A survey that ages out of that window before it
-  closes never becomes a finalization candidate — acceptable at PoC scale;
-  Tier 2's full index removes the window.
+- **Known caveat (PoC):** the configured `SINCE` floor is where a walk from
+  nothing starts — a fresh database, or a generation rewind. Rows above it are
+  durable once integrated (§5.4), so nothing "ages out" of the corpus any more,
+  but a survey defined before the floor is not in it to begin with and never
+  becomes a finalization candidate. Tier 2's full index removes the floor.
 
 Store (SQLite/D1 — `migrations/0003_tally.sql`; the `migrations/` files are
 the single schema source for both backends: D1 applies them via `wrangler d1
@@ -585,18 +692,20 @@ tally_artifact(
 
 There is also `validated_response` (`migrations/0002_validated_responses.sql`):
 the §6.3 rules 1–3 verdicts per `(tx_hash, response_index)`, filled
-**incrementally during each snapshot refresh** — only never-seen keys cost the
-`/tx_cbor` + `/tx_info` reads, so the steady state adds zero subrequests, and a
-failed enrichment leaves NULLs that are retried on the next refresh.
+**incrementally during each snapshot refresh** — a completed verdict is
+re-judged only when what it was decided against has moved (its survey's link set
+changed, or the response itself re-landed at a different chain position after a
+rollback), so the steady state adds zero subrequests, and a failed enrichment
+leaves NULLs that are retried on the next refresh.
 
 And `tx_metadata_cache` (`migrations/0005_tx_metadata_cache.sql`): fetch-once
 label-17 metadata per tx hash, making the snapshot scan itself resumable the
 same way. A tx's metadata is immutable (content-addressed by its hash), so each
 fulfilled `/tx_metadata` batch is banked as it completes and never re-fetched;
 a refresh cut short by the Worker subrequest cap keeps the batches it fetched
-and converges over successive crons. Snapshot membership still comes from each
-run's fresh label-index scan, so rolled-back txs age out — their cache entries
-just stop being requested.
+and converges over successive crons. Corpus membership comes from the label-index
+listing, not from this cache, so a rolled-back tx is swept out of the rows by the
+segment that no longer lists it — its cache entry just stops being requested.
 
 Its twin `tx_proof_cache` (`migrations/0015_tx_proof_cache.sql`) banks the tx
 **CBOR** behind every owner-proof and response proof, which an open survey would

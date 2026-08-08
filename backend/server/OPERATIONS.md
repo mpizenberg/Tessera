@@ -83,10 +83,15 @@ for a minute or two while the route propagates. That is not a failed deploy;
 retry until it answers rather than redeploying or recreating the Worker. The
 same applies to the app's `tessera-<network>` hostname.
 
-`/health` must return `{"ok":true,"network":"preprod"}`. Wait at least one
-three-minute cron interval for the first scan. `/api/health` must then report
-`network: "preprod"`, a non-null `snapshot`, an `ok` latest refresh, and
-`validationBacklog: 0`. The following check enforces those gates:
+`/health` must return `{"ok":true,"network":"preprod"}`. Then wait for the
+walker to reach the tip: a database with no banked cursor starts at the `SINCE`
+floor and integrates a bounded number of listing pages per run, so the first
+corpus is assembled over as many three-minute crons as the history needs — one
+per ~800 label-17 transactions. Until it arrives, every run records
+`incomplete: true` and nothing finalizes. `/api/health` must report
+`network: "preprod"`, a non-null `snapshot`, a latest refresh that is `ok` and
+no longer `incomplete`, and `validationBacklog: 0`. The following check enforces
+those gates:
 
 ```sh
 BACKEND_URL="$BACKEND_URL" node --input-type=module <<'NODE'
@@ -99,6 +104,7 @@ if (
   health.network !== "preprod" ||
   health.snapshot === null ||
   health.lastRefresh?.ok !== true ||
+  health.lastRefresh?.incomplete === true ||
   health.validationBacklog !== 0
 )
   throw new Error(`preprod is not ready: ${JSON.stringify(health)}`);
@@ -172,7 +178,10 @@ request. Koios enforces the real quota with 429s, which surface as a failed
 refresh. The quota belongs to the identity, not the deployment, so Workers
 sharing one token share one budget while each footer shows only its own share.
 Budget before assuming a tier fits: the three-minute cron alone spends roughly
-2,400 Koios calls a day per network before any user traffic.
+2,000 Koios calls a day per network before any user traffic — four per run (tip,
+segment page, drift-rescan page, proposal scan) plus whatever new records cost.
+That floor is flat: it is set by the settlement window, not by how much history
+the deployment has accumulated.
 
 ## Roll back
 
@@ -194,3 +203,13 @@ pnpm --filter cardano-tessera-backend exec wrangler d1 time-travel restore DB --
 
 After either rollback, repeat both health checks and wait for one successful
 refresh before restoring client traffic.
+
+A restore rewinds the materialized rows to their state at the bookmark, and the
+refresh no longer rebuilds them from scratch: the next run re-derives only the
+settlement window, so anything older stays as the restore left it until the
+drift-healing rescan rotates past it (hours, at one page per run). To force the
+whole corpus to be re-derived immediately instead — after a restore, or after a
+deploy that changed how records project into rows — bump `SCAN_GENERATION` in
+`src/refresh.ts` and deploy. The banked generation then mismatches, the cursor
+rewinds to the `SINCE` floor, and the walker re-derives forward over as many
+crons as the history needs, exactly as on a fresh database.

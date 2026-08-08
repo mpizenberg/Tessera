@@ -8,10 +8,13 @@ Cloudflare Worker (`src/worker.ts`, D1 + Cron trigger). See
 
 Each refresh cycle does three things, in order:
 
-1. **Snapshot** — fetch all label-17 records + chain tip from Koios, resolve the
-   governance links (dereferencing each candidate action's anchor and verifying
-   it against the hash committed on-chain — fetched once ever, then banked), and
-   cache the result (what the read endpoints serve).
+1. **Snapshot** — integrate one slot segment of the label-17 index into the
+   stored rows (the settlement margin below the banked scan cursor, plus a
+   rotating page of settled history that heals silent drift), and resolve the
+   governance links for the epochs whose links can still move (dereferencing
+   each candidate action's anchor and verifying it against the hash committed
+   on-chain — fetched once ever, then banked). The rows are what the read
+   endpoints serve; see `backend/ARCHITECTURE.md` §5.4.
 2. **Validate** — for responses not seen before, fetch their tx block index
    and proof evidence and persist the §6.3 checks (well-formedness, credential
    proof via required signers / native scripts / vote bindings). Incremental:
@@ -127,11 +130,12 @@ reproducible preprod creation, migration, secrets, deployment, measurement,
 health gate, and rollback commands.
 
 Subrequests (logged on every cron run in `wrangler tail`): a steady-state
-refresh costs 3 Koios calls — the tip, the label-17 scan page, and the
-governance proposal scan; validating new responses and finalizing closing
-surveys add batched calls only when there is new work (a full live cycle —
-refresh + validation + weight snapshotting + artifact emission — measured ~13
-on top of the floor).
+refresh costs 4 Koios calls — the tip, the segment listing page, the
+drift-healing rescan's page, and the governance proposal scan; validating new
+responses and finalizing closing surveys add batched calls only when there is
+new work (a full live cycle — refresh + validation + weight snapshotting +
+artifact emission — measured ~13 on top of the floor). None of that grows with
+the size of the archive.
 Unresolved governance anchors add up to `ANCHOR_ATTEMPTS_PER_REFRESH` more,
 which is why the log line and the health footer count every upstream request,
 not just the Koios ones.

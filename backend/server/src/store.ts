@@ -370,7 +370,11 @@ export interface RefreshRunRow {
    * links and no artifact was minted — a state the run's own `ok` can't show.
    */
   readonly govLinksOk: boolean;
-  /** The stored snapshot's `incomplete` flag (scan paging cap hit). */
+  /**
+   * The stored snapshot's `incomplete` flag: a record the listing promised
+   * never arrived, or the walker is still catching up to the tip. Either way
+   * nothing finalized this run.
+   */
   readonly incomplete: boolean;
   readonly surveys: number;
   readonly responses: number;
