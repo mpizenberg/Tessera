@@ -250,9 +250,10 @@ export const SURVEY_BUNDLE_SELECT = `
   SELECT record, cancellations FROM survey_index WHERE survey_key = ?`;
 
 /** The stored links keyed by survey, skipping the rows that carry none. */
+/** Stored link slices inside the caller's end-epoch horizon. Binds: (minEndEpoch). */
 export const SURVEY_GOV_LINKS_SELECT = `
   SELECT survey_key AS surveyKey, gov_links AS govLinks
-  FROM survey_index WHERE gov_links <> '[]'`;
+  FROM survey_index WHERE end_epoch >= ? AND gov_links <> '[]'`;
 
 /**
  * A response is content-addressed by its coordinate, but its chain position
@@ -626,6 +627,18 @@ export const scanStateUpsertSql = (state: ScanState): SqlQuery => ({
   ],
 });
 
+/**
+ * The settlement floor, written on its own so an incomplete scan — which must
+ * not bank a cursor — can still bank what the governance pass settled. Before
+ * the first cursor there is no row, and the update is a no-op: the floor reads
+ * 0, which asks about everything.
+ */
+export const SETTLEMENT_FLOOR_UPDATE = `
+  UPDATE scan_state SET settlement_floor = ? WHERE id = 1`;
+
+export const SETTLEMENT_FLOOR_SELECT = `
+  SELECT settlement_floor AS settlementFloor FROM scan_state WHERE id = 1`;
+
 export const SCAN_STATE_SELECT = `
   SELECT cursor_slot AS cursorSlot, cursor_tx_hash AS cursorTxHash,
          caught_up AS caughtUp, generation,
@@ -742,9 +755,13 @@ export const markFinalizedCancelledSql = (
     }),
   );
 
-/** The governance scan's input: which end epochs any stored survey has. */
+/**
+ * The governance pass's input: which end epochs any stored survey has, from
+ * the settlement horizon up. Binds: (minEndEpoch).
+ */
 export const SURVEY_END_EPOCHS = `
   SELECT DISTINCT end_epoch AS endEpoch FROM survey_index
+  WHERE end_epoch >= ?
   ORDER BY end_epoch`;
 
 /**

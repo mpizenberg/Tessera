@@ -67,6 +67,8 @@ export function memBackendStore(): MemBackendStore {
   let cancellationRows: readonly CancellationRow[] = [];
   let meta: SnapshotMeta | null = null;
   let scanStateRow: ScanState | null = null;
+  // Rides the scan-state row, as in SQL: no row banked yet, no floor to bank.
+  let settlementFloorValue = 0;
 
   // Same semantics as the SQL in snapshotSql.ts (and core's pageSurveyList).
   const bucketOf = (r: SurveyIndexRow, tipEpoch: number): number =>
@@ -280,6 +282,12 @@ export function memBackendStore(): MemBackendStore {
     async putSettledGovEpoch(row) {
       if (!govEpochs.has(row.expiration)) govEpochs.set(row.expiration, row);
     },
+    async settlementFloor() {
+      return settlementFloorValue;
+    },
+    async putSettlementFloor(expiration) {
+      if (scanStateRow !== null) settlementFloorValue = expiration;
+    },
 
     async reconcileSnapshot(surveys, responses, cancellations, envelope) {
       surveyIndexRows = [...surveys];
@@ -293,10 +301,10 @@ export function memBackendStore(): MemBackendStore {
     async snapshotMeta() {
       return meta;
     },
-    async surveyGovLinks() {
+    async surveyGovLinks(minEndEpoch) {
       return new Map(
         surveyIndexRows
-          .filter((r) => r.govLinks !== "[]")
+          .filter((r) => r.endEpoch >= minEndEpoch && r.govLinks !== "[]")
           .map((r) => [r.surveyKey, JSON.parse(r.govLinks) as GovLink[]]),
       );
     },
@@ -494,10 +502,14 @@ export function memBackendStore(): MemBackendStore {
       });
       return changes;
     },
-    async surveyEndEpochs() {
-      return [...new Set(surveyIndexRows.map((r) => r.endEpoch))].sort(
-        (a, b) => a - b,
-      );
+    async surveyEndEpochs(minEndEpoch) {
+      return [
+        ...new Set(
+          surveyIndexRows
+            .filter((r) => r.endEpoch >= minEndEpoch)
+            .map((r) => r.endEpoch),
+        ),
+      ].sort((a, b) => a - b);
     },
     async unfinalizedClosedSurveyRows(tipEpoch) {
       return surveyIndexRows

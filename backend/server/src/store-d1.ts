@@ -50,6 +50,8 @@ import {
   RESPONSES_FOR_SURVEY,
   RESPONSES_IN_SLOT_RANGE,
   SCAN_STATE_SELECT,
+  SETTLEMENT_FLOOR_SELECT,
+  SETTLEMENT_FLOOR_UPDATE,
   SNAPSHOT_META_SELECT,
   STALE_CANCELLED_SURVEYS,
   SURVEY_BUNDLE_SELECT,
@@ -488,12 +490,17 @@ export function d1BackendStore(db: D1Like): BackendStore {
     async settledGovEpochs(
       expirations: readonly number[],
     ): Promise<Map<number, SettledGovEpoch>> {
+      if (expirations.length === 0) return new Map();
+      // Read from the lowest expiration asked about: the request is a
+      // contiguous-ish horizon, so one bounded read beats chunked `IN (…)`
+      // and never touches the settled archive below it.
       const wanted = new Set(expirations);
       const { results } = await db
         .prepare(
           `SELECT expiration, links, gave_up AS gaveUp, settled_at AS settledAt
-           FROM gov_epoch`,
+           FROM gov_epoch WHERE expiration >= ?`,
         )
+        .bind(Math.min(...expirations))
         .all<DbGovEpochRow>();
       return new Map(
         results
@@ -547,9 +554,12 @@ export function d1BackendStore(db: D1Like): BackendStore {
       if (!row) return null;
       return { ...row, incomplete: row.incomplete !== 0 };
     },
-    async surveyGovLinks(): Promise<Map<string, GovLink[]>> {
+    async surveyGovLinks(
+      minEndEpoch: number,
+    ): Promise<Map<string, GovLink[]>> {
       const { results } = await db
         .prepare(SURVEY_GOV_LINKS_SELECT)
+        .bind(minEndEpoch)
         .all<{ surveyKey: string; govLinks: string }>();
       return new Map(
         results.map((r) => [r.surveyKey, JSON.parse(r.govLinks) as GovLink[]]),
@@ -626,6 +636,15 @@ export function d1BackendStore(db: D1Like): BackendStore {
         .prepare(sql)
         .bind(...params)
         .run();
+    },
+    async settlementFloor(): Promise<number> {
+      const row = await db
+        .prepare(SETTLEMENT_FLOOR_SELECT)
+        .first<{ settlementFloor: number }>();
+      return row?.settlementFloor ?? 0;
+    },
+    async putSettlementFloor(expiration: number): Promise<void> {
+      await db.prepare(SETTLEMENT_FLOOR_UPDATE).bind(expiration).run();
     },
     async reconcileSegment(
       range: SlotRange | null,
@@ -715,9 +734,10 @@ export function d1BackendStore(db: D1Like): BackendStore {
       );
       return outcomes.reduce((n, r) => n + (r.meta?.changes ?? 0), 0);
     },
-    async surveyEndEpochs(): Promise<number[]> {
+    async surveyEndEpochs(minEndEpoch: number): Promise<number[]> {
       const { results } = await db
         .prepare(SURVEY_END_EPOCHS)
+        .bind(minEndEpoch)
         .all<{ endEpoch: number }>();
       return results.map((r) => r.endEpoch);
     },

@@ -280,6 +280,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0017_list_counts.sql",
       "0018_scan_state.sql",
       "0019_cancellation_rows.sql",
+      "0020_gov_settlement_floor.sql",
     ]);
   });
 });
@@ -556,12 +557,12 @@ describe("store-node survey_index paging SQL", () => {
     expect(await page({})).toHaveLength(rows.length);
   });
 
-  // What a refresh with an unreachable proposal endpoint republishes instead of
-  // blanking every link (the stored rows are the only copy).
+  // The stored side of the link-change diff: the slices a refresh compares its
+  // freshly resolved links against, inside its settlement horizon.
   it("reads back every stored governance link, across rows", async () => {
     store = openBackendStore(":memory:");
-    const link = (key: string, action: string) =>
-      `{"surveyKey":"${key}","actionId":"${action}","endEpoch":510,"title":null}`;
+    const link = (key: string, action: string, endEpoch = 510) =>
+      `{"surveyKey":"${key}","actionId":"${action}","endEpoch":${endEpoch},"title":null}`;
     await store.reconcileSnapshot(
       [
         row("aa:0", 100, {
@@ -570,15 +571,16 @@ describe("store-node survey_index paging SQL", () => {
         }),
         row("bb:0", 300), // no links: contributes nothing, not a parse error
         row("cc:0", 500, {
+          endEpoch: 520,
           govLinked: true,
-          govLinks: `[${link("cc:0", "gov_action1c")}]`,
+          govLinks: `[${link("cc:0", "gov_action1c", 520)}]`,
         }),
       ],
       [],
       [],
       meta,
     );
-    const stored = await store.surveyGovLinks();
+    const stored = await store.surveyGovLinks(0);
     expect([...stored.keys()]).toEqual(["aa:0", "cc:0"]);
     expect([...stored.values()].flat().map((l) => l.actionId)).toEqual([
       "gov_action1a",
@@ -591,6 +593,8 @@ describe("store-node survey_index paging SQL", () => {
       endEpoch: 510,
       title: null,
     });
+    // Below the horizon a link slice is frozen, so the diff never reads it.
+    expect([...(await store.surveyGovLinks(511)).keys()]).toEqual(["cc:0"]);
   });
 });
 
@@ -787,6 +791,29 @@ describe("store-node scan state", () => {
     await store.putScanState(rewound);
     expect(await store.scanState()).toEqual(rewound);
   });
+
+  it("banks the settlement floor without disturbing the cursor", async () => {
+    store = openBackendStore(":memory:");
+    // Before the first cursor there is no row to update, and 0 — ask about
+    // every epoch — is exactly what a database with no settlements owes.
+    await store.putSettlementFloor(511);
+    expect(await store.settlementFloor()).toBe(0);
+
+    const walked = {
+      cursor: { slot: 5_000, txHash: "aa".repeat(32) },
+      caughtUp: true,
+      generation: 3,
+      trickle: null,
+    };
+    await store.putScanState(walked);
+    await store.putSettlementFloor(511);
+    expect(await store.settlementFloor()).toBe(511);
+
+    // The cursor write leaves the floor alone: settlement is not the scan's
+    // coverage, and an incomplete scan that banks no cursor must not lose it.
+    await store.putScanState({ ...walked, cursor: null, caughtUp: false });
+    expect(await store.settlementFloor()).toBe(511);
+  });
 });
 
 describe("store-node segment reconciliation", () => {
@@ -966,8 +993,9 @@ describe("store-node segment reconciliation", () => {
       createdAt: 1,
     });
 
-    // The governance scan's input: distinct, ascending.
-    expect(await store.surveyEndEpochs()).toEqual([490, 495, 500]);
+    // The governance pass's input: distinct, ascending, from its horizon up.
+    expect(await store.surveyEndEpochs(0)).toEqual([490, 495, 500]);
+    expect(await store.surveyEndEpochs(495)).toEqual([495, 500]);
     // Finalization candidates: closed at the tip, minus the finalized.
     expect(
       (await store.unfinalizedClosedSurveyRows(500)).map((r) => r.surveyKey),

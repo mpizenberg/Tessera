@@ -109,7 +109,7 @@ export async function integrateSegment(
   }
   const linkTouched: string[] = [];
   if (args.govLinksReliable) {
-    const stored = await store.surveyGovLinks();
+    const stored = await store.surveyGovLinks(0);
     for (const key of new Set([...stored.keys(), ...currentLinks.keys()])) {
       if (
         linkSliceText(stored.get(key)) !== linkSliceText(currentLinks.get(key))

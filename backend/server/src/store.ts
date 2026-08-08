@@ -284,6 +284,18 @@ export interface GovLinkStore {
   ): Promise<Map<number, SettledGovEpoch>>;
   /** Record an epoch as settled (insert-or-ignore: settlement is once and final). */
   putSettledGovEpoch(row: SettledGovEpoch): Promise<void>;
+  /**
+   * The banked settlement floor: the lowest expiration epoch not yet settled.
+   * Everything below it is decided for good, so the pass never asks about it
+   * again — and 0, the value before anything is banked, asks about everything.
+   */
+  settlementFloor(): Promise<number>;
+  /**
+   * Bank the floor. Written only once the refresh that computed it has
+   * reconciled its rows: a floor that ran ahead of the rows would freeze a
+   * survey's links at whatever its row happened to hold.
+   */
+  putSettlementFloor(expiration: number): Promise<void>;
 }
 
 /** A `gov_epoch` row as stored: both collections arrive as JSON text. */
@@ -692,15 +704,13 @@ export interface SnapshotStore {
   /** The envelope, or null before the first refresh — the readiness signal. */
   snapshotMeta(): Promise<SnapshotMeta | null>;
   /**
-   * The stored governance links, keyed by survey (rows whose link slice is
-   * non-empty). Two consumers: the link-set change detection (stored vs this
-   * refresh's links, per key), and the display republish when a refresh's
-   * gov-links fetch failed — stale by up to one interval, but "unknown"
-   * displayed as "none" would blank the linkage everywhere until the next
-   * good run. Display and diffing only — a stale link must never reach a
-   * verdict or an artifact.
+   * The stored governance links of the surveys ending at or after
+   * `minEndEpoch`, keyed by survey (rows whose link slice is non-empty) —
+   * the link-set change detection's stored side. Bounded because only an
+   * unsettled epoch's links can change: below the settlement floor a row's
+   * slice IS the frozen truth, so there is nothing to compare it against.
    */
-  surveyGovLinks(): Promise<Map<string, GovLink[]>>;
+  surveyGovLinks(minEndEpoch: number): Promise<Map<string, GovLink[]>>;
   /**
    * One survey's bundle slice, or null if the snapshot doesn't have it. The
    * responses are ALL of them, raw and undeduped — client-side audit and
@@ -805,11 +815,12 @@ export interface SnapshotStore {
    */
   markFinalizedCancelled(surveyKeys: readonly string[]): Promise<number>;
   /**
-   * Distinct `end_epoch` values across the stored surveys, ascending — the
-   * governance-link scan's input (its per-epoch settlement memo then decides
-   * which of them still need asking about).
+   * Distinct `end_epoch` values at or after `minEndEpoch` across the stored
+   * surveys, ascending — the governance-link pass's input. The bound is the
+   * settlement floor minus one: an epoch below it is settled, its links are
+   * frozen into the rows, and asking again could only return the same answer.
    */
-  surveyEndEpochs(): Promise<number[]>;
+  surveyEndEpochs(minEndEpoch: number): Promise<number[]>;
   /**
    * Stored surveys with `end_epoch` before `tipEpoch` and no row in
    * `tally_artifact` — finalization's candidate set, in key order. Bounded by

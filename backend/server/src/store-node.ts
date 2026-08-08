@@ -58,6 +58,8 @@ import {
   RESPONSES_FOR_SURVEY,
   RESPONSES_IN_SLOT_RANGE,
   SCAN_STATE_SELECT,
+  SETTLEMENT_FLOOR_SELECT,
+  SETTLEMENT_FLOOR_UPDATE,
   SNAPSHOT_META_SELECT,
   STALE_CANCELLED_SURVEYS,
   SURVEY_BUNDLE_SELECT,
@@ -187,6 +189,8 @@ export function openBackendStore(path: string): BackendStore {
   const surveyGovLinksStmt = db.prepare(SURVEY_GOV_LINKS_SELECT);
   const responsesForSurveyStmt = db.prepare(RESPONSES_FOR_SURVEY);
   const scanStateStmt = db.prepare(SCAN_STATE_SELECT);
+  const settlementFloorStmt = db.prepare(SETTLEMENT_FLOOR_SELECT);
+  const putSettlementFloorStmt = db.prepare(SETTLEMENT_FLOOR_UPDATE);
   const responsesInRangeStmt = db.prepare(RESPONSES_IN_SLOT_RANGE);
   const cancellationsInRangeStmt = db.prepare(CANCELLATIONS_IN_SLOT_RANGE);
   const staleCancelledStmt = db.prepare(STALE_CANCELLED_SURVEYS);
@@ -323,9 +327,9 @@ export function openBackendStore(path: string): BackendStore {
   const deleteGovAnchorStmt = db.prepare(
     "DELETE FROM gov_anchor WHERE anchor_hash = ?",
   );
-  const govEpochAllStmt = db.prepare(
+  const govEpochFromStmt = db.prepare(
     `SELECT expiration, links, gave_up AS gaveUp, settled_at AS settledAt
-     FROM gov_epoch`,
+     FROM gov_epoch WHERE expiration >= ?`,
   );
   const putGovEpochStmt = db.prepare(
     `INSERT OR IGNORE INTO gov_epoch (expiration, links, gave_up, settled_at)
@@ -624,10 +628,14 @@ export function openBackendStore(path: string): BackendStore {
     async settledGovEpochs(
       expirations: readonly number[],
     ): Promise<Map<number, SettledGovEpoch>> {
-      // Rows exist only for epochs some survey asked about, so the table is
-      // already about the size of the request — one read beats chunked `IN (…)`.
+      if (expirations.length === 0) return new Map();
+      // Read from the lowest expiration asked about: the request is a
+      // contiguous-ish horizon, so one bounded read beats chunked `IN (…)`
+      // and never touches the settled archive below it.
       const wanted = new Set(expirations);
-      const rows = govEpochAllStmt.all() as unknown as DbGovEpochRow[];
+      const rows = govEpochFromStmt.all(
+        Math.min(...expirations),
+      ) as unknown as DbGovEpochRow[];
       return new Map(
         rows
           .filter((r) => wanted.has(r.expiration))
@@ -669,8 +677,8 @@ export function openBackendStore(path: string): BackendStore {
       if (!row) return null;
       return { ...row, incomplete: row.incomplete !== 0 };
     },
-    async surveyGovLinks(): Promise<Map<string, GovLink[]>> {
-      const rows = surveyGovLinksStmt.all() as {
+    async surveyGovLinks(minEndEpoch: number): Promise<Map<string, GovLink[]>> {
+      const rows = surveyGovLinksStmt.all(minEndEpoch) as {
         surveyKey: string;
         govLinks: string;
       }[];
@@ -737,6 +745,15 @@ export function openBackendStore(path: string): BackendStore {
     async putScanState(state: ScanState): Promise<void> {
       const { sql, params } = scanStateUpsertSql(state);
       db.prepare(sql).run(...(params as SqlValue[]));
+    },
+    async settlementFloor(): Promise<number> {
+      const row = settlementFloorStmt.get() as
+        | { settlementFloor: number }
+        | undefined;
+      return row?.settlementFloor ?? 0;
+    },
+    async putSettlementFloor(expiration: number): Promise<void> {
+      putSettlementFloorStmt.run(expiration);
     },
     async reconcileSegment(
       range: SlotRange | null,
@@ -818,10 +835,10 @@ export function openBackendStore(path: string): BackendStore {
       }
       return changes;
     },
-    async surveyEndEpochs(): Promise<number[]> {
-      return (surveyEndEpochsStmt.all() as { endEpoch: number }[]).map(
-        (r) => r.endEpoch,
-      );
+    async surveyEndEpochs(minEndEpoch: number): Promise<number[]> {
+      return (
+        surveyEndEpochsStmt.all(minEndEpoch) as { endEpoch: number }[]
+      ).map((r) => r.endEpoch);
     },
     async unfinalizedClosedSurveyRows(
       tipEpoch: number,

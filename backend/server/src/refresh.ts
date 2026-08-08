@@ -255,7 +255,7 @@ export async function refreshSnapshot(
         source,
         [
           ...new Set([
-            ...(await store.surveyEndEpochs()),
+            ...(await store.surveyEndEpochs(0)),
             ...records.surveys.map((s) => s.definition.endEpoch),
           ]),
         ],
@@ -453,7 +453,7 @@ export async function displayGovLinks(
 ): Promise<readonly GovLink[]> {
   if (reliable) return links;
   try {
-    const stored = [...(await store.surveyGovLinks()).values()].flat();
+    const stored = [...(await store.surveyGovLinks(0)).values()].flat();
     console.warn(`gov links unreadable — republishing ${stored.length}`);
     return stored;
   } catch (err) {

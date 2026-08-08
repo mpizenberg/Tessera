@@ -119,7 +119,8 @@ const schema = `
     caught_up INTEGER NOT NULL DEFAULT 0,
     generation INTEGER NOT NULL,
     trickle_slot INTEGER,
-    trickle_tx_hash TEXT
+    trickle_tx_hash TEXT,
+    settlement_floor INTEGER NOT NULL DEFAULT 0
   );
   CREATE TABLE cancellation (
     tx_hash TEXT NOT NULL,
@@ -306,6 +307,12 @@ describe("D1 snapshot reconciliation", () => {
     };
     await store.putScanState(state);
     expect(await store.scanState()).toEqual(state);
+
+    // The floor rides the same row but is written on its own, so a later
+    // cursor write can't drop it.
+    await store.putSettlementFloor(512);
+    await store.putScanState({ ...state, cursor: null, caughtUp: false });
+    expect(await store.settlementFloor()).toBe(512);
     sqlite.close();
   });
 });
