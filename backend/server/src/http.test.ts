@@ -46,13 +46,17 @@ async function seed(
     govLinks,
     (await store.finalizedArtifactKeys()).cancelled,
   );
-  await store.reconcileSnapshot(snapshot.surveys, snapshot.responses, {
-    tip: JSON.stringify(toJsonSafe(tip)),
-    incomplete: false,
-    fetchedAt: FETCHED_AT,
-    payloadDigest: null,
-    listCounts: JSON.stringify(snapshot.listCounts),
-  });
+  await store.reconcileSnapshot(
+    snapshot.surveys,
+    snapshot.responses,
+    snapshot.cancellations,
+    {
+      tip: JSON.stringify(toJsonSafe(tip)),
+      incomplete: false,
+      fetchedAt: FETCHED_AT,
+      listCounts: JSON.stringify(snapshot.listCounts),
+    },
+  );
 }
 
 async function seededStore(): Promise<MemBackendStore> {
@@ -270,7 +274,7 @@ describe("GET /api/surveys", () => {
       await (await appWith(store).request("/api/surveys")).json(),
     ) as Record<string, unknown>;
 
-    const recovered = await store.snapshotGovLinks();
+    const recovered = [...(await store.surveyGovLinks()).values()].flat();
     expect(recovered).toEqual([govLinkA]);
     await seed(store, recovered); // the next refresh, gov links unreachable
     const body = fromJsonSafe(

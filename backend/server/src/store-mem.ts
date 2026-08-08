@@ -11,6 +11,7 @@ import { BINDABLE_ROLES, type GovLink, type GovLinkDoc } from "cip-179/domain";
 import type {
   ArtifactRow,
   BackendStore,
+  CancellationRow,
   RefreshRunRow,
   ResponseRow,
   ScanState,
@@ -63,6 +64,7 @@ export function memBackendStore(): MemBackendStore {
   let lease: { holder: string; expiresAt: number } | null = null;
   let surveyIndexRows: readonly SurveyIndexRow[] = [];
   let responseRows: readonly ResponseRow[] = [];
+  let cancellationRows: readonly CancellationRow[] = [];
   let meta: SnapshotMeta | null = null;
   let scanStateRow: ScanState | null = null;
 
@@ -279,9 +281,10 @@ export function memBackendStore(): MemBackendStore {
       if (!govEpochs.has(row.expiration)) govEpochs.set(row.expiration, row);
     },
 
-    async reconcileSnapshot(surveys, responses, envelope) {
+    async reconcileSnapshot(surveys, responses, cancellations, envelope) {
       surveyIndexRows = [...surveys];
       responseRows = [...responses];
+      cancellationRows = [...cancellations];
       meta = envelope;
     },
     async publishSnapshotMeta(envelope) {
@@ -290,9 +293,11 @@ export function memBackendStore(): MemBackendStore {
     async snapshotMeta() {
       return meta;
     },
-    async snapshotGovLinks() {
-      return surveyIndexRows.flatMap(
-        (r) => JSON.parse(r.govLinks) as GovLink[],
+    async surveyGovLinks() {
+      return new Map(
+        surveyIndexRows
+          .filter((r) => r.govLinks !== "[]")
+          .map((r) => [r.surveyKey, JSON.parse(r.govLinks) as GovLink[]]),
       );
     },
     async surveyBundle(surveyKey) {
@@ -374,28 +379,47 @@ export function memBackendStore(): MemBackendStore {
     async putScanState(state) {
       scanStateRow = state;
     },
-    async reconcileSegment(range, surveys, responses, envelope) {
+    async reconcileSegment(range, surveys, responses, cancellations, envelope) {
+      // Same upsert/sweep semantics as the SQL program, with the same changed-
+      // row count: replaced-but-identical rows are not changes.
+      const rowText = (row: object) =>
+        JSON.stringify(Object.entries(row).sort());
       const inRange = (slot: number) =>
-        slot >= range.fromSlot && slot <= range.toSlot;
-      const givenSurveys = new Set(surveys.map((s) => s.surveyKey));
-      surveyIndexRows = [
-        ...surveyIndexRows.filter(
-          (r) => !givenSurveys.has(r.surveyKey) && !inRange(r.slot),
-        ),
-        ...surveys,
-      ];
-      const responseKey = (r: ResponseRow) =>
-        validationKey(r.txHash, r.responseIndex);
-      const givenResponses = new Set(responses.map(responseKey));
-      const kept = responseRows.filter(
-        (r) => givenResponses.has(responseKey(r)) || !inRange(r.slot),
+        range !== null && slot >= range.fromSlot && slot <= range.toSlot;
+      let changes = 0;
+      const merge = <T extends { readonly slot: number }>(
+        stored: readonly T[],
+        given: readonly T[],
+        keyOf: (row: T) => string,
+      ): T[] => {
+        const byKey = new Map(stored.map((r) => [keyOf(r), r]));
+        for (const r of given) {
+          const prev = byKey.get(keyOf(r));
+          if (prev === undefined || rowText(prev) !== rowText(r)) changes++;
+          byKey.set(keyOf(r), r);
+        }
+        const givenKeys = new Set(given.map(keyOf));
+        return [...byKey.values()].filter((r) => {
+          const swept = inRange(r.slot) && !givenKeys.has(keyOf(r));
+          if (swept) changes++;
+          return !swept;
+        });
+      };
+      surveyIndexRows = merge(
+        surveyIndexRows,
+        [...surveys],
+        (r) => r.surveyKey,
       );
-      const existing = new Set(kept.map(responseKey));
-      responseRows = [
-        ...kept,
-        ...responses.filter((r) => !existing.has(responseKey(r))),
-      ];
+      responseRows = merge(responseRows, [...responses], (r) =>
+        validationKey(r.txHash, r.responseIndex),
+      );
+      cancellationRows = merge(
+        cancellationRows,
+        [...cancellations],
+        (r) => `${r.txHash}|${r.surveyKey}`,
+      );
       meta = envelope;
+      return changes;
     },
     async surveyRowsByKeys(keys) {
       const wanted = new Set(keys);
@@ -428,6 +452,47 @@ export function memBackendStore(): MemBackendStore {
             (a.txHash < b.txHash ? -1 : a.txHash > b.txHash ? 1 : 0) ||
             a.responseIndex - b.responseIndex,
         );
+    },
+    async cancellationRowsForSurveys(surveyKeys) {
+      const wanted = new Set(surveyKeys);
+      return cancellationRows
+        .filter((r) => wanted.has(r.surveyKey))
+        .sort(
+          (a, b) =>
+            (a.surveyKey < b.surveyKey
+              ? -1
+              : a.surveyKey > b.surveyKey
+                ? 1
+                : 0) ||
+            a.slot - b.slot ||
+            (a.txHash < b.txHash ? -1 : a.txHash > b.txHash ? 1 : 0),
+        );
+    },
+    async cancellationRowsInSlotRange(range) {
+      return cancellationRows
+        .filter((r) => r.slot >= range.fromSlot && r.slot <= range.toSlot)
+        .sort(
+          (a, b) =>
+            a.slot - b.slot ||
+            (a.txHash < b.txHash ? -1 : a.txHash > b.txHash ? 1 : 0),
+        );
+    },
+    async staleCancelledSurveyKeys(tipEpoch) {
+      return surveyIndexRows
+        .filter(
+          (r) => r.cancelled && !r.finalizedCancelled && r.endEpoch < tipEpoch,
+        )
+        .map((r) => r.surveyKey);
+    },
+    async markFinalizedCancelled(surveyKeys) {
+      const wanted = new Set(surveyKeys);
+      let changes = 0;
+      surveyIndexRows = surveyIndexRows.map((r) => {
+        if (!wanted.has(r.surveyKey) || r.finalizedCancelled) return r;
+        changes++;
+        return { ...r, finalizedCancelled: true, cancelled: true };
+      });
+      return changes;
     },
     async surveyEndEpochs() {
       return [...new Set(surveyIndexRows.map((r) => r.endEpoch))].sort(

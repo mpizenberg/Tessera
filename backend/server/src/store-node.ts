@@ -23,6 +23,7 @@ import type {
   ArtifactKeys,
   ArtifactRow,
   BackendStore,
+  CancellationRow,
   DbGovEpochRow,
   RefreshRunRow,
   RefreshTotals,
@@ -52,19 +53,23 @@ import {
   validationKey,
 } from "./store";
 import {
+  CANCELLATIONS_IN_SLOT_RANGE,
   INCOMPLETE_VALIDATION_SURVEYS,
   RESPONSES_FOR_SURVEY,
   RESPONSES_IN_SLOT_RANGE,
   SCAN_STATE_SELECT,
-  SNAPSHOT_GOV_LINKS_SELECT,
   SNAPSHOT_META_SELECT,
+  STALE_CANCELLED_SURVEYS,
   SURVEY_BUNDLE_SELECT,
   SURVEY_END_EPOCHS,
+  SURVEY_GOV_LINKS_SELECT,
   SURVEYS_ENDING_AT_OR_AFTER,
   UNFINALIZED_CLOSED_SURVEYS,
   VALIDATED_LINK_CURSORS,
+  cancellationsBySurveysSql,
   completedValidationsSql,
   countsFromDb,
+  markFinalizedCancelledSql,
   ownedCountSql,
   respondedSql,
   responsesBySurveysSql,
@@ -179,20 +184,27 @@ export function openBackendStore(path: string): BackendStore {
 
   const snapshotMetaStmt = db.prepare(SNAPSHOT_META_SELECT);
   const surveyBundleStmt = db.prepare(SURVEY_BUNDLE_SELECT);
-  const snapshotGovLinksStmt = db.prepare(SNAPSHOT_GOV_LINKS_SELECT);
+  const surveyGovLinksStmt = db.prepare(SURVEY_GOV_LINKS_SELECT);
   const responsesForSurveyStmt = db.prepare(RESPONSES_FOR_SURVEY);
   const scanStateStmt = db.prepare(SCAN_STATE_SELECT);
   const responsesInRangeStmt = db.prepare(RESPONSES_IN_SLOT_RANGE);
+  const cancellationsInRangeStmt = db.prepare(CANCELLATIONS_IN_SLOT_RANGE);
+  const staleCancelledStmt = db.prepare(STALE_CANCELLED_SURVEYS);
   const surveyEndEpochsStmt = db.prepare(SURVEY_END_EPOCHS);
   const unfinalizedClosedStmt = db.prepare(UNFINALIZED_CLOSED_SURVEYS);
   const endingAtOrAfterStmt = db.prepare(SURVEYS_ENDING_AT_OR_AFTER);
 
-  const runAtomically = (queries: readonly SqlQuery[]): void => {
+  /** Run in one transaction; returns changed rows, the final statement excluded. */
+  const runAtomically = (queries: readonly SqlQuery[]): number => {
     db.exec("BEGIN");
     try {
-      for (const { sql, params } of queries)
-        db.prepare(sql).run(...(params as SqlValue[]));
+      let changes = 0;
+      queries.forEach(({ sql, params }, i) => {
+        const result = db.prepare(sql).run(...(params as SqlValue[]));
+        if (i < queries.length - 1) changes += Number(result.changes);
+      });
       db.exec("COMMIT");
+      return changes;
     } catch (err) {
       db.exec("ROLLBACK");
       throw err;
@@ -634,9 +646,12 @@ export function openBackendStore(path: string): BackendStore {
     async reconcileSnapshot(
       surveys: readonly SurveyIndexRow[],
       responses: readonly ResponseRow[],
+      cancellations: readonly CancellationRow[],
       meta: SnapshotMeta,
     ): Promise<void> {
-      runAtomically(snapshotReconciliationSql(surveys, responses, meta));
+      runAtomically(
+        snapshotReconciliationSql(surveys, responses, cancellations, meta),
+      );
     },
     async publishSnapshotMeta(meta: SnapshotMeta): Promise<void> {
       const { sql, params } = snapshotMetaUpsertSql(meta);
@@ -648,16 +663,20 @@ export function openBackendStore(path: string): BackendStore {
             tip: string;
             incomplete: number;
             fetchedAt: number;
-            payloadDigest: string | null;
             listCounts: string | null;
           }
         | undefined;
       if (!row) return null;
       return { ...row, incomplete: row.incomplete !== 0 };
     },
-    async snapshotGovLinks(): Promise<GovLink[]> {
-      const rows = snapshotGovLinksStmt.all() as { govLinks: string }[];
-      return rows.flatMap((r) => JSON.parse(r.govLinks) as GovLink[]);
+    async surveyGovLinks(): Promise<Map<string, GovLink[]>> {
+      const rows = surveyGovLinksStmt.all() as {
+        surveyKey: string;
+        govLinks: string;
+      }[];
+      return new Map(
+        rows.map((r) => [r.surveyKey, JSON.parse(r.govLinks) as GovLink[]]),
+      );
     },
     async surveyBundle(surveyKey: string): Promise<SurveyBundleRows | null> {
       const row = surveyBundleStmt.get(surveyKey) as
@@ -720,12 +739,21 @@ export function openBackendStore(path: string): BackendStore {
       db.prepare(sql).run(...(params as SqlValue[]));
     },
     async reconcileSegment(
-      range: SlotRange,
+      range: SlotRange | null,
       surveys: readonly SurveyIndexRow[],
       responses: readonly ResponseRow[],
+      cancellations: readonly CancellationRow[],
       meta: SnapshotMeta,
-    ): Promise<void> {
-      runAtomically(segmentReconciliationSql(range, surveys, responses, meta));
+    ): Promise<number> {
+      return runAtomically(
+        segmentReconciliationSql(
+          range,
+          surveys,
+          responses,
+          cancellations,
+          meta,
+        ),
+      );
     },
     async surveyRowsByKeys(keys: readonly string[]): Promise<SurveyIndexRow[]> {
       if (keys.length === 0) return [];
@@ -753,6 +781,42 @@ export function openBackendStore(path: string): BackendStore {
         range.fromSlot,
         range.toSlot,
       ) as unknown as ResponseRow[];
+    },
+    async cancellationRowsForSurveys(
+      surveyKeys: readonly string[],
+    ): Promise<CancellationRow[]> {
+      if (surveyKeys.length === 0) return [];
+      return cancellationsBySurveysSql(surveyKeys).flatMap(
+        ({ sql, params }) =>
+          db
+            .prepare(sql)
+            .all(...(params as SqlValue[])) as unknown as CancellationRow[],
+      );
+    },
+    async cancellationRowsInSlotRange(
+      range: SlotRange,
+    ): Promise<CancellationRow[]> {
+      return cancellationsInRangeStmt.all(
+        range.fromSlot,
+        range.toSlot,
+      ) as unknown as CancellationRow[];
+    },
+    async staleCancelledSurveyKeys(tipEpoch: number): Promise<string[]> {
+      return (staleCancelledStmt.all(tipEpoch) as { surveyKey: string }[]).map(
+        (r) => r.surveyKey,
+      );
+    },
+    async markFinalizedCancelled(
+      surveyKeys: readonly string[],
+    ): Promise<number> {
+      if (surveyKeys.length === 0) return 0;
+      let changes = 0;
+      for (const { sql, params } of markFinalizedCancelledSql(surveyKeys)) {
+        changes += Number(
+          db.prepare(sql).run(...(params as SqlValue[])).changes,
+        );
+      }
+      return changes;
     },
     async surveyEndEpochs(): Promise<number[]> {
       return (surveyEndEpochsStmt.all() as { endEpoch: number }[]).map(

@@ -25,6 +25,7 @@ import {
   type Cip179Records,
   type GovLink,
   type ResponseRecord,
+  type SurveyRecord,
   type UnresolvedGovAction,
 } from "cip-179/domain";
 import { fromJsonSafe } from "cip-179/tally";
@@ -33,23 +34,26 @@ import type { KoiosDataSource } from "cardano-tessera-koios";
 import type { SnapshotStore, TallyStore, ValidatedResponseRow } from "./store";
 import { validationKey } from "./store";
 
-/** What validation reads and writes: verdict state, plus stored responses. */
+/** What validation reads and writes: verdict state, plus stored rows. */
 export type ValidateStore = TallyStore &
-  Pick<SnapshotStore, "responseRowsForSurveys">;
+  Pick<SnapshotStore, "responseRowsForSurveys" | "surveyRowsByKeys">;
 
 /**
  * Validate the scan's responses that were never (fully) validated before, plus
  * any whose survey's governance link changed since their last verdict, and
- * persist the results. Responses referencing a survey outside the snapshot are
- * skipped entirely (no row) — they can't be tallied anyway.
+ * persist the results. Responses referencing an unknown survey are skipped
+ * entirely (no row) — they can't be tallied anyway.
  *
  * The input need not carry the whole corpus: stored verdicts that fell out of
  * date without a new response arriving — a bindable verdict pinned to a link
  * set that has since changed, or a verdict still awaiting an enrichment retry
  * — put their survey back on the candidate list, and its responses are revived
- * from the stored rows. Completed verdicts are then read keyed by exactly the
- * candidate surveys, so validation's reads scale with what this refresh
- * touches rather than with every verdict ever recorded.
+ * from the stored rows. Segment integration runs before this pass, so the
+ * stored rows are authoritative: definitions of surveys the input doesn't
+ * carry are read from their rows (a survey with no row anywhere has rolled
+ * back and must not be validated against). Completed verdicts are then read
+ * keyed by exactly the candidate surveys, so validation's reads scale with
+ * what this refresh touches rather than with every verdict ever recorded.
  *
  * A bindable role's *negative* verdict is never frozen while a link it might
  * depend on is unknown (finding 6). Two flavours of "unknown", both left as a
@@ -75,9 +79,22 @@ export async function validateNewResponses(
   govLinksReliable = true,
   unresolved: readonly UnresolvedGovAction[] = [],
 ): Promise<void> {
+  // The verdict-state reads come first: the surveys they name (but the input
+  // doesn't carry) need their definitions revived from stored rows before the
+  // link index below is built, or their link cursors would compare against
+  // nothing and re-validate forever.
+  const cursors = await store.validatedLinkCursors();
+  const retrySurveys = await store.incompleteValidationSurveys();
   const defByKey = new Map(
     records.surveys.map((s) => [refKey(s.ref), s.definition]),
   );
+  const offInput = [
+    ...new Set([...cursors.map((c) => c.surveyKey), ...retrySurveys]),
+  ].filter((key) => !defByKey.has(key));
+  for (const row of await store.surveyRowsByKeys(offInput)) {
+    const record = fromJsonSafe(JSON.parse(row.record)) as SurveyRecord;
+    defByKey.set(row.surveyKey, record.definition);
+  }
   // A survey is governance-linked only by actions whose expiry epoch equals its
   // end_epoch (the CIP invariant, same rule the app applies). A survey MAY be
   // linked by several actions (CIP-179 v5), so index a list per key.
@@ -118,15 +135,10 @@ export async function validateNewResponses(
   // are unknown, so a failed gov-links fetch skips the cursor comparison the
   // same way it freezes the per-response re-check below.
   const staleCursors = govLinksReliable
-    ? (await store.validatedLinkCursors()).filter(
-        (c) => c.linkedActionId !== linkSetKey(c.surveyKey),
-      )
+    ? cursors.filter((c) => c.linkedActionId !== linkSetKey(c.surveyKey))
     : [];
   const revivalKeys = [
-    ...new Set([
-      ...staleCursors.map((c) => c.surveyKey),
-      ...(await store.incompleteValidationSurveys()),
-    ]),
+    ...new Set([...staleCursors.map((c) => c.surveyKey), ...retrySurveys]),
   ];
   const inputKeys = new Set(
     records.responses.map((r) => validationKey(r.txHash, r.responseIndex)),

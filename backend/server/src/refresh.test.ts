@@ -1,17 +1,23 @@
 /**
- * What a refresh publishes as its governance links. A successful read speaks
- * for itself — classifications come from hash-verified documents, banked, so
- * they don't flicker — but a read that failed outright means "unknown", and the
- * previous snapshot's links are a better answer than none.
+ * The refresh's pure decision points: how a run resumes the segment walk from
+ * the banked state, which slots its sweep may delete in, and what it publishes
+ * as its governance links when the read failed.
  */
 
 import { describe, expect, it } from "vitest";
 
 import type { ChainTip, GovLink } from "cip-179/domain";
 import { toJsonSafe } from "cip-179/tally";
+import type { SegmentScan } from "cardano-tessera-koios";
 
-import { displayGovLinks, publishSnapshot } from "./refresh";
-import { snapshotTip, type SnapshotMeta } from "./store";
+import {
+  coveredRange,
+  displayGovLinks,
+  planSegment,
+  SCAN_GENERATION,
+  SETTLEMENT_MARGIN_SLOTS,
+} from "./refresh";
+import { snapshotTip, type ScanState } from "./store";
 
 const link = (actionId: string, surveyKey = "aa:0"): GovLink => ({
   surveyKey,
@@ -21,11 +27,19 @@ const link = (actionId: string, surveyKey = "aa:0"): GovLink => ({
 });
 
 const storeWith = (stored: readonly GovLink[]) => ({
-  snapshotGovLinks: async () => [...stored],
+  surveyGovLinks: async () => {
+    const byKey = new Map<string, GovLink[]>();
+    for (const l of stored) {
+      const list = byKey.get(l.surveyKey);
+      if (list) list.push(l);
+      else byKey.set(l.surveyKey, [l]);
+    }
+    return byKey;
+  },
 });
 
 const failingStore = {
-  snapshotGovLinks: async (): Promise<GovLink[]> => {
+  surveyGovLinks: async (): Promise<Map<string, GovLink[]>> => {
     throw new Error("store unreachable");
   },
 };
@@ -50,50 +64,91 @@ describe("displayGovLinks", () => {
   });
 });
 
-describe("publishSnapshot", () => {
-  const snapshot = { surveys: [], responses: [] };
-  const metaWith = (payloadDigest: string | null): SnapshotMeta => ({
-    tip: "{}",
-    incomplete: false,
-    fetchedAt: 2,
-    payloadDigest,
-    listCounts: null,
-  });
-  const spyStore = () => {
-    const calls: string[] = [];
-    return {
-      calls,
-      store: {
-        reconcileSnapshot: async () => void calls.push("reconcile"),
-        publishSnapshotMeta: async () => void calls.push("meta"),
-      },
-    };
-  };
+const state = (over: Partial<ScanState>): ScanState => ({
+  cursor: { slot: 900_000, txHash: "cc" },
+  caughtUp: true,
+  generation: SCAN_GENERATION,
+  trickle: null,
+  ...over,
+});
 
-  it("republishes only the envelope when the stored digest matches", async () => {
-    const { calls, store } = spyStore();
-    await publishSnapshot(store, metaWith("d1"), snapshot, metaWith("d1"));
-    expect(calls).toEqual(["meta"]);
+describe("planSegment", () => {
+  it("walks from the config floor with no banked cursor", () => {
+    expect(planSegment(null, 1_000)).toEqual({
+      from: { slot: 1_000 },
+      sweepFromSlot: 1_000,
+    });
   });
 
-  it("reconciles fully on a digest change", async () => {
-    const { calls, store } = spyStore();
-    await publishSnapshot(store, metaWith("d1"), snapshot, metaWith("d2"));
-    expect(calls).toEqual(["reconcile"]);
+  it("re-derives the settlement margin below a caught-up cursor", () => {
+    const plan = planSegment(state({}), 1_000);
+    expect(plan.from).toEqual({ slot: 900_000 - SETTLEMENT_MARGIN_SLOTS });
+    expect(plan.sweepFromSlot).toBe(900_000 - SETTLEMENT_MARGIN_SLOTS);
   });
 
-  it("reconciles fully when either digest is unknown", async () => {
-    // No previous envelope, a pre-digest envelope, and an uncomputed digest:
-    // none may match anything, or rows could go permanently unstored.
-    for (const [previous, next] of [
-      [null, metaWith("d1")],
-      [metaWith(null), metaWith("d1")],
-      [metaWith(null), metaWith(null)],
-    ] as const) {
-      const { calls, store } = spyStore();
-      await publishSnapshot(store, previous, snapshot, next);
-      expect(calls).toEqual(["reconcile"]);
-    }
+  it("clamps the margin re-derivation at the config floor", () => {
+    expect(planSegment(state({}), 850_000).from).toEqual({ slot: 850_000 });
+  });
+
+  it("continues strictly after a budget-capped cursor, sweeping past its slot", () => {
+    // Rows at the cursor slot at-or-before the cursor hash are not re-listed,
+    // so a sweep at that slot would delete live rows.
+    const plan = planSegment(state({ caughtUp: false }), 1_000);
+    expect(plan.from).toEqual({ slot: 900_000, txHash: "cc" });
+    expect(plan.sweepFromSlot).toBe(900_001);
+  });
+});
+
+const scanWith = (over: Partial<SegmentScan>): SegmentScan => ({
+  records: { surveys: [], responses: [], cancellations: [], incomplete: false },
+  cursor: { slot: 950_000, txHash: "dd" },
+  exhausted: true,
+  ...over,
+});
+
+describe("coveredRange", () => {
+  const plan = { from: { slot: 700_000 }, sweepFromSlot: 700_000 };
+
+  it("covers through the tip when the segment is exhausted", () => {
+    expect(coveredRange(plan, scanWith({}), 960_000)).toEqual({
+      fromSlot: 700_000,
+      toSlot: 960_000,
+    });
+  });
+
+  it("stops one slot short of a budget-capped walk's last listed slot", () => {
+    // The last slot may hold further unlisted txs past the page budget, so
+    // rows there are not deletion candidates yet.
+    expect(coveredRange(plan, scanWith({ exhausted: false }), 960_000)).toEqual(
+      { fromSlot: 700_000, toSlot: 949_999 },
+    );
+  });
+
+  it("covers nothing on an incomplete scan", () => {
+    expect(
+      coveredRange(
+        plan,
+        scanWith({
+          records: {
+            surveys: [],
+            responses: [],
+            cancellations: [],
+            incomplete: true,
+          },
+        }),
+        960_000,
+      ),
+    ).toBeNull();
+  });
+
+  it("covers nothing when the walk never left its starting slot", () => {
+    expect(
+      coveredRange(
+        { from: { slot: 950_000, txHash: "aa" }, sweepFromSlot: 950_001 },
+        scanWith({ exhausted: false, cursor: { slot: 950_000, txHash: "zz" } }),
+        960_000,
+      ),
+    ).toBeNull();
   });
 });
 
@@ -116,7 +171,6 @@ describe("snapshotTip", () => {
       tip: JSON.stringify(toJsonSafe(tip)),
       incomplete: false,
       fetchedAt: 1_750_000_000,
-      payloadDigest: null,
       listCounts: null,
     };
 

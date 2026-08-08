@@ -237,11 +237,10 @@ describe("store-node migration of a pre-runner database", () => {
         (await store.completedValidationsForSurveys(["bb:1"])).get("bb:1"),
       ).toBe("gov#0");
       // Missing tables were created by their migrations, not the baseline.
-      await store.reconcileSnapshot([], [], {
+      await store.reconcileSnapshot([], [], [], {
         tip: "{}",
         incomplete: false,
         fetchedAt: 7,
-        payloadDigest: null,
         listCounts: null,
       });
       expect((await store.snapshotMeta())?.fetchedAt).toBe(7);
@@ -280,6 +279,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0016_snapshot_digest_and_backlog.sql",
       "0017_list_counts.sql",
       "0018_scan_state.sql",
+      "0019_cancellation_rows.sql",
     ]);
   });
 });
@@ -322,14 +322,76 @@ describe("store-node migration to per-response rows", () => {
       // surveys whose responses have silently vanished.
       expect(await store.snapshotMeta()).toBeNull();
       // And the next refresh publishes into the new shape.
-      await store.reconcileSnapshot([], [], {
+      await store.reconcileSnapshot([], [], [], {
         tip: "{}",
         incomplete: false,
         fetchedAt: 100,
-        payloadDigest: null,
         listCounts: null,
       });
       expect((await store.snapshotMeta())?.fetchedAt).toBe(100);
+    } finally {
+      store.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("store-node migration to cancellation rows", () => {
+  it("backfills rows from the stored projections' wire JSON", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tessera-store-"));
+    const path = join(dir, "cache.sqlite");
+    // A deployed backend just before 0019: every migration up to it applied,
+    // and a survey row carrying two cancellations in its projection column.
+    const migrationsDir = fileURLToPath(
+      new URL("../migrations", import.meta.url),
+    );
+    const before = readdirSync(migrationsDir)
+      .filter((f) => f.endsWith(".sql") && f < "0019")
+      .sort();
+    const old = new DatabaseSync(path);
+    old.exec(`CREATE TABLE schema_migration (
+      name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL
+    );`);
+    for (const file of before) {
+      old.exec(readFileSync(join(migrationsDir, file), "utf8"));
+      old.prepare("INSERT INTO schema_migration VALUES (?, 1)").run(file);
+    }
+    const record = (txHash: string, slot: number) =>
+      // The wire shape materialize stored: plain fields plus encoded bytes.
+      `{"txHash":"${txHash}","slot":${slot},"epochNo":499,` +
+      `"target":{"txId":{"$bytes":"${"ab".repeat(32)}"},"index":0},"proof":null}`;
+    old
+      .prepare(
+        `INSERT INTO survey_index
+           (survey_key, slot, end_epoch, sealed, cancelled, gov_linked, owner,
+            haystack, record, cancellations, gov_links, response_count,
+            finalized_cancelled)
+         VALUES ('aa:0', 100, 500, 0, 0, 0, 'key:11', 'aa', '{}',
+                 '[${record("c1", 150)},${record("c2", 160)}]', '[]', 0, 0)`,
+      )
+      .run();
+    old.close();
+
+    const store = openBackendStore(path);
+    try {
+      expect(
+        (await store.cancellationRowsForSurveys(["aa:0"])).map((r) => [
+          r.txHash,
+          r.surveyKey,
+          r.slot,
+        ]),
+      ).toEqual([
+        ["c1", "aa:0", 150],
+        ["c2", "aa:0", 160],
+      ]);
+      // Each row's record is that cancellation's own slice of the projection.
+      const rows = await store.cancellationRowsInSlotRange({
+        fromSlot: 150,
+        toSlot: 150,
+      });
+      expect(JSON.parse(rows[0]!.record)).toEqual(
+        JSON.parse(record("c1", 150)),
+      );
     } finally {
       store.close();
       rmSync(dir, { recursive: true, force: true });
@@ -366,7 +428,6 @@ describe("store-node survey_index paging SQL", () => {
     tip: `{"epoch":${TIP_EPOCH}}`,
     incomplete: false,
     fetchedAt: 7,
-    payloadDigest: null,
     listCounts: null,
   };
 
@@ -391,7 +452,7 @@ describe("store-node survey_index paging SQL", () => {
 
   it("orders by bucket, slot desc, key — and follows the keyset cursor", async () => {
     store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(rows, [], meta);
+    await store.reconcileSnapshot(rows, [], [], meta);
     expect(await store.snapshotMeta()).toEqual(meta);
 
     const all = await page({});
@@ -412,7 +473,7 @@ describe("store-node survey_index paging SQL", () => {
 
   it("applies filters and search terms", async () => {
     store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(rows, [], meta);
+    await store.reconcileSnapshot(rows, [], [], meta);
 
     // Active = not cancelled and deadline not passed; the linked row is
     // active too and still sorts first by bucket.
@@ -439,7 +500,7 @@ describe("store-node survey_index paging SQL", () => {
 
   it("computes global counts over the search-matching set", async () => {
     store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(rows, [], meta);
+    await store.reconcileSnapshot(rows, [], [], meta);
     expect(await store.surveyIndexCounts(TIP_EPOCH, ["key:11"], [])).toEqual({
       all: 4,
       linked: 1,
@@ -460,7 +521,7 @@ describe("store-node survey_index paging SQL", () => {
 
   it("counts owned surveys alone via the owner index", async () => {
     store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(rows, [], meta);
+    await store.reconcileSnapshot(rows, [], [], meta);
     expect(await store.ownedSurveyCount(["key:11"])).toBe(4);
     expect(await store.ownedSurveyCount(["key:11", "key:99"])).toBe(4);
     expect(await store.ownedSurveyCount(["key:99"])).toBe(0);
@@ -469,8 +530,8 @@ describe("store-node survey_index paging SQL", () => {
 
   it("deletes surveys absent from the authoritative scan", async () => {
     store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(rows, [], meta);
-    await store.reconcileSnapshot([row("ee:0", 50)], [], {
+    await store.reconcileSnapshot(rows, [], [], meta);
+    await store.reconcileSnapshot([row("ee:0", 50)], [], [], {
       ...meta,
       fetchedAt: 8,
     });
@@ -481,17 +542,15 @@ describe("store-node survey_index paging SQL", () => {
   it("republishes the envelope alone, leaving rows untouched", async () => {
     store = openBackendStore(":memory:");
     const counts = `{"all":4,"linked":1,"active":3,"sealed":1,"public":2}`;
-    await store.reconcileSnapshot(rows, [], { ...meta, payloadDigest: "d1" });
+    await store.reconcileSnapshot(rows, [], [], meta);
     await store.publishSnapshotMeta({
       ...meta,
       fetchedAt: 8,
-      payloadDigest: "d1",
       listCounts: counts,
     });
     expect(await store.snapshotMeta()).toEqual({
       ...meta,
       fetchedAt: 8,
-      payloadDigest: "d1",
       listCounts: counts,
     });
     expect(await page({})).toHaveLength(rows.length);
@@ -516,14 +575,17 @@ describe("store-node survey_index paging SQL", () => {
         }),
       ],
       [],
+      [],
       meta,
     );
-    expect((await store.snapshotGovLinks()).map((l) => l.actionId)).toEqual([
+    const stored = await store.surveyGovLinks();
+    expect([...stored.keys()]).toEqual(["aa:0", "cc:0"]);
+    expect([...stored.values()].flat().map((l) => l.actionId)).toEqual([
       "gov_action1a",
       "gov_action1b",
       "gov_action1c",
     ]);
-    expect((await store.snapshotGovLinks())[0]).toEqual({
+    expect(stored.get("aa:0")![0]).toEqual({
       surveyKey: "aa:0",
       actionId: "gov_action1a",
       endEpoch: 510,
@@ -545,7 +607,6 @@ describe("store-node response rows", () => {
     tip: `{"epoch":500}`,
     incomplete: false,
     fetchedAt: 7,
-    payloadDigest: null,
     listCounts: null,
   };
   const resp = (
@@ -591,7 +652,7 @@ describe("store-node response rows", () => {
     storeDir = mkdtempSync(join(tmpdir(), "tessera-reconcile-"));
     const path = join(storeDir, "store.sqlite");
     store = openBackendStore(path);
-    await store.reconcileSnapshot(surveys, rows, meta);
+    await store.reconcileSnapshot(surveys, rows, [], meta);
 
     const audit = new DatabaseSync(path);
     audit.exec(`
@@ -611,7 +672,10 @@ describe("store-node response rows", () => {
     `);
     audit.close();
 
-    await store.reconcileSnapshot(surveys, rows, { ...meta, fetchedAt: 8 });
+    await store.reconcileSnapshot(surveys, rows, [], {
+      ...meta,
+      fetchedAt: 8,
+    });
     const check = new DatabaseSync(path);
     expect(check.prepare("SELECT event FROM reconcile_audit").all()).toEqual([
       { event: "meta:update" },
@@ -627,6 +691,7 @@ describe("store-node response rows", () => {
           : survey,
       ),
       [...rows, newResponse],
+      [],
       { ...meta, fetchedAt: 9 },
     );
     const changed = new DatabaseSync(path);
@@ -640,7 +705,7 @@ describe("store-node response rows", () => {
 
   it("serves one survey's bundle in a stable order", async () => {
     store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(surveys, rows, meta);
+    await store.reconcileSnapshot(surveys, rows, [], meta);
 
     // (slot, txHash, responseIndex): the same bytes on every refresh, so the
     // ETag's promise that an unchanged snapshot means an unchanged body holds.
@@ -663,7 +728,7 @@ describe("store-node response rows", () => {
 
   it("maps credentials to the surveys they answered", async () => {
     store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(surveys, rows, meta);
+    await store.reconcileSnapshot(surveys, rows, [], meta);
 
     expect(await store.respondedSurveyKeys(["key:11"])).toEqual(["aa:0"]);
     // Union across a wallet's credentials, deduped across several responses.
@@ -677,11 +742,12 @@ describe("store-node response rows", () => {
 
   it("deletes a response absent from the authoritative scan", async () => {
     store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(surveys, rows, meta);
+    await store.reconcileSnapshot(surveys, rows, [], meta);
     // A reorg drops the later response; a merging write would keep serving it.
     await store.reconcileSnapshot(
       surveys,
       rows.filter((r) => r.txHash !== "dd"),
+      [],
       { ...meta, fetchedAt: 8 },
     );
 
@@ -703,6 +769,7 @@ describe("store-node scan state", () => {
 
     const walked = {
       cursor: { slot: 5_000, txHash: "aa".repeat(32) },
+      caughtUp: true,
       generation: 3,
       trickle: { slot: 1_200, txHash: "bb".repeat(32) },
     };
@@ -711,7 +778,12 @@ describe("store-node scan state", () => {
 
     // A rewind rewrites the whole row: null cursor, new generation, trickle
     // reset — nothing of the previous walk may survive by omission.
-    const rewound = { cursor: null, generation: 4, trickle: null };
+    const rewound = {
+      cursor: null,
+      caughtUp: false,
+      generation: 4,
+      trickle: null,
+    };
     await store.putScanState(rewound);
     expect(await store.scanState()).toEqual(rewound);
   });
@@ -725,7 +797,6 @@ describe("store-node segment reconciliation", () => {
     tip: `{"epoch":500}`,
     incomplete: false,
     fetchedAt,
-    payloadDigest: null,
     listCounts: null,
   });
   const survey = (
@@ -775,19 +846,22 @@ describe("store-node segment reconciliation", () => {
     resp("r3", "cc:0", 850),
   ];
 
-  it("sweeps only in-range rows, keeps settled history, honors immutability", async () => {
+  it("sweeps only in-range rows, keeps settled history, applies repositions", async () => {
     store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(seededSurveys, seededResponses, meta(1));
+    await store.reconcileSnapshot(seededSurveys, seededResponses, [], meta(1));
 
     // The segment [300, 600] saw: survey bb:0 gone (rolled back), response r2
-    // still there (re-listed, possibly with drifted bytes), r5 gone, r4 new.
-    // aa:0 rides along as a touched survey from outside the range.
-    await store.reconcileSegment(
+    // re-listed with drifted bytes (a rollback repositioned its tx), r5 gone,
+    // r4 new. aa:0 rides along as a touched survey from outside the range.
+    const changes = await store.reconcileSegment(
       { fromSlot: 300, toSlot: 600 },
       [survey("aa:0", 100, { responseCount: 2 })],
       [resp("r2", "aa:0", 450, `{"tx":"drifted"}`), resp("r4", "aa:0", 500)],
+      [],
       meta(2),
     );
+    // aa:0 updated, r2 updated, r4 inserted, bb:0 and r5 swept.
+    expect(changes).toBe(5);
 
     // bb:0 was in range and unlisted → swept; cc:0 out of range → untouched.
     expect(
@@ -800,14 +874,14 @@ describe("store-node segment reconciliation", () => {
       ["cc:0", 0],
     ]);
     // r5 swept with its survey; r1/r3 outside the range survive; r4 joined;
-    // r2 kept its original bytes (a response row is immutable once stored).
+    // r2 took the re-listed bytes — a reposition must not pin the old slot.
     expect(
       (await store.responseRowsForSurveys(["aa:0", "bb:0", "cc:0"])).map(
         (r) => [r.txHash, r.record],
       ),
     ).toEqual([
       ["r1", `{"tx":"r1"}`],
-      ["r2", `{"tx":"r2"}`],
+      ["r2", `{"tx":"drifted"}`],
       ["r4", `{"tx":"r4"}`],
       ["r3", `{"tx":"r3"}`],
     ]);
@@ -816,9 +890,10 @@ describe("store-node segment reconciliation", () => {
 
   it("with nothing listed, empties exactly the segment", async () => {
     store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(seededSurveys, seededResponses, meta(1));
+    await store.reconcileSnapshot(seededSurveys, seededResponses, [], meta(1));
     await store.reconcileSegment(
       { fromSlot: 300, toSlot: 600 },
+      [],
       [],
       [],
       meta(2),
@@ -838,7 +913,7 @@ describe("store-node segment reconciliation", () => {
 
   it("reads the pre-sweep window state by inclusive slot bounds", async () => {
     store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(seededSurveys, seededResponses, meta(1));
+    await store.reconcileSnapshot(seededSurveys, seededResponses, [], meta(1));
 
     expect(
       (await store.responseRowsInSlotRange({ fromSlot: 450, toSlot: 550 })).map(
@@ -855,6 +930,7 @@ describe("store-node segment reconciliation", () => {
     await store.reconcileSnapshot(
       [...seededSurveys, survey("dd:0", 900, { sealed: true })],
       seededResponses,
+      [],
       meta(1),
     );
 
@@ -878,6 +954,7 @@ describe("store-node segment reconciliation", () => {
         survey("cc:0", 300, { endEpoch: 500 }), // open at tip 500
         survey("dd:0", 400, { endEpoch: 495 }), // closed, artifact-less
       ],
+      [],
       [],
       meta(1),
     );

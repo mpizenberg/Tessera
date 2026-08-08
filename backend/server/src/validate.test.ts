@@ -127,13 +127,12 @@ const TIP: ChainTip = {
 /** Publish `recs` as stored rows — the corpus a windowed input no longer carries. */
 async function publish(store: MemBackendStore, recs: Cip179Records) {
   const snapshot = materializeSnapshot(recs, TIP, [], new Set());
-  await store.reconcileSnapshot(snapshot.surveys, snapshot.responses, {
-    tip: "{}",
-    incomplete: false,
-    fetchedAt: 1,
-    payloadDigest: null,
-    listCounts: null,
-  });
+  await store.reconcileSnapshot(
+    snapshot.surveys,
+    snapshot.responses,
+    snapshot.cancellations,
+    { tip: "{}", incomplete: false, fetchedAt: 1, listCounts: null },
+  );
 }
 
 const signedProof = (b: number): TxProof => ({

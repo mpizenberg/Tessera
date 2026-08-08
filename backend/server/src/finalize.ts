@@ -110,9 +110,9 @@ function decodeRevealed(stored: string | null): SurveyResponse | null {
 const COVERED_ROLES: readonly number[] = [...RULESET_DESCRIPTOR.coveredRoles];
 
 /**
- * Reorg depth past the vote deadline (~30 blocks). Indexing lag is not this
- * margin's job: the epoch gate covers it, since the tip cannot outrun the
- * indexer it is read from.
+ * Reorg depth past the vote deadline (~30 blocks), measured on the covered
+ * chain prefix. Indexing lag is not this margin's job: the epoch gate covers
+ * it, since the tip cannot outrun the indexer it is read from.
  */
 const FINALIZE_MARGIN_SECONDS = 600;
 
@@ -139,6 +139,7 @@ export async function finalizeClosedSurveys(
   source: Pick<import("cardano-tessera-koios").KoiosDataSource, "txProofs">,
   incomplete: boolean,
   tip: ChainTip,
+  coveredThroughUnix: number | null,
   reveal: SealedRevealFn = tlockSealedReveal,
   govLinks: readonly GovLink[] | null = [],
 ): Promise<ArtifactKeys> {
@@ -159,6 +160,12 @@ export async function finalizeClosedSurveys(
     console.warn("finalize: governance links unknown — skipping finalization");
     return artifactKeys;
   }
+  // Nothing integrated yet (fresh database, first run failed): nothing is
+  // safely past its deadline on the covered prefix.
+  if (coveredThroughUnix === null) {
+    console.warn("finalize: no scan cursor banked — skipping finalization");
+    return artifactKeys;
+  }
 
   const nowSec = Math.floor(Date.now() / 1000);
   const spe = config.app.secondsPerEpoch;
@@ -166,7 +173,10 @@ export async function finalizeClosedSurveys(
   // Candidates come from the stored rows — closed at this tip, no artifact
   // yet — revived from their wire JSON. Each row also carries every
   // cancellation targeting its survey, which is exactly the evidence the
-  // cancellation walk below needs.
+  // cancellation walk below needs. A survey finalizes only once the scan
+  // cursor has covered its vote deadline plus the reorg margin: the covered
+  // instant can never exceed the wall clock, and during catch-up a survey's
+  // responses may not all be integrated yet.
   const candidateRows = await store.unfinalizedClosedSurveyRows(tip.epoch);
   const cancellationsByKey = new Map(
     candidateRows.map((r) => [
@@ -178,7 +188,7 @@ export async function finalizeClosedSurveys(
     .map((r) => fromJsonSafe(JSON.parse(r.record)) as SurveyRecord)
     .filter(
       (s) =>
-        nowSec >=
+        coveredThroughUnix >=
         voteDeadlineUnix(s.definition.endEpoch, tip, spe) +
           FINALIZE_MARGIN_SECONDS,
     );

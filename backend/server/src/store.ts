@@ -303,7 +303,10 @@ export const govEpochFromDb = (r: DbGovEpochRow): SettledGovEpoch => ({
 
 /**
  * One refresh run's operational stats (`refresh_run`) — what the health
- * endpoint reports. Failed runs carry `ok: false` plus the error text; their
+ * endpoint reports. `surveys`/`responses`/`payloadBytes` describe what the
+ * run's segment integrated, not the whole corpus (counting the corpus per
+ * refresh is exactly the cost the windowed scan removes). Failed runs carry
+ * `ok: false` plus the error text; their
  * `incomplete`/`surveys`/`responses`/`payloadBytes` are 0 (nothing was stored).
  */
 export interface RefreshRunRow {
@@ -335,7 +338,7 @@ export interface RefreshRunRow {
   readonly incomplete: boolean;
   readonly surveys: number;
   readonly responses: number;
-  /** Total wire JSON stored across the materialized rows — the growth metric. */
+  /** Wire JSON across the rows this run upserted — the growth metric. */
   readonly payloadBytes: number;
   /**
    * Validated rows still awaiting an enrichment retry when the run recorded
@@ -539,6 +542,22 @@ export interface ResponseRow {
 }
 
 /**
+ * One on-chain cancellation, as a slot-addressed row — what the segment sweep
+ * detects rollbacks against. The `record` column holds the wire JSON of the
+ * `CancellationRecord` (owner-proof evidence included when it was attached);
+ * the per-survey `cancellations` projection on {@link SurveyIndexRow} is
+ * rebuilt from these rows whenever the survey is touched.
+ */
+export interface CancellationRow {
+  readonly txHash: string;
+  /** Target survey ("<txHex>:<index>"). */
+  readonly surveyKey: string;
+  readonly slot: number;
+  /** Wire JSON of the `CancellationRecord`. */
+  readonly record: string;
+}
+
+/**
  * One survey's serving slice, as stored: wire JSON text throughout, so the
  * bundle body is assembled by parse-and-concatenate.
  */
@@ -564,13 +583,6 @@ export interface SnapshotMeta {
    */
   readonly fetchedAt: number;
   /**
-   * `snapshotDigest` of the materialized rows this envelope was published
-   * with, or null when unknown (stored before digests existed). The refresh
-   * compares the next run's digest against it to skip the row reconcile on an
-   * unchanged corpus; null never matches, so unknown reconciles fully.
-   */
-  readonly payloadDigest: string | null;
-  /**
    * Wire JSON of the banked {@link BankedListCounts}, or null when unknown
    * (stored before the counts existed) — the list route then falls back to
    * the live aggregate until the next refresh publishes.
@@ -580,12 +592,12 @@ export interface SnapshotMeta {
 
 /**
  * The chip counts that depend on neither the caller's credentials nor a
- * search — every chip but `mine`. The refresh computes them over the rows it
- * materializes and banks them with the envelope, so a no-search list request
- * reads them from the envelope it already holds instead of aggregating the
- * whole `survey_index`. They ride the envelope, not the digest gate:
- * `active`/`sealed`/`public` move at epoch turnover even when the rows do
- * not, and the envelope lands every run.
+ * search — every chip but `mine`. The refresh banks them with the envelope,
+ * so a no-search list request reads them from the envelope it already holds
+ * instead of aggregating the whole `survey_index`; they are recomputed (one
+ * SQL aggregate) only on a refresh that changed rows or crossed an epoch
+ * boundary, since `active`/`sealed`/`public` move at epoch turnover even
+ * when the rows do not.
  */
 export type BankedListCounts = Omit<
   import("cardano-tessera-core").SurveyListCounts,
@@ -624,13 +636,17 @@ export interface SlotRange {
  * Banked state of the windowed segment walker. `cursor` is the last chain
  * position whose slot segment is fully integrated into the materialized rows
  * — null means "walk from the config floor" (first windowed run, or a
- * generation rewind). `generation` is the derivation generation the stored
- * rows were built under; deployed code carrying a different one must rewind
- * the cursor rather than trust them. `trickle` is where the drift-healing
- * rescan is in its rotation over the settled prefix.
+ * generation rewind). `caughtUp` records how the next run resumes: true means
+ * the last walk was exhausted at the tip (re-derive the settlement margin
+ * below `cursor`); false means it was budget-capped (continue strictly after
+ * the cursor pair). `generation` is the derivation generation the stored rows
+ * were built under; deployed code carrying a different one must rewind the
+ * cursor rather than trust them. `trickle` is where the drift-healing rescan
+ * is in its rotation over the settled prefix.
  */
 export interface ScanState {
   readonly cursor: ScanCursor | null;
+  readonly caughtUp: boolean;
   readonly generation: number;
   readonly trickle: ScanCursor | null;
 }
@@ -655,33 +671,36 @@ export interface SurveyPageQuery {
  */
 export interface SnapshotStore {
   /**
-   * Atomically reconcile the authoritative scan with the materialized rows and
-   * publish its envelope. New immutable responses are inserted, changed survey
-   * projections are updated, and absent records are deleted; readers see either
-   * the complete previous generation or the complete new one.
+   * Atomically replace the materialized rows with a full rebuild's and publish
+   * its envelope — the whole-corpus sibling of {@link reconcileSegment}, kept
+   * as the differential oracle's applicator and the tests' fixture publisher;
+   * the runtime path integrates segments instead. Readers see either the
+   * complete previous generation or the complete new one.
    */
   reconcileSnapshot(
     surveys: readonly SurveyIndexRow[],
     responses: readonly ResponseRow[],
+    cancellations: readonly CancellationRow[],
     meta: SnapshotMeta,
   ): Promise<void>;
   /**
    * Republish only the envelope, leaving the materialized rows untouched —
-   * the fast path when `meta.payloadDigest` matches the stored one, i.e. the
-   * rows are already exactly what this refresh materialized and only
-   * freshness (tip, fetchedAt) moves.
+   * how the refresh lands recomputed banked counts after the segment
+   * reconcile already published this run's freshness.
    */
   publishSnapshotMeta(meta: SnapshotMeta): Promise<void>;
   /** The envelope, or null before the first refresh — the readiness signal. */
   snapshotMeta(): Promise<SnapshotMeta | null>;
   /**
-   * Every governance link in the stored snapshot, re-parsed from the survey
-   * rows. This is what a refresh whose gov-links fetch failed publishes instead
-   * of an empty list: the links are stale by up to one refresh interval, but
-   * "unknown" displayed as "none" blanks them everywhere until the next good
-   * run. Display only — a stale link must never reach a verdict or an artifact.
+   * The stored governance links, keyed by survey (rows whose link slice is
+   * non-empty). Two consumers: the link-set change detection (stored vs this
+   * refresh's links, per key), and the display republish when a refresh's
+   * gov-links fetch failed — stale by up to one interval, but "unknown"
+   * displayed as "none" would blank the linkage everywhere until the next
+   * good run. Display and diffing only — a stale link must never reach a
+   * verdict or an artifact.
    */
-  snapshotGovLinks(): Promise<GovLink[]>;
+  surveyGovLinks(): Promise<Map<string, GovLink[]>>;
   /**
    * One survey's bundle slice, or null if the snapshot doesn't have it. The
    * responses are ALL of them, raw and undeduped — client-side audit and
@@ -727,19 +746,24 @@ export interface SnapshotStore {
   putScanState(state: ScanState): Promise<void>;
   /**
    * Atomically reconcile one slot segment: upsert the given survey
-   * projections (in-window and touched-outside alike), insert the immutable
-   * responses, and delete rows whose slot lies in `range` but whose key the
-   * arguments don't carry — a row the segment listing didn't see has rolled
-   * back. Rows outside `range` are never deletion candidates, so settled
-   * history survives however little the segment covers. Publishes `meta`
-   * in the same transaction, like {@link reconcileSnapshot}.
+   * projections (in-window and touched-outside alike), upsert the response
+   * and cancellation rows, and delete rows whose slot lies in `range` but
+   * whose key the arguments don't carry — a row the segment listing didn't
+   * see has rolled back. Rows outside `range` are never deletion candidates,
+   * so settled history survives however little the segment covers; a null
+   * `range` (an incomplete scan — a listed tx may be missing its record)
+   * upserts without sweeping anything. Publishes `meta` in the same
+   * transaction. Returns the number of rows the reconcile actually changed
+   * (the envelope excluded, since freshness moves every run) — the banked
+   * list counts' recompute trigger.
    */
   reconcileSegment(
-    range: SlotRange,
+    range: SlotRange | null,
     surveys: readonly SurveyIndexRow[],
     responses: readonly ResponseRow[],
+    cancellations: readonly CancellationRow[],
     meta: SnapshotMeta,
-  ): Promise<void>;
+  ): Promise<number>;
   /** The stored projections of `keys`, in key order; unknown keys are absent. */
   surveyRowsByKeys(keys: readonly string[]): Promise<SurveyIndexRow[]>;
   /**
@@ -754,6 +778,32 @@ export interface SnapshotStore {
    * lacks is about to be swept, and its survey needs a recount.
    */
   responseRowsInSlotRange(range: SlotRange): Promise<ResponseRow[]>;
+  /**
+   * Every stored cancellation of the given surveys — a touched survey's
+   * `cancellations` projection is rebuilt over these merged with the
+   * segment's own listing.
+   */
+  cancellationRowsForSurveys(
+    surveyKeys: readonly string[],
+  ): Promise<CancellationRow[]>;
+  /** The stored cancellations with slot in `range` — see {@link responseRowsInSlotRange}. */
+  cancellationRowsInSlotRange(range: SlotRange): Promise<CancellationRow[]>;
+  /**
+   * Surveys whose verified-while-open cancellation just expired: `cancelled`
+   * set, no finalized-cancelled overlay, and closed at `tipEpoch`. Client-side
+   * cancellation verification only holds while a survey is open, so these
+   * rows' projections are stale the moment their epoch turns — they go back
+   * on the touched list. Empty in steady state.
+   */
+  staleCancelledSurveyKeys(tipEpoch: number): Promise<string[]>;
+  /**
+   * Stamp the finalized-cancelled overlay (and the `cancelled` flag it
+   * implies) onto the given surveys' rows where not already set, returning
+   * how many rows flipped. Idempotent — called every refresh with every
+   * cancelled artifact's key, it applies this pass's finalizations and heals
+   * drift in one statement.
+   */
+  markFinalizedCancelled(surveyKeys: readonly string[]): Promise<number>;
   /**
    * Distinct `end_epoch` values across the stored surveys, ascending — the
    * governance-link scan's input (its per-epoch settlement memo then decides

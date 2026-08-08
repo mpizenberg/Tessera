@@ -1,12 +1,18 @@
 /**
- * Turn a freshly fetched snapshot into the rows the serving routes read — the
- * refresh-time half of every snapshot-derived endpoint. Aggregation (verified
- * cancellations, epoch-aligned governance links, deduped response counts)
- * reuses the exact core domain code the app runs, so a row's flags always
- * agree with what a client would derive from the full payload.
+ * Project on-chain records into the rows the serving routes read. The
+ * per-record projections are shared by the runtime segment integration
+ * (`integrate.ts`, applied per touched survey) and by `materializeSnapshot` —
+ * the pure whole-corpus rebuild kept as the differential-test oracle:
+ * windowed integration over any event sequence must leave exactly the rows a
+ * full rebuild would produce. Aggregation (verified cancellations,
+ * epoch-aligned governance links, deduped response counts) reuses the exact
+ * core domain code the app runs, so a row's flags always agree with what a
+ * client would derive from the full payload.
  */
 
 import {
+  aggregate,
+  byCancellationChainOrder,
   credentialKey,
   refKey,
   responseCounts,
@@ -14,31 +20,52 @@ import {
   type ChainTip,
   type Cip179Records,
   type GovLink,
+  type ResponseRecord,
+  type SurveyRecord,
 } from "cip-179/domain";
 import { toJsonSafe } from "cip-179/tally";
-import { aggregateSurveyList, surveyHaystack } from "cardano-tessera-core";
+import { surveyHaystack } from "cardano-tessera-core";
 
-import type { BankedListCounts, ResponseRow, SurveyIndexRow } from "./store";
+import type {
+  BankedListCounts,
+  CancellationRow,
+  ResponseRow,
+  SurveyIndexRow,
+} from "./store";
 
 export interface MaterializedSnapshot {
   readonly surveys: SurveyIndexRow[];
   readonly responses: ResponseRow[];
+  readonly cancellations: CancellationRow[];
   /**
    * Credential-free chip counts over all rows, against this snapshot's tip —
-   * banked with the envelope so the list route serves them without
-   * aggregating. Mirrors core `pageSurveyList`'s counts with no search terms.
+   * what the refresh banks with the envelope so the list route serves them
+   * without aggregating. Mirrors core `pageSurveyList`'s counts with no
+   * search terms.
    */
   readonly listCounts: BankedListCounts;
 }
 
-export function materializeSnapshot(
-  records: Cip179Records,
+/**
+ * Project the given surveys' index rows from their full aggregation inputs:
+ * each survey's definition record, every cancellation targeting it, its
+ * deduped response count, and the current links/tip/overlay. Callers own the
+ * scoping — the oracle passes the whole corpus, the segment integration
+ * passes the touched surveys with their merged stored+segment inputs.
+ */
+export function surveyRowsOf(
+  surveys: readonly SurveyRecord[],
+  cancellations: readonly CancellationRecord[],
+  countByKey: Record<string, number>,
   tip: ChainTip,
   govLinks: readonly GovLink[],
   finalizedCancelled: ReadonlySet<string>,
-): MaterializedSnapshot {
+): SurveyIndexRow[] {
+  // Grouped in chain order, so the projected JSON is identical whether the
+  // inputs arrive in scan order (the oracle) or as stored-plus-segment merges
+  // (the segment integration).
   const cancellationsByKey = new Map<string, CancellationRecord[]>();
-  for (const c of records.cancellations) {
+  for (const c of [...cancellations].sort(byCancellationChainOrder)) {
     const key = refKey(c.target);
     const list = cancellationsByKey.get(key);
     if (list) list.push(c);
@@ -53,90 +80,81 @@ export function materializeSnapshot(
     if (list) list.push(l);
     else linksByKey.set(l.surveyKey, [l]);
   }
-
-  const aggregates = aggregateSurveyList({
-    surveys: records.surveys,
-    cancellations: records.cancellations,
-    govLinks,
+  return aggregate(
+    surveys,
+    cancellations,
+    countByKey,
     tip,
-    responseCounts: responseCounts(records.responses),
-    finalizedCancelled: [...finalizedCancelled],
-  });
+    govLinks,
+    finalizedCancelled,
+  ).map((a) => ({
+    surveyKey: a.key,
+    slot: a.record.slot,
+    endEpoch: a.record.definition.endEpoch,
+    sealed: a.sealed,
+    cancelled: a.cancelled,
+    govLinked: a.govLinks.length > 0,
+    owner: credentialKey(a.record.definition.owner),
+    haystack: surveyHaystack(a.record, a.govLinks),
+    record: JSON.stringify(toJsonSafe(a.record)),
+    cancellations: JSON.stringify(
+      toJsonSafe(cancellationsByKey.get(a.key) ?? []),
+    ),
+    govLinks: JSON.stringify(toJsonSafe(linksByKey.get(a.key) ?? [])),
+    responseCount: a.responseCount,
+    finalizedCancelled: finalizedCancelled.has(a.key),
+  }));
+}
 
-  const active = aggregates.filter((a) => a.status === "active");
+export const responseRowOf = (r: ResponseRecord): ResponseRow => ({
+  txHash: r.txHash,
+  responseIndex: r.responseIndex,
+  surveyKey: refKey(r.response.surveyRef),
+  credential: credentialKey(r.response.credential),
+  slot: r.slot,
+  record: JSON.stringify(toJsonSafe(r)),
+});
+
+export const cancellationRowOf = (c: CancellationRecord): CancellationRow => ({
+  txHash: c.txHash,
+  surveyKey: refKey(c.target),
+  slot: c.slot,
+  record: JSON.stringify(toJsonSafe(c)),
+});
+
+/** Chip counts over projected rows — the SQL aggregate's in-memory twin. */
+export function listCountsOf(
+  surveys: readonly SurveyIndexRow[],
+  tipEpoch: number,
+): BankedListCounts {
+  const active = surveys.filter((r) => !r.cancelled && r.endEpoch >= tipEpoch);
   return {
-    listCounts: {
-      all: aggregates.length,
-      linked: aggregates.filter((a) => a.govLinks.length > 0).length,
-      active: active.length,
-      sealed: active.filter((a) => a.sealed).length,
-      public: active.filter((a) => !a.sealed).length,
-    },
-    surveys: aggregates.map((a) => ({
-      surveyKey: a.key,
-      slot: a.record.slot,
-      endEpoch: a.record.definition.endEpoch,
-      sealed: a.sealed,
-      cancelled: a.cancelled,
-      govLinked: a.govLinks.length > 0,
-      owner: credentialKey(a.record.definition.owner),
-      haystack: surveyHaystack(a.record, a.govLinks),
-      record: JSON.stringify(toJsonSafe(a.record)),
-      cancellations: JSON.stringify(
-        toJsonSafe(cancellationsByKey.get(a.key) ?? []),
-      ),
-      govLinks: JSON.stringify(toJsonSafe(linksByKey.get(a.key) ?? [])),
-      responseCount: a.responseCount,
-      finalizedCancelled: finalizedCancelled.has(a.key),
-    })),
-    responses: records.responses.map((r) => ({
-      txHash: r.txHash,
-      responseIndex: r.responseIndex,
-      surveyKey: refKey(r.response.surveyRef),
-      credential: credentialKey(r.response.credential),
-      slot: r.slot,
-      record: JSON.stringify(toJsonSafe(r)),
-    })),
+    all: surveys.length,
+    linked: surveys.filter((r) => r.govLinked).length,
+    active: active.length,
+    sealed: active.filter((r) => r.sealed).length,
+    public: active.filter((r) => !r.sealed).length,
   };
 }
 
-const compareText = (a: string, b: string): number =>
-  a < b ? -1 : a > b ? 1 : 0;
-
-/**
- * Hex SHA-256 identifying the materialized rows, for the refresh's
- * reconcile-skip: a stored digest equal to this run's means the tables
- * already hold exactly these rows. Hashed over the *materialized* output, not
- * the raw scan, so everything baked into rows — epoch-driven flags, the
- * finalized-cancelled overlay, governance links — is covered by construction.
- * Rows are sorted by key first: equality must not depend on scan order.
- * The banked counts are deliberately outside the digest: they are derived
- * from the rows and the tip, and the envelope carrying them lands every run.
- */
-export async function snapshotDigest(
-  snapshot: Pick<MaterializedSnapshot, "surveys" | "responses">,
-): Promise<string> {
-  const surveys = [...snapshot.surveys].sort((a, b) =>
-    compareText(a.surveyKey, b.surveyKey),
+export function materializeSnapshot(
+  records: Cip179Records,
+  tip: ChainTip,
+  govLinks: readonly GovLink[],
+  finalizedCancelled: ReadonlySet<string>,
+): MaterializedSnapshot {
+  const surveys = surveyRowsOf(
+    records.surveys,
+    records.cancellations,
+    responseCounts(records.responses),
+    tip,
+    govLinks,
+    finalizedCancelled,
   );
-  const responses = [...snapshot.responses].sort(
-    (a, b) =>
-      compareText(a.txHash, b.txHash) || a.responseIndex - b.responseIndex,
-  );
-  const bytes = new TextEncoder().encode(JSON.stringify([surveys, responses]));
-  const hash = await crypto.subtle.digest("SHA-256", bytes);
-  return [...new Uint8Array(hash)]
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-/** Stored wire JSON across all rows — the refresh's growth metric. */
-export function snapshotBytes(snapshot: MaterializedSnapshot): number {
-  return (
-    snapshot.surveys.reduce(
-      (n, r) =>
-        n + r.record.length + r.cancellations.length + r.govLinks.length,
-      0,
-    ) + snapshot.responses.reduce((n, r) => n + r.record.length, 0)
-  );
+  return {
+    listCounts: listCountsOf(surveys, tip.epoch),
+    surveys,
+    responses: records.responses.map(responseRowOf),
+    cancellations: records.cancellations.map(cancellationRowOf),
+  };
 }

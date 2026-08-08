@@ -119,13 +119,12 @@ async function prune(
 ) {
   const mem = memBackendStore();
   const snapshot = materializeSnapshot(recs, TIP, [], new Set());
-  await mem.reconcileSnapshot(snapshot.surveys, snapshot.responses, {
-    tip: "{}",
-    incomplete: false,
-    fetchedAt: 1,
-    payloadDigest: null,
-    listCounts: null,
-  });
+  await mem.reconcileSnapshot(
+    snapshot.surveys,
+    snapshot.responses,
+    snapshot.cancellations,
+    { tip: "{}", incomplete: false, fetchedAt: 1, listCounts: null },
+  );
   const cache = fakeCache(banked);
   await pruneTxProofCache(
     {

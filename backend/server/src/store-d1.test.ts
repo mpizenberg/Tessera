@@ -25,21 +25,22 @@ class FakeD1Statement {
     return row ?? null;
   }
 
-  async run(): Promise<unknown> {
-    return this.statement().run(...this.values);
+  async run(): Promise<{ meta: { changes: number } }> {
+    const result = this.statement().run(...this.values);
+    return { meta: { changes: Number(result.changes) } };
   }
 
   async all<T = unknown>(): Promise<{ results: T[] }> {
-    return { results: this.rows<T>() };
+    return { results: this.execute().results as T[] };
   }
 
-  rows<T = unknown>(): T[] {
+  execute(): { results: unknown[]; changes: number } {
     const statement = this.statement();
     if (statement.columns().length === 0) {
-      statement.run(...this.values);
-      return [];
+      const result = statement.run(...this.values);
+      return { results: [], changes: Number(result.changes) };
     }
-    return statement.all(...this.values) as T[];
+    return { results: statement.all(...this.values), changes: 0 };
   }
 
   private statement(): StatementSync {
@@ -58,13 +59,14 @@ class FakeD1 implements D1Like {
 
   async batch(
     statements: FakeD1Statement[],
-  ): Promise<{ results: unknown[] }[]> {
+  ): Promise<{ results: unknown[]; meta: { changes: number } }[]> {
     this.batchSizes.push(statements.length);
     this.sqlite.exec("BEGIN");
     try {
-      const results = statements.map((statement) => ({
-        results: statement.rows(),
-      }));
+      const results = statements.map((statement) => {
+        const { results, changes } = statement.execute();
+        return { results, meta: { changes } };
+      });
       this.sqlite.exec("COMMIT");
       return results;
     } catch (error) {
@@ -95,7 +97,6 @@ const schema = `
     tip TEXT NOT NULL,
     incomplete INTEGER NOT NULL,
     fetched_at INTEGER NOT NULL,
-    payload_digest TEXT,
     list_counts TEXT
   );
   CREATE TABLE response (
@@ -115,10 +116,20 @@ const schema = `
     id INTEGER PRIMARY KEY CHECK (id = 1),
     cursor_slot INTEGER,
     cursor_tx_hash TEXT,
+    caught_up INTEGER NOT NULL DEFAULT 0,
     generation INTEGER NOT NULL,
     trickle_slot INTEGER,
     trickle_tx_hash TEXT
   );
+  CREATE TABLE cancellation (
+    tx_hash TEXT NOT NULL,
+    survey_key TEXT NOT NULL,
+    slot INTEGER NOT NULL,
+    record TEXT NOT NULL,
+    PRIMARY KEY (tx_hash, survey_key)
+  );
+  CREATE INDEX cancellation_survey ON cancellation (survey_key);
+  CREATE INDEX cancellation_slot ON cancellation (slot, tx_hash);
 `;
 
 const survey = (
@@ -157,7 +168,6 @@ const meta = (fetchedAt: number): SnapshotMeta => ({
   tip: JSON.stringify({ epoch: 500, fetchedAt }),
   incomplete: false,
   fetchedAt,
-  payloadDigest: null,
   listCounts: null,
 });
 
@@ -174,6 +184,7 @@ describe("D1 snapshot reconciliation", () => {
     await store.reconcileSnapshot(
       [survey("aa:0"), survey("bb:0")],
       [],
+      [],
       meta(7),
     );
     sqlite.exec(`
@@ -185,6 +196,7 @@ describe("D1 snapshot reconciliation", () => {
     await expect(
       store.reconcileSnapshot(
         [survey("aa:0", { slot: 111 }), survey("bb:0", { slot: 999 })],
+        [],
         [],
         meta(8),
       ),
@@ -210,6 +222,7 @@ describe("D1 snapshot reconciliation", () => {
     await store.reconcileSnapshot(
       [survey("survey:0", { responseCount: responses.length })],
       responses,
+      [],
       meta(1),
     );
 
@@ -223,6 +236,7 @@ describe("D1 snapshot reconciliation", () => {
     await store.reconcileSnapshot(
       [survey("survey:0", { responseCount: kept.length })],
       kept,
+      [],
       meta(2),
     );
 
@@ -247,17 +261,20 @@ describe("D1 snapshot reconciliation", () => {
     await store.reconcileSnapshot(
       [survey("survey:0", { slot: 20_000 })],
       responses,
+      [],
       meta(1),
     );
 
     // The segment listed nothing: every response with slot in it rolled back.
-    await store.reconcileSegment(
+    const changes = await store.reconcileSegment(
       { fromSlot: 5_000, toSlot: 5_999 },
+      [],
       [],
       [],
       meta(2),
     );
 
+    expect(changes).toBe(1_000);
     expect(d1.batchSizes.at(-1)).toBeLessThan(100);
     expect(sqlite.prepare("SELECT COUNT(*) AS n FROM response").get()).toEqual({
       n: 9_000,
@@ -283,6 +300,7 @@ describe("D1 snapshot reconciliation", () => {
 
     const state = {
       cursor: { slot: 7_000, txHash: "ab".repeat(32) },
+      caughtUp: true,
       generation: 1,
       trickle: null,
     };

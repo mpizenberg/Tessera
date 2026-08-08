@@ -351,13 +351,14 @@ async function finalizeRecords(
   govLinks?: readonly GovLink[] | null,
 ) {
   const snapshot = materializeSnapshot(recs, tip, [], new Set());
-  await store.reconcileSnapshot(snapshot.surveys, snapshot.responses, {
-    tip: "{}",
-    incomplete: false,
-    fetchedAt: 1,
-    payloadDigest: null,
-    listCounts: null,
-  });
+  await store.reconcileSnapshot(
+    snapshot.surveys,
+    snapshot.responses,
+    snapshot.cancellations,
+    { tip: "{}", incomplete: false, fetchedAt: 1, listCounts: null },
+  );
+  // A caught-up cursor: the covered prefix reaches the wall clock, so the
+  // cursor gate reduces to the deadline-plus-margin check.
   return finalizeClosedSurveys(
     config,
     store,
@@ -365,6 +366,7 @@ async function finalizeRecords(
     source,
     recs.incomplete === true,
     tip,
+    Number.MAX_SAFE_INTEGER,
     reveal,
     govLinks,
   );

@@ -1,30 +1,31 @@
 /**
- * Snapshot refresh: run the Koios read path server-side and cache the result.
- *
- * This is the exact `KoiosDataSource` the browser used to run per load, now run
- * once per interval behind the server's token (or the anonymous tier). A failed
- * refresh logs and leaves the previous good snapshot in place — the server never
- * serves a half-built or blank snapshot because one fetch hiccuped.
+ * Snapshot refresh: walk one slot segment of the label-17 index per run and
+ * integrate it into the stored rows. The stored rows are the durable truth
+ * for settled history; each run re-derives only the settlement margin below
+ * its banked cursor (rollbacks are settlement-bounded), so the per-refresh
+ * cost tracks the window, not the corpus age. A failed refresh logs and
+ * leaves the previous good snapshot in place — the server never serves a
+ * half-built or blank snapshot because one fetch hiccuped.
  *
  * At most one run at a time, enforced by a stored lease. Neither scheduler
  * serializes itself: a Cloudflare cron can start while the previous one is
- * still running, and the Node loop's interval fires regardless. Two runs racing
- * would let the slower one write its older scan last, over the newer snapshot.
+ * still running, and the Node loop's interval fires regardless. Two runs
+ * racing would let the slower one write its older scan last, over the newer
+ * snapshot.
  */
 
 import type { GovLink } from "cip-179/domain";
 import { toJsonSafe } from "cip-179/tally";
-import { KoiosDataSource, KoiosTallyInputs } from "cardano-tessera-koios";
+import {
+  KoiosDataSource,
+  KoiosTallyInputs,
+  type SegmentScan,
+} from "cardano-tessera-koios";
 
 import type { ServerConfig } from "./config";
 import { finalizeClosedSurveys } from "./finalize";
 import { refreshGovLinks } from "./govLinks";
-import {
-  materializeSnapshot,
-  snapshotBytes,
-  snapshotDigest,
-  type MaterializedSnapshot,
-} from "./materialize";
+import { integrateSegment } from "./integrate";
 import { upstreamMeter } from "./meter";
 import { pruneTxProofCache } from "./proofCache";
 import {
@@ -33,14 +34,89 @@ import {
   snapshotTip,
   sumUpstream,
   type BackendStore,
-  type SnapshotMeta,
+  type BankedListCounts,
+  type ScanState,
+  type SlotRange,
   type SnapshotStore,
   type UpstreamTotals,
 } from "./store";
 import { validateNewResponses } from "./validate";
 
+/**
+ * The derivation generation of the deployed code. Bump it whenever a deploy
+ * changes how records project into rows: a banked generation that differs
+ * rewinds the scan cursor to the config floor, and the ordinary segment
+ * walker re-derives everything forward over as many crons as the page budget
+ * needs.
+ */
+export const SCAN_GENERATION = 1;
+
+/**
+ * How far below the banked cursor a steady-state run re-derives, in 1 s
+ * slots: ~3 days, about twice the 36 h mainnet/preprod stability window.
+ * Nothing deeper can roll back, so re-integrating this margin every run heals
+ * every chain-caused divergence. One constant for all networks.
+ */
+export const SETTLEMENT_MARGIN_SLOTS = 259_200;
+
+/**
+ * Listing pages one run may spend on its segment. Steady state expects ≤ 1;
+ * the rest is catch-up throughput after downtime or a generation rewind,
+ * bounded so the run stays inside the Worker's subrequest budget alongside
+ * metadata batches, anchors, validation and finalization.
+ */
+const SEGMENT_PAGE_BUDGET = 8;
+
 /** Cap stored failure messages so a pathological error can't bloat the row. */
 const ERROR_TEXT_MAX = 300;
+
+/** How one run resumes the walk, derived from the banked state. */
+export interface SegmentPlan {
+  /** `fetchSegment`'s resume point (inclusive floor, or strictly-after pair). */
+  readonly from: { readonly slot: number; readonly txHash?: string };
+  /**
+   * First slot the sweep may delete in. In floor mode this is the floor
+   * itself; continuing a keyset walk it is `cursor.slot + 1` — rows at the
+   * cursor slot at-or-before the cursor hash are not re-listed, so sweeping
+   * that slot would delete live rows.
+   */
+  readonly sweepFromSlot: number;
+}
+
+export function planSegment(
+  state: ScanState | null,
+  floorSlot: number,
+): SegmentPlan {
+  const cursor = state?.cursor ?? null;
+  if (cursor === null)
+    return { from: { slot: floorSlot }, sweepFromSlot: floorSlot };
+  if (state!.caughtUp) {
+    const slot = Math.max(floorSlot, cursor.slot - SETTLEMENT_MARGIN_SLOTS);
+    return { from: { slot }, sweepFromSlot: slot };
+  }
+  return {
+    from: { slot: cursor.slot, txHash: cursor.txHash },
+    sweepFromSlot: cursor.slot + 1,
+  };
+}
+
+/**
+ * The slot range this scan safely covered — the sweep's deletion scope — or
+ * null when nothing may be swept: an incomplete scan (an unfetched tx is
+ * indistinguishable from a vanished one), or a budget-capped walk whose last
+ * listed slot may hold further unlisted txs (the covered prefix then ends one
+ * slot earlier; a range that inverts covers nothing).
+ */
+export function coveredRange(
+  plan: SegmentPlan,
+  scan: SegmentScan,
+  tipSlot: number,
+): SlotRange | null {
+  if (scan.records.incomplete) return null;
+  const toSlot = scan.exhausted ? tipSlot : scan.cursor!.slot - 1;
+  if (toSlot < plan.sweepFromSlot) return null;
+  return { fromSlot: plan.sweepFromSlot, toSlot };
+}
 
 const callSummary = (calls: UpstreamTotals): string =>
   `${sumUpstream(calls)} upstream requests (${calls.koios} Koios)`;
@@ -122,11 +198,9 @@ export async function refreshSnapshot(
   };
 
   // The store-backed scan cache banks what a tx hash content-addresses. Its
-  // metadata half makes the scan resumable: each fulfilled /tx_metadata batch is
-  // banked and never re-fetched, so a refresh cut short (Worker subrequest cap)
-  // converges over successive crons instead of failing identically forever. Its
-  // proof half spares an open survey the /tx_cbor batches its owner-proof would
-  // otherwise cost on every single scan.
+  // metadata half is read keyed by the segment's listed hashes only; its
+  // proof half spares an open survey the /tx_cbor batches its owner-proof
+  // (and cancellation-proof) checks would otherwise cost on every single run.
   const source = new KoiosDataSource(
     config.app,
     undefined,
@@ -144,17 +218,47 @@ export async function refreshSnapshot(
     // three-minute cadence against day-long epochs, is nearly every run.
     const previous = await store.snapshotMeta();
     const tip = await source.chainTip(previous ? snapshotTip(previous) : null);
-    const records = await source.fetchAll(tip);
-    // The consumers below (gov links, validation, finalization, proof-cache
-    // prune) read the stored rows, which this run rewrites only at the
-    // materialize step — so they see the previous refresh's corpus. One
-    // interval of lag, and every consumer self-heals: a survey first seen
-    // this run links, finalizes and registers as live next run.
+
+    const banked = await store.scanState();
+    const rewound = banked !== null && banked.generation !== SCAN_GENERATION;
+    if (rewound) {
+      console.log(
+        `scan generation ${banked.generation} → ${SCAN_GENERATION}: rewinding to the config floor`,
+      );
+    }
+    const state = rewound ? null : banked;
+    // Post-Shelley slots are 1 s, so the config floor's slot is derived
+    // linearly from the tip — no per-network genesis math.
+    const floorSlot = Math.max(
+      0,
+      Math.floor(tip.slot - (tip.time - config.app.sinceUnix)),
+    );
+    const plan = planSegment(state, floorSlot);
+    const scan = await source.fetchSegment(
+      { from: plan.from, pageBudget: SEGMENT_PAGE_BUDGET },
+      tip,
+    );
+    const records = scan.records;
+    console.log(
+      `segment scanned: ${records.surveys.length} surveys, ` +
+        `${records.responses.length} responses, ` +
+        `${records.cancellations.length} cancellations` +
+        `${records.incomplete ? " (incomplete)" : ""}` +
+        `${scan.exhausted ? "" : " (catching up)"}`,
+    );
+
+    // The epoch set is the stored surveys' plus this segment's, so a survey
+    // first seen this run links in the same run.
     const { links: govLinks, unresolved: govUnresolved } =
       await refreshGovLinks(
         store,
         source,
-        await store.surveyEndEpochs(),
+        [
+          ...new Set([
+            ...(await store.surveyEndEpochs()),
+            ...records.surveys.map((s) => s.definition.endEpoch),
+          ]),
+        ],
         tip.epoch,
         startedAt,
         { onRequest: meter.hook("anchor") },
@@ -164,16 +268,59 @@ export async function refreshSnapshot(
         return { links: [], unresolved: [] };
       });
 
-    console.log(
-      `snapshot refreshed: ${records.surveys.length} surveys, ` +
-        `${records.responses.length} responses, ` +
-        `${records.cancellations.length} cancellations` +
-        `${records.incomplete ? " (incomplete)" : ""}`,
-    );
+    // Integrate BEFORE the consumers run, so validation, finalization and the
+    // proof-cache prune all see this run's corpus. The overlay input is the
+    // pre-finalize artifact state; this run's own finalizations land through
+    // the targeted overlay update below.
+    const artifactKeys = await store.finalizedArtifactKeys();
+    const range = coveredRange(plan, scan, tip.slot);
+    const incomplete = records.incomplete === true || !scan.exhausted;
+    const integration = await integrateSegment(store, source, {
+      records,
+      range,
+      tip,
+      govLinks: await displayGovLinks(store, govLinks, govLinksReliable),
+      govLinksReliable,
+      finalizedCancelled: artifactKeys.cancelled,
+      meta: {
+        tip: JSON.stringify(toJsonSafe(tip)),
+        incomplete,
+        // Stamped with the scan's start, not this write: `tip` was read then,
+        // so the pair describes one instant, and age counts from when the
+        // data was true rather than from when it happened to land.
+        fetchedAt: startedAt,
+        listCounts: previous?.listCounts ?? null,
+      },
+    });
+
+    // Bank the cursor only after its segment is reconciled: a banked cursor
+    // past unreconciled slots would settle a gap in for good, while a
+    // reconciled segment with an unbanked cursor only costs an idempotent
+    // re-walk. An incomplete scan banks nothing — a listed tx may be missing
+    // its record, and advancing past it would settle the gap in.
+    let cursor = state?.cursor ?? null;
+    if (records.incomplete !== true) {
+      cursor = scan.exhausted
+        ? {
+            slot: tip.slot,
+            txHash: scan.cursor?.txHash ?? cursor?.txHash ?? "",
+          }
+        : scan.cursor!;
+      await store.putScanState({
+        cursor,
+        caughtUp: scan.exhausted,
+        generation: SCAN_GENERATION,
+        trickle: rewound ? null : (state?.trickle ?? null),
+      });
+    }
+    // The instant the integrated prefix reaches, on the chain's own clock —
+    // finalization's safety gate during catch-up.
+    const coveredThroughUnix =
+      cursor === null ? null : tip.time + (cursor.slot - tip.slot);
 
     // §6.3 validation rides the same refresh (Node loop + Worker cron alike):
     // incremental, so already-validated responses cost nothing. Best-effort —
-    // the snapshot above is already stored either way.
+    // the rows above are already stored either way.
     await validateNewResponses(
       store,
       records,
@@ -185,20 +332,21 @@ export async function refreshSnapshot(
       console.warn(`response validation failed (will retry): ${String(err)}`),
     );
 
-    // Finalization (§6.5/§7) runs last, on the freshly validated state: weight
+    // Finalization (§6.5/§7) runs on the freshly validated state: weight
     // snapshotting + artifact emission for safely-closed surveys. Idempotent and
     // resumable, so a failure here just retries next refresh. Its returned key
-    // sets carry this pass's emissions, so the prune and materialize below need
-    // no `tally_artifact` scan of their own; a pass that died mid-way may still
-    // have emitted, so only then is the store re-read.
-    const artifactKeys =
+    // sets carry this pass's emissions, so the prune and overlay update below
+    // need no `tally_artifact` scan of their own; a pass that died mid-way may
+    // still have emitted, so only then is the store re-read.
+    const finalKeys =
       (await finalizeClosedSurveys(
         config,
         store,
         new KoiosTallyInputs(config.app, undefined, countKoios),
         source,
-        records.incomplete === true,
+        incomplete,
         tip,
+        coveredThroughUnix,
         undefined,
         // `null` = unknown, so the pass defers rather than stamping "no links"
         // into an artifact that outlives this refresh.
@@ -208,50 +356,64 @@ export async function refreshSnapshot(
         return null;
       })) ?? (await store.finalizedArtifactKeys());
 
+    // A survey finalized as cancelled flips its row's overlay in the same
+    // run. Idempotent over every cancelled artifact key, so it also heals a
+    // row whose flag drifted.
+    const overlayChanges = await store
+      .markFinalizedCancelled([...finalKeys.cancelled])
+      .catch((err) => {
+        console.warn(
+          `finalized-cancelled overlay update failed: ${String(err)}`,
+        );
+        return 0;
+      });
+
     // After finalization, so a survey that just froze its artifact releases its
     // transactions in the same run rather than a refresh later. Best-effort: a
     // cache that keeps too much is only a cache that costs storage.
-    await pruneTxProofCache(
-      store,
-      records.incomplete === true,
-      tip,
-      artifactKeys.finalized,
-    ).catch((err) =>
-      console.warn(`tx proof cache prune failed: ${String(err)}`),
+    await pruneTxProofCache(store, incomplete, tip, finalKeys.finalized).catch(
+      (err) => console.warn(`tx proof cache prune failed: ${String(err)}`),
     );
 
-    // Materialize LAST, so the stored rows reflect this run's validation and
-    // finalization (a survey finalized as cancelled above flips its row's
-    // overlay flag in the same refresh). One transaction publishes the whole
-    // snapshot at once: until it commits, every route serves the previous one.
-    const snapshot = materializeSnapshot(
-      records,
-      tip,
-      await displayGovLinks(store, govLinks, govLinksReliable),
-      artifactKeys.cancelled,
-    );
-    const payloadBytes = snapshotBytes(snapshot);
-    await publishSnapshot(store, previous, snapshot, {
-      tip: JSON.stringify(toJsonSafe(tip)),
-      incomplete: records.incomplete === true,
-      // Stamped with the scan's start, not this write: `tip` was read then, so
-      // the pair describes one instant, and age counts from when the data was
-      // true rather than from when it happened to land.
-      fetchedAt: startedAt,
-      payloadDigest: await snapshotDigest(snapshot),
-      listCounts: JSON.stringify(snapshot.listCounts),
-    });
+    // Banked chip counts move only when rows changed or the epoch turned, so
+    // recompute the aggregate only then; every other run republishes the
+    // previous counts with this run's freshness (already done above).
+    const previousEpoch = previous ? snapshotTip(previous).epoch : null;
+    if (
+      integration.changes > 0 ||
+      overlayChanges > 0 ||
+      previousEpoch !== tip.epoch ||
+      previous?.listCounts == null
+    ) {
+      const counts = await store.surveyIndexCounts(tip.epoch, [], []);
+      const bankedCounts: BankedListCounts = {
+        all: counts.all,
+        linked: counts.linked,
+        active: counts.active,
+        sealed: counts.sealed,
+        public: counts.public,
+      };
+      await store.publishSnapshotMeta({
+        tip: JSON.stringify(toJsonSafe(tip)),
+        incomplete,
+        fetchedAt: startedAt,
+        listCounts: JSON.stringify(bankedCounts),
+      });
+    }
 
     // Read before recording: recording drains the meter.
     const summary = callSummary(meter.counted());
     await recordRun({
       ok: true,
-      incomplete: records.incomplete === true,
+      incomplete,
       surveys: records.surveys.length,
       responses: records.responses.length,
-      payloadBytes,
+      payloadBytes: integration.payloadBytes,
     });
-    console.log(`refresh ok: ${summary}, ${Date.now() - startedMs} ms`);
+    console.log(
+      `refresh ok: ${integration.changes} row changes, ${summary}, ` +
+        `${Date.now() - startedMs} ms`,
+    );
   } catch (err) {
     const summary = callSummary(meter.counted());
     await recordRun({ ok: false, error: String(err) });
@@ -269,40 +431,14 @@ export async function refreshSnapshot(
 }
 
 /**
- * Store the materialized snapshot: the full row reconcile, or — when
- * `previous`'s digest shows the tables already hold exactly these rows — just
- * the envelope. The skip is what keeps an unchanged corpus from paying the
- * per-refresh reconcile reads (upsert compare-reads and tombstone sweeps,
- * both O(corpus)); the envelope must still land every run, because
- * `fetchedAt` is the freshness contract behind the ETag and the health
- * footer's age. `previous` was read under this run's lease, so nothing can
- * have reconciled in between.
- */
-export async function publishSnapshot(
-  store: Pick<SnapshotStore, "reconcileSnapshot" | "publishSnapshotMeta">,
-  previous: SnapshotMeta | null,
-  snapshot: Pick<MaterializedSnapshot, "surveys" | "responses">,
-  meta: SnapshotMeta,
-): Promise<void> {
-  if (
-    meta.payloadDigest !== null &&
-    previous?.payloadDigest === meta.payloadDigest
-  ) {
-    await store.publishSnapshotMeta(meta);
-    return;
-  }
-  await store.reconcileSnapshot(snapshot.surveys, snapshot.responses, meta);
-}
-
-/**
- * The governance links the snapshot publishes: this refresh's, or the previous
- * snapshot's when the whole read failed.
+ * The governance links the touched-survey projections publish: this
+ * refresh's, or the stored ones when the whole read failed.
  *
  * A failed read makes every link *unknown* at once, and publishing unknown as
  * "no links" would blank the linkage everywhere until the next good run.
  * Republishing is sound because an action's anchor is hash-fixed at proposal
  * time: whatever was resolved before is what the action still says. The links
- * only reach the display snapshot, where epoch alignment, haystack and counts
+ * only reach the display projection, where epoch alignment, haystack and counts
  * are re-derived against the fresh tip; validation and finalization see the
  * honest (empty) read, so no verdict or artifact is built on a stale link.
  *
@@ -311,13 +447,13 @@ export async function publishSnapshot(
  * seen once stays in the answer until its epoch settles it in for good.
  */
 export async function displayGovLinks(
-  store: Pick<SnapshotStore, "snapshotGovLinks">,
+  store: Pick<SnapshotStore, "surveyGovLinks">,
   links: readonly GovLink[],
   reliable: boolean,
 ): Promise<readonly GovLink[]> {
   if (reliable) return links;
   try {
-    const stored = await store.snapshotGovLinks();
+    const stored = [...(await store.surveyGovLinks()).values()].flat();
     console.warn(`gov links unreadable — republishing ${stored.length}`);
     return stored;
   } catch (err) {

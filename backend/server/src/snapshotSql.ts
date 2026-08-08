@@ -15,6 +15,7 @@ import type { SurveyListCounts } from "cardano-tessera-core";
 import { BINDABLE_ROLES } from "cip-179/domain";
 
 import type {
+  CancellationRow,
   ResponseRow,
   ScanState,
   SlotRange,
@@ -226,44 +227,41 @@ const SURVEY_INDEX_RECONCILE = `
      OR survey_index.finalized_cancelled IS NOT excluded.finalized_cancelled`;
 
 const SNAPSHOT_META_UPSERT = `
-  INSERT INTO snapshot_meta (id, tip, incomplete, fetched_at, payload_digest,
-                             list_counts)
-  VALUES (1, ?, ?, ?, ?, ?)
+  INSERT INTO snapshot_meta (id, tip, incomplete, fetched_at, list_counts)
+  VALUES (1, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
     tip = excluded.tip,
     incomplete = excluded.incomplete,
     fetched_at = excluded.fetched_at,
-    payload_digest = excluded.payload_digest,
     list_counts = excluded.list_counts`;
 
-/** The envelope write, alone (the digest-match fast path) or ending a reconcile. */
+/** The envelope write, alone (recomputed counts) or ending a reconcile. */
 export const snapshotMetaUpsertSql = (meta: SnapshotMeta): SqlQuery => ({
   sql: SNAPSHOT_META_UPSERT,
-  params: [
-    meta.tip,
-    meta.incomplete ? 1 : 0,
-    meta.fetchedAt,
-    meta.payloadDigest,
-    meta.listCounts,
-  ],
+  params: [meta.tip, meta.incomplete ? 1 : 0, meta.fetchedAt, meta.listCounts],
 });
 
 export const SNAPSHOT_META_SELECT = `
-  SELECT tip, incomplete, fetched_at AS fetchedAt,
-         payload_digest AS payloadDigest, list_counts AS listCounts
+  SELECT tip, incomplete, fetched_at AS fetchedAt, list_counts AS listCounts
   FROM snapshot_meta WHERE id = 1`;
 
 /** The survey half of a bundle — only the two columns the body carries. */
 export const SURVEY_BUNDLE_SELECT = `
   SELECT record, cancellations FROM survey_index WHERE survey_key = ?`;
 
-/** The stored snapshot's governance links, skipping the rows that carry none. */
-export const SNAPSHOT_GOV_LINKS_SELECT = `
-  SELECT gov_links AS govLinks FROM survey_index WHERE gov_links <> '[]'`;
+/** The stored links keyed by survey, skipping the rows that carry none. */
+export const SURVEY_GOV_LINKS_SELECT = `
+  SELECT survey_key AS surveyKey, gov_links AS govLinks
+  FROM survey_index WHERE gov_links <> '[]'`;
 
-/** A repeated coordinate is the same immutable on-chain response. */
+/**
+ * A response is content-addressed by its coordinate, but its chain position
+ * can move: the same tx re-landing after a rollback carries a new slot (and
+ * epoch) in its record, so this is an upsert with a changed-row guard, not an
+ * insert-or-ignore that would pin the original position forever.
+ */
 const RESPONSE_RECONCILE = `
-  INSERT OR IGNORE INTO response
+  INSERT INTO response
     (tx_hash, response_index, survey_key, credential, slot, record)
   SELECT json_extract(value, '$.txHash'),
          json_extract(value, '$.responseIndex'),
@@ -271,7 +269,30 @@ const RESPONSE_RECONCILE = `
          json_extract(value, '$.credential'),
          json_extract(value, '$.slot'),
          json_extract(value, '$.record')
-  FROM json_each(?)`;
+  FROM json_each(?)
+  WHERE 1
+  ON CONFLICT(tx_hash, response_index) DO UPDATE SET
+    survey_key = excluded.survey_key,
+    credential = excluded.credential,
+    slot = excluded.slot,
+    record = excluded.record
+  WHERE response.slot IS NOT excluded.slot
+     OR response.record IS NOT excluded.record`;
+
+/** Same reposition rule as {@link RESPONSE_RECONCILE}. */
+const CANCELLATION_RECONCILE = `
+  INSERT INTO cancellation (tx_hash, survey_key, slot, record)
+  SELECT json_extract(value, '$.txHash'),
+         json_extract(value, '$.surveyKey'),
+         json_extract(value, '$.slot'),
+         json_extract(value, '$.record')
+  FROM json_each(?)
+  WHERE 1
+  ON CONFLICT(tx_hash, survey_key) DO UPDATE SET
+    slot = excluded.slot,
+    record = excluded.record
+  WHERE cancellation.slot IS NOT excluded.slot
+     OR cancellation.record IS NOT excluded.record`;
 
 const SNAPSHOT_ROWS_PER_CHUNK = 500;
 const SNAPSHOT_KEYS_PER_CHUNK = 5_000;
@@ -412,11 +433,67 @@ function responseDeletionSql(
   });
 }
 
+interface CancellationKey {
+  readonly txHash: string;
+  readonly surveyKey: string;
+}
+
+function cancellationDeletionSql(
+  keys: readonly CancellationKey[],
+  range?: SlotRange,
+): SqlQuery[] {
+  const bound = slotBound(range);
+  if (keys.length === 0)
+    return [
+      {
+        sql: `DELETE FROM cancellation WHERE ${bound.sql}`,
+        params: [...bound.params],
+      },
+    ];
+  const chunks = jsonChunks(keys, SNAPSHOT_KEYS_PER_CHUNK);
+  return chunks.map((chunk, index) => {
+    const lower = index === 0 ? null : chunk.values[0]!;
+    const upper = chunks[index + 1]?.values[0] ?? null;
+    const bounds: string[] = [bound.sql];
+    const params: unknown[] = [...bound.params];
+    if (lower !== null) {
+      bounds.push("(tx_hash > ? OR (tx_hash = ? AND survey_key >= ?))");
+      params.push(lower.txHash, lower.txHash, lower.surveyKey);
+    }
+    if (upper !== null) {
+      bounds.push("(tx_hash < ? OR (tx_hash = ? AND survey_key < ?))");
+      params.push(upper.txHash, upper.txHash, upper.surveyKey);
+    }
+    params.push(chunk.json);
+    return {
+      sql: `DELETE FROM cancellation
+            WHERE ${bounds.join(" AND ")}
+              AND (tx_hash, survey_key) NOT IN (
+                SELECT json_extract(value, '$.txHash'),
+                       json_extract(value, '$.surveyKey')
+                FROM json_each(?)
+              )`,
+      params,
+    };
+  });
+}
+
+/**
+ * How a reconcile program sweeps: everywhere (the full rebuild), only within
+ * a slot range (a covered segment), or not at all (an incomplete scan, whose
+ * unlisted txs are indistinguishable from vanished ones).
+ */
+type Sweep =
+  | { readonly kind: "everything" }
+  | { readonly kind: "range"; readonly range: SlotRange }
+  | { readonly kind: "none" };
+
 function reconciliationSql(
   surveys: readonly SurveyIndexRow[],
   responses: readonly ResponseRow[],
+  cancellations: readonly CancellationRow[],
   meta: SnapshotMeta,
-  range?: SlotRange,
+  sweep: Sweep,
 ): SqlQuery[] {
   const sortedSurveys = [...surveys].sort((a, b) =>
     compareText(a.surveyKey, b.surveyKey),
@@ -425,23 +502,51 @@ function reconciliationSql(
     (a, b) =>
       compareText(a.txHash, b.txHash) || a.responseIndex - b.responseIndex,
   );
-  const surveyKeys = sortedSurveys.map(({ surveyKey }) => ({ surveyKey }));
-  const responseKeys = sortedResponses.map(({ txHash, responseIndex }) => ({
-    txHash,
-    responseIndex,
-  }));
+  const sortedCancellations = [...cancellations].sort(
+    (a, b) =>
+      compareText(a.txHash, b.txHash) || compareText(a.surveyKey, b.surveyKey),
+  );
+
+  const deletions =
+    sweep.kind === "none"
+      ? []
+      : [
+          ...surveyDeletionSql(
+            sortedSurveys.map(({ surveyKey }) => ({ surveyKey })),
+            sweep.kind === "range" ? sweep.range : undefined,
+          ),
+          ...responseDeletionSql(
+            sortedResponses.map(({ txHash, responseIndex }) => ({
+              txHash,
+              responseIndex,
+            })),
+            sweep.kind === "range" ? sweep.range : undefined,
+          ),
+          ...cancellationDeletionSql(
+            sortedCancellations.map(({ txHash, surveyKey }) => ({
+              txHash,
+              surveyKey,
+            })),
+            sweep.kind === "range" ? sweep.range : undefined,
+          ),
+        ];
 
   return [
     ...jsonChunks(sortedSurveys, SNAPSHOT_ROWS_PER_CHUNK).map((chunk) => ({
       sql: SURVEY_INDEX_RECONCILE,
       params: [chunk.json],
     })),
-    ...surveyDeletionSql(surveyKeys, range),
     ...jsonChunks(sortedResponses, SNAPSHOT_ROWS_PER_CHUNK).map((chunk) => ({
       sql: RESPONSE_RECONCILE,
       params: [chunk.json],
     })),
-    ...responseDeletionSql(responseKeys, range),
+    ...jsonChunks(sortedCancellations, SNAPSHOT_ROWS_PER_CHUNK).map(
+      (chunk) => ({
+        sql: CANCELLATION_RECONCILE,
+        params: [chunk.json],
+      }),
+    ),
+    ...deletions,
     snapshotMetaUpsertSql(meta),
   ];
 }
@@ -449,26 +554,40 @@ function reconciliationSql(
 /**
  * One atomic reconciliation program for either SQLite adapter. JSON table-valued
  * parameters keep first materialization and large reorgs to bounded set
- * operations rather than one statement per record.
+ * operations rather than one statement per record. The envelope upsert is
+ * always the final statement, so a caller counting changed rows can exclude
+ * it (freshness moves every run).
  */
 export const snapshotReconciliationSql = (
   surveys: readonly SurveyIndexRow[],
   responses: readonly ResponseRow[],
+  cancellations: readonly CancellationRow[],
   meta: SnapshotMeta,
-): SqlQuery[] => reconciliationSql(surveys, responses, meta);
+): SqlQuery[] =>
+  reconciliationSql(surveys, responses, cancellations, meta, {
+    kind: "everything",
+  });
 
 /**
  * The slot-bounded sibling of {@link snapshotReconciliationSql}: the same
- * upserts and insert-or-ignores, but only rows with slot in `range` are
- * deletion candidates — settled history outside the segment is never swept,
- * however little of the chain one call covers.
+ * upserts, but only rows with slot in `range` are deletion candidates —
+ * settled history outside the segment is never swept, however little of the
+ * chain one call covers. A null `range` (incomplete scan) sweeps nothing.
  */
 export const segmentReconciliationSql = (
-  range: SlotRange,
+  range: SlotRange | null,
   surveys: readonly SurveyIndexRow[],
   responses: readonly ResponseRow[],
+  cancellations: readonly CancellationRow[],
   meta: SnapshotMeta,
-): SqlQuery[] => reconciliationSql(surveys, responses, meta, range);
+): SqlQuery[] =>
+  reconciliationSql(
+    surveys,
+    responses,
+    cancellations,
+    meta,
+    range === null ? { kind: "none" } : { kind: "range", range },
+  );
 
 /** Ordered so a bundle body is byte-stable across refreshes. */
 export const RESPONSES_FOR_SURVEY = `
@@ -484,12 +603,13 @@ export const respondedSql = (credentials: readonly string[]): SqlQuery => ({
 
 const SCAN_STATE_UPSERT = `
   INSERT INTO scan_state
-    (id, cursor_slot, cursor_tx_hash, generation, trickle_slot,
+    (id, cursor_slot, cursor_tx_hash, caught_up, generation, trickle_slot,
      trickle_tx_hash)
-  VALUES (1, ?, ?, ?, ?, ?)
+  VALUES (1, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
     cursor_slot = excluded.cursor_slot,
     cursor_tx_hash = excluded.cursor_tx_hash,
+    caught_up = excluded.caught_up,
     generation = excluded.generation,
     trickle_slot = excluded.trickle_slot,
     trickle_tx_hash = excluded.trickle_tx_hash`;
@@ -499,6 +619,7 @@ export const scanStateUpsertSql = (state: ScanState): SqlQuery => ({
   params: [
     state.cursor?.slot ?? null,
     state.cursor?.txHash ?? null,
+    state.caughtUp ? 1 : 0,
     state.generation,
     state.trickle?.slot ?? null,
     state.trickle?.txHash ?? null,
@@ -506,7 +627,8 @@ export const scanStateUpsertSql = (state: ScanState): SqlQuery => ({
 });
 
 export const SCAN_STATE_SELECT = `
-  SELECT cursor_slot AS cursorSlot, cursor_tx_hash AS cursorTxHash, generation,
+  SELECT cursor_slot AS cursorSlot, cursor_tx_hash AS cursorTxHash,
+         caught_up AS caughtUp, generation,
          trickle_slot AS trickleSlot, trickle_tx_hash AS trickleTxHash
   FROM scan_state WHERE id = 1`;
 
@@ -514,6 +636,7 @@ export const SCAN_STATE_SELECT = `
 export interface DbScanStateRow {
   readonly cursorSlot: number | null;
   readonly cursorTxHash: string | null;
+  readonly caughtUp: number;
   readonly generation: number;
   readonly trickleSlot: number | null;
   readonly trickleTxHash: string | null;
@@ -524,6 +647,7 @@ export const scanStateFromDb = (r: DbScanStateRow): ScanState => ({
     r.cursorSlot === null || r.cursorTxHash === null
       ? null
       : { slot: r.cursorSlot, txHash: r.cursorTxHash },
+  caughtUp: r.caughtUp !== 0,
   generation: r.generation,
   trickle:
     r.trickleSlot === null || r.trickleTxHash === null
@@ -574,6 +698,49 @@ export const RESPONSES_IN_SLOT_RANGE = `
   SELECT ${RESPONSE_ROW_COLUMNS} FROM response
   WHERE slot BETWEEN ? AND ?
   ORDER BY slot, tx_hash, response_index`;
+
+const CANCELLATION_ROW_COLUMNS = `tx_hash AS txHash,
+       survey_key AS surveyKey, slot, record`;
+
+/** All stored cancellations of the given surveys — a projection rebuild's stored half. */
+export const cancellationsBySurveysSql = (
+  surveyKeys: readonly string[],
+): SqlQuery[] =>
+  jsonChunks([...surveyKeys].sort(compareText), SNAPSHOT_KEYS_PER_CHUNK).map(
+    (chunk) => ({
+      sql: `SELECT ${CANCELLATION_ROW_COLUMNS} FROM cancellation
+            WHERE survey_key IN (SELECT value FROM json_each(?))
+            ORDER BY survey_key, slot, tx_hash`,
+      params: [chunk.json],
+    }),
+  );
+
+/** The window's stored cancellations. Binds: (fromSlot, toSlot). */
+export const CANCELLATIONS_IN_SLOT_RANGE = `
+  SELECT ${CANCELLATION_ROW_COLUMNS} FROM cancellation
+  WHERE slot BETWEEN ? AND ?
+  ORDER BY slot, tx_hash`;
+
+/**
+ * Surveys whose verified-while-open cancellation expired at close (no
+ * finalized overlay yet backs it). Binds: (tipEpoch).
+ */
+export const STALE_CANCELLED_SURVEYS = `
+  SELECT survey_key AS surveyKey FROM survey_index
+  WHERE cancelled = 1 AND finalized_cancelled = 0 AND end_epoch < ?`;
+
+/** Stamp the finalized-cancelled overlay where not already set. */
+export const markFinalizedCancelledSql = (
+  surveyKeys: readonly string[],
+): SqlQuery[] =>
+  jsonChunks([...surveyKeys].sort(compareText), SNAPSHOT_KEYS_PER_CHUNK).map(
+    (chunk) => ({
+      sql: `UPDATE survey_index SET finalized_cancelled = 1, cancelled = 1
+            WHERE finalized_cancelled = 0
+              AND survey_key IN (SELECT value FROM json_each(?))`,
+      params: [chunk.json],
+    }),
+  );
 
 /** The governance scan's input: which end epochs any stored survey has. */
 export const SURVEY_END_EPOCHS = `

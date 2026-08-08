@@ -15,6 +15,7 @@ import type {
   ArtifactKeys,
   ArtifactRow,
   BackendStore,
+  CancellationRow,
   DbGovEpochRow,
   RefreshRunRow,
   RefreshTotals,
@@ -44,19 +45,23 @@ import {
   validationKey,
 } from "./store";
 import {
+  CANCELLATIONS_IN_SLOT_RANGE,
   INCOMPLETE_VALIDATION_SURVEYS,
   RESPONSES_FOR_SURVEY,
   RESPONSES_IN_SLOT_RANGE,
   SCAN_STATE_SELECT,
-  SNAPSHOT_GOV_LINKS_SELECT,
   SNAPSHOT_META_SELECT,
+  STALE_CANCELLED_SURVEYS,
   SURVEY_BUNDLE_SELECT,
   SURVEY_END_EPOCHS,
+  SURVEY_GOV_LINKS_SELECT,
   SURVEYS_ENDING_AT_OR_AFTER,
   UNFINALIZED_CLOSED_SURVEYS,
   VALIDATED_LINK_CURSORS,
+  cancellationsBySurveysSql,
   completedValidationsSql,
   countsFromDb,
+  markFinalizedCancelledSql,
   ownedCountSql,
   respondedSql,
   responsesBySurveysSql,
@@ -75,10 +80,15 @@ import {
   type DbSurveyRow,
 } from "./snapshotSql";
 
+/** The per-statement outcome slice we read: rows changed by a write. */
+interface D1ResultMeta {
+  readonly meta?: { readonly changes?: number };
+}
+
 interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
   first<T = unknown>(): Promise<T | null>;
-  run(): Promise<unknown>;
+  run(): Promise<D1ResultMeta>;
   all<T = unknown>(): Promise<{ results: T[] }>;
 }
 
@@ -86,7 +96,9 @@ interface D1PreparedStatement {
 export interface D1Like {
   prepare(query: string): D1PreparedStatement;
   /** One round trip, one transaction; results are positional per statement. */
-  batch(statements: D1PreparedStatement[]): Promise<{ results: unknown[] }[]>;
+  batch(
+    statements: D1PreparedStatement[],
+  ): Promise<({ results: unknown[] } & D1ResultMeta)[]>;
 }
 
 interface DbValidatedRow extends Omit<
@@ -507,12 +519,13 @@ export function d1BackendStore(db: D1Like): BackendStore {
     async reconcileSnapshot(
       surveys: readonly SurveyIndexRow[],
       responses: readonly ResponseRow[],
+      cancellations: readonly CancellationRow[],
       meta: SnapshotMeta,
     ): Promise<void> {
       // One batch is one transaction: row diffs and their freshness envelope
       // become visible together, or the previous generation remains intact.
       await db.batch(
-        snapshotReconciliationSql(surveys, responses, meta).map(
+        snapshotReconciliationSql(surveys, responses, cancellations, meta).map(
           ({ sql, params }) => db.prepare(sql).bind(...params),
         ),
       );
@@ -529,17 +542,18 @@ export function d1BackendStore(db: D1Like): BackendStore {
         tip: string;
         incomplete: number;
         fetchedAt: number;
-        payloadDigest: string | null;
         listCounts: string | null;
       }>();
       if (!row) return null;
       return { ...row, incomplete: row.incomplete !== 0 };
     },
-    async snapshotGovLinks(): Promise<GovLink[]> {
+    async surveyGovLinks(): Promise<Map<string, GovLink[]>> {
       const { results } = await db
-        .prepare(SNAPSHOT_GOV_LINKS_SELECT)
-        .all<{ govLinks: string }>();
-      return results.flatMap((r) => JSON.parse(r.govLinks) as GovLink[]);
+        .prepare(SURVEY_GOV_LINKS_SELECT)
+        .all<{ surveyKey: string; govLinks: string }>();
+      return new Map(
+        results.map((r) => [r.surveyKey, JSON.parse(r.govLinks) as GovLink[]]),
+      );
     },
     async surveyBundle(surveyKey: string): Promise<SurveyBundleRows | null> {
       const [survey, responses] = await db.batch([
@@ -614,16 +628,25 @@ export function d1BackendStore(db: D1Like): BackendStore {
         .run();
     },
     async reconcileSegment(
-      range: SlotRange,
+      range: SlotRange | null,
       surveys: readonly SurveyIndexRow[],
       responses: readonly ResponseRow[],
+      cancellations: readonly CancellationRow[],
       meta: SnapshotMeta,
-    ): Promise<void> {
-      await db.batch(
-        segmentReconciliationSql(range, surveys, responses, meta).map(
-          ({ sql, params }) => db.prepare(sql).bind(...params),
-        ),
+    ): Promise<number> {
+      const outcomes = await db.batch(
+        segmentReconciliationSql(
+          range,
+          surveys,
+          responses,
+          cancellations,
+          meta,
+        ).map(({ sql, params }) => db.prepare(sql).bind(...params)),
       );
+      // The final statement is the envelope upsert, which changes every run.
+      return outcomes
+        .slice(0, -1)
+        .reduce((n, r) => n + (r.meta?.changes ?? 0), 0);
     },
     async surveyRowsByKeys(keys: readonly string[]): Promise<SurveyIndexRow[]> {
       if (keys.length === 0) return [];
@@ -653,6 +676,44 @@ export function d1BackendStore(db: D1Like): BackendStore {
         .bind(range.fromSlot, range.toSlot)
         .all<ResponseRow>();
       return results;
+    },
+    async cancellationRowsForSurveys(
+      surveyKeys: readonly string[],
+    ): Promise<CancellationRow[]> {
+      if (surveyKeys.length === 0) return [];
+      const batches = await db.batch(
+        cancellationsBySurveysSql(surveyKeys).map(({ sql, params }) =>
+          db.prepare(sql).bind(...params),
+        ),
+      );
+      return batches.flatMap((b) => b.results as CancellationRow[]);
+    },
+    async cancellationRowsInSlotRange(
+      range: SlotRange,
+    ): Promise<CancellationRow[]> {
+      const { results } = await db
+        .prepare(CANCELLATIONS_IN_SLOT_RANGE)
+        .bind(range.fromSlot, range.toSlot)
+        .all<CancellationRow>();
+      return results;
+    },
+    async staleCancelledSurveyKeys(tipEpoch: number): Promise<string[]> {
+      const { results } = await db
+        .prepare(STALE_CANCELLED_SURVEYS)
+        .bind(tipEpoch)
+        .all<{ surveyKey: string }>();
+      return results.map((r) => r.surveyKey);
+    },
+    async markFinalizedCancelled(
+      surveyKeys: readonly string[],
+    ): Promise<number> {
+      if (surveyKeys.length === 0) return 0;
+      const outcomes = await db.batch(
+        markFinalizedCancelledSql(surveyKeys).map(({ sql, params }) =>
+          db.prepare(sql).bind(...params),
+        ),
+      );
+      return outcomes.reduce((n, r) => n + (r.meta?.changes ?? 0), 0);
     },
     async surveyEndEpochs(): Promise<number[]> {
       const { results } = await db
