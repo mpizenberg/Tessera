@@ -195,9 +195,9 @@ export function createApp(
   // `pparams` feeds the (necessary) submit flow. `tx_status` is uncached
   // comfort traffic (post-submit confirmation polling), so it goes through a
   // SEPARATE source with its own token (`config.passthroughKoiosToken`, default
-  // unauthenticated): a flood of `/api/tx_status` can only exhaust that isolated
-  // quota, never the identity refresh/validate/finalize rely on for artifact
-  // *correctness* (review finding 15).
+  // unauthenticated): a flood of `/api/tx_status` can only exhaust that
+  // isolated quota, never the identity refresh/validate/finalize rely on for
+  // artifact *correctness*.
   // Serving-path Koios calls spend the same daily quotas the refresh does, so
   // they are metered too — a 24 h total summed from refresh runs alone would
   // report the operator's identity as quieter than it is. The drain runs after

@@ -345,9 +345,8 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
   // Per role ascending: weights + membership at end_epoch, then hand the
   // membership-filtered responders + total to the SHARED assembler (the emitter
   // uses the same `assembleTallyBody`, so role ordering, per-role artifact
-  // shaping, and the base body can't drift — finding 29). Weight/total sourcing
-  // and the membership filter are inherently data-source-specific, so they stay
-  // here.
+  // shaping, and the base body can't drift). Weight/total sourcing and the
+  // membership filter are inherently data-source-specific, so they stay here.
   const rolesPresent = [...new Set(counted.map((r) => r.response.role))].sort(
     (a, b) => a - b,
   );
