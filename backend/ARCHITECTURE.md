@@ -585,40 +585,32 @@ enforcing one rule:
 
 ## 7. Frontend integration
 
-- New **`IndexerDataSource`** (HTTP) behind the existing `DataSource`. Swapped in
-  via the existing seam in `state.tsx`; `KoiosDataSource` is retained as the
-  direct/power-user/offline path (and the user-token override keeps working
-  against it).
-- Results UI consumes artifacts — **implemented**: `DataSource` grew
-  `artifact(ref)` (`IndexerDataSource` maps the route's 404 to null;
-  `KoiosDataSource` always answers null, so direct mode keeps the raw tally).
-  The survey page fetches it lazily for closed/cancelled surveys and renders a
-  **final weighted results** view — per-role sections, stake-weighted bars,
-  turnout against the embedded totals — with a toggle back to the raw
-  per-credential tally. Every float (bar fractions, means, percentages) is
-  derived presentation-side from the integer aggregates
-  (`frontend/app/src/domain/artifactView.ts`).
-- The existing "no weighting applied / out of scope" disclaimer is replaced (in
-  the weighted view; the raw view keeps it) by an honest **provenance + trust**
-  note: weights are Koios-sourced at `end_epoch`, re-verifiable, not yet
-  trustless — plus the artifact's content hash.
-- **The browser reads the serving tier's proof verdicts (§5.1) instead of
-  re-deriving them.** A complete in-browser audit was considered and rejected:
-  ≈40 Koios requests per survey view (dominated by one GET per DRep), per
-  visitor, with no place to bank them across page loads — and it would be a
-  second implementation of `packages/verifier`, which already _is_ the complete
-  Koios-based audit. Evaluating only the contested subset was rejected in the
-  same breath: an audit deserves more care than the claim it checks, not less.
-- **Standalone verifier** — implemented as the workspace package
-  `packages/verifier` (`cardano-tessera-verifier`):
-  `pnpm --filter cardano-tessera-verifier verify -- --backend <url> --survey
-<txHash>:<index>`. It fetches the bundle + artifact from the backend, refetches
-  every verification input straight from Koios (tx proofs, block indices,
-  weights, membership, totals, governance links), re-runs the pinned ruleset
-  via the same `cardano-tessera-core` code, and compares content hashes —
-  `MATCH`/`MISMATCH` (with a diff), exit 0/1. It never reads the backend's
-  validation tables; a total the upstream can't re-serve is taken from the
-  artifact with an explicit "not independently confirmed" note.
+`IndexerDataSource` (HTTP) sits behind the existing `DataSource` seam;
+`KoiosDataSource` is retained as the direct/power-user/offline path, and the
+user-token override keeps working against it. The survey page fetches an
+artifact lazily for closed and cancelled surveys and renders the weighted
+result, deriving every float presentation-side from the integer aggregates
+(`frontend/app/src/domain/artifactView.ts`). Two decisions are worth recording:
+
+- **The browser reads the serving tier's proof verdicts (§5.1) rather than
+  re-deriving them.** A complete in-browser audit costs ≈40 Koios requests per
+  survey view, dominated by one GET per DRep, per visitor, with nowhere to bank
+  them across page loads — and it would be a second implementation of
+  `packages/verifier`, which already _is_ the complete Koios-based audit.
+  Evaluating only the contested subset was rejected in the same breath: an audit
+  deserves more care than the claim it checks, not less.
+- **The weighted view states provenance instead of disclaiming it.** Where the
+  raw view still says "no weighting applied", the artifact view says weights are
+  Koios-sourced at `end_epoch`, re-verifiable, and not yet trustless — with the
+  content hash beside it.
+
+The **standalone verifier** is the workspace package `packages/verifier`. It
+fetches the bundle and artifact from a backend, refetches every verification
+input straight from Koios, re-runs the pinned ruleset through the same shared
+code, and compares content hashes — `MATCH`/`MISMATCH` with a diff, exit 0/1. It
+never reads the backend's validation tables, and a total the upstream cannot
+re-serve is taken from the artifact with an explicit "not independently
+confirmed" note.
 
 ---
 
