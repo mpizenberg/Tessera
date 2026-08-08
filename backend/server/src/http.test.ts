@@ -263,10 +263,11 @@ describe("GET /api/surveys", () => {
     expect(body["finalizedCancelled"]).toEqual([]);
   });
 
-  // A refresh whose gov-links fetch failed republishes the links it stored last
-  // time rather than an empty list, so the app doesn't lose them for an
-  // interval. What comes back out of the rows has to survive the round trip
-  // whole — links, flags, counts and searchable text alike.
+  // A refresh whose gov-links fetch failed re-projects nothing from a set it
+  // never read: each survey's row carries its own slice through untouched, so
+  // the app never loses the linkage for an interval. What comes back out of
+  // the rows has to survive the round trip whole — links, flags, counts and
+  // searchable text alike.
   it("keeps the links a failed gov-links fetch would have blanked", async () => {
     const store = await seededStore();
     await seed(store, [govLinkA]);

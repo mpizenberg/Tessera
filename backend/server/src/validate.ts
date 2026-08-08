@@ -22,7 +22,6 @@ import {
   refKey,
   responseCredentialProof,
   scriptCredentialHash,
-  type Cip179Records,
   type GovLink,
   type ResponseRecord,
   type SurveyRecord,
@@ -49,11 +48,12 @@ export type ValidateStore = TallyStore &
  * set that has since changed, or a verdict still awaiting an enrichment retry
  * — put their survey back on the candidate list, and its responses are revived
  * from the stored rows. Segment integration runs before this pass, so the
- * stored rows are authoritative: definitions of surveys the input doesn't
- * carry are read from their rows (a survey with no row anywhere has rolled
- * back and must not be validated against). Completed verdicts are then read
- * keyed by exactly the candidate surveys, so validation's reads scale with
- * what this refresh touches rather than with every verdict ever recorded.
+ * stored rows are authoritative for both halves of what a verdict is built
+ * against: the survey's definition and its governance links (a survey with no
+ * row anywhere has rolled back and must not be validated against). Completed
+ * verdicts are then read keyed by exactly the candidate surveys, so
+ * validation's reads scale with what this refresh touches rather than with
+ * every verdict ever recorded.
  *
  * A bindable role's *negative* verdict is never frozen while a link it might
  * depend on is unknown (finding 6). Two flavours of "unknown", both left as a
@@ -73,39 +73,38 @@ export type ValidateStore = TallyStore &
  */
 export async function validateNewResponses(
   store: ValidateStore,
-  records: Cip179Records,
-  govLinks: readonly GovLink[],
+  responses: readonly ResponseRecord[],
   source: Pick<KoiosDataSource, "txBlockIndices" | "txProofs">,
   govLinksReliable = true,
   unresolved: readonly UnresolvedGovAction[] = [],
 ): Promise<void> {
-  // The verdict-state reads come first: the surveys they name (but the input
-  // doesn't carry) need their definitions revived from stored rows before the
-  // link index below is built, or their link cursors would compare against
-  // nothing and re-validate forever.
+  // Every survey this pass could have to judge: the input responses' targets,
+  // plus the surveys whose verdicts need another look. Their definitions and
+  // link slices both come from their stored rows — integration has already
+  // written this refresh's links there, so the row is the current answer and
+  // a survey with no row has rolled back.
   const cursors = await store.validatedLinkCursors();
   const retrySurveys = await store.incompleteValidationSurveys();
-  const defByKey = new Map(
-    records.surveys.map((s) => [refKey(s.ref), s.definition]),
-  );
-  const offInput = [
-    ...new Set([...cursors.map((c) => c.surveyKey), ...retrySurveys]),
-  ].filter((key) => !defByKey.has(key));
-  for (const row of await store.surveyRowsByKeys(offInput)) {
+  const surveyRows = await store.surveyRowsByKeys([
+    ...new Set([
+      ...responses.map((r) => refKey(r.response.surveyRef)),
+      ...cursors.map((c) => c.surveyKey),
+      ...retrySurveys,
+    ]),
+  ]);
+  const defByKey = new Map<string, SurveyRecord["definition"]>();
+  // A survey is governance-linked only by actions whose expiry epoch equals its
+  // end_epoch (the CIP invariant, same rule the app applies) — its row carries
+  // every action naming it, aligned or not. A survey MAY be linked by several
+  // actions (CIP-179 v5), so index a list per key.
+  const linksByKey = new Map<string, GovLink[]>();
+  for (const row of surveyRows) {
     const record = fromJsonSafe(JSON.parse(row.record)) as SurveyRecord;
     defByKey.set(row.surveyKey, record.definition);
-  }
-  // A survey is governance-linked only by actions whose expiry epoch equals its
-  // end_epoch (the CIP invariant, same rule the app applies). A survey MAY be
-  // linked by several actions (CIP-179 v5), so index a list per key.
-  const linksByKey = new Map<string, GovLink[]>();
-  for (const link of govLinks) {
-    const def = defByKey.get(link.surveyKey);
-    if (def && link.endEpoch === def.endEpoch) {
-      const list = linksByKey.get(link.surveyKey);
-      if (list) list.push(link);
-      else linksByKey.set(link.surveyKey, [link]);
-    }
+    const aligned = (JSON.parse(row.govLinks) as GovLink[]).filter(
+      (l) => l.endEpoch === record.definition.endEpoch,
+    );
+    if (aligned.length > 0) linksByKey.set(row.surveyKey, aligned);
   }
   // Canonical cursor for a survey's epoch-aligned resolved link set
   // (order-insensitive): the stored value a completed verdict is pinned to. When
@@ -131,22 +130,22 @@ export async function validateNewResponses(
     else unresolvedByEpoch.set(u.endEpoch, [u.actionId]);
   }
 
-  // A link-set change can't re-evaluate anything while the links themselves
-  // are unknown, so a failed gov-links fetch skips the cursor comparison the
-  // same way it freezes the per-response re-check below.
-  const staleCursors = govLinksReliable
-    ? cursors.filter((c) => c.linkedActionId !== linkSetKey(c.surveyKey))
-    : [];
+  // The rows ARE this refresh's link truth, so a cursor that disagrees with
+  // one is a genuine change to re-evaluate — and a refresh whose gov-links
+  // fetch failed re-projected nothing, so nothing disagrees.
+  const staleCursors = cursors.filter(
+    (c) => c.linkedActionId !== linkSetKey(c.surveyKey),
+  );
   const revivalKeys = [
     ...new Set([...staleCursors.map((c) => c.surveyKey), ...retrySurveys]),
   ];
   const inputKeys = new Set(
-    records.responses.map((r) => validationKey(r.txHash, r.responseIndex)),
+    responses.map((r) => validationKey(r.txHash, r.responseIndex)),
   );
   const revived = (await store.responseRowsForSurveys(revivalKeys))
     .map((row) => fromJsonSafe(JSON.parse(row.record)) as ResponseRecord)
     .filter((r) => !inputKeys.has(validationKey(r.txHash, r.responseIndex)));
-  const pool = [...records.responses, ...revived];
+  const pool = [...responses, ...revived];
 
   const completed = await store.completedValidationsForSurveys(
     [...new Set(pool.map((r) => refKey(r.response.surveyRef)))].filter((key) =>
@@ -165,7 +164,6 @@ export async function validateNewResponses(
     if (!defByKey.has(refKey(r.response.surveyRef))) return false;
     const key = validationKey(r.txHash, r.responseIndex);
     if (!completed.has(key)) return true; // never validated / enrichment pending
-    if (!govLinksReliable) return false; // can't re-evaluate links this refresh
     if (!BINDABLE_ROLES.has(r.response.role)) return false; // link-independent
     // Re-validate when the survey's current link set differs from the one this
     // verdict was pinned to (a link appeared, changed, or was removed).

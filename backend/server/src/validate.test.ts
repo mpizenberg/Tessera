@@ -10,6 +10,7 @@ import {
   type ResponseRecord,
   type SurveyRecord,
   type TxProof,
+  type UnresolvedGovAction,
 } from "cip-179/domain";
 
 import { materializeSnapshot } from "./materialize";
@@ -125,13 +126,42 @@ const TIP: ChainTip = {
 };
 
 /** Publish `recs` as stored rows — the corpus a windowed input no longer carries. */
-async function publish(store: MemBackendStore, recs: Cip179Records) {
-  const snapshot = materializeSnapshot(recs, TIP, [], new Set());
+async function publish(
+  store: MemBackendStore,
+  recs: Cip179Records,
+  links: readonly GovLink[] = [],
+) {
+  const snapshot = materializeSnapshot(recs, TIP, links, new Set());
   await store.reconcileSnapshot(
     snapshot.surveys,
     snapshot.responses,
     snapshot.cancellations,
     { tip: "{}", incomplete: false, fetchedAt: 1, listCounts: null },
+  );
+}
+
+/**
+ * One validation pass. Segment integration runs first in every refresh, so the
+ * corpus — each survey's definition AND the links this refresh resolved for it
+ * — is in the rows before validation reads a thing; the input carries only
+ * what the segment listed, which by default is the corpus's own responses.
+ */
+async function validatePass(
+  store: MemBackendStore,
+  stored: Cip179Records,
+  links: readonly GovLink[],
+  source: Parameters<typeof validateNewResponses>[2],
+  govLinksReliable = true,
+  unresolved: readonly UnresolvedGovAction[] = [],
+  input: readonly ResponseRecord[] = stored.responses,
+) {
+  await publish(store, stored, links);
+  await validateNewResponses(
+    store,
+    input,
+    source,
+    govLinksReliable,
+    unresolved,
   );
 }
 
@@ -150,7 +180,7 @@ describe("validateNewResponses", () => {
       { t1: signedProof(1), t2: signedProof(9) }, // t2 signed by the WRONG key
       { t1: 4, t2: 7 },
     );
-    await validateNewResponses(
+    await validatePass(
       store,
       records(response("t1", 1), response("t2", 2)),
       [],
@@ -175,10 +205,10 @@ describe("validateNewResponses", () => {
     const source = fakeSource({ t1: signedProof(1) }, { t1: 4 });
     const recs = records(response("t1", 1));
 
-    await validateNewResponses(store, recs, [], source);
+    await validatePass(store, recs, [], source);
     expect(source.txProofs).toHaveBeenCalledTimes(1);
 
-    await validateNewResponses(store, recs, [], source);
+    await validatePass(store, recs, [], source);
     expect(source.txProofs).toHaveBeenCalledTimes(1); // untouched
     expect(source.txBlockIndices).toHaveBeenCalledTimes(1);
   });
@@ -188,7 +218,7 @@ describe("validateNewResponses", () => {
     const failing = fakeSource({ t1: null }, {}); // cbor + tx_info both failed
     const recs = records(response("t1", 1));
 
-    await validateNewResponses(store, recs, [], failing);
+    await validatePass(store, recs, [], failing);
     expect(store.rows.get("t1:0")).toMatchObject({
       proofOk: null,
       blockIndex: null,
@@ -196,7 +226,7 @@ describe("validateNewResponses", () => {
     });
 
     const healthy = fakeSource({ t1: signedProof(1) }, { t1: 4 });
-    await validateNewResponses(store, recs, [], healthy);
+    await validatePass(store, recs, [], healthy);
     expect(healthy.txProofs).toHaveBeenCalledTimes(1); // re-fetched this tx
     expect(store.rows.get("t1:0")).toMatchObject({
       proofOk: true,
@@ -214,12 +244,7 @@ describe("validateNewResponses", () => {
         surveyRef: { txId: hexToBytes("bb".repeat(32)), index: 0 },
       },
     };
-    await validateNewResponses(
-      store,
-      { ...records(), responses: [stray] },
-      [],
-      source,
-    );
+    await validatePass(store, { ...records(), responses: [stray] }, [], source);
     expect(store.rows.size).toBe(0);
     // And it costs no Koios subrequests — an unknown-survey response must not
     // enter the fetch set, or it taxes every refresh forever (finding 4).
@@ -230,6 +255,9 @@ describe("validateNewResponses", () => {
   it("applies mechanism B for epoch-aligned governance links", async () => {
     const ACTION = "gov_action1linked";
     const store = memTallyStore();
+    // The link reaches this pass only through the survey's stored row: below
+    // the settlement floor the refresh never asks about the epoch again, so
+    // the row is the one place a verdict can read it from.
     // The tx votes the linked action as a DRep with the response credential —
     // no required_signers at all, so only mechanism B can prove it.
     const source = fakeSource(
@@ -250,7 +278,7 @@ describe("validateNewResponses", () => {
       endEpoch: DEF.endEpoch, // aligned → the survey counts as linked
       title: null,
     };
-    await validateNewResponses(
+    await validatePass(
       store,
       records(response("t1", 1, Role.DRep)),
       [link],
@@ -260,7 +288,7 @@ describe("validateNewResponses", () => {
 
     // Same evidence but a mis-aligned link: not linked → mechanism A → false.
     const store2 = memTallyStore();
-    await validateNewResponses(
+    await validatePass(
       store2,
       records(response("t1", 1, Role.DRep)),
       [{ ...link, endEpoch: DEF.endEpoch + 1 }],
@@ -282,7 +310,7 @@ describe("validateNewResponses", () => {
       },
       { t1: 1, t2: 1, t3: 1 },
     );
-    await validateNewResponses(
+    await validatePass(
       store,
       records(
         response("t1", 1, Role.DRep),
@@ -317,7 +345,7 @@ describe("validateNewResponses", () => {
     const recs = records(response("t1", 1, Role.DRep));
 
     // First refresh: links resolved but this survey's link not yet indexed.
-    await validateNewResponses(store, recs, [], source, true);
+    await validatePass(store, recs, [], source, true);
     expect(store.rows.get("t1:0")!.proofOk).toBe(false); // mechanism A fails
     expect(store.rows.get("t1:0")!.linkedActionId).toBe(null);
     expect(source.txProofs).toHaveBeenCalledTimes(1);
@@ -329,13 +357,13 @@ describe("validateNewResponses", () => {
       endEpoch: DEF.endEpoch,
       title: null,
     };
-    await validateNewResponses(store, recs, [link], source, true);
+    await validatePass(store, recs, [link], source, true);
     expect(source.txProofs).toHaveBeenCalledTimes(2); // re-fetched on link change
     expect(store.rows.get("t1:0")!.proofOk).toBe(true); // mechanism B now proves it
     expect(store.rows.get("t1:0")!.linkedActionId).toBe(ACTION);
 
     // Steady state: link unchanged → no further re-fetch.
-    await validateNewResponses(store, recs, [link], source, true);
+    await validatePass(store, recs, [link], source, true);
     expect(source.txProofs).toHaveBeenCalledTimes(2);
   });
 
@@ -360,7 +388,7 @@ describe("validateNewResponses", () => {
       },
       { t1: 3, t2: 4 },
     );
-    await validateNewResponses(
+    await validatePass(
       store,
       records(response("t1", 1, Role.DRep), response("t2", 2, Role.DRep)),
       [], // no RESOLVED links this refresh
@@ -375,7 +403,7 @@ describe("validateNewResponses", () => {
     // unresolved set for good and the held verdict finally freezes. Without
     // that, a permanently dead anchor postpones this survey's artifact forever
     // — finalization postpones on any null verdict.
-    await validateNewResponses(
+    await validatePass(
       store,
       records(response("t1", 1, Role.DRep), response("t2", 2, Role.DRep)),
       [],
@@ -404,7 +432,7 @@ describe("validateNewResponses", () => {
     // The unresolved action expires at a different epoch than the survey ends,
     // so epoch-alignment rules it out — it can't link this survey regardless of
     // its content, and the negative is final rather than deferred.
-    await validateNewResponses(
+    await validatePass(
       store,
       records(response("t1", 1, Role.DRep)),
       [],
@@ -431,9 +459,8 @@ describe("validateNewResponses", () => {
       { t1: 3 },
     );
     const full = records(response("t1", 1, Role.DRep));
-    await validateNewResponses(store, full, [], source, true);
+    await validatePass(store, full, [], source, true);
     expect(store.rows.get("t1:0")!.proofOk).toBe(false);
-    await publish(store, full);
 
     // Next refresh, windowed: the input no longer carries the response, but
     // the link appearing re-validates it from its stored row.
@@ -443,7 +470,7 @@ describe("validateNewResponses", () => {
       endEpoch: DEF.endEpoch,
       title: null,
     };
-    await validateNewResponses(store, records(), [link], source, true);
+    await validatePass(store, full, [link], source, true, [], []);
     expect(source.txProofs).toHaveBeenCalledTimes(2);
     expect(store.rows.get("t1:0")!.proofOk).toBe(true);
     expect(store.rows.get("t1:0")!.linkedActionId).toBe(ACTION);
@@ -452,12 +479,11 @@ describe("validateNewResponses", () => {
   it("retries an enrichment-pending verdict whose response left the input", async () => {
     const store = memTallyStore();
     const full = records(response("t1", 1));
-    await validateNewResponses(store, full, [], fakeSource({ t1: null }, {}));
+    await validatePass(store, full, [], fakeSource({ t1: null }, {}));
     expect(store.rows.get("t1:0")!.proofOk).toBeNull();
-    await publish(store, full);
 
     const healthy = fakeSource({ t1: signedProof(1) }, { t1: 4 });
-    await validateNewResponses(store, records(), [], healthy);
+    await validatePass(store, full, [], healthy, true, [], []);
     expect(healthy.txProofs).toHaveBeenCalledTimes(1);
     expect(store.rows.get("t1:0")).toMatchObject({
       proofOk: true,
@@ -469,12 +495,7 @@ describe("validateNewResponses", () => {
     const store = memTallyStore();
     const source = fakeSource({ t1: signedProof(1) }, { t1: 0 });
     // Role 1 (SPO) is not in DEF.eligibleRoles.
-    await validateNewResponses(
-      store,
-      records(response("t1", 1, Role.SPO)),
-      [],
-      source,
-    );
+    await validatePass(store, records(response("t1", 1, Role.SPO)), [], source);
     expect(store.rows.get("t1:0")).toMatchObject({
       wellFormed: false,
       proofOk: true, // proof is orthogonal — the credential did sign the tx
@@ -484,7 +505,7 @@ describe("validateNewResponses", () => {
   it("validates each response of a multi-response tx separately", async () => {
     const store = memTallyStore();
     const source = fakeSource({ t1: signedProof(1) }, { t1: 2 });
-    await validateNewResponses(
+    await validatePass(
       store,
       records(
         response("t1", 1, Role.Stakeholder, 0),
@@ -534,7 +555,7 @@ describe("validateNewResponses", () => {
         answers: { type: "public", answers: [answer] },
       },
     };
-    await validateNewResponses(store, records(scriptResp), [], source);
+    await validatePass(store, records(scriptResp), [], source);
     // The script hash is passed so the source can resolve it by hash when the
     // carrying tx doesn't attach it; a key-credentialed response passes nothing.
     expect(source.txProofs).toHaveBeenCalledWith(

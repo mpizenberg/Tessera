@@ -131,6 +131,11 @@ const ROLE_ENDPOINTS: Record<number, string> = {
  * refresh's one full `tally_artifact` key read, with this pass's own emissions
  * folded in, so callers (proof-cache prune, materialize) reuse it instead of
  * re-scanning the table.
+ *
+ * `settlementFloor` is the governance pass's frontier: a candidate whose
+ * expiration is at or above it still has links in motion and waits, while
+ * below it the candidate row's own slice is the settled set an artifact may
+ * commit to.
  */
 export async function finalizeClosedSurveys(
   config: ServerConfig,
@@ -140,8 +145,8 @@ export async function finalizeClosedSurveys(
   incomplete: boolean,
   tip: ChainTip,
   coveredThroughUnix: number | null,
+  settlementFloor: number,
   reveal: SealedRevealFn = tlockSealedReveal,
-  govLinks: readonly GovLink[] | null = [],
 ): Promise<ArtifactKeys> {
   const artifactKeys = await store.finalizedArtifactKeys();
   // An incomplete scan (a dropped metadata batch or the page cap) may be
@@ -149,15 +154,6 @@ export async function finalizeClosedSurveys(
   // which — so no artifact this refresh is safe to hash. Postpone all of them.
   if (incomplete) {
     console.warn("finalize: snapshot incomplete — skipping finalization");
-    return artifactKeys;
-  }
-  // Same reasoning, for the link set: `null` is "this refresh couldn't read the
-  // links", and an artifact's provenance is an immutable record of what its
-  // verdicts were built on. Committing "no links" from an unread set would
-  // misreport a linked survey forever, so postpone — one interval, and the pass
-  // is idempotent.
-  if (govLinks === null) {
-    console.warn("finalize: governance links unknown — skipping finalization");
     return artifactKeys;
   }
   // Nothing integrated yet (fresh database, first run failed): nothing is
@@ -184,14 +180,37 @@ export async function finalizeClosedSurveys(
       fromJsonSafe(JSON.parse(r.cancellations)) as CancellationRecord[],
     ]),
   );
+  // An artifact's provenance is an immutable record of what its verdicts were
+  // built on, so it may only be stamped with a *settled* link set: below the
+  // settlement floor an epoch is decided for good and the row's slice is that
+  // decision, while at or above it an anchor still resolving could add a link
+  // tomorrow. Postponing is cheap — the pass is idempotent, and an epoch
+  // settles within one of them of the survey's close.
+  const linksByKey = new Map(
+    candidateRows.map((r) => [
+      r.surveyKey,
+      JSON.parse(r.govLinks) as GovLink[],
+    ]),
+  );
+  let unsettledLinks = 0;
   const candidates = candidateRows
     .map((r) => fromJsonSafe(JSON.parse(r.record)) as SurveyRecord)
-    .filter(
-      (s) =>
+    .filter((s) => {
+      if (s.definition.endEpoch + 1 >= settlementFloor) {
+        unsettledLinks++;
+        return false;
+      }
+      return (
         coveredThroughUnix >=
         voteDeadlineUnix(s.definition.endEpoch, tip, spe) +
-          FINALIZE_MARGIN_SECONDS,
+          FINALIZE_MARGIN_SECONDS
+      );
+    });
+  if (unsettledLinks > 0) {
+    console.log(
+      `finalize: ${unsettledLinks} survey(s) postponed — governance links not settled`,
     );
+  }
   if (candidates.length === 0) return artifactKeys;
 
   // Spec-invalid surveys are untalliable (findings 10, 11, 45, 12): a non-v5 or
@@ -372,10 +391,8 @@ export async function finalizeClosedSurveys(
         // The epoch-aligned link set the mechanism-B verdicts were built on,
         // committed to the artifact's provenance so a re-verifier can diff its
         // own (finding 6). Same filter+sort as validate's `linkSetKey`.
-        const linkedActionIds = govLinks
-          .filter(
-            (l) => l.surveyKey === key && l.endEpoch === s.definition.endEpoch,
-          )
+        const linkedActionIds = (linksByKey.get(key) ?? [])
+          .filter((l) => l.endEpoch === s.definition.endEpoch)
           .map((l) => l.actionId)
           .sort();
 

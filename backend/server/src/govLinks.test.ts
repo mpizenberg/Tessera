@@ -79,8 +79,9 @@ const run = (
   tipEpoch: number,
   fetchDoc: ReturnType<typeof docs>,
   nowSec = 1000,
+  floor = 0,
 ) =>
-  refreshGovLinks(store, source, endEpochs, tipEpoch, nowSec, {
+  refreshGovLinks(store, source, endEpochs, tipEpoch, nowSec, floor, {
     fetchDoc,
     rotate: 0,
   });
@@ -210,6 +211,59 @@ describe("refreshGovLinks — settlement", () => {
   });
 });
 
+describe("refreshGovLinks — settlement floor", () => {
+  // The growth bound made explicit: what the pass hands back is where the next
+  // one starts asking, and a settled epoch is behind it for good.
+  it("stops at the lowest epoch it left unsettled", async () => {
+    const store = memBackendStore();
+    const source = sourceOf([proposal(1, 500), proposal(2, 600)]);
+    const fetchDoc = docs({ "1": linkDoc(0), "2": linkDoc(1) });
+
+    // Tip 505: the survey ending at 500 has its epoch frozen and settled; the
+    // one ending at 600 cannot settle, and pins the frontier at its expiration.
+    const pass = await run(store, source, [500, 600], 505, fetchDoc);
+    expect(store.govEpochs.has(501)).toBe(true);
+    expect(pass.floor).toBe(601);
+  });
+
+  it("clears the whole query set when every epoch settled", async () => {
+    const store = memBackendStore();
+    const source = sourceOf([]);
+    const pass = await run(store, source, [500, 501, 502], 510, docs({}));
+    // A multi-epoch gap between refreshes settles every epoch in it, so none
+    // is left below the frontier unasked.
+    expect([...store.govEpochs.keys()].sort()).toEqual([501, 502, 503]);
+    expect(pass.floor).toBe(504);
+  });
+
+  it("waits at an epoch whose anchors are still worth asking about", async () => {
+    const store = memBackendStore();
+    const source = sourceOf([proposal(1, 510), proposal(2, 510)]);
+    const fetchDoc = docs({ "1": linkDoc(0) }); // 2 never resolves
+
+    const waiting = await run(store, source, [510], 511, fetchDoc);
+    expect(waiting.floor).toBe(511);
+    const settled = await run(
+      store,
+      source,
+      [510],
+      511 + SETTLEMENT_PATIENCE_EPOCHS,
+      fetchDoc,
+    );
+    expect(settled.floor).toBe(512);
+  });
+
+  it("never moves backwards over epochs a caller no longer asks about", async () => {
+    const store = memBackendStore();
+    const source = sourceOf([]);
+    // The caller's query set is one old, already-settled epoch — everything
+    // between it and the banked floor is settled too, by induction.
+    await run(store, source, [400], 510, docs({}));
+    const pass = await run(store, source, [400], 510, docs({}), 1000, 601);
+    expect(pass.floor).toBe(601);
+  });
+});
+
 describe("refreshGovLinks — bank pruning", () => {
   it("drops a settled epoch's anchors but keeps ones another epoch still needs", async () => {
     const store = memBackendStore();
@@ -253,9 +307,11 @@ describe("refreshGovLinks — rebuildable cache", () => {
   it("asks nothing at all when there are no surveys", async () => {
     const store = memBackendStore();
     const source = sourceOf([proposal(1, 510)]);
-    expect(await run(store, source, [], 511, docs({}))).toEqual({
+    expect(await run(store, source, [], 511, docs({}), 1000, 7)).toEqual({
       links: [],
       unresolved: [],
+      // Nothing asked, nothing decided: the frontier stays put.
+      floor: 7,
     });
     expect(source.asked).toEqual([]);
   });

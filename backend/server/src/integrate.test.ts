@@ -191,26 +191,69 @@ const inSegment =
   (r: { readonly slot: number }): boolean =>
     r.slot >= range.fromSlot && r.slot <= range.toSlot;
 
+/**
+ * The governance pass's frontier, as the refresh computes it: an expiration
+ * settles as soon as the tip reaches it, so the floor is the lowest one still
+ * ahead of the tip, and the query set is the surveys from there up plus
+ * whatever the segment carried. Below it the pass asks nothing and a row's own
+ * slice is the only link source — which is what these tests put under the
+ * oracle, since the rebuild is handed every link either way.
+ */
+function linkHorizon(
+  chain: Chain,
+  tip: ChainTip,
+  segment: readonly SurveyRecord[],
+): { floor: number; scope: Set<number> } {
+  const expirations = chain.surveys.map((s) => s.definition.endEpoch + 1);
+  const unsettled = expirations.filter((e) => e > tip.epoch);
+  const floor =
+    unsettled.length > 0
+      ? Math.min(...unsettled)
+      : expirations.length > 0
+        ? Math.max(...expirations) + 1
+        : 0;
+  const scope = new Set([
+    ...chain.surveys
+      .filter((s) => s.definition.endEpoch >= floor - 1)
+      .map((s) => s.definition.endEpoch),
+    ...segment.map((s) => s.definition.endEpoch),
+  ]);
+  return { floor, scope };
+}
+
 async function runRefresh(
   store: MemBackendStore,
   chain: Chain,
   tip: ChainTip,
 ): Promise<void> {
   const range = { fromSlot: Math.max(0, tip.slot - MARGIN), toSlot: tip.slot };
+  const surveys = chain.surveys.filter(inSegment(range));
+  const { floor, scope } = linkHorizon(chain, tip, surveys);
   await integrateSegment(store, emptySource, {
     records: {
-      surveys: chain.surveys.filter(inSegment(range)),
+      surveys,
       responses: chain.responses.filter(inSegment(range)),
       cancellations: chain.cancellations.filter(inSegment(range)),
     },
     range,
     tip,
-    govLinks: chain.govLinks,
-    govLinksReliable: true,
+    // The pass only ever returns links from the epochs it asked about.
+    govLinks: chain.govLinks.filter((l) => scope.has(l.endEpoch)),
+    govLinkScope: scope,
+    govLinkFloor: floor,
     finalizedCancelled: chain.finalizedCancelled,
     meta: metaAt(tip),
   });
   await store.markFinalizedCancelled([...chain.finalizedCancelled]);
+}
+
+/** `linkHorizon` shaped as the two `SegmentArgs` fields it feeds. */
+function linkHorizonArgs(
+  chain: Chain,
+  tip: ChainTip,
+): { govLinkScope: Set<number>; govLinkFloor: number } {
+  const { floor, scope } = linkHorizon(chain, tip, []);
+  return { govLinkScope: scope, govLinkFloor: floor };
 }
 
 async function expectOracleMatch(
@@ -333,19 +376,22 @@ describe("segment integration vs the full-rebuild oracle", () => {
               );
             }
           } else if (roll < 0.9) {
-            // Link set change: add an (aligned or misaligned) link, or drop one.
-            if (chain.govLinks.length > 0 && rand() < 0.4) {
-              chain.govLinks = chain.govLinks.filter(
-                (l) => l !== pick(chain.govLinks),
-              );
-            } else {
-              const target = pick(chain.surveys);
+            // Link set change: add a link, or drop one. Only at epochs the tip
+            // hasn't reached — a settled epoch's links are frozen by
+            // construction, and re-deciding one is not an event the chain can
+            // produce.
+            const open = chain.surveys.filter(
+              (s) => s.definition.endEpoch + 1 > tip.epoch,
+            );
+            const droppable = chain.govLinks.filter((l) =>
+              open.some((s) => refKey(s.ref) === l.surveyKey),
+            );
+            if (droppable.length > 0 && rand() < 0.4) {
+              const victim = pick(droppable);
+              chain.govLinks = chain.govLinks.filter((l) => l !== victim);
+            } else if (open.length > 0) {
               chain.govLinks.push(
-                govLinkTo(
-                  target,
-                  `gov_action1x${actionCounter++}`,
-                  target.definition.endEpoch + (rand() < 0.3 ? 1 : 0),
-                ),
+                govLinkTo(pick(open), `gov_action1x${actionCounter++}`),
               );
             }
           } else {
@@ -431,11 +477,37 @@ describe("segment integration mechanics", () => {
       range,
       tip: tipAt(640),
       govLinks: chain.govLinks,
-      govLinksReliable: true,
+      ...linkHorizonArgs(chain, tipAt(640)),
       finalizedCancelled: chain.finalizedCancelled,
       meta: metaAt(tipAt(640)),
     });
     expect(changes).toBe(0);
+  });
+
+  it("keeps a settled survey's links when the pass no longer asks about its epoch", async () => {
+    const store = memBackendStore();
+    const chain: Chain = {
+      surveys: [surveyAt(1, 100, 1, 3)],
+      responses: [],
+      cancellations: [],
+      govLinks: [],
+      finalizedCancelled: new Set(),
+    };
+    chain.govLinks.push(govLinkTo(chain.surveys[0]!, "gov_action1settled"));
+    // While the survey is open its epoch is in the query set, so the link
+    // lands in its row.
+    await runRefresh(store, chain, tipAt(150));
+    expect((await store.surveyRowsEndingAtOrAfter(0))[0]!.govLinked).toBe(true);
+
+    // Epochs later the frontier has moved past it: nothing asks about that
+    // epoch again, and a late response re-projects the survey from scratch.
+    // The row's own slice is the only copy left, and it must survive.
+    chain.responses.push(responseAt(2, 990, chain.surveys[0]!, 10));
+    await runRefresh(store, chain, tipAt(1000));
+    const row = (await store.surveyRowsEndingAtOrAfter(0))[0]!;
+    expect(row.govLinked).toBe(true);
+    expect(row.govLinks).toContain("gov_action1settled");
+    await expectOracleMatch(store, chain, tipAt(1000));
   });
 
   it("fetches the owner-proof of a cancellation whose open target is outside the segment", async () => {
@@ -458,7 +530,7 @@ describe("segment integration mechanics", () => {
       range,
       tip: tipAt(600),
       govLinks: [],
-      govLinksReliable: true,
+      ...linkHorizonArgs(chain, tipAt(600)),
       finalizedCancelled: new Set(),
       meta: metaAt(tipAt(600)),
     });
@@ -511,7 +583,7 @@ describe("segment integration mechanics", () => {
       range: null,
       tip: tipAt(210),
       govLinks: [],
-      govLinksReliable: true,
+      ...linkHorizonArgs(chain, tipAt(210)),
       finalizedCancelled: new Set(),
       meta: { ...metaAt(tipAt(210)), incomplete: true },
     });

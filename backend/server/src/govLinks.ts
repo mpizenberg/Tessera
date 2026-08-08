@@ -12,8 +12,10 @@
  *    and its link set can be decided once and for all (`gov_epoch`).
  *
  * Settling epochs is what keeps this bounded: a settled epoch leaves the Koios
- * query filter and its anchors leave the bank, so the whole pass costs O(active
- * surveys) rather than growing with every survey ever run.
+ * query filter, its anchors leave the bank, and the banked settlement floor
+ * rises past it so no later pass reads it out of the database either — its
+ * links live on in the survey rows they were projected into. The whole pass
+ * costs O(active surveys) rather than growing with every survey ever run.
  *
  * Settlement waits for every anchor at the epoch to resolve, but not forever:
  * most anchors in the wild are permanently dead, and a fetch failure is not
@@ -52,10 +54,25 @@ export const SETTLEMENT_PATIENCE_EPOCHS = 1;
  */
 export const ANCHOR_ATTEMPTS_PER_REFRESH = 6;
 
+/** What one pass resolved, and where its settlement frontier now stands. */
+export interface GovLinkPass extends GovLinkScan {
+  /**
+   * The floor to bank: the lowest expiration this pass left unsettled, so the
+   * next one starts its query set there. Banked by the caller and only once
+   * the rows this pass fed are reconciled — a floor that ran ahead of the rows
+   * would freeze a survey's links at whatever its row happened to hold.
+   */
+  readonly floor: number;
+}
+
 /**
  * The refresh's governance links: every link at a settled epoch, plus what this
  * pass could resolve at the unsettled ones — and the actions still unreadable
  * there, which are *unknown*, not unlinked (finding 6).
+ *
+ * `endEpochs` is the caller's query set, and this pass's links are authoritative
+ * for exactly those epochs; below the floor an epoch is decided for good and
+ * each survey's own stored link slice is the copy every consumer reads.
  *
  * Unresolved is local and monotone now: an action leaves that set when its
  * anchor resolves or its epoch settles, and never re-enters. A link this backend
@@ -67,21 +84,38 @@ export async function refreshGovLinks(
   endEpochs: readonly number[],
   tipEpoch: number,
   nowSec: number,
+  floor: number,
   opts: ResolveAnchorsOptions = {},
-): Promise<GovLinkScan> {
+): Promise<GovLinkPass> {
   const expirations = [...new Set(endEpochs)]
     .map((e) => e + 1)
     .sort((a, b) => a - b);
-  if (expirations.length === 0) return { links: [], unresolved: [] };
+  if (expirations.length === 0) return { links: [], unresolved: [], floor };
 
   const settled = await store.settledGovEpochs(expirations);
   const settledLinks = expirations.flatMap(
     (e) => settled.get(e)?.links ?? ([] as readonly GovLink[]),
   );
   const unsettled = expirations.filter((e) => !settled.has(e));
+  // The frontier after this pass. Nothing unsettled left in the query set puts
+  // it past the whole set — but never backwards, since everything below the
+  // old floor is settled too; a query set that still holds an unsettled epoch
+  // (a future one, or an old survey only just discovered) pins it there, which
+  // may well be *below* where it stood.
+  const nextFloor = (settledNow: ReadonlySet<number>): number => {
+    const open = unsettled.filter((e) => !settledNow.has(e));
+    return open.length > 0
+      ? open[0]
+      : Math.max(floor, expirations[expirations.length - 1] + 1);
+  };
   // Every epoch already settled: the snapshot's links are all stored, and the
   // proposal endpoint is not touched at all.
-  if (unsettled.length === 0) return { links: settledLinks, unresolved: [] };
+  if (unsettled.length === 0)
+    return {
+      links: settledLinks,
+      unresolved: [],
+      floor: nextFloor(new Set()),
+    };
 
   const proposals = await source.fetchGovProposals(unsettled.map((e) => e - 1));
   const banked = await store.cachedGovAnchors([
@@ -111,6 +145,7 @@ export async function refreshGovLinks(
     // An action at an epoch that just settled is no longer unknown: the epoch
     // decided, and every verdict waiting on it can now be frozen.
     unresolved: scan.unresolved.filter((u) => !settledNow.has(u.endEpoch + 1)),
+    floor: nextFloor(settledNow),
   };
 }
 

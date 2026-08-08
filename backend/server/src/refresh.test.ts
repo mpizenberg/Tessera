@@ -1,68 +1,21 @@
 /**
  * The refresh's pure decision points: how a run resumes the segment walk from
- * the banked state, which slots its sweep may delete in, and what it publishes
- * as its governance links when the read failed.
+ * the banked state, and which slots its sweep may delete in.
  */
 
 import { describe, expect, it } from "vitest";
 
-import type { ChainTip, GovLink } from "cip-179/domain";
+import type { ChainTip } from "cip-179/domain";
 import { toJsonSafe } from "cip-179/tally";
 import type { SegmentScan } from "cardano-tessera-koios";
 
 import {
   coveredRange,
-  displayGovLinks,
   planSegment,
   SCAN_GENERATION,
   SETTLEMENT_MARGIN_SLOTS,
 } from "./refresh";
 import { snapshotTip, type ScanState } from "./store";
-
-const link = (actionId: string, surveyKey = "aa:0"): GovLink => ({
-  surveyKey,
-  actionId,
-  endEpoch: 510,
-  title: `title of ${actionId}`,
-});
-
-const storeWith = (stored: readonly GovLink[]) => ({
-  surveyGovLinks: async () => {
-    const byKey = new Map<string, GovLink[]>();
-    for (const l of stored) {
-      const list = byKey.get(l.surveyKey);
-      if (list) list.push(l);
-      else byKey.set(l.surveyKey, [l]);
-    }
-    return byKey;
-  },
-});
-
-const failingStore = {
-  surveyGovLinks: async (): Promise<Map<string, GovLink[]>> => {
-    throw new Error("store unreachable");
-  },
-};
-
-describe("displayGovLinks", () => {
-  it("publishes what the refresh resolved", async () => {
-    const links = [link("gov_action1a")];
-    // Including when an anchor at an unsettled epoch is still unread: that is
-    // this refresh's honest answer, and the stored snapshot knows no more.
-    expect(
-      await displayGovLinks(storeWith([link("gov_action1b")]), links, true),
-    ).toEqual(links);
-  });
-
-  it("falls back to every stored link when the read failed", async () => {
-    const stored = [link("gov_action1a"), link("gov_action1b")];
-    expect(await displayGovLinks(storeWith(stored), [], false)).toEqual(stored);
-  });
-
-  it("publishes the failed read's empty set when the fallback also fails", async () => {
-    expect(await displayGovLinks(failingStore, [], false)).toEqual([]);
-  });
-});
 
 const state = (over: Partial<ScanState>): ScanState => ({
   cursor: { slot: 900_000, txHash: "cc" },

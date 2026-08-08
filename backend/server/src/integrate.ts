@@ -12,6 +12,13 @@
  * when its verified-while-open cancellation expired at close. Every per-survey
  * aggregate is recomputed over stored rows merged with the segment's records,
  * never maintained by deltas.
+ *
+ * Governance links are the one input that is not always re-derived: this
+ * refresh's pass covers only the epochs whose links can still move, and below
+ * that horizon a survey's own stored slice is the frozen answer, carried
+ * through every re-projection. That is what keeps the pass — and this
+ * module's link read — bounded by the live surveys rather than by every
+ * survey ever run.
  */
 
 import {
@@ -54,10 +61,17 @@ export interface SegmentArgs {
    */
   readonly range: SlotRange | null;
   readonly tip: ChainTip;
-  /** The full current link set (settled and unsettled epochs alike). */
+  /** The links this refresh's governance pass resolved. */
   readonly govLinks: readonly GovLink[];
-  /** False skips link-change detection: no link is comparable when all are unknown. */
-  readonly govLinksReliable: boolean;
+  /**
+   * The end epochs that pass asked about — where `govLinks` is authoritative.
+   * A touched survey outside it carries its stored slice through untouched:
+   * its epoch is settled, so the row already holds the final answer. Empty
+   * when the pass failed, which makes every row its own source.
+   */
+  readonly govLinkScope: ReadonlySet<number>;
+  /** The settlement floor the pass ran against — the link diff's horizon. */
+  readonly govLinkFloor: number;
   /** Surveys a tally artifact finalized as cancelled (the overlay). */
   readonly finalizedCancelled: ReadonlySet<string>;
   readonly meta: SnapshotMeta;
@@ -86,7 +100,15 @@ export async function integrateSegment(
   source: Pick<KoiosDataSource, "txProofs">,
   args: SegmentArgs,
 ): Promise<SegmentIntegration> {
-  const { records, range, tip, govLinks, finalizedCancelled, meta } = args;
+  const {
+    records,
+    range,
+    tip,
+    govLinks,
+    govLinkScope,
+    finalizedCancelled,
+    meta,
+  } = args;
   const inRange = (slot: number): boolean =>
     range !== null && slot >= range.fromSlot && slot <= range.toSlot;
 
@@ -108,8 +130,12 @@ export async function integrateSegment(
     else currentLinks.set(l.surveyKey, [l]);
   }
   const linkTouched: string[] = [];
-  if (args.govLinksReliable) {
-    const stored = await store.surveyGovLinks(0);
+  if (govLinkScope.size > 0) {
+    // Only an unsettled epoch's links can move, so the stored side of the
+    // diff stops at the settlement horizon.
+    const stored = await store.surveyGovLinks(
+      Math.max(0, args.govLinkFloor - 1),
+    );
     for (const key of new Set([...stored.keys(), ...currentLinks.keys()])) {
       if (
         linkSliceText(stored.get(key)) !== linkSliceText(currentLinks.get(key))
@@ -134,12 +160,10 @@ export async function integrateSegment(
   // not re-list has rolled back — projecting it would resurrect the row the
   // sweep is about to delete.
   const segmentKeys = new Set(records.surveys.map((s) => refKey(s.ref)));
-  const storedRecords = (
-    await store.surveyRowsByKeys(
-      [...touched].filter((k) => !segmentKeys.has(k)),
-    )
-  )
-    .filter((row) => !inRange(row.slot))
+  const storedRows = await store.surveyRowsByKeys([...touched]);
+  const rowByKey = new Map(storedRows.map((row) => [row.surveyKey, row]));
+  const storedRecords = storedRows
+    .filter((row) => !segmentKeys.has(row.surveyKey) && !inRange(row.slot))
     .map((row) => fromJsonSafe(JSON.parse(row.record)) as SurveyRecord);
   const touchedRecords = [...records.surveys, ...storedRecords];
   const defByKey = new Map(
@@ -206,12 +230,24 @@ export async function integrateSegment(
     )
     .map((row) => fromJsonSafe(JSON.parse(row.record)) as ResponseRecord);
 
+  // Links per touched survey: this refresh's, for the epochs it asked about;
+  // the row's own frozen slice for the rest. Settled links are not re-derived
+  // from the epoch memo on every pass — the projection they landed in IS the
+  // copy, which is what bounds the pass to the epochs still in motion.
+  const projectedLinks = touchedRecords.flatMap((s) => {
+    const key = refKey(s.ref);
+    if (govLinkScope.has(s.definition.endEpoch))
+      return currentLinks.get(key) ?? [];
+    const row = rowByKey.get(key);
+    return row ? (JSON.parse(row.govLinks) as GovLink[]) : [];
+  });
+
   const surveyRows = surveyRowsOf(
     touchedRecords,
     [...cancellations, ...storedCancels],
     responseCounts([...records.responses, ...storedResponses]),
     tip,
-    govLinks,
+    projectedLinks,
     finalizedCancelled,
   );
   const responseRows = records.responses.map(responseRowOf);

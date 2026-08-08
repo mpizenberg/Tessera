@@ -348,9 +348,12 @@ async function finalizeRecords(
   recs: Cip179Records,
   tip: ChainTip,
   reveal?: SealedRevealFn,
-  govLinks?: readonly GovLink[] | null,
+  govLinks: readonly GovLink[] = [],
+  // Every epoch settled: the rows' link slices are final, which is the state
+  // finalization normally finds a closed survey in.
+  settlementFloor = Number.MAX_SAFE_INTEGER,
 ) {
-  const snapshot = materializeSnapshot(recs, tip, [], new Set());
+  const snapshot = materializeSnapshot(recs, tip, govLinks, new Set());
   await store.reconcileSnapshot(
     snapshot.surveys,
     snapshot.responses,
@@ -367,8 +370,8 @@ async function finalizeRecords(
     recs.incomplete === true,
     tip,
     Number.MAX_SAFE_INTEGER,
+    settlementFloor,
     reveal,
-    govLinks,
   );
 }
 
@@ -1015,9 +1018,10 @@ describe("finalizeClosedSurveys", () => {
     expect(stored.artifactHash).toBe(artifactHash(artifact.tally));
   });
 
-  // An artifact's provenance is immutable, so "no links" must never be recorded
-  // from a link set this refresh never managed to read.
-  it("emits nothing when the gov-link set is unknown", async () => {
+  // An artifact's provenance is immutable, so a link set that can still change
+  // must never be committed: an anchor resolving tomorrow would add a link the
+  // artifact denies. The survey waits for its epoch to settle.
+  it("postpones a survey whose governance epoch has not settled", async () => {
     const store = memBackendStore();
     await seed(store, [validatedRow(rA)]);
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
@@ -1029,7 +1033,8 @@ describe("finalizeClosedSurveys", () => {
       records(survey(), [rA]),
       TIP,
       undefined,
-      null,
+      [],
+      END_EPOCH + 1, // the survey's own expiration is still the frontier
     );
     expect(store.artifacts.size).toBe(0);
   });

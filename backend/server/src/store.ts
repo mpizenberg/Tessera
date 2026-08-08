@@ -267,7 +267,8 @@ export interface SettledGovEpoch {
  * answer.
  *
  * Settling an epoch is what keeps the scan O(active surveys): a settled epoch
- * leaves the query filter for good, and its bank rows are pruned with it.
+ * leaves the query filter for good, its bank rows are pruned with it, and the
+ * settlement floor rises past it so no later pass reads it back out.
  */
 export interface GovLinkStore {
   /** Banked classifications for the cached subset of the requested hashes. */

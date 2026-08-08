@@ -14,7 +14,6 @@
  * snapshot.
  */
 
-import type { GovLink } from "cip-179/domain";
 import { toJsonSafe } from "cip-179/tally";
 import {
   KoiosDataSource,
@@ -37,7 +36,6 @@ import {
   type BankedListCounts,
   type ScanState,
   type SlotRange,
-  type SnapshotStore,
   type UpstreamTotals,
 } from "./store";
 import { validateNewResponses } from "./validate";
@@ -247,26 +245,34 @@ export async function refreshSnapshot(
         `${scan.exhausted ? "" : " (catching up)"}`,
     );
 
-    // The epoch set is the stored surveys' plus this segment's, so a survey
-    // first seen this run links in the same run.
-    const { links: govLinks, unresolved: govUnresolved } =
-      await refreshGovLinks(
-        store,
-        source,
-        [
-          ...new Set([
-            ...(await store.surveyEndEpochs(0)),
-            ...records.surveys.map((s) => s.definition.endEpoch),
-          ]),
-        ],
-        tip.epoch,
-        startedAt,
-        { onRequest: meter.hook("anchor") },
-      ).catch((err) => {
-        console.warn(`gov links fetch failed: ${String(err)}`);
-        govLinksReliable = false;
-        return { links: [], unresolved: [] };
-      });
+    // The epoch set: stored surveys from the settlement horizon up, plus this
+    // segment's, so a survey first seen this run links in the same run. Below
+    // the horizon every epoch is decided and its links already live in the
+    // rows they were projected into, so the pass never asks again.
+    const govFloor = await store.settlementFloor();
+    const govEpochs = [
+      ...new Set([
+        ...(await store.surveyEndEpochs(Math.max(0, govFloor - 1))),
+        ...records.surveys.map((s) => s.definition.endEpoch),
+      ]),
+    ];
+    const {
+      links: govLinks,
+      unresolved: govUnresolved,
+      floor: nextGovFloor,
+    } = await refreshGovLinks(
+      store,
+      source,
+      govEpochs,
+      tip.epoch,
+      startedAt,
+      govFloor,
+      { onRequest: meter.hook("anchor") },
+    ).catch((err) => {
+      console.warn(`gov links fetch failed: ${String(err)}`);
+      govLinksReliable = false;
+      return { links: [], unresolved: [], floor: govFloor };
+    });
 
     // Integrate BEFORE the consumers run, so validation, finalization and the
     // proof-cache prune all see this run's corpus. The overlay input is the
@@ -279,8 +285,13 @@ export async function refreshSnapshot(
       records,
       range,
       tip,
-      govLinks: await displayGovLinks(store, govLinks, govLinksReliable),
-      govLinksReliable,
+      govLinks,
+      // A failed pass makes every row its own link source, which is both the
+      // display fallback (an unread set published as "none" would blank the
+      // linkage everywhere) and the honest one: nothing was re-read, so
+      // nothing may change.
+      govLinkScope: govLinksReliable ? new Set(govEpochs) : new Set<number>(),
+      govLinkFloor: govFloor,
       finalizedCancelled: artifactKeys.cancelled,
       meta: {
         tip: JSON.stringify(toJsonSafe(tip)),
@@ -313,6 +324,10 @@ export async function refreshSnapshot(
         trickle: rewound ? null : (state?.trickle ?? null),
       });
     }
+    // Same ordering rule for the settlement frontier: the rows carrying the
+    // links this pass settled are written, so the epochs behind it can leave
+    // the query set for good.
+    if (nextGovFloor !== govFloor) await store.putSettlementFloor(nextGovFloor);
     // The instant the integrated prefix reaches, on the chain's own clock —
     // finalization's safety gate during catch-up.
     const coveredThroughUnix =
@@ -323,8 +338,7 @@ export async function refreshSnapshot(
     // the rows above are already stored either way.
     await validateNewResponses(
       store,
-      records,
-      govLinks,
+      records.responses,
       source,
       govLinksReliable,
       govUnresolved,
@@ -347,10 +361,7 @@ export async function refreshSnapshot(
         incomplete,
         tip,
         coveredThroughUnix,
-        undefined,
-        // `null` = unknown, so the pass defers rather than stamping "no links"
-        // into an artifact that outlives this refresh.
-        govLinksReliable ? govLinks : null,
+        nextGovFloor,
       ).catch((err) => {
         console.warn(`finalization failed (will retry): ${String(err)}`);
         return null;
@@ -427,38 +438,6 @@ export async function refreshSnapshot(
     await store
       .releaseRefreshLease(lease)
       .catch((e) => console.warn(`refresh lease release failed: ${String(e)}`));
-  }
-}
-
-/**
- * The governance links the touched-survey projections publish: this
- * refresh's, or the stored ones when the whole read failed.
- *
- * A failed read makes every link *unknown* at once, and publishing unknown as
- * "no links" would blank the linkage everywhere until the next good run.
- * Republishing is sound because an action's anchor is hash-fixed at proposal
- * time: whatever was resolved before is what the action still says. The links
- * only reach the display projection, where epoch alignment, haystack and counts
- * are re-derived against the fresh tip; validation and finalization see the
- * honest (empty) read, so no verdict or artifact is built on a stale link.
- *
- * A *successful* read needs no such rescue: classifications come from documents
- * verified against their on-chain hash and banked, so a link this backend has
- * seen once stays in the answer until its epoch settles it in for good.
- */
-export async function displayGovLinks(
-  store: Pick<SnapshotStore, "surveyGovLinks">,
-  links: readonly GovLink[],
-  reliable: boolean,
-): Promise<readonly GovLink[]> {
-  if (reliable) return links;
-  try {
-    const stored = [...(await store.surveyGovLinks(0)).values()].flat();
-    console.warn(`gov links unreadable — republishing ${stored.length}`);
-    return stored;
-  } catch (err) {
-    console.warn(`gov links recovery failed: ${String(err)}`);
-    return links;
   }
 }
 

@@ -554,9 +554,7 @@ export function d1BackendStore(db: D1Like): BackendStore {
       if (!row) return null;
       return { ...row, incomplete: row.incomplete !== 0 };
     },
-    async surveyGovLinks(
-      minEndEpoch: number,
-    ): Promise<Map<string, GovLink[]>> {
+    async surveyGovLinks(minEndEpoch: number): Promise<Map<string, GovLink[]>> {
       const { results } = await db
         .prepare(SURVEY_GOV_LINKS_SELECT)
         .bind(minEndEpoch)
