@@ -75,6 +75,29 @@ sealed ciphertext for the sealed survey. Tessera has validated both
   validation verdict and counted state are read back from the bundle's
   `verdicts` and the list's `responseCounts`.
 
+## What a host must not claim
+
+The host is the surface that can overstate this data, so four limits travel with
+the contract above:
+
+- A **sealed** response hides its answers until the pinned drand round, and
+  nothing else. Role and credential are in clear on-chain from submission.
+- A **governance link** is a discovery relation. It is not evidence that the
+  action's proposer and the survey's owner are the same party — "linked by this
+  action" is the honest label, and "official" is not.
+- A response is authenticated by its carrying transaction. A host session may
+  decide which call to action is shown, never which credential is submitted.
+- Results are **per-role and never merged** into a single figure
+  (`backend/TALLY-SPEC.md` §1), and a weighted aggregate is a Tessera profile
+  rather than a CIP-179 result: name the policy and its ruleset.
+
+## The operating question
+
+Whether a host runs its own Tessera backend or depends on someone else's is
+settled by measurement, not assertion. `backend/server/OPERATIONS.md` describes
+the collector, the workloads worth separating, and the three answers the evidence
+can produce. That study is the remaining deliverable of this record.
+
 ## Interoperability test sequence
 
 1. Read the fixture surveys by exact reference.

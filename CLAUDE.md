@@ -19,6 +19,14 @@ Some choices you make while working are worth surfacing even though they didn't 
 - Append entries to a **Decisions** section in the plan document as they occur, and repeat them in the increment's commit message or summary so they surface without opening the file.
 - Flag anything you are uncertain about explicitly rather than presenting it as settled; if a decision materially changes scope or architecture, raise it in the chat at the increment boundary instead of only logging it.
 
+## Cross-references between docs and code
+
+`backend/ARCHITECTURE.md` and `backend/TALLY-SPEC.md` are cited by section number from code comments, which makes their numbering a public interface.
+
+- Renumbering is a breaking change. Compress a section in place rather than deleting it, and if a document must be split, retarget every inbound reference in the same diff.
+- Published packages (`packages/cip179`, `packages/koios`, `packages/respond-*`) name the rule instead of citing a coordinate — someone who installed the package cannot follow a pointer into a document they do not have. `backend/server` and `frontend/app` do cite, file-qualified.
+- READMEs name the concept and point at the document, never at a section. They are read by people who have not read the design doc and will not notice a coordinate that has drifted.
+
 ## Keep the codebase lean
 
 Every diff should leave the repo simpler, or at least no more complex. Removing is as valuable as adding.

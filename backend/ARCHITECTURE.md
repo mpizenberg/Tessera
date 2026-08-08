@@ -222,7 +222,11 @@ re-scans from the floor on every load.
   can actually change: `/api/tip` is memoized for seconds, `/api/pparams` is keyed
   by the stored snapshot's epoch (protocol parameters are fixed within one), and
   `/api/tx_status` is uncached by nature — it exists to watch a specific
-  transaction land.
+  transaction land. Keying pparams on _this tier's_ epoch rather than on a fresh
+  `/tip` read is what makes the cache free, and it buys that with one refresh
+  interval of staleness across an epoch boundary: a transaction built in that
+  window against changed fee parameters is rejected at submit — loudly, and
+  retryable.
 - Freshness target: the snapshot is one cron interval old (`*/3`, so ≤180 s),
   acceptable for a survey app. The browser shows "updated Ns ago".
 
@@ -630,6 +634,14 @@ confirmed" note.
   tally and matches the hash) but **trusted** (the weights' provenance is Koios).
   The node+indexer phase upgrades provenance to authoritative without changing the
   artifact, verifier, or UI.
+- **What none of this claims**, each easy for a surface built on it to overstate:
+  a **sealed** response delays answer disclosure and is not anonymous — role and
+  credential are in clear on-chain from submission, and only the answers are
+  timelocked; a **governance link** is a discovery relation, not evidence that the
+  action's proposer and the survey's owner are the same party; a response is
+  authenticated by its carrying transaction and never by a login session; and the
+  artifact format and its ruleset are a **Tessera profile**, not part of CIP-179,
+  which leaves weighting and aggregation out of scope deliberately.
 
 ---
 
@@ -645,8 +657,58 @@ confirmed" note.
   preprod fixture set recorded in `interop/`, whose surveys must pass their end
   epoch before finalization and reveal can be measured; a DRep-eligible survey is
   still needed, since every fixture so far admits Stakeholder only.
+- **Full-text search** — `/api/surveys?q=` matches `haystack LIKE` against every
+  survey row, so it is the one per-request cost that still grows with the archive,
+  and the one place §0's invariant does not hold. Deliberate for now: the banked
+  chip counts already cover the no-`q` case, which is the common one, and an index
+  (FTS5 or equivalent) is a design of its own. Trigger: search traffic heavy
+  enough to show up in `d1 insights`.
+- **A reusable `<tessera-results>` element** — result rendering is app-internal
+  (`artifactView.ts`, `Survey.tsx`), so a host that embeds `<tessera-respond>` has
+  no matching way to show the outcome, and re-implementing seven question methods,
+  per-role separation and provenance disclosure is exactly the fork the widget
+  seam exists to prevent. Until it exists, the honest MVP for a host is a compact
+  summary plus a deep link, not a partial renderer that silently mishandles the
+  methods it does not cover.
 - **Container/compose packaging** — the self-hostable process runs (§3); the
   reproducible image and stack around it are not built.
 - **Optional IPFS pin of the artifact bytes** from the frontend, reusing
   `enrichment/pin.ts` — same bytes, same hash, same id (`TALLY-SPEC.md` §5).
 - **On-chain anchor** of the artifact hash — future, closes the CIP-179 loop.
+
+---
+
+## 10. Weighed and rejected
+
+Cheaper-looking alternatives that were measured or reasoned through and turned
+down. They are recorded because each is the obvious next idea, and re-deriving
+the reason costs more than reading it.
+
+- **A slower cron on preview** (`*/10` rather than `*/3`) — roughly 70% off that
+  deployment's entire upstream and D1 bill, for no code. Rejected by the operator:
+  preview exists for rapid prototyping and needs the three-minute feedback loop.
+  The cadence is `*/3` on every network.
+- **ETag by content digest instead of `fetchedAt`** — would let an unchanged
+  corpus answer 304 across refresh generations, but the body legitimately carries
+  `fetchedAt`/`ageSeconds` and `IndexerDataSource` reads them, so it is an API
+  contract change bought with a transfer win. The 304 path already costs one row.
+- **Edge-caching `/api/surveys` with `s-maxage`** — the rows may change at any
+  refresh, so `no-cache` plus ETag revalidation is already the right shape;
+  artifacts, the one response worth caching hard, are already `immutable`.
+- **A whole-snapshot blob for serving** — a regression of migrations 0009→0010,
+  which moved to rows precisely so the list could be paged and filtered in SQL.
+- **Dropping the `response_credential` index** to cut write amplification — it
+  serves `/api/responded`, and an ignored-conflict insert bills nothing, so the
+  amplification only ever taxes genuinely new data.
+- **Replacing the refresh lease with a Durable Object, or simply not releasing
+  it** — the lease is three rows a run and is the whole overlap-correctness
+  mechanism; leaving it held would stretch the effective cadence to its TTL. A
+  platform dependency for pennies.
+- **Workers Analytics Engine for `refresh_run` / `upstream_tally`** —
+  `/api/health` would then need the Analytics SQL API (a token, eventual
+  consistency, a new dependency) to serve numbers D1 already gives it for about
+  two writes a run.
+- **Shrinking `OPERATIONAL_RETENTION_SECONDS`** to lighten the health scan — that
+  scan is bounded by its 24 h predicate on the primary key, not by table size.
+  Retention moves storage only; it is not a read lever.
+- **D1 read replicas** — a latency feature. Rows bill the same either way.

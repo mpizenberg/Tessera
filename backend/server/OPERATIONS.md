@@ -178,6 +178,38 @@ Reports are created with mode `0600` because they contain the Cloudflare account
 id. Keep raw files local; commit only normalized benchmark figures and their
 collection command.
 
+### Deciding whether a footprint is acceptable
+
+One report is a number. The question it exists to answer — can whoever wants this
+deployment run it themselves, on a plan they are willing to pay for — needs the
+same schema across the workloads that actually differ. Collect one window per
+scenario, naming each in `--workload`:
+
+1. steady refresh, with no new label-17 records;
+2. ingestion and proof validation of new public responses;
+3. repeated reads of the list, an exact-reference bundle, an artifact, tip,
+   protocol parameters, and transaction status;
+4. public finalization with DRep weights;
+5. sealed reveal, which is paced by Worker CPU rather than by subrequests and so
+   may span several crons for one survey;
+6. a synthetic retained corpus at roughly 100, 1,000, and 10,000 response rows —
+   the only practical way to price the serving curves, search above all, without
+   manufacturing chain spam;
+7. a transient Koios or anchor failure, to price soft failure and recovery.
+
+Record the corpus size beside every figure, and say for each scenario whether its
+cost is constant, proportional to new records, proportional to one survey's
+participation, or proportional to retained history. The last is the only one that
+is a defect rather than a number: §0 of `backend/ARCHITECTURE.md` is the standard
+it fails, and §9 lists the one term known to fail it today. Name the first limit
+each scenario would reach and the headroom before it.
+
+Do not settle the question against a threshold invented here. Put the evidence in
+front of whoever would operate the deployment and record which of three answers
+it produced: they are comfortable running one instance per network; a named
+optimization is required first, together with the trigger that forces it; or the
+deployment stays externally operated for now.
+
 ## Koios quota separation
 
 `KOIOS_TOKEN` is used by operator-critical snapshot scans, proof validation,
