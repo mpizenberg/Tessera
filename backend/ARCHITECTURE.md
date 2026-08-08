@@ -430,6 +430,37 @@ tests replay seeded-random event sequences (new txs, rollbacks, link changes,
 epoch turnover, overlays) through segment integration and assert the rows stay
 identical to what a from-scratch rebuild would produce, after every step.
 
+### 5.5 What the refresh banks
+
+Three tables exist so that a later run never redoes work an earlier one
+finished — the growth invariant applied to storage rather than to queries.
+
+- **`validated_response`** (`migrations/0002`) — the `TALLY-SPEC.md` §3 rules 1–3
+  verdicts per `(tx_hash, response_index)`, filled incrementally as responses
+  land. A completed verdict is re-judged only when what it was decided against
+  has moved, so the steady state adds no subrequests; a failed enrichment leaves
+  NULLs the next refresh retries.
+- **`tx_metadata_cache`** (`migrations/0005`) — fetch-once label-17 metadata per
+  tx hash. Metadata is immutable, so each fulfilled batch is banked as it
+  completes and a refresh cut short by the subrequest cap keeps what it fetched.
+  Corpus membership comes from the label-index listing, not from this cache: a
+  rolled-back transaction is swept out of the rows by the segment that no longer
+  lists it, and its cache entry simply stops being requested.
+- **`tx_proof_cache`** (`migrations/0015`) — the transaction CBOR behind every
+  owner and response proof, which an open survey would otherwise re-fetch on
+  every scan. Raw bytes only, never a decoded proof: mechanism-A resolution
+  merges scripts fetched by hash, and a script absent today can be registered
+  tomorrow, so a merged proof is true only as of its fetch. A hash Koios returned
+  no row for is a node that is behind, not an answer, and is banked as nothing.
+
+`tx_proof_cache` is the one that is **evicted** (`proofCache.ts`): its rows are
+whole transactions, and a proof stops being read once nothing can still be decided
+from it. The sweep runs over the _cache's own keys_, keeping what a live survey
+still bears on — bounded by the open set, where a drop set derived from the
+records would be bounded by the archive and so re-delete every dead hash on every
+refresh. Over-deleting only ever costs a re-fetch; under-deleting is the permanent
+mistake.
+
 ---
 
 ## 6. Tally inputs and finalization (Koios)
@@ -549,40 +580,6 @@ enforcing one rule:
 - **`tally_artifact`**, one immutable row per survey, written once at
   finalization: the content hash (`TALLY-SPEC.md` §5) and the full `{tally, provenance}` JSON,
   stored as the text that is served verbatim.
-
-There is also `validated_response` (`migrations/0002_validated_responses.sql`):
-the `TALLY-SPEC.md` §3 rules 1–3 verdicts per `(tx_hash, response_index)`, filled
-**incrementally during each snapshot refresh** — a completed verdict is
-re-judged only when what it was decided against has moved (its survey's link set
-changed, or the response itself re-landed at a different chain position after a
-rollback), so the steady state adds zero subrequests, and a failed enrichment
-leaves NULLs that are retried on the next refresh.
-
-And `tx_metadata_cache` (`migrations/0005_tx_metadata_cache.sql`): fetch-once
-label-17 metadata per tx hash, making the snapshot scan itself resumable the
-same way. A tx's metadata is immutable (content-addressed by its hash), so each
-fulfilled `/tx_metadata` batch is banked as it completes and never re-fetched;
-a refresh cut short by the Worker subrequest cap keeps the batches it fetched
-and converges over successive crons. Corpus membership comes from the label-index
-listing, not from this cache, so a rolled-back tx is swept out of the rows by the
-segment that no longer lists it — its cache entry just stops being requested.
-
-Its twin `tx_proof_cache` (`migrations/0015_tx_proof_cache.sql`) banks the tx
-**CBOR** behind every owner-proof and response proof, which an open survey would
-otherwise re-fetch on every scan. The raw bytes are stored, never a decoded
-proof: mechanism-A resolution merges scripts fetched by hash from the chain, and
-a script absent today can be registered tomorrow, so a merged proof is only true
-as of its fetch — decoding and merging therefore run per call. Only bytes Koios
-actually returned are banked; a hash it returned no row for is a node that is
-behind, not an answer.
-
-This is the one cache here that is **evicted** (`proofCache.ts`), because its
-rows are whole transactions and a proof stops being read once nothing can still
-be decided from it. The sweep runs over the _cache's own keys_, keeping what a
-live survey still bears on: bounded by the open set, where a drop set derived
-from the records would be bounded by the archive and so re-delete every dead
-hash on every refresh. Over-deleting only ever costs a re-fetch; under-deleting
-is the permanent mistake.
 
 ---
 
