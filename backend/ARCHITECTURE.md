@@ -210,94 +210,69 @@ re-scans from the floor on every load.
   integration. `fetchedAt` is the scan's **start**, the instant `tip` was read:
   the envelope then describes one point in time instead of straddling the run,
   and reported age never understates staleness by the run's duration.
-- The serving endpoints read only the rows they serve (§5.1) plus that
-  freshness stamp; `/tip` and `/tx_status` may stay live passthroughs for
-  immediacy.
-- Freshness target: snapshot is interval-old (e.g. 60–120s); acceptable for a
-  survey app. The browser shows "updated Ns ago".
+- The serving endpoints read only the rows they serve (§5.1) plus that freshness
+  stamp. Three routes stay Koios passthroughs, each cached by how fast its answer
+  can actually change: `/api/tip` is memoized for seconds, `/api/pparams` is keyed
+  by the stored snapshot's epoch (protocol parameters are fixed within one), and
+  `/api/tx_status` is uncached by nature — it exists to watch a specific
+  transaction land.
+- Freshness target: the snapshot is one cron interval old (`*/3`, so ≤180 s),
+  acceptable for a survey app. The browser shows "updated Ns ago".
 
 The browser's `IndexerDataSource` becomes "one bounded fetch per page" —
 lighter client, faster load, no per-device paging/batching.
 
-### 5.1 Phase 2: split the snapshot into per-page slices — DONE
+### 5.1 One route per page-shaped read
 
-The monolithic `GET /api/snapshot` shipped every response record to every
-client, and `responses` is the one unbounded section (it grows with users ×
-surveys; sealed responses each carry a tlock ciphertext blob). Phase 1
-mitigated with compression + an `ETag` versioned by `fetchedAt` (304 between
-refreshes); the real fix — **implemented, `/api/snapshot` is retired** — is to
-serve what each page actually reads:
+`responses` is the one unbounded section of the corpus — it grows with users ×
+surveys, and each sealed response carries a tlock ciphertext blob — so no route
+ships it wholesale. Each serves what one page actually reads, out of the rows the
+refresh materialized, and a request costs what the survey it asked for costs:
 
-- **`GET /api/surveys`** — the Explore-list payload: survey records + tip +
-  gov links + raw cancellations (tiny, and shipping them raw keeps cancellation
-  proofs client-verifiable) + a server-computed **deduped** `responseCount` per
-  survey, and the `fetchedAt`/`ageSeconds` stamp. Bounded regardless of
-  participation. Also carries `finalizedCancelled` — the survey keys whose
-  artifact finalized them as cancelled: the scan keeps `proof: null` for
-  cancellations of closed surveys, so without this overlay the list would show
-  a cancelled-then-closed survey as plain "Ended" while the artifact says
-  cancelled. Derived from the stored artifact JSON at query time
-  (`json_extract`), so no extra schema; the claim stays auditable against the
-  served artifact itself.
-- **`GET /api/surveys/{txHash}/{index}`** — the self-contained per-survey
-  bundle: the definition record, **all** its `ResponseRecord`s (including sealed
-  ciphertexts), the cancellations targeting it, and the tip. One request serves
-  the detail/respond pages _and_ the standalone verifier — a survey result is
-  re-verified from exactly this slice, so **the verifier never needs the full
-  snapshot** (which is why `/api/snapshot` could be dropped outright once the
-  app migrated). It also carries `verdicts` — the decided §6.3 rule-2 proof
-  verdicts, keyed `"<txHash>:<responseIndex>"` — beside the chain data rather
-  than inside it, for `finalizedCancelled`'s reason: the verifier re-derives
-  `SurveyBundle` and must never read the serving tier's opinion as part of it.
-  A key the map lacks is **pending, not failed**, and stays counted in the live
-  tally (counting only what is proven would make every fresh response vanish
-  until the next refresh decided it); only a decided `false` excludes, applied
-  before latest-wins dedup.
-- **`GET /api/responded?credentials=key:<hex>,script:<hex>`** — slim
-  `[surveyKey]` projection so Explore can flag "surveys I answered" without
-  downloading responses (the mapping is public on-chain data; it was the only
-  reason the list view touched raw responses). Credentials travel in the core
-  `credentialKey` form and several fit one request, since a wallet controls
-  both a payment and a stake credential.
+- **`GET /api/surveys`** — the Explore list, **keyset-paginated**
+  (`filter`/`q`/`cursor`/`limit`): survey records, tip, governance links, raw
+  cancellations (tiny, and raw keeps their owner-proofs client-verifiable), a
+  server-computed **deduped** `responseCount` per survey, and the
+  `fetchedAt`/`ageSeconds` stamp. Ordering, filters and counts are the core
+  `pageSurveyList` spec implemented in SQL, so the direct-Koios path pages the
+  same list in memory by the same rule. Chip counts are global over the matching
+  set rather than per page: banked in the envelope at refresh time
+  (`migrations/0017_list_counts.sql`), aggregated live only when a search narrows
+  the set. A cursor carries the snapshot generation it was minted against, and one
+  from an older generation is still answered — with `resync` set, so the client
+  silently refreshes page one, since rows may have crossed the cursor boundary
+  when their bucket changed. The payload also carries `finalizedCancelled`, the
+  survey keys whose artifact finalized them as cancelled: the scan keeps
+  `proof: null` for cancellations of closed surveys, so without that overlay a
+  cancelled-then-closed survey would read as plain "Ended" while its artifact says
+  cancelled. The claim stays auditable against the served artifact.
+- **`GET /api/surveys/{txHash}/{index}`** — the self-contained per-survey bundle:
+  the definition record, **all** its `ResponseRecord`s (sealed ciphertexts
+  included), the cancellations targeting it, and the tip. One request serves the
+  detail/respond pages _and_ the standalone verifier — a result is re-verified
+  from exactly this slice, so **the verifier never needs the whole corpus**. It
+  also carries `verdicts`, the decided §6.3 rule-2 proof verdicts keyed
+  `"<txHash>:<responseIndex>"` — beside the chain data, never inside it, because
+  the verifier re-derives `SurveyBundle` and must not read the serving tier's
+  opinion as part of it. A key the map lacks is **pending, not failed**, and stays
+  counted in the live tally (counting only what is proven would make every fresh
+  response vanish until a refresh decided it); only a decided `false` excludes,
+  applied before latest-wins dedup.
+- **`GET /api/responded?credentials=key:<hex>,script:<hex>`** — a slim
+  `[surveyKey]` projection, so Explore can flag "surveys I answered" without
+  downloading responses; the mapping is public on-chain data. Credentials travel
+  in the core `credentialKey` form, and several fit one request since a wallet
+  controls both a payment and a stake credential.
 - **`GET /api/surveys/{txHash}/{index}/artifact`** and
-  **`GET /api/artifacts/{hash}`** — the final tally artifact (§7) of a
-  finalized survey, by ref or by content address. The stored JSON text is
-  served **verbatim** (byte identity with the hash), with a strong
-  `ETag: "<artifactHash>"` and `Cache-Control: public, max-age=31536000,
-immutable`; 404 while the survey is open or not yet finalized.
+  **`GET /api/artifacts/{hash}`** — the final tally artifact (§7), by ref or by
+  content address. The stored JSON text is served **verbatim** (byte identity with
+  the hash), with a strong `ETag: "<artifactHash>"` and
+  `Cache-Control: public, max-age=31536000, immutable`; 404 while the survey is
+  open or not yet finalized.
 
-How it landed (shared with Phase 2's tally work, which is why it waited):
-
-- The **dedupe rule** (latest-valid-per-credential) lives in `cardano-tessera-core`
-  (`dedupe.ts`: `refKey`/`credentialKey`/`dedupeResponses`/`responseCounts`),
-  so the server's `responseCount` and the client's audit agree by construction.
-- **Nothing is stored as a whole-snapshot document**
-  (`migrations/0010_response_rows.sql`). Each route reads only the rows it
-  serves: a survey bundle is one `survey_index` row plus that survey's
-  `response` rows, and `/api/responded` is a `credential IN (…)` lookup. The
-  store the routes used to share was a single JSON value, which had two
-  ceilings — D1 caps one value at ~2,000,000 bytes (past that every refresh's
-  write fails and the snapshot silently freezes at its last good state while
-  validation and finalization stop advancing), and every request parsed the
-  entire corpus, including padded sealed ciphertexts that grow with
-  participation, inside a Worker's CPU and memory limits. Rows remove both; what
-  a request costs now scales with the survey it asked for.
-- Each refresh **reconciles its segment**: rows derived from the segment are
-  upserted (changed values only), and a row whose slot lies inside the range the
-  scan covered but which the scan did not list is deleted — it rolled back.
-  Settled rows outside the segment are never deletion candidates, which is what
-  makes the reconcile O(window) instead of O(corpus). Bulk JSON table parameters
-  keep a large segment to chunked set operations rather than one statement per
-  record, and the whole diff plus `snapshot_meta` remains one transaction.
-  `refresh_run.surveys`/`responses`/`payload_bytes` describe what the run
-  _integrated_, not the corpus: a per-refresh corpus count would reintroduce
-  exactly the cost §5.4 removes.
-- The frontend seam widened: `state.tsx`'s single eager resource became a list
-  resource + a lazy per-survey bundle resource, and `DataSource` is now exactly
-  `surveyList`/`surveyBundle`/`respondedKeys`/`txStatus` (`KoiosDataSource`
-  implements the per-page methods by filtering one memoized full scan, so the
-  direct/power-user path keeps working unchanged; its full-scan reads remain as
-  concrete methods for the serving tier's refresh).
+The **dedupe rule** behind `responseCount` is the shared one
+(`cip-179/domain`'s `dedupe.ts`, latest-valid-per-credential), so the server's
+count and the client's audit agree by construction rather than by review.
 
 ### 5.2 Governance links: verified anchors, settled epochs
 
@@ -317,7 +292,7 @@ Two on-chain facts bound the work (`backend/server/src/govLinks.ts`):
   permanently. Classifications are banked by anchor hash (`gov_anchor`) and
   never re-fetched — including verified _non_-links, which are as final as
   links. A fetch _failure_ is banked nowhere: it is absence of evidence, and the
-  action stays **unresolved** — unknown, not unlinked (finding 6).
+  action stays **unresolved** — unknown, not unlinked.
 - **A proposal's expiration epoch is in the future when it is proposed**, so
   once the tip reaches epoch X the set of proposals expiring at X is frozen and
   its link set can be decided once and for all (`gov_epoch`). A settled epoch
@@ -345,8 +320,7 @@ resolution under one wall-clock budget and publishes what resolved.
 
 ### 5.3 Upstream metering: one counter per budget
 
-Three different meters run on this backend, and each bounds a different set of
-requests:
+Three meters run on this backend, each bounding a different set of requests:
 
 | Budget                | Metered by                 | Window         | Counts                       |
 | --------------------- | -------------------------- | -------------- | ---------------------------- |
@@ -356,24 +330,22 @@ requests:
 
 So requests are counted by the budget they spend (`meter.ts`): `koios` for the
 operator identity, `koios-passthrough` for the segregated identity behind
-`/api/tx_status` (§ finding 15 — a separate account bucket, never summed into
-the first), and `anchor` for governance documents on whatever host serves them.
-One number covering all of them cannot be compared against any of these limits
-without being wrong in one direction or the other.
+`/api/tx_status` (a separate account bucket, never summed into the first), and
+`anchor` for governance documents on whatever host serves them. One number
+covering all three cannot be compared against any of these limits without being
+wrong in one direction or the other.
 
-The counts land in two places, because they answer two questions.
-`refresh_run` carries the per-run totals — a per-_invocation_ cap needs a
-per-invocation number, and when a run trips it, the Koios/anchor split is what
-says which half spent it. `upstream_tally` carries five-minute buckets per kind,
-summed over 24 h for the health footer; refresh runs drain into it at the end of
-each pass, and the serving tier drains after each request, since `/api/tip` and
-`/api/pparams` spend the operator's Koios quota outside any run and a total
-summed from run rows alone would report that identity as quieter than it is.
+Per-run totals live on `refresh_run`, because a per-_invocation_ cap needs a
+per-invocation number and the Koios/anchor split is what says which half spent
+it. The rolling 24 h totals (`upstream_tally`) are drained by the serving tier as
+well as by refresh runs: `/api/tip` and `/api/pparams` spend the operator's Koios
+quota outside any run, so a total summed from run rows alone would report that
+identity as quieter than it is.
 
-What the footer reports without a limit to compare against is deliberate:
-Koios's per-tier quota is account-side and not discoverable through the API
-(hence `KOIOS_DAILY_LIMIT`, when the operator knows it), and no upstream service
-publishes its number to us. The volume is still worth showing.
+The footer reports volume with no limit to compare against, deliberately: Koios's
+per-tier quota is account-side and not discoverable through the API (hence
+`KOIOS_DAILY_LIMIT`, when the operator knows it), and no upstream service
+publishes its number to us.
 
 ### 5.4 The windowed refresh: one segment per run
 
