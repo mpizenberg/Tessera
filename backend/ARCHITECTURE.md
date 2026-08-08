@@ -145,6 +145,13 @@ core, a thin swappable runtime/storage adapter, and a portable HTTP contract.
 - The existing **user-token override is preserved** as the direct
   `KoiosDataSource` path (decentralization escape hatch / "verify against chain
   directly"). The serving tier is an addition, not a removal.
+- **One deployment serves exactly one network.** Each backend and frontend parses
+  its network strictly at startup — no path segment, no runtime switch — and
+  `IndexerDataSource` verifies its backend against `/health`, so a misconfigured
+  pairing fails loudly instead of quietly mixing two chains' data. This is not
+  fastidiousness: preview and preprod both report CIP-30 network id 0, so wallet
+  selection cannot tell them apart, while their Koios hosts, storage, explorers
+  and transaction-builder chain parameters are all different.
 
 ---
 
@@ -630,43 +637,22 @@ registered, provenance}`, plus per-`(epoch, role)` totals. This table is shared
   but a survey defined before the floor is not in it to begin with and never
   becomes a finalization candidate. Tier 2's full index removes the floor.
 
-Store (SQLite/D1 — `migrations/0003_tally.sql`; the `migrations/` files are
-the single schema source for both backends: D1 applies them via `wrangler d1
-migrations apply`, the local node:sqlite database via `store-node.ts`'s
-runner, which tracks applied files in a `schema_migration` table):
+The `migrations/` files are the single schema source for both backends — D1
+applies them via `wrangler d1 migrations apply`, the local node:sqlite database
+via `store-node.ts`'s runner, which tracks applied files in a `schema_migration`
+table. Three tables carry the tally state (`migrations/0003_tally.sql`), each
+enforcing one rule:
 
-```sql
--- shared across all surveys ending at the same epoch; a row is written only
--- once fetched (complete), so "row exists" = "weight known" = resume cursor.
--- Insert-or-ignore: an artifact may already have been emitted from a stored
--- weight, so a row is never revised once written
-weight_snapshot(
-  epoch      INTEGER NOT NULL,
-  role       INTEGER NOT NULL,          -- CIP-179 Role
-  credential TEXT    NOT NULL,          -- core credentialKey form ("key:<hex>" | "script:<hex>")
-  weight     TEXT    NOT NULL,          -- lovelace as decimal string ("1" per Keyholder)
-  registered INTEGER NOT NULL,          -- 0/1 membership at `epoch`
-  fetched_at INTEGER NOT NULL,          -- fill time (debug only; endpoint = f(role))
-  PRIMARY KEY (epoch, role, credential)
-);
-
-epoch_totals(
-  epoch INTEGER NOT NULL,
-  role  INTEGER NOT NULL,
-  total TEXT NOT NULL,                  -- decimal string
-  endpoint TEXT NOT NULL, fetched_at INTEGER NOT NULL,
-  PRIMARY KEY (epoch, role)
-);
-
--- one immutable row per survey, written once when end_epoch is finalized
-tally_artifact(
-  survey_key   TEXT PRIMARY KEY,
-  end_epoch    INTEGER NOT NULL,
-  artifact_hash TEXT NOT NULL,          -- content address = H(canonical(tally)) (§7)
-  artifact     TEXT NOT NULL,           -- the full {tally, provenance} JSON, served verbatim
-  created_at   INTEGER NOT NULL
-);
-```
+- **`weight_snapshot`**, keyed `(epoch, role, credential)` — shared by every
+  survey ending at that epoch. A row is written only once **fetched**, so "row
+  exists" = "weight known" = the resume cursor; and it is never revised once
+  written (insert-or-ignore), because an artifact may already have been emitted
+  from it. Weights are lovelace as decimal strings, `1` for Keyholder.
+- **`epoch_totals`**, keyed `(epoch, role)` — the electorate denominator, decimal
+  strings again, recorded with the endpoint it came from.
+- **`tally_artifact`**, one immutable row per survey, written once at
+  finalization: the content hash (§7) and the full `{tally, provenance}` JSON,
+  stored as the text that is served verbatim.
 
 There is also `validated_response` (`migrations/0002_validated_responses.sql`):
 the §6.3 rules 1–3 verdicts per `(tx_hash, response_index)`, filled
@@ -696,21 +682,11 @@ behind, not an answer.
 
 This is the one cache here that is **evicted** (`proofCache.ts`), because its
 rows are whole transactions and a proof stops being read once nothing can still
-be decided from it. Once per refresh, after finalization, the sweep runs over
-the table's own keys and keeps only what a _live_ survey still bears on — no
-artifact yet **and** within 5 epochs of its end epoch. The artifact is the
-normal exit; the epoch backstop covers surveys that never produce one (a
-spec-invalid definition is untalliable, so finalization emits nothing for it).
-
-Sweeping the cache rather than deriving a drop set from the records is what
-keeps each run proportional to the _cache_ instead of to the survey archive: the
-archive only grows, so a records-driven sweep would re-delete every historical
-hash on every refresh until the batch outgrew what D1 accepts — at which point
-eviction would start failing, silently, exactly when the cache first needed it.
-Sweeping also collects transactions no record mentions any more, which nothing
-else would claim. The keep set is re-derived every run rather than tracked, so a
-run that dies before pruning loses nothing, and over-deleting only ever costs a
-re-fetch.
+be decided from it. The sweep runs over the _cache's own keys_, keeping what a
+live survey still bears on: bounded by the open set, where a drop set derived
+from the records would be bounded by the archive and so re-delete every dead
+hash on every refresh. Over-deleting only ever costs a re-fetch; under-deleting
+is the permanent mistake.
 
 ### 6.6 Weighted tally computation (`cip-179/tally`)
 
@@ -910,29 +886,16 @@ Contents (sketch):
 
 ## 10. Phasing
 
-1. **Phase 1 — security + scale + packaging.**
-   - Promote `cip-179` to a workspace package; extract `cardano-tessera-core`
-     (BigInt/rational-ready).
-   - Stand up Tier 1 serving (read path moved server-side; token as
-     secret/anonymous; SQL snapshot cache; Cron refresh). Frontend swaps to
-     `IndexerDataSource`.
-   - Reproducible via `wrangler` **and** a container/compose. No node required.
-2. **Phase 2 — Koios tally inputs + artifacts.**
-   - ~~`TallyInputSource` (Koios impl): per-epoch shared snapshot (§6.5).~~
-     **Done** — `packages/koios/src/tallyInputs.ts` + `finalize.ts`.
-   - ~~Weighted per-role tally in `cip-179/tally` (§6.6).~~ **Done** —
-     `weightedTally.ts` (+ §6.3 rules 1–3 in `proof.ts`/`audit.ts`/`dedupe.ts`,
-     persisted incrementally in `validated_response`).
-   - Content-addressed artifacts (§7 — in D1, not R2; **done**); optional IPFS
-     pin from the frontend; standalone verifier reusing `cardano-tessera-core`.
-   - ~~Split `/api/snapshot` into per-page slices (§5.1): `/api/surveys` list,
-     per-survey bundle (also the verifier's input — it never needs the full
-     snapshot), `/api/responded` projection; then retire `/api/snapshot`.~~
-     **Done** — the three per-page routes serve everything; `/api/snapshot`
-     is removed.
-3. **Phase 3 — node + indexer (post-PoC, `RESEARCH.md`).**
-   - Tier 2 implements the same `TallyInputSource` and emits the same artifact.
-     The Koios→node swap is invisible to the verifier and UI.
+Phases 1 and 2 have landed: the serving tier and its per-page routes, the
+per-epoch shared weight snapshot, the weighted per-role tally, and
+content-addressed artifacts in D1, with the standalone verifier re-deriving all
+of it from Koios independently. What is left of them is in §11.
+
+**Phase 3 — node + indexer (post-PoC, `RESEARCH.md`).** Tier 2 implements the
+same `TallyInputSource` and emits the same artifact, so the Koios→node swap is
+invisible to the verifier and to the UI. The constraint that phase places on
+everything above it is already in force: nothing may be built in a way that
+assumes Koios is the only possible provenance.
 
 ---
 
@@ -941,40 +904,15 @@ Contents (sketch):
 - **CC (committee) role** — weighting + membership semantics. Deferred
   (artifacts pin covered roles {DRep, Stakeholder, Keyholder} in their ruleset).
 - **SPO role** — specified, not exercised until non-browser responders / Tier 2.
-- ~~**Exact Koios shapes**~~ — resolved empirically; see the §6.4 table (incl.
-  the deprecated-variant and `_epoch_no` pitfalls and `/epoch_info` flakiness).
-- ~~**Credential-proof verification** (§6.3 rule 2)~~ — **done**: mechanism A/B
-  evaluated in `cip-179/domain`'s `proof.ts` over `TxProof` evidence decoded by
-  `packages/cip179/src/txproof/txProof.ts` (voting_procedures shape pinned by real
-  preview vote-tx fixtures); verdicts persisted per response (§6.5).
-- ~~**Credential encodings**~~ — **done**: `packages/cip179/src/evolution/index.ts`
-  (`stakeAddress` / `drepId` / `govActionId`, behind the `TxProofCodec` port) (§6.4).
-- ~~**Canonicalization profile**~~ — **done**: `cip-179/tally` `canonical.ts`
-  (JCS-lite + decimal-string bigints + blake2b-256), used by emitter and
-  verifier (§7).
-- ~~**Finalization safety margin**~~ — chosen: 600 s past the `end_epoch`
-  boundary (§6.5).
-- ~~**Sealed-survey artifact emission**~~ — **done**: once the definition's
-  drand round publishes, finalization decrypts every in-window response
-  (server-side, one BLS-verified `fetchBeacon` per survey per pass), runs
-  reveal→validate→dedup (`auditRevealedResponses`), and emits a `sealed=true`
-  artifact committing each responder's revealed answers plus the reveal beacon
-  in provenance (§6.5, §7). The verifier re-reveals with its own beacon.
-  Non-quicknet sealed surveys are unsupported and skipped (no artifact).
 - **End-to-end closure of the paths chain timing has never exercised** — sealed
   reveal against real sealed responses, mechanism-B (governance-vote) proof, and
   DRep/Stakeholder weights and totals are implemented and unit-tested, but no
-  live survey has yet driven them from response to artifact. Preview survey
-  `e34f46df3410f1e21e25067076fd3129a254c49afee7e3cec8185b3cd42e28b8#0` was
-  created to close them and answered from two Stakeholder credentials; it
-  expires 2026-08-04, after which re-verifying it with `packages/verifier` is
-  the check.
+  live survey has yet driven them from response to artifact. The vehicle is the
+  preprod fixture set recorded in `interop/`, whose surveys must pass their end
+  epoch before finalization and reveal can be measured; a DRep-eligible survey is
+  still needed, since every fixture so far admits Stakeholder only.
+- **Container/compose packaging** — the self-hostable process runs (§3); the
+  reproducible image and stack around it are not built.
+- **Optional IPFS pin of the artifact bytes** from the frontend, reusing
+  `enrichment/pin.ts` — same bytes, same hash, same id (§7).
 - **On-chain anchor** of the artifact hash — future, closes the CIP-179 loop.
-- **Single-network deployments** (mainnet/preprod/preview) — resolved in the
-  shared runtime model: each backend and frontend serves exactly one strictly
-  parsed network, with no network path segment or runtime switch. The frontend
-  links to explicitly configured deployments through per-network URLs, and
-  `IndexerDataSource` verifies its backend against `/health` so a misconfigured
-  pairing fails loudly instead of mixing networks. Preview and preprod both use
-  CIP-30 network id 0, so wallet selection cannot distinguish them; Koios,
-  storage, explorer, and transaction-builder chain parameters remain separate.
