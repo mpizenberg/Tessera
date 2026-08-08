@@ -1,6 +1,9 @@
 # Tessera Data & Tally Architecture — PoC Phase (Koios + Cloudflare)
 
-> **Status:** decided design for the current proof-of-concept phase. Continues
+> **Status:** decided design for the current proof-of-concept phase, and a
+> running one — the serving tier, the per-page routes, the per-epoch weight
+> snapshot, the weighted tally and content-addressed artifacts are all live, with
+> the standalone verifier re-deriving them from Koios independently. Continues
 > `RESEARCH.md` §9 ("the indexer choice is secondary to the state strategy") by
 > committing to the _light, Koios-backed_ corner of the trilemma now, and
 > deferring the trustless node+indexer until after the app is validated with
@@ -30,8 +33,11 @@
 - **Tally-ready.** Produce per-role, stake-weighted survey results from Koios,
   with results published as immutable, independently re-verifiable artifacts.
 - **Forward-compatible.** The Koios path is the first implementation of a seam;
-  the future node+indexer is the second, with no change to the artifact format,
-  the verifier, or the UI.
+  the future node+indexer (`RESEARCH.md`) is the second, implementing the same
+  `TallyInputSource` and emitting the same artifact, so the swap is invisible to
+  the verifier and the UI. The constraint that places on everything here is
+  already in force: nothing may be built in a way that assumes Koios is the only
+  possible provenance.
 
 **Non-goals (this phase)**
 
@@ -46,23 +52,17 @@
 
 ## 1. Why the serving tier exists
 
-The frontend originally talked to Koios **directly from every browser**, running
-the full read pipeline on each load: paged `/tx_by_metalabel?_label=17`, batched
-`/tx_metadata`, a `/tx_cbor` pass for the owner-proofs of open surveys and of the
-transactions cancelling them, `/proposal_list`, `/tip`, polled `/tx_status`. Two
-defects, both structural:
+The frontend originally read Koios **directly from every browser**, running the
+full label-17 pipeline on each load. Two structural defects forced the move
+server-side. **Security:** Koios's anonymous tier is CORS-blocked, so a
+client-side token is effectively mandatory, and any token shipped with an app is
+visible to everyone and burnable against one quota. **Scalability:** load scaled
+with _users × refreshes_ against that quota, each client re-scanning all of
+history with no shared cache and a hard page ceiling.
 
-1. **Security.** Koios's anonymous tier is CORS-blocked, so a client-side token
-   is effectively mandatory — and any token shipped with the app is visible to
-   everyone and burnable against one quota.
-2. **Scalability.** Load scaled with _users × refreshes_ on that one quota, and
-   each client re-scanned all of label-17 history from `sinceUnix` with no shared
-   cache, against a hard `MAX_PAGES` ceiling.
-
-The `DataSource` seam (`cardano-tessera-core`'s `source.ts`) was built for exactly this swap:
-_"a future semantic indexer backend can implement the same interface and drop in
-with no change to the domain or UI layers."_ That direct path still runs, as the
-power-user/offline mode (§7); it is no longer what the app does by default.
+The `DataSource` seam (`cardano-tessera-core`'s `source.ts`) was built for
+exactly this swap. The direct path survives as the power-user/offline mode (§7);
+it is no longer what the app does by default.
 
 ---
 
@@ -633,22 +633,7 @@ confirmed" note.
 
 ---
 
-## 9. Phasing
-
-Phases 1 and 2 have landed: the serving tier and its per-page routes, the
-per-epoch shared weight snapshot, the weighted per-role tally, and
-content-addressed artifacts in D1, with the standalone verifier re-deriving all
-of it from Koios independently. What is left of them is in §10.
-
-**Phase 3 — node + indexer (post-PoC, `RESEARCH.md`).** Tier 2 implements the
-same `TallyInputSource` and emits the same artifact, so the Koios→node swap is
-invisible to the verifier and to the UI. The constraint that phase places on
-everything above it is already in force: nothing may be built in a way that
-assumes Koios is the only possible provenance.
-
----
-
-## 10. Open items / TODO
+## 9. Open items / TODO
 
 - **CC (committee) role** — weighting + membership semantics. Deferred
   (artifacts pin covered roles {DRep, Stakeholder, Keyholder} in their ruleset).
