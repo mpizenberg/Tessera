@@ -1,5 +1,5 @@
 /**
- * Survey finalization (ARCHITECTURE.md §6.5/§7): once a survey's voting window
+ * Survey finalization (ARCHITECTURE.md §6.2, TALLY-SPEC.md §5): once a survey's voting window
  * is safely past, snapshot every counted responder's weight at `end_epoch`,
  * compute the per-role weighted tally, and write the immutable
  * content-addressed artifact.

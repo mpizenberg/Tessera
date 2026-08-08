@@ -1,6 +1,6 @@
 /**
  * Koios-backed {@link TallyInputSource}: role membership + weights at a
- * survey's `end_epoch` (ARCHITECTURE.md §6.1/§6.5).
+ * survey's `end_epoch` (TALLY-SPEC.md §1, ARCHITECTURE.md §6.2).
  *
  * Stakeholders (role 3) resolve in two bulk reads per 50-credential chunk:
  *  - `/account_update_history?epoch_no=lte.E&action_type=in.(registration,

@@ -1,6 +1,6 @@
 /**
  * Canonical JSON + content hashing — the byte-level foundation of re-verifiable
- * tally artifacts (`backend/ARCHITECTURE.md` §7). Emitter and verifier both
+ * tally artifacts (`backend/TALLY-SPEC.md` §5). Emitter and verifier both
  * serialize through exactly this code, so "same tally" ⇔ "same bytes" ⇔ "same
  * hash" holds by construction.
  *

@@ -1,4 +1,4 @@
--- Phase-2 tally tables (ARCHITECTURE.md §6.5).
+-- Tally persistence (ARCHITECTURE.md §6.2).
 
 -- Shared weight snapshot across all surveys ending at the same epoch: one row
 -- per (epoch, role, credential), written only once fetched (complete rows),

@@ -1,5 +1,5 @@
 /**
- * Stake-weighted tallying (`backend/ARCHITECTURE.md` §6.6). Every aggregate is
+ * Stake-weighted tallying (`backend/TALLY-SPEC.md` §4). Every aggregate is
  * a BigInt — no floats anywhere; presentation layers derive fractions/means
  * from the exact `{weightedSum, answeredWeight}` rationals. With every weight
  * `1n` it reduces to a plain count tally (which is also how the count-only

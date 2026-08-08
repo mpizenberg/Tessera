@@ -305,7 +305,7 @@ export const AppProvider: ParentComponent = (props) => {
   // Reads flow through the Tier-1 serving backend when one is configured
   // (the deployment's `indexerUrl`) — the secure/scalable default — otherwise
   // straight to Koios (the direct/power-user/offline path). See
-  // `backend/ARCHITECTURE.md` §8.
+  // `backend/ARCHITECTURE.md` §7.
   const indexerUrl = resolveIndexerUrl();
   const source: DataSource = indexerUrl
     ? new IndexerDataSource(indexerUrl, config.network)

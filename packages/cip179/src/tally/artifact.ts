@@ -1,5 +1,5 @@
 /**
- * The content-addressed tally artifact (`backend/ARCHITECTURE.md` §7): the
+ * The content-addressed tally artifact (`backend/TALLY-SPEC.md` §5): the
  * self-describing, re-verifiable final result of a closed survey.
  *
  * Everything under `tally` is what the hash commits to — JSON-plain (numbers
@@ -36,7 +36,7 @@ import {
  * describes: the load-bearing behaviors live in `cip-179`'s `validateResponse`
  * ("validity") and core's `dedupeResponses` ("dedup"), whose files carry a
  * matching RULESET-PINNED-BEHAVIOR note — a semantic change there needs the same
- * version bump even if this descriptor's text is untouched. Mirrors §6.2/§6.3
+ * version bump even if this descriptor's text is untouched. Mirrors `TALLY-SPEC.md` §2/§3
  * and the CIP-179 credential-proof mechanisms.
  */
 export const RULESET_DESCRIPTOR = {

@@ -1,4 +1,4 @@
--- Per-response validation results (ARCHITECTURE.md §6.3 rules 1–3), filled
+-- Per-response validation results (TALLY-SPEC.md §3 rules 1–3), filled
 -- incrementally during each snapshot refresh: only never-seen
 -- (tx_hash, response_index) keys cost extra Koios calls.
 --

@@ -131,7 +131,7 @@ export interface CompletedValidation {
   readonly epochNo: number;
 }
 
-/** Phase-2 tally persistence (ARCHITECTURE.md §6.5), same database. */
+/** Tally persistence (ARCHITECTURE.md §6.2), same database. */
 export interface TallyStore {
   /**
    * The given surveys' rows needing no enrichment retry (both `blockIndex` and

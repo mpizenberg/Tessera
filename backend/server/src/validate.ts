@@ -1,5 +1,5 @@
 /**
- * Incremental response validation (ARCHITECTURE.md §6.3 rules 1–3), run at the
+ * Incremental response validation (TALLY-SPEC.md §3 rules 1–3), run at the
  * end of every snapshot refresh:
  *
  *  - rule 1 (window) needs no fetch — the scan already carries each record's

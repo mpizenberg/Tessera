@@ -10,7 +10,7 @@
  * domain semantics, and the count/stake-weighted tally with its canonical,
  * content-addressed artifact — lives in the `cip-179` package and is imported
  * from its subpaths directly (`cip-179/domain`, `cip-179/tally`), never
- * re-exported through here (see `backend/ARCHITECTURE.md` §4/§6/§7).
+ * re-exported through here (see `backend/ARCHITECTURE.md` §4 and `backend/TALLY-SPEC.md`).
  *
  * @module
  */

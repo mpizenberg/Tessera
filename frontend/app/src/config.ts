@@ -120,7 +120,7 @@ export function storeKoiosToken(token: string): void {
  * (`IndexerDataSource`) instead of scanning Koios from the browser; absent ⇒
  * the direct-Koios path. Must serve the deployment's network — the app
  * verifies this against the backend's `/health` and refuses mixed-network
- * data. See `backend/ARCHITECTURE.md` §2/§8.
+ * data. See `backend/ARCHITECTURE.md` §2/§7.
  */
 export function envIndexerUrl(): string | undefined {
   return __DEPLOYMENT__.indexerUrl;

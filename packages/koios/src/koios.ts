@@ -312,7 +312,7 @@ export class KoiosDataSource implements DataSource {
    * transaction builder can pass them as `build({ fullProtocolParameters })` and
    * skip the provider's own pparams fetch — the one Koios read that tx building
    * otherwise needs, letting the client build without a Koios token
-   * (`backend/ARCHITECTURE.md` §8). Deposits, execution budgets, and
+   * (`backend/ARCHITECTURE.md` §7). Deposits, execution budgets, and
    * coins-per-UTxO-byte are BigInt; cost models are index-keyed per language.
    */
   async protocolParameters(): Promise<ProtocolParameters> {

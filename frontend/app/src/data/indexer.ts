@@ -1,6 +1,6 @@
 /**
  * `IndexerDataSource` — the browser's read path against the Tier-1 serving
- * backend (`backend/ARCHITECTURE.md` §2, §5, §8).
+ * backend (`backend/ARCHITECTURE.md` §2, §5, §7).
  *
  * Where {@link import("cardano-tessera-koios").KoiosDataSource} makes every browser
  * re-scan Koios (a shared token baked in the bundle; load scaling with

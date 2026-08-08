@@ -8,7 +8,7 @@
  * to/from a tagged JSON-safe form, so a snapshot can cross HTTP and SQLite and be
  * reconstructed as an equal value — with map entry order normalized, see below.
  *
- * Conventions mirror the artifact format (`backend/ARCHITECTURE.md` §7): bytes →
+ * Conventions mirror the artifact format (`backend/TALLY-SPEC.md` §5): bytes →
  * hex, big integers → decimal strings. Each tag is an object with a single
  * `$`-prefixed key. Decoded CIP-179 data never produces such an object itself
  * (its map keys are integers or plain strings, its values are the primitives

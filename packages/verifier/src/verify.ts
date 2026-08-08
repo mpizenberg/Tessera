@@ -1,6 +1,7 @@
 /**
- * Artifact re-verification (`backend/ARCHITECTURE.md` §7/§8): rebuild a
- * survey's final tally from first principles and compare content hashes.
+ * Artifact re-verification (`backend/TALLY-SPEC.md` §5, `backend/ARCHITECTURE.md`
+ * §8): rebuild a survey's final tally from first principles and compare content
+ * hashes.
  *
  * Trust model: the ONLY thing taken from the backend is the artifact under
  * test, whose hash this module recomputes. Every input the rebuild consumes —

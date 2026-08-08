@@ -1,7 +1,7 @@
 /**
  * Cloudflare Worker entry point: the same Hono app as `main.ts`, but with a D1
  * store and a Cron-triggered refresh instead of a long-lived process + interval
- * (`backend/ARCHITECTURE.md` §3, §10). Deployment config lives in
+ * (`backend/ARCHITECTURE.md` §3, §9). Deployment config lives in
  * `wrangler.toml`; the D1 schema in `migrations/`.
  *
  * Workers hand `env` to each invocation instead of exposing a process-wide
