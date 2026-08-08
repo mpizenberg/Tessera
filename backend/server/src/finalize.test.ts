@@ -352,6 +352,7 @@ async function finalizeRecords(
   // Every epoch settled: the rows' link slices are final, which is the state
   // finalization normally finds a closed survey in.
   settlementFloor = Number.MAX_SAFE_INTEGER,
+  finalizationFloor = 0,
 ) {
   const snapshot = materializeSnapshot(recs, tip, govLinks, new Set());
   await store.reconcileSnapshot(
@@ -367,10 +368,13 @@ async function finalizeRecords(
     store,
     inputs,
     source,
-    recs.incomplete === true,
-    tip,
-    Number.MAX_SAFE_INTEGER,
-    settlementFloor,
+    {
+      tip,
+      incomplete: recs.incomplete === true,
+      coveredThroughUnix: Number.MAX_SAFE_INTEGER,
+      settlementFloor,
+      finalizationFloor,
+    },
     reveal,
   );
 }
@@ -389,7 +393,7 @@ describe("finalizeClosedSurveys", () => {
       [KEY_B]: { weight: 7n, registered: true },
     });
 
-    const keys = await finalizeRecords(
+    const outcome = await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -399,8 +403,8 @@ describe("finalizeClosedSurveys", () => {
     );
     // The pass's own emission rides back on the returned key sets, so the
     // refresh needs no second tally_artifact read.
-    expect(keys.finalized).toEqual(new Set([SURVEY_KEY]));
-    expect(keys.cancelled).toEqual(new Set());
+    expect(outcome.keys.finalized).toEqual(new Set([SURVEY_KEY]));
+    expect(outcome.keys.cancelled).toEqual(new Set());
 
     const row = store.artifacts.get(SURVEY_KEY);
     expect(row).toBeDefined();
@@ -549,7 +553,7 @@ describe("finalizeClosedSurveys", () => {
     };
 
     // The pass completes normally (does not reject) despite survey 1 throwing.
-    const keys = await finalizeRecords(
+    const outcome = await finalizeRecords(
       CONFIG,
       poisoned,
       inputs,
@@ -557,7 +561,7 @@ describe("finalizeClosedSurveys", () => {
       recs,
       TIP,
     );
-    expect(keys.finalized).toEqual(new Set([SURVEY_KEY2]));
+    expect(outcome.keys.finalized).toEqual(new Set([SURVEY_KEY2]));
 
     expect(store.artifacts.has(SURVEY_KEY)).toBe(false); // poisoned → skipped
     expect(store.artifacts.has(SURVEY_KEY2)).toBe(true); // healthy → finalized
@@ -599,9 +603,19 @@ describe("finalizeClosedSurveys", () => {
       cancellations: [],
     };
 
-    await finalizeRecords(CONFIG, store, inputs, noProofs, recs, TIP);
+    const outcome = await finalizeRecords(
+      CONFIG,
+      store,
+      inputs,
+      noProofs,
+      recs,
+      TIP,
+    );
     expect(store.artifacts.has(SURVEY_KEY)).toBe(false); // untalliable → no artifact
     expect(store.artifacts.has(SURVEY_KEY2)).toBe(true); // valid → finalized
+    // Both are decided — one emitted, one permanently untalliable — so neither
+    // holds the frontier down and the residue stops being re-read forever.
+    expect(outcome.floor).toBe(TIP.epoch);
   });
 
   it("buys no evidence for a survey the ruleset already rejects without it", async () => {
@@ -868,6 +882,32 @@ describe("finalizeClosedSurveys", () => {
     expect(inputs.stakeholderCalls).toBe(1);
   });
 
+  it("never looks below its banked floor", async () => {
+    const store = memBackendStore();
+    await seed(store, [validatedRow(rA)]);
+    const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
+
+    // A survey that would finalize on its own merits, at an epoch a previous
+    // pass has already declared settled. It is not a candidate at all — which
+    // is what makes the read bounded, and what a generation rewind (floor back
+    // to 0) is the escape hatch from.
+    const outcome = await finalizeRecords(
+      CONFIG,
+      store,
+      inputs,
+      noProofs,
+      records(survey(), [rA]),
+      TIP,
+      undefined,
+      [],
+      Number.MAX_SAFE_INTEGER,
+      END_EPOCH + 1,
+    );
+    expect(store.artifacts.size).toBe(0);
+    expect(inputs.stakeholderCalls).toBe(0);
+    expect(outcome.floor).toBe(TIP.epoch);
+  });
+
   it("produces the same artifact hash on independent runs (determinism)", async () => {
     const make = async () => {
       const store = memBackendStore();
@@ -1070,7 +1110,7 @@ describe("finalizeClosedSurveys", () => {
     const proofs = proofsStub({ [cancellation.txHash]: OWNER_PROOF });
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
 
-    const keys = await finalizeRecords(
+    const outcome = await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -1080,8 +1120,8 @@ describe("finalizeClosedSurveys", () => {
     );
     // A cancellation emission lands in both returned sets — materialize reads
     // the cancelled one for the same-refresh overlay flip.
-    expect(keys.finalized).toEqual(new Set([SURVEY_KEY]));
-    expect(keys.cancelled).toEqual(new Set([SURVEY_KEY]));
+    expect(outcome.keys.finalized).toEqual(new Set([SURVEY_KEY]));
+    expect(outcome.keys.cancelled).toEqual(new Set([SURVEY_KEY]));
 
     const artifact = JSON.parse(
       store.artifacts.get(SURVEY_KEY)!.artifact,
@@ -1425,7 +1465,11 @@ describe("finalizeClosedSurveys", () => {
         TIP,
         reveal,
       ),
-    ).resolves.toEqual({ finalized: new Set(), cancelled: new Set() });
+      // …and the survey it postponed holds the frontier at its own epoch.
+    ).resolves.toEqual({
+      keys: { finalized: new Set(), cancelled: new Set() },
+      floor: END_EPOCH,
+    });
 
     expect(reveal).toHaveBeenCalledTimes(1);
     expect(store.artifacts.size).toBe(0); // retried next refresh
@@ -1588,7 +1632,7 @@ describe("finalizeClosedSurveys", () => {
     await seed(store, [validatedRow(rA)]);
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
 
-    await finalizeRecords(
+    const outcome = await finalizeRecords(
       CONFIG,
       store,
       inputs,
@@ -1599,6 +1643,8 @@ describe("finalizeClosedSurveys", () => {
     expect(store.artifacts.size).toBe(0);
     expect(store.weights.size).toBe(0); // no weight work either
     expect(inputs.stakeholderCalls).toBe(0);
+    // A pass that decided nothing moves no frontier: the banked one stands.
+    expect(outcome.floor).toBeNull();
   });
 
   it("prunes a counted response that fell out of the snapshot, then finalizes (finding 3)", async () => {

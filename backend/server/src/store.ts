@@ -213,6 +213,20 @@ export interface TallyStore {
    * source of truth.
    */
   finalizedArtifactKeys(): Promise<ArtifactKeys>;
+  /**
+   * The banked finalization floor: the lowest end epoch that still holds a
+   * survey the pass expects to decide. Below it every closed survey has either
+   * emitted its artifact or been judged permanently untalliable, so no later
+   * pass reads it back out — and 0, the value before anything is banked, reads
+   * the whole archive once.
+   */
+  finalizationFloor(): Promise<number>;
+  /**
+   * Bank the floor. Only a complete, caught-up pass computes one: while the
+   * scan is still integrating, a survey below the floor may not have all its
+   * responses yet.
+   */
+  putFinalizationFloor(endEpoch: number): Promise<void>;
 }
 
 /**
@@ -832,12 +846,15 @@ export interface SnapshotStore {
    */
   surveyEndEpochs(minEndEpoch: number): Promise<number[]>;
   /**
-   * Stored surveys with `end_epoch` before `tipEpoch` and no row in
-   * `tally_artifact` — finalization's candidate set, in key order. Bounded by
-   * construction: recent closers plus the slow-growing residue that never
-   * produces an artifact (spec-invalid definitions, unsupported drand chains).
+   * Stored surveys ending in `[floorEpoch, tipEpoch)` with no row in
+   * `tally_artifact` — finalization's candidate set, in key order. The floor is
+   * what bounds it: below it every survey is decided, so neither its row nor
+   * its artifact is read at all.
    */
-  unfinalizedClosedSurveyRows(tipEpoch: number): Promise<SurveyIndexRow[]>;
+  unfinalizedClosedSurveyRows(
+    floorEpoch: number,
+    tipEpoch: number,
+  ): Promise<SurveyIndexRow[]>;
   /**
    * Stored surveys with `end_epoch >= minEndEpoch`, in key order — the open
    * set plus however many epochs of recent closers the caller's horizon

@@ -295,6 +295,11 @@ export async function refreshSnapshot(
       console.log(
         `scan generation ${banked.generation} → ${SCAN_GENERATION}: rewinding to the config floor`,
       );
+      // Finalization's frontier summarizes what the *previous* derivation
+      // decided. Rewinding without dropping it would leave every survey below
+      // it — including any this deploy judges differently — outside the
+      // candidate read for good.
+      await store.putFinalizationFloor(0);
     }
     const state = rewound ? null : banked;
     // Post-Shelley slots are 1 s, so the config floor's slot is derived
@@ -466,20 +471,27 @@ export async function refreshSnapshot(
     // sets carry this pass's emissions, so the prune and overlay update below
     // need no `tally_artifact` scan of their own; a pass that died mid-way may
     // still have emitted, so only then is the store re-read.
-    const finalKeys =
-      (await finalizeClosedSurveys(
-        config,
-        store,
-        new KoiosTallyInputs(config.app, undefined, countKoios),
-        source,
-        incomplete,
+    const finalFloor = await store.finalizationFloor();
+    const finalized = await finalizeClosedSurveys(
+      config,
+      store,
+      new KoiosTallyInputs(config.app, undefined, countKoios),
+      source,
+      {
         tip,
+        incomplete,
         coveredThroughUnix,
-        nextGovFloor,
-      ).catch((err) => {
-        console.warn(`finalization failed (will retry): ${String(err)}`);
-        return null;
-      })) ?? (await store.finalizedArtifactKeys());
+        settlementFloor: nextGovFloor,
+        finalizationFloor: finalFloor,
+      },
+    ).catch((err) => {
+      console.warn(`finalization failed (will retry): ${String(err)}`);
+      return null;
+    });
+    const finalKeys = finalized?.keys ?? (await store.finalizedArtifactKeys());
+    if (finalized?.floor != null && finalized.floor !== finalFloor) {
+      await store.putFinalizationFloor(finalized.floor);
+    }
 
     // A survey finalized as cancelled flips its row's overlay in the same
     // run. Idempotent over every cancelled artifact key, so it also heals a

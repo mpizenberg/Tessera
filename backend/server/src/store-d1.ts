@@ -47,6 +47,8 @@ import {
 } from "./store";
 import {
   CANCELLATIONS_IN_SLOT_RANGE,
+  FINALIZATION_FLOOR_SELECT,
+  FINALIZATION_FLOOR_UPDATE,
   INCOMPLETE_VALIDATION_SURVEYS,
   RESPONSES_FOR_SURVEY,
   RESPONSES_IN_SLOT_RANGE,
@@ -648,6 +650,15 @@ export function d1BackendStore(db: D1Like): BackendStore {
     async putSettlementFloor(expiration: number): Promise<void> {
       await db.prepare(SETTLEMENT_FLOOR_UPDATE).bind(expiration).run();
     },
+    async finalizationFloor(): Promise<number> {
+      const row = await db
+        .prepare(FINALIZATION_FLOOR_SELECT)
+        .first<{ finalizationFloor: number }>();
+      return row?.finalizationFloor ?? 0;
+    },
+    async putFinalizationFloor(endEpoch: number): Promise<void> {
+      await db.prepare(FINALIZATION_FLOOR_UPDATE).bind(endEpoch).run();
+    },
     async reconcileSegment(
       range: SlotRange | null,
       surveys: readonly SurveyIndexRow[],
@@ -744,11 +755,12 @@ export function d1BackendStore(db: D1Like): BackendStore {
       return results.map((r) => r.endEpoch);
     },
     async unfinalizedClosedSurveyRows(
+      floorEpoch: number,
       tipEpoch: number,
     ): Promise<SurveyIndexRow[]> {
       const { results } = await db
         .prepare(UNFINALIZED_CLOSED_SURVEYS)
-        .bind(tipEpoch)
+        .bind(floorEpoch, tipEpoch, floorEpoch)
         .all<DbSurveyRow>();
       return results.map(surveyRowFromDb);
     },

@@ -639,6 +639,16 @@ export const SETTLEMENT_FLOOR_UPDATE = `
 export const SETTLEMENT_FLOOR_SELECT = `
   SELECT settlement_floor AS settlementFloor FROM scan_state WHERE id = 1`;
 
+/**
+ * The finalization floor, on the same row and by the same rule: written on its
+ * own, and 0 before there is a row to write.
+ */
+export const FINALIZATION_FLOOR_UPDATE = `
+  UPDATE scan_state SET finalization_floor = ? WHERE id = 1`;
+
+export const FINALIZATION_FLOOR_SELECT = `
+  SELECT finalization_floor AS finalizationFloor FROM scan_state WHERE id = 1`;
+
 export const SCAN_STATE_SELECT = `
   SELECT cursor_slot AS cursorSlot, cursor_tx_hash AS cursorTxHash,
          caught_up AS caughtUp, generation,
@@ -765,13 +775,16 @@ export const SURVEY_END_EPOCHS = `
   ORDER BY end_epoch`;
 
 /**
- * Finalization's candidate set: closed at the bound epoch, no artifact yet.
- * Binds: (tipEpoch).
+ * Finalization's candidate set: closed at the tip, no artifact yet, from its
+ * floor up — below which every survey is decided, so neither the rows nor the
+ * artifacts down there are worth reading. Binds: (floorEpoch, tipEpoch,
+ * floorEpoch).
  */
 export const UNFINALIZED_CLOSED_SURVEYS = `
   SELECT ${SURVEY_ROW_COLUMNS} FROM survey_index
-  WHERE end_epoch < ?
-    AND survey_key NOT IN (SELECT survey_key FROM tally_artifact)
+  WHERE end_epoch >= ? AND end_epoch < ?
+    AND survey_key NOT IN (
+      SELECT survey_key FROM tally_artifact WHERE end_epoch >= ?)
   ORDER BY survey_key`;
 
 /** Surveys still inside a caller's end-epoch horizon. Binds: (minEndEpoch). */

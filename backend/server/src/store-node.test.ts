@@ -281,6 +281,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0018_scan_state.sql",
       "0019_cancellation_rows.sql",
       "0020_gov_settlement_floor.sql",
+      "0021_finalization_floor.sql",
     ]);
   });
 });
@@ -792,12 +793,14 @@ describe("store-node scan state", () => {
     expect(await store.scanState()).toEqual(rewound);
   });
 
-  it("banks the settlement floor without disturbing the cursor", async () => {
+  it("banks both floors without disturbing the cursor", async () => {
     store = openBackendStore(":memory:");
     // Before the first cursor there is no row to update, and 0 — ask about
-    // every epoch — is exactly what a database with no settlements owes.
+    // everything — is exactly what a database with no history owes.
     await store.putSettlementFloor(511);
+    await store.putFinalizationFloor(498);
     expect(await store.settlementFloor()).toBe(0);
+    expect(await store.finalizationFloor()).toBe(0);
 
     const walked = {
       cursor: { slot: 5_000, txHash: "aa".repeat(32) },
@@ -807,12 +810,15 @@ describe("store-node scan state", () => {
     };
     await store.putScanState(walked);
     await store.putSettlementFloor(511);
+    await store.putFinalizationFloor(498);
     expect(await store.settlementFloor()).toBe(511);
+    expect(await store.finalizationFloor()).toBe(498);
 
-    // The cursor write leaves the floor alone: settlement is not the scan's
-    // coverage, and an incomplete scan that banks no cursor must not lose it.
+    // The cursor write leaves both alone: neither frontier is the scan's
+    // coverage, and an incomplete scan that banks no cursor must not lose them.
     await store.putScanState({ ...walked, cursor: null, caughtUp: false });
     expect(await store.settlementFloor()).toBe(511);
+    expect(await store.finalizationFloor()).toBe(498);
   });
 });
 
@@ -996,10 +1002,17 @@ describe("store-node segment reconciliation", () => {
     // The governance pass's input: distinct, ascending, from its horizon up.
     expect(await store.surveyEndEpochs(0)).toEqual([490, 495, 500]);
     expect(await store.surveyEndEpochs(495)).toEqual([495, 500]);
-    // Finalization candidates: closed at the tip, minus the finalized.
+    // Finalization candidates: closed at the tip, minus the finalized, from
+    // the floor (inclusive) up — above it, nothing is left to decide.
     expect(
-      (await store.unfinalizedClosedSurveyRows(500)).map((r) => r.surveyKey),
+      (await store.unfinalizedClosedSurveyRows(0, 500)).map((r) => r.surveyKey),
     ).toEqual(["bb:0", "dd:0"]);
+    expect(
+      (await store.unfinalizedClosedSurveyRows(495, 500)).map(
+        (r) => r.surveyKey,
+      ),
+    ).toEqual(["bb:0", "dd:0"]);
+    expect(await store.unfinalizedClosedSurveyRows(496, 500)).toEqual([]);
     // The prune's live horizon is inclusive at its floor.
     expect(
       (await store.surveyRowsEndingAtOrAfter(495)).map((r) => r.surveyKey),

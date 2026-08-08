@@ -55,6 +55,8 @@ import {
 } from "./store";
 import {
   CANCELLATIONS_IN_SLOT_RANGE,
+  FINALIZATION_FLOOR_SELECT,
+  FINALIZATION_FLOOR_UPDATE,
   INCOMPLETE_VALIDATION_SURVEYS,
   RESPONSES_FOR_SURVEY,
   RESPONSES_IN_SLOT_RANGE,
@@ -192,6 +194,8 @@ export function openBackendStore(path: string): BackendStore {
   const scanStateStmt = db.prepare(SCAN_STATE_SELECT);
   const settlementFloorStmt = db.prepare(SETTLEMENT_FLOOR_SELECT);
   const putSettlementFloorStmt = db.prepare(SETTLEMENT_FLOOR_UPDATE);
+  const finalizationFloorStmt = db.prepare(FINALIZATION_FLOOR_SELECT);
+  const putFinalizationFloorStmt = db.prepare(FINALIZATION_FLOOR_UPDATE);
   const responsesInRangeStmt = db.prepare(RESPONSES_IN_SLOT_RANGE);
   const cancellationsInRangeStmt = db.prepare(CANCELLATIONS_IN_SLOT_RANGE);
   const staleCancelledStmt = db.prepare(STALE_CANCELLED_SURVEYS);
@@ -762,6 +766,15 @@ export function openBackendStore(path: string): BackendStore {
     async putSettlementFloor(expiration: number): Promise<void> {
       putSettlementFloorStmt.run(expiration);
     },
+    async finalizationFloor(): Promise<number> {
+      const row = finalizationFloorStmt.get() as
+        | { finalizationFloor: number }
+        | undefined;
+      return row?.finalizationFloor ?? 0;
+    },
+    async putFinalizationFloor(endEpoch: number): Promise<void> {
+      putFinalizationFloorStmt.run(endEpoch);
+    },
     async reconcileSegment(
       range: SlotRange | null,
       surveys: readonly SurveyIndexRow[],
@@ -848,10 +861,15 @@ export function openBackendStore(path: string): BackendStore {
       ).map((r) => r.endEpoch);
     },
     async unfinalizedClosedSurveyRows(
+      floorEpoch: number,
       tipEpoch: number,
     ): Promise<SurveyIndexRow[]> {
       return (
-        unfinalizedClosedStmt.all(tipEpoch) as unknown as DbSurveyRow[]
+        unfinalizedClosedStmt.all(
+          floorEpoch,
+          tipEpoch,
+          floorEpoch,
+        ) as unknown as DbSurveyRow[]
       ).map(surveyRowFromDb);
     },
     async surveyRowsEndingAtOrAfter(

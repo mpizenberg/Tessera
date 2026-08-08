@@ -19,7 +19,9 @@
  * has a final proof verdict and block index, every counted responder has a
  * weight row, and every covered role has its electorate total. Any of these
  * still pending postpones emission to a later cron (artifacts are immutable, so
- * emitting early would freeze a legitimately valid response out forever).
+ * emitting early would freeze a legitimately valid response out forever) — and
+ * a postponed survey is what holds the pass's floor down, since the floor is
+ * exactly "the oldest epoch still holding something to decide".
  * Sealed surveys additionally wait for their drand round to publish, then
  * decrypt their in-window responses — over as many passes as the decrypt budget
  * needs — and tally the revealed answers (§6.5); a sealed survey on an
@@ -126,54 +128,99 @@ const ROLE_ENDPOINTS: Record<number, string> = {
   [Role.Keyholder]: "local-count",
 };
 
-/**
- * Returns the artifact key sets as they stand at the end of the pass — the
- * refresh's one full `tally_artifact` key read, with this pass's own emissions
- * folded in, so callers (proof-cache prune, materialize) reuse it instead of
- * re-scanning the table.
- *
- * `settlementFloor` is the governance pass's frontier: a candidate whose
- * expiration is at or above it still has links in motion and waits, while
- * below it the candidate row's own slice is the settled set an artifact may
- * commit to.
- */
+/** What one refresh hands the pass about the state it runs against. */
+export interface FinalizeGates {
+  readonly tip: ChainTip;
+  /**
+   * The scan couldn't be trusted to be whole — a dropped metadata batch or a
+   * catch-up run. Nothing finalizes.
+   */
+  readonly incomplete: boolean;
+  /** The instant the integrated prefix reaches; null before any cursor. */
+  readonly coveredThroughUnix: number | null;
+  /**
+   * The governance pass's frontier: a candidate whose expiration is at or above
+   * it still has links in motion and waits, while below it the candidate row's
+   * own slice is the settled set an artifact may commit to.
+   */
+  readonly settlementFloor: number;
+  /**
+   * This pass's own frontier: the lowest end epoch that still holds a survey to
+   * decide. Everything below it is finalized or permanently untalliable, so the
+   * candidate read skips it.
+   */
+  readonly finalizationFloor: number;
+}
+
+/** What the pass leaves behind: its key sets, and where its frontier now is. */
+export interface FinalizeOutcome {
+  /**
+   * The artifact key sets as they stand at the end of the pass — the refresh's
+   * one full `tally_artifact` key read, with this pass's own emissions folded
+   * in, so callers (proof-cache prune, the cancelled overlay) reuse it instead
+   * of re-scanning the table.
+   */
+  readonly keys: ArtifactKeys;
+  /**
+   * The finalization floor to bank, or null when the pass decided nothing and
+   * the banked one must stand.
+   */
+  readonly floor: number | null;
+}
+
 export async function finalizeClosedSurveys(
   config: ServerConfig,
   store: FinalizeStore,
   inputs: TallyInputSource,
   source: Pick<import("cardano-tessera-koios").KoiosDataSource, "txProofs">,
-  incomplete: boolean,
-  tip: ChainTip,
-  coveredThroughUnix: number | null,
-  settlementFloor: number,
+  gates: FinalizeGates,
   reveal: SealedRevealFn = tlockSealedReveal,
-): Promise<ArtifactKeys> {
+): Promise<FinalizeOutcome> {
+  const { tip, incomplete, coveredThroughUnix, settlementFloor } = gates;
   const artifactKeys = await store.finalizedArtifactKeys();
   // An incomplete scan (a dropped metadata batch or the page cap) may be
   // missing a responder tx or a cancellation for *any* survey, and we can't tell
   // which — so no artifact this refresh is safe to hash. Postpone all of them.
   if (incomplete) {
     console.warn("finalize: snapshot incomplete — skipping finalization");
-    return artifactKeys;
+    return { keys: artifactKeys, floor: null };
   }
   // Nothing integrated yet (fresh database, first run failed): nothing is
   // safely past its deadline on the covered prefix.
   if (coveredThroughUnix === null) {
     console.warn("finalize: no scan cursor banked — skipping finalization");
-    return artifactKeys;
+    return { keys: artifactKeys, floor: null };
   }
 
   const nowSec = Math.floor(Date.now() / 1000);
   const spe = config.app.secondsPerEpoch;
 
   // Candidates come from the stored rows — closed at this tip, no artifact
-  // yet — revived from their wire JSON. Each row also carries every
-  // cancellation targeting its survey, which is exactly the evidence the
-  // cancellation walk below needs. A survey finalizes only once the scan
-  // cursor has covered its vote deadline plus the reorg margin: the covered
-  // instant can never exceed the wall clock, and during catch-up a survey's
-  // responses may not all be integrated yet.
-  const candidateRows = await store.unfinalizedClosedSurveyRows(tip.epoch);
+  // yet, from the frontier up — revived from their wire JSON. Each row also
+  // carries every cancellation targeting its survey, which is exactly the
+  // evidence the cancellation walk below needs. A survey finalizes only once
+  // the scan cursor has covered its vote deadline plus the reorg margin: the
+  // covered instant can never exceed the wall clock, and during catch-up a
+  // survey's responses may not all be integrated yet.
+  const candidateRows = await store.unfinalizedClosedSurveyRows(
+    gates.finalizationFloor,
+    tip.epoch,
+  );
+  // Where the frontier stands once this pass is done: the lowest epoch still
+  // holding a candidate it expects to decide. A survey it *decided* — emitted,
+  // or judged permanently untalliable — stops holding the floor down and drops
+  // out of the candidate set for good, which is what keeps the read bounded
+  // rather than growing with the residue that never produces an artifact.
+  const undecided = new Map(
+    candidateRows.map((r) => [r.surveyKey, r.endEpoch]),
+  );
+  const settle = (): FinalizeOutcome => {
+    for (const key of artifactKeys.finalized) undecided.delete(key);
+    let floor = tip.epoch;
+    for (const endEpoch of undecided.values())
+      floor = Math.min(floor, endEpoch);
+    return { keys: artifactKeys, floor };
+  };
   const cancellationsByKey = new Map(
     candidateRows.map((r) => [
       r.surveyKey,
@@ -211,7 +258,7 @@ export async function finalizeClosedSurveys(
       `finalize: ${unsettledLinks} survey(s) postponed — governance links not settled`,
     );
   }
-  if (candidates.length === 0) return artifactKeys;
+  if (candidates.length === 0) return settle();
 
   // Spec-invalid surveys are untalliable (findings 10, 11, 45, 12): a non-v5 or
   // structurally-invalid definition, one whose end_epoch is not past its own
@@ -232,11 +279,12 @@ export async function finalizeClosedSurveys(
   const needEvidence = candidates.filter((s) => {
     if (isSurveyTalliable(s)) return true;
     untalliable.push(refKey(s.ref));
+    undecided.delete(refKey(s.ref));
     return false;
   });
-  // One line rather than one per survey: the verdict is permanent and nothing
-  // retires these from the candidate set, so the same list is reported on every
-  // refresh forever. Listing them all would drown the log at archive scale.
+  // One line rather than one per survey: a floor reset re-reads the whole
+  // archive, and every spec-invalid definition in it reaches this verdict again
+  // in that one pass.
   if (untalliable.length > 0) {
     const shown = untalliable.slice(0, UNTALLIABLE_LOG_REFS);
     const rest = untalliable.length - shown.length;
@@ -246,7 +294,7 @@ export async function finalizeClosedSurveys(
         (rest > 0 ? `, +${rest} more` : ""),
     );
   }
-  if (needEvidence.length === 0) return artifactKeys;
+  if (needEvidence.length === 0) return settle();
 
   const talliable: SurveyRecord[] = [];
   for (const s of await withOwnerProofs(source, needEvidence)) {
@@ -262,11 +310,12 @@ export async function finalizeClosedSurveys(
       console.warn(
         `finalize: ${refKey(s.ref)} owner credential unproven — untalliable, no artifact`,
       );
+      undecided.delete(refKey(s.ref));
       continue;
     }
     talliable.push(s);
   }
-  if (talliable.length === 0) return artifactKeys;
+  if (talliable.length === 0) return settle();
 
   // --- cancelled surveys: a cancellation artifact, no weight work ------------
   // The snapshot keeps `proof: null` for cancellations of closed surveys (the
@@ -284,14 +333,14 @@ export async function finalizeClosedSurveys(
   // A sealed survey on a drand chain the bundled tlock can't decrypt is
   // permanently unrevealable — its votes are undecryptable forever (vote-time
   // guard aside, an old survey may predate it). Drop it entirely: no weight
-  // work, no artifact. Warned every pass (accepted; a persisted "skipped"
-  // marker is a possible follow-up).
+  // work, no artifact, and decided as far as the floor is concerned.
   const open = notCancelled.filter((s) => {
     const mode = s.definition.submissionMode;
     if (mode.type === "sealed" && !isQuicknet(mode.chainHash)) {
       console.warn(
         `finalize: ${refKey(s.ref)} sealed on unsupported drand chain — skipped (no artifact)`,
       );
+      undecided.delete(refKey(s.ref));
       return false;
     }
     return true;
@@ -575,7 +624,7 @@ export async function finalizeClosedSurveys(
       }
     }
   }
-  return artifactKeys;
+  return settle();
 }
 
 /**

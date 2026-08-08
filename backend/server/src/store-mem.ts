@@ -67,8 +67,10 @@ export function memBackendStore(): MemBackendStore {
   let cancellationRows: readonly CancellationRow[] = [];
   let meta: SnapshotMeta | null = null;
   let scanStateRow: ScanState | null = null;
-  // Rides the scan-state row, as in SQL: no row banked yet, no floor to bank.
+  // Both ride the scan-state row, as in SQL: no row banked yet, no floor to
+  // bank.
   let settlementFloorValue = 0;
+  let finalizationFloorValue = 0;
 
   // Same semantics as the SQL in snapshotSql.ts (and core's pageSurveyList).
   const bucketOf = (r: SurveyIndexRow, tipEpoch: number): number =>
@@ -291,6 +293,12 @@ export function memBackendStore(): MemBackendStore {
     },
     async putSettlementFloor(expiration) {
       if (scanStateRow !== null) settlementFloorValue = expiration;
+    },
+    async finalizationFloor() {
+      return finalizationFloorValue;
+    },
+    async putFinalizationFloor(endEpoch) {
+      if (scanStateRow !== null) finalizationFloorValue = endEpoch;
     },
 
     async reconcileSnapshot(surveys, responses, cancellations, envelope) {
@@ -515,9 +523,14 @@ export function memBackendStore(): MemBackendStore {
         ),
       ].sort((a, b) => a - b);
     },
-    async unfinalizedClosedSurveyRows(tipEpoch) {
+    async unfinalizedClosedSurveyRows(floorEpoch, tipEpoch) {
       return surveyIndexRows
-        .filter((r) => r.endEpoch < tipEpoch && !artifacts.has(r.surveyKey))
+        .filter(
+          (r) =>
+            r.endEpoch >= floorEpoch &&
+            r.endEpoch < tipEpoch &&
+            !artifacts.has(r.surveyKey),
+        )
         .sort(bySurveyKey);
     },
     async surveyRowsEndingAtOrAfter(minEndEpoch) {
