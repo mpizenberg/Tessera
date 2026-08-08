@@ -63,62 +63,53 @@ voting power, and their pool's stake).
 ## 3. Validation → the hashed counted set
 
 The hashed `tally` (§5) is a pure function of _which responses count_ and _their
-answer values_, so the validation ruleset **is** part of the hash preimage — a
-verifier reproduces the hash only by applying it byte-for-byte, which is what
-`rulesetHash` binds. This authoritative validation is distinct from the browser's
-fast **approximate** pass (`audit.ts`: `epochOfSlot`-estimated deadline,
-`(slot, txHash)` dedup) that drives the live UI but is _not_ authoritative for the
-artifact; the serving tier produces the counted set below from ledger facts.
+answer values_, so the validation ruleset **is** part of the hash preimage: a
+verifier reproduces the hash only by applying it byte-for-byte.
 
-A response is **tally-valid** iff all of:
+**The ruleset is data, and the data is the authority.** `RULESET_DESCRIPTOR`
+(`packages/cip179/src/tally/artifact.ts`) is a canonical description of every
+counting rule — the covered roles, what one unit of weight measures for each, and
+one string per rule. `rulesetHash()` is its blake2b-256 and is embedded in every
+tally body, so two artifacts hashed under different rules can never compare
+equal. `rulesetVersion` is bumped on any semantic change and a golden test pins
+the resulting hash; the bump is required even when the change lives inside
+`validateResponse` or `dedupeResponses` rather than in the descriptor's text, and
+those files carry a matching RULESET-PINNED-BEHAVIOR note. **Read the rules
+there.** Restating them here would be a second definition with nothing pinning
+it — what follows is only what the rule strings cannot say.
 
-1. **On-time.** The response tx's block epoch ≤ `end_epoch` (inclusive, §2),
-   read from the block's authoritative `epoch_no` (Koios) — _not_ the tip-relative
-   `epochOfSlot` estimate, which can disagree at a boundary slot.
-2. **Credential proof** (CIP-179 Mechanism A/B). Control of `credential` is proven
-   by `required_signers` (field 14: key hash present, or native script resolved +
-   satisfied) or by a `voting_procedures` entry binding it to `linked_action_id`.
-   Unproven ⇒ excluded; without this the tally is forgeable (anyone could name
-   another's credential). Needs the tx body + witnesses / native-script resolution
-   (the `NativeScriptInfo` seam).
-3. **Well-formed.** Passes `cip-179` `validateResponse` (mode, eligible-role claim,
-   in-constraint answers, no duplicate/out-of-range indices, required answered).
-   The **pinned validator version** is part of the ruleset.
-4. **Member.** `credential` is **registered at `end_epoch`** (§1; inactive ⇒
-   weight 0). Membership is checked **only** at `end_epoch` — response-time
-   membership (CIP-179 phase 1) is presentation-only, a deliberate deviation.
+**Authoritative ≠ the browser's pass.** `audit.ts` runs a fast approximation for
+the live UI — `epochOfSlot`-estimated deadlines, `(slot, txHash)` dedup — which is
+_not_ authoritative for the artifact. The counted set is produced from ledger
+facts instead: the block's authoritative `epoch_no` rather than a tip-relative
+estimate, which can disagree at a boundary slot, and the full CIP-179 chain order
+`(slot, tx_index_in_block, response_index)`, a total order with no ties. Those
+last two are read-model fields the UI lacks, which is why its key is a display
+approximation only.
 
-**Dedup.** Among the tally-valid responses, one wins per
-`(survey_ref, role, credential)` by CIP-179 chain order
-**`(slot, tx_index_in_block, response_index)`** — a total order (no ties), latest
-wins. Deduping over the _tally-valid_ set (not all responses) means an invalid
-later response never suppresses a valid earlier one. This requires two read-model
-fields the UI lacks — `tx_index_in_block` (Koios block tx index) and
-`response_index` (payload array position); the UI's `(slot, txHash)` key is a
-display approximation only.
+Why three of the rules are shaped as they are:
 
-**Validate early what can be validated early.** Rules 1–3 need only the response
-transaction plus complementary network info — its block `epoch_no` (on-time), the
-tx witnesses / `required_signers` and any native-script resolution (proof), and
-the payload itself (well-formed) — all fixed once the tx is confirmed, well before
-`end_epoch`. The serving tier should check and **persist** them incrementally as
-responses land (e.g. during the read-path refresh, `ARCHITECTURE.md` §5), not
-re-run them in a batch at close. Only rule 4 (membership) and the weights
-(`ARCHITECTURE.md` §6.2) need the `end_epoch` snapshot, so finalization does just
-that boundary-bound work over the already-validated responder set — flattening
-what would otherwise be a burst of tx fetches, proof-checking, and CPU at epoch
-end (and the Koios rate-limiting it would invite). Dedup's ordering fields
-(`slot`, `tx_index_in_block`, `response_index`) are likewise known early; only the
-final winner can shift, since dedup runs over the membership-filtered set.
+- **Dedup runs over the tally-valid set**, not over all responses, so an invalid
+  later response never suppresses a valid earlier one.
+- **Membership is checked only at `end_epoch`** (§1). Response-time membership
+  (CIP-179 phase 1) is presentation-only — a deliberate deviation.
+- **Talliability gates the definition**, not only the responses. A survey whose
+  on-chain definition fails semantic validation produces no artifact and is never
+  counted, and the gate includes CIP-179's owner rule: the defining transaction
+  must itself prove the `owner` credential. Without that, a definition could name
+  any credential — a known DRep, a foundation — and be tallied under a borrowed
+  name. A backend that tallies an untalliable survey diverges from a conformant
+  verifier, which reaches the untalliable verdict independently.
 
-**Sealed surveys.** The counted set is final only at reveal: decrypt, re-run
-`validateResponse`, drop undecryptable/invalid. Deadline is by submission slot;
-weights by `end_epoch`.
-
-**Cancelled surveys.** An owner-verified, in-window cancellation ⇒ the survey
-emits an artifact whose hashed body is a single **cancellation record** (cancelling
-`txHash`, owner-proof reference, slot/epoch) and no per-role tally. Unverified
-("claimed") cancellations are ignored.
+**Validate early what can be validated early.** Everything except membership and
+the weights is fixed once the response transaction is confirmed, well before
+`end_epoch`: its block epoch, its witnesses and any native-script resolution, the
+payload itself. The serving tier persists those verdicts incrementally as
+responses land (`ARCHITECTURE.md` §5) rather than re-running them in a batch at
+close, so finalization does only the boundary-bound work — otherwise epoch end is
+a burst of transaction fetches, proof checking and CPU, and the Koios rate
+limiting that invites. Dedup's ordering fields are known early too; only the final
+winner can shift, since dedup runs over the membership-filtered set.
 
 ---
 
@@ -135,6 +126,11 @@ Weighting is the mechanical generalization of the existing tally: **replace
   - singleChoice / multiSelect / ranking-first-preference → `Σ weight` per option.
   - numericRange / rating / pointsAllocation → store the **rational as two
     integers**: `Σ(weightᵢ · valueᵢ)` and `Σ weightᵢ`.
+- **Per-question aggregates are sparse**: only options actually answered appear,
+  each carrying its own `index`, and rating distributions carry only populated
+  levels. A definition declares its own option count and rating span, so a dense
+  body would be sized by a number a hostile survey chooses — the body grows with
+  responses received, never with the width declared.
 - **No floats anywhere in the result.** Averages, percentages, and participation
   rates are derived by the **presentation layer** from the integer aggregates +
   the totals. This eliminates float canonicalization and makes the artifact hash
@@ -187,56 +183,39 @@ Excluding provenance is what lets Koios- and node-produced artifacts share one
 hash when results are identical — keeping the Tier 1 → Tier 2 swap invisible to
 the verifier (`ARCHITECTURE.md` §2, §8).
 
-Contents (sketch):
+Shape (the typed definition is `TallyArtifact` in `cip-179/tally`'s
+`artifact.ts`):
 
 ```jsonc
 {
-  // hashed:  artifactHash = H(canonical(tally))
   "tally": {
-    "rulesetHash": "...", // binds the §3 validation ruleset + epoch semantics + role→measure + pinned cip-179 validator
+    "rulesetHash": "…",
     "network": "mainnet",
-    "survey": { "txId": "...", "index": 0, "endEpoch": 642 },
-    "sealed": false, // true iff sealed submission mode; reveal context in provenance
+    "survey": { "txId": "…", "index": 0, "endEpoch": 642 },
+    "sealed": false,
     "perRole": [
       {
-        "role": 1, // CIP-179 Role
-        "total": "12345678901234", // epoch total for this role (denominator; presentation decides use)
+        "role": 1,
+        "total": "12345678901234",
         "responders": [
           {
             "credential": "…",
             "weight": "1000000000",
             "txHash": "…",
-            "responseIndex": 0, // position in the tx's label-17 payload
-            // sealed surveys only: the revealed answers in JSON-safe wire form
-            // (bytes→hex, bigint→decimal string, Map→tagged pairs sorted by the
-            // canonical JSON of the tagged key), e.g.
-            // "answers": [{ "type": "singleChoice", "questionIndex": 0, "optionIndex": 1 }]
+            "responseIndex": 0,
           },
-          // unregistered responders are excluded, not listed here
         ],
-        "questions": [
-          /* BigInt-string aggregates + {numerator,denominator} ratios */
-        ],
+        "questions": [],
       },
     ],
   },
-  // NOT hashed: provenance envelope
   "provenance": {
     "source": {
       "provider": "koios",
       "baseUrl": "https://api.koios.rest/api/v1",
     },
     "fetchedAt": 0,
-    "byRole": [
-      { "role": 1, "endpoint": "/account_stake_history" },
-      // fallback-estimated weights, if any: "estimated": [ "<cred>", … ]
-    ],
-    // sealed surveys only: the reveal context an offline auditor re-checks.
-    // "sealedReveal": {
-    //   "chainHash": "52db9ba7…c84e971", // quicknet
-    //   "round": 19000000,
-    //   "beacon": { "round": 19000000, "randomness": "…", "signature": "…" },
-    // },
+    "byRole": [{ "role": 1, "endpoint": "/account_stake_history" }],
   },
 }
 ```
