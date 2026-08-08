@@ -17,8 +17,14 @@
 **Goals**
 
 - **Secure by default.** No shared Koios token shipped in client code.
-- **Scalable.** Koios load is decoupled from user count (one server-side scan
-  serves everyone, instead of every browser re-scanning).
+- **Scalable on both axes.** Koios load is decoupled from user count — one
+  server-side scan serves everyone, instead of every browser re-scanning — and
+  from corpus age: **no per-refresh or per-request cost may grow with the size
+  of the archive.** Every predicate over all of history gets a banked frontier
+  that retires the settled part of it. That invariant is why the refresh walks a
+  window rather than rebuilding (§5.4), why governance links settle by epoch
+  (§5.2), and why finalization and the proof cache carry frontiers of their own
+  (§6.5); it is the standard those sections are held to.
 - **Reproducible.** Anyone can re-run the whole setup with their own Cloudflare
   account _or_ self-host it without a Cloudflare account at all.
 - **Tally-ready.** Produce per-role, stake-weighted survey results from Koios,
@@ -38,26 +44,25 @@
 
 ---
 
-## 1. Today's state and the two defects
+## 1. Why the serving tier exists
 
-The frontend talks to Koios **directly from every browser**, on each load/refresh
-running the full read pipeline (`src/data/koios.ts`): paged
-`/tx_by_metalabel?_label=17`, batched `/tx_metadata`, one `/tx_cbor` pass for the
-owner-proofs of open surveys and of the transactions cancelling them,
-`/proposal_list` for governance links, `/tip`, and polled `/tx_status`.
+The frontend originally talked to Koios **directly from every browser**, running
+the full read pipeline on each load: paged `/tx_by_metalabel?_label=17`, batched
+`/tx_metadata`, a `/tx_cbor` pass for the owner-proofs of open surveys and of the
+transactions cancelling them, `/proposal_list`, `/tip`, polled `/tx_status`. Two
+defects, both structural:
 
-1. **Security.** A Koios credential has to live in the browser at all: the
-   anonymous tier is CORS-blocked, so a client-side token is effectively
-   mandatory, and any token shipped with the app is visible to everyone and
-   burnable against one quota.
-2. **Scalability.** Koios load scales with _users × refreshes_, all on one quota,
-   and each client re-scans the full label-17 history from `sinceUnix` with no
-   shared cache — cost grows for every user as surveys accumulate, and the
-   `MAX_PAGES` cap (`incomplete` flag) is a real ceiling.
+1. **Security.** Koios's anonymous tier is CORS-blocked, so a client-side token
+   is effectively mandatory — and any token shipped with the app is visible to
+   everyone and burnable against one quota.
+2. **Scalability.** Load scaled with _users × refreshes_ on that one quota, and
+   each client re-scanned all of label-17 history from `sinceUnix` with no shared
+   cache, against a hard `MAX_PAGES` ceiling.
 
 The `DataSource` seam (`cardano-tessera-core`'s `source.ts`) was built for exactly this swap:
 _"a future semantic indexer backend can implement the same interface and drop in
-with no change to the domain or UI layers."_
+with no change to the domain or UI layers."_ That direct path still runs, as the
+power-user/offline mode (§8); it is no longer what the app does by default.
 
 ---
 
@@ -124,8 +129,11 @@ core, a thin swappable runtime/storage adapter, and a portable HTTP contract.
 
 **Consequences**
 
-- The **baseline reproducible artifact is a container/compose stack**; Cloudflare
-  is _one_ managed deploy target for Tier 1, not a requirement.
+- Cloudflare is _one_ managed deploy target for Tier 1, not a requirement: the
+  same server already runs as a plain process against a `node:sqlite` file
+  (`pnpm start`), with no Cloudflare account. Packaging that process as a
+  container/compose stack is the intended baseline artifact and is **not built
+  yet**.
 - Substrate is **SQL/SQLite**, the most portable Cloudflare primitive (vs KV,
   which is the least). Avoid Durable Objects in the core path; if used later for
   live push, treat as a CF-only enhancement.
@@ -140,41 +148,39 @@ core, a thin swappable runtime/storage adapter, and a portable HTTP contract.
 
 ---
 
-## 4. Workspace packaging (prerequisite refactor)
+## 4. Workspace packaging
 
-Running the _same_ validation + tally code in the browser, the serving tier, and
-a standalone verifier requires factoring the shared code out of the app. This is
-load-bearing for the verifiability story, not just hygiene.
+Running the _same_ validation and tally code in the browser, the serving tier and
+a standalone verifier is load-bearing for the verifiability story, not hygiene.
+Two cut lines, in this order — _reusable CIP-179 semantics_ before
+_Tessera-specific but pure_ before _concrete I/O and runtime_:
 
-- **`cip-179`** — a pnpm-workspace package at `packages/cip179`, imported by
-  name. It has since grown beyond the codec into the reusable, cross-implementation
-  surface (subpath exports `cip-179/domain`, `cip-179/tally`, `cip-179/txproof`,
-  `cip-179/tlock`, and the `cip-179/evolution` serialization adapter). The
+- **`cip-179`** (`packages/cip179`) — everything a second, independent
+  implementation of the CIP would need: the codec, plus the pure domain
+  (`cip-179/domain`: on-chain record shapes, `audit`, `dedupe`, `proof`,
+  `survey`, `govLink`), the weighted tally and its canonical content-addressed
+  artifact (`cip-179/tally`), `cip-179/content`, `cip-179/txproof`,
+  `cip-179/tlock`, and the `cip-179/evolution` serialization adapter. The
   txproof/tlock stacks inject their Cardano-serialization primitives through
-  `TxProofCodec` / `MetadatumCodec` ports, so evolution-sdk is confined to the
+  `TxProofCodec` / `MetadatumCodec` ports, so evolution-sdk is confined to that
   adapter; see `packages/cip179/README.md`.
-- **`cardano-tessera-core`** — extract the **pure** domain from `frontend/app/src`:
-  - **Move:** the data-model **types** from `data/source.ts` (`ChainPos`,
-    `ChainTip`, `SurveyRecord`, `ResponseRecord`, `CancellationRecord`,
-    `Cip179Records`, `GovLink`, `CancellationProof`, `NativeScriptInfo`), and the
-    pure logic: `audit.ts`, `tally.ts`, `survey.ts`, `cancellation.ts`,
-    `answer.ts`, `govLink.ts`, `fee.ts`, plus `util/hex.ts`.
-  - **Keep in the app:** anything touching CIP-30 / wallet (`roles.ts`'s
-    wallet-facing helpers, `wallet/*`) or `~/config` runtime. `roles.ts` splits:
-    the pure credential/eligibility core may move; the `WalletIdentity`-coupled
-    helpers stay.
-  - **Cut line:** _data-model types + pure validation/tally/aggregation →
-    package; anything wallet/CIP-30/runtime → app._
-- `cardano-tessera-core` is authored **BigInt- and rational-ready** from the outset
-  (§6.6): the **weighted, content-addressed** tally (`weightedTally*` → the
-  hashed artifact) uses BigInt aggregates and returns ratios as integer
-  `{numerator, denominator}` pairs, never floats. Note this applies to the
-  _hashed_ path only: `tally.ts` is the unweighted, count-based **display**
-  tally (bar fill fractions, mean/median), which uses floats and is never
-  hashed — a presentation helper that happens to live in the package.
+- **`cardano-tessera-core`** (`packages/core`) — the Tessera seam and nothing
+  else: the `DataSource` read interface with the Explore-list and health payload
+  shapes (`source.ts`), keyset paging (`page.ts`), the list-aggregation adapter
+  (`surveyList.ts`), portable config. It imports the `cip-179` subpaths and
+  never re-exports them, so no consumer can reach reusable semantics _through_
+  Tessera.
+- **`cardano-tessera-koios`** (`packages/koios`) — the concrete Koios reader and
+  tally inputs. Outside the pure packages, shared by the browser's direct path
+  and the serving tier's refresh.
+- **The app** keeps everything touching CIP-30, wallet, or `~/config` runtime —
+  including `displayTally.ts`, the unweighted count-based tally behind bar
+  fractions and means/medians, which uses floats and is never hashed.
 
-`KoiosDataSource` (the concrete Koios reader) stays in the app/serving tier, not
-in `cardano-tessera-core` — the package is pure logic + types only.
+The hashed path is **BigInt- and rational-ready** by construction (§6.6):
+`weightedTally*` aggregates in BigInt and returns ratios as integer
+`{numerator, denominator}` pairs, never floats, so canonicalization has no
+float profile to pin and the artifact hash is stable across implementations.
 
 ---
 
