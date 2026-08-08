@@ -18,7 +18,8 @@
  * that horizon a survey's own stored slice is the frozen answer, carried
  * through every re-projection. That is what keeps the pass — and this
  * module's link read — bounded by the live surveys rather than by every
- * survey ever run.
+ * survey ever run. A survey the segment carries but no row holds is the one
+ * case with no slice to carry: the settled epoch memo still has its links.
  */
 
 import {
@@ -36,7 +37,13 @@ import { fromJsonSafe } from "cip-179/tally";
 import type { KoiosDataSource } from "cardano-tessera-koios";
 
 import { cancellationRowOf, responseRowOf, surveyRowsOf } from "./materialize";
-import type { SlotRange, SnapshotMeta, SnapshotStore } from "./store";
+import type {
+  GovLinkStore,
+  SettledGovEpoch,
+  SlotRange,
+  SnapshotMeta,
+  SnapshotStore,
+} from "./store";
 import { validationKey } from "./store";
 
 /** The stored-row reads and the one write a segment integration performs. */
@@ -50,7 +57,22 @@ export type IntegrateStore = Pick<
   | "surveyGovLinks"
   | "staleCancelledSurveyKeys"
   | "reconcileSegment"
->;
+> &
+  Pick<GovLinkStore, "settledGovEpochs">;
+
+/** What one refresh's governance pass answered, as integration reads it. */
+export interface GovPass {
+  /** The links it resolved. */
+  readonly links: readonly GovLink[];
+  /**
+   * The end epochs it asked about — where {@link links} is authoritative. A
+   * touched survey outside it carries its stored slice through untouched: its
+   * epoch is settled, so the row already holds the final answer.
+   */
+  readonly scope: ReadonlySet<number>;
+  /** The settlement floor it ran against — the link diff's horizon. */
+  readonly floor: number;
+}
 
 export interface SegmentArgs {
   /** The segment scan's records. */
@@ -61,17 +83,13 @@ export interface SegmentArgs {
    */
   readonly range: SlotRange | null;
   readonly tip: ChainTip;
-  /** The links this refresh's governance pass resolved. */
-  readonly govLinks: readonly GovLink[];
   /**
-   * The end epochs that pass asked about — where `govLinks` is authoritative.
-   * A touched survey outside it carries its stored slice through untouched:
-   * its epoch is settled, so the row already holds the final answer. Empty
-   * when the pass failed, which makes every row its own source.
+   * This refresh's governance pass, or null when it asked nothing: a failed
+   * fetch, or a second integration riding on what the first one already
+   * wrote. Every touched survey is then its own link source and no
+   * link-change diff runs — nothing was re-read, so nothing may change.
    */
-  readonly govLinkScope: ReadonlySet<number>;
-  /** The settlement floor the pass ran against — the link diff's horizon. */
-  readonly govLinkFloor: number;
+  readonly govPass: GovPass | null;
   /** Surveys a tally artifact finalized as cancelled (the overlay). */
   readonly finalizedCancelled: ReadonlySet<string>;
   readonly meta: SnapshotMeta;
@@ -100,15 +118,7 @@ export async function integrateSegment(
   source: Pick<KoiosDataSource, "txProofs">,
   args: SegmentArgs,
 ): Promise<SegmentIntegration> {
-  const {
-    records,
-    range,
-    tip,
-    govLinks,
-    govLinkScope,
-    finalizedCancelled,
-    meta,
-  } = args;
+  const { records, range, tip, govPass, finalizedCancelled, meta } = args;
   const inRange = (slot: number): boolean =>
     range !== null && slot >= range.fromSlot && slot <= range.toSlot;
 
@@ -124,18 +134,16 @@ export async function integrateSegment(
   // roll back). Compared order-insensitively so scan-order jitter between
   // runs never churns rows.
   const currentLinks = new Map<string, GovLink[]>();
-  for (const l of govLinks) {
+  for (const l of govPass?.links ?? []) {
     const list = currentLinks.get(l.surveyKey);
     if (list) list.push(l);
     else currentLinks.set(l.surveyKey, [l]);
   }
   const linkTouched: string[] = [];
-  if (govLinkScope.size > 0) {
+  if (govPass) {
     // Only an unsettled epoch's links can move, so the stored side of the
     // diff stops at the settlement horizon.
-    const stored = await store.surveyGovLinks(
-      Math.max(0, args.govLinkFloor - 1),
-    );
+    const stored = await store.surveyGovLinks(Math.max(0, govPass.floor - 1));
     for (const key of new Set([...stored.keys(), ...currentLinks.keys()])) {
       if (
         linkSliceText(stored.get(key)) !== linkSliceText(currentLinks.get(key))
@@ -230,16 +238,37 @@ export async function integrateSegment(
     )
     .map((row) => fromJsonSafe(JSON.parse(row.record)) as ResponseRecord);
 
+  // A touched survey below the horizon with no row at all is one this segment
+  // resurrects — a row lost out-of-band, which the drift-healing rescan walks
+  // back into existence. There is no slice to carry forward, so the epoch memo
+  // the slice was projected from is read instead; a survey whose epoch has not
+  // settled yet is left unlinked and the next pass, which now sees its row,
+  // puts its links back.
+  const rowless = touchedRecords.filter(
+    (s) =>
+      !govPass?.scope.has(s.definition.endEpoch) &&
+      !rowByKey.has(refKey(s.ref)),
+  );
+  const revived =
+    rowless.length > 0
+      ? await store.settledGovEpochs([
+          ...new Set(rowless.map((s) => s.definition.endEpoch + 1)),
+        ])
+      : new Map<number, SettledGovEpoch>();
+
   // Links per touched survey: this refresh's, for the epochs it asked about;
   // the row's own frozen slice for the rest. Settled links are not re-derived
   // from the epoch memo on every pass — the projection they landed in IS the
   // copy, which is what bounds the pass to the epochs still in motion.
   const projectedLinks = touchedRecords.flatMap((s) => {
     const key = refKey(s.ref);
-    if (govLinkScope.has(s.definition.endEpoch))
+    if (govPass?.scope.has(s.definition.endEpoch))
       return currentLinks.get(key) ?? [];
     const row = rowByKey.get(key);
-    return row ? (JSON.parse(row.govLinks) as GovLink[]) : [];
+    if (row) return JSON.parse(row.govLinks) as GovLink[];
+    return (revived.get(s.definition.endEpoch + 1)?.links ?? []).filter(
+      (l) => l.surveyKey === key,
+    );
   });
 
   const surveyRows = surveyRowsOf(

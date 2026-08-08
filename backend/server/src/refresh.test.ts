@@ -1,6 +1,7 @@
 /**
- * The refresh's pure decision points: how a run resumes the segment walk from
- * the banked state, and which slots its sweep may delete in.
+ * The refresh's pure decision points: how a run resumes the segment walk and
+ * the drift-healing rotation from the banked state, and which slots their
+ * sweeps may delete in.
  */
 
 import { describe, expect, it } from "vitest";
@@ -11,7 +12,9 @@ import type { SegmentScan } from "cardano-tessera-koios";
 
 import {
   coveredRange,
+  nextTrickle,
   planSegment,
+  planTrickle,
   SCAN_GENERATION,
   SETTLEMENT_MARGIN_SLOTS,
 } from "./refresh";
@@ -102,6 +105,91 @@ describe("coveredRange", () => {
         960_000,
       ),
     ).toBeNull();
+  });
+});
+
+describe("planTrickle", () => {
+  const FLOOR = 1_000;
+  const settledTop = 900_000 - SETTLEMENT_MARGIN_SLOTS - 1;
+  /** The main segment of a steady-state run whose cursor reached the tip. */
+  const steady = planSegment(state({}), FLOOR);
+
+  it("starts the rotation at the config floor with nothing banked", () => {
+    expect(planTrickle(state({}), steady, FLOOR)).toEqual({
+      from: { slot: FLOOR },
+      sweepFromSlot: FLOOR,
+      toSlot: settledTop,
+    });
+  });
+
+  it("continues strictly after the banked rotation cursor", () => {
+    const plan = planTrickle(
+      state({ trickle: { slot: 500_000, txHash: "aa" } }),
+      steady,
+      FLOOR,
+    );
+    expect(plan!.from).toEqual({ slot: 500_000, txHash: "aa" });
+    expect(plan!.sweepFromSlot).toBe(500_001);
+    expect(plan!.toSlot).toBe(settledTop);
+  });
+
+  it("stops one slot below the run's own segment", () => {
+    // Two integrations in one refresh; neither may sweep where the other
+    // wrote. The main segment's floor lags the cursor by a run, so it is the
+    // lower of the two bounds whenever the tip has moved.
+    const behind = { from: { slot: 600_000 }, sweepFromSlot: 600_000 };
+    expect(planTrickle(state({}), behind, FLOOR)!.toSlot).toBe(599_999);
+  });
+
+  it("stops below the settlement margin when the segment swept above it", () => {
+    // The run that finishes a catch-up: its segment continued from a cursor
+    // near the tip, but nothing there is settled enough to rescan.
+    const catchUp = planSegment(
+      state({ caughtUp: false, cursor: { slot: 899_000, txHash: "bb" } }),
+      FLOOR,
+    );
+    expect(planTrickle(state({}), catchUp, FLOOR)!.toSlot).toBe(settledTop);
+  });
+
+  it("rescans nothing while the main walk is catching up", () => {
+    expect(planTrickle(state({ caughtUp: false }), steady, FLOOR)).toBeNull();
+  });
+
+  it("rescans nothing until something has settled below the margin", () => {
+    expect(planTrickle(state({ cursor: null }), steady, FLOOR)).toBeNull();
+    const young = planSegment(state({}), 850_000);
+    expect(planTrickle(state({}), young, 850_000)).toBeNull();
+  });
+});
+
+describe("nextTrickle", () => {
+  const banked = { slot: 500_000, txHash: "aa" };
+
+  it("moves on from the last row listed", () => {
+    expect(nextTrickle(scanWith({ exhausted: false }), banked)).toEqual({
+      slot: 950_000,
+      txHash: "dd",
+    });
+  });
+
+  it("wraps to the start once the settled prefix is exhausted", () => {
+    expect(nextTrickle(scanWith({}), banked)).toBeNull();
+  });
+
+  it("holds its place when the scan was incomplete", () => {
+    expect(
+      nextTrickle(
+        scanWith({
+          records: {
+            surveys: [],
+            responses: [],
+            cancellations: [],
+            incomplete: true,
+          },
+        }),
+        banked,
+      ),
+    ).toBe(banked);
   });
 });
 

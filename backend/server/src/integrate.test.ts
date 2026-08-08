@@ -23,7 +23,7 @@ import {
   type SurveyRecord,
 } from "cip-179/domain";
 
-import { integrateSegment } from "./integrate";
+import { integrateSegment, type GovPass } from "./integrate";
 import { listCountsOf, materializeSnapshot } from "./materialize";
 import type { SlotRange, SnapshotMeta } from "./store";
 import { memBackendStore, type MemBackendStore } from "./store-mem";
@@ -192,18 +192,19 @@ const inSegment =
     r.slot >= range.fromSlot && r.slot <= range.toSlot;
 
 /**
- * The governance pass's frontier, as the refresh computes it: an expiration
- * settles as soon as the tip reaches it, so the floor is the lowest one still
- * ahead of the tip, and the query set is the surveys from there up plus
- * whatever the segment carried. Below it the pass asks nothing and a row's own
- * slice is the only link source — which is what these tests put under the
- * oracle, since the rebuild is handed every link either way.
+ * The governance pass a refresh at this tip would hand integration. An
+ * expiration settles as soon as the tip reaches it, so the floor is the lowest
+ * one still ahead of the tip, and the query set is the surveys from there up
+ * plus whatever the segment carried — a pass only ever answers for the epochs
+ * it asked about. Below the floor it asks nothing and a row's own slice is the
+ * only link source, which is what these tests put under the oracle, since the
+ * rebuild is handed every link either way.
  */
-function linkHorizon(
+function govPassFor(
   chain: Chain,
   tip: ChainTip,
-  segment: readonly SurveyRecord[],
-): { floor: number; scope: Set<number> } {
+  segment: readonly SurveyRecord[] = [],
+): GovPass {
   const expirations = chain.surveys.map((s) => s.definition.endEpoch + 1);
   const unsettled = expirations.filter((e) => e > tip.epoch);
   const floor =
@@ -218,7 +219,11 @@ function linkHorizon(
       .map((s) => s.definition.endEpoch),
     ...segment.map((s) => s.definition.endEpoch),
   ]);
-  return { floor, scope };
+  return {
+    links: chain.govLinks.filter((l) => scope.has(l.endEpoch)),
+    scope,
+    floor,
+  };
 }
 
 async function runRefresh(
@@ -228,7 +233,6 @@ async function runRefresh(
 ): Promise<void> {
   const range = { fromSlot: Math.max(0, tip.slot - MARGIN), toSlot: tip.slot };
   const surveys = chain.surveys.filter(inSegment(range));
-  const { floor, scope } = linkHorizon(chain, tip, surveys);
   await integrateSegment(store, emptySource, {
     records: {
       surveys,
@@ -237,23 +241,11 @@ async function runRefresh(
     },
     range,
     tip,
-    // The pass only ever returns links from the epochs it asked about.
-    govLinks: chain.govLinks.filter((l) => scope.has(l.endEpoch)),
-    govLinkScope: scope,
-    govLinkFloor: floor,
+    govPass: govPassFor(chain, tip, surveys),
     finalizedCancelled: chain.finalizedCancelled,
     meta: metaAt(tip),
   });
   await store.markFinalizedCancelled([...chain.finalizedCancelled]);
-}
-
-/** `linkHorizon` shaped as the two `SegmentArgs` fields it feeds. */
-function linkHorizonArgs(
-  chain: Chain,
-  tip: ChainTip,
-): { govLinkScope: Set<number>; govLinkFloor: number } {
-  const { floor, scope } = linkHorizon(chain, tip, []);
-  return { govLinkScope: scope, govLinkFloor: floor };
 }
 
 async function expectOracleMatch(
@@ -476,8 +468,7 @@ describe("segment integration mechanics", () => {
       records: { surveys: [], responses: [], cancellations: [] },
       range,
       tip: tipAt(640),
-      govLinks: chain.govLinks,
-      ...linkHorizonArgs(chain, tipAt(640)),
+      govPass: govPassFor(chain, tipAt(640)),
       finalizedCancelled: chain.finalizedCancelled,
       meta: metaAt(tipAt(640)),
     });
@@ -529,8 +520,7 @@ describe("segment integration mechanics", () => {
       records: { surveys: [], responses: [], cancellations: [cancel] },
       range,
       tip: tipAt(600),
-      govLinks: [],
-      ...linkHorizonArgs(chain, tipAt(600)),
+      govPass: govPassFor(chain, tipAt(600)),
       finalizedCancelled: new Set(),
       meta: metaAt(tipAt(600)),
     });
@@ -567,6 +557,84 @@ describe("segment integration mechanics", () => {
     await expectOracleMatch(store, chain, tipAt(560));
   });
 
+  it("re-derives a stored projection that drifted", async () => {
+    const store = memBackendStore();
+    const chain = seedChain();
+    await runRefresh(store, chain, tipAt(200));
+    const stored = (await store.surveyRowsEndingAtOrAfter(0))[0]!;
+
+    // A count no derivation would produce — the silent divergence only a
+    // re-derivation over the settled prefix can find.
+    await store.reconcileSegment(
+      null,
+      [{ ...stored, responseCount: 99 }],
+      [],
+      [],
+      metaAt(tipAt(200)),
+    );
+
+    // The rescan asks the governance pass nothing: whatever the main segment
+    // resolved this run is already in the rows it walks.
+    const tip = tipAt(1000);
+    const { changes } = await integrateSegment(store, emptySource, {
+      records: fullRecords(chain),
+      range: { fromSlot: 0, toSlot: 200 },
+      tip,
+      govPass: null,
+      finalizedCancelled: new Set(),
+      meta: metaAt(tip),
+    });
+    expect(changes).toBe(1);
+    await expectOracleMatch(store, chain, tip);
+  });
+
+  it("resurrects a row lost out-of-band with its settled links", async () => {
+    const store = memBackendStore();
+    const chain: Chain = {
+      surveys: [surveyAt(1, 100, 1, 3)],
+      responses: [],
+      cancellations: [],
+      govLinks: [],
+      finalizedCancelled: new Set(),
+    };
+    chain.responses.push(responseAt(2, 110, chain.surveys[0]!, 10));
+    chain.govLinks.push(govLinkTo(chain.surveys[0]!, "gov_action1lost"));
+    await runRefresh(store, chain, tipAt(150));
+    await store.putSettledGovEpoch({
+      expiration: 2,
+      links: chain.govLinks,
+      gaveUp: [],
+      settledAt: 0,
+    });
+
+    // The rows vanish with nothing on chain having moved — a restore, or
+    // surgery. Their epoch settled long ago, so no pass will ask about its
+    // links again and the row that held them is the copy that just went.
+    await store.reconcileSegment(
+      { fromSlot: 0, toSlot: 120 },
+      [],
+      [],
+      [],
+      metaAt(tipAt(150)),
+    );
+    expect(await store.surveyRowsEndingAtOrAfter(0)).toEqual([]);
+
+    const tip = tipAt(1000);
+    await integrateSegment(store, emptySource, {
+      records: fullRecords(chain),
+      range: { fromSlot: 0, toSlot: 120 },
+      tip,
+      govPass: null,
+      finalizedCancelled: new Set(),
+      meta: metaAt(tip),
+    });
+    const row = (await store.surveyRowsEndingAtOrAfter(0))[0]!;
+    expect(row.responseCount).toBe(1);
+    expect(row.govLinked).toBe(true);
+    expect(row.govLinks).toContain("gov_action1lost");
+    await expectOracleMatch(store, chain, tip);
+  });
+
   it("upserts without sweeping when the scan is incomplete", async () => {
     const store = memBackendStore();
     const chain = seedChain();
@@ -582,8 +650,7 @@ describe("segment integration mechanics", () => {
       },
       range: null,
       tip: tipAt(210),
-      govLinks: [],
-      ...linkHorizonArgs(chain, tipAt(210)),
+      govPass: govPassFor(chain, tipAt(210)),
       finalizedCancelled: new Set(),
       meta: { ...metaAt(tipAt(210)), incomplete: true },
     });

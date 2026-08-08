@@ -34,6 +34,7 @@ import {
   sumUpstream,
   type BackendStore,
   type BankedListCounts,
+  type ScanCursor,
   type ScanState,
   type SlotRange,
   type UpstreamTotals,
@@ -64,6 +65,16 @@ export const SETTLEMENT_MARGIN_SLOTS = 259_200;
  * metadata batches, anchors, validation and finalization.
  */
 const SEGMENT_PAGE_BUDGET = 8;
+
+/**
+ * Listing pages the drift-healing rescan spends per run. One page rotates ~100
+ * settled txs back through the same integration, so the whole settled prefix
+ * is re-derived every corpus/100 refreshes — hours, at a three-minute cadence,
+ * for any corpus this design expects. The cost is one listing call: its
+ * metadata reads are cache hits, and re-deriving a row that never moved
+ * changes nothing.
+ */
+const TRICKLE_PAGE_BUDGET = 1;
 
 /** Cap stored failure messages so a pathological error can't bloat the row. */
 const ERROR_TEXT_MAX = 300;
@@ -103,17 +114,78 @@ export function planSegment(
  * null when nothing may be swept: an incomplete scan (an unfetched tx is
  * indistinguishable from a vanished one), or a budget-capped walk whose last
  * listed slot may hold further unlisted txs (the covered prefix then ends one
- * slot earlier; a range that inverts covers nothing).
+ * slot earlier; a range that inverts covers nothing). `ceilingSlot` is what an
+ * exhausted walk reached: the tip for the main segment, the top of the settled
+ * prefix for the rescan.
  */
 export function coveredRange(
   plan: SegmentPlan,
   scan: SegmentScan,
-  tipSlot: number,
+  ceilingSlot: number,
 ): SlotRange | null {
   if (scan.records.incomplete) return null;
-  const toSlot = scan.exhausted ? tipSlot : scan.cursor!.slot - 1;
+  const toSlot = scan.exhausted ? ceilingSlot : scan.cursor!.slot - 1;
   if (toSlot < plan.sweepFromSlot) return null;
   return { fromSlot: plan.sweepFromSlot, toSlot };
+}
+
+/** Where the drift-healing rescan resumes, with the ceiling it stops at. */
+export interface TricklePlan extends SegmentPlan {
+  /** Inclusive slot ceiling: the top of the settled prefix. */
+  readonly toSlot: number;
+}
+
+/**
+ * One rotation step of the drift-healing rescan, or null when there is nothing
+ * to rescan. `plan` is the main segment of the same run.
+ *
+ * It walks the *settled prefix*: below the settlement margin, so nothing it
+ * lists can still move on chain, and below whatever the run's own segment
+ * swept, so two integrations of one refresh never both claim a slot. Only a
+ * caught-up walk has such a prefix at all — while catching up, every page of
+ * budget belongs to the main segment, and its cursor has not yet reached the
+ * tip that makes anything settled.
+ *
+ * A null trickle cursor starts the rotation at the config floor; otherwise it
+ * continues strictly after the banked pair (an inclusive floor would re-list
+ * the same page forever). Advancing past the ceiling wraps back to null, which
+ * is what makes drift heal without operator discipline: every settled row is
+ * re-derived, in order, over and over.
+ */
+export function planTrickle(
+  state: ScanState,
+  plan: SegmentPlan,
+  floorSlot: number,
+): TricklePlan | null {
+  if (state.cursor === null || !state.caughtUp) return null;
+  const toSlot =
+    Math.min(
+      plan.sweepFromSlot,
+      Math.max(floorSlot, state.cursor.slot - SETTLEMENT_MARGIN_SLOTS),
+    ) - 1;
+  if (toSlot < floorSlot) return null;
+  const from = state.trickle;
+  return from === null
+    ? { from: { slot: floorSlot }, sweepFromSlot: floorSlot, toSlot }
+    : {
+        from: { slot: from.slot, txHash: from.txHash },
+        sweepFromSlot: from.slot + 1,
+        toSlot,
+      };
+}
+
+/**
+ * Where the rotation stands after a rescan: on from the last row listed, back
+ * to the start once the settled prefix is exhausted, or unmoved when the scan
+ * was incomplete — an unfetched tx is indistinguishable from a vanished one,
+ * and rotating past it would skip the very row this pass came to check.
+ */
+export function nextTrickle(
+  scan: SegmentScan,
+  current: ScanCursor | null,
+): ScanCursor | null {
+  if (scan.records.incomplete === true) return current;
+  return scan.exhausted ? null : scan.cursor;
 }
 
 const callSummary = (calls: UpstreamTotals): string =>
@@ -281,31 +353,33 @@ export async function refreshSnapshot(
     const artifactKeys = await store.finalizedArtifactKeys();
     const range = coveredRange(plan, scan, tip.slot);
     const incomplete = records.incomplete === true || !scan.exhausted;
+    const meta = {
+      tip: JSON.stringify(toJsonSafe(tip)),
+      incomplete,
+      // Stamped with the scan's start, not this write: `tip` was read then, so
+      // the pair describes one instant, and age counts from when the data was
+      // true rather than from when it happened to land.
+      fetchedAt: startedAt,
+      listCounts: previous?.listCounts ?? null,
+    };
     const integration = await integrateSegment(store, source, {
       records,
       range,
       tip,
-      govLinks,
       // A failed pass makes every row its own link source, which is both the
       // display fallback (an unread set published as "none" would blank the
       // linkage everywhere) and the honest one: nothing was re-read, so
       // nothing may change.
-      govLinkScope: govLinksReliable ? new Set(govEpochs) : new Set<number>(),
-      govLinkFloor: govFloor,
+      govPass: govLinksReliable
+        ? { links: govLinks, scope: new Set(govEpochs), floor: govFloor }
+        : null,
       finalizedCancelled: artifactKeys.cancelled,
-      meta: {
-        tip: JSON.stringify(toJsonSafe(tip)),
-        incomplete,
-        // Stamped with the scan's start, not this write: `tip` was read then,
-        // so the pair describes one instant, and age counts from when the
-        // data was true rather than from when it happened to land.
-        fetchedAt: startedAt,
-        listCounts: previous?.listCounts ?? null,
-      },
+      meta,
     });
+    let rowChanges = integration.changes;
 
-    // Bank the cursor only after its segment is reconciled: a banked cursor
-    // past unreconciled slots would settle a gap in for good, while a
+    // Bank the cursors only after their segments are reconciled: a banked
+    // cursor past unreconciled slots would settle a gap in for good, while a
     // reconciled segment with an unbanked cursor only costs an idempotent
     // re-walk. An incomplete scan banks nothing — a listed tx may be missing
     // its record, and advancing past it would settle the gap in.
@@ -317,12 +391,52 @@ export async function refreshSnapshot(
             txHash: scan.cursor?.txHash ?? cursor?.txHash ?? "",
           }
         : scan.cursor!;
-      await store.putScanState({
+      let next: ScanState = {
         cursor,
         caughtUp: scan.exhausted,
         generation: SCAN_GENERATION,
-        trickle: rewound ? null : (state?.trickle ?? null),
-      });
+        // A rewind nulls the whole banked state, so the rotation restarts at
+        // the config floor with the walk it heals behind.
+        trickle: state?.trickle ?? null,
+      };
+
+      // The drift-healing rescan: one page of the settled prefix per run,
+      // rotating oldest→newest through the same integration. It asks the
+      // governance pass nothing — the main integration already wrote whatever
+      // moved — so a settled row it re-derives is byte-identical unless the
+      // stored one had drifted, which is the whole point. Best-effort: the
+      // run's own segment is already banked either way.
+      const rotation = planTrickle(next, plan, floorSlot);
+      if (rotation !== null) {
+        try {
+          const rescan = await source.fetchSegment(
+            {
+              from: rotation.from,
+              toSlot: rotation.toSlot,
+              pageBudget: TRICKLE_PAGE_BUDGET,
+            },
+            tip,
+          );
+          const healed = await integrateSegment(store, source, {
+            records: rescan.records,
+            range: coveredRange(rotation, rescan, rotation.toSlot),
+            tip,
+            govPass: null,
+            finalizedCancelled: artifactKeys.cancelled,
+            meta,
+          });
+          rowChanges += healed.changes;
+          if (healed.changes > 0) {
+            console.log(
+              `rescan healed ${healed.changes} row change(s) at or below slot ${rotation.toSlot}`,
+            );
+          }
+          next = { ...next, trickle: nextTrickle(rescan, next.trickle) };
+        } catch (err) {
+          console.warn(`rescan failed (will retry): ${String(err)}`);
+        }
+      }
+      await store.putScanState(next);
     }
     // Same ordering rule for the settlement frontier: the rows carrying the
     // links this pass settled are written, so the epochs behind it can leave
@@ -391,7 +505,7 @@ export async function refreshSnapshot(
     // previous counts with this run's freshness (already done above).
     const previousEpoch = previous ? snapshotTip(previous).epoch : null;
     if (
-      integration.changes > 0 ||
+      rowChanges > 0 ||
       overlayChanges > 0 ||
       previousEpoch !== tip.epoch ||
       previous?.listCounts == null
@@ -422,7 +536,7 @@ export async function refreshSnapshot(
       payloadBytes: integration.payloadBytes,
     });
     console.log(
-      `refresh ok: ${integration.changes} row changes, ${summary}, ` +
+      `refresh ok: ${rowChanges} row changes, ${summary}, ` +
         `${Date.now() - startedMs} ms`,
     );
   } catch (err) {
