@@ -265,17 +265,18 @@ export function createApp(
       `${Math.floor(Date.now() / 3_600_000)}`,
     async () => {
       const now = Math.floor(Date.now() / 1000);
-      const [lastRefresh, runs, calls] = await Promise.all([
+      const [lastRefresh, runs, calls, scan] = await Promise.all([
         store.lastRefreshRun(),
         store.refreshTotalsSince(now - 86_400),
         store.upstreamTotalsSince(now - 86_400),
+        store.scanState(),
       ]);
       // Banked by the refresh; the live count only backs up runs that predate
       // the column (or whose own count failed).
       const validationBacklog =
         lastRefresh?.validationBacklog ??
         (await store.incompleteValidationCount());
-      return { lastRefresh, runs, calls, validationBacklog };
+      return { lastRefresh, runs, calls, validationBacklog, scan };
     },
   );
 
@@ -285,7 +286,7 @@ export function createApp(
   // fresh — only the aggregates above are memoized per refresh generation.
   app.get("/api/health", async (c) => {
     const now = Math.floor(Date.now() / 1000);
-    const [meta, { lastRefresh, runs, calls, validationBacklog }] =
+    const [meta, { lastRefresh, runs, calls, validationBacklog, scan }] =
       await Promise.all([store.snapshotMeta(), cachedHealthAggregates()]);
     const body: BackendHealth = {
       network: config.app.network,
@@ -294,6 +295,10 @@ export function createApp(
         ? { fetchedAt: meta.fetchedAt, ageSeconds: now - meta.fetchedAt }
         : null,
       lastRefresh,
+      scan: scan && {
+        cursorSlot: scan.cursor?.slot ?? null,
+        caughtUp: scan.caughtUp,
+      },
       last24h: {
         ...runs,
         upstreamRequests: sumUpstream(calls),

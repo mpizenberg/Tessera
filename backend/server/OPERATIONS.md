@@ -90,8 +90,8 @@ corpus is assembled over as many three-minute crons as the history needs — one
 per ~800 label-17 transactions. Until it arrives, every run records
 `incomplete: true` and nothing finalizes. `/api/health` must report
 `network: "preprod"`, a non-null `snapshot`, a latest refresh that is `ok` and
-no longer `incomplete`, and `validationBacklog: 0`. The following check enforces
-those gates:
+no longer `incomplete`, and `validationBacklog: 0`. `scan` reports where the
+walker stands while you wait. The following check enforces those gates:
 
 ```sh
 BACKEND_URL="$BACKEND_URL" node --input-type=module <<'NODE'
@@ -112,11 +112,32 @@ console.log(JSON.stringify({ identity, health }, null, 2));
 NODE
 ```
 
-Use `wrangler tail` to inspect the first refresh and its upstream count:
+**A check that does not pass has two very different meanings**, and the
+`incomplete` gate cannot tell them apart on its own: the walker is still working
+through history, or it is stuck and will never finish. `scan` in the same
+response separates them — run the check twice, a cron or more apart, and compare:
+
+| `scan`                               | reading                                                                         |
+| ------------------------------------ | ------------------------------------------------------------------------------- |
+| `caughtUp: false`, `cursorSlot` up   | catching up normally — wait                                                     |
+| `caughtUp: false`, `cursorSlot` same | stuck: the run banks no cursor, so it is repeating a segment                    |
+| `scan: null` after several crons     | no run has ever completed a segment                                             |
+| `caughtUp: true`, still `incomplete` | reaching the tip but losing records — a listing or metadata fetch keeps failing |
+
+A stuck walk is upstream, not local: `lastRefresh.error` names the failure when
+the run died outright, and when runs report `ok` while standing still the cause
+is a listing page or metadata batch that keeps coming back short. Read the run
+lines to see which:
 
 ```sh
 pnpm --filter cardano-tessera-backend exec wrangler tail --env preprod
 ```
+
+Each run logs one `segment scanned:` line with its record counts. `(catching up)`
+alone is a healthy walk with more history to cover; `(incomplete)` is the marker
+that matters — it means a listed transaction never yielded its record, so the run
+banks no cursor and the next one re-walks the same segment. That is the state
+that never finishes on its own.
 
 The static Tessera app is optional and is not an integration dependency. If it
 is useful for fixture authoring, set its preprod backend URL and run

@@ -702,6 +702,30 @@ describe("GET /api/health", () => {
     });
   });
 
+  it("reports where the walker stands, so catching up is not read as stuck", async () => {
+    const store = await seededStore();
+    await store.putRefreshRun({ ...runRow, incomplete: true });
+
+    // Nothing walked yet: an `incomplete` run with no cursor to compare.
+    const before = (await (
+      await appWith(store).request("/api/health")
+    ).json()) as Record<string, unknown>;
+    expect(before["scan"]).toBeNull();
+
+    await store.putScanState({
+      cursor: { slot: 4_000, txHash: "aa".repeat(32) },
+      caughtUp: false,
+      generation: 1,
+      trickle: null,
+    });
+    const during = (await (
+      await appWith(store).request("/api/health")
+    ).json()) as Record<string, unknown>;
+    // The pair an operator watches across crons: still catching up, and the
+    // slot it reached — which either moves next run or doesn't.
+    expect(during["scan"]).toEqual({ cursorSlot: 4_000, caughtUp: false });
+  });
+
   it("falls back to a live backlog count when the run predates banking", async () => {
     const store = await seededStore();
     await store.putRefreshRun({ ...runRow, validationBacklog: null });

@@ -128,12 +128,29 @@ export interface BackendHealth {
      * ones — the run is otherwise `ok`, since links are best-effort enrichment.
      */
     readonly govLinksOk: boolean;
-    /** The scan hit its paging cap — the snapshot is a prefix, not the whole. */
+    /**
+     * The run integrated a prefix, not the whole: a record its listing promised
+     * never arrived, or the walker has not reached the tip yet. Nothing
+     * finalizes on such a run.
+     */
     readonly incomplete: boolean;
+    /** Surveys and responses this run integrated — its segment, not the corpus. */
     readonly surveys: number;
     readonly responses: number;
-    /** Total wire JSON across the stored snapshot rows — the growth metric. */
+    /** Wire JSON across the rows this run wrote — the growth metric. */
     readonly payloadBytes: number;
+  } | null;
+  /**
+   * How far the segment walker has integrated the chain, or null before it has
+   * ever run. `caughtUp` is the answer to "is the stored corpus the whole
+   * story?"; while it is false, `cursorSlot` moving between refreshes is a walk
+   * making progress, and `cursorSlot` standing still is one that is stuck.
+   */
+  readonly scan: {
+    /** Last slot whose segment is fully integrated; null = nothing walked yet. */
+    readonly cursorSlot: number | null;
+    /** The last walk reached the tip, so the next one only re-derives the margin. */
+    readonly caughtUp: boolean;
   } | null;
   /**
    * Rolling totals over the last 24 hours — the window every upstream service
