@@ -356,17 +356,11 @@ publishes its number to us.
 
 ### 5.4 The windowed refresh: one segment per run
 
-The refresh used to re-derive the world on every cron: list every label-17 tx
-since the configured `SINCE` floor, read every cached metadata row, rebuild every
-record in memory, reconcile every stored row. Five costs grew with corpus age
-from that one root — the offset-paged listing (+1 Koios call per 100 corpus txs
-_per refresh_), the `MAX_PAGES` truncation wall at 5,000 txs (past which every
-snapshot is permanently `incomplete` and the oldest rows get swept out of
-serving), the reconcile's compare-and-sweep reads, the full-table metadata read,
-and the whole corpus as JSON inside a 128 MB isolate.
-
-What the full rebuild bought was that _any_ divergence between stored rows and
-chain truth self-corrected within one cron. Decomposed, that splits three ways:
+A refresh that re-derives the whole corpus every cron violates §0's invariant
+five ways at once, and hits a hard wall at 5,000 transactions where the listing
+truncates and every snapshot is permanently `incomplete`. What it buys is that
+_any_ divergence between stored rows and chain truth self-corrects within one
+cron. Decomposed, that divergence splits three ways:
 
 - **chain-caused** — rollbacks removing or repositioning a tx, indexer lag and
   backfill, this app's own truncated scans. Continuous, but nothing deeper than
