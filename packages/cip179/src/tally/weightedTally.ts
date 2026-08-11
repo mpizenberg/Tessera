@@ -2,9 +2,9 @@
  * Stake-weighted tallying (`backend/TALLY-SPEC.md` §4). Every aggregate is
  * a BigInt — no floats anywhere; presentation layers derive fractions/means
  * from the exact `{weightedSum, answeredWeight}` rationals. With every weight
- * `1n` it reduces to a plain count tally (which is also how the count-only
- * Keyholder role is tallied, and what the frontend's display tally is
- * cross-checked against).
+ * `1n` it reduces to a plain count tally — which is how the count-only
+ * Keyholder role is tallied, and how a browser tallies a survey that has no
+ * artifact yet. There is no second, count-based implementation.
  *
  * **Input contract:** callers pass responses that already passed validation and
  * dedup — the *counted* set, at most one responder per (role, credential), each
@@ -46,7 +46,7 @@ export interface WeightedValueBin {
  * count (`{type:"count", count}`) is attacker-controlled and unbounded, so we
  * never allocate a dense per-option array — only options actually answered are
  * emitted, `index` ascending. A zero-answer option simply doesn't appear (the
- * display fills it back in from the definition; see `artifactView.ts`).
+ * display fills it back in from the definition, under a cap).
  */
 export interface WeightedOptionBucket {
   /** The option's index in the definition. */

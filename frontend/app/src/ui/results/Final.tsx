@@ -13,16 +13,12 @@ import {
   type TallyArtifact,
 } from "cip-179/tally";
 
-import {
-  formatAda,
-  resultRoleViews,
-  type Weighting,
-} from "~/domain/artifactView";
+import { artifactResults, formatAda, type Weighting } from "~/domain/results";
 import { roleLabel, shortRef } from "~/ui/format";
 import { TxNotice } from "~/ui/components/TxNotice";
 import { toCsv, downloadCsv, downloadJson } from "~/util/csv";
 import { t, n } from "~/i18n";
-import { WeightedQuestionResult } from "./cards";
+import { QuestionResult, metaFor } from "./Question";
 import { InfoNote } from "./parts";
 import css from "./results.module.css";
 
@@ -35,7 +31,7 @@ import css from "./results.module.css";
  * Only DRep/Stakeholder/Keyholder are covered here; the full, inclusive per-role
  * breakdown (SPO/CC included) lives in the raw view, one toggle away.
  *
- * Every float is derived presentation-side in `~/domain/artifactView`.
+ * Every float is derived presentation-side in `~/domain/results`.
  */
 export const FinalResults: Component<{
   artifact: TallyArtifact;
@@ -48,7 +44,7 @@ export const FinalResults: Component<{
   const [weighting, setWeighting] = createSignal<Weighting>("chain");
   const cancelled = () => props.artifact.tally.cancelled;
   const roles = createMemo(() =>
-    resultRoleViews(props.artifact, props.def, props.responses, weighting()),
+    artifactResults(props.artifact, props.def, props.responses, weighting()),
   );
   const endEpoch = () => props.artifact.tally.survey.endEpoch;
   const responderTotal = createMemo(() =>
@@ -209,13 +205,14 @@ export const FinalResults: Component<{
                 </span>
               </div>
               <div class={css.questionResults}>
-                <For each={props.def.questions}>
-                  {(q, i) => (
-                    <WeightedQuestionResult
-                      q={q}
+                <For each={rv.questions}>
+                  {(results, i) => (
+                    <QuestionResult
+                      q={props.def.questions[i()]}
                       index={i()}
-                      view={rv.questions[i()]}
-                      countOnly={rv.total === null}
+                      results={results}
+                      responderCount={rv.responderCount}
+                      meta={metaFor(rv.votedWeight !== null)}
                     />
                   )}
                 </For>

@@ -106,6 +106,11 @@ const survey: Messages = {
   // Custom card
   customCountLabel: "réponses libres · comptabilisées selon le schéma externe",
 
+  // Détail supplémentaire — recalculé localement, hors empreinte du décompte
+  derived: "calculé localement",
+  derivedTitle:
+    "Relu depuis les réponses comptabilisées, dans votre navigateur. Contrairement aux chiffres ci-dessus, cela ne fait pas partie de ce que l'empreinte de l'artefact de décompte engage.",
+
   // Empty states
   noResponsesYet: "Aucune réponse pour l'instant.",
 
@@ -174,7 +179,6 @@ const survey: Messages = {
   weightedCounted: "{n} comptées",
   weightedVotingWeight: "{ada} ₳ de poids de vote",
   weightedTurnout: "{pct} % de participation",
-  weightedMean: "moyenne pondérée",
   weightedBarMeta: "{ada} ₳ · {n}",
   weightedCancelledTitle: "Sondage annulé par son propriétaire",
   weightedCancelledBody:

@@ -3,9 +3,10 @@
  *
  * The stake-weighted tally rules, the JSON-safe wire codec, the canonical-JSON
  * encoding, and the `RULESET_DESCRIPTOR` / `rulesetHash()` that make a tally
- * result reproducible and hash-identical across implementations. The unweighted
- * count-based *display* tally is not here — presentation lives with its consumer
- * in the frontend (`frontend/app/src/domain/displayTally.ts`).
+ * result reproducible and hash-identical across implementations. These are the
+ * only counting rules there are: an unweighted count is this tally with every
+ * weight `1n`. Presentation is not here — turning the integer aggregates into
+ * chart floats lives with its consumer.
  *
  * @module
  */

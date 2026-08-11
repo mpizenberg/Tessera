@@ -24,15 +24,11 @@ import {
 import type { SurveyDefinition, SurveyResponse } from "cip-179";
 
 import { useApp } from "~/state";
-import {
-  roleBreakdown,
-  tallySurvey,
-  type QuestionTally,
-} from "~/domain/displayTally";
+import { liveResults, type RoleResults } from "~/domain/results";
 import { roleLabel, shortRef } from "~/ui/format";
 import { toCsv, downloadCsv } from "~/util/csv";
 import { t, n } from "~/i18n";
-import { QuestionResult } from "./cards";
+import { QuestionResult, metaFor } from "./Question";
 import {
   ExclusionPanel,
   summarizeExclusions,
@@ -120,26 +116,17 @@ export const LiveResults: Component<{
       .map((r) => r.response)
       .filter((r) => r.answers.type === "public"),
   );
-  const roleCounts = createMemo(() =>
-    roleBreakdown(props.records.map((r) => r.response)),
-  );
-  const roleFilter = createMemo<number | null>(() => {
-    const counts = roleCounts();
+  // Roles are independent electorates, so every role is tallied separately and
+  // exactly one is shown; the counts also drive the picker.
+  const roles = createMemo(() => liveResults(props.def, props.records));
+  const shown = createMemo<RoleResults | undefined>(() => {
     const picked = pickedRole();
-    if (picked !== null && counts.some((rc) => rc.role === picked))
-      return picked;
-    return counts[0]?.role ?? null;
+    return roles().find((r) => r.role === picked) ?? roles()[0] ?? undefined;
   });
-  const filtered = createMemo<SurveyResponse[]>(() =>
-    publicResponses().filter((r) => r.role === roleFilter()),
-  );
   // Same role filter, but keeping the full record (tx hash) for the per-response
-  // breakdown. Mirrors `filtered`, which drops down to bare responses for tallying.
+  // breakdown.
   const filteredRecords = createMemo<ResponseRecord[]>(() =>
-    props.records.filter((r) => r.response.role === roleFilter()),
-  );
-  const tallies = createMemo<QuestionTally[]>(() =>
-    tallySurvey(props.def, filtered(), filtered().length),
+    props.records.filter((r) => r.response.role === shown()?.role),
   );
 
   const exportCsv = () => {
@@ -250,17 +237,17 @@ export const LiveResults: Component<{
       <InfoNote />
 
       {/* role picker — one role at a time, no combined tally across roles */}
-      <Show when={roleCounts().length > 0}>
+      <Show when={roles().length > 0}>
         <div class={css.roleFilterRow}>
           <span class={css.roleFilterLabel}>{t("survey.roleFilterLabel")}</span>
           <div class={css.roleFilterBtns}>
-            <For each={roleCounts()}>
-              {(rc) => (
+            <For each={roles()}>
+              {(r) => (
                 <RoleFilterBtn
-                  label={roleLabel(rc.role)}
-                  count={rc.count}
-                  on={roleFilter() === rc.role}
-                  onClick={() => setPickedRole(rc.role)}
+                  label={roleLabel(r.role)}
+                  count={r.responderCount}
+                  on={shown()?.role === r.role}
+                  onClick={() => setPickedRole(r.role)}
                 />
               )}
             </For>
@@ -270,9 +257,15 @@ export const LiveResults: Component<{
 
       {/* per-question results */}
       <div class={css.questionResults}>
-        <For each={props.def.questions}>
-          {(q, i) => (
-            <QuestionResult q={q} index={i()} tally={tallies()[i()]} />
+        <For each={shown()?.questions ?? []}>
+          {(results, i) => (
+            <QuestionResult
+              q={props.def.questions[i()]}
+              index={i()}
+              results={results}
+              responderCount={shown()!.responderCount}
+              meta={metaFor(false)}
+            />
           )}
         </For>
       </div>

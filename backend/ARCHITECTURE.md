@@ -181,8 +181,10 @@ _Tessera-specific but pure_ before _concrete I/O and runtime_:
   tally inputs. Outside the pure packages, shared by the browser's direct path
   and the serving tier's refresh.
 - **The app** keeps everything touching CIP-30, wallet, or `~/config` runtime —
-  including `displayTally.ts`, the unweighted count-based tally behind bar
-  fractions and means/medians, which uses floats and is never hashed.
+  including `domain/results.ts`, which turns the integer aggregates into the
+  floats a chart needs. It does not tally: a pre-artifact ("live") result is
+  `weightedTally*` run with every weight `1n`, so there is one set of counting
+  rules, not a display copy of them.
 
 The hashed path is **BigInt- and rational-ready** by construction (`TALLY-SPEC.md` §4):
 `weightedTally*` aggregates in BigInt and returns ratios as integer
@@ -594,7 +596,7 @@ enforcing one rule:
 user-token override keeps working against it. The survey page fetches an
 artifact lazily for closed and cancelled surveys and renders the weighted
 result, deriving every float presentation-side from the integer aggregates
-(`frontend/app/src/domain/artifactView.ts`). Two decisions are worth recording:
+(`frontend/app/src/domain/results.ts`). Two decisions are worth recording:
 
 - **The browser reads the serving tier's proof verdicts (§5.1) rather than
   re-deriving them.** A complete in-browser audit costs ≈40 Koios requests per
@@ -664,7 +666,7 @@ confirmed" note.
   (FTS5 or equivalent) is a design of its own. Trigger: search traffic heavy
   enough to show up in `d1 insights`.
 - **A reusable `<tessera-results>` element** — result rendering is app-internal
-  (`artifactView.ts`, `Survey.tsx`), so a host that embeds `<tessera-respond>` has
+  (`domain/results.ts`, `ui/results/`), so a host that embeds `<tessera-respond>` has
   no matching way to show the outcome, and re-implementing seven question methods,
   per-role separation and provenance disclosure is exactly the fork the widget
   seam exists to prevent. Until it exists, the honest MVP for a host is a compact

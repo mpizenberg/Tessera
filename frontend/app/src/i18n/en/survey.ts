@@ -122,6 +122,11 @@ const survey = {
   /** Free-form answers count label following the value. */
   customCountLabel: "free-form answers · tallied per the external schema",
 
+  // Supplementary detail — recomputed locally, not covered by the tally hash
+  derived: "derived locally",
+  derivedTitle:
+    "Read back from the counted responses in your browser. Unlike the figures above it, this is not part of what the tally artifact's hash commits to.",
+
   // Empty states
   noResponsesYet: "No responses yet.",
 
@@ -207,7 +212,6 @@ const survey = {
   /** Turnout against the role's electorate total. */
   weightedTurnout: "{pct}% turnout",
   /** Weighted mean shown on numeric results. */
-  weightedMean: "weighted mean",
   /** Bar meta on weighted results: ada weight + responder count. */
   weightedBarMeta: "{ada} \u20b3 \u00b7 {n}",
   weightedCancelledTitle: "Survey cancelled by its owner",

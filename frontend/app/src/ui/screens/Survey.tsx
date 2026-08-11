@@ -24,7 +24,7 @@ import {
 import type { TallyArtifact } from "cip-179/tally";
 
 import { useApp } from "~/state";
-import { roleBreakdown } from "~/domain/displayTally";
+import { roleBreakdown } from "~/domain/results";
 import { walletCanProveOwner, walletOwns } from "~/domain/roles";
 import { usePresentation } from "~/enrichment/usePresentation";
 import {
