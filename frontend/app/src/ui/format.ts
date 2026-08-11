@@ -149,6 +149,11 @@ export function fullRef(key: string): string {
   return `${hash ?? ""}#${index ?? "0"}`;
 }
 
+/** A bare hex hash, elided in the middle: "abcdef…1234". */
+export function shortHash(hex: string): string {
+  return hex.length > 12 ? `${hex.slice(0, 6)}…${hex.slice(-4)}` : hex;
+}
+
 /** Coarse "time left to vote": days+hours up high, hours+minutes near the end. */
 function timeLeft(deadlineUnix: number, nowUnix: number): string {
   const s = deadlineUnix - nowUnix;

@@ -8,7 +8,7 @@ import { LoadError } from "~/ui/components/LoadError";
 import { Explore } from "~/ui/screens/Explore";
 import { Survey } from "~/ui/screens/Survey";
 import { Respond } from "~/ui/screens/Respond";
-import { Create } from "~/ui/screens/Create";
+import { Create } from "~/ui/create";
 import { Settings } from "~/ui/screens/Settings";
 import { ProposeInfoAction } from "~/ui/screens/ProposeInfoAction";
 import { BottomNav } from "~/ui/components/BottomNav";
