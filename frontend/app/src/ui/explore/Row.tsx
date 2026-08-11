@@ -10,7 +10,13 @@ import { A } from "@solidjs/router";
 import type { ChainTip, SurveyAggregate } from "cip-179/domain";
 
 import { useApp } from "~/state";
-import { endsText, fullRef, isClosed, viewStatus } from "~/ui/format";
+import {
+  endsText,
+  fullRef,
+  isClosed,
+  shortGovId,
+  viewStatus,
+} from "~/ui/format";
 import { FormMosaic, RoleChips, VisGlyph } from "~/ui/components/glyphs";
 import { t } from "~/i18n";
 import { COLS } from "./Chrome";
@@ -40,6 +46,28 @@ export const Entry: Component<EntryProps> = (props) => (
     <CardRow {...props} />
   </Show>
 );
+
+/**
+ * Everything both presentations read off a survey. The row and the card differ
+ * in layout, not in what they derive, so they derive it once here.
+ */
+function rowView(props: EntryProps) {
+  const app = useApp();
+  // Enriched from the session cache when we hold the doc (e.g. just authored);
+  // otherwise the on-chain definition, where external labels are absent.
+  const def = () => app.displayDefinition(props.a.record.definition);
+  const status = () => viewStatus(props.a);
+  return {
+    def,
+    status,
+    labelsMissing: () => !!def().contentAnchor && def().title.trim() === "",
+    closed: () => isClosed(status()),
+    ends: (): string =>
+      props.tip
+        ? endsText(props.a, props.tip, props.secondsPerEpoch, props.nowUnix)
+        : "—",
+  };
+}
 
 /** Inline check shown on surveys the connected wallet has answered. */
 const AnsweredCheck: Component = () => (
@@ -83,18 +111,7 @@ const GovLine: Component<{ actionId: string; title: string | null }> = (
 );
 
 const GridRow: Component<EntryProps> = (props) => {
-  const app = useApp();
-  // Enriched from the session cache when we hold the doc (e.g. just authored);
-  // otherwise the on-chain definition, where external labels are absent.
-  const def = () => app.displayDefinition(props.a.record.definition);
-  const labelsMissing = () =>
-    !!def().contentAnchor && def().title.trim() === "";
-  const v = () => viewStatus(props.a);
-  const closed = () => isClosed(v());
-  const ends = (): string =>
-    props.tip
-      ? endsText(props.a, props.tip, props.secondsPerEpoch, props.nowUnix)
-      : "—";
+  const { def, status, labelsMissing, closed, ends } = rowView(props);
   return (
     // A router link, not a div+navigate: a plain click stays client-side (no
     // reload — wallet connection and snapshot survive), while cmd/ctrl/middle
@@ -114,7 +131,7 @@ const GridRow: Component<EntryProps> = (props) => {
         </span>
       </div>
       <div class={css.centerCell}>
-        <VisGlyph status={v()} />
+        <VisGlyph status={status()} />
       </div>
       <div class={css.centerCell}>
         <Show when={props.flags.responded}>
@@ -168,7 +185,7 @@ const GridRow: Component<EntryProps> = (props) => {
       </div>
       <div class={css.repliesCell}>
         <span class={css.replies} classList={{ [css.repliesClosed]: closed() }}>
-          {v() === "cancelled" || v() === "invalid"
+          {status() === "cancelled" || status() === "invalid"
             ? "—"
             : props.a.responseCount}
         </span>
@@ -188,21 +205,12 @@ const MetaChip: Component<{ label: string; children: JSX.Element }> = (
 );
 
 const CardRow: Component<EntryProps> = (props) => {
-  const app = useApp();
-  const def = () => app.displayDefinition(props.a.record.definition);
-  const labelsMissing = () =>
-    !!def().contentAnchor && def().title.trim() === "";
-  const v = () => viewStatus(props.a);
-  const closed = () => isClosed(v());
-  const ends = (): string =>
-    props.tip
-      ? endsText(props.a, props.tip, props.secondsPerEpoch, props.nowUnix)
-      : "—";
+  const { def, status, labelsMissing, closed, ends } = rowView(props);
   return (
     <A href={`/survey/${encodeURIComponent(props.a.key)}`} class={css.card}>
       <div class={css.cardHead}>
         <span class={css.cardGlyph}>
-          <VisGlyph status={v()} />
+          <VisGlyph status={status()} />
         </span>
         <Show when={props.flags.responded}>
           <AnsweredCheck />
@@ -260,7 +268,7 @@ const CardRow: Component<EntryProps> = (props) => {
           </span>
         </MetaChip>
         <MetaChip label={t("explore.metaReplies")}>
-          {v() === "cancelled" || v() === "invalid"
+          {status() === "cancelled" || status() === "invalid"
             ? "—"
             : String(props.a.responseCount)}
         </MetaChip>
@@ -278,8 +286,3 @@ const CardRow: Component<EntryProps> = (props) => {
     </A>
   );
 };
-
-/** Shorten a bech32 governance action id for inline display. */
-function shortGovId(id: string): string {
-  return id.length > 18 ? `${id.slice(0, 12)}…${id.slice(-4)}` : id;
-}

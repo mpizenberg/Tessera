@@ -155,6 +155,15 @@ export function shortHash(hex: string): string {
 }
 
 /**
+ * A bech32 governance action id, elided in the middle. Keeps twice the leading
+ * characters {@link shortHash} does because the `gov_action1` prefix eats the
+ * first eleven — at six, every id on the page would read the same.
+ */
+export function shortGovId(id: string): string {
+  return id.length > 18 ? `${id.slice(0, 12)}…${id.slice(-4)}` : id;
+}
+
+/**
  * Whole-ada rendering of a lovelace amount, grouped for the active locale.
  * A stake small enough to floor to zero reads "<1" rather than "0", which
  * would be indistinguishable from no stake at all.
