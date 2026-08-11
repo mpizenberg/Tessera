@@ -7,8 +7,12 @@ import {
   type SurveyAggregate,
 } from "cip-179/domain";
 import { IPFS_GATEWAYS } from "cip-179/content";
+import { roleDescriptionKey } from "cardano-tessera-respond-core";
 import { expectedNetworkId, type Network } from "~/config";
-import { t, n, type MsgKey } from "~/i18n";
+import { t, n } from "~/i18n";
+
+/** Role naming and browser-claimability are shared with the widget. */
+export { roleLabel, roleBrowserClaimable } from "cardano-tessera-respond-core";
 
 /**
  * Link to a transaction on the Cardano Explorer aggregator. Mainnet lives at
@@ -71,14 +75,6 @@ export function isSafeAnchorUri(uri: string): boolean {
   return safeExternalHref(uri) !== null;
 }
 
-const ROLE_LABEL: Record<number, string> = {
-  [Role.DRep]: "DRep",
-  [Role.SPO]: "SPO",
-  [Role.CC]: "CC",
-  [Role.Stakeholder]: "Stakeholder",
-  [Role.Keyholder]: "Keyholder",
-};
-
 const ROLE_ABBR: Record<number, string> = {
   [Role.DRep]: "DRep",
   [Role.SPO]: "SPO",
@@ -96,30 +92,9 @@ const ROLE_COLORS: Record<number, readonly [string, string]> = {
   [Role.Keyholder]: ["#9A6B1E", "#F6EDD9"],
 };
 
-/** i18n key (in the `roles` namespace) for each role's one-line explanation. */
-const ROLE_DESCRIPTION_KEY = {
-  [Role.DRep]: "roles.drep",
-  [Role.SPO]: "roles.spo",
-  [Role.CC]: "roles.cc",
-  [Role.Stakeholder]: "roles.stakeholder",
-  [Role.Keyholder]: "roles.keyholder",
-} as const satisfies Record<number, MsgKey>;
-
-export function roleLabel(role: number): string {
-  return ROLE_LABEL[role] ?? `Role ${role}`;
-}
-
 export function roleDescription(role: number): string {
-  const key = ROLE_DESCRIPTION_KEY[role as keyof typeof ROLE_DESCRIPTION_KEY];
+  const key = roleDescriptionKey(role);
   return key ? t(key) : "";
-}
-
-/**
- * Whether a browser wallet can ever prove this role. SPO and CC need cold/hot
- * keys that live outside browser wallets, so they're never claimable here.
- */
-export function roleBrowserClaimable(role: number): boolean {
-  return role !== Role.SPO && role !== Role.CC;
 }
 
 export function roleAbbr(role: number): string {

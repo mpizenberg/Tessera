@@ -50,6 +50,8 @@ import {
   prefillDrafts,
   renderProblem,
   respondableRolesFor,
+  roleBrowserClaimable,
+  roleLabel,
   sealResponse,
   type Draft,
   type DraftValue,
@@ -62,13 +64,7 @@ import {
   typeMeta,
   useI18n,
 } from "cardano-tessera-respond-ui";
-import {
-  keyKindForRole,
-  roleBrowserClaimable,
-  roleColors,
-  roleDescription,
-  roleLabel,
-} from "./roles";
+import { keyKindForRole, roleColors, roleDescription } from "./roles";
 import {
   RESPOND_EVENTS,
   type CredentialProof,

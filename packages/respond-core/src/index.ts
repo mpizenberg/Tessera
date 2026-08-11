@@ -17,6 +17,7 @@
  */
 
 export * from "./eligibility.js";
+export * from "./roles.js";
 export * from "./draft.js";
 export * from "./i18n.js";
 export * from "./seal.js";
