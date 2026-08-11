@@ -6,9 +6,12 @@
  * app and the `<tessera-respond>` widget so their answering behavior cannot
  * drift. The two host-specific deltas are injected via context:
  *
- * - {@link I18nContext} — an `I18n` accessor (strings, numbers, dates); both
- *   hosts provide respond-core's `createI18n`, so wording comes from one
- *   catalog;
+ * - {@link I18nContext} — an `I18n` accessor (strings, numbers, dates). Both
+ *   hosts serve the same respond-core catalog by different routes: the widget
+ *   builds one with `createI18n`, scoped to its `locale`/`messages` props; the
+ *   app adapts its own reactive global, whose catalog spreads respond-core's,
+ *   so app-level overrides reach the bodies and `createI18n`'s two bundled
+ *   catalogs stay out of the app's entry chunk;
  * - {@link ClassesContext} — the class-name map: identity by default (the
  *   widget's shadow-scoped stylesheet uses the literal names); the app
  *   provides its CSS-module lookup.

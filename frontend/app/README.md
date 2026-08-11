@@ -97,9 +97,15 @@ mode.
 | `src/wallet`     | CIP-30 discovery and connection, plus the whole write path: the action cart (`cart.ts`), the pure partitioner (`plan.ts`), building/signing/submission (`submit.ts`, the only evolution-sdk site), and the pending-tx set (`pending.ts`). |
 | `src/tlock`      | Frontend `Date`-formatting helpers over drand rounds (`drand.ts`); the sealed-mode encryption itself lives in `cip-179/tlock`.                                                                                                            |
 | `src/enrichment` | Optional off-chain content: IPFS reads (gateway race) and pinning (per-provider tokens from Settings).                                                                                                                                    |
-| `src/ui`         | Screens + components (CSS modules, `theme.css`).                                                                                                                                                                                          |
+| `src/ui`         | Screens + components (CSS modules, `theme.css`). See the surface convention below.                                                                                                                                                        |
 | `src/i18n`       | English + French catalogs, co-located per screen, zero dependencies.                                                                                                                                                                      |
 | `src/state.tsx`  | The app store: snapshot resources, wallet session, the cart and the in-memory signing session, settings persistence.                                                                                                                      |
+
+A screen too large to read in one file owns a directory beside
+`src/ui/screens/` — `ui/create/`, `ui/explore/`, `ui/respond/`, `ui/results/` —
+each an `index.tsx` entry, siblings by concern, and one CSS module for the whole
+directory. Beside `screens/` rather than inside it: `Create.tsx` and `create/`
+differ only by case, which a case-insensitive filesystem cannot keep apart.
 
 Notable UI behavior: a finalized survey renders its **content-addressed result
 artifact** (per-role weighted bars, turnout, provenance note, artifact hash —

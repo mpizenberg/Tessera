@@ -83,7 +83,11 @@ const ROLE_ABBR: Record<number, string> = {
   [Role.Keyholder]: "Key",
 };
 
-/** [text color, background] per role, mirroring the mockup palette. */
+/**
+ * [text color, background] per role, mirroring the mockup palette. Not shared
+ * with the widget the way labels are: its role colors are `--tessera-role-*`
+ * tokens a host can re-skin. Same concept, deliberately different values.
+ */
 const ROLE_COLORS: Record<number, readonly [string, string]> = {
   [Role.DRep]: ["var(--accent)", "var(--accent-bg)"],
   [Role.SPO]: ["#2E6B5E", "#E4EFEB"],
