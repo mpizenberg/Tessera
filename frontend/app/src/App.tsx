@@ -7,7 +7,7 @@ import { Header } from "~/ui/components/Header";
 import { LoadError } from "~/ui/components/LoadError";
 import { Explore } from "~/ui/screens/Explore";
 import { Survey } from "~/ui/screens/Survey";
-import { Respond } from "~/ui/screens/Respond";
+import { Respond } from "~/ui/respond";
 import { Create } from "~/ui/create";
 import { Settings } from "~/ui/screens/Settings";
 import { ProposeInfoAction } from "~/ui/screens/ProposeInfoAction";
