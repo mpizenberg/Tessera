@@ -9,6 +9,10 @@
  * different locales). It reaches no router, wallet, chain, or network state:
  * `onSubmit` **emits** a `tessera:response` for the host to sign and submit.
  *
+ * Role choice, drafts and progress come from `createResponseDraft`, the same
+ * reactive spine the Tessera app's Respond screen runs on; what remains here is
+ * the widget's own concerns — shadow-DOM theming, layout, and the emit.
+ *
  * Two layouts share all state and logic (layout is pure presentation):
  * `"one-per-screen"` (default) steps through the question cards one at a time;
  * `"list"` renders them all at once. The `theme` prop is reflected as inline
@@ -24,17 +28,15 @@ import {
   on,
   type Component,
 } from "solid-js";
-import { createStore } from "solid-js/store";
 
 import {
   Role,
   encodePayload,
   validateResponse,
-  type Credential,
   type Question,
   type SurveyDefinition,
 } from "cip-179";
-import { credentialKey, refKey, surveyStatus } from "cip-179/domain";
+import { surveyStatus } from "cip-179/domain";
 import { isQuicknet, unixTimeForRound } from "cip-179/tlock";
 
 import {
@@ -42,14 +44,7 @@ import {
   buildSealedResponse,
   collectAnswers,
   createI18n,
-  credentialForRole,
-  decided,
-  findPriorResponse,
-  hasAnyAnswer,
-  initDraft,
-  prefillDrafts,
   renderProblem,
-  respondableRolesFor,
   roleBrowserClaimable,
   roleLabel,
   sealResponse,
@@ -61,6 +56,7 @@ import {
 import {
   I18nContext,
   QuestionBody,
+  createResponseDraft,
   typeMeta,
   useI18n,
 } from "cardano-tessera-respond-ui";
@@ -116,137 +112,34 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     themedKeys = Object.keys(theme);
   });
 
-  const respondable = createMemo<Role[]>(() =>
-    respondableRolesFor(props.definition, props.responder),
-  );
-
-  // Role we respond as: honor the header's picked role if respondable here,
-  // else the host-provided `initialRole` if respondable, else the first
-  // claimable.
-  const [roleOverride, setRoleOverride] = createSignal<Role | null>(null);
-  const role = createMemo<Role | null>(() => {
-    const rs = respondable();
-    if (rs.length === 0) return null;
-    const o = roleOverride();
-    if (o !== null && rs.includes(o)) return o;
-    const pref = props.initialRole;
-    if (pref !== undefined && rs.includes(pref)) return pref;
-    return rs[0]!;
+  const {
+    respondable,
+    role,
+    pickRole,
+    credential,
+    prior,
+    formKey,
+    drafts,
+    setValue,
+    setSkipped,
+    total,
+    decidedCount,
+    answered,
+  } = createResponseDraft({
+    definition: () => props.definition,
+    surveyRef: () => props.surveyRef,
+    responder: () => props.responder,
+    priorResponses: () => props.priorResponses,
+    preferredRole: () => props.initialRole,
   });
 
-  const credential = createMemo<Credential | null>(() => {
-    const r = role();
-    return r !== null ? (credentialForRole(r, props.responder) ?? null) : null;
-  });
-
-  // The responder's prior response for the *current* (role, credential), picked
-  // from the host-supplied set. The host passes one per role it answered as;
-  // `findPriorResponse` selects the one matching the chosen role, so switching
-  // roles re-prefills correctly (or clears, when that role is fresh).
-  const prior = createMemo(() => {
-    const prs = props.priorResponses;
-    const r = role();
-    const cred = credential();
-    if (!prs || prs.length === 0 || r === null || !cred) return undefined;
-    return findPriorResponse(prs, props.surveyRef, r, cred);
-  });
-
-  // Drafts can only be seeded from a public prior; a sealed one is known to
-  // exist but unreadable, so its form starts pristine.
-  const prefillFrom = createMemo(() => {
-    const p = prior();
-    return p?.answers.type === "public" ? p : undefined;
-  });
-
-  // Store mirror of Draft with mutable fields so path setters typecheck.
-  const [drafts, setDrafts] = createStore<
-    { skipped: boolean; value: DraftValue }[]
-  >([]);
-  // True once the user edits; gates auto-(re)seeding so late-arriving prop
-  // changes never clobber in-progress input.
-  const [touched, setTouched] = createSignal(false);
-
-  // Per-(role, credential) stash of in-progress answers, kept for the
-  // component's lifetime so a misclick on a role chip doesn't destroy edits —
-  // switching back restores them. Only touched forms are stashed (a pristine
-  // form is reproduced exactly by reseeding); cleared when the survey changes.
-  const draftCache = new Map<
-    string,
-    { skipped: boolean; value: DraftValue }[]
-  >();
-  const draftKey = (r: Role | null, cred: Credential | null): string =>
-    `${r}:${cred ? credentialKey(cred) : ""}`;
-
-  // (Re)seed drafts when the form's identity or backing data changes. Identity
-  // is (survey, role, credential) — the credential matters because a host may
-  // swap `responder` to a different wallet holding the same role, and wallet
-  // A's edits must never be submitted under wallet B's credential. An identity
-  // change restores that identity's stashed edits or makes the form pristine;
-  // otherwise we only (re)seed while the user hasn't started editing.
-  createEffect(
-    on(
-      () =>
-        [
-          refKey(props.surveyRef),
-          role(),
-          credential(),
-          props.definition,
-          prefillFrom(),
-        ] as const,
-      ([k, r, cred], prev) => {
-        if (
-          prev &&
-          (prev[0] !== k || draftKey(prev[1], prev[2]) !== draftKey(r, cred))
-        ) {
-          if (prev[0] !== k) draftCache.clear();
-          else if (touched()) {
-            // Draft values are replaced immutably on edit, so copying the
-            // records detaches the stash from future store writes.
-            draftCache.set(
-              draftKey(prev[1], prev[2]),
-              drafts.map((d) => ({ skipped: d.skipped, value: d.value })),
-            );
-          }
-          setStep(0);
-          const stashed = draftCache.get(draftKey(r, cred));
-          if (stashed) {
-            setTouched(true);
-            setDrafts(stashed.map((d) => ({ ...d })));
-            return;
-          }
-          setTouched(false);
-        }
-        if (touched()) return;
-        const def = props.definition;
-        const ex = prefillFrom();
-        setDrafts(
-          ex ? prefillDrafts(def.questions, ex) : def.questions.map(initDraft),
-        );
-      },
-    ),
-  );
-
-  const total = () => props.definition.questions.length;
-
-  // Stepper position for the one-per-screen layout — reset alongside the
-  // drafts (survey/role change, above) and clamped in case the definition
-  // shrinks under it.
+  // Stepper position for the one-per-screen layout — reset whenever the form's
+  // identity changes, and clamped in case the definition shrinks under it.
   const layout = () => props.layout ?? "one-per-screen";
   const [step, setStep] = createSignal(0);
+  createEffect(on(formKey, () => setStep(0), { defer: true }));
   const stepIndex = createMemo(() =>
     Math.min(step(), Math.max(0, total() - 1)),
-  );
-
-  const decidedCount = createMemo(
-    () =>
-      props.definition.questions.filter(
-        (q, i) => drafts[i] && decided(q, drafts[i]!),
-      ).length,
-  );
-  // Every-question-decided still allows an all-skipped (all-optional) form; a
-  // response needs ≥1 recorded answer or it is spec-invalid and drops at scan.
-  const answered = createMemo(() =>
-    hasAnyAnswer(props.definition.questions, drafts),
   );
 
   const sealedMode = createMemo(() => {
@@ -273,15 +166,6 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
 
   const [submitting, setSubmitting] = createSignal(false);
   const [problems, setProblems] = createSignal<string[]>([]);
-
-  const setValue = (i: number, value: DraftValue) => {
-    setTouched(true);
-    setDrafts(i, "value", value);
-  };
-  const setSkipped = (i: number, skipped: boolean) => {
-    setTouched(true);
-    setDrafts(i, "skipped", skipped);
-  };
 
   // Ready to submit: open, eligible, unblocked, every question decided, and at
   // least one question actually answered (an all-skipped form is spec-invalid).
@@ -390,7 +274,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
           def={props.definition}
           role={role()}
           respondable={respondable()}
-          onPickRole={setRoleOverride}
+          onPickRole={pickRole}
         />
 
         <Show
