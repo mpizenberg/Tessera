@@ -18,7 +18,7 @@ export function toCsv(rows: ReadonlyArray<ReadonlyArray<string>>): string {
 }
 
 /** Trigger a browser download of `content` as `filename` (the one side effect). */
-export function downloadText(
+function downloadText(
   filename: string,
   content: string,
   type = "text/plain;charset=utf-8",

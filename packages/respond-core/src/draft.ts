@@ -152,7 +152,7 @@ function ratingInScale(rating: bigint, scale: RatingScale): boolean {
  * Build the CIP-179 answer item for a question, or null when there is no answer
  * to record (the question was skipped, or its draft isn't answerable yet).
  */
-export function buildAnswerItem(
+function buildAnswerItem(
   q: Question,
   index: number,
   draft: Draft,

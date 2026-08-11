@@ -45,7 +45,7 @@ export const IPFS_PROVIDERS: readonly ProviderMeta[] = [
 export type ProviderTokens = Partial<Record<ProviderId, string>>;
 
 /** localStorage key for a provider's token. */
-export function providerTokenKey(id: ProviderId): string {
+function providerTokenKey(id: ProviderId): string {
   return `tessera.ipfs.${id}`;
 }
 

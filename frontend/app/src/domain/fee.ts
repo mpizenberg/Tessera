@@ -17,10 +17,10 @@
  */
 
 /** Lovelace charged per serialized byte (`txFeePerByte`). */
-export const TX_FEE_PER_BYTE = 44n;
+const TX_FEE_PER_BYTE = 44n;
 
 /** Flat lovelace added to every transaction (`txFeeFixed`). */
-export const TX_FEE_FIXED = 155381n;
+const TX_FEE_FIXED = 155381n;
 
 /**
  * Byte allowance for everything in a minimal signed tx except the label-17

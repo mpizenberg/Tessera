@@ -45,7 +45,7 @@ export type SurveyListFilter =
   | "public"
   | "mine";
 
-export const SURVEY_LIST_FILTERS: readonly SurveyListFilter[] = [
+const SURVEY_LIST_FILTERS: readonly SurveyListFilter[] = [
   "all",
   "linked",
   "active",
@@ -174,7 +174,7 @@ export function surveyHaystack(
  * closed), 1 open standalone, 2 closed standalone — the exact partition the
  * Explore screen renders.
  */
-export function surveyListBucket(a: SurveyAggregate): number {
+function surveyListBucket(a: SurveyAggregate): number {
   if (a.govLinks.length > 0) return 0;
   return a.status === "active" ? 1 : 2;
 }

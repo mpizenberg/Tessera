@@ -150,7 +150,7 @@ export function fullRef(key: string): string {
 }
 
 /** Coarse "time left to vote": days+hours up high, hours+minutes near the end. */
-export function timeLeft(deadlineUnix: number, nowUnix: number): string {
+function timeLeft(deadlineUnix: number, nowUnix: number): string {
   const s = deadlineUnix - nowUnix;
   if (s <= 0) return t("explore.endingNow");
   const d = Math.floor(s / 86400);

@@ -19,7 +19,7 @@ export type { AppConfig, Network } from "cardano-tessera-core";
 const SURVEYS_SINCE_ISO = "2026-06-01T00:00:00Z";
 
 /** localStorage key for the last connected CIP-30 wallet (for auto-reconnect). */
-export const LAST_WALLET_STORAGE_KEY = "tessera.lastWallet";
+const LAST_WALLET_STORAGE_KEY = "tessera.lastWallet";
 
 /**
  * The network this deployment serves. **One deployment, one network**: there

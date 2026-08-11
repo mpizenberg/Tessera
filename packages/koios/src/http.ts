@@ -15,7 +15,7 @@ export const RETRY_BACKOFF_MS = 500;
 
 /** One bounded retry: a transient blip is absorbed; a persistent failure still
  * surfaces after exactly one extra attempt (never a retry storm). */
-export const MAX_RETRIES = 1;
+const MAX_RETRIES = 1;
 
 /**
  * Max concurrent batch requests in a single fan-out. Koios rate-limits, and
