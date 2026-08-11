@@ -35,7 +35,8 @@ Everything except the ids is project configuration: change it in
 `wrangler.toml.example`, then re-copy and re-fill, so the template a fresh
 checkout deploys never drifts from what you run.
 
-Apply every committed migration before deploying the Worker:
+Apply every committed migration before deploying the Worker. Nothing serves this
+database yet, so the order is free here; on a redeploy it is not:
 
 ```sh
 pnpm --filter cardano-tessera-backend migrate:preprod
@@ -143,6 +144,31 @@ The static Tessera app is optional and is not an integration dependency. If it
 is useful for fixture authoring, set its preprod backend URL and run
 `pnpm --filter tessera-app deploy:preprod` separately.
 
+## Redeploy a running deployment
+
+A redeploy is the same two steps in one of two orders, and the release's
+migrations decide which. Additive ones go first: the new Worker needs what they
+create and the running one never sees them. A migration that drops or narrows
+anything the running Worker still reads goes after the deploy that stops reading
+it — applied first, it breaks every serving read for as long as the upload
+takes.
+
+A release carrying both has no safe order, so pick the cheaper casualty.
+Deploying first costs `/api/health` and the cron refresh until the migrations
+land, while `/health` is answered without touching the database and the serving
+reads work off the rows already materialized — usually the side to give up:
+
+```sh
+git status --short
+pnpm --filter cardano-tessera-backend deploy:preprod
+pnpm --filter cardano-tessera-backend migrate:preprod
+```
+
+Then repeat the checks above. Expect a catch-up rather than a steady state
+whenever the release rewound the walker — a generation bump, or a migration that
+left no banked scan state: until `scan.caughtUp`, every run reports
+`incomplete: true` and nothing finalizes.
+
 ## Collect a comparable report
 
 The dependency-free collector reuses Wrangler's current credential. It checks
@@ -245,9 +271,15 @@ pnpm --filter cardano-tessera-backend exec wrangler versions list --env preprod
 pnpm --filter cardano-tessera-backend exec wrangler rollback <version-id> --env preprod --message 'rollback to known-good Tessera commit'
 ```
 
-Migrations are additive and are not reversed by a Worker rollback. If a D1
-migration or write damaged data, first obtain the point-in-time bookmark and
-then perform the destructive restore explicitly:
+A Worker rollback does not reverse migrations, and not every migration can be
+rolled back around: one that dropped or narrowed something the older code reads
+makes every version below it unservable. Check what the release migrated before
+choosing a target version. Where such a migration has landed, the ways back are
+forward to a fixed version, or the restore below — which rewinds the migration
+ledger along with every write since the bookmark.
+
+If a D1 migration or write damaged data, first obtain the point-in-time bookmark
+and then perform the destructive restore explicitly:
 
 ```sh
 pnpm --filter cardano-tessera-backend exec wrangler d1 time-travel info DB --env preprod --timestamp <rfc3339-before-change> --json
@@ -265,4 +297,6 @@ whole corpus to be re-derived immediately instead — after a restore, or after 
 deploy that changed how records project into rows — bump `SCAN_GENERATION` in
 `src/refresh.ts` and deploy. The banked generation then mismatches, the cursor
 rewinds to the `SINCE` floor, and the walker re-derives forward over as many
-crons as the history needs, exactly as on a fresh database.
+crons as the history needs, exactly as on a fresh database. The bump acts on a
+banked generation and needs one to act on: a database whose `scan_state` row is
+absent re-derives from the floor on its next run whatever the constant says.
