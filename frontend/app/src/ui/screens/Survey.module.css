@@ -5,13 +5,11 @@
  * bridged through CSS custom properties consumed here. Boolean/enum state (role
  * filter on/off, notice tone, disabled) toggles via Solid `classList`.
  */
-
 .page {
   max-width: 820px;
   margin: 0 auto;
   padding: 22px 24px 90px;
 }
-
 .back {
   display: inline-flex;
   align-items: center;
@@ -22,11 +20,9 @@
   text-decoration: none;
   padding: 6px 0;
 }
-
 .backArrow {
   font-size: 15px;
 }
-
 .respondCtaRow {
   display: flex;
   flex-wrap: wrap;
@@ -34,7 +30,6 @@
   gap: 10px;
   margin-top: 16px;
 }
-
 .respondCta {
   display: inline-flex;
   align-items: center;
@@ -48,11 +43,9 @@
   font-weight: 700;
   box-shadow: 0 8px 20px -8px var(--accent-shadow);
 }
-
 .respondCtaArrow {
   font-size: 15px;
 }
-
 /* Dev-only secondary CTA to the <tessera-respond> reference-host page. */
 .respondDevCta {
   display: inline-flex;
@@ -81,11 +74,9 @@
   border-radius: var(--r-2xs);
   padding: 2px 6px;
 }
-
 /* ---------------------------------------------------------------------------
  * Claimed cancellation notice
  * ------------------------------------------------------------------------- */
-
 .claimedNotice {
   margin-top: 14px;
   padding: 11px 14px;
@@ -96,40 +87,9 @@
   color: var(--warn);
   line-height: 1.45;
 }
-
 /* ---------------------------------------------------------------------------
  * Owner controls (cancel)
  * ------------------------------------------------------------------------- */
-
-.cancelSubmitted {
-  background: var(--danger-bg);
-  border: 1px solid var(--danger-line);
-  border-radius: var(--r-md);
-  padding: 14px 16px;
-  margin-top: 16px;
-}
-
-.cancelSubmittedTitle {
-  font-size: 13.5px;
-  font-weight: 700;
-  color: var(--danger);
-}
-
-.cancelSubmittedHash {
-  font-family: var(--mono);
-  font-size: 11.5px;
-  color: var(--danger-ink);
-  margin-top: 5px;
-  word-break: break-all;
-}
-
-.cancelSubmittedBody {
-  font-size: 12.5px;
-  color: var(--danger-ink);
-  line-height: 1.5;
-  margin-top: 6px;
-}
-
 .ownerBar {
   display: flex;
   align-items: center;
@@ -142,17 +102,14 @@
   padding: 12px 15px;
   margin-top: 16px;
 }
-
 .ownerText {
   font-size: 12.5px;
   color: var(--label);
   line-height: 1.45;
 }
-
 .ownerTextStrong {
   color: #5b4a22;
 }
-
 .cancelBtn {
   font-family: inherit;
   font-size: 13px;
@@ -165,18 +122,15 @@
   padding: 9px 14px;
   white-space: nowrap;
 }
-
 .cancelBtn:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
-
 .confirmRow {
   display: flex;
   gap: 8px;
   align-items: center;
 }
-
 .confirmBtn {
   font-family: inherit;
   font-size: 13px;
@@ -189,11 +143,9 @@
   padding: 9px 14px;
   white-space: nowrap;
 }
-
 .confirmBtn:disabled {
   cursor: not-allowed;
 }
-
 .keepBtn {
   font-family: inherit;
   font-size: 13px;
@@ -205,18 +157,15 @@
   border-radius: var(--r-input);
   padding: 9px 14px;
 }
-
 .ownerError {
   flex-basis: 100%;
   font-size: 12px;
   color: var(--danger);
   word-break: break-word;
 }
-
 /* ---------------------------------------------------------------------------
  * Owner: link survey to a governance Info Action
  * ------------------------------------------------------------------------- */
-
 .linkPanel {
   background: #f0f2f7;
   border: 1px solid var(--gov-line);
@@ -224,14 +173,12 @@
   padding: 16px 18px;
   margin-top: 10px;
 }
-
 .linkHead {
   display: flex;
   align-items: center;
   gap: 9px;
   flex-wrap: wrap;
 }
-
 .linkOptional {
   display: inline-flex;
   align-items: center;
@@ -246,26 +193,22 @@
   border-radius: var(--r-2xs);
   padding: 4px 8px;
 }
-
 .linkTitle {
   font-size: 15px;
   font-weight: 800;
   letter-spacing: -0.01em;
   margin: 0;
 }
-
 .linkBody {
   font-size: 13px;
   color: var(--muted);
   line-height: 1.55;
   margin: 10px 0 0;
 }
-
 .linkMono {
   font-family: var(--mono);
   font-size: 12px;
 }
-
 .linkCodeBox {
   position: relative;
   background: #0b0e14;
@@ -273,14 +216,12 @@
   padding: 14px 15px;
   margin-top: 12px;
 }
-
 .linkContextHint {
   font-size: 13px;
   color: var(--muted);
   line-height: 1.55;
   margin: 14px 0 0;
 }
-
 .linkCopy {
   position: absolute;
   top: 10px;
@@ -295,7 +236,6 @@
   padding: 5px 10px;
   cursor: pointer;
 }
-
 .linkCode {
   margin: 0;
   font-family: var(--mono);
@@ -305,30 +245,25 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
-
 .linkFootnote {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--dim);
   margin-top: 11px;
 }
-
 /* ---------------------------------------------------------------------------
  * Header
  * ------------------------------------------------------------------------- */
-
 .header {
   border-bottom: 1px solid #e7dfce;
   padding: 14px 2px 20px;
   margin-top: 6px;
 }
-
 /* Pro-only ref row above the title; empty (unrendered) for non-pro users. */
 .headerTop {
   display: flex;
   align-items: center;
 }
-
 .headerRefLead {
   margin-left: auto;
   font-family: var(--mono);
@@ -336,7 +271,6 @@
   color: var(--pale);
   word-break: break-all;
 }
-
 .headerTitle {
   font-size: 26px;
   font-weight: 700;
@@ -345,14 +279,12 @@
   margin: 14px 0 0;
   color: var(--ink);
 }
-
 .headerDesc {
   font-size: 14.5px;
   color: var(--muted);
   line-height: 1.55;
   margin: 8px 0 0;
 }
-
 .govLinkCard {
   display: flex;
   align-items: flex-start;
@@ -363,7 +295,6 @@
   padding: 13px 15px;
   margin-top: 16px;
 }
-
 .govLinkBadge {
   display: inline-flex;
   align-items: center;
@@ -381,36 +312,30 @@
   flex: none;
   margin-top: 1px;
 }
-
 .govLinkMain {
   flex: 1;
   min-width: 0;
 }
-
 .govLinkText {
   font-size: 13.5px;
   color: #3a352b;
   line-height: 1.45;
 }
-
 .govLinkTextStrong {
   color: var(--ink);
 }
-
 .govLinkActionId {
   font-family: var(--mono);
   font-size: 11.5px;
   color: var(--gov);
   word-break: break-all;
 }
-
 .govLinkMeta {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--faint);
   margin-top: 5px;
 }
-
 /* Survey summary card: orientation metadata (questions / eligible roles / ends
    / responses) over a plain per-role response count. Deliberately no
    percentages or proportional bars — roles are separate electorates, not slices
@@ -421,20 +346,17 @@
   border-radius: var(--r-md);
   padding: 14px 16px;
 }
-
 .summaryMeta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 10px 22px;
 }
-
 .summaryItem {
   display: inline-flex;
   align-items: center;
   gap: 8px;
 }
-
 .summaryLabel {
   font-family: var(--mono);
   font-size: 10px;
@@ -443,13 +365,11 @@
   font-weight: 600;
   color: var(--dim);
 }
-
 .summaryValue {
   font-size: 13.5px;
   font-weight: 700;
   color: var(--ink);
 }
-
 /* Per-role response counts, under a hairline divider — plain integers. */
 .summaryRoles {
   display: flex;
@@ -460,13 +380,11 @@
   padding-top: 12px;
   border-top: 1px solid var(--line);
 }
-
 .summaryRole {
   display: inline-flex;
   align-items: center;
   gap: 7px;
 }
-
 /* Role chip colors come from `roleColors()`, bridged as inline CSS vars. */
 .summaryRoleChip {
   font-size: 12px;
@@ -476,841 +394,15 @@
   border-radius: 6px;
   padding: 2.5px 8px;
 }
-
 .summaryRoleCount {
   font-family: var(--mono);
   font-size: 13px;
   font-weight: 600;
   color: var(--ink);
 }
-
-/* ---------------------------------------------------------------------------
- * Card shell (shared by histogram / rating / custom)
- * ------------------------------------------------------------------------- */
-
-.card {
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: var(--r-card);
-  padding: 22px;
-}
-
-.cardHead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.cardHeadLeft {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-.qChip {
-  font-family: var(--mono);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--accent);
-  background: var(--accent-bg);
-  border-radius: var(--r-chip);
-  padding: 5px 8px;
-}
-
-.typeLabel {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--dim);
-}
-
-.abstain {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--faint);
-  background: var(--surface3);
-  border-radius: var(--r-xs);
-  padding: 5px 9px;
-  white-space: nowrap;
-  flex: none;
-}
-
-.cardTitle {
-  font-family: var(--serif);
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1.28;
-  margin: 11px 0 0;
-  color: var(--ink);
-}
-
-/* ---------------------------------------------------------------------------
- * Histogram card
- * ------------------------------------------------------------------------- */
-
-.histStats {
-  display: flex;
-  gap: 18px;
-  margin-top: 6px;
-}
-
-.histStat {
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.histStatValue {
-  color: var(--accent);
-}
-
-.histBars {
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
-  height: 130px;
-  margin-top: 14px;
-}
-
-.histCol {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  height: 100%;
-  justify-content: flex-end;
-  gap: 7px;
-}
-
-.histCount {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--dim);
-}
-
-.histColTrack {
-  width: 100%;
-  flex: 1;
-  display: flex;
-  align-items: flex-end;
-}
-
-/* Bar height is computed (`${pct}%`), bridged as an inline CSS var. */
-.histBar {
-  width: 100%;
-  height: var(--hist-h);
-  background: linear-gradient(180deg, var(--accent-2), var(--accent));
-  border-radius: 4px 4px 0 0;
-  min-height: 2px;
-}
-
-.histLabel {
-  font-family: var(--mono);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--body);
-}
-
-/* ---------------------------------------------------------------------------
- * Rating card
- * ------------------------------------------------------------------------- */
-
-.ratingLegend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  margin-top: 14px;
-}
-
-.ratingLegendItem {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--muted);
-  font-weight: 600;
-}
-
-.ratingLegendIndex {
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--dim);
-}
-
-.ratingRows {
-  margin-top: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.ratingRow {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.ratingRowLabel {
-  font-size: 14px;
-  font-weight: 600;
-  width: 120px;
-  flex: none;
-}
-
-.ratingTrack {
-  flex: 1;
-  height: 13px;
-  border-radius: var(--r-pill);
-  background: var(--track);
-  overflow: hidden;
-}
-
-/* Width is computed (`${pctOf(...)}%`), bridged as an inline CSS var. */
-.ratingBar {
-  width: var(--rating-pct);
-  height: 100%;
-  background: linear-gradient(90deg, var(--accent), var(--accent-2));
-  border-radius: var(--r-pill);
-}
-
-.ratingAvg {
-  font-family: var(--mono);
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--accent);
-  width: 108px;
-  text-align: right;
-}
-
-/* ---------------------------------------------------------------------------
- * Custom card
- * ------------------------------------------------------------------------- */
-
-.customCount {
-  display: flex;
-  align-items: baseline;
-  gap: 9px;
-  margin-top: 14px;
-}
-
-.customCountValue {
-  font-family: var(--mono);
-  font-size: 30px;
-  font-weight: 600;
-  color: var(--accent);
-}
-
-.customCountLabel {
-  font-size: 13.5px;
-  color: var(--muted);
-}
-
-.customSamples {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.customSample {
-  font-size: 13px;
-  color: var(--body);
-  background: var(--surface);
-  border: 1px solid var(--line2);
-  border-radius: var(--r-chip);
-  padding: 7px 11px;
-}
-
-/* ---------------------------------------------------------------------------
- * Role filter button
- * ------------------------------------------------------------------------- */
-
-.roleFilterBtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-family: inherit;
-  font-size: 12.5px;
-  font-weight: 600;
-  cursor: pointer;
-  border-radius: 8px;
-  padding: 6px 12px;
-  border: 1px solid var(--line);
-  background: #f2ecde;
-  color: #6b6356;
-}
-
-.roleFilterBtnOn {
-  font-weight: 700;
-  border-color: var(--accent);
-  background: var(--accent);
-  color: #fbf8f1;
-}
-
-.roleFilterCount {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: #a79c88;
-}
-
-.roleFilterCountOn {
-  color: rgba(251, 248, 241, 0.75);
-}
-
-/* ---------------------------------------------------------------------------
- * No data
- * ------------------------------------------------------------------------- */
-
-.noData {
-  font-size: 12.5px;
-  color: var(--dim);
-  margin: 14px 0 0;
-}
-
-/* ---------------------------------------------------------------------------
- * Exclusion panel
- * ------------------------------------------------------------------------- */
-
-.exclPanel {
-  margin-top: 12px;
-  border: 1px solid var(--warn-line);
-  border-radius: var(--r-md);
-  overflow: hidden;
-}
-
-.exclHead {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--card-bg);
-  border-bottom: 1px solid var(--card-line);
-  padding: 12px 16px;
-  flex-wrap: wrap;
-}
-
-.exclHeadTitle {
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--label);
-}
-
-.exclHeadNote {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: #a89878;
-}
-
-.exclBody {
-  background: #fff;
-  padding: 4px 16px 14px;
-}
-
-.exclRow {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 11px 0;
-  border-top: 1px solid #f6f2e8;
-}
-
-.exclRowMain {
-  flex: 1;
-  min-width: 0;
-}
-
-.exclRowLabel {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--body);
-}
-
-.exclRowHint {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: #a89878;
-  margin-top: 2px;
-}
-
-.exclTrack {
-  width: 120px;
-  flex: none;
-  height: 8px;
-  border-radius: var(--r-pill);
-  background: #f4ece0;
-  overflow: hidden;
-}
-
-/* Width is computed (`${pct}%`), bridged as an inline CSS var. */
-.exclBar {
-  width: var(--excl-pct);
-  height: 100%;
-  border-radius: var(--r-pill);
-  background: #e0857b;
-}
-
-.exclCount {
-  font-family: var(--mono);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--warn);
-  width: 28px;
-  text-align: right;
-  flex: none;
-}
-
-.exclFootnote {
-  font-size: 11.5px;
-  color: #a89878;
-  line-height: 1.5;
-  margin: 11px 0 0;
-}
-
-.exclFootnoteMono {
-  font-family: var(--mono);
-  font-size: 11px;
-}
-
-/* ---------------------------------------------------------------------------
- * Individual responses
- * ------------------------------------------------------------------------- */
-
-.individual {
-  margin-top: 26px;
-}
-
-.individualToggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-family: inherit;
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--body);
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: var(--r-input);
-  padding: 8px 13px;
-  cursor: pointer;
-}
-
-/* Empty record set: dimmed, not clickable. */
-.individualToggleDisabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.individualCount {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--dim);
-}
-
-.individualCaret {
-  font-size: 9px;
-}
-
-.individualList {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 12px;
-}
-
-.showMore {
-  margin-top: 12px;
-  font-family: inherit;
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--accent);
-  background: #fff;
-  border: 1px solid var(--accent-line);
-  border-radius: var(--r-input);
-  padding: 8px 14px;
-  cursor: pointer;
-}
-
-/* ---------------------------------------------------------------------------
- * Response card
- * ------------------------------------------------------------------------- */
-
-.responseCard {
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  padding: 13px 15px;
-  background: #fff;
-}
-
-.responseHead {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  flex-wrap: wrap;
-}
-
-/* Role chip colors come from `roleColors()`, bridged as inline CSS vars. */
-.responseRole {
-  font-size: 11.5px;
-  font-weight: 700;
-  color: var(--role-color);
-  background: var(--role-bg);
-  border-radius: 6px;
-  padding: 2.5px 8px;
-  flex: none;
-}
-
-.responseCred {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--faint);
-}
-
-/* Owns margin-left:auto, pushing the rationale/tx cluster right — no spacer. */
-.responseRationale {
-  margin-left: auto;
-  font-size: 11.5px;
-  font-weight: 700;
-  color: var(--accent);
-  text-decoration: none;
-}
-
-/*
- * Both this and `.responseRationale` carry margin-left:auto, replacing the
- * empty spacer <span> that used to push the trailing cluster right. The
- * rationale link is conditional, so the always-present tx span needs it too;
- * when both are shown only the first (rationale) consumes the free space.
- */
-.responseTx {
-  margin-left: auto;
-  font-family: var(--mono);
-  font-size: 10.5px;
-  max-width: 150px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.responseSealed {
-  font-family: var(--mono);
-  font-size: 11.5px;
-  color: var(--dim);
-  margin-top: 10px;
-}
-
-.responseAnswers {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  margin-top: 11px;
-}
-
-.responseAnswer {
-  display: flex;
-  gap: 10px;
-}
-
-.responseAnswerQ {
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--accent);
-  flex: none;
-  padding-top: 1px;
-}
-
-.responseAnswerMain {
-  min-width: 0;
-}
-
-.responseAnswerPrompt {
-  font-size: 12px;
-  color: var(--muted);
-  line-height: 1.4;
-}
-
-.responseAnswerValue {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--body);
-  line-height: 1.45;
-  margin-top: 1px;
-}
-
-/* ---------------------------------------------------------------------------
- * Results body
- * ------------------------------------------------------------------------- */
-
-.countedRow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 14px;
-  flex-wrap: wrap;
-}
-
-.countedPill {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--ok);
-  background: var(--ok-bg);
-  border: 1px solid var(--ok-line);
-  border-radius: var(--r-sm);
-  padding: 7px 12px;
-}
-
-.countedDot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ok);
-}
-
-.pendingPill {
-  display: inline-flex;
-  align-items: center;
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--muted);
-  border: 1px dashed var(--line);
-  border-radius: var(--r-sm);
-  padding: 7px 12px;
-}
-
-.excludedToggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-family: inherit;
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--warn);
-  background: #fff8ec;
-  border: 1px solid var(--warn-line);
-  border-radius: var(--r-sm);
-  padding: 7px 12px;
-  cursor: pointer;
-}
-
-.excludedCaret {
-  font-size: 9px;
-}
-
-.exportBtn {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--accent);
-  background: #fff;
-  border: 1px solid var(--accent-line);
-  border-radius: var(--r-input);
-  padding: 9px 14px;
-  cursor: pointer;
-}
-
-/* No records: dimmed, not clickable. */
-.exportBtnDisabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.exportIcon {
-  font-size: 14px;
-}
-
-/* Final (artifact) view: export buttons — artifact JSON + votes CSV, side by
-   side. Same visual language as .exportBtn, minus its margin-left:auto (they
-   sit in their own left-aligned row). */
-.artifactActions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-top: 12px;
-}
-
-.artifactBtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--accent);
-  background: #fff;
-  border: 1px solid var(--accent-line);
-  border-radius: var(--r-input);
-  padding: 9px 14px;
-  cursor: pointer;
-}
-
-.artifactBtnDisabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.incomplete {
-  margin-top: 10px;
-  padding: 9px 13px;
-  border: 1px solid var(--warn-line);
-  background: var(--warn-bg);
-  border-radius: var(--r-md);
-  font-size: 12.5px;
-  color: var(--warn);
-}
-
-.disclaimer {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  background: var(--card-bg);
-  border: 1px solid var(--card-line);
-  border-radius: var(--r-md);
-  padding: 12px 15px;
-  margin-top: 14px;
-}
-
-.disclaimerBadge {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--warn);
-  background: var(--warn-bg);
-  border: 1px solid var(--warn-line);
-  border-radius: var(--r-2xs);
-  padding: 4px 7px;
-  flex: none;
-  margin-top: 1px;
-}
-
-.disclaimerText {
-  font-size: 12.5px;
-  color: var(--label);
-  line-height: 1.5;
-}
-
-.weightedRoleHead {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin: 22px 0 4px;
-}
-
-.weightedRoleTitle {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--ink);
-}
-
-.weightedRoleMeta {
-  font-family: var(--mono);
-  font-size: 11.5px;
-  color: var(--label);
-}
-
-.roleFilterRow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 22px 0 6px;
-  flex-wrap: wrap;
-}
-
-.roleFilterLabel {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--dim);
-  font-weight: 600;
-}
-
-.roleFilterBtns {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.questionResults {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin-top: 8px;
-}
-
-.tallyFootnote {
-  text-align: center;
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: #b8ae99;
-  margin: 22px 0 0;
-  line-height: 1.6;
-}
-
-/* ---------------------------------------------------------------------------
- * Sealed state notice
- * ------------------------------------------------------------------------- */
-
-.sealedNotice {
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: var(--r-card);
-  padding: 26px;
-  margin-top: 16px;
-  text-align: center;
-}
-
-/* `tone === "warn"` swaps the border color. */
-.sealedNoticeWarn {
-  border-color: var(--warn-line);
-}
-
-.sealedNoticeTitle {
-  font-size: 16px;
-  font-weight: 800;
-  color: var(--ink);
-}
-
-/* `tone === "warn"` swaps the title color. */
-.sealedNoticeTitleWarn {
-  color: var(--warn);
-}
-
-.sealedNoticeBody {
-  font-size: 13.5px;
-  color: var(--muted);
-  line-height: 1.55;
-  margin: 8px auto 0;
-  max-width: 460px;
-}
-
-.sealedNoticeBtn {
-  margin-top: 16px;
-  font-family: inherit;
-  font-size: 13.5px;
-  font-weight: 700;
-  cursor: pointer;
-  border: none;
-  border-radius: var(--r-control);
-  padding: 10px 18px;
-  background: var(--accent);
-  color: #fff;
-}
-
 /* ---------------------------------------------------------------------------
  * Labels unavailable
  * ------------------------------------------------------------------------- */
-
 .labelsUnavailable {
   display: flex;
   align-items: flex-start;
@@ -1321,7 +413,6 @@
   padding: 15px 17px;
   margin-top: 14px;
 }
-
 .labelsIcon {
   width: 26px;
   height: 26px;
@@ -1336,34 +427,28 @@
   justify-content: center;
   flex: none;
 }
-
 .labelsMain {
   flex: 1;
   min-width: 0;
 }
-
 .labelsTitle {
   font-size: 14px;
   font-weight: 700;
   color: var(--label);
 }
-
 .labelsBody {
   font-size: 12.5px;
   color: var(--label);
   line-height: 1.5;
   margin: 5px 0 0;
 }
-
 .labelsMono {
   font-family: var(--mono);
   font-size: 11.5px;
 }
-
 /* ---------------------------------------------------------------------------
  * Empty / error state
  * ------------------------------------------------------------------------- */
-
 .empty {
   background: #fff;
   border: 1px solid var(--line);
@@ -1373,12 +458,10 @@
   text-align: center;
   color: var(--muted);
 }
-
 .emptyError {
   color: var(--danger);
   margin-bottom: 12px;
 }
-
 .retryBtn {
   font-family: inherit;
   font-size: 13px;
