@@ -131,22 +131,50 @@ export function t(key: MsgKey, params?: Params): string {
   return params ? interpolate(tmpl, params) : tmpl;
 }
 
-const formatters = new Map<string, Intl.NumberFormat>();
+const numberFormats = new Map<string, Intl.NumberFormat>();
+const dateFormats = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * Formatter for the active locale, memoized per (locale, options) since
+ * constructing an Intl formatter is not free. Reads the locale signal, which
+ * is what makes `n` and `d` reactive.
+ */
+function cachedFormat<F>(
+  cache: Map<string, F>,
+  options: object | undefined,
+  make: (locale: Locale) => F,
+): F {
+  const loc = localeSig();
+  const cacheKey = loc + (options ? JSON.stringify(options) : "");
+  let f = cache.get(cacheKey);
+  if (!f) {
+    f = make(loc);
+    cache.set(cacheKey, f);
+  }
+  return f;
+}
 
 /**
  * Locale-aware number formatting via Intl. Reactive (reads the locale signal):
- * 1024 → "1,024" in English, "1 024" in French. Formatters are memoized per
- * (locale, options) since constructing an Intl.NumberFormat is not free.
+ * 1024 → "1,024" in English, "1 024" in French.
  */
 export function n(value: number, options?: Intl.NumberFormatOptions): string {
-  const loc = localeSig();
-  const cacheKey = loc + (options ? JSON.stringify(options) : "");
-  let f = formatters.get(cacheKey);
-  if (!f) {
-    f = new Intl.NumberFormat(loc, options);
-    formatters.set(cacheKey, f);
-  }
-  return f.format(value);
+  return cachedFormat(numberFormats, options, (loc) =>
+    new Intl.NumberFormat(loc, options),
+  ).format(value);
+}
+
+/**
+ * Locale-aware date/time formatting from unix **seconds** via Intl. Reactive
+ * (reads the locale signal), so rendered dates re-format on locale switch.
+ */
+export function d(
+  unixSeconds: number,
+  options?: Intl.DateTimeFormatOptions,
+): string {
+  return cachedFormat(dateFormats, options, (loc) =>
+    new Intl.DateTimeFormat(loc, options),
+  ).format(new Date(unixSeconds * 1000));
 }
 
 // Reflect the initial locale on <html lang>, and warm its catalog: a no-op for

@@ -1,16 +1,19 @@
 /**
- * Frontend-only `Date`-formatting helpers over drand rounds and Cardano epochs.
+ * Frontend-only date-formatting helpers over drand rounds and Cardano epochs.
  * The underlying round/time math lives in `cip-179/tlock` (shared with the
  * serving tier and the verifier) and is imported directly by call sites; only
- * this presentation layer stays in the frontend.
+ * this presentation layer stays in the frontend. Rendering goes through the
+ * i18n layer's `d`, so every date follows the active locale and re-formats
+ * when it switches.
  */
 
 import { epochEndUnix, unixTimeForRound } from "cip-179/tlock";
 
-/** Format a unix time (seconds) as a local wall-clock, e.g. "Jun 30, 2026, 14:05". */
+import { d } from "~/i18n";
+
+/** Wall-clock rendering of a unix time (seconds), e.g. "Jun 30, 2026, 14:05". */
 export function formatUnixDate(unix: number): string {
-  const d = new Date(unix * 1000);
-  return d.toLocaleString(undefined, {
+  return d(unix, {
     year: "numeric",
     month: "short",
     day: "numeric",
