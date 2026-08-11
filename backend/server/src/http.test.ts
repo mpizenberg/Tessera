@@ -1,9 +1,10 @@
 /**
- * Route tests against an in-memory store — no SQLite. The snapshot-derived
- * routes need nothing else; the passthroughs `/api/tip` and `/api/tx_status`
- * reach Koios through a stubbed `fetch`. `/api/pparams` is not exercised
- * end-to-end: evolution-sdk maps its response through a schema wanting some
- * sixty fields, so what it caches on is covered through `keyedCache` instead.
+ * Route tests against a real store on an in-memory database, so a route and
+ * the SQL under it are exercised together. The passthroughs `/api/tip` and
+ * `/api/tx_status` reach Koios through a stubbed `fetch`. `/api/pparams` is not
+ * exercised end-to-end: evolution-sdk maps its response through a schema
+ * wanting some sixty fields, so what it caches on is covered through
+ * `keyedCache` instead.
  *
  * The fixture is materialized through `materializeSnapshot`, exactly as a
  * refresh does, so a route test can't pass against rows the refresh would
@@ -28,16 +29,16 @@ import type {
 import { loadConfig } from "./config";
 import { createApp, keyedCache } from "./http";
 import { materializeSnapshot } from "./materialize";
-import { memBackendStore, type MemBackendStore } from "./store-mem";
+import { testStore, type TestStore } from "./testing/store";
 import type { ValidatedResponseRow } from "./store";
 
-function appWith(store: MemBackendStore) {
+function appWith(store: TestStore) {
   return createApp(loadConfig({}), store, { compress: false });
 }
 
 /** Materialize the fixture snapshot into the store, as the refresh does. */
 async function seed(
-  store: MemBackendStore,
+  store: TestStore,
   govLinks: readonly GovLink[] = [],
 ): Promise<void> {
   const snapshot = materializeSnapshot(
@@ -59,8 +60,8 @@ async function seed(
   );
 }
 
-async function seededStore(): Promise<MemBackendStore> {
-  const store = memBackendStore();
+async function seededStore(): Promise<TestStore> {
+  const store = testStore();
   await seed(store);
   return store;
 }
@@ -169,13 +170,9 @@ const FETCHED_AT = 1_750_000_100;
 
 describe("GET /health", () => {
   it("reports the exact configured preprod identity", async () => {
-    const app = createApp(
-      loadConfig({ NETWORK: "preprod" }),
-      memBackendStore(),
-      {
-        compress: false,
-      },
-    );
+    const app = createApp(loadConfig({ NETWORK: "preprod" }), testStore(), {
+      compress: false,
+    });
     const res = await app.request("/health");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, network: "preprod" });
@@ -183,7 +180,7 @@ describe("GET /health", () => {
 });
 
 describe("before the first refresh", () => {
-  const app = appWith(memBackendStore());
+  const app = appWith(testStore());
   it.each(["/api/surveys", `/api/surveys/${TX_A}/0`, "/api/responded"])(
     "%s answers 503",
     async (path) => {
@@ -283,7 +280,8 @@ describe("GET /api/surveys", () => {
     ) as Record<string, unknown>;
     expect(body["govLinks"]).toEqual([govLinkA]);
     expect(body["counts"]).toEqual(linked["counts"]);
-    expect(store.surveyIndex.map((r) => [r.surveyKey, r.govLinked])).toEqual([
+    const stored = await store.surveyRowsEndingAtOrAfter(0);
+    expect(stored.map((r) => [r.surveyKey, r.govLinked])).toEqual([
       [`${TX_A}:0`, true],
       [`${TX_B}:1`, false],
     ]);
@@ -777,7 +775,7 @@ describe("GET /api/health", () => {
   });
 
   it("serves nulls before any refresh, with a default per-refresh limit", async () => {
-    const app = appWith(memBackendStore());
+    const app = appWith(testStore());
     const res = await app.request("/api/health");
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
@@ -815,7 +813,7 @@ describe("serving-path metering", () => {
           ),
       ),
     );
-    const store = memBackendStore();
+    const store = testStore();
     const res = await appWith(store).request(`/api/tx_status?hashes=${hash}`);
     expect(res.status).toBe(200);
 
@@ -829,7 +827,7 @@ describe("serving-path metering", () => {
   });
 
   it("costs no storage on a request that reaches nothing upstream", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     await appWith(store).request("/api/health");
     expect(await store.upstreamTotalsSince(0)).toEqual({
       koios: 0,
@@ -851,7 +849,7 @@ describe("GET /api/tx_status (finding 15)", () => {
   it("rejects a malformed hash with 400 and never calls Koios", async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
-    const res = await appWith(memBackendStore()).request(
+    const res = await appWith(testStore()).request(
       "/api/tx_status?hashes=not-a-hash",
     );
     expect(res.status).toBe(400);
@@ -864,7 +862,7 @@ describe("GET /api/tx_status (finding 15)", () => {
     const many = Array.from({ length: 21 }, (_, i) =>
       i.toString(16).padStart(2, "0").repeat(32),
     ).join(",");
-    const res = await appWith(memBackendStore()).request(
+    const res = await appWith(testStore()).request(
       `/api/tx_status?hashes=${many}`,
     );
     expect(res.status).toBe(400);
@@ -882,7 +880,7 @@ describe("GET /api/tx_status (finding 15)", () => {
           ),
       ),
     );
-    const res = await appWith(memBackendStore()).request(
+    const res = await appWith(testStore()).request(
       `/api/tx_status?hashes=${H("ab")}`,
     );
     expect(res.status).toBe(200);
@@ -904,7 +902,7 @@ describe("GET /api/tx_status (finding 15)", () => {
     // The critical path's identity is set, but comfort polling must not carry it.
     const app = createApp(
       loadConfig({ KOIOS_TOKEN: "super-secret" }),
-      memBackendStore(),
+      testStore(),
       {
         compress: false,
       },
@@ -973,7 +971,7 @@ describe("GET /api/tip", () => {
 
   it("re-reads it when there is no snapshot to bank from", async () => {
     const paths = koiosAt(tip.epoch);
-    await appWith(memBackendStore()).request("/api/tip");
+    await appWith(testStore()).request("/api/tip");
     expect(paths).toEqual(["tip", "epoch_params"]);
   });
 });

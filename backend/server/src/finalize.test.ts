@@ -34,7 +34,7 @@ import { finalizeClosedSurveys } from "./finalize";
 import { materializeSnapshot } from "./materialize";
 import type { SealedRevealFn } from "./sealedReveal";
 import type { ValidatedResponseRow } from "./store";
-import { memBackendStore, type MemBackendStore } from "./store-mem";
+import { testStore, type TestStore } from "./testing/store";
 
 // --- fixtures ------------------------------------------------------------------
 
@@ -320,10 +320,7 @@ function cancellation(
   };
 }
 
-async function seed(
-  store: MemBackendStore,
-  rows: readonly ValidatedResponseRow[],
-) {
+async function seed(store: TestStore, rows: readonly ValidatedResponseRow[]) {
   await store.upsertValidatedResponses(rows);
 }
 
@@ -342,7 +339,7 @@ function records(
  */
 async function finalizeRecords(
   config: ServerConfig,
-  store: MemBackendStore,
+  store: TestStore,
   inputs: TallyInputSource,
   source: Pick<import("cardano-tessera-koios").KoiosDataSource, "txProofs">,
   recs: Cip179Records,
@@ -386,7 +383,7 @@ describe("finalizeClosedSurveys", () => {
   const rB = response("22".repeat(32), CRED_B, 1);
 
   it("emits a complete weighted artifact (weights, totals, sorted responders)", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     await seed(store, [validatedRow(rA), validatedRow(rB)]);
     const inputs = fakeInputs({
       [KEY_A]: { weight: 100n, registered: true },
@@ -440,7 +437,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("fetches the shared-credential union once across same-epoch surveys", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const s2: SurveyRecord = {
       txHash: SURVEY_TX2,
       slot: 100,
@@ -512,7 +509,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("isolates a poisoned survey: one failing emission never blocks the others (finding 3)", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const SURVEY_KEY2 = `${SURVEY_TX2}:0`;
     const s2: SurveyRecord = {
       txHash: SURVEY_TX2,
@@ -568,7 +565,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("skips a spec-invalid (untalliable) survey — no artifact — without blocking valid ones (findings 10, 11)", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const SURVEY_KEY2 = `${SURVEY_TX2}:0`;
     // Survey 1's on-chain definition declares spec_version 6 — untalliable, so it
     // must produce no artifact (never tallied under v5 semantics).
@@ -623,7 +620,7 @@ describe("finalizeClosedSurveys", () => {
     // candidate set. Fetching its proof first would re-read its CBOR on every
     // refresh for the life of the deployment — the cost is permanent, and no
     // proof could change the verdict.
-    const store = memBackendStore();
+    const store = testStore();
     const SURVEY_KEY2 = `${SURVEY_TX2}:0`;
     const invalid: SurveyRecord = {
       ...survey(),
@@ -669,7 +666,7 @@ describe("finalizeClosedSurveys", () => {
   // the `owner` credential." Nothing checked it, so a survey could name any
   // credential as owner and be tallied under a borrowed name.
   it("skips a survey whose defining tx never proved the owner — without blocking valid ones", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const s2: SurveyRecord = {
       txHash: SURVEY_TX2,
       slot: 100,
@@ -711,7 +708,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("postpones (never decides) a survey whose owner-proof could not be fetched", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     await seed(store, [validatedRow(rA)]);
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
     // No definition tx proves out and none is listed: every hash reads as a
@@ -739,7 +736,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("postpones when the electorate total is unavailable, resumes without refetching weights", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     await seed(store, [validatedRow(rA)]);
     const inputs = fakeInputs(
       { [KEY_A]: { weight: 5n, registered: true } },
@@ -776,7 +773,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("persists weights per credential so a mid-role failure resumes (finding 5)", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const dA = response("11".repeat(32), CRED_A, 0, 200, Role.DRep);
     const dB = response("22".repeat(32), CRED_B, 1, 200, Role.DRep);
     await seed(store, [validatedRow(dA), validatedRow(dB)]);
@@ -822,7 +819,7 @@ describe("finalizeClosedSurveys", () => {
   // An account whose history the upstream can't resolve used to abort the whole
   // pass, starving every other epoch of finalization for as long as it lasted.
   it("skips only the epoch whose weights failed, finalizing the others", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const s2: SurveyRecord = {
       txHash: SURVEY_TX2,
       slot: 100,
@@ -870,7 +867,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("is idempotent: an emitted survey is never re-finalized", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     await seed(store, [validatedRow(rA)]);
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
     const recs = records(survey(), [rA]);
@@ -878,12 +875,12 @@ describe("finalizeClosedSurveys", () => {
     await finalizeRecords(CONFIG, store, inputs, noProofs, recs, TIP);
     const first = store.artifacts.get(SURVEY_KEY)!;
     await finalizeRecords(CONFIG, store, inputs, noProofs, recs, TIP);
-    expect(store.artifacts.get(SURVEY_KEY)).toBe(first);
+    expect(store.artifacts.get(SURVEY_KEY)).toEqual(first);
     expect(inputs.stakeholderCalls).toBe(1);
   });
 
   it("never looks below its banked floor", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     await seed(store, [validatedRow(rA)]);
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
 
@@ -910,7 +907,7 @@ describe("finalizeClosedSurveys", () => {
 
   it("produces the same artifact hash on independent runs (determinism)", async () => {
     const make = async () => {
-      const store = memBackendStore();
+      const store = testStore();
       await seed(store, [validatedRow(rA), validatedRow(rB)]);
       await finalizeRecords(
         CONFIG,
@@ -933,7 +930,7 @@ describe("finalizeClosedSurveys", () => {
       responses: ResponseRecord[],
       rows: ValidatedResponseRow[],
     ) => {
-      const store = memBackendStore();
+      const store = testStore();
       await seed(store, rows);
       await finalizeRecords(
         CONFIG,
@@ -954,7 +951,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("emits an artifact the independent verifier reproduces (cross-seam, finding 30)", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     await seed(store, [validatedRow(rA), validatedRow(rB)]);
     await finalizeRecords(
       CONFIG,
@@ -1013,7 +1010,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("commits the resolved gov-link set to (unhashed) provenance (finding 6)", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     await seed(store, [validatedRow(rA)]);
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
     const link: GovLink = {
@@ -1062,7 +1059,7 @@ describe("finalizeClosedSurveys", () => {
   // must never be committed: an anchor resolving tomorrow would add a link the
   // artifact denies. The survey waits for its epoch to settle.
   it("postpones a survey whose governance epoch has not settled", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     await seed(store, [validatedRow(rA)]);
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
     await finalizeRecords(
@@ -1080,7 +1077,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("commits an empty gov-link set for a standalone survey (finding 6)", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     await seed(store, [validatedRow(rA)]);
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
     await finalizeRecords(
@@ -1098,7 +1095,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("emits a cancellation artifact for an owner-proven, in-window cancellation", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     await seed(store, [validatedRow(rA)]);
     const cancellation: CancellationRecord = {
       txHash: "cc".repeat(32),
@@ -1136,7 +1133,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("postpones (never tallies) a survey whose in-window cancellation proof failed to fetch (finding 1)", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     await seed(store, [validatedRow(rA)]);
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
     const cx = cancellation("cc".repeat(32), 300);
@@ -1174,7 +1171,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("tallies a survey whose in-window cancellation is fetched but unproven (owner not a signer)", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     await seed(store, [validatedRow(rA)]);
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
     const cx = cancellation("cc".repeat(32), 300);
@@ -1199,7 +1196,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("postpones when an earlier cancellation's proof is unknown but a later one verifies (winner undetermined)", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     await seed(store, [validatedRow(rA)]);
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
     const earlier = cancellation("c1".repeat(32), 300); // unknown proof
@@ -1220,7 +1217,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("emits the earlier verified cancellation even when a later one's proof is unknown (winner determined)", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     await seed(store, [validatedRow(rA)]);
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
     const earlier = cancellation("c1".repeat(32), 300); // owner-verified
@@ -1245,7 +1242,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("emits a sealed artifact with revealed answers and a provenance beacon", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const rSealed = sealedResponse("11".repeat(32), CRED_A);
     await seed(store, [validatedRow(rSealed)]);
     const inputs = fakeInputs({ [KEY_A]: { weight: 100n, registered: true } });
@@ -1290,7 +1287,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("dedups sealed responses AFTER reveal: a later undecryptable ballot never supersedes an earlier valid one (finding 2)", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const early = sealedResponse("11".repeat(32), CRED_A, 200);
     const late = sealedResponse("33".repeat(32), CRED_A, 250); // later in chain
     await seed(store, [validatedRow(early), validatedRow(late)]);
@@ -1328,7 +1325,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("postpones a sealed reveal while the round is unavailable (weights frozen, reveal not called)", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const rSealed = sealedResponse("11".repeat(32), CRED_A);
     await seed(store, [validatedRow(rSealed)]);
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
@@ -1360,7 +1357,7 @@ describe("finalizeClosedSurveys", () => {
   // sealed survey outlives any single invocation; `sealed_reveal` is the cursor
   // that lets it finish anyway.
   it("resumes a sealed reveal across passes, re-decrypting nothing", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const fleet = sealedFleet(200); // past MAX_SEALED_DECRYPTS_PER_PASS (150)
     await seed(store, fleet.rows);
     // The first ciphertext never decrypts. That verdict has to be recorded too,
@@ -1403,7 +1400,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("spends the pass-wide decrypt budget on one sealed survey and defers the next", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const first = sealedFleet(150); // exactly MAX_SEALED_DECRYPTS_PER_PASS
     const SURVEY_KEY2 = `${SURVEY_TX2}:0`;
     const second = sealedFleet(1, SURVEY_KEY2, 200);
@@ -1445,7 +1442,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("postpones (does not escape) when the reveal throws", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const rSealed = sealedResponse("11".repeat(32), CRED_A);
     await seed(store, [validatedRow(rSealed)]);
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
@@ -1476,7 +1473,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("skips a sealed survey on an unsupported (non-quicknet) chain — no reveal, no weight work", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const rSealed = sealedResponse("11".repeat(32), CRED_A);
     await seed(store, [validatedRow(rSealed)]);
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
@@ -1506,7 +1503,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("marks a sealed survey's cancellation artifact as sealed", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const rSealed = sealedResponse("11".repeat(32), CRED_A);
     await seed(store, [validatedRow(rSealed)]);
     const cancellation: CancellationRecord = {
@@ -1546,7 +1543,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("applies the counted-set rules: dedupe latest-wins, unproven excluded, unregistered dropped", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const rA2 = response("33".repeat(32), CRED_A, 1, 250); // A's later answer: "no"
     const rC = response("44".repeat(32), keyCred("c3".repeat(28)), 0);
     const rD = response("55".repeat(32), CRED_B, 0);
@@ -1589,7 +1586,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("postpones emission while any counted-candidate verdict or block index is pending (finding 1)", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const rC = response("44".repeat(32), keyCred("c3".repeat(28)), 0);
     await seed(store, [
       validatedRow(rA),
@@ -1628,7 +1625,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("skips all finalization when the snapshot is incomplete (finding 3)", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     await seed(store, [validatedRow(rA)]);
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
 
@@ -1648,7 +1645,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("prunes a counted response that fell out of the snapshot, then finalizes (finding 3)", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     await seed(store, [validatedRow(rA)]); // validated earlier…
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
 
@@ -1682,7 +1679,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("re-counts a reorged-out response if it returns before the next finalize (finding 3)", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     await seed(store, [validatedRow(rA)]);
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
 
@@ -1712,7 +1709,7 @@ describe("finalizeClosedSurveys", () => {
   });
 
   it("leaves still-open or too-recent surveys alone", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     await seed(store, [validatedRow(rA)]);
     const openTip: ChainTip = { ...TIP, epoch: END_EPOCH }; // not yet past
     await finalizeRecords(

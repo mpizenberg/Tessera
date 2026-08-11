@@ -19,7 +19,7 @@ import {
   SETTLEMENT_PATIENCE_EPOCHS,
   refreshGovLinks,
 } from "./govLinks";
-import { memBackendStore, type MemBackendStore } from "./store-mem";
+import { testStore, type TestStore } from "./testing/store";
 
 const TXID = "9a1c".repeat(16);
 
@@ -73,7 +73,7 @@ function docs(byHash: Record<string, unknown>) {
 }
 
 const run = (
-  store: MemBackendStore,
+  store: TestStore,
   source: ReturnType<typeof sourceOf>,
   endEpochs: readonly number[],
   tipEpoch: number,
@@ -88,7 +88,7 @@ const run = (
 
 describe("refreshGovLinks — fetch once, bank forever", () => {
   it("never re-fetches an anchor it has verified", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const source = sourceOf([proposal(1, 510), proposal(2, 510)]);
     const fetchDoc = docs({ "1": linkDoc(0), "2": PLAIN_DOC });
 
@@ -113,7 +113,7 @@ describe("refreshGovLinks — fetch once, bank forever", () => {
   });
 
   it("keeps an unreadable anchor out of the bank and reports it unresolved", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const source = sourceOf([proposal(1, 510), proposal(2, 510)]);
     const fetchDoc = docs({ "1": linkDoc(0) }); // 2 is unreachable
 
@@ -129,7 +129,7 @@ describe("refreshGovLinks — fetch once, bank forever", () => {
   });
 
   it("attempts at most a bounded number of anchors per refresh", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const many = Array.from(
       { length: ANCHOR_ATTEMPTS_PER_REFRESH + 3 },
       (_, i) => proposal(i + 1, 510),
@@ -149,7 +149,7 @@ describe("refreshGovLinks — fetch once, bank forever", () => {
 
 describe("refreshGovLinks — settlement", () => {
   it("settles a frozen epoch once every anchor is classified", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const source = sourceOf([proposal(1, 510), proposal(2, 510)]);
     const fetchDoc = docs({ "1": linkDoc(0), "2": PLAIN_DOC });
 
@@ -170,7 +170,7 @@ describe("refreshGovLinks — settlement", () => {
   });
 
   it("does not settle an epoch the tip hasn't reached", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const source = sourceOf([proposal(1, 510)]);
     await run(store, source, [510], 510, docs({ "1": linkDoc(0) }));
     // The action expires at epoch 511 and the tip is 510: another proposal can
@@ -181,7 +181,7 @@ describe("refreshGovLinks — settlement", () => {
   // The liveness bound: most anchors in the wild never resolve, and a held
   // verdict on one of them would postpone the survey's artifact forever.
   it("settles without a dead anchor once patience runs out", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const source = sourceOf([proposal(1, 510), proposal(2, 510)]);
     const fetchDoc = docs({ "1": linkDoc(0) }); // 2 never resolves
 
@@ -204,7 +204,7 @@ describe("refreshGovLinks — settlement", () => {
   });
 
   it("settles a frozen epoch with no proposals at all", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const source = sourceOf([]);
     await run(store, source, [510], 511, docs({}));
     expect(store.govEpochs.get(511)).toMatchObject({ links: [], gaveUp: [] });
@@ -215,7 +215,7 @@ describe("refreshGovLinks — settlement floor", () => {
   // The growth bound made explicit: what the pass hands back is where the next
   // one starts asking, and a settled epoch is behind it for good.
   it("stops at the lowest epoch it left unsettled", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const source = sourceOf([proposal(1, 500), proposal(2, 600)]);
     const fetchDoc = docs({ "1": linkDoc(0), "2": linkDoc(1) });
 
@@ -227,7 +227,7 @@ describe("refreshGovLinks — settlement floor", () => {
   });
 
   it("clears the whole query set when every epoch settled", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const source = sourceOf([]);
     const pass = await run(store, source, [500, 501, 502], 510, docs({}));
     // A multi-epoch gap between refreshes settles every epoch in it, so none
@@ -237,7 +237,7 @@ describe("refreshGovLinks — settlement floor", () => {
   });
 
   it("waits at an epoch whose anchors are still worth asking about", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const source = sourceOf([proposal(1, 510), proposal(2, 510)]);
     const fetchDoc = docs({ "1": linkDoc(0) }); // 2 never resolves
 
@@ -254,7 +254,7 @@ describe("refreshGovLinks — settlement floor", () => {
   });
 
   it("never moves backwards over epochs a caller no longer asks about", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const source = sourceOf([]);
     // The caller's query set is one old, already-settled epoch — everything
     // between it and the banked floor is settled too, by induction.
@@ -266,7 +266,7 @@ describe("refreshGovLinks — settlement floor", () => {
 
 describe("refreshGovLinks — bank pruning", () => {
   it("drops a settled epoch's anchors but keeps ones another epoch still needs", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     // Anchor 1 is referenced from both epochs (one document, two actions);
     // anchor 2 belongs to the settling epoch alone.
     const shared: GovProposal = {
@@ -293,19 +293,19 @@ describe("refreshGovLinks — rebuildable cache", () => {
     const source = sourceOf([proposal(1, 510)]);
     const fetchDoc = docs({ "1": linkDoc(0) });
 
-    const before = memBackendStore();
+    const before = testStore();
     const original = await run(before, source, [510], 511, fetchDoc);
 
     // A fresh store is exactly a wiped cache: the epoch is unsettled again, so
     // the scan asks for it and the links come back identical rather than lost.
-    const after = memBackendStore();
+    const after = testStore();
     const rebuilt = await run(after, source, [510], 511, fetchDoc);
     expect(rebuilt).toEqual(original);
     expect(after.govEpochs.get(511)?.links).toEqual(original.links);
   });
 
   it("asks nothing at all when there are no surveys", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const source = sourceOf([proposal(1, 510)]);
     expect(await run(store, source, [], 511, docs({}), 1000, 7)).toEqual({
       links: [],

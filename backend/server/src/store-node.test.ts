@@ -1,12 +1,14 @@
 /**
- * `store-sql.ts` over the node driver, against a real (in-memory) SQLite
- * database — exercised where the SQL itself carries logic the in-memory store
- * re-implements in JS, so the two can't silently disagree. That's the
- * `json_extract` predicate behind `finalizedArtifactKeys`, the conditional
- * upsert behind the refresh lease, the join and cascade behind the
- * sealed-reveal cursor, and the paging keyset. D1 shares both the dialect and
- * this store, so what passes here holds there too; `store-d1.test.ts` covers
- * only what its driver does differently (batching, transaction rollback).
+ * The store itself, where the SQL carries logic no behavioural test would
+ * pin on its own: the migration runner (including the pre-runner databases it
+ * has to recognise), the `json_extract` predicate behind
+ * `finalizedArtifactKeys`, the conditional upsert behind the refresh lease,
+ * the join and cascade behind the sealed-reveal cursor, the paging keyset,
+ * and the segment sweep's changed-row count.
+ *
+ * D1 shares both the dialect and `store-sql.ts`, so what passes here holds
+ * there; `store-d1.test.ts` covers only what its driver does differently
+ * (batching, transaction rollback).
  */
 
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";

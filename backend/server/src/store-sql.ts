@@ -103,7 +103,7 @@ const nullableBit = (value: boolean | null): number | null =>
   value === null ? null : bit(value);
 
 /** How a `validated_response` row arrives: its booleans are integers. */
-interface DbValidatedRow extends Omit<
+export interface DbValidatedRow extends Omit<
   ValidatedResponseRow,
   "proofOk" | "wellFormed"
 > {
@@ -111,7 +111,7 @@ interface DbValidatedRow extends Omit<
   wellFormed: number;
 }
 
-const validatedFromDb = (r: DbValidatedRow): ValidatedResponseRow => ({
+export const validatedFromDb = (r: DbValidatedRow): ValidatedResponseRow => ({
   ...r,
   proofOk: r.proofOk === null ? null : r.proofOk !== 0,
   wellFormed: r.wellFormed !== 0,
@@ -126,13 +126,13 @@ interface DbRefreshRunRow extends Omit<
   incomplete: number;
 }
 
-const VALIDATED_COLUMNS = `tx_hash AS txHash, response_index AS responseIndex,
+export const VALIDATED_COLUMNS = `tx_hash AS txHash, response_index AS responseIndex,
        survey_key AS surveyKey, role, credential, slot,
        epoch_no AS epochNo, block_index AS blockIndex,
        proof_ok AS proofOk, linked_action_id AS linkedActionId,
        well_formed AS wellFormed, checked_at AS checkedAt`;
 
-const ARTIFACT_COLUMNS = `survey_key AS surveyKey, end_epoch AS endEpoch,
+export const ARTIFACT_COLUMNS = `survey_key AS surveyKey, end_epoch AS endEpoch,
        artifact_hash AS artifactHash, artifact, created_at AS createdAt`;
 
 const REFRESH_RUN_COLUMNS = `started_at AS startedAt, duration_ms AS durationMs,

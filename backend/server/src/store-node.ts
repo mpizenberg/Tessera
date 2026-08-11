@@ -149,8 +149,12 @@ function nodeDriver(db: DatabaseSync): SqlDriver {
   };
 }
 
-export function openBackendStore(path: string): BackendStore {
-  const db = new DatabaseSync(path);
+/** Migrate `db` and serve the store from it. The caller owns the handle. */
+export function nodeBackendStore(db: DatabaseSync): BackendStore {
   applyMigrations(db);
   return sqlBackendStore(nodeDriver(db));
+}
+
+export function openBackendStore(path: string): BackendStore {
+  return nodeBackendStore(new DatabaseSync(path));
 }

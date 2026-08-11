@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { upstreamMeter } from "./meter";
-import { memBackendStore } from "./store-mem";
+import { testStore } from "./testing/store";
 import { tallyBucket } from "./store";
 
 describe("upstreamMeter", () => {
   it("keeps the three budgets apart and drains them into one bucket", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const meter = upstreamMeter(store);
     const koios = meter.hook("koios");
     const anchor = meter.hook("anchor");
@@ -31,7 +31,7 @@ describe("upstreamMeter", () => {
   // The serving tier drains per request from a meter shared across requests, so
   // a drain that didn't reset would re-charge every earlier request's calls.
   it("resets on drain, so a second drain writes nothing", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const meter = upstreamMeter(store);
     meter.hook("koios")();
     await meter.drain(1_000_000);

@@ -12,7 +12,7 @@ import {
 
 import { materializeSnapshot } from "./materialize";
 import { pruneTxProofCache } from "./proofCache";
-import { memBackendStore } from "./store-mem";
+import { testStore } from "./testing/store";
 
 const tx = (byte: string) => byte.repeat(32);
 
@@ -117,7 +117,7 @@ async function prune(
   recs: Cip179Records,
   finalized: ReadonlySet<string>,
 ) {
-  const mem = memBackendStore();
+  const mem = testStore();
   const snapshot = materializeSnapshot(recs, TIP, [], new Set());
   await mem.reconcileSnapshot(
     snapshot.surveys,

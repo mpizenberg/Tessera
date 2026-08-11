@@ -26,7 +26,7 @@ import {
 import { integrateSegment, type GovPass } from "./integrate";
 import { listCountsOf, materializeSnapshot } from "./materialize";
 import type { SlotRange, SnapshotMeta } from "./store";
-import { memBackendStore, type MemBackendStore } from "./store-mem";
+import { testStore, type TestStore } from "./testing/store";
 
 // --- fixtures ------------------------------------------------------------------
 
@@ -227,7 +227,7 @@ function govPassFor(
 }
 
 async function runRefresh(
-  store: MemBackendStore,
+  store: TestStore,
   chain: Chain,
   tip: ChainTip,
 ): Promise<void> {
@@ -249,7 +249,7 @@ async function runRefresh(
 }
 
 async function expectOracleMatch(
-  store: MemBackendStore,
+  store: TestStore,
   chain: Chain,
   tip: ChainTip,
 ): Promise<void> {
@@ -302,7 +302,7 @@ describe("segment integration vs the full-rebuild oracle", () => {
         govLinks: [],
         finalizedCancelled: new Set(),
       };
-      const store = memBackendStore();
+      const store = testStore();
       let slot = MARGIN;
       let txCounter = 1;
       let actionCounter = 1;
@@ -409,7 +409,7 @@ describe("segment integration vs the full-rebuild oracle", () => {
     // cancellation holds only while the survey is open. When its epoch turns
     // with no tx touching it, the expiry read must put it back on the touched
     // list — the full rebuild recomputes it from the tip every run.
-    const store = memBackendStore();
+    const store = testStore();
     const chain: Chain = {
       surveys: [surveyAt(1, 150, 1, 3)],
       responses: [],
@@ -447,7 +447,7 @@ describe("segment integration mechanics", () => {
   });
 
   it("re-projects a survey on a link-set change without any tx event", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const chain = seedChain();
     await runRefresh(store, chain, tipAt(200));
 
@@ -476,7 +476,7 @@ describe("segment integration mechanics", () => {
   });
 
   it("keeps a settled survey's links when the pass no longer asks about its epoch", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const chain: Chain = {
       surveys: [surveyAt(1, 100, 1, 3)],
       responses: [],
@@ -502,7 +502,7 @@ describe("segment integration mechanics", () => {
   });
 
   it("fetches the owner-proof of a cancellation whose open target is outside the segment", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const chain = seedChain();
     await runRefresh(store, chain, tipAt(200));
 
@@ -531,7 +531,7 @@ describe("segment integration mechanics", () => {
   });
 
   it("does not resurrect a rolled-back survey whose responses made it touched", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const survey = surveyAt(1, 500, 9, 3);
     const early = responseAt(2, 100, survey, 10);
     const chain: Chain = {
@@ -558,7 +558,7 @@ describe("segment integration mechanics", () => {
   });
 
   it("re-derives a stored projection that drifted", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const chain = seedChain();
     await runRefresh(store, chain, tipAt(200));
     const stored = (await store.surveyRowsEndingAtOrAfter(0))[0]!;
@@ -589,7 +589,7 @@ describe("segment integration mechanics", () => {
   });
 
   it("resurrects a row lost out-of-band with its settled links", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const chain: Chain = {
       surveys: [surveyAt(1, 100, 1, 3)],
       responses: [],
@@ -636,7 +636,7 @@ describe("segment integration mechanics", () => {
   });
 
   it("upserts without sweeping when the scan is incomplete", async () => {
-    const store = memBackendStore();
+    const store = testStore();
     const chain = seedChain();
     await runRefresh(store, chain, tipAt(200));
 
