@@ -34,7 +34,6 @@ import {
   buildResponse,
   buildSealedResponse,
   collectAnswers,
-  createI18n,
   type Draft,
   type DraftValue,
   type I18n,
@@ -76,7 +75,7 @@ import {
 } from "~/ui/format";
 import type { Action } from "~/wallet/action";
 import { type WalletIdentity } from "~/wallet/types";
-import { locale, t, n } from "~/i18n";
+import { t, n, d } from "~/i18n";
 import { problemText } from "~/i18n/problem";
 import css from "./Respond.module.css";
 
@@ -151,10 +150,12 @@ export const Respond: Component = () => {
   const params = useParams<{ key: string }>();
   const key = () => decodeURIComponent(params.key);
 
-  // i18n for the shared question bodies: respond-core's `createI18n` (the same
-  // catalog the widget renders from) driven by the app's reactive locale. The
-  // context takes the memo itself, so a locale switch re-renders every body.
-  const bodiesI18n = createMemo<I18n>(() => createI18n({ locale: locale() }));
+  // i18n for the shared question bodies: the app's own engine wearing
+  // respond-core's `I18n` interface — compile-time sound because the app's
+  // respond/roles/validation namespaces spread respond-core's catalogs, so
+  // every core key is an app key. `t`/`n`/`d` each read the locale signal, so
+  // calls stay reactive behind a constant instance.
+  const bodiesI18n: I18n = { t, n, d };
 
   // Fall back to the optimistic set so a just-created survey is answerable
   // immediately, before Koios indexes it (mirrors the results page).
@@ -657,7 +658,7 @@ export const Respond: Component = () => {
                 <LabelsAbsentBanner keyStr={key()} />
               </Show>
 
-              <I18nContext.Provider value={bodiesI18n}>
+              <I18nContext.Provider value={() => bodiesI18n}>
                 <ClassesContext.Provider value={bodyClasses}>
                   <div class={css.questionList}>
                     <For
