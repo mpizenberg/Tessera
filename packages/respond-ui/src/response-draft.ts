@@ -109,7 +109,9 @@ export function createResponseDraft(
 
   const credential = createMemo<Credential | null>(() => {
     const r = role();
-    return r !== null ? (credentialForRole(r, source.responder()) ?? null) : null;
+    return r !== null
+      ? (credentialForRole(r, source.responder()) ?? null)
+      : null;
   });
 
   const prior = createMemo<SurveyResponse | undefined>(() => {
@@ -161,7 +163,10 @@ export function createResponseDraft(
           prefillFrom(),
         ] as const,
       ([key, r, cred], prev) => {
-        if (prev && (prev[0] !== key || keyOf(prev[1], prev[2]) !== keyOf(r, cred))) {
+        if (
+          prev &&
+          (prev[0] !== key || keyOf(prev[1], prev[2]) !== keyOf(r, cred))
+        ) {
           if (prev[0] !== key) stash.clear();
           else if (touched()) {
             // Draft values are replaced immutably on edit, so copying the
