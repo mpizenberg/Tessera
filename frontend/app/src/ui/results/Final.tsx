@@ -5,7 +5,7 @@
 
 import { For, Show, createMemo, createSignal, type Component } from "solid-js";
 import type { SurveyDefinition, SurveyResponse } from "cip-179";
-import { serializeAnswer, type ResponseRecord } from "cip-179/domain";
+import type { ResponseRecord } from "cip-179/domain";
 import {
   RULESET_DESCRIPTOR,
   artifactHash,
@@ -16,8 +16,9 @@ import {
 import { artifactResults, formatAda, type Weighting } from "~/domain/results";
 import { roleLabel, shortRef } from "~/ui/format";
 import { TxNotice } from "~/ui/components/TxNotice";
-import { toCsv, downloadCsv, downloadJson } from "~/util/csv";
+import { downloadCsv, downloadJson } from "~/util/csv";
 import { t, n } from "~/i18n";
+import { responsesCsv, type CsvEntry } from "./export";
 import { QuestionResult, metaFor } from "./Question";
 import { InfoNote } from "./parts";
 import css from "./results.module.css";
@@ -63,70 +64,39 @@ export const FinalResults: Component<{
       JSON.stringify(props.artifact, null, 2),
     );
 
-  // One row per counted responder × answer, weight reflecting the active
-  // switch (chain weight, or 1). `weight_unit` names what the weight measures
-  // per role, since it's heterogeneous (voting power vs active stake vs count).
+  // One entry per counted responder, weight reflecting the active switch (chain
+  // weight, or 1). `weight_unit` names what the weight measures per role, since
+  // it's heterogeneous (voting power vs active stake vs count).
   const exportVotesCsv = (): void => {
     const w = weighting();
-    const header = [
-      "role",
-      "credential",
-      "weight",
-      "weight_unit",
-      "response_tx",
-      "response_index",
-      "question_index",
-      "question_type",
-      "answer",
-    ];
     const measures = RULESET_DESCRIPTOR.roleMeasures as Record<string, string>;
     const byKey = new Map<string, SurveyResponse>();
     for (const rec of props.responses)
       byKey.set(`${rec.txHash}|${rec.responseIndex}`, rec.response);
-    const rows = props.artifact.tally.perRole.flatMap((role) => {
-      const unit = w === "one" ? "count" : (measures[String(role.role)] ?? "");
-      return role.responders.flatMap((r) => {
-        const weight = w === "one" ? "1" : r.weight;
+    const entries = props.artifact.tally.perRole.flatMap((role) =>
+      role.responders.map((r): CsvEntry => {
         // Sealed artifacts commit each responder's revealed answers; public and
         // legacy artifacts rejoin them from the on-chain response instead.
         const resp = byKey.get(`${r.txHash}|${r.responseIndex}`);
-        const answers =
-          responderAnswers(r) ??
-          (resp && resp.answers.type === "public"
-            ? resp.answers.answers
-            : null);
-        if (!answers) {
-          const type = resp ? "sealed" : "";
-          return [
-            [
-              roleLabel(role.role),
-              r.credential,
-              weight,
-              unit,
-              r.txHash,
-              String(r.responseIndex),
-              "",
-              type,
-              "",
-            ],
-          ];
-        }
-        return answers.map((a) => [
-          roleLabel(role.role),
-          r.credential,
-          weight,
-          unit,
-          r.txHash,
-          String(r.responseIndex),
-          String(a.questionIndex),
-          a.type,
-          serializeAnswer(a),
-        ]);
-      });
-    });
+        return {
+          disposition: "counted",
+          role: role.role,
+          credential: r.credential,
+          weight: w === "one" ? 1n : BigInt(r.weight),
+          weightUnit:
+            w === "one" ? "count" : (measures[String(role.role)] ?? ""),
+          txHash: r.txHash,
+          responseIndex: r.responseIndex,
+          answers:
+            responderAnswers(r) ??
+            (resp?.answers.type === "public" ? resp.answers.answers : null),
+          sealed: resp !== undefined,
+        };
+      }),
+    );
     downloadCsv(
       `tessera-${shortRef(props.keyStr)}-${w}.csv`,
-      toCsv([header, ...rows]),
+      responsesCsv(entries),
     );
   };
 

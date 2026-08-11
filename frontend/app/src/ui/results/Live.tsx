@@ -14,9 +14,8 @@ import {
   type Component,
 } from "solid-js";
 import {
-  bytesToHex,
+  credentialKey,
   proofVerdictKey,
-  serializeAnswer,
   type ExcludedRecord,
   type ProofVerdicts,
   type ResponseRecord,
@@ -24,10 +23,15 @@ import {
 import type { SurveyDefinition, SurveyResponse } from "cip-179";
 
 import { useApp } from "~/state";
-import { liveResults, type RoleResults } from "~/domain/results";
+import {
+  liveResults,
+  type CountedResponse,
+  type RoleResults,
+} from "~/domain/results";
 import { roleLabel, shortRef } from "~/ui/format";
-import { toCsv, downloadCsv } from "~/util/csv";
+import { downloadCsv } from "~/util/csv";
 import { t, n } from "~/i18n";
+import { responsesCsv, type CsvEntry } from "./export";
 import { QuestionResult, metaFor } from "./Question";
 import {
   ExclusionPanel,
@@ -130,62 +134,37 @@ export const LiveResults: Component<{
   );
 
   const exportCsv = () => {
-    const header = [
-      "disposition",
-      "response_tx",
-      "role",
-      "credential",
-      "question_index",
-      "question_type",
-      "answer",
-    ];
-    const credOf = (r: SurveyResponse): string =>
-      r.credential.type === "key"
-        ? `key:${bytesToHex(r.credential.keyHash)}`
-        : `script:${bytesToHex(r.credential.scriptHash)}`;
-    // Counted responses: one row per answer (or one ciphertext row if a sealed
-    // payload reaches here unrevealed).
-    const counted = props.records.flatMap((rec) => {
+    const entry = (
+      disposition: string,
+      rec: CountedResponse,
+      counted: boolean,
+    ): CsvEntry => {
       const r = rec.response;
-      const cred = credOf(r);
-      if (r.answers.type !== "public") {
-        return [
-          [
-            "counted",
-            rec.txHash,
-            roleLabel(r.role),
-            cred,
-            "",
-            "sealed",
-            "(ciphertext)",
-          ],
-        ];
-      }
-      return r.answers.answers.map((a) => [
-        "counted",
-        rec.txHash,
-        roleLabel(r.role),
-        cred,
-        String(a.questionIndex),
-        a.type,
-        serializeAnswer(a),
-      ]);
-    });
-    // Excluded responses: envelope only (tx + reason + identity) so an auditor
-    // can open each one on-chain; answers are left blank (sealed/malformed ones
-    // aren't readable, and we keep the row shape uniform across reasons).
-    const excluded = props.excludedRecords.map(({ key, record }) => [
-      key,
-      record.txHash,
-      roleLabel(record.response.role),
-      credOf(record.response),
-      "",
-      "",
-      "",
-    ]);
+      const isPublic = r.answers.type === "public";
+      return {
+        disposition,
+        role: r.role,
+        credential: credentialKey(r.credential),
+        // Nothing here is stake-weighted: no snapshot exists before
+        // finalization, so a counted response is worth exactly one.
+        weight: counted ? 1n : null,
+        weightUnit: counted ? "count" : "",
+        txHash: rec.txHash,
+        responseIndex: rec.responseIndex,
+        // Excluded responses are recorded by envelope only, so an auditor can
+        // open each one on-chain without us republishing its content.
+        answers: counted && isPublic ? r.answers.answers : null,
+        sealed: !isPublic,
+      };
+    };
     downloadCsv(
       `tessera-${shortRef(props.keyStr)}.csv`,
-      toCsv([header, ...counted, ...excluded]),
+      responsesCsv([
+        ...props.records.map((rec) => entry("counted", rec, true)),
+        ...props.excludedRecords.map(({ key, record }) =>
+          entry(key, record, false),
+        ),
+      ]),
     );
   };
 
