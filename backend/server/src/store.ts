@@ -513,30 +513,6 @@ export interface HealthStore {
 export const REFRESH_LEASE_SECONDS = 600;
 
 /**
- * Take the lease for one run: insert it, or steal it iff the incumbent has
- * expired. The `WHERE` makes that an atomic test-and-set — a conflicting row
- * that is still live matches nothing, so the statement affects no rows and
- * `RETURNING` yields none, which is how the loser learns it lost.
- *
- * Binds: (holder, expiresAt, nowSec).
- */
-export const REFRESH_LEASE_ACQUIRE = `
-  INSERT INTO refresh_lease (id, holder, expires_at) VALUES (1, ?, ?)
-  ON CONFLICT(id) DO UPDATE SET
-    holder = excluded.holder,
-    expires_at = excluded.expires_at
-    WHERE refresh_lease.expires_at <= ?
-  RETURNING holder
-`;
-
-/**
- * Release by token, so a run that overran its TTL and was superseded cannot
- * free the lease its successor now holds. Binds: (holder).
- */
-export const REFRESH_LEASE_RELEASE =
-  "DELETE FROM refresh_lease WHERE id = 1 AND holder = ?";
-
-/**
  * Single-writer guard over the refresh. Neither runtime serializes its own
  * scheduler, and concurrent runs are worse than wasteful: the slower one
  * finishes last and writes its older scan over the newer snapshot, stamped with

@@ -5,13 +5,13 @@
  * latest-wins / insert-or-ignore semantics have a single definition and cannot
  * drift between deployments.
  *
- * The snapshot and survey-index SQL lives in `snapshotSql.ts` because its arity
- * varies with the request; the fixed statements here sit with the method that
- * issues them.
+ * Every fixed statement lives here, with the method that issues it; SQL whose
+ * shape varies with the request — search terms, credential lists, key chunks,
+ * the reconciliation program — is composed in `sqlBuilders.ts`.
  */
 
 import type { SurveyListCounts } from "cardano-tessera-core";
-import type { GovLink, GovLinkDoc } from "cip-179/domain";
+import { BINDABLE_ROLES, type GovLink, type GovLinkDoc } from "cip-179/domain";
 
 import type {
   ArtifactKeys,
@@ -41,8 +41,6 @@ import type {
 } from "./store";
 import {
   govEpochFromDb,
-  REFRESH_LEASE_ACQUIRE,
-  REFRESH_LEASE_RELEASE,
   OPERATIONAL_RETENTION_SECONDS,
   tallyBucket,
   UPSTREAM_KINDS,
@@ -50,44 +48,22 @@ import {
   validationKey,
 } from "./store";
 import {
-  CANCELLATIONS_IN_SLOT_RANGE,
-  FINALIZATION_FLOOR_SELECT,
-  FINALIZATION_FLOOR_UPDATE,
-  INCOMPLETE_VALIDATION_SURVEYS,
-  RESPONSES_FOR_SURVEY,
-  RESPONSES_IN_SLOT_RANGE,
-  SCAN_STATE_SELECT,
-  SETTLEMENT_FLOOR_SELECT,
-  SETTLEMENT_FLOOR_UPDATE,
-  SNAPSHOT_META_SELECT,
-  STALE_CANCELLED_SURVEYS,
-  SURVEY_BUNDLE_SELECT,
-  SURVEY_END_EPOCHS,
-  SURVEY_GOV_LINKS_SELECT,
-  SURVEYS_ENDING_AT_OR_AFTER,
-  UNFINALIZED_CLOSED_SURVEYS,
-  VALIDATED_LINK_CURSORS,
+  CANCELLATION_ROW_COLUMNS,
+  RESPONSE_ROW_COLUMNS,
+  SURVEY_ROW_COLUMNS,
   cancellationsBySurveysSql,
   completedValidationsSql,
-  countsFromDb,
   markFinalizedCancelledSql,
   ownedCountSql,
   respondedSql,
   responsesBySurveysSql,
-  scanStateFromDb,
-  scanStateUpsertSql,
   segmentReconciliationSql,
   snapshotMetaUpsertSql,
   snapshotReconciliationSql,
   surveyCountsSql,
-  surveyIndexRowFromDb,
   surveyPageSql,
-  surveyRowFromDb,
   surveysByKeysSql,
-  type DbScanStateRow,
-  type DbSurveyIndexRow,
-  type DbSurveyRow,
-} from "./snapshotSql";
+} from "./sqlBuilders";
 
 /** Bound parameters per keyed read — D1 rejects a statement with more. */
 const SQL_PARAM_CHUNK = 100;
@@ -139,6 +115,222 @@ const REFRESH_RUN_COLUMNS = `started_at AS startedAt, duration_ms AS durationMs,
        upstream_requests AS upstreamRequests, koios_calls AS koiosCalls,
        ok, error, gov_links_ok AS govLinksOk, incomplete, surveys, responses,
        payload_bytes AS payloadBytes, validation_backlog AS validationBacklog`;
+
+const BINDABLE = [...BINDABLE_ROLES].sort((a, b) => a - b);
+
+/**
+ * The distinct link-set cursors completed verdicts are pinned to, per survey.
+ * Only bindable roles: no other verdict re-evaluates on a link change, so no
+ * other row can put a survey back on the candidate list.
+ */
+const VALIDATED_LINK_CURSORS: SqlQuery = {
+  sql: `SELECT DISTINCT survey_key AS surveyKey,
+               linked_action_id AS linkedActionId
+        FROM validated_response
+        WHERE block_index IS NOT NULL AND proof_ok IS NOT NULL
+          AND role IN (${BINDABLE.map(() => "?").join(", ")})`,
+  params: [...BINDABLE],
+};
+
+/** Surveys with a verdict still awaiting an enrichment retry. */
+const INCOMPLETE_VALIDATION_SURVEYS = `
+  SELECT DISTINCT survey_key AS surveyKey FROM validated_response
+  WHERE block_index IS NULL OR proof_ok IS NULL`;
+
+const SNAPSHOT_META_SELECT = `
+  SELECT tip, incomplete, fetched_at AS fetchedAt, list_counts AS listCounts
+  FROM snapshot_meta WHERE id = 1`;
+
+/** Stored link slices inside the caller's end-epoch horizon. Binds: (minEndEpoch). */
+const SURVEY_GOV_LINKS_SELECT = `
+  SELECT survey_key AS surveyKey, gov_links AS govLinks
+  FROM survey_index WHERE end_epoch >= ? AND gov_links <> '[]'`;
+
+/** The survey half of a bundle — only the two columns the body carries. */
+const SURVEY_BUNDLE_SELECT = `
+  SELECT record, cancellations FROM survey_index WHERE survey_key = ?`;
+
+/** Ordered so a bundle body is byte-stable across refreshes. */
+const RESPONSES_FOR_SURVEY = `
+  SELECT record FROM response WHERE survey_key = ?
+  ORDER BY slot, tx_hash, response_index`;
+
+const SCAN_STATE_UPSERT = `
+  INSERT INTO scan_state
+    (id, cursor_slot, cursor_tx_hash, caught_up, generation, trickle_slot,
+     trickle_tx_hash)
+  VALUES (1, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT(id) DO UPDATE SET
+    cursor_slot = excluded.cursor_slot,
+    cursor_tx_hash = excluded.cursor_tx_hash,
+    caught_up = excluded.caught_up,
+    generation = excluded.generation,
+    trickle_slot = excluded.trickle_slot,
+    trickle_tx_hash = excluded.trickle_tx_hash`;
+
+const SCAN_STATE_SELECT = `
+  SELECT cursor_slot AS cursorSlot, cursor_tx_hash AS cursorTxHash,
+         caught_up AS caughtUp, generation,
+         trickle_slot AS trickleSlot, trickle_tx_hash AS trickleTxHash
+  FROM scan_state WHERE id = 1`;
+
+/** As stored: each cursor is a pair of columns, NULL together. */
+interface DbScanStateRow {
+  readonly cursorSlot: number | null;
+  readonly cursorTxHash: string | null;
+  readonly caughtUp: number;
+  readonly generation: number;
+  readonly trickleSlot: number | null;
+  readonly trickleTxHash: string | null;
+}
+
+const scanStateFromDb = (r: DbScanStateRow): ScanState => ({
+  cursor:
+    r.cursorSlot === null || r.cursorTxHash === null
+      ? null
+      : { slot: r.cursorSlot, txHash: r.cursorTxHash },
+  caughtUp: r.caughtUp !== 0,
+  generation: r.generation,
+  trickle:
+    r.trickleSlot === null || r.trickleTxHash === null
+      ? null
+      : { slot: r.trickleSlot, txHash: r.trickleTxHash },
+});
+
+/**
+ * The settlement floor, written on its own so an incomplete scan — which must
+ * not bank a cursor — can still bank what the governance pass settled. Before
+ * the first cursor there is no row, and the update is a no-op: the floor reads
+ * 0, which asks about everything.
+ */
+const SETTLEMENT_FLOOR_UPDATE = `
+  UPDATE scan_state SET settlement_floor = ? WHERE id = 1`;
+
+const SETTLEMENT_FLOOR_SELECT = `
+  SELECT settlement_floor AS settlementFloor FROM scan_state WHERE id = 1`;
+
+/**
+ * The finalization floor, on the same row and by the same rule: written on its
+ * own, and 0 before there is a row to write.
+ */
+const FINALIZATION_FLOOR_UPDATE = `
+  UPDATE scan_state SET finalization_floor = ? WHERE id = 1`;
+
+const FINALIZATION_FLOOR_SELECT = `
+  SELECT finalization_floor AS finalizationFloor FROM scan_state WHERE id = 1`;
+
+/** The window's stored responses, in scan order. Binds: (fromSlot, toSlot). */
+const RESPONSES_IN_SLOT_RANGE = `
+  SELECT ${RESPONSE_ROW_COLUMNS} FROM response
+  WHERE slot BETWEEN ? AND ?
+  ORDER BY slot, tx_hash, response_index`;
+
+/** The window's stored cancellations. Binds: (fromSlot, toSlot). */
+const CANCELLATIONS_IN_SLOT_RANGE = `
+  SELECT ${CANCELLATION_ROW_COLUMNS} FROM cancellation
+  WHERE slot BETWEEN ? AND ?
+  ORDER BY slot, tx_hash`;
+
+/**
+ * Surveys whose verified-while-open cancellation expired at close (no
+ * finalized overlay yet backs it). Binds: (tipEpoch).
+ */
+const STALE_CANCELLED_SURVEYS = `
+  SELECT survey_key AS surveyKey FROM survey_index
+  WHERE cancelled = 1 AND finalized_cancelled = 0 AND end_epoch < ?`;
+
+/**
+ * The governance pass's input: which end epochs any stored survey has, from
+ * the settlement horizon up. Binds: (minEndEpoch).
+ */
+const SURVEY_END_EPOCHS = `
+  SELECT DISTINCT end_epoch AS endEpoch FROM survey_index
+  WHERE end_epoch >= ?
+  ORDER BY end_epoch`;
+
+/**
+ * Finalization's candidate set: closed at the tip, no artifact yet, from its
+ * floor up — below which every survey is decided, so neither the rows nor the
+ * artifacts down there are worth reading. Binds: (floorEpoch, tipEpoch,
+ * floorEpoch).
+ */
+const UNFINALIZED_CLOSED_SURVEYS = `
+  SELECT ${SURVEY_ROW_COLUMNS} FROM survey_index
+  WHERE end_epoch >= ? AND end_epoch < ?
+    AND survey_key NOT IN (
+      SELECT survey_key FROM tally_artifact WHERE end_epoch >= ?)
+  ORDER BY survey_key`;
+
+/** Surveys still inside a caller's end-epoch horizon. Binds: (minEndEpoch). */
+const SURVEYS_ENDING_AT_OR_AFTER = `
+  SELECT ${SURVEY_ROW_COLUMNS} FROM survey_index
+  WHERE end_epoch >= ?
+  ORDER BY survey_key`;
+
+/** As stored: booleans are 0/1 integers. */
+interface DbSurveyRow extends Omit<
+  SurveyIndexRow,
+  "sealed" | "cancelled" | "govLinked" | "finalizedCancelled"
+> {
+  readonly sealed: number;
+  readonly cancelled: number;
+  readonly govLinked: number;
+  readonly finalizedCancelled: number;
+}
+
+/** A page row additionally carries its computed section bucket. */
+interface DbSurveyIndexRow extends DbSurveyRow {
+  readonly bucket: number;
+}
+
+const surveyRowFromDb = (r: DbSurveyRow): SurveyIndexRow => ({
+  ...r,
+  sealed: r.sealed !== 0,
+  cancelled: r.cancelled !== 0,
+  govLinked: r.govLinked !== 0,
+  finalizedCancelled: r.finalizedCancelled !== 0,
+});
+
+const surveyIndexRowFromDb = (
+  r: DbSurveyIndexRow,
+): SurveyIndexRow & { bucket: number } => ({
+  ...surveyRowFromDb(r),
+  bucket: r.bucket,
+});
+
+/** Counts come back as SQLite integers already shaped like the counts type. */
+const countsFromDb = (r: Record<string, number>): SurveyListCounts => ({
+  all: r["all"] ?? 0,
+  linked: r["linked"] ?? 0,
+  active: r["active"] ?? 0,
+  sealed: r["sealed"] ?? 0,
+  public: r["public"] ?? 0,
+  mine: r["mine"] ?? 0,
+});
+
+/**
+ * Take the lease for one run: insert it, or steal it iff the incumbent has
+ * expired. The `WHERE` makes that an atomic test-and-set — a conflicting row
+ * that is still live matches nothing, so the statement affects no rows and
+ * `RETURNING` yields none, which is how the loser learns it lost.
+ *
+ * Binds: (holder, expiresAt, nowSec).
+ */
+const REFRESH_LEASE_ACQUIRE = `
+  INSERT INTO refresh_lease (id, holder, expires_at) VALUES (1, ?, ?)
+  ON CONFLICT(id) DO UPDATE SET
+    holder = excluded.holder,
+    expires_at = excluded.expires_at
+    WHERE refresh_lease.expires_at <= ?
+  RETURNING holder
+`;
+
+/**
+ * Release by token, so a run that overran its TTL and was superseded cannot
+ * free the lease its successor now holds. Binds: (holder).
+ */
+const REFRESH_LEASE_RELEASE =
+  "DELETE FROM refresh_lease WHERE id = 1 AND holder = ?";
 
 export function sqlBackendStore(db: SqlDriver): BackendStore {
   /** The first row, or null — every "at most one row" read. */
@@ -631,7 +823,17 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       return row === null ? null : scanStateFromDb(row);
     },
     async putScanState(state: ScanState): Promise<void> {
-      await write(scanStateUpsertSql(state));
+      await write(
+        query(
+          SCAN_STATE_UPSERT,
+          state.cursor?.slot ?? null,
+          state.cursor?.txHash ?? null,
+          bit(state.caughtUp),
+          state.generation,
+          state.trickle?.slot ?? null,
+          state.trickle?.txHash ?? null,
+        ),
+      );
     },
     async settlementFloor(): Promise<number> {
       const row = await first<{ settlementFloor: number }>(

@@ -318,7 +318,7 @@ export function createApp(
   // The paged Explore list, answered from the refresh-materialized
   // `survey_index` rows. Query params mirror `cardano-tessera-core`'s
   // `SurveyListParams`; semantics (ordering, filters, counts, cursor) are the
-  // core `pageSurveyList` spec, implemented in SQL (`snapshotSql.ts`). The
+  // core `pageSurveyList` spec, implemented in SQL (`sqlBuilders.ts`). The
   // finalized-cancelled overlay is baked into the rows at refresh time,
   // consistent with the snapshot the ETag versions.
   app.get("/api/surveys", async (c) => {

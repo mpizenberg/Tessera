@@ -1,20 +1,19 @@
 /**
- * SQL over the materialized snapshot tables — the half of `store-sql.ts` whose
- * arity varies with the request (search terms, credential lists, key chunks),
- * so it is built rather than written out. The `survey_index` page/count
- * semantics mirror `cardano-tessera-core`'s `pageSurveyList` — the executable
- * spec — exactly: bucket 0 gov-linked / 1 open / 2 closed, ordered (bucket ASC,
- * slot DESC, key ASC), AND-of-substrings search, chip counts over the
- * search-matching set.
+ * SQL composed at call time — the statements `store-sql.ts` cannot write out
+ * because their shape varies with the request: search terms and credential
+ * lists (paging and counts), key sets riding as chunked JSON parameters, and
+ * the snapshot reconciliation program. Every fixed statement lives in
+ * `store-sql.ts` with the method that issues it.
+ *
+ * The `survey_index` page/count semantics mirror `cardano-tessera-core`'s
+ * `pageSurveyList` — the executable spec — exactly: bucket 0 gov-linked /
+ * 1 open / 2 closed, ordered (bucket ASC, slot DESC, key ASC),
+ * AND-of-substrings search, chip counts over the search-matching set.
  */
-
-import type { SurveyListCounts } from "cardano-tessera-core";
-import { BINDABLE_ROLES } from "cip-179/domain";
 
 import type {
   CancellationRow,
   ResponseRow,
-  ScanState,
   SlotRange,
   SnapshotMeta,
   SqlQuery,
@@ -142,37 +141,6 @@ export function surveyCountsSql(
   };
 }
 
-/** As stored: booleans are 0/1 integers. */
-export interface DbSurveyRow extends Omit<
-  SurveyIndexRow,
-  "sealed" | "cancelled" | "govLinked" | "finalizedCancelled"
-> {
-  readonly sealed: number;
-  readonly cancelled: number;
-  readonly govLinked: number;
-  readonly finalizedCancelled: number;
-}
-
-/** A page row additionally carries its computed section bucket. */
-export interface DbSurveyIndexRow extends DbSurveyRow {
-  readonly bucket: number;
-}
-
-export const surveyRowFromDb = (r: DbSurveyRow): SurveyIndexRow => ({
-  ...r,
-  sealed: r.sealed !== 0,
-  cancelled: r.cancelled !== 0,
-  govLinked: r.govLinked !== 0,
-  finalizedCancelled: r.finalizedCancelled !== 0,
-});
-
-export const surveyIndexRowFromDb = (
-  r: DbSurveyIndexRow,
-): SurveyIndexRow & { bucket: number } => ({
-  ...surveyRowFromDb(r),
-  bucket: r.bucket,
-});
-
 const SURVEY_INDEX_RECONCILE = `
   INSERT INTO survey_index
     (survey_key, slot, end_epoch, sealed, cancelled, gov_linked, owner,
@@ -233,20 +201,6 @@ export const snapshotMetaUpsertSql = (meta: SnapshotMeta): SqlQuery => ({
   sql: SNAPSHOT_META_UPSERT,
   params: [meta.tip, meta.incomplete ? 1 : 0, meta.fetchedAt, meta.listCounts],
 });
-
-export const SNAPSHOT_META_SELECT = `
-  SELECT tip, incomplete, fetched_at AS fetchedAt, list_counts AS listCounts
-  FROM snapshot_meta WHERE id = 1`;
-
-/** The survey half of a bundle — only the two columns the body carries. */
-export const SURVEY_BUNDLE_SELECT = `
-  SELECT record, cancellations FROM survey_index WHERE survey_key = ?`;
-
-/** The stored links keyed by survey, skipping the rows that carry none. */
-/** Stored link slices inside the caller's end-epoch horizon. Binds: (minEndEpoch). */
-export const SURVEY_GOV_LINKS_SELECT = `
-  SELECT survey_key AS surveyKey, gov_links AS govLinks
-  FROM survey_index WHERE end_epoch >= ? AND gov_links <> '[]'`;
 
 /**
  * A response is content-addressed by its coordinate, but its chain position
@@ -583,11 +537,6 @@ export const segmentReconciliationSql = (
     range === null ? { kind: "none" } : { kind: "range", range },
   );
 
-/** Ordered so a bundle body is byte-stable across refreshes. */
-export const RESPONSES_FOR_SURVEY = `
-  SELECT record FROM response WHERE survey_key = ?
-  ORDER BY slot, tx_hash, response_index`;
-
 /** Distinct surveys answered by any of `credentials`. */
 export const respondedSql = (credentials: readonly string[]): SqlQuery => ({
   sql: `SELECT DISTINCT survey_key AS surveyKey FROM response
@@ -595,89 +544,13 @@ export const respondedSql = (credentials: readonly string[]): SqlQuery => ({
   params: [...credentials],
 });
 
-const SCAN_STATE_UPSERT = `
-  INSERT INTO scan_state
-    (id, cursor_slot, cursor_tx_hash, caught_up, generation, trickle_slot,
-     trickle_tx_hash)
-  VALUES (1, ?, ?, ?, ?, ?, ?)
-  ON CONFLICT(id) DO UPDATE SET
-    cursor_slot = excluded.cursor_slot,
-    cursor_tx_hash = excluded.cursor_tx_hash,
-    caught_up = excluded.caught_up,
-    generation = excluded.generation,
-    trickle_slot = excluded.trickle_slot,
-    trickle_tx_hash = excluded.trickle_tx_hash`;
-
-export const scanStateUpsertSql = (state: ScanState): SqlQuery => ({
-  sql: SCAN_STATE_UPSERT,
-  params: [
-    state.cursor?.slot ?? null,
-    state.cursor?.txHash ?? null,
-    state.caughtUp ? 1 : 0,
-    state.generation,
-    state.trickle?.slot ?? null,
-    state.trickle?.txHash ?? null,
-  ],
-});
-
-/**
- * The settlement floor, written on its own so an incomplete scan — which must
- * not bank a cursor — can still bank what the governance pass settled. Before
- * the first cursor there is no row, and the update is a no-op: the floor reads
- * 0, which asks about everything.
- */
-export const SETTLEMENT_FLOOR_UPDATE = `
-  UPDATE scan_state SET settlement_floor = ? WHERE id = 1`;
-
-export const SETTLEMENT_FLOOR_SELECT = `
-  SELECT settlement_floor AS settlementFloor FROM scan_state WHERE id = 1`;
-
-/**
- * The finalization floor, on the same row and by the same rule: written on its
- * own, and 0 before there is a row to write.
- */
-export const FINALIZATION_FLOOR_UPDATE = `
-  UPDATE scan_state SET finalization_floor = ? WHERE id = 1`;
-
-export const FINALIZATION_FLOOR_SELECT = `
-  SELECT finalization_floor AS finalizationFloor FROM scan_state WHERE id = 1`;
-
-export const SCAN_STATE_SELECT = `
-  SELECT cursor_slot AS cursorSlot, cursor_tx_hash AS cursorTxHash,
-         caught_up AS caughtUp, generation,
-         trickle_slot AS trickleSlot, trickle_tx_hash AS trickleTxHash
-  FROM scan_state WHERE id = 1`;
-
-/** As stored: each cursor is a pair of columns, NULL together. */
-export interface DbScanStateRow {
-  readonly cursorSlot: number | null;
-  readonly cursorTxHash: string | null;
-  readonly caughtUp: number;
-  readonly generation: number;
-  readonly trickleSlot: number | null;
-  readonly trickleTxHash: string | null;
-}
-
-export const scanStateFromDb = (r: DbScanStateRow): ScanState => ({
-  cursor:
-    r.cursorSlot === null || r.cursorTxHash === null
-      ? null
-      : { slot: r.cursorSlot, txHash: r.cursorTxHash },
-  caughtUp: r.caughtUp !== 0,
-  generation: r.generation,
-  trickle:
-    r.trickleSlot === null || r.trickleTxHash === null
-      ? null
-      : { slot: r.trickleSlot, txHash: r.trickleTxHash },
-});
-
-const SURVEY_ROW_COLUMNS = `survey_key AS surveyKey, slot,
+export const SURVEY_ROW_COLUMNS = `survey_key AS surveyKey, slot,
        end_epoch AS endEpoch, sealed, cancelled, gov_linked AS govLinked,
        owner, haystack, record, cancellations, gov_links AS govLinks,
        response_count AS responseCount,
        finalized_cancelled AS finalizedCancelled`;
 
-const RESPONSE_ROW_COLUMNS = `tx_hash AS txHash,
+export const RESPONSE_ROW_COLUMNS = `tx_hash AS txHash,
        response_index AS responseIndex, survey_key AS surveyKey, credential,
        slot, record`;
 
@@ -709,13 +582,7 @@ export const responsesBySurveysSql = (
     }),
   );
 
-/** The window's stored responses, in scan order. Binds: (fromSlot, toSlot). */
-export const RESPONSES_IN_SLOT_RANGE = `
-  SELECT ${RESPONSE_ROW_COLUMNS} FROM response
-  WHERE slot BETWEEN ? AND ?
-  ORDER BY slot, tx_hash, response_index`;
-
-const CANCELLATION_ROW_COLUMNS = `tx_hash AS txHash,
+export const CANCELLATION_ROW_COLUMNS = `tx_hash AS txHash,
        survey_key AS surveyKey, slot, record`;
 
 /** All stored cancellations of the given surveys — a projection rebuild's stored half. */
@@ -731,20 +598,6 @@ export const cancellationsBySurveysSql = (
     }),
   );
 
-/** The window's stored cancellations. Binds: (fromSlot, toSlot). */
-export const CANCELLATIONS_IN_SLOT_RANGE = `
-  SELECT ${CANCELLATION_ROW_COLUMNS} FROM cancellation
-  WHERE slot BETWEEN ? AND ?
-  ORDER BY slot, tx_hash`;
-
-/**
- * Surveys whose verified-while-open cancellation expired at close (no
- * finalized overlay yet backs it). Binds: (tipEpoch).
- */
-export const STALE_CANCELLED_SURVEYS = `
-  SELECT survey_key AS surveyKey FROM survey_index
-  WHERE cancelled = 1 AND finalized_cancelled = 0 AND end_epoch < ?`;
-
 /** Stamp the finalized-cancelled overlay where not already set. */
 export const markFinalizedCancelledSql = (
   surveyKeys: readonly string[],
@@ -757,34 +610,6 @@ export const markFinalizedCancelledSql = (
       params: [chunk.json],
     }),
   );
-
-/**
- * The governance pass's input: which end epochs any stored survey has, from
- * the settlement horizon up. Binds: (minEndEpoch).
- */
-export const SURVEY_END_EPOCHS = `
-  SELECT DISTINCT end_epoch AS endEpoch FROM survey_index
-  WHERE end_epoch >= ?
-  ORDER BY end_epoch`;
-
-/**
- * Finalization's candidate set: closed at the tip, no artifact yet, from its
- * floor up — below which every survey is decided, so neither the rows nor the
- * artifacts down there are worth reading. Binds: (floorEpoch, tipEpoch,
- * floorEpoch).
- */
-export const UNFINALIZED_CLOSED_SURVEYS = `
-  SELECT ${SURVEY_ROW_COLUMNS} FROM survey_index
-  WHERE end_epoch >= ? AND end_epoch < ?
-    AND survey_key NOT IN (
-      SELECT survey_key FROM tally_artifact WHERE end_epoch >= ?)
-  ORDER BY survey_key`;
-
-/** Surveys still inside a caller's end-epoch horizon. Binds: (minEndEpoch). */
-export const SURVEYS_ENDING_AT_OR_AFTER = `
-  SELECT ${SURVEY_ROW_COLUMNS} FROM survey_index
-  WHERE end_epoch >= ?
-  ORDER BY survey_key`;
 
 /**
  * Completed validation verdicts (both enrichments present) of the given
@@ -805,33 +630,3 @@ export const completedValidationsSql = (
     }),
   );
 
-const BINDABLE = [...BINDABLE_ROLES].sort((a, b) => a - b);
-
-/**
- * The distinct link-set cursors completed verdicts are pinned to, per survey.
- * Only bindable roles: no other verdict re-evaluates on a link change, so no
- * other row can put a survey back on the candidate list.
- */
-export const VALIDATED_LINK_CURSORS: SqlQuery = {
-  sql: `SELECT DISTINCT survey_key AS surveyKey,
-               linked_action_id AS linkedActionId
-        FROM validated_response
-        WHERE block_index IS NOT NULL AND proof_ok IS NOT NULL
-          AND role IN (${BINDABLE.map(() => "?").join(", ")})`,
-  params: [...BINDABLE],
-};
-
-/** Surveys with a verdict still awaiting an enrichment retry. */
-export const INCOMPLETE_VALIDATION_SURVEYS = `
-  SELECT DISTINCT survey_key AS surveyKey FROM validated_response
-  WHERE block_index IS NULL OR proof_ok IS NULL`;
-
-/** Counts come back as SQLite integers already shaped like the counts type. */
-export const countsFromDb = (r: Record<string, number>): SurveyListCounts => ({
-  all: r["all"] ?? 0,
-  linked: r["linked"] ?? 0,
-  active: r["active"] ?? 0,
-  sealed: r["sealed"] ?? 0,
-  public: r["public"] ?? 0,
-  mine: r["mine"] ?? 0,
-});
