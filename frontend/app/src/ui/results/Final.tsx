@@ -19,8 +19,9 @@ import { TxNotice } from "~/ui/components/TxNotice";
 import { downloadCsv, downloadJson } from "~/util/csv";
 import { t, n } from "~/i18n";
 import { responsesCsv, type CsvEntry } from "./export";
+import { InfoNote } from "./Card";
 import { QuestionResult, metaFor } from "./Question";
-import { InfoNote } from "./parts";
+
 import css from "./results.module.css";
 
 /**

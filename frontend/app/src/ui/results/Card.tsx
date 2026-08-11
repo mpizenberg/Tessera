@@ -1,4 +1,4 @@
-/** The chrome every result card shares, and the two bodies most of them use. */
+/** The chrome every result card shares, the bars most of them draw, the notes. */
 
 import { For, Show, type Component, type JSX } from "solid-js";
 import type { Question } from "cip-179";
@@ -17,7 +17,7 @@ const BASE_TYPE_KEY: Record<Question["type"], string> = {
 };
 
 /** Localized base type label; resolved at render time so it tracks the locale. */
-export const baseType = (type: Question["type"]): string =>
+const baseType = (type: Question["type"]): string =>
   t(`survey.${BASE_TYPE_KEY[type]}` as Parameters<typeof t>[0]);
 
 /** `<base> · <suffix>`, e.g. "MULTI-SELECT · % OF RESPONDERS". */
@@ -95,4 +95,24 @@ export const DerivedNote: Component = () => (
   <span class={css.derived} title={t("survey.derivedTitle")}>
     {t("survey.derived")}
   </span>
+);
+
+/**
+ * Shown above every results view: Tessera's tallies are generic and indicative —
+ * a survey's own validity/allow-list/weighting rules are the creator's to apply
+ * and interpret. In the final (artifact) view it carries the "view raw
+ * responses" escape hatch on its right.
+ */
+export const InfoNote: Component<{ onShowRaw?: () => void }> = (props) => (
+  <div class={css.disclaimer}>
+    <span class={css.disclaimerBadge}>{t("survey.infoBadge")}</span>
+    <span class={css.disclaimerText}>
+      <b>{t("survey.infoNoteStrong")}</b> {t("survey.infoNote")}
+    </span>
+    <Show when={props.onShowRaw}>
+      <button class={css.excludedToggle} onClick={() => props.onShowRaw!()}>
+        {t("survey.weightedShowRaw")}
+      </button>
+    </Show>
+  </div>
 );

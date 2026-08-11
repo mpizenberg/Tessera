@@ -32,6 +32,7 @@ import { roleLabel, shortRef } from "~/ui/format";
 import { downloadCsv } from "~/util/csv";
 import { t, n } from "~/i18n";
 import { responsesCsv, type CsvEntry } from "./export";
+import { InfoNote } from "./Card";
 import { QuestionResult, metaFor } from "./Question";
 import {
   ExclusionPanel,
@@ -39,7 +40,7 @@ import {
   type ExclusionSummary,
 } from "./Exclusions";
 import { IndividualResponses } from "./Individual";
-import { InfoNote } from "./parts";
+
 import css from "./results.module.css";
 
 const RoleFilterBtn: Component<{
@@ -64,10 +65,9 @@ const RoleFilterBtn: Component<{
 );
 
 /**
- * The tally view, shared by public surveys and revealed sealed surveys. Takes
- * already-plaintext response records (for sealed, these are the decrypted
- * ones), owns the role filter and CSV export, and renders the per-question
- * widgets.
+ * The tally view shared by public surveys and revealed sealed ones. Takes
+ * already-plaintext response records (for sealed, the decrypted ones), owns the
+ * role picker and the CSV export, and renders the per-question cards.
  */
 export const LiveResults: Component<{
   def: SurveyDefinition;
@@ -86,10 +86,6 @@ export const LiveResults: Component<{
   verdicts?: ProofVerdicts | undefined;
 }> = (props) => {
   const app = useApp();
-  // Roles are independent electorates, so there is no "all roles" tally — the
-  // view always shows exactly one role. `pickedRole` is the user's explicit
-  // choice; `roleFilter` falls back to the first responded role when nothing
-  // is picked yet (or the picked role no longer has responses after a refresh).
   const [pickedRole, setPickedRole] = createSignal<number | null>(null);
   const [exclOpen, setExclOpen] = createSignal(false);
   // Reset when navigating between surveys (the component instance is reused).
@@ -120,13 +116,14 @@ export const LiveResults: Component<{
       .map((r) => r.response)
       .filter((r) => r.answers.type === "public"),
   );
-  // Roles are independent electorates, so every role is tallied separately and
-  // exactly one is shown; the counts also drive the picker.
+  // Roles are independent electorates, so there is no "all roles" tally: each is
+  // tallied separately and exactly one is shown. `pickedRole` is the viewer's
+  // explicit choice; without one (or when the picked role has no responses after
+  // a refresh) the first responded role shows.
   const roles = createMemo(() => liveResults(props.def, props.records));
-  const shown = createMemo<RoleResults | undefined>(() => {
-    const picked = pickedRole();
-    return roles().find((r) => r.role === picked) ?? roles()[0] ?? undefined;
-  });
+  const shown = createMemo<RoleResults | undefined>(
+    () => roles().find((r) => r.role === pickedRole()) ?? roles()[0],
+  );
   // Same role filter, but keeping the full record (tx hash) for the per-response
   // breakdown.
   const filteredRecords = createMemo<ResponseRecord[]>(() =>
