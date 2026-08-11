@@ -10,7 +10,7 @@ import { useNavigate } from "@solidjs/router";
 import type { DefinitionMeta } from "~/domain/create";
 import { formatRevealDate } from "~/tlock/drand";
 import { roleLabel, shortHash, shortRef } from "~/ui/format";
-import { TxLink } from "~/ui/components/TxLink";
+import { SubmissionReceipt } from "~/ui/components/SubmissionReceipt";
 import { t, n } from "~/i18n";
 import css from "./create.module.css";
 
@@ -127,33 +127,21 @@ export const PublishButton: Component<{
 
 export const SubmittedPanel: Component<{ hash: string }> = (props) => {
   const navigate = useNavigate();
-  const surveyKey = `${props.hash}:0`;
+  const surveyKey = () => `${props.hash}:0`;
   return (
-    <div class={css.submittedCard}>
-      <span class={css.submittedTick}>✓</span>
-      <h3 class={css.submittedTitle}>{t("create.surveyPublished")}</h3>
-      <p class={css.submittedBody}>{t("create.submittedBody")}</p>
-      <div class={css.submittedRef}>
-        <TxLink hash={props.hash} /> ·{" "}
-        {t("create.submittedRef", { ref: shortRef(surveyKey) })}
-      </div>
-      <div class={css.submittedActions}>
-        <button
-          type="button"
-          onClick={() => navigate(`/survey/${encodeURIComponent(surveyKey)}`)}
-          class={css.submittedPrimary}
-        >
-          {t("create.viewSurvey")}
-        </button>
-        <button
-          type="button"
-          onClick={() => navigate("/")}
-          class={css.submittedSecondary}
-        >
-          {t("create.allSurveysButton")}
-        </button>
-      </div>
-    </div>
+    <SubmissionReceipt
+      title={t("create.surveyPublished")}
+      body={t("create.submittedBody")}
+      hash={props.hash}
+      detail={t("create.submittedRef", { ref: shortRef(surveyKey()) })}
+      actions={[
+        {
+          label: t("create.viewSurvey"),
+          onClick: () => navigate(`/survey/${encodeURIComponent(surveyKey())}`),
+        },
+        { label: t("create.allSurveysButton"), onClick: () => navigate("/") },
+      ]}
+    />
   );
 };
 

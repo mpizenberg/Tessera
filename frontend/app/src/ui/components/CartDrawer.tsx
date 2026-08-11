@@ -32,6 +32,7 @@ import {
 import type { PlannedTx } from "~/wallet/plan";
 import type { BuiltTx } from "~/wallet/submit";
 import type { ConnectedWallet } from "~/wallet/types";
+import { shortHash } from "~/ui/format";
 import { TxLink } from "~/ui/components/TxLink";
 import { Spinner } from "~/ui/components/Spinner";
 import { t, type MsgKey } from "~/i18n";
@@ -498,8 +499,4 @@ function heldKeyHashes(w: ConnectedWallet): ReadonlySet<string> {
 /** A credential's hash as hex — how a required witness is named. */
 function credentialHash(c: Credential): string {
   return bytesToHex(c.type === "key" ? c.keyHash : c.scriptHash);
-}
-
-function shortHash(hex: string): string {
-  return hex.length > 14 ? `${hex.slice(0, 6)}…${hex.slice(-4)}` : hex;
 }

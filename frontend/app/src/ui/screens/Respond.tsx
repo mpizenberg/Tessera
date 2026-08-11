@@ -65,7 +65,7 @@ import { IPFS_PROVIDERS } from "~/enrichment/providers";
 import { OnchainPreview } from "~/ui/components/OnchainPreview";
 import { ErrorBox, ProblemList } from "~/ui/components/Feedback";
 import { SegmentedToggle } from "~/ui/components/SegmentedToggle";
-import { TxLink } from "~/ui/components/TxLink";
+import { SubmissionReceipt } from "~/ui/components/SubmissionReceipt";
 import { PublishLocked, QueuedNote } from "~/ui/components/CartDrawer";
 import {
   SubmitProgressModal,
@@ -1329,22 +1329,18 @@ const SubmittedPanel: Component<{ hash: string; surveyKey: string }> = (
 ) => {
   const navigate = useNavigate();
   return (
-    <div class={css.submittedPanel}>
-      <span class={css.submittedCheck}>✓</span>
-      <h3 class={css.submittedTitle}>{t("respond.submittedTitle")}</h3>
-      <p class={css.submittedText}>{t("respond.submittedText")}</p>
-      <div class={css.submittedTx}>
-        <TxLink hash={props.hash} />
-      </div>
-      <button
-        onClick={() =>
-          navigate(`/survey/${encodeURIComponent(props.surveyKey)}`)
-        }
-        class={css.viewResultsBtn}
-      >
-        {t("respond.viewResults")}
-      </button>
-    </div>
+    <SubmissionReceipt
+      title={t("respond.submittedTitle")}
+      body={t("respond.submittedText")}
+      hash={props.hash}
+      actions={[
+        {
+          label: t("respond.viewResults"),
+          onClick: () =>
+            navigate(`/survey/${encodeURIComponent(props.surveyKey)}`),
+        },
+      ]}
+    />
   );
 };
 
