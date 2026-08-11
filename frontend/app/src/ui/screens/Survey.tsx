@@ -37,6 +37,7 @@ import {
   viewStatus,
 } from "~/ui/format";
 import { Results } from "~/ui/results";
+import { Empty, type EmptyText } from "~/ui/components/Empty";
 import { RoleChips } from "~/ui/components/glyphs";
 import { TxNotice } from "~/ui/components/TxNotice";
 import { PublishLocked, QueuedNote } from "~/ui/components/CartDrawer";
@@ -146,6 +147,7 @@ export const Survey: Component = () => {
             loading={app.list.loading}
             error={app.list.error}
             onRetry={() => app.reload()}
+            text={emptyText()}
           />
         }
       >
@@ -244,6 +246,7 @@ export const Survey: Component = () => {
                   loading={bundle.loading}
                   error={bundle.error}
                   onRetry={retryBundle}
+                  text={emptyText()}
                 />
               }
             >
@@ -677,24 +680,10 @@ const LabelsUnavailable: Component<{ keyStr: string }> = (props) => (
   </div>
 );
 
-const Empty: Component<{
-  loading: boolean;
-  error?: unknown;
-  onRetry?: () => void;
-}> = (props) => (
-  <div class={css.empty}>
-    <Show
-      when={props.error}
-      fallback={props.loading ? t("survey.loading") : t("survey.notFound")}
-    >
-      <div class={css.emptyError}>{t("survey.loadError")}</div>
-      <button
-        type="button"
-        onClick={() => props.onRetry?.()}
-        class={css.retryBtn}
-      >
-        {t("survey.retry")}
-      </button>
-    </Show>
-  </div>
-);
+/** Read through a getter at each call site, so it re-reads on a locale switch. */
+const emptyText = (): EmptyText => ({
+  loading: t("survey.loading"),
+  notFound: t("survey.notFound"),
+  error: t("survey.loadError"),
+  retry: t("survey.retry"),
+});

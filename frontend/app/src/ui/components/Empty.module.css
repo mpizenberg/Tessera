@@ -1,0 +1,28 @@
+/* Co-located styles for Empty.tsx (CSS Modules). */
+
+.empty {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  padding: 30px 24px;
+  margin-top: 14px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.emptyError {
+  color: var(--danger);
+  margin-bottom: 12px;
+}
+
+.retry {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--r-input);
+  padding: 9px 16px;
+}

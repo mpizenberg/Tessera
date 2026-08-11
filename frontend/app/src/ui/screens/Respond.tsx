@@ -52,6 +52,7 @@ import {
 import { walletResponder } from "~/domain/roles";
 import { usePresentation } from "~/enrichment/usePresentation";
 import { IPFS_PROVIDERS } from "~/enrichment/providers";
+import { Empty } from "~/ui/components/Empty";
 import { OnchainPreview } from "~/ui/components/OnchainPreview";
 import { ErrorBox, ProblemList } from "~/ui/components/Feedback";
 import { SegmentedToggle } from "~/ui/components/SegmentedToggle";
@@ -605,6 +606,12 @@ export const Respond: Component = () => {
             loading={app.list.loading}
             error={app.list.error}
             onRetry={() => app.reload()}
+            text={{
+              loading: t("respond.loading"),
+              notFound: t("respond.notFound"),
+              error: t("respond.loadError"),
+              retry: t("respond.retry"),
+            }}
           />
         }
       >
@@ -1240,27 +1247,5 @@ const Notice: Component<{
       {props.title}
     </div>
     <p class={css.noticeBody}>{props.body}</p>
-  </div>
-);
-
-const Empty: Component<{
-  loading: boolean;
-  error?: unknown;
-  onRetry?: () => void;
-}> = (props) => (
-  <div class={css.empty}>
-    <Show
-      when={props.error}
-      fallback={props.loading ? t("respond.loading") : t("respond.notFound")}
-    >
-      <div class={css.emptyError}>{t("respond.loadError")}</div>
-      <button
-        type="button"
-        onClick={() => props.onRetry?.()}
-        class={css.retryBtn}
-      >
-        {t("respond.retry")}
-      </button>
-    </Show>
   </div>
 );

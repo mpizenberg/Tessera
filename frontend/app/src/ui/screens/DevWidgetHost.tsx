@@ -31,7 +31,6 @@ import {
   createSignal,
   onCleanup,
   type Component,
-  type JSX,
 } from "solid-js";
 import { A, useParams } from "@solidjs/router";
 import {
@@ -57,6 +56,7 @@ import { payloadActions } from "~/wallet/action";
 import { roleCredential, walletResponder } from "~/domain/roles";
 import { usePresentation } from "~/enrichment/usePresentation";
 import { networkMismatch, shortRef } from "~/ui/format";
+import { Empty } from "~/ui/components/Empty";
 import { TxLink } from "~/ui/components/TxLink";
 import { QueuedNote } from "~/ui/components/CartDrawer";
 import { locale } from "~/i18n";
@@ -247,6 +247,12 @@ const DevWidgetHost: Component = () => {
             loading={app.list.loading}
             error={app.list.error}
             onRetry={() => app.reload()}
+            text={{
+              loading: "Loading survey…",
+              notFound: "Survey not found.",
+              error: "Couldn't load the survey list.",
+              retry: "Retry",
+            }}
           />
         }
       >
@@ -386,23 +392,5 @@ const Submitted: Component<{ hash: string; surveyKey: string }> = (props) => (
     >
       View survey ({shortRef(props.surveyKey)}) →
     </A>
-  </div>
-);
-
-const Empty: Component<{
-  loading: boolean;
-  error?: unknown;
-  onRetry?: () => void;
-}> = (props): JSX.Element => (
-  <div class={css.empty}>
-    <Show
-      when={props.error}
-      fallback={props.loading ? "Loading survey…" : "Survey not found."}
-    >
-      <div class={css.emptyError}>Couldn't load the survey list.</div>
-      <button type="button" onClick={() => props.onRetry?.()} class={css.retry}>
-        Retry
-      </button>
-    </Show>
   </div>
 );

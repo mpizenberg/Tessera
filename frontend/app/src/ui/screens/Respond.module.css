@@ -982,30 +982,6 @@
   max-width: 460px;
 }
 
-.empty {
-  composes: card;
-  text-align: center;
-  color: var(--muted);
-  margin-top: 14px;
-}
-
-.emptyError {
-  color: var(--danger);
-  margin-bottom: 12px;
-}
-
-.retryBtn {
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  border-radius: var(--r-input);
-  padding: 9px 16px;
-}
-
 .submitActions {
   margin-left: auto;
   display: flex;
