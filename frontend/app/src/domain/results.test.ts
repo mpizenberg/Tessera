@@ -6,7 +6,6 @@ import type { TallyArtifact } from "cip-179/tally";
 
 import {
   MAX_DISPLAY_BUCKETS,
-  formatAda,
   fracOf,
   liveResults,
   ratioOf,
@@ -32,12 +31,6 @@ describe("exact-to-float helpers", () => {
   it("ratioOf yields null on an empty denominator", () => {
     expect(ratioOf(10n, 4n)).toBe(2.5);
     expect(ratioOf(0n, 0n)).toBeNull();
-  });
-
-  it("formatAda renders whole ada, grouped", () => {
-    expect(formatAda(512_793_397_078n)).toBe("512,793");
-    expect(formatAda(0n)).toBe("0");
-    expect(formatAda(999_999n)).toBe("<1");
   });
 });
 

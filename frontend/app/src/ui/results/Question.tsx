@@ -5,12 +5,9 @@
 
 import { Show, type Component, type JSX } from "solid-js";
 import type { Question } from "cip-179";
-import {
-  formatAda,
-  type QuestionResults,
-  type QuestionView,
-} from "~/domain/results";
+import type { QuestionResults, QuestionView } from "~/domain/results";
 
+import { formatAda } from "~/ui/format";
 import { t, n } from "~/i18n";
 import { Bars, ResultCard, typeLabel } from "./Card";
 import { Custom } from "./Custom";

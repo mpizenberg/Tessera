@@ -13,8 +13,8 @@ import {
   type TallyArtifact,
 } from "cip-179/tally";
 
-import { artifactResults, formatAda, type Weighting } from "~/domain/results";
-import { roleLabel, shortRef } from "~/ui/format";
+import { artifactResults, type Weighting } from "~/domain/results";
+import { formatAda, roleLabel, shortRef } from "~/ui/format";
 import { TxNotice } from "~/ui/components/TxNotice";
 import { downloadCsv, downloadJson } from "~/util/csv";
 import { t, n } from "~/i18n";

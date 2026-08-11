@@ -62,13 +62,6 @@ export function ratioOf(num: bigint, den: bigint): number | null {
   return Number((num * 10_000n) / den) / 10_000;
 }
 
-/** Whole-ada rendering of a lovelace amount, grouped ("512,793"). */
-export function formatAda(lovelace: bigint): string {
-  const ada = lovelace / 1_000_000n;
-  if (ada === 0n && lovelace > 0n) return "<1";
-  return ada.toLocaleString("en-US");
-}
-
 /**
  * Upper bound on how many option/level buckets any widget will materialize. A
  * hostile definition can declare an astronomically large option `count` or

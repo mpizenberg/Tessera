@@ -154,6 +154,17 @@ export function shortHash(hex: string): string {
   return hex.length > 12 ? `${hex.slice(0, 6)}…${hex.slice(-4)}` : hex;
 }
 
+/**
+ * Whole-ada rendering of a lovelace amount, grouped for the active locale.
+ * A stake small enough to floor to zero reads "<1" rather than "0", which
+ * would be indistinguishable from no stake at all.
+ */
+export function formatAda(lovelace: bigint): string {
+  const ada = lovelace / 1_000_000n;
+  if (ada === 0n && lovelace > 0n) return "<1";
+  return n(ada);
+}
+
 /** Coarse "time left to vote": days+hours up high, hours+minutes near the end. */
 function timeLeft(deadlineUnix: number, nowUnix: number): string {
   const s = deadlineUnix - nowUnix;
