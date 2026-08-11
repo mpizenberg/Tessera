@@ -423,6 +423,14 @@ describe("GET /api/surveys pagination, filters, search", () => {
     expect(keysOf(both)).toEqual([`${TX_A}:0`]);
   });
 
+  it("treats LIKE wildcards in a search term as literals", async () => {
+    const app = appWith(await seededStore());
+    // Unescaped, `%` would match every haystack instead of none.
+    const body = await getBody(app, "?q=%25");
+    expect(body["surveys"]).toEqual([]);
+    expect((body["counts"] as { all: number }).all).toBe(0);
+  });
+
   it("rejects malformed paging params", async () => {
     const app = appWith(await seededStore());
     expect((await app.request("/api/surveys?limit=0")).status).toBe(400);

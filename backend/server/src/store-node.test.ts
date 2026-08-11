@@ -3,8 +3,12 @@
  * pin on its own: the migration runner (including the pre-runner databases it
  * has to recognise), the `json_extract` predicate behind
  * `finalizedArtifactKeys`, the conditional upsert behind the refresh lease,
- * the join and cascade behind the sealed-reveal cursor, the paging keyset,
- * and the segment sweep's changed-row count.
+ * the join and cascade behind the sealed-reveal cursor, the paging keyset and
+ * the filters no route test reaches, the segment sweep's changed-row count,
+ * the changed-rows-only write contract of a reconcile, the write-once
+ * terminality of the evidence tables, the D1 parameter-cap chunking, and the
+ * operational retention prunes. Everything else the store does is pinned by
+ * the behavioural suites, which run on this same SQL via `testing/store.ts`.
  *
  * D1 shares both the dialect and `store-sql.ts`, so what passes here holds
  * there; `store-d1.test.ts` covers only what its driver does differently
@@ -70,13 +74,6 @@ describe("store-node finalizedArtifactKeys (json_extract)", () => {
     });
   });
 
-  it("is empty with no artifacts", async () => {
-    store = openBackendStore(":memory:");
-    expect(await store.finalizedArtifactKeys()).toEqual({
-      finalized: new Set(),
-      cancelled: new Set(),
-    });
-  });
 });
 
 const validatedRow = (
@@ -140,47 +137,6 @@ describe("store-node sealed reveal cursor", () => {
     expect(await store.sealedReveals("s2:0")).toEqual(
       new Map([["bb:0", `{"answers":2}`]]),
     );
-  });
-});
-
-describe("store-node validation candidate reads", () => {
-  let store: BackendStore;
-  afterEach(() => store.close());
-
-  it("keys completed verdicts by survey and surfaces stale-cursor and retry surveys", async () => {
-    store = openBackendStore(":memory:");
-    await store.upsertValidatedResponses([
-      // s1: completed bindable verdicts pinned to two distinct link sets.
-      { ...validatedRow("aa", 0, "s1:0"), role: 0, linkedActionId: "gov#1" },
-      { ...validatedRow("aa", 1, "s1:0"), role: 0, linkedActionId: "gov#1" },
-      { ...validatedRow("ab", 0, "s1:0"), role: 2 },
-      // s2: completed but non-bindable — never a link-change candidate.
-      { ...validatedRow("bb", 0, "s2:0"), linkedActionId: "gov#2" },
-      // s3: bindable but enrichment-pending — a retry survey, not a cursor.
-      { ...validatedRow("cc", 0, "s3:0"), role: 0, proofOk: null },
-    ]);
-
-    expect(
-      await store.completedValidationsForSurveys(["s1:0", "s3:0"]),
-    ).toEqual(
-      new Map([
-        ["aa:0", { linkedActionId: "gov#1", slot: 1, epochNo: 499 }],
-        ["aa:1", { linkedActionId: "gov#1", slot: 1, epochNo: 499 }],
-        ["ab:0", { linkedActionId: null, slot: 1, epochNo: 499 }],
-      ]),
-    );
-    expect(await store.completedValidationsForSurveys([])).toEqual(new Map());
-
-    // One cursor per distinct (survey, link set) a bindable verdict pinned.
-    expect(
-      (await store.validatedLinkCursors()).sort((a, b) =>
-        (a.linkedActionId ?? "").localeCompare(b.linkedActionId ?? ""),
-      ),
-    ).toEqual([
-      { surveyKey: "s1:0", linkedActionId: null },
-      { surveyKey: "s1:0", linkedActionId: "gov#1" },
-    ]);
-    expect(await store.incompleteValidationSurveys()).toEqual(["s3:0"]);
   });
 });
 
@@ -437,10 +393,12 @@ describe("store-node survey_index paging SQL", () => {
     listCounts: null,
   };
 
-  // linked (bucket 0), two open (bucket 1, newest slot first), one closed.
+  // linked (bucket 0), three open (cb/cc slot-tied, so the key tie-break the
+  // cursor rests on has a witness), one closed.
   const rows = [
     row("aa:0", 100, { govLinked: true }),
     row("bb:0", 300),
+    row("cb:0", 500),
     row("cc:0", 500, { sealed: true }),
     row("dd:0", 900, { endEpoch: 499 }),
   ];
@@ -459,147 +417,39 @@ describe("store-node survey_index paging SQL", () => {
   it("orders by bucket, slot desc, key — and follows the keyset cursor", async () => {
     store = openBackendStore(":memory:");
     await store.reconcileSnapshot(rows, [], [], meta);
-    expect(await store.snapshotMeta()).toEqual(meta);
 
     const all = await page({});
     expect(all.map((r) => r.surveyKey)).toEqual([
       "aa:0",
+      "cb:0",
       "cc:0",
       "bb:0",
       "dd:0",
     ]);
-    expect(all.map((r) => r.bucket)).toEqual([0, 1, 1, 2]);
+    expect(all.map((r) => r.bucket)).toEqual([0, 1, 1, 1, 2]);
 
+    // A cursor on the first of two slot-tied rows resumes at the second.
     const second = await page({
-      cursor: { bucket: 1, slot: 500, key: "cc:0" },
+      cursor: { bucket: 1, slot: 500, key: "cb:0" },
       limit: 2,
     });
-    expect(second.map((r) => r.surveyKey)).toEqual(["bb:0", "dd:0"]);
+    expect(second.map((r) => r.surveyKey)).toEqual(["cc:0", "bb:0"]);
   });
 
-  it("applies filters and search terms", async () => {
+  // The route fixture carries no sealed survey, so these two filters have no
+  // behavioural witness.
+  it("filters sealed and public against the active set", async () => {
     store = openBackendStore(":memory:");
     await store.reconcileSnapshot(rows, [], [], meta);
 
-    // Active = not cancelled and deadline not passed; the linked row is
-    // active too and still sorts first by bucket.
-    expect((await page({ filter: "active" })).map((r) => r.surveyKey)).toEqual([
-      "aa:0",
-      "cc:0",
-      "bb:0",
-    ]);
     expect((await page({ filter: "sealed" })).map((r) => r.surveyKey)).toEqual([
       "cc:0",
     ]);
-    expect(
-      (await page({ filter: "mine", credentials: ["key:11"] })).map(
-        (r) => r.surveyKey,
-      ),
-    ).toHaveLength(4);
-    expect(await page({ filter: "mine", credentials: ["key:99"] })).toEqual([]);
-    expect(
-      (await page({ searchTerms: ["title", "bb"] })).map((r) => r.surveyKey),
-    ).toEqual(["bb:0"]);
-    // LIKE wildcards in a term must not act as wildcards.
-    expect(await page({ searchTerms: ["%"] })).toEqual([]);
-  });
-
-  it("computes global counts over the search-matching set", async () => {
-    store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(rows, [], [], meta);
-    expect(await store.surveyIndexCounts(TIP_EPOCH, ["key:11"], [])).toEqual({
-      all: 4,
-      linked: 1,
-      active: 3,
-      sealed: 1,
-      public: 2,
-      mine: 4,
-    });
-    expect(await store.surveyIndexCounts(TIP_EPOCH, [], ["bb"])).toEqual({
-      all: 1,
-      linked: 0,
-      active: 1,
-      sealed: 0,
-      public: 1,
-      mine: 0,
-    });
-  });
-
-  it("counts owned surveys alone via the owner index", async () => {
-    store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(rows, [], [], meta);
-    expect(await store.ownedSurveyCount(["key:11"])).toBe(4);
-    expect(await store.ownedSurveyCount(["key:11", "key:99"])).toBe(4);
-    expect(await store.ownedSurveyCount(["key:99"])).toBe(0);
-    expect(await store.ownedSurveyCount([])).toBe(0);
-  });
-
-  it("deletes surveys absent from the authoritative scan", async () => {
-    store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(rows, [], [], meta);
-    await store.reconcileSnapshot([row("ee:0", 50)], [], [], {
-      ...meta,
-      fetchedAt: 8,
-    });
-    expect((await page({})).map((r) => r.surveyKey)).toEqual(["ee:0"]);
-    expect((await store.snapshotMeta())?.fetchedAt).toBe(8);
-  });
-
-  it("republishes the envelope alone, leaving rows untouched", async () => {
-    store = openBackendStore(":memory:");
-    const counts = `{"all":4,"linked":1,"active":3,"sealed":1,"public":2}`;
-    await store.reconcileSnapshot(rows, [], [], meta);
-    await store.publishSnapshotMeta({
-      ...meta,
-      fetchedAt: 8,
-      listCounts: counts,
-    });
-    expect(await store.snapshotMeta()).toEqual({
-      ...meta,
-      fetchedAt: 8,
-      listCounts: counts,
-    });
-    expect(await page({})).toHaveLength(rows.length);
-  });
-
-  // The stored side of the link-change diff: the slices a refresh compares its
-  // freshly resolved links against, inside its settlement horizon.
-  it("reads back every stored governance link, across rows", async () => {
-    store = openBackendStore(":memory:");
-    const link = (key: string, action: string, endEpoch = 510) =>
-      `{"surveyKey":"${key}","actionId":"${action}","endEpoch":${endEpoch},"title":null}`;
-    await store.reconcileSnapshot(
-      [
-        row("aa:0", 100, {
-          govLinked: true,
-          govLinks: `[${link("aa:0", "gov_action1a")},${link("aa:0", "gov_action1b")}]`,
-        }),
-        row("bb:0", 300), // no links: contributes nothing, not a parse error
-        row("cc:0", 500, {
-          endEpoch: 520,
-          govLinked: true,
-          govLinks: `[${link("cc:0", "gov_action1c", 520)}]`,
-        }),
-      ],
-      [],
-      [],
-      meta,
-    );
-    const stored = await store.surveyGovLinks(0);
-    expect([...stored.keys()]).toEqual(["aa:0", "cc:0"]);
-    expect([...stored.values()].flat().map((l) => l.actionId)).toEqual([
-      "gov_action1a",
-      "gov_action1b",
-      "gov_action1c",
+    expect((await page({ filter: "public" })).map((r) => r.surveyKey)).toEqual([
+      "aa:0",
+      "cb:0",
+      "bb:0",
     ]);
-    expect(stored.get("aa:0")![0]).toEqual({
-      surveyKey: "aa:0",
-      actionId: "gov_action1a",
-      endEpoch: 510,
-      title: null,
-    });
-    // Below the horizon a link slice is frozen, so the diff never reads it.
-    expect([...(await store.surveyGovLinks(511)).keys()]).toEqual(["cc:0"]);
   });
 });
 
@@ -735,36 +585,6 @@ describe("store-node response rows", () => {
     expect(await store.surveyBundle("unknown:0")).toBeNull();
   });
 
-  it("maps credentials to the surveys they answered", async () => {
-    store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(surveys, rows, [], meta);
-
-    expect(await store.respondedSurveyKeys(["key:11"])).toEqual(["aa:0"]);
-    // Union across a wallet's credentials, deduped across several responses.
-    expect(
-      (await store.respondedSurveyKeys(["key:11", "script:22"])).sort(),
-    ).toEqual(["aa:0", "bb:1"]);
-    // Credential kinds must not cross-match.
-    expect(await store.respondedSurveyKeys(["script:11"])).toEqual([]);
-    expect(await store.respondedSurveyKeys([])).toEqual([]);
-  });
-
-  it("deletes a response absent from the authoritative scan", async () => {
-    store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(surveys, rows, [], meta);
-    // A reorg drops the later response; a merging write would keep serving it.
-    await store.reconcileSnapshot(
-      surveys,
-      rows.filter((r) => r.txHash !== "dd"),
-      [],
-      { ...meta, fetchedAt: 8 },
-    );
-
-    expect((await store.surveyBundle("aa:0"))?.responses).toEqual([
-      `{"tx":"cc","i":0}`,
-      `{"tx":"cc","i":1}`,
-    ]);
-  });
 });
 
 describe("store-node scan state", () => {
@@ -925,106 +745,6 @@ describe("store-node segment reconciliation", () => {
     expect((await store.snapshotMeta())?.fetchedAt).toBe(2);
   });
 
-  it("with nothing listed, empties exactly the segment", async () => {
-    store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(seededSurveys, seededResponses, [], meta(1));
-    await store.reconcileSegment(
-      { fromSlot: 300, toSlot: 600 },
-      [],
-      [],
-      [],
-      meta(2),
-    );
-
-    expect(
-      (await store.surveyRowsByKeys(["aa:0", "bb:0", "cc:0"])).map(
-        (r) => r.surveyKey,
-      ),
-    ).toEqual(["aa:0", "cc:0"]);
-    expect(
-      (await store.responseRowsInSlotRange({ fromSlot: 0, toSlot: 1_000 })).map(
-        (r) => r.txHash,
-      ),
-    ).toEqual(["r1", "r3"]);
-  });
-
-  it("reads the pre-sweep window state by inclusive slot bounds", async () => {
-    store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(seededSurveys, seededResponses, [], meta(1));
-
-    expect(
-      (await store.responseRowsInSlotRange({ fromSlot: 450, toSlot: 550 })).map(
-        (r) => r.txHash,
-      ),
-    ).toEqual(["r2", "r5"]);
-    expect(
-      await store.responseRowsInSlotRange({ fromSlot: 451, toSlot: 549 }),
-    ).toEqual([]);
-  });
-
-  it("serves keyed projection and response reads in stable order", async () => {
-    store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(
-      [...seededSurveys, survey("dd:0", 900, { sealed: true })],
-      seededResponses,
-      [],
-      meta(1),
-    );
-
-    const rows = await store.surveyRowsByKeys(["dd:0", "aa:0", "unknown:0"]);
-    expect(rows.map((r) => r.surveyKey)).toEqual(["aa:0", "dd:0"]);
-    expect(rows[1]).toMatchObject({ sealed: true, cancelled: false });
-
-    expect(
-      (await store.responseRowsForSurveys(["aa:0"])).map((r) => r.txHash),
-    ).toEqual(["r1", "r2"]);
-    expect(await store.responseRowsForSurveys([])).toEqual([]);
-    expect(await store.surveyRowsByKeys([])).toEqual([]);
-  });
-
-  it("feeds each refresh consumer its bounded slice of the corpus", async () => {
-    store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(
-      [
-        survey("aa:0", 100, { endEpoch: 490 }), // closed, finalized below
-        survey("bb:0", 200, { endEpoch: 495 }), // closed, artifact-less
-        survey("cc:0", 300, { endEpoch: 500 }), // open at tip 500
-        survey("dd:0", 400, { endEpoch: 495 }), // closed, artifact-less
-      ],
-      [],
-      [],
-      meta(1),
-    );
-    await store.putArtifact({
-      surveyKey: "aa:0",
-      endEpoch: 490,
-      artifactHash: "h1",
-      artifact: "{}",
-      createdAt: 1,
-    });
-
-    // The governance pass's input: distinct, ascending, from its horizon up.
-    expect(await store.surveyEndEpochs(0)).toEqual([490, 495, 500]);
-    expect(await store.surveyEndEpochs(495)).toEqual([495, 500]);
-    // Finalization candidates: closed at the tip, minus the finalized, from
-    // the floor (inclusive) up — above it, nothing is left to decide.
-    expect(
-      (await store.unfinalizedClosedSurveyRows(0, 500)).map((r) => r.surveyKey),
-    ).toEqual(["bb:0", "dd:0"]);
-    expect(
-      (await store.unfinalizedClosedSurveyRows(495, 500)).map(
-        (r) => r.surveyKey,
-      ),
-    ).toEqual(["bb:0", "dd:0"]);
-    expect(await store.unfinalizedClosedSurveyRows(496, 500)).toEqual([]);
-    // The prune's live horizon is inclusive at its floor.
-    expect(
-      (await store.surveyRowsEndingAtOrAfter(495)).map((r) => r.surveyKey),
-    ).toEqual(["bb:0", "cc:0", "dd:0"]);
-    expect(
-      (await store.surveyRowsEndingAtOrAfter(496)).map((r) => r.surveyKey),
-    ).toEqual(["cc:0"]);
-  });
 });
 
 describe("store-node tx proof cache", () => {
@@ -1070,21 +790,6 @@ describe("store-node tx proof cache", () => {
     expect(got.get(hashes[249]!)).toBe(`cbor${hashes[249]!}`);
   });
 
-  it("lists what it holds, so the sweep costs the cache and not the archive", async () => {
-    store = openBackendStore(":memory:");
-    await store.putTxProofCbor(
-      new Map([
-        [hash(1), "84a4"],
-        [hash(2), "84a5"],
-      ]),
-    );
-    expect(new Set(await store.cachedTxProofHashes())).toEqual(
-      new Set([hash(1), hash(2)]),
-    );
-
-    await store.deleteTxProofCbor([hash(1)]);
-    expect(await store.cachedTxProofHashes()).toEqual([hash(2)]);
-  });
 });
 
 describe("store-node governance-link resolution state", () => {
@@ -1093,29 +798,9 @@ describe("store-node governance-link resolution state", () => {
 
   const doc = (surveyKey: string) => ({ surveyKey, title: "a title" });
 
-  it("banks a classification per anchor hash, including a verified non-link", async () => {
+  it("a banked classification is terminal, safe to rest an artifact on", async () => {
     store = openBackendStore(":memory:");
-    await store.putGovAnchors(
-      new Map([
-        ["aa".repeat(32), doc("s1:0")],
-        ["bb".repeat(32), null], // verified: this document is not a link
-      ]),
-    );
-
-    // A cached row and a null row are different answers; an unbanked hash is a
-    // third one (absent), which is what "still unresolved" means.
-    expect(
-      await store.cachedGovAnchors([
-        "aa".repeat(32),
-        "bb".repeat(32),
-        "cc".repeat(32),
-      ]),
-    ).toEqual(
-      new Map<string, unknown>([
-        ["aa".repeat(32), doc("s1:0")],
-        ["bb".repeat(32), null],
-      ]),
-    );
+    await store.putGovAnchors(new Map([["aa".repeat(32), doc("s1:0")]]));
 
     // Content is hash-fixed, so a banked row is terminal — a later write of the
     // same hash cannot revise the classification an artifact may already rest on.
@@ -1123,11 +808,6 @@ describe("store-node governance-link resolution state", () => {
     expect(
       (await store.cachedGovAnchors(["aa".repeat(32)])).get("aa".repeat(32)),
     ).toEqual(doc("s1:0"));
-
-    await store.deleteGovAnchors(["aa".repeat(32)]);
-    expect(
-      await store.cachedGovAnchors(["aa".repeat(32), "bb".repeat(32)]),
-    ).toEqual(new Map([["bb".repeat(32), null]]));
   });
 
   it("settles an epoch once, with its links and its given-up anchors", async () => {
@@ -1251,42 +931,6 @@ describe("store-node refresh_run health metrics", () => {
     ...over,
   });
 
-  it("round-trips the latest run and aggregates a window", async () => {
-    store = openBackendStore(":memory:");
-    expect(await store.lastRefreshRun()).toBeNull();
-
-    await store.putRefreshRun(run(1000));
-    await store.putRefreshRun(
-      run(1180, { ok: false, error: "Koios GET /tip → 502", koiosCalls: 2 }),
-    );
-    await store.putRefreshRun(
-      run(1360, { upstreamRequests: 17, koiosCalls: 11, incomplete: true }),
-    );
-
-    const last = await store.lastRefreshRun();
-    expect(last).toMatchObject({
-      startedAt: 1360,
-      upstreamRequests: 17,
-      koiosCalls: 11,
-      ok: true,
-      error: null,
-      govLinksOk: true,
-      incomplete: true,
-      validationBacklog: 2,
-    });
-
-    // Window covering the two most recent runs only.
-    expect(await store.refreshTotalsSince(1180)).toEqual({
-      runs: 2,
-      failures: 1,
-    });
-    // Empty window aggregates to zeros, not NULLs.
-    expect(await store.refreshTotalsSince(9999)).toEqual({
-      runs: 0,
-      failures: 0,
-    });
-  });
-
   // A gov-links failure leaves the run `ok` (the snapshot still publishes, with
   // the previous run's links), so this flag is the only thing that records it.
   it("records a gov-links failure on an otherwise successful run", async () => {
@@ -1343,33 +987,5 @@ describe("store-node refresh_run health metrics", () => {
 
     await store.pruneUpstreamTally(t + TALLY_BUCKET_SECONDS);
     expect(await store.upstreamTotalsSince(0)).toMatchObject({ koios: 6 });
-  });
-
-  it("counts validated rows still awaiting enrichment", async () => {
-    store = openBackendStore(":memory:");
-    const row = (
-      txHash: string,
-      blockIndex: number | null,
-      proofOk: boolean | null,
-    ) => ({
-      txHash,
-      responseIndex: 0,
-      surveyKey: "aa:0",
-      role: 3,
-      credential: "cred",
-      slot: 10,
-      epochNo: 500,
-      blockIndex,
-      proofOk,
-      linkedActionId: null,
-      wellFormed: true,
-      checkedAt: 1,
-    });
-    await store.upsertValidatedResponses([
-      row("aa", 1, true), // complete
-      row("bb", null, true), // missing block index
-      row("cc", 2, null), // missing proof verdict
-    ]);
-    expect(await store.incompleteValidationCount()).toBe(2);
   });
 });
