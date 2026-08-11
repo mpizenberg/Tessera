@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { Role, type SurveyDefinition } from "cip-179";
+import { Role } from "cip-179";
 import { bytesToHex } from "cip-179/domain";
 
 import {
   claimableRoles,
   ownerCredential,
-  respondableRoles,
   roleCredential,
   walletCanProveOwner,
   walletCredToCip179,
@@ -49,9 +48,6 @@ const identity = (creds: {
   drepKeyHex: creds.drep ? hex(32, 3) : undefined,
   drep: creds.drep,
 });
-
-const defWith = (...roles: Role[]): SurveyDefinition =>
-  ({ eligibleRoles: roles }) as unknown as SurveyDefinition;
 
 describe("claimableRoles", () => {
   it("payment-only wallet claims Keyholder", () => {
@@ -149,28 +145,6 @@ describe("ownerCredential", () => {
     expect(
       ownerCredential(identity({ payment: scriptPayment, stake, drep })),
     ).toBeUndefined();
-  });
-});
-
-describe("respondableRoles", () => {
-  it("intersects eligible roles with what the wallet can produce", () => {
-    const def = defWith(Role.SPO, Role.DRep, Role.Keyholder);
-    expect(respondableRoles(def, identity({ drep }))).toEqual([
-      Role.DRep,
-      Role.Keyholder,
-    ]);
-  });
-
-  it("is empty when the wallet can't claim any eligible role", () => {
-    const def = defWith(Role.SPO, Role.CC);
-    expect(respondableRoles(def, identity({ stake, drep }))).toEqual([]);
-  });
-
-  it("excludes an eligible role a script credential would have to prove", () => {
-    const def = defWith(Role.Stakeholder, Role.Keyholder);
-    expect(
-      respondableRoles(def, identity({ payment: scriptPayment, stake })),
-    ).toEqual([Role.Stakeholder]);
   });
 });
 

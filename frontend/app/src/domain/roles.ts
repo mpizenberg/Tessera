@@ -6,8 +6,8 @@
  * validates a credential — the carrying transaction does, host-side). So the
  * wallet→role derivation lives here, next to the wallet seam, operating on the
  * full CIP-30-shaped {@link WalletIdentity}:
- * - `claimableRoles` / `roleCredential` / `respondableRoles` — which roles a
- *   wallet can claim and the credential each carries;
+ * - `claimableRoles` / `roleCredential` — which roles a wallet can claim and the
+ *   credential each carries;
  * - `ownerCredential` — the credential a survey it creates is owned by;
  * - `walletResponder` — the `Responder` map handed to `<tessera-respond>`;
  * - `walletOwns` / `walletCanProveOwner` — the *ownership* concern (does the
@@ -15,7 +15,7 @@
  *   and `Explore`.
  */
 
-import { Role, type Credential, type SurveyDefinition } from "cip-179";
+import { Role, type Credential } from "cip-179";
 
 import { bytesToHex, hexToBytes } from "cip-179/domain";
 import type { Responder } from "cardano-tessera-respond-core";
@@ -88,16 +88,6 @@ export function ownerCredential(
   identity: WalletIdentity,
 ): Credential | undefined {
   return provable(identity.payment);
-}
-
-/** Roles the wallet can respond as to `def`: its eligible roles ∩ claimable. */
-export function respondableRoles(
-  def: SurveyDefinition,
-  identity: WalletIdentity,
-): Role[] {
-  return def.eligibleRoles.filter(
-    (role) => roleCredential(identity, role) !== undefined,
-  );
 }
 
 /**

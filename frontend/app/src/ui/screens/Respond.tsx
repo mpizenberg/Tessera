@@ -1,16 +1,13 @@
 import {
   For,
   Show,
-  createEffect,
   createMemo,
   createResource,
   createSignal,
-  on,
   onCleanup,
   type Component,
   type JSX,
 } from "solid-js";
-import { createStore } from "solid-js/store";
 import { A, useNavigate, useParams } from "@solidjs/router";
 import {
   SPEC_VERSION,
@@ -18,17 +15,14 @@ import {
   encodePayload,
   validateResponse,
   type ContentAnchor,
-  type Credential,
   type Metadatum,
   type Question,
   type Role,
   type SurveyDefinition,
-  type SurveyResponse,
 } from "cip-179";
 
 import { useApp } from "~/state";
 import {
-  credentialKey,
   dedupeResponses,
   findSurvey,
   hexToBytes,
@@ -41,25 +35,22 @@ import {
   buildSealedResponse,
   collectAnswers,
   createI18n,
-  decided,
-  findPriorResponse,
-  hasAnyAnswer,
-  initDraft,
-  prefillDrafts,
   type Draft,
   type DraftValue,
   type I18n,
+  type Responder,
 } from "cardano-tessera-respond-core";
 import {
   ClassesContext,
   I18nContext,
   QuestionBody,
+  createResponseDraft,
   range,
   typeMeta,
   useI18n,
   type BodyClasses,
 } from "cardano-tessera-respond-ui";
-import { respondableRoles, roleCredential } from "~/domain/roles";
+import { walletResponder } from "~/domain/roles";
 import { usePresentation } from "~/enrichment/usePresentation";
 import { IPFS_PROVIDERS } from "~/enrichment/providers";
 import { OnchainPreview } from "~/ui/components/OnchainPreview";
@@ -233,140 +224,37 @@ export const Respond: Component = () => {
     return t("respond.deadlineSoon", { m: n(Math.ceil(left / 60)) });
   };
 
-  const respondable = createMemo<Role[]>(() => {
-    const def = definition();
+  // Role choice, drafts and progress: the spine shared with the widget. The app
+  // feeds it a wallet-derived responder, the survey's on-chain ref, and the
+  // responses riding in the lazily-fetched bundle. `definition()` is the
+  // enriched one, so external-content labels swapping in reseeds the form.
+  const responder = createMemo<Responder>(() => {
     const id = identity();
-    return def && id ? respondableRoles(def, id) : [];
+    return id ? walletResponder(id) : {};
   });
-
-  // Role we respond as: honor the header's active role if it's respondable here,
-  // otherwise the first role this wallet can claim for this survey.
-  const [roleOverride, setRoleOverride] = createSignal<Role | null>(null);
-  const role = createMemo<Role | null>(() => {
-    const rs = respondable();
-    if (rs.length === 0) return null;
-    const o = roleOverride();
-    if (o !== null && rs.includes(o)) return o;
-    const a = app.activeRole();
-    if (a !== null && rs.includes(a as Role)) return a as Role;
-    return rs[0]!;
-  });
-
-  const credential = createMemo<Credential | null>(() => {
-    const id = identity();
-    const r = role();
-    return id && r !== null ? (roleCredential(id, r) ?? null) : null;
-  });
-
-  // The wallet's prior response for (this survey, role, credential) — sealed
-  // included, so a sealed survey still says "you already responded".
-  const prior = createMemo<SurveyResponse | undefined>(() => {
-    const def = definition();
-    const s = survey();
-    const r = role();
-    const cred = credential();
-    const b = bundle.error ? undefined : bundle();
-    if (!def || !s || r === null || !cred || !b) return undefined;
-    const mine = dedupeResponses(b.responses).map((x) => x.response);
-    return findPriorResponse(mine, s.record.ref, r, cred);
-  });
-
-  // Drafts can only be seeded from a public prior; a sealed one is known to
-  // exist but unreadable, so its form starts pristine.
-  const prefillFrom = createMemo<SurveyResponse | undefined>(() => {
-    const p = prior();
-    return p?.answers.type === "public" ? p : undefined;
-  });
-
-  // Store mirror of Draft with mutable fields so path setters typecheck;
-  // assignable to/from the readonly domain Draft.
-  const [drafts, setDrafts] = createStore<
-    { skipped: boolean; value: DraftValue }[]
-  >([]);
-
-  // True once the user edits an answer; gates auto-(re)seeding so late-arriving
-  // data and reloads never clobber in-progress input.
-  const [touched, setTouched] = createSignal(false);
-
-  // Per-(role, credential) stash of in-progress answers, kept for the screen's
-  // lifetime so a misclick on a role chip doesn't destroy edits — switching
-  // back restores them. Only touched forms are stashed (a pristine form is
-  // reproduced exactly by reseeding); cleared when the survey changes.
-  const draftCache = new Map<
-    string,
-    { skipped: boolean; value: DraftValue }[]
-  >();
-  const draftKey = (r: Role | null, cred: Credential | null): string =>
-    `${r}:${cred ? credentialKey(cred) : ""}`;
-
-  // (Re)seed drafts when the form's identity or its backing data changes:
-  //  - survey key / role / credential → a different prior response to pre-fill
-  //    from (the credential matters: switching wallets mid-edit must not carry
-  //    wallet A's drafts under wallet B's credential)
-  //  - definition()            → external-content enrichment swapping labels in
-  //  - prefillFrom()           → a prior on-chain response that resolves *after*
-  //    the first seed (e.g. once the wallet auto-reconnects)
-  // An identity change restores that identity's stashed edits or makes the form
-  // pristine again; otherwise we only (re)seed while the user hasn't started
-  // editing.
-  createEffect(
-    on(
-      () =>
-        [
-          survey()?.key,
-          role(),
-          credential(),
-          definition(),
-          prefillFrom(),
-        ] as const,
-      ([k, r, cred], prev) => {
-        if (
-          prev &&
-          (prev[0] !== k || draftKey(prev[1], prev[2]) !== draftKey(r, cred))
-        ) {
-          if (prev[0] !== k) draftCache.clear();
-          else if (touched()) {
-            // Draft values are replaced immutably on edit, so copying the
-            // records detaches the stash from future store writes.
-            draftCache.set(
-              draftKey(prev[1], prev[2]),
-              drafts.map((d) => ({ skipped: d.skipped, value: d.value })),
-            );
-          }
-          const stashed = draftCache.get(draftKey(r, cred));
-          if (stashed) {
-            setTouched(true);
-            setDrafts(stashed.map((d) => ({ ...d })));
-            return;
-          }
-          setTouched(false);
-        }
-        if (touched()) return;
-        const def = definition();
-        if (!def) {
-          setDrafts([]);
-          return;
-        }
-        const ex = prefillFrom();
-        setDrafts(
-          ex ? prefillDrafts(def.questions, ex) : def.questions.map(initDraft),
-        );
-      },
-    ),
-  );
-
-  const total = () => definition()?.questions.length ?? 0;
-  const decidedCount = createMemo(() => {
-    const def = definition();
-    if (!def) return 0;
-    return def.questions.filter((q, i) => drafts[i] && decided(q, drafts[i]!))
-      .length;
-  });
-  // Every-question-decided still allows an all-skipped (all-optional) form; a
-  // response needs ≥1 recorded answer or it is spec-invalid and drops at scan.
-  const answered = createMemo(() => {
-    const def = definition();
-    return def ? hasAnyAnswer(def.questions, drafts) : false;
+  const {
+    respondable,
+    role,
+    pickRole,
+    credential,
+    prior,
+    drafts,
+    setValue,
+    setSkipped,
+    total,
+    decidedCount,
+    answered,
+  } = createResponseDraft({
+    definition,
+    surveyRef: () => survey()?.record.ref,
+    responder,
+    priorResponses: () => {
+      const b = bundle.error ? undefined : bundle();
+      return b
+        ? dedupeResponses(b.responses).map((x) => x.response)
+        : undefined;
+    },
+    preferredRole: () => app.activeRole() as Role | null,
   });
 
   const sealedMode = createMemo(() => {
@@ -413,15 +301,6 @@ export const Respond: Component = () => {
   const [ratText, setRatText] = createSignal("");
   const [ratUri, setRatUri] = createSignal("");
   const [ratHash, setRatHash] = createSignal("");
-
-  const setValue = (i: number, value: DraftValue) => {
-    setTouched(true);
-    setDrafts(i, "value", value);
-  };
-  const setSkipped = (i: number, skipped: boolean) => {
-    setTouched(true);
-    setDrafts(i, "skipped", skipped);
-  };
 
   // Parse the *manual* rationale anchor: the anchor, `undefined` (none), or
   // "invalid" (problems set). URI required; hash must be 32 bytes of hex. The
@@ -745,7 +624,7 @@ export const Respond: Component = () => {
               respondable={respondable()}
               // Per-survey choice only — must not rewrite the app-wide active
               // role used by other screens (e.g. the "mine" Explore filter).
-              onPickRole={(r) => setRoleOverride(r)}
+              onPickRole={pickRole}
             />
 
             <Show when={s().cancellationClaimed}>

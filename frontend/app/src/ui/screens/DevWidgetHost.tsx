@@ -40,7 +40,10 @@ import {
   type SurveyResponse,
 } from "cip-179";
 import { dedupeResponses, findSurvey } from "cip-179/domain";
-import { findPriorResponse } from "cardano-tessera-respond-core";
+import {
+  findPriorResponse,
+  respondableRolesFor,
+} from "cardano-tessera-respond-core";
 import type {
   Responder,
   RespondChangeDetail,
@@ -51,11 +54,7 @@ import type {
 
 import { useApp } from "~/state";
 import { payloadActions } from "~/wallet/action";
-import {
-  respondableRoles,
-  roleCredential,
-  walletResponder,
-} from "~/domain/roles";
+import { roleCredential, walletResponder } from "~/domain/roles";
 import { usePresentation } from "~/enrichment/usePresentation";
 import { networkMismatch, shortRef } from "~/ui/format";
 import { TxLink } from "~/ui/components/TxLink";
@@ -109,7 +108,7 @@ const DevWidgetHost: Component = () => {
   const respondable = createMemo(() => {
     const def = definition();
     const id = identity();
-    return def && id ? respondableRoles(def, id) : [];
+    return def && id ? respondableRolesFor(def, walletResponder(id)) : [];
   });
 
   // The responder's prior response for *each* role it can claim here, so the
