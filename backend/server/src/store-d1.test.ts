@@ -20,11 +20,6 @@ class FakeD1Statement {
     return new FakeD1Statement(this.db, this.sql, values as SQLInputValue[]);
   }
 
-  async first<T = unknown>(): Promise<T | null> {
-    const row = this.statement().get(...this.values) as T | undefined;
-    return row ?? null;
-  }
-
   async run(): Promise<{ meta: { changes: number } }> {
     const result = this.statement().run(...this.values);
     return { meta: { changes: Number(result.changes) } };

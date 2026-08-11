@@ -14,7 +14,7 @@ packages:
   - examples/svelte-host
 
 allowBuilds:
-  '@parcel/watcher': false
+  "@parcel/watcher": false
   esbuild: true
   msgpackr-extract: false
   sharp: false

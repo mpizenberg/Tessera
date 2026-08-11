@@ -1,17 +1,44 @@
 /**
- * Snapshot storage — the repository interface.
+ * Snapshot storage — the repository interface and the driver port under it.
  *
  * The read-path snapshot is content the browser used to re-fetch on every load;
  * here it is computed once server-side and stored, materialized as the rows the
- * serving routes read directly (`materialize.ts` turns a scan into them). Two
- * implementations share this seam and the same SQLite schema: `store-node.ts`
- * (node:sqlite, local process) and `store-d1.ts` (Cloudflare D1, Worker) — see
- * `backend/ARCHITECTURE.md` §3. Every method is async because D1 is; the node
- * impl just wraps its synchronous calls. The tally tables (§6.2) join
- * this schema too.
+ * serving routes read directly (`materialize.ts` turns a scan into them). The
+ * tally tables (ARCHITECTURE.md §6.2) join the same schema.
+ *
+ * {@link BackendStore} has one implementation (`store-sql.ts`) over one SQLite
+ * schema (`migrations/*.sql`); what a runtime supplies is a {@link SqlDriver} —
+ * `store-node.ts` (node:sqlite, local process) or `store-d1.ts` (Cloudflare D1,
+ * Worker). That is the "thin swappable storage adapter" of §3. Every method is
+ * async because D1 is; the node driver wraps its synchronous calls.
  */
 
 import type { ChainTip, GovLink, GovLinkDoc } from "cip-179/domain";
+
+/** One SQL statement (SQLite dialect) and its positional bindings. */
+export interface SqlQuery {
+  readonly sql: string;
+  readonly params: unknown[];
+}
+
+/**
+ * Everything a runtime has to provide for {@link BackendStore} to work: run
+ * SQL, and group statements so a multi-statement operation is one transaction
+ * (and, on a remote database, one round trip).
+ *
+ * Reads and writes are separate methods because that is what the two runtimes
+ * offer: `node:sqlite` returns rows from `all()` and change counts from `run()`
+ * and cannot return both for one statement.
+ */
+export interface SqlDriver {
+  /** One query's rows. */
+  all<T>(query: SqlQuery): Promise<T[]>;
+  /** Several reads together; rows per query, in argument order. */
+  batchAll<T>(queries: readonly SqlQuery[]): Promise<T[][]>;
+  /** Several writes as one transaction; rows changed per query, in order. */
+  batchWrite(queries: readonly SqlQuery[]): Promise<number[]>;
+  close(): void;
+}
 
 /**
  * One response's validation result (TALLY-SPEC.md §3), persisted so each

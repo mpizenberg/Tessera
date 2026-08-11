@@ -1,14 +1,11 @@
 /**
- * SQL over the materialized snapshot tables, shared verbatim by `store-node.ts`
- * and `store-d1.ts` (same SQLite dialect on both). The `survey_index`
- * page/count semantics mirror `cardano-tessera-core`'s `pageSurveyList` — the
- * executable spec — exactly: bucket 0 gov-linked / 1 open / 2 closed, ordered
- * (bucket ASC, slot DESC, key ASC), AND-of-substrings search, chip counts over
- * the search-matching set.
- *
- * Queries whose arity varies (search terms, credential lists) are built per
- * call, so nothing here is a cached prepared statement — the tables are
- * scan-sized and these run once per request.
+ * SQL over the materialized snapshot tables — the half of `store-sql.ts` whose
+ * arity varies with the request (search terms, credential lists, key chunks),
+ * so it is built rather than written out. The `survey_index` page/count
+ * semantics mirror `cardano-tessera-core`'s `pageSurveyList` — the executable
+ * spec — exactly: bucket 0 gov-linked / 1 open / 2 closed, ordered (bucket ASC,
+ * slot DESC, key ASC), AND-of-substrings search, chip counts over the
+ * search-matching set.
  */
 
 import type { SurveyListCounts } from "cardano-tessera-core";
@@ -20,14 +17,10 @@ import type {
   ScanState,
   SlotRange,
   SnapshotMeta,
+  SqlQuery,
   SurveyIndexRow,
   SurveyPageQuery,
 } from "./store";
-
-export interface SqlQuery {
-  readonly sql: string;
-  readonly params: unknown[];
-}
 
 /** The section bucket, computed against the snapshot tip's epoch (1 param). */
 const BUCKET = `CASE WHEN gov_linked = 1 THEN 0
