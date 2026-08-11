@@ -7,9 +7,17 @@
  * from the problem's `params`; `{where}` is a machine locator such as
  * `questions[2]` — shown verbatim, never translated. A test
  * (validation.test.ts) asserts this catalog covers every declared code.
+ *
+ * The `response` and `answer` subtrees are `respond-core`'s: the widget renders
+ * the same problems from the same codes, so the wording has one definition. The
+ * `definition` and `question` codes are the app's alone — only it authors
+ * surveys.
  */
 
+import { enMessages } from "cardano-tessera-respond-core";
+
 const validation = {
+  ...enMessages.validation,
   definition: {
     specVersionUnsupported: "spec_version {actual} != supported {supported}",
     eligibleRolesEmpty: "eligible_roles must be non-empty",
@@ -44,39 +52,6 @@ const validation = {
     maxRankedGtOptions:
       "{where}: max_ranked must be <= number of options ({count})",
     budgetNotPositive: "{where}: budget must be > 0",
-  },
-  response: {
-    specVersionMismatch: "response spec_version {actual} != survey {expected}",
-    roleNotEligible: "role {role} is not in the survey's eligible_roles",
-    sealedRequired: "sealed survey requires a sealed (ciphertext) response",
-    publicRequired: "public survey requires public (plaintext) answers",
-    sealedCiphertextEmpty: "sealed response ciphertext is empty",
-    answersEmpty: "answer at least one question before submitting",
-    duplicateAnswer: "{where}: duplicate answer for question {questionIndex}",
-    questionIndexOutOfRange:
-      "{where}: question index {questionIndex} out of range",
-    requiredNotAnswered: "required question {questionIndex} is not answered",
-  },
-  answer: {
-    typeMismatch:
-      '{where}: answer type "{answerType}" does not match question type "{questionType}"',
-    optionIndexOutOfRange: "{where}: option index {index} out of range",
-    optionIndicesOutOfRange: "{where}: option index out of range",
-    duplicateOptionIndices: "{where}: duplicate option indices",
-    selectionCountOutOfRange:
-      "{where}: selection count {count} not in [{min}, {max}]",
-    duplicateRankedIndices: "{where}: duplicate ranked indices",
-    rankedIndexOutOfRange: "{where}: ranked index out of range",
-    rankedCountOutOfRange:
-      "{where}: ranked count {count} not in [{min}, {max}]",
-    valueOutOfRange: "{where}: value {value} out of range",
-    valueStepMismatch: "{where}: value {value} does not satisfy step {step}",
-    pointsNegative: "{where}: points must be >= 0",
-    pointsSumMismatch: "{where}: points sum {sum} != budget {budget}",
-    ratingInvalid:
-      "{where}.ratings[{index}]: rating {rating} invalid for scale",
-    ratingRequireAll:
-      "{where}: require_all rating must cover all {count} options, got {got}",
   },
 };
 

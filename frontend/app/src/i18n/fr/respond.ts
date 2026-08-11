@@ -3,13 +3,21 @@
  * « o »). Le groupement des nombres (1 024 vs 1,024) est géré par `n()` via Intl,
  * pas ici.
  */
+import { frMessages } from "cardano-tessera-respond-core";
+
 import type { Messages } from "../en/respond";
 
 const respond: Messages = {
+  ...frMessages.respond,
+
+  // --- Chaînes partagées que l'app formule autrement (elle a un portefeuille)
+  ineligibleLead:
+    "Elle n'est ouverte qu'aux rôles ci-dessous, et votre portefeuille connecté ne peut en revendiquer aucun ici. Voici ce que signifie chacun :",
+  notClaimable: " Non revendicable dans un portefeuille de navigateur.",
+
   // --- Top-level navigation / progress ------------------------------------
   backToResults: "Retour aux résultats",
   submitting: "Envoi…",
-  encrypting: "Chiffrement…",
   pinningRationale: "Épinglage de la justification…",
 
   // --- Submit progress steps ----------------------------------------------
@@ -30,13 +38,7 @@ const respond: Messages = {
   cancelClaimBody:
     "Une annulation de ce sondage a été publiée mais n'a pas pu être vérifiée comme provenant du propriétaire ; elle est donc ignorée — vous pouvez toujours répondre.",
 
-  // --- Closed / cancelled notices -----------------------------------------
-  closedCancelledTitle: "Ce sondage a été annulé",
-  closedTitle: "Ce sondage est clos",
-  closedCancelledBody:
-    "Le propriétaire l'a retirée par une annulation tag-2. Les nouvelles réponses sont rejetées. La définition reste on-chain à titre de référence.",
-  closedBody:
-    "Son époque de fin est passée, les nouvelles réponses ne sont donc plus acceptées. Vous pouvez toujours consulter les résultats.",
+  // --- Définition invalide (le widget n'en affiche jamais) ----------------
   untalliableTitle: "La définition de ce sondage est invalide",
   untalliableBody:
     "Sa définition on-chain n'est pas conforme à CIP-179 v5 (mauvaise version de spec, ou une contrainte interdite par la spec) : elle est donc non décomptable et aucun lecteur conforme ne la compte. Répondre gaspillerait des frais, l'envoi est donc désactivé.",
@@ -46,40 +48,10 @@ const respond: Messages = {
   connectBody:
     "Utilisez le bouton « Connecter un portefeuille » dans l'en-tête. L'éligibilité est vérifiée par rapport aux identifiants de votre portefeuille. Vous pouvez lire le sondage et ses résultats sans vous connecter.",
 
-  // --- Ineligible ----------------------------------------------------------
-  ineligibleTitle: "Vous ne pouvez pas répondre à ce sondage",
-  ineligibleLead:
-    "Elle n'est ouverte qu'aux rôles ci-dessous, et votre portefeuille connecté ne peut en revendiquer aucun ici. Voici ce que signifie chacun :",
-  notClaimable: " Non revendicable dans un portefeuille de navigateur.",
-
   // --- Header --------------------------------------------------------------
-  respondLabel: "Répondre",
   refTitle:
     "Référence complète du sondage — hash de la transaction de définition et index de sortie",
   refPrefix: "réf {ref}",
-  untitledSurvey: "Sondage sans titre",
-  respondingAs: "Vous répondez en tant que",
-
-  // --- Already-responded banner -------------------------------------------
-  alreadyResponded: "Vous avez déjà répondu en tant que {role}",
-  alreadyRespondedRoleFallback: "ce rôle",
-  alreadyRespondedText:
-    "Vos réponses précédentes sont pré-remplies. Renvoyer publie une nouvelle réponse qui remplace entièrement la précédente selon le principe « dernière valide gagne » ; l'ancienne reste on-chain mais n'est plus comptabilisée.",
-
-  // --- Sealed banner -------------------------------------------------------
-  sealedTitle: "Ceci est un sondage scellé",
-  sealedTextBefore:
-    "Vos réponses sont chiffrées par verrou temporel à l'envoi — ",
-  sealedNoOne: "personne, pas même vous, ne peut les lire",
-  sealedTextAfter:
-    " jusqu'à la publication du tour drand ({reveal}). Les résultats agrégés n'apparaissent qu'après la révélation.",
-
-  // --- Scellé sur une chaîne drand non prise en charge (envoi bloqué) ------
-  sealedUnsupportedTitle: "Impossible de répondre à ce sondage scellé",
-  sealedUnsupportedBody:
-    "Il est rattaché à une chaîne drand que Tessera ne peut pas déchiffrer : une réponse envoyée ne pourrait jamais être révélée. L'envoi est désactivé.",
-  sealedUnsupportedNote:
-    "Chaîne drand non prise en charge — révélation impossible",
 
   // --- Vote deadline --------------------------------------------------------
   deadlinePassed:
@@ -118,60 +90,8 @@ const respond: Messages = {
   ratWriteHint:
     "À l'envoi, ceci est épinglé sur vos fournisseurs IPFS et ancré (URI + hash blake2b-256) sur votre réponse. Informatif uniquement — n'affecte jamais la validation ni les décomptes.",
 
-  // --- Indication de couverture de notation -------------------------------
-  ratingRequireAll: "Notez chaque option pour que votre réponse compte.",
-  ratingAllowSubset:
-    "Notez autant d'options que vous le souhaitez ; laissez le reste vide.",
-
-  // --- Question type labels -----------------------------------------------
-  typeCustom: "Personnalisé · schéma externe",
-  typeSingleChoice: "Choix unique",
-  typeMultiSelect: "Sélection multiple",
-  typeRanking: "Classement",
-  typeNumericRange: "Plage numérique",
-  typePointsAllocation: "Allocation de points",
-  typeRating: "Notation",
-  typeMetaRange: "{base} · {min}–{max}",
-  typeMetaBudget: "{base} · budget {budget}",
-
-  // --- Question card -------------------------------------------------------
-  questionChip: "Q{n}",
-  required: "Obligatoire",
-  skipped: "Ignorée",
-  skip: "Ignorer",
-  noPrompt: "(aucun énoncé)",
-  skippedNote:
-    "Ignorée — abstention. Rien n'est enregistré pour cette question.",
-
-  // --- Multi-select body ---------------------------------------------------
-  multiSelectCount: "sélectionnez {min}–{max} · {chosen} choisie(s)",
-  noneLead: "« Aucune de celles-ci » est une vraie réponse.",
-  noneNote:
-    "Cette question autorise 0 sélection — envoyer sans rien cocher enregistre une réponse vide délibérée, différente d'Ignorer (abstention).",
-
-  // --- Ranking body --------------------------------------------------------
-  rankMoveUp: "Monter",
-  rankMoveDown: "Descendre",
-  rankRemove: "Retirer du classement",
-  rankPoolHint: "touchez pour ajouter · classez {min}–{max}",
-
-  // --- Points allocation body ---------------------------------------------
-  pointsRemainLabel: "Restant à allouer",
-  pointsRemain: "{n} pts",
-  pointsFooter: "répartissez {budget} points · la somme doit égaler le budget",
-
-  // --- Custom body ---------------------------------------------------------
-  customSchemaTag: "schéma",
-  customPlaceholder: "Votre réponse",
-  customHint:
-    "Encodé comme un metadatum texte brut et interprété par la méthode à l'ancre.",
-
   // --- Submit bar ----------------------------------------------------------
-  decidedCount: "{decided} sur {total} renseignées",
-  replacesNote: "✓ remplace votre réponse précédente",
   switchNetwork: "Basculez votre portefeuille sur {network} pour envoyer",
-  encryptAndSubmit: "Chiffrer et envoyer",
-  signAndSubmit: "Signer et envoyer",
 
   // --- Submitted panel -----------------------------------------------------
   submittedTitle: "Réponse envoyée",
@@ -185,12 +105,6 @@ const respond: Messages = {
   loadError:
     "Impossible de charger depuis le réseau — il peut s'agir d'une erreur transitoire.",
   retry: "Réessayer",
-
-  // --- Submit problems list ------------------------------------------------
-  problemsTitle: "Veuillez corriger avant d'envoyer",
-
-  // --- Option fallback label ----------------------------------------------
-  optionFallback: "Option {n}",
 };
 
 export default respond;

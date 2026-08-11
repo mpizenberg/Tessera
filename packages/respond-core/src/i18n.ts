@@ -30,6 +30,13 @@ import type {
 
 export type { DeepPartial, MsgKey, Params, RespondMessages };
 
+/**
+ * The bundled catalogs themselves. A host with its own i18n (the Tessera app)
+ * builds its `respond`/`roles`/`validation` namespaces on top of these instead
+ * of restating the same strings, so shared wording has one definition.
+ */
+export { en as enMessages, fr as frMessages };
+
 /** The i18n surface the widget consumes. */
 export interface I18n {
   /** Translate `key` for the locale, filling `{token}` placeholders. */
