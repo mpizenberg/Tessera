@@ -37,6 +37,7 @@ import {
   tallyBucket,
 } from "./store";
 import { openBackendStore } from "./store-node";
+import { ALL_SLOTS } from "./testing/store";
 
 const artifact = (surveyKey: string, tally: string, hash: string) => ({
   surveyKey,
@@ -73,7 +74,6 @@ describe("store-node finalizedArtifactKeys (json_extract)", () => {
       cancelled: new Set(["bb:1"]),
     });
   });
-
 });
 
 const validatedRow = (
@@ -197,7 +197,7 @@ describe("store-node migration of a pre-runner database", () => {
         (await store.completedValidationsForSurveys(["bb:1"])).get("bb:1"),
       ).toMatchObject({ linkedActionId: "gov#0" });
       // Missing tables were created by their migrations, not the baseline.
-      await store.reconcileSnapshot([], [], [], {
+      await store.reconcileSegment(ALL_SLOTS, [], [], [], {
         tip: "{}",
         incomplete: false,
         fetchedAt: 7,
@@ -284,7 +284,7 @@ describe("store-node migration to per-response rows", () => {
       // surveys whose responses have silently vanished.
       expect(await store.snapshotMeta()).toBeNull();
       // And the next refresh publishes into the new shape.
-      await store.reconcileSnapshot([], [], [], {
+      await store.reconcileSegment(ALL_SLOTS, [], [], [], {
         tip: "{}",
         incomplete: false,
         fetchedAt: 100,
@@ -416,7 +416,7 @@ describe("store-node survey_index paging SQL", () => {
 
   it("orders by bucket, slot desc, key — and follows the keyset cursor", async () => {
     store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(rows, [], [], meta);
+    await store.reconcileSegment(ALL_SLOTS, rows, [], [], meta);
 
     const all = await page({});
     expect(all.map((r) => r.surveyKey)).toEqual([
@@ -440,7 +440,7 @@ describe("store-node survey_index paging SQL", () => {
   // behavioural witness.
   it("filters sealed and public against the active set", async () => {
     store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(rows, [], [], meta);
+    await store.reconcileSegment(ALL_SLOTS, rows, [], [], meta);
 
     expect((await page({ filter: "sealed" })).map((r) => r.surveyKey)).toEqual([
       "cc:0",
@@ -511,7 +511,7 @@ describe("store-node response rows", () => {
     storeDir = mkdtempSync(join(tmpdir(), "tessera-reconcile-"));
     const path = join(storeDir, "store.sqlite");
     store = openBackendStore(path);
-    await store.reconcileSnapshot(surveys, rows, [], meta);
+    await store.reconcileSegment(ALL_SLOTS, surveys, rows, [], meta);
 
     const audit = new DatabaseSync(path);
     audit.exec(`
@@ -531,7 +531,7 @@ describe("store-node response rows", () => {
     `);
     audit.close();
 
-    await store.reconcileSnapshot(surveys, rows, [], {
+    await store.reconcileSegment(ALL_SLOTS, surveys, rows, [], {
       ...meta,
       fetchedAt: 8,
     });
@@ -543,7 +543,8 @@ describe("store-node response rows", () => {
     check.close();
 
     const newResponse = resp("gg", "aa:0", "key:11", 970_000);
-    await store.reconcileSnapshot(
+    await store.reconcileSegment(
+      ALL_SLOTS,
       surveys.map((survey) =>
         survey.surveyKey === "aa:0"
           ? { ...survey, responseCount: survey.responseCount + 1 }
@@ -564,7 +565,7 @@ describe("store-node response rows", () => {
 
   it("serves one survey's bundle in a stable order", async () => {
     store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(surveys, rows, [], meta);
+    await store.reconcileSegment(ALL_SLOTS, surveys, rows, [], meta);
 
     // (slot, txHash, responseIndex): the same bytes on every refresh, so the
     // ETag's promise that an unchanged snapshot means an unchanged body holds.
@@ -584,7 +585,6 @@ describe("store-node response rows", () => {
     expect((await store.surveyBundle("empty:0"))?.responses).toEqual([]);
     expect(await store.surveyBundle("unknown:0")).toBeNull();
   });
-
 });
 
 describe("store-node scan state", () => {
@@ -705,7 +705,13 @@ describe("store-node segment reconciliation", () => {
 
   it("sweeps only in-range rows, keeps settled history, applies repositions", async () => {
     store = openBackendStore(":memory:");
-    await store.reconcileSnapshot(seededSurveys, seededResponses, [], meta(1));
+    await store.reconcileSegment(
+      ALL_SLOTS,
+      seededSurveys,
+      seededResponses,
+      [],
+      meta(1),
+    );
 
     // The segment [300, 600] saw: survey bb:0 gone (rolled back), response r2
     // re-listed with drifted bytes (a rollback repositioned its tx), r5 gone,
@@ -744,7 +750,6 @@ describe("store-node segment reconciliation", () => {
     ]);
     expect((await store.snapshotMeta())?.fetchedAt).toBe(2);
   });
-
 });
 
 describe("store-node tx proof cache", () => {
@@ -789,7 +794,6 @@ describe("store-node tx proof cache", () => {
     expect(got.size).toBe(250);
     expect(got.get(hashes[249]!)).toBe(`cbor${hashes[249]!}`);
   });
-
 });
 
 describe("store-node governance-link resolution state", () => {

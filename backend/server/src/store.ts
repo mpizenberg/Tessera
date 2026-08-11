@@ -714,19 +714,6 @@ export interface SurveyPageQuery {
  */
 export interface SnapshotStore {
   /**
-   * Atomically replace the materialized rows with a full rebuild's and publish
-   * its envelope — the whole-corpus sibling of {@link reconcileSegment}, kept
-   * as the differential oracle's applicator and the tests' fixture publisher;
-   * the runtime path integrates segments instead. Readers see either the
-   * complete previous generation or the complete new one.
-   */
-  reconcileSnapshot(
-    surveys: readonly SurveyIndexRow[],
-    responses: readonly ResponseRow[],
-    cancellations: readonly CancellationRow[],
-    meta: SnapshotMeta,
-  ): Promise<void>;
-  /**
    * Republish only the envelope, leaving the materialized rows untouched —
    * how the refresh lands recomputed banked counts after the segment
    * reconcile already published this run's freshness.

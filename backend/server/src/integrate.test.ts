@@ -26,7 +26,7 @@ import {
 import { integrateSegment, type GovPass } from "./integrate";
 import { listCountsOf, materializeSnapshot } from "./materialize";
 import type { SlotRange, SnapshotMeta } from "./store";
-import { testStore, type TestStore } from "./testing/store";
+import { ALL_SLOTS, testStore, type TestStore } from "./testing/store";
 
 // --- fixtures ------------------------------------------------------------------
 
@@ -259,7 +259,6 @@ async function expectOracleMatch(
     chain.govLinks,
     chain.finalizedCancelled,
   );
-  const everything = { fromSlot: 0, toSlot: Number.MAX_SAFE_INTEGER };
   const bySurveyKey = <T extends { surveyKey: string }>(rows: T[]): T[] =>
     [...rows].sort((a, b) => (a.surveyKey < b.surveyKey ? -1 : 1));
   const byTx = <T extends { txHash: string; surveyKey: string }>(
@@ -273,10 +272,10 @@ async function expectOracleMatch(
   expect(bySurveyKey(await store.surveyRowsEndingAtOrAfter(0))).toEqual(
     bySurveyKey(oracle.surveys),
   );
-  expect(byTx(await store.responseRowsInSlotRange(everything))).toEqual(
+  expect(byTx(await store.responseRowsInSlotRange(ALL_SLOTS))).toEqual(
     byTx(oracle.responses),
   );
-  expect(byTx(await store.cancellationRowsInSlotRange(everything))).toEqual(
+  expect(byTx(await store.cancellationRowsInSlotRange(ALL_SLOTS))).toEqual(
     byTx(oracle.cancellations),
   );
   const counts = await store.surveyIndexCounts(tip.epoch, [], []);

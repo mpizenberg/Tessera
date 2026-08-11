@@ -292,15 +292,15 @@ function jsonChunks<T>(values: readonly T[], maxRows: number): JsonChunk<T>[] {
 const compareText = (a: string, b: string): number =>
   a < b ? -1 : a > b ? 1 : 0;
 
-/** Restricts a deletion's candidates to `range`; unbounded when absent. */
-const slotBound = (range: SlotRange | undefined): SqlQuery =>
-  range === undefined
-    ? { sql: "1", params: [] }
-    : { sql: "slot BETWEEN ? AND ?", params: [range.fromSlot, range.toSlot] };
+/** Restricts a deletion's candidates to `range`. */
+const slotBound = (range: SlotRange): SqlQuery => ({
+  sql: "slot BETWEEN ? AND ?",
+  params: [range.fromSlot, range.toSlot],
+});
 
 function surveyDeletionSql(
   keys: readonly { readonly surveyKey: string }[],
-  range?: SlotRange,
+  range: SlotRange,
 ): SqlQuery[] {
   const bound = slotBound(range);
   if (keys.length === 0)
@@ -343,7 +343,7 @@ interface ResponseKey {
 
 function responseDeletionSql(
   keys: readonly ResponseKey[],
-  range?: SlotRange,
+  range: SlotRange,
 ): SqlQuery[] {
   const bound = slotBound(range);
   if (keys.length === 0)
@@ -388,7 +388,7 @@ interface CancellationKey {
 
 function cancellationDeletionSql(
   keys: readonly CancellationKey[],
-  range?: SlotRange,
+  range: SlotRange,
 ): SqlQuery[] {
   const bound = slotBound(range);
   if (keys.length === 0)
@@ -427,21 +427,22 @@ function cancellationDeletionSql(
 }
 
 /**
- * How a reconcile program sweeps: everywhere (the full rebuild), only within
- * a slot range (a covered segment), or not at all (an incomplete scan, whose
- * unlisted txs are indistinguishable from vanished ones).
+ * One atomic reconciliation program for either SQLite adapter. JSON
+ * table-valued parameters keep first materialization and large reorgs to
+ * bounded set operations rather than one statement per record. Only rows with
+ * slot in `range` are deletion candidates — settled history outside the
+ * segment is never swept, however little of the chain one call covers; a null
+ * `range` (an incomplete scan, whose unlisted txs are indistinguishable from
+ * vanished ones) sweeps nothing. The envelope upsert is always the final
+ * statement, so a caller counting changed rows can exclude it (freshness
+ * moves every run).
  */
-type Sweep =
-  | { readonly kind: "everything" }
-  | { readonly kind: "range"; readonly range: SlotRange }
-  | { readonly kind: "none" };
-
-function reconciliationSql(
+export function segmentReconciliationSql(
+  range: SlotRange | null,
   surveys: readonly SurveyIndexRow[],
   responses: readonly ResponseRow[],
   cancellations: readonly CancellationRow[],
   meta: SnapshotMeta,
-  sweep: Sweep,
 ): SqlQuery[] {
   const sortedSurveys = [...surveys].sort((a, b) =>
     compareText(a.surveyKey, b.surveyKey),
@@ -456,26 +457,26 @@ function reconciliationSql(
   );
 
   const deletions =
-    sweep.kind === "none"
+    range === null
       ? []
       : [
           ...surveyDeletionSql(
             sortedSurveys.map(({ surveyKey }) => ({ surveyKey })),
-            sweep.kind === "range" ? sweep.range : undefined,
+            range,
           ),
           ...responseDeletionSql(
             sortedResponses.map(({ txHash, responseIndex }) => ({
               txHash,
               responseIndex,
             })),
-            sweep.kind === "range" ? sweep.range : undefined,
+            range,
           ),
           ...cancellationDeletionSql(
             sortedCancellations.map(({ txHash, surveyKey }) => ({
               txHash,
               surveyKey,
             })),
-            sweep.kind === "range" ? sweep.range : undefined,
+            range,
           ),
         ];
 
@@ -498,44 +499,6 @@ function reconciliationSql(
     snapshotMetaUpsertSql(meta),
   ];
 }
-
-/**
- * One atomic reconciliation program for either SQLite adapter. JSON table-valued
- * parameters keep first materialization and large reorgs to bounded set
- * operations rather than one statement per record. The envelope upsert is
- * always the final statement, so a caller counting changed rows can exclude
- * it (freshness moves every run).
- */
-export const snapshotReconciliationSql = (
-  surveys: readonly SurveyIndexRow[],
-  responses: readonly ResponseRow[],
-  cancellations: readonly CancellationRow[],
-  meta: SnapshotMeta,
-): SqlQuery[] =>
-  reconciliationSql(surveys, responses, cancellations, meta, {
-    kind: "everything",
-  });
-
-/**
- * The slot-bounded sibling of {@link snapshotReconciliationSql}: the same
- * upserts, but only rows with slot in `range` are deletion candidates —
- * settled history outside the segment is never swept, however little of the
- * chain one call covers. A null `range` (incomplete scan) sweeps nothing.
- */
-export const segmentReconciliationSql = (
-  range: SlotRange | null,
-  surveys: readonly SurveyIndexRow[],
-  responses: readonly ResponseRow[],
-  cancellations: readonly CancellationRow[],
-  meta: SnapshotMeta,
-): SqlQuery[] =>
-  reconciliationSql(
-    surveys,
-    responses,
-    cancellations,
-    meta,
-    range === null ? { kind: "none" } : { kind: "range", range },
-  );
 
 /** Distinct surveys answered by any of `credentials`. */
 export const respondedSql = (credentials: readonly string[]): SqlQuery => ({
@@ -629,4 +592,3 @@ export const completedValidationsSql = (
       params: [chunk.json],
     }),
   );
-

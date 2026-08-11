@@ -18,6 +18,7 @@ import type {
   ArtifactRow,
   BackendStore,
   SettledGovEpoch,
+  SlotRange,
   ValidatedResponseRow,
   WeightRow,
 } from "../store";
@@ -29,6 +30,12 @@ import {
   validatedFromDb,
   type DbValidatedRow,
 } from "../store-sql";
+
+/** The range admitting every row — how tests seed via `reconcileSegment`. */
+export const ALL_SLOTS: SlotRange = {
+  fromSlot: 0,
+  toSlot: Number.MAX_SAFE_INTEGER,
+};
 
 /** The stored tables tests read back, keyed as their primary keys are. */
 export interface StoredRows {

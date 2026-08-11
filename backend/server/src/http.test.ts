@@ -29,7 +29,7 @@ import type {
 import { loadConfig } from "./config";
 import { createApp, keyedCache } from "./http";
 import { materializeSnapshot } from "./materialize";
-import { testStore, type TestStore } from "./testing/store";
+import { ALL_SLOTS, testStore, type TestStore } from "./testing/store";
 import type { ValidatedResponseRow } from "./store";
 
 function appWith(store: TestStore) {
@@ -47,7 +47,8 @@ async function seed(
     govLinks,
     (await store.finalizedArtifactKeys()).cancelled,
   );
-  await store.reconcileSnapshot(
+  await store.reconcileSegment(
+    ALL_SLOTS,
     snapshot.surveys,
     snapshot.responses,
     snapshot.cancellations,

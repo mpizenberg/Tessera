@@ -34,7 +34,7 @@ import { finalizeClosedSurveys } from "./finalize";
 import { materializeSnapshot } from "./materialize";
 import type { SealedRevealFn } from "./sealedReveal";
 import type { ValidatedResponseRow } from "./store";
-import { testStore, type TestStore } from "./testing/store";
+import { ALL_SLOTS, testStore, type TestStore } from "./testing/store";
 
 // --- fixtures ------------------------------------------------------------------
 
@@ -352,7 +352,8 @@ async function finalizeRecords(
   finalizationFloor = 0,
 ) {
   const snapshot = materializeSnapshot(recs, tip, govLinks, new Set());
-  await store.reconcileSnapshot(
+  await store.reconcileSegment(
+    ALL_SLOTS,
     snapshot.surveys,
     snapshot.responses,
     snapshot.cancellations,

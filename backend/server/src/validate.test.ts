@@ -14,7 +14,7 @@ import {
 } from "cip-179/domain";
 
 import { materializeSnapshot } from "./materialize";
-import { testStore, type TestStore } from "./testing/store";
+import { ALL_SLOTS, testStore, type TestStore } from "./testing/store";
 import { validateNewResponses } from "./validate";
 
 // --- store + fake Koios source -------------------------------------------------
@@ -124,7 +124,8 @@ async function publish(
   links: readonly GovLink[] = [],
 ) {
   const snapshot = materializeSnapshot(recs, TIP, links, new Set());
-  await store.reconcileSnapshot(
+  await store.reconcileSegment(
+    ALL_SLOTS,
     snapshot.surveys,
     snapshot.responses,
     snapshot.cancellations,

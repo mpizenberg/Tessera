@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ResponseRow, SnapshotMeta, SurveyIndexRow } from "./store";
 import { d1BackendStore, type D1Like } from "./store-d1";
+import { ALL_SLOTS } from "./testing/store";
 
 class FakeD1Statement {
   constructor(
@@ -178,7 +179,8 @@ function fakeStore() {
 describe("D1 snapshot reconciliation", () => {
   it("rolls row changes and the envelope back as one generation", async () => {
     const { sqlite, store } = fakeStore();
-    await store.reconcileSnapshot(
+    await store.reconcileSegment(
+      ALL_SLOTS,
       [survey("aa:0"), survey("bb:0")],
       [],
       [],
@@ -191,7 +193,8 @@ describe("D1 snapshot reconciliation", () => {
     `);
 
     await expect(
-      store.reconcileSnapshot(
+      store.reconcileSegment(
+        ALL_SLOTS,
         [survey("aa:0", { slot: 111 }), survey("bb:0", { slot: 999 })],
         [],
         [],
@@ -216,7 +219,8 @@ describe("D1 snapshot reconciliation", () => {
   it("materializes and prunes 10,000 responses in bounded set operations", async () => {
     const { d1, sqlite, store } = fakeStore();
     const responses = Array.from({ length: 10_000 }, (_, n) => response(n));
-    await store.reconcileSnapshot(
+    await store.reconcileSegment(
+      ALL_SLOTS,
       [survey("survey:0", { responseCount: responses.length })],
       responses,
       [],
@@ -230,7 +234,8 @@ describe("D1 snapshot reconciliation", () => {
 
     const removed = new Set([0, 4_999, 5_000, 9_999]);
     const kept = responses.filter((_, n) => !removed.has(n));
-    await store.reconcileSnapshot(
+    await store.reconcileSegment(
+      ALL_SLOTS,
       [survey("survey:0", { responseCount: kept.length })],
       kept,
       [],
@@ -255,7 +260,8 @@ describe("D1 snapshot reconciliation", () => {
   it("sweeps a segment in one bounded batch, sparing rows outside it", async () => {
     const { d1, sqlite, store } = fakeStore();
     const responses = Array.from({ length: 10_000 }, (_, n) => response(n));
-    await store.reconcileSnapshot(
+    await store.reconcileSegment(
+      ALL_SLOTS,
       [survey("survey:0", { slot: 20_000 })],
       responses,
       [],

@@ -59,7 +59,6 @@ import {
   responsesBySurveysSql,
   segmentReconciliationSql,
   snapshotMetaUpsertSql,
-  snapshotReconciliationSql,
   surveyCountsSql,
   surveyPageSql,
   surveysByKeysSql,
@@ -737,18 +736,6 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       );
     },
 
-    async reconcileSnapshot(
-      surveys: readonly SurveyIndexRow[],
-      responses: readonly ResponseRow[],
-      cancellations: readonly CancellationRow[],
-      meta: SnapshotMeta,
-    ): Promise<void> {
-      // One transaction: row diffs and their freshness envelope become visible
-      // together, or the previous generation remains intact.
-      await db.batchWrite(
-        snapshotReconciliationSql(surveys, responses, cancellations, meta),
-      );
-    },
     async publishSnapshotMeta(meta: SnapshotMeta): Promise<void> {
       await write(snapshotMetaUpsertSql(meta));
     },
