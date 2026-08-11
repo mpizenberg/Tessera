@@ -5,7 +5,7 @@ import { AppProvider } from "~/state";
 import { DirectModeBanner } from "~/ui/components/DirectModeBanner";
 import { Header } from "~/ui/components/Header";
 import { LoadError } from "~/ui/components/LoadError";
-import { Explore } from "~/ui/screens/Explore";
+import { Explore } from "~/ui/explore";
 import { Survey } from "~/ui/screens/Survey";
 import { Respond } from "~/ui/respond";
 import { Create } from "~/ui/create";
