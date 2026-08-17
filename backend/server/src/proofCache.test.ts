@@ -89,16 +89,13 @@ const records = (r: Partial<Cip179Records>): Cip179Records => ({
  * deletion round-trips, so a test can tell "deleted nothing" from "asked the
  * database to delete nothing".
  */
-function fakeCache(banked: readonly string[]) {
+function fakeCache() {
   const deleted = new Set<string>();
   let calls = 0;
   return {
     deleted,
     get calls() {
       return calls;
-    },
-    async cachedTxProofHashes() {
-      return banked;
     },
     async deleteTxProofCbor(txHashes: readonly string[]) {
       calls += 1;
@@ -136,14 +133,13 @@ async function prune(
       createdAt: 1,
     });
   }
-  const cache = fakeCache(banked);
+  await mem.putTxProofCbor(new Map(banked.map((h) => [h, "cbor"])));
+  const cache = fakeCache();
   await pruneTxProofCache(
     {
-      surveyRowsEndingAtOrAfter: (e) => mem.surveyRowsEndingAtOrAfter(e),
-      responseTxHashesForSurveys: (keys) =>
-        mem.responseTxHashesForSurveys(keys),
+      surveyKeysEndingAtOrAfter: (e) => mem.surveyKeysEndingAtOrAfter(e),
       artifactKeysFor: (keys) => mem.artifactKeysFor(keys),
-      cachedTxProofHashes: cache.cachedTxProofHashes,
+      unclaimedTxProofHashes: (live) => mem.unclaimedTxProofHashes(live),
       deleteTxProofCbor: cache.deleteTxProofCbor,
     },
     recs.incomplete === true,

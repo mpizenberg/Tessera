@@ -7,11 +7,14 @@
  * surveys, and finalization asks once, on the way to freezing an artifact.
  *
  * The sweep runs over *the cache's own keys*, keeping those a live survey still
- * bears on. The live surveys and their transactions come from the stored rows,
- * read within the end-epoch horizon — bounded by the open set, not by the
- * survey archive, so the sweep never re-deletes long-dead hashes refresh after
- * refresh. Over-deleting only ever costs a re-fetch, so the policy may be as
- * blunt as it likes; under-deleting is the permanent mistake.
+ * bears on. The live surveys come from the stored rows within the end-epoch
+ * horizon, and whether a banked hash is theirs is decided in the database, one
+ * seek per hash — bounded by the open set and the cache, not by the survey
+ * archive or by how many responses a live survey has, so the sweep never
+ * re-deletes long-dead hashes refresh after refresh nor re-reads a busy
+ * survey's responses to keep them. Over-deleting only ever costs a re-fetch,
+ * so the policy may be as blunt as it likes; under-deleting is the permanent
+ * mistake.
  */
 
 import type { ChainTip } from "cip-179/domain";
@@ -42,42 +45,20 @@ const PROOF_GRACE_EPOCHS = 5;
  * every refresh, so a run that dies before pruning loses nothing.
  */
 export async function pruneTxProofCache(
-  store: Pick<
-    SnapshotStore,
-    "surveyRowsEndingAtOrAfter" | "responseTxHashesForSurveys"
-  > &
+  store: Pick<SnapshotStore, "surveyKeysEndingAtOrAfter"> &
     Pick<TallyStore, "artifactKeysFor"> &
-    Pick<ScanCacheStore, "cachedTxProofHashes" | "deleteTxProofCbor">,
+    Pick<ScanCacheStore, "unclaimedTxProofHashes" | "deleteTxProofCbor">,
   incomplete: boolean,
   tip: ChainTip,
 ): Promise<void> {
   if (incomplete) return;
 
-  const recent = await store.surveyRowsEndingAtOrAfter(
+  const recent = await store.surveyKeysEndingAtOrAfter(
     tip.epoch - PROOF_GRACE_EPOCHS,
   );
-  const { finalized } = await store.artifactKeysFor(
-    recent.map((r) => r.surveyKey),
-  );
-  const live = recent.filter((r) => !finalized.has(r.surveyKey));
-
-  // The wire JSON keeps every tx hash as a plain hex string, so the keep set
-  // is read without reviving the full records.
-  const keep = new Set<string>();
-  for (const row of live) {
-    keep.add((JSON.parse(row.record) as { txHash: string }).txHash);
-    for (const c of JSON.parse(row.cancellations) as { txHash: string }[]) {
-      keep.add(c.txHash);
-    }
-  }
-  for (const txHash of await store.responseTxHashesForSurveys(
-    live.map((row) => row.surveyKey),
-  )) {
-    keep.add(txHash);
-  }
-
-  const hashes = (await store.cachedTxProofHashes()).filter(
-    (h) => !keep.has(h),
+  const { finalized } = await store.artifactKeysFor(recent);
+  const hashes = await store.unclaimedTxProofHashes(
+    recent.filter((key) => !finalized.has(key)),
   );
   if (hashes.length === 0) return;
   await store.deleteTxProofCbor(hashes);

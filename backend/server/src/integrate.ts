@@ -43,6 +43,7 @@ import type {
   SlotRange,
   SnapshotMeta,
   SnapshotStore,
+  StoredResponse,
   TallyStore,
 } from "./store";
 import { responseIdentityKey, validationKey } from "./store";
@@ -50,7 +51,7 @@ import { responseIdentityKey, validationKey } from "./store";
 /** The stored-row reads and the one write a segment integration performs. */
 export type IntegrateStore = Pick<
   SnapshotStore,
-  | "responseRowsInSlotRange"
+  | "responsesInSlotRange"
   | "cancellationRowsInSlotRange"
   | "cancellationRowsForSurveys"
   | "responseIdentitiesFrom"
@@ -134,7 +135,7 @@ export async function integrateSegment(
 
   // A stored row in the swept range that the segment listing lacks is about
   // to be deleted — a rollback — and its survey's aggregates must shed it.
-  const preResponses = range ? await store.responseRowsInSlotRange(range) : [];
+  const preResponses = range ? await store.responsesInSlotRange(range) : [];
   const preCancels = range
     ? await store.cancellationRowsInSlotRange(range)
     : [];
@@ -339,7 +340,7 @@ async function responderCounts(
   touchedKeys: readonly string[],
   segmentRows: readonly ResponseRow[],
   range: SlotRange | null,
-  storedInRange: readonly ResponseRow[],
+  storedInRange: readonly StoredResponse[],
   settledBelowSlot: number,
 ): Promise<{
   countByKey: Record<string, number>;
@@ -360,15 +361,16 @@ async function responderCounts(
   };
   const segmentBySurvey = bySurvey(segmentRows);
   const storedBySurvey = bySurvey(storedInRange);
-  const rowKey = (r: ResponseRow): string =>
+  const rowKey = (r: StoredResponse): string =>
     validationKey(r.txHash, r.responseIndex);
 
   // The lowest slot at which this integration changes a survey's response
-  // set: a segment row that is new or differs from its stored counterpart
-  // (at either position), or a stored in-range row the segment no longer
-  // lists (about to be swept). Infinity when nothing moves. With no swept
-  // range the stored counterparts are unknown, so any segment row for the
-  // survey counts as a change from the bottom.
+  // set: a segment row that is new or sits at another slot than its stored
+  // counterpart (a response is content-addressed, so only its position can
+  // differ — at either position), or a stored in-range row the segment no
+  // longer lists (about to be swept). Infinity when nothing moves. With no
+  // swept range the stored counterparts are unknown, so any segment row for
+  // the survey counts as a change from the bottom.
   const lowestChange = (key: string): number => {
     const segment = segmentBySurvey.get(key) ?? [];
     if (range === null) return segment.length > 0 ? 0 : Infinity;
@@ -380,7 +382,7 @@ async function responderCounts(
     for (const r of segment) {
       const before = stored.get(rowKey(r));
       if (before === undefined) lowest = Math.min(lowest, r.slot);
-      else if (before.record !== r.record)
+      else if (before.slot !== r.slot)
         lowest = Math.min(lowest, r.slot, before.slot);
     }
     for (const [k, r] of stored)

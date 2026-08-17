@@ -290,12 +290,8 @@ async function expectOracleMatch(
         (a.txHash < b.txHash ? -1 : a.txHash > b.txHash ? 1 : 0) ||
         (a.surveyKey < b.surveyKey ? -1 : 1),
     );
-  expect(bySurveyKey(await store.surveyRowsEndingAtOrAfter(0))).toEqual(
-    bySurveyKey(oracle.surveys),
-  );
-  expect(byTx(await store.responseRowsInSlotRange(ALL_SLOTS))).toEqual(
-    byTx(oracle.responses),
-  );
+  expect(bySurveyKey(store.surveyRows)).toEqual(bySurveyKey(oracle.surveys));
+  expect(byTx(store.responseRows)).toEqual(byTx(oracle.responses));
   expect(byTx(await store.cancellationRowsInSlotRange(ALL_SLOTS))).toEqual(
     byTx(oracle.cancellations),
   );
@@ -441,14 +437,12 @@ describe("segment integration vs the full-rebuild oracle", () => {
       cancellationAt(2, 160, chain.surveys[0]!, signerProof(3)),
     );
     await runRefresh(store, chain, tipAt(200));
-    expect((await store.surveyRowsEndingAtOrAfter(0))[0]!.cancelled).toBe(true);
+    expect(store.surveyRows[0]!.cancelled).toBe(true);
 
     // Two epochs later, nothing on-chain moved: the flag must expire…
     await runRefresh(store, chain, tipAt(450));
     await expectOracleMatch(store, chain, tipAt(450));
-    expect((await store.surveyRowsEndingAtOrAfter(0))[0]!.cancelled).toBe(
-      false,
-    );
+    expect(store.surveyRows[0]!.cancelled).toBe(false);
 
     // …until the finalized artifact carries it past close for good.
     chain.finalizedCancelled.add(refKey(chain.surveys[0]!.ref));
@@ -474,7 +468,7 @@ describe("segment integration mechanics", () => {
     // Far past the survey's slot: the segment no longer carries it.
     chain.govLinks.push(govLinkTo(chain.surveys[0]!, "gov_action1new"));
     await runRefresh(store, chain, tipAt(600));
-    const row = (await store.surveyRowsEndingAtOrAfter(0))[0]!;
+    const row = store.surveyRows[0]!;
     expect(row.govLinked).toBe(true);
     expect(row.haystack).toContain("gov_action1new");
     await expectOracleMatch(store, chain, tipAt(600));
@@ -508,14 +502,14 @@ describe("segment integration mechanics", () => {
     // While the survey is open its epoch is in the query set, so the link
     // lands in its row.
     await runRefresh(store, chain, tipAt(150));
-    expect((await store.surveyRowsEndingAtOrAfter(0))[0]!.govLinked).toBe(true);
+    expect(store.surveyRows[0]!.govLinked).toBe(true);
 
     // Epochs later the frontier has moved past it: nothing asks about that
     // epoch again, and a late response re-projects the survey from scratch.
     // The row's own slice is the only copy left, and it must survive.
     chain.responses.push(responseAt(2, 990, chain.surveys[0]!, 10));
     await runRefresh(store, chain, tipAt(1000));
-    const row = (await store.surveyRowsEndingAtOrAfter(0))[0]!;
+    const row = store.surveyRows[0]!;
     expect(row.govLinked).toBe(true);
     expect(row.govLinks).toContain("gov_action1settled");
     await expectOracleMatch(store, chain, tipAt(1000));
@@ -545,7 +539,7 @@ describe("segment integration mechanics", () => {
       meta: metaAt(tipAt(600)),
     });
     expect(source.txProofs).toHaveBeenCalledOnce();
-    const row = (await store.surveyRowsEndingAtOrAfter(0))[0]!;
+    const row = store.surveyRows[0]!;
     expect(row.cancelled).toBe(true);
     expect(row.cancellations).toContain("requiredSigners");
   });
@@ -564,14 +558,14 @@ describe("segment integration mechanics", () => {
     // First: integrate the response's own region, then the survey's.
     await runRefresh(store, chain, tipAt(150));
     await runRefresh(store, chain, tipAt(550));
-    expect(await store.surveyRowsEndingAtOrAfter(0)).toHaveLength(1);
+    expect(store.surveyRows).toHaveLength(1);
 
     // The defining tx rolls back while its slot is still in the window. The
     // stored response outside the window puts the survey on the touched list;
     // its stored definition must not win over the sweep.
     chain.surveys = [];
     await runRefresh(store, chain, tipAt(560));
-    expect(await store.surveyRowsEndingAtOrAfter(0)).toEqual([]);
+    expect(store.surveyRows).toEqual([]);
     // The out-of-window response row survives as an orphan — exactly what the
     // full rebuild produces from the same records.
     await expectOracleMatch(store, chain, tipAt(560));
@@ -593,8 +587,7 @@ describe("segment integration mechanics", () => {
       finalizedCancelled: new Set(),
     };
     const bank = async () => (await store.responseCountBanks([key])).get(key);
-    const count = async () =>
-      (await store.surveyRowsEndingAtOrAfter(0))[0]!.responseCount;
+    const count = async () => store.surveyRows[0]!.responseCount;
 
     await runRefresh(store, chain, tipAt(200));
     expect(await count()).toBe(2);
@@ -660,7 +653,7 @@ describe("segment integration mechanics", () => {
     const store = testStore();
     const chain = seedChain();
     await runRefresh(store, chain, tipAt(200));
-    const stored = (await store.surveyRowsEndingAtOrAfter(0))[0]!;
+    const stored = store.surveyRows[0]!;
 
     // A count no derivation would produce — the silent divergence only a
     // re-derivation over the settled prefix can find.
@@ -718,7 +711,7 @@ describe("segment integration mechanics", () => {
       [],
       metaAt(tipAt(150)),
     );
-    expect(await store.surveyRowsEndingAtOrAfter(0)).toEqual([]);
+    expect(store.surveyRows).toEqual([]);
 
     const tip = tipAt(1000);
     await integrateSegment(store, emptySource, {
@@ -729,7 +722,7 @@ describe("segment integration mechanics", () => {
       settledBelowSlot: 0,
       meta: metaAt(tip),
     });
-    const row = (await store.surveyRowsEndingAtOrAfter(0))[0]!;
+    const row = store.surveyRows[0]!;
     expect(row.responseCount).toBe(1);
     expect(row.govLinked).toBe(true);
     expect(row.govLinks).toContain("gov_action1lost");
@@ -755,9 +748,7 @@ describe("segment integration mechanics", () => {
       settledBelowSlot: 0,
       meta: { ...metaAt(tipAt(210)), incomplete: true },
     });
-    expect(await store.surveyRowsEndingAtOrAfter(0)).toHaveLength(1);
-    expect(
-      await store.responseRowsInSlotRange({ fromSlot: 0, toSlot: 10_000 }),
-    ).toHaveLength(1);
+    expect(store.surveyRows).toHaveLength(1);
+    expect(store.responseRows).toHaveLength(1);
   });
 });

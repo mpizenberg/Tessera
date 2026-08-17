@@ -149,10 +149,15 @@ function nodeDriver(db: DatabaseSync): SqlDriver {
   };
 }
 
+/** Migrate `db` and drive SQL through it. The caller owns the handle. */
+export function nodeSqlDriver(db: DatabaseSync): SqlDriver {
+  applyMigrations(db);
+  return nodeDriver(db);
+}
+
 /** Migrate `db` and serve the store from it. The caller owns the handle. */
 export function nodeBackendStore(db: DatabaseSync): BackendStore {
-  applyMigrations(db);
-  return sqlBackendStore(nodeDriver(db));
+  return sqlBackendStore(nodeSqlDriver(db));
 }
 
 export function openBackendStore(path: string): BackendStore {

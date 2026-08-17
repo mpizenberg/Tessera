@@ -17,8 +17,10 @@ import type { GovLinkDoc } from "cip-179/domain";
 import type {
   ArtifactRow,
   BackendStore,
+  ResponseRow,
   SettledGovEpoch,
   SlotRange,
+  SurveyIndexRow,
   ValidatedResponseRow,
   WeightRow,
 } from "../store";
@@ -27,9 +29,12 @@ import { nodeBackendStore } from "../store-node";
 import {
   ARTIFACT_COLUMNS,
   VALIDATED_COLUMNS,
+  surveyRowFromDb,
   validatedFromDb,
+  type DbSurveyRow,
   type DbValidatedRow,
 } from "../store-sql";
+import { RESPONSE_ROW_COLUMNS, SURVEY_ROW_COLUMNS } from "../sqlBuilders";
 
 /** The range admitting every row — how tests seed via `reconcileSegment`. */
 export const ALL_SLOTS: SlotRange = {
@@ -39,6 +44,10 @@ export const ALL_SLOTS: SlotRange = {
 
 /** The stored tables tests read back, keyed as their primary keys are. */
 export interface StoredRows {
+  /** Every materialized survey row, whole. */
+  readonly surveyRows: SurveyIndexRow[];
+  /** Every materialized response row, whole. */
+  readonly responseRows: ResponseRow[];
   readonly validated: Map<string, ValidatedResponseRow>;
   readonly weights: Map<string, WeightRow>;
   readonly artifacts: Map<string, ArtifactRow>;
@@ -58,6 +67,14 @@ export function testStore(): TestStore {
 
   return Object.defineProperties(store, {
     db: { value: db },
+    surveyRows: view(() =>
+      rows<DbSurveyRow>(`SELECT ${SURVEY_ROW_COLUMNS} FROM survey_index`).map(
+        surveyRowFromDb,
+      ),
+    ),
+    responseRows: view(() =>
+      rows<ResponseRow>(`SELECT ${RESPONSE_ROW_COLUMNS} FROM response`),
+    ),
     validated: view(
       () =>
         new Map(

@@ -63,9 +63,9 @@ export type ValidateStore = TallyStore &
  * stored rows are authoritative for both halves of what a verdict is built
  * against: the survey's definition and its governance links (a survey with no
  * row anywhere has rolled back and must not be validated against). Completed
- * verdicts are then read keyed by exactly the candidate surveys, so
- * validation's reads scale with what this refresh touches rather than with
- * every verdict ever recorded.
+ * verdicts are then read keyed by exactly the pool's transactions, so
+ * validation's reads scale with the responses in front of it rather than with
+ * every verdict ever recorded — or with every verdict a busy survey holds.
  *
  * A bindable role's *negative* verdict is never frozen while a link it might
  * depend on is unknown (finding 6). Two flavours of "unknown", both left as a
@@ -162,11 +162,9 @@ export async function validateNewResponses(
     .filter((r) => !inputKeys.has(validationKey(r.txHash, r.responseIndex)));
   const pool = [...responses, ...revived];
 
-  const completed = await store.completedValidationsForSurveys(
-    [...new Set(pool.map((r) => refKey(r.response.surveyRef)))].filter((key) =>
-      defByKey.has(key),
-    ),
-  );
+  const completed = await store.completedValidationsForTxs([
+    ...new Set(pool.map((r) => r.txHash)),
+  ]);
   const candidates = pool.filter((r) => {
     // Resolve the survey first: a response whose ref isn't in this snapshot
     // (nonexistent survey, or one older than the scan floor) can never be

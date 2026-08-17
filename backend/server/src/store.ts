@@ -160,14 +160,14 @@ export interface CompletedValidation {
 /** Tally persistence (ARCHITECTURE.md §6.2), same database. */
 export interface TallyStore {
   /**
-   * The given surveys' rows needing no enrichment retry (both `blockIndex` and
-   * `proofOk` present), keyed by {@link validationKey}. A refresh skips these
-   * unless what they were decided against has moved since. Keyed by survey so
-   * validation reads only its candidates' verdicts, not every verdict ever
-   * recorded.
+   * The given transactions' rows needing no enrichment retry (both
+   * `blockIndex` and `proofOk` present), keyed by {@link validationKey}. A
+   * refresh skips these unless what they were decided against has moved
+   * since. Keyed by transaction so validation reads only the verdicts of the
+   * responses in front of it — never a whole survey's, however many it has.
    */
-  completedValidationsForSurveys(
-    surveyKeys: readonly string[],
+  completedValidationsForTxs(
+    txHashes: readonly string[],
   ): Promise<Map<string, CompletedValidation>>;
   /**
    * Distinct link-set cursors pinned by completed bindable-role verdicts of
@@ -284,10 +284,15 @@ export interface ScanCacheStore {
   /** Persist fetched tx CBOR (insert-or-ignore). */
   putTxProofCbor(entries: ReadonlyMap<string, string>): Promise<void>;
   /**
-   * Every banked tx hash. The prune's candidate set, which is what keeps its
-   * cost proportional to the cache rather than to the survey archive.
+   * The banked tx hashes that no live survey bears on: not a definition, a
+   * cancellation or a response of any of `liveSurveyKeys` — the prune's drop
+   * set, decided in the database by one seek per banked hash against each of
+   * the three tables, so the cost is the cache's size plus the live set's,
+   * never the archive's.
    */
-  cachedTxProofHashes(): Promise<readonly string[]>;
+  unclaimedTxProofHashes(
+    liveSurveyKeys: readonly string[],
+  ): Promise<readonly string[]>;
   /** Drop cached CBOR no live survey bears on any more. */
   deleteTxProofCbor(txHashes: readonly string[]): Promise<void>;
 }
@@ -591,6 +596,9 @@ export interface ResponseRow {
   readonly record: string;
 }
 
+/** A stored response's coordinates and identity, without its record. */
+export type StoredResponse = Omit<ResponseRow, "record">;
+
 /**
  * A response's identity key and chain position, without its record — what a
  * responder count reads. `role` and `credential` together are the key CIP-179
@@ -834,16 +842,11 @@ export interface SnapshotStore {
   surveyRowsByKeys(keys: readonly string[]): Promise<SurveyIndexRow[]>;
   /**
    * Every stored response of the given surveys, records included — what
-   * finalization tallies and validation revives. Not a count or a keep-set
-   * input: those read identities and tx hashes from the indexes.
+   * finalization tallies and validation revives. Not a count input: a
+   * survey's responder count reads identities from the index.
    */
   responseRowsForSurveys(surveyKeys: readonly string[]): Promise<ResponseRow[]>;
-  /**
-   * The distinct transaction hashes carrying any of the given surveys'
-   * stored responses — the proof-cache prune's keep set, read from the
-   * per-survey index without touching a record.
-   */
-  responseTxHashesForSurveys(surveyKeys: readonly string[]): Promise<string[]>;
+
   /**
    * The identity keys of the given surveys' stored responses at or above each
    * survey's own `fromSlot`, in no particular order — a recount's stored
@@ -871,11 +874,12 @@ export interface SnapshotStore {
     surveyKeys: readonly string[],
   ): Promise<Map<string, ResponseCountBank>>;
   /**
-   * The stored responses with slot in `range` — the pre-sweep window state.
-   * Read before {@link reconcileSegment}: a row here that the segment listing
-   * lacks is about to be swept, and its survey needs a recount.
+   * The stored responses with slot in `range`, records excluded — the
+   * pre-sweep window state. Read before {@link reconcileSegment}: a row here
+   * that the segment listing lacks is about to be swept, and its survey needs
+   * a recount; a row whose slot differs from the listing's has moved.
    */
-  responseRowsInSlotRange(range: SlotRange): Promise<ResponseRow[]>;
+  responsesInSlotRange(range: SlotRange): Promise<StoredResponse[]>;
   /**
    * Every stored cancellation of the given surveys — a touched survey's
    * `cancellations` projection is rebuilt over these merged with the
@@ -920,11 +924,11 @@ export interface SnapshotStore {
     tipEpoch: number,
   ): Promise<SurveyIndexRow[]>;
   /**
-   * Stored surveys with `end_epoch >= minEndEpoch`, in key order — the open
-   * set plus however many epochs of recent closers the caller's horizon
-   * covers (the proof-cache prune's live candidates).
+   * Keys of the stored surveys with `end_epoch >= minEndEpoch` — the open set
+   * plus however many epochs of recent closers the caller's horizon covers
+   * (the proof-cache prune's live candidates).
    */
-  surveyRowsEndingAtOrAfter(minEndEpoch: number): Promise<SurveyIndexRow[]>;
+  surveyKeysEndingAtOrAfter(minEndEpoch: number): Promise<string[]>;
   close(): void;
 }
 

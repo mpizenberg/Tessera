@@ -26,6 +26,7 @@ import type {
   ResponseIdentity,
   ResponseRow,
   ScanState,
+  StoredResponse,
   SealedRevealRow,
   SettledGovEpoch,
   SlotRange,
@@ -52,7 +53,7 @@ import {
 } from "./store";
 import {
   CANCELLATION_ROW_COLUMNS,
-  RESPONSE_ROW_COLUMNS,
+  STORED_RESPONSE_COLUMNS,
   SURVEY_ROW_COLUMNS,
   artifactKeysSql,
   cachedByTxHashSql,
@@ -63,10 +64,10 @@ import {
   respondedSql,
   responseCountBanksSql,
   responseIdentitiesSql,
-  responseTxHashesSql,
   responsesBySurveysSql,
   segmentReconciliationSql,
   settledResponseKeysSql,
+  unclaimedTxProofHashesSql,
   snapshotMetaUpsertSql,
   surveyCountsSql,
   surveyPageSql,
@@ -233,11 +234,10 @@ const FINALIZATION_FLOOR_UPDATE = `
 const FINALIZATION_FLOOR_SELECT = `
   SELECT finalization_floor AS finalizationFloor FROM scan_state WHERE id = 1`;
 
-/** The window's stored responses, in scan order. Binds: (fromSlot, toSlot). */
+/** The window's stored responses, records excluded. Binds: (fromSlot, toSlot). */
 const RESPONSES_IN_SLOT_RANGE = `
-  SELECT ${RESPONSE_ROW_COLUMNS} FROM response
-  WHERE slot BETWEEN ? AND ?
-  ORDER BY slot, tx_hash, response_index`;
+  SELECT ${STORED_RESPONSE_COLUMNS} FROM response
+  WHERE slot BETWEEN ? AND ?`;
 
 /** The window's stored cancellations. Binds: (fromSlot, toSlot). */
 const CANCELLATIONS_IN_SLOT_RANGE = `
@@ -275,14 +275,18 @@ const UNFINALIZED_CLOSED_SURVEYS = `
       SELECT survey_key FROM tally_artifact WHERE end_epoch >= ?)
   ORDER BY survey_key`;
 
-/** Surveys still inside a caller's end-epoch horizon. Binds: (minEndEpoch). */
-const SURVEYS_ENDING_AT_OR_AFTER = `
-  SELECT ${SURVEY_ROW_COLUMNS} FROM survey_index
-  WHERE end_epoch >= ?
-  ORDER BY survey_key`;
+/**
+ * Keys of the surveys still inside a caller's end-epoch horizon. Deliberately
+ * unordered: with an `ORDER BY survey_key` the planner (which has no
+ * statistics on D1) walks the whole primary key instead of seeking
+ * `survey_index_end_epoch`, turning a horizon-bounded read into a scan of the
+ * archive. Binds: (minEndEpoch).
+ */
+const SURVEY_KEYS_ENDING_AT_OR_AFTER = `
+  SELECT survey_key AS surveyKey FROM survey_index WHERE end_epoch >= ?`;
 
 /** As stored: booleans are 0/1 integers. */
-interface DbSurveyRow extends Omit<
+export interface DbSurveyRow extends Omit<
   SurveyIndexRow,
   "sealed" | "cancelled" | "govLinked" | "finalizedCancelled"
 > {
@@ -297,7 +301,7 @@ interface DbSurveyIndexRow extends DbSurveyRow {
   readonly bucket: number;
 }
 
-const surveyRowFromDb = (r: DbSurveyRow): SurveyIndexRow => ({
+export const surveyRowFromDb = (r: DbSurveyRow): SurveyIndexRow => ({
   ...r,
   sealed: r.sealed !== 0,
   cancelled: r.cancelled !== 0,
@@ -356,14 +360,14 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
   };
 
   return {
-    async completedValidationsForSurveys(
-      surveyKeys: readonly string[],
+    async completedValidationsForTxs(
+      txHashes: readonly string[],
     ): Promise<Map<string, CompletedValidation>> {
       const out = new Map<string, CompletedValidation>();
-      if (surveyKeys.length === 0) return out;
+      if (txHashes.length === 0) return out;
       const batches = await db.batchAll<
         { txHash: string; responseIndex: number } & CompletedValidation
-      >(completedValidationsSql(surveyKeys));
+      >(completedValidationsSql(txHashes));
       for (const rows of batches) {
         for (const r of rows)
           out.set(validationKey(r.txHash, r.responseIndex), {
@@ -650,11 +654,24 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
         ),
       );
     },
-    async cachedTxProofHashes(): Promise<readonly string[]> {
-      const rows = await db.all<{ txHash: string }>(
-        query("SELECT tx_hash AS txHash FROM tx_proof_cache"),
+    async unclaimedTxProofHashes(
+      liveSurveyKeys: readonly string[],
+    ): Promise<readonly string[]> {
+      // No live survey claims anything: probe against a key nothing matches,
+      // so every banked hash comes back (an empty key list would build no
+      // statement and drop nothing).
+      const batches = await db.batchAll<{ txHash: string }>(
+        unclaimedTxProofHashesSql(
+          liveSurveyKeys.length > 0 ? liveSurveyKeys : [""],
+        ),
       );
-      return rows.map((r) => r.txHash);
+      // Unclaimed by every chunk of the live set.
+      const perChunk = batches.map(
+        (rows) => new Set(rows.map((r) => r.txHash)),
+      );
+      return [...(perChunk[0] ?? [])].filter((h) =>
+        perChunk.every((chunk) => chunk.has(h)),
+      );
     },
     async deleteTxProofCbor(txHashes: readonly string[]): Promise<void> {
       await db.batchWrite(
@@ -872,15 +889,6 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       );
       return batches.flat();
     },
-    async responseTxHashesForSurveys(
-      surveyKeys: readonly string[],
-    ): Promise<string[]> {
-      if (surveyKeys.length === 0) return [];
-      const batches = await db.batchAll<{ txHash: string }>(
-        responseTxHashesSql(surveyKeys),
-      );
-      return batches.flat().map((r) => r.txHash);
-    },
     async responseIdentitiesFrom(
       requests: readonly { surveyKey: string; fromSlot: number }[],
     ): Promise<ResponseIdentity[]> {
@@ -928,8 +936,8 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       );
       return new Map(batches.flat().map((b) => [b.surveyKey, b]));
     },
-    async responseRowsInSlotRange(range: SlotRange): Promise<ResponseRow[]> {
-      return db.all<ResponseRow>(
+    async responsesInSlotRange(range: SlotRange): Promise<StoredResponse[]> {
+      return db.all<StoredResponse>(
         query(RESPONSES_IN_SLOT_RANGE, range.fromSlot, range.toSlot),
       );
     },
@@ -979,13 +987,11 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       );
       return rows.map(surveyRowFromDb);
     },
-    async surveyRowsEndingAtOrAfter(
-      minEndEpoch: number,
-    ): Promise<SurveyIndexRow[]> {
-      const rows = await db.all<DbSurveyRow>(
-        query(SURVEYS_ENDING_AT_OR_AFTER, minEndEpoch),
+    async surveyKeysEndingAtOrAfter(minEndEpoch: number): Promise<string[]> {
+      const rows = await db.all<{ surveyKey: string }>(
+        query(SURVEY_KEYS_ENDING_AT_OR_AFTER, minEndEpoch),
       );
-      return rows.map(surveyRowFromDb);
+      return rows.map((r) => r.surveyKey);
     },
 
     async putRefreshRun(row: RefreshRunRow): Promise<void> {

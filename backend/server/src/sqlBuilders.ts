@@ -539,9 +539,11 @@ export const SURVEY_ROW_COLUMNS = `survey_key AS surveyKey, slot,
        response_count AS responseCount,
        finalized_cancelled AS finalizedCancelled`;
 
-export const RESPONSE_ROW_COLUMNS = `tx_hash AS txHash,
+export const STORED_RESPONSE_COLUMNS = `tx_hash AS txHash,
        response_index AS responseIndex, survey_key AS surveyKey, role,
-       credential, slot, record`;
+       credential, slot`;
+
+export const RESPONSE_ROW_COLUMNS = `${STORED_RESPONSE_COLUMNS}, record`;
 
 /**
  * A keyed read: `sql` once per chunk of keys, each chunk bound as one JSON
@@ -563,16 +565,6 @@ export const surveysByKeysSql = (keys: readonly string[]): SqlQuery[] =>
      WHERE survey_key IN ${KEYS}
      ORDER BY survey_key`,
     keys,
-  );
-
-/** The transactions carrying the given surveys' responses (covered by `response_survey`). */
-export const responseTxHashesSql = (
-  surveyKeys: readonly string[],
-): SqlQuery[] =>
-  byKeysSql(
-    `SELECT DISTINCT tx_hash AS txHash FROM response
-     WHERE survey_key IN ${KEYS}`,
-    surveyKeys,
   );
 
 /** All stored responses of the given surveys, records included. */
@@ -612,20 +604,49 @@ export const markFinalizedCancelledSql = (
 
 /**
  * Completed validation verdicts (both enrichments present) of the given
- * surveys, keyed so a windowed refresh reads only the corner of the table its
- * candidates touch instead of every verdict ever recorded.
+ * transactions — a primary-key seek per hash, so validation reads the
+ * verdicts of the responses in front of it and nothing else.
  */
 export const completedValidationsSql = (
-  surveyKeys: readonly string[],
+  txHashes: readonly string[],
 ): SqlQuery[] =>
   byKeysSql(
     `SELECT tx_hash AS txHash, response_index AS responseIndex,
             linked_action_id AS linkedActionId, slot, epoch_no AS epochNo
      FROM validated_response
-     WHERE survey_key IN ${KEYS}
+     WHERE tx_hash IN ${KEYS}
        AND block_index IS NOT NULL AND proof_ok IS NOT NULL`,
-    surveyKeys,
+    txHashes,
   );
+
+/**
+ * Banked proof transactions no live survey bears on. Each banked hash is
+ * probed against the three tables that could claim it — a survey key is
+ * "<txHash>:<index>", so a definition is a prefix seek on the primary key —
+ * and the live set rides as one JSON array, bound once per probe. Chunked
+ * over the live keys: a hash is unclaimed only if every chunk says so.
+ */
+export const unclaimedTxProofHashesSql = (
+  liveSurveyKeys: readonly string[],
+): SqlQuery[] =>
+  jsonChunks(
+    [...liveSurveyKeys].sort(compareText),
+    SNAPSHOT_KEYS_PER_CHUNK,
+  ).map((chunk) => ({
+    sql: `SELECT c.tx_hash AS txHash FROM tx_proof_cache c
+            WHERE NOT EXISTS (
+                SELECT 1 FROM response r
+                WHERE r.tx_hash = c.tx_hash AND r.survey_key IN ${KEYS})
+              AND NOT EXISTS (
+                SELECT 1 FROM cancellation x
+                WHERE x.tx_hash = c.tx_hash AND x.survey_key IN ${KEYS})
+              AND NOT EXISTS (
+                SELECT 1 FROM survey_index s
+                WHERE s.survey_key >= c.tx_hash || ':'
+                  AND s.survey_key < c.tx_hash || ';'
+                  AND s.survey_key IN ${KEYS})`,
+    params: [chunk.json, chunk.json, chunk.json],
+  }));
 
 /**
  * The artifact key sets restricted to the given surveys: which of them hold

@@ -283,7 +283,7 @@ describe("GET /api/surveys", () => {
     ) as Record<string, unknown>;
     expect(body["govLinks"]).toEqual([govLinkA]);
     expect(body["counts"]).toEqual(linked["counts"]);
-    const stored = await store.surveyRowsEndingAtOrAfter(0);
+    const stored = store.surveyRows;
     expect(stored.map((r) => [r.surveyKey, r.govLinked])).toEqual([
       [`${TX_A}:0`, true],
       [`${TX_B}:1`, false],
