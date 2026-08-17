@@ -1,6 +1,6 @@
 {
   "name": "cardano-tessera-respond",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "The embeddable <tessera-respond> custom element: renders the CIP-179 answering UI from a survey definition + responder identity, validates and (for sealed surveys) timelock-encrypts in-widget, and emits a ready-to-attach label-17 payload back to the host. Framework-agnostic; wallets, chain reads, and submission stay host-side.",
   "type": "module",
   "license": "Apache-2.0",
