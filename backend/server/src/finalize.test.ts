@@ -357,6 +357,7 @@ async function finalizeRecords(
     snapshot.surveys,
     snapshot.responses,
     snapshot.cancellations,
+    [],
     { tip: "{}", incomplete: false, fetchedAt: 1, listCounts: null },
   );
   // A caught-up cursor: the covered prefix reaches the wall clock, so the

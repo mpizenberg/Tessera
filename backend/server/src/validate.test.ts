@@ -129,6 +129,7 @@ async function publish(
     snapshot.surveys,
     snapshot.responses,
     snapshot.cancellations,
+    [],
     { tip: "{}", incomplete: false, fetchedAt: 1, listCounts: null },
   );
 }

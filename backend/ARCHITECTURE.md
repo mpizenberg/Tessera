@@ -284,8 +284,11 @@ refresh materialized, and a request costs what the survey it asked for costs:
   open or not yet finalized.
 
 The **dedupe rule** behind `responseCount` is the shared one
-(`cip-179/domain`'s `dedupe.ts`, latest-valid-per-credential), so the server's
-count and the client's audit agree by construction rather than by review.
+(`cip-179/domain`'s `dedupe.ts`, latest-valid-per-credential): the count is the
+number of distinct `(role, credential)` identity keys that rule collapses to,
+which the server counts from indexed identity columns (§5.5's bank) and the
+client derives by running the rule over the records — the same key, so the two
+agree by definition rather than by review.
 
 ### 5.2 Governance links: verified anchors, settled epochs
 
@@ -405,7 +408,8 @@ Integration is **idempotent re-derivation**, never a delta: list the segment,
 fetch the metadata it is missing (keyed by hash, chunked), classify, then
 reconcile that slot range. A survey is _touched_ — its projection rebuilt from
 scratch, every aggregate recomputed over stored rows merged with the segment's
-records — when the segment carries its definition or something targeting it, when
+records (its responder count over identity columns from its banked settled
+count up, §5.5) — when the segment carries its definition or something targeting it, when
 a stored response/cancellation in the swept range is about to vanish, when its
 governance link set differs from the stored one, or when its verified-while-open
 cancellation expired at close. Sweep bounds exclude uncovered boundary slots: a
@@ -438,7 +442,7 @@ identical to what a from-scratch rebuild would produce, after every step.
 
 ### 5.5 What the refresh banks
 
-Three tables exist so that a later run never redoes work an earlier one
+Four tables exist so that a later run never redoes work an earlier one
 finished — the growth invariant applied to storage rather than to queries.
 
 - **`validated_response`** (`migrations/0002`) — the `TALLY-SPEC.md` §3 rules 1–3
@@ -458,6 +462,16 @@ finished — the growth invariant applied to storage rather than to queries.
   merges scripts fetched by hash, and a script absent today can be registered
   tomorrow, so a merged proof is true only as of its fetch. A hash Koios returned
   no row for is a node that is behind, not an answer, and is banked as nothing.
+
+- **`response_count_bank`** (`migrations/0023`) — per survey, the distinct
+  `(role, credential)` count over its response rows below a slot, banked as of
+  the run's settlement horizon whenever the survey is recounted. Below the
+  horizon a survey's response set cannot move, so a later re-projection merges
+  only the rows at or above the banked slot — a keyed range read of identity
+  columns plus one index probe per key not yet seen — instead of re-reading
+  its whole participation. A change below the banked slot (the drift-healing
+  rescan, a rewind) recounts the survey from all its identity rows and banks
+  afresh; no record is read either way.
 
 `tx_proof_cache` is the one that is **evicted** (`proofCache.ts`): its rows are
 whole transactions, and a proof stops being read once nothing can still be decided

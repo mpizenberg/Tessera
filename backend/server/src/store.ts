@@ -571,8 +571,10 @@ export interface SurveyIndexRow {
 /**
  * One on-chain response, materialized for serving. The `record` column holds
  * the wire JSON of the `ResponseRecord`, so a bundle body is assembled by
- * parse-and-concatenate; the other columns are what the two queries over this
- * table select on — a survey's responses, and a credential's answered surveys.
+ * parse-and-concatenate; the other columns are what the queries over this
+ * table select on — a survey's responses, a credential's answered surveys,
+ * and the (role, credential) identity key a survey's responder count is a
+ * distinct count of.
  */
 export interface ResponseRow {
   readonly txHash: string;
@@ -580,11 +582,43 @@ export interface ResponseRow {
   readonly responseIndex: number;
   /** Target survey ("<txHex>:<index>"). */
   readonly surveyKey: string;
+  /** Claimed CIP-179 role. */
+  readonly role: number;
   /** Responder identity ("key:<hex>" | "script:<hex>"). */
   readonly credential: string;
   readonly slot: number;
   /** Wire JSON of the `ResponseRecord`. */
   readonly record: string;
+}
+
+/**
+ * A response's identity key and chain position, without its record — what a
+ * responder count reads. `role` and `credential` together are the key CIP-179
+ * counts at most one response per; `slot` is where the row sits relative to a
+ * survey's banked settled count.
+ */
+export interface ResponseIdentity {
+  readonly surveyKey: string;
+  readonly role: number;
+  readonly credential: string;
+  readonly slot: number;
+}
+
+/** The (role, credential) identity key as one string: "<role>|<credential>". */
+export const responseIdentityKey = (role: number, credential: string): string =>
+  `${role}|${credential}`;
+
+/**
+ * A survey's banked settled responder count: `settledCount` distinct
+ * (role, credential) keys among its response rows with slot below
+ * `belowSlot`. Frozen because those rows lie below the settlement window and
+ * cannot move; usable by an integration only when every response row it may
+ * add, replace or delete lies at or above `belowSlot`.
+ */
+export interface ResponseCountBank {
+  readonly surveyKey: string;
+  readonly settledCount: number;
+  readonly belowSlot: number;
 }
 
 /**
@@ -783,26 +817,59 @@ export interface SnapshotStore {
    * see has rolled back. Rows outside `range` are never deletion candidates,
    * so settled history survives however little the segment covers; a null
    * `range` (an incomplete scan — a listed tx may be missing its record)
-   * upserts without sweeping anything. Publishes `meta` in the same
-   * transaction. Returns the number of rows the reconcile actually changed
-   * (the envelope excluded, since freshness moves every run) — the banked
-   * list counts' recompute trigger.
+   * upserts without sweeping anything. Writes the recounted surveys' banks
+   * and publishes `meta` in the same transaction. Returns the number of rows
+   * the reconcile actually changed (the envelope and banks excluded, since
+   * freshness moves every run) — the banked list counts' recompute trigger.
    */
   reconcileSegment(
     range: SlotRange | null,
     surveys: readonly SurveyIndexRow[],
     responses: readonly ResponseRow[],
     cancellations: readonly CancellationRow[],
+    banks: readonly ResponseCountBank[],
     meta: SnapshotMeta,
   ): Promise<number>;
   /** The stored projections of `keys`, in key order; unknown keys are absent. */
   surveyRowsByKeys(keys: readonly string[]): Promise<SurveyIndexRow[]>;
   /**
-   * Every stored response of the given surveys — the recount input for a
-   * touched survey: per-survey aggregates are re-derived over these merged
-   * with the segment's own listing, never maintained by deltas.
+   * Every stored response of the given surveys, records included — what
+   * finalization tallies and validation revives. Not a count or a keep-set
+   * input: those read identities and tx hashes from the indexes.
    */
   responseRowsForSurveys(surveyKeys: readonly string[]): Promise<ResponseRow[]>;
+  /**
+   * The distinct transaction hashes carrying any of the given surveys'
+   * stored responses — the proof-cache prune's keep set, read from the
+   * per-survey index without touching a record.
+   */
+  responseTxHashesForSurveys(surveyKeys: readonly string[]): Promise<string[]>;
+  /**
+   * The identity keys of the given surveys' stored responses at or above each
+   * survey's own `fromSlot`, in no particular order — a recount's stored
+   * half. Read from the identity index, so no record is touched; `fromSlot`
+   * 0 reads a survey whole, a banked survey reads only its window.
+   */
+  responseIdentitiesFrom(
+    requests: readonly { surveyKey: string; fromSlot: number }[],
+  ): Promise<ResponseIdentity[]>;
+  /**
+   * For each survey, which of the given identity keys already appear among
+   * its stored responses below `belowSlot` — the probe that tells a window
+   * key apart from a new responder against a banked settled count. One index
+   * seek per key.
+   */
+  settledResponseKeys(
+    requests: readonly {
+      surveyKey: string;
+      belowSlot: number;
+      keys: readonly { role: number; credential: string }[];
+    }[],
+  ): Promise<Map<string, Set<string>>>;
+  /** The banked settled counts of the given surveys; a survey never banked is absent. */
+  responseCountBanks(
+    surveyKeys: readonly string[],
+  ): Promise<Map<string, ResponseCountBank>>;
   /**
    * The stored responses with slot in `range` — the pre-sweep window state.
    * Read before {@link reconcileSegment}: a row here that the segment listing

@@ -124,6 +124,7 @@ async function prune(
     snapshot.surveys,
     snapshot.responses,
     snapshot.cancellations,
+    [],
     { tip: "{}", incomplete: false, fetchedAt: 1, listCounts: null },
   );
   for (const surveyKey of finalized) {
@@ -139,7 +140,8 @@ async function prune(
   await pruneTxProofCache(
     {
       surveyRowsEndingAtOrAfter: (e) => mem.surveyRowsEndingAtOrAfter(e),
-      responseRowsForSurveys: (keys) => mem.responseRowsForSurveys(keys),
+      responseTxHashesForSurveys: (keys) =>
+        mem.responseTxHashesForSurveys(keys),
       artifactKeysFor: (keys) => mem.artifactKeysFor(keys),
       cachedTxProofHashes: cache.cachedTxProofHashes,
       deleteTxProofCbor: cache.deleteTxProofCbor,

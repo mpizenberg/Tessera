@@ -199,7 +199,7 @@ describe("store-node migration of a pre-runner database", () => {
         (await store.completedValidationsForSurveys(["bb:1"])).get("bb:1"),
       ).toMatchObject({ linkedActionId: "gov#0" });
       // Missing tables were created by their migrations, not the baseline.
-      await store.reconcileSegment(ALL_SLOTS, [], [], [], {
+      await store.reconcileSegment(ALL_SLOTS, [], [], [], [], {
         tip: "{}",
         incomplete: false,
         fetchedAt: 7,
@@ -245,7 +245,55 @@ describe("store-node migration of a pre-runner database", () => {
       "0020_gov_settlement_floor.sql",
       "0021_finalization_floor.sql",
       "0022_validation_backlog_index.sql",
+      "0023_response_identity.sql",
     ]);
+  });
+});
+
+describe("store-node migration to identity columns", () => {
+  it("backfills each stored response's role from its record", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tessera-store-"));
+    const path = join(dir, "cache.sqlite");
+    // A database at 0022 exactly, holding a response row in the shape the
+    // wire JSON has always had — role inside the record.
+    const migrationsDir = fileURLToPath(
+      new URL("../migrations", import.meta.url),
+    );
+    const before = readdirSync(migrationsDir)
+      .filter((f) => f.endsWith(".sql") && f < "0023")
+      .sort();
+    const old = new DatabaseSync(path);
+    old.exec(`CREATE TABLE schema_migration (
+      name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL
+    );`);
+    for (const file of before) {
+      old.exec(readFileSync(join(migrationsDir, file), "utf8"));
+      old.prepare("INSERT INTO schema_migration VALUES (?, 1)").run(file);
+    }
+    const record = JSON.stringify({
+      txHash: "aa",
+      slot: 5,
+      epochNo: 1,
+      responseIndex: 0,
+      response: { specVersion: 5, role: 3, credential: {}, answers: {} },
+    });
+    old
+      .prepare(
+        `INSERT INTO response (tx_hash, response_index, survey_key, credential, slot, record)
+         VALUES ('aa', 0, 's:0', 'key:11', 5, ?)`,
+      )
+      .run(record);
+    old.close();
+
+    const store = openBackendStore(path);
+    try {
+      expect(
+        await store.responseIdentitiesFrom([{ surveyKey: "s:0", fromSlot: 0 }]),
+      ).toEqual([{ surveyKey: "s:0", role: 3, credential: "key:11", slot: 5 }]);
+    } finally {
+      store.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -287,7 +335,7 @@ describe("store-node migration to per-response rows", () => {
       // surveys whose responses have silently vanished.
       expect(await store.snapshotMeta()).toBeNull();
       // And the next refresh publishes into the new shape.
-      await store.reconcileSegment(ALL_SLOTS, [], [], [], {
+      await store.reconcileSegment(ALL_SLOTS, [], [], [], [], {
         tip: "{}",
         incomplete: false,
         fetchedAt: 100,
@@ -419,7 +467,7 @@ describe("store-node survey_index paging SQL", () => {
 
   it("orders by bucket, slot desc, key — and follows the keyset cursor", async () => {
     store = openBackendStore(":memory:");
-    await store.reconcileSegment(ALL_SLOTS, rows, [], [], meta);
+    await store.reconcileSegment(ALL_SLOTS, rows, [], [], [], meta);
 
     const all = await page({});
     expect(all.map((r) => r.surveyKey)).toEqual([
@@ -443,7 +491,7 @@ describe("store-node survey_index paging SQL", () => {
   // behavioural witness.
   it("filters sealed and public against the active set", async () => {
     store = openBackendStore(":memory:");
-    await store.reconcileSegment(ALL_SLOTS, rows, [], [], meta);
+    await store.reconcileSegment(ALL_SLOTS, rows, [], [], [], meta);
 
     expect((await page({ filter: "sealed" })).map((r) => r.surveyKey)).toEqual([
       "cc:0",
@@ -481,6 +529,7 @@ describe("store-node response rows", () => {
     txHash,
     responseIndex,
     surveyKey,
+    role: 3,
     credential,
     slot,
     record: `{"tx":"${txHash}","i":${responseIndex}}`,
@@ -514,7 +563,7 @@ describe("store-node response rows", () => {
     storeDir = mkdtempSync(join(tmpdir(), "tessera-reconcile-"));
     const path = join(storeDir, "store.sqlite");
     store = openBackendStore(path);
-    await store.reconcileSegment(ALL_SLOTS, surveys, rows, [], meta);
+    await store.reconcileSegment(ALL_SLOTS, surveys, rows, [], [], meta);
 
     const audit = new DatabaseSync(path);
     audit.exec(`
@@ -534,7 +583,7 @@ describe("store-node response rows", () => {
     `);
     audit.close();
 
-    await store.reconcileSegment(ALL_SLOTS, surveys, rows, [], {
+    await store.reconcileSegment(ALL_SLOTS, surveys, rows, [], [], {
       ...meta,
       fetchedAt: 8,
     });
@@ -555,6 +604,7 @@ describe("store-node response rows", () => {
       ),
       [...rows, newResponse],
       [],
+      [],
       { ...meta, fetchedAt: 9 },
     );
     const changed = new DatabaseSync(path);
@@ -568,7 +618,7 @@ describe("store-node response rows", () => {
 
   it("serves one survey's bundle in a stable order", async () => {
     store = openBackendStore(":memory:");
-    await store.reconcileSegment(ALL_SLOTS, surveys, rows, [], meta);
+    await store.reconcileSegment(ALL_SLOTS, surveys, rows, [], [], meta);
 
     // (slot, txHash, responseIndex): the same bytes on every refresh, so the
     // ETag's promise that an unchanged snapshot means an unchanged body holds.
@@ -688,6 +738,7 @@ describe("store-node segment reconciliation", () => {
     txHash,
     responseIndex: 0,
     surveyKey,
+    role: 3,
     credential: "key:11",
     slot,
     record,
@@ -713,6 +764,7 @@ describe("store-node segment reconciliation", () => {
       seededSurveys,
       seededResponses,
       [],
+      [],
       meta(1),
     );
 
@@ -723,6 +775,7 @@ describe("store-node segment reconciliation", () => {
       { fromSlot: 300, toSlot: 600 },
       [survey("aa:0", 100, { responseCount: 2 })],
       [resp("r2", "aa:0", 450, `{"tx":"drifted"}`), resp("r4", "aa:0", 500)],
+      [],
       [],
       meta(2),
     );

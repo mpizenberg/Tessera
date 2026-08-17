@@ -72,7 +72,7 @@ import type {
   ValidatedResponseRow,
   WeightRow,
 } from "./store";
-import { validationKey } from "./store";
+import { responseIdentityKey, validationKey } from "./store";
 
 /** The tally seam plus the stored-row reads the candidate walk needs. */
 export type FinalizeStore = TallyStore &
@@ -845,7 +845,7 @@ async function countedRows(
   // Latest-wins per (role, credential) — same order the ruleset pins.
   const best = new Map<string, ValidatedResponseRow>();
   for (const r of eligible) {
-    const id = `${r.role}|${r.credential}`;
+    const id = responseIdentityKey(r.role, r.credential);
     const prev = best.get(id);
     if (!prev || laterInChain(r, prev)) best.set(id, r);
   }

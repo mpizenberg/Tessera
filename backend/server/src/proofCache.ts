@@ -44,7 +44,7 @@ const PROOF_GRACE_EPOCHS = 5;
 export async function pruneTxProofCache(
   store: Pick<
     SnapshotStore,
-    "surveyRowsEndingAtOrAfter" | "responseRowsForSurveys"
+    "surveyRowsEndingAtOrAfter" | "responseTxHashesForSurveys"
   > &
     Pick<TallyStore, "artifactKeysFor"> &
     Pick<ScanCacheStore, "cachedTxProofHashes" | "deleteTxProofCbor">,
@@ -70,10 +70,10 @@ export async function pruneTxProofCache(
       keep.add(c.txHash);
     }
   }
-  for (const r of await store.responseRowsForSurveys(
+  for (const txHash of await store.responseTxHashesForSurveys(
     live.map((row) => row.surveyKey),
   )) {
-    keep.add(r.txHash);
+    keep.add(txHash);
   }
 
   const hashes = (await store.cachedTxProofHashes()).filter(

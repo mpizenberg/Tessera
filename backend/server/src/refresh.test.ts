@@ -33,6 +33,7 @@ describe("planSegment", () => {
     expect(planSegment(null, 1_000)).toEqual({
       from: { slot: 1_000 },
       sweepFromSlot: 1_000,
+      settledBelowSlot: 1_000,
     });
   });
 
@@ -40,6 +41,7 @@ describe("planSegment", () => {
     const plan = planSegment(state({}), 1_000);
     expect(plan.from).toEqual({ slot: 900_000 - SETTLEMENT_MARGIN_SLOTS });
     expect(plan.sweepFromSlot).toBe(900_000 - SETTLEMENT_MARGIN_SLOTS);
+    expect(plan.settledBelowSlot).toBe(900_000 - SETTLEMENT_MARGIN_SLOTS);
   });
 
   it("clamps the margin re-derivation at the config floor", () => {
@@ -52,6 +54,9 @@ describe("planSegment", () => {
     const plan = planSegment(state({ caughtUp: false }), 1_000);
     expect(plan.from).toEqual({ slot: 900_000, txHash: "cc" });
     expect(plan.sweepFromSlot).toBe(900_001);
+    // Settled means below the tip's margin, and the cursor is at or below the
+    // tip — nothing this or a later main segment reaches lies below this.
+    expect(plan.settledBelowSlot).toBe(900_000 - SETTLEMENT_MARGIN_SLOTS);
   });
 });
 
@@ -63,7 +68,7 @@ const scanWith = (over: Partial<SegmentScan>): SegmentScan => ({
 });
 
 describe("coveredRange", () => {
-  const plan = { from: { slot: 700_000 }, sweepFromSlot: 700_000 };
+  const plan = { sweepFromSlot: 700_000 };
 
   it("covers through the tip when the segment is exhausted", () => {
     expect(coveredRange(plan, scanWith({}), 960_000)).toEqual({
@@ -100,7 +105,7 @@ describe("coveredRange", () => {
   it("covers nothing when the walk never left its starting slot", () => {
     expect(
       coveredRange(
-        { from: { slot: 950_000, txHash: "aa" }, sweepFromSlot: 950_001 },
+        { sweepFromSlot: 950_001 },
         scanWith({ exhausted: false, cursor: { slot: 950_000, txHash: "zz" } }),
         960_000,
       ),
@@ -137,7 +142,7 @@ describe("planTrickle", () => {
     // Two integrations in one refresh; neither may sweep where the other
     // wrote. The main segment's floor lags the cursor by a run, so it is the
     // lower of the two bounds whenever the tip has moved.
-    const behind = { from: { slot: 600_000 }, sweepFromSlot: 600_000 };
+    const behind = { sweepFromSlot: 600_000 };
     expect(planTrickle(state({}), behind, FLOOR)!.toSlot).toBe(599_999);
   });
 

@@ -7,7 +7,9 @@
  * full rebuild would produce. Aggregation (verified cancellations,
  * epoch-aligned governance links, deduped response counts) reuses the exact
  * core domain code the app runs, so a row's flags always agree with what a
- * client would derive from the full payload.
+ * client would derive from the full payload; the segment integration counts
+ * responders from the stored identity columns instead of the records, over
+ * the same `(survey, role, credential)` key `dedupeResponses` collapses.
  */
 
 import {
@@ -110,6 +112,7 @@ export const responseRowOf = (r: ResponseRecord): ResponseRow => ({
   txHash: r.txHash,
   responseIndex: r.responseIndex,
   surveyKey: refKey(r.response.surveyRef),
+  role: r.response.role,
   credential: credentialKey(r.response.credential),
   slot: r.slot,
   record: JSON.stringify(toJsonSafe(r)),

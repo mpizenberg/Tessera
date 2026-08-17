@@ -13,6 +13,7 @@
 
 import type {
   CancellationRow,
+  ResponseCountBank,
   ResponseRow,
   SlotRange,
   SnapshotMeta,
@@ -210,10 +211,11 @@ export const snapshotMetaUpsertSql = (meta: SnapshotMeta): SqlQuery => ({
  */
 const RESPONSE_RECONCILE = `
   INSERT INTO response
-    (tx_hash, response_index, survey_key, credential, slot, record)
+    (tx_hash, response_index, survey_key, role, credential, slot, record)
   SELECT json_extract(value, '$.txHash'),
          json_extract(value, '$.responseIndex'),
          json_extract(value, '$.surveyKey'),
+         json_extract(value, '$.role'),
          json_extract(value, '$.credential'),
          json_extract(value, '$.slot'),
          json_extract(value, '$.record')
@@ -221,11 +223,24 @@ const RESPONSE_RECONCILE = `
   WHERE 1
   ON CONFLICT(tx_hash, response_index) DO UPDATE SET
     survey_key = excluded.survey_key,
+    role = excluded.role,
     credential = excluded.credential,
     slot = excluded.slot,
     record = excluded.record
   WHERE response.slot IS NOT excluded.slot
      OR response.record IS NOT excluded.record`;
+
+/** A recounted survey's bank, overwritten whole. */
+const RESPONSE_COUNT_BANK_UPSERT = `
+  INSERT INTO response_count_bank (survey_key, settled_count, below_slot)
+  SELECT json_extract(value, '$.surveyKey'),
+         json_extract(value, '$.settledCount'),
+         json_extract(value, '$.belowSlot')
+  FROM json_each(?)
+  WHERE 1
+  ON CONFLICT(survey_key) DO UPDATE SET
+    settled_count = excluded.settled_count,
+    below_slot = excluded.below_slot`;
 
 /** Same reposition rule as {@link RESPONSE_RECONCILE}. */
 const CANCELLATION_RECONCILE = `
@@ -433,17 +448,18 @@ function cancellationDeletionSql(
  * slot in `range` are deletion candidates — settled history outside the
  * segment is never swept, however little of the chain one call covers; a null
  * `range` (an incomplete scan, whose unlisted txs are indistinguishable from
- * vanished ones) sweeps nothing. The envelope upsert is always the final
- * statement, so a caller counting changed rows can exclude it (freshness
- * moves every run).
+ * vanished ones) sweeps nothing. The first `rowStatements` statements are the
+ * row writes; the bank upserts and the envelope upsert follow, so a caller
+ * counting changed rows can exclude them (freshness moves every run).
  */
 export function segmentReconciliationSql(
   range: SlotRange | null,
   surveys: readonly SurveyIndexRow[],
   responses: readonly ResponseRow[],
   cancellations: readonly CancellationRow[],
+  banks: readonly ResponseCountBank[],
   meta: SnapshotMeta,
-): SqlQuery[] {
+): { program: SqlQuery[]; rowStatements: number } {
   const sortedSurveys = [...surveys].sort((a, b) =>
     compareText(a.surveyKey, b.surveyKey),
   );
@@ -480,7 +496,7 @@ export function segmentReconciliationSql(
           ),
         ];
 
-  return [
+  const rows = [
     ...jsonChunks(sortedSurveys, SNAPSHOT_ROWS_PER_CHUNK).map((chunk) => ({
       sql: SURVEY_INDEX_RECONCILE,
       params: [chunk.json],
@@ -496,8 +512,18 @@ export function segmentReconciliationSql(
       }),
     ),
     ...deletions,
-    snapshotMetaUpsertSql(meta),
   ];
+  return {
+    program: [
+      ...rows,
+      ...jsonChunks(banks, SNAPSHOT_ROWS_PER_CHUNK).map((chunk) => ({
+        sql: RESPONSE_COUNT_BANK_UPSERT,
+        params: [chunk.json],
+      })),
+      snapshotMetaUpsertSql(meta),
+    ],
+    rowStatements: rows.length,
+  };
 }
 
 /** Distinct surveys answered by any of `credentials`. */
@@ -514,8 +540,8 @@ export const SURVEY_ROW_COLUMNS = `survey_key AS surveyKey, slot,
        finalized_cancelled AS finalizedCancelled`;
 
 export const RESPONSE_ROW_COLUMNS = `tx_hash AS txHash,
-       response_index AS responseIndex, survey_key AS surveyKey, credential,
-       slot, record`;
+       response_index AS responseIndex, survey_key AS surveyKey, role,
+       credential, slot, record`;
 
 /**
  * A keyed read: `sql` once per chunk of keys, each chunk bound as one JSON
@@ -539,7 +565,17 @@ export const surveysByKeysSql = (keys: readonly string[]): SqlQuery[] =>
     keys,
   );
 
-/** All stored responses of the given surveys — a recount's stored half. */
+/** The transactions carrying the given surveys' responses (covered by `response_survey`). */
+export const responseTxHashesSql = (
+  surveyKeys: readonly string[],
+): SqlQuery[] =>
+  byKeysSql(
+    `SELECT DISTINCT tx_hash AS txHash FROM response
+     WHERE survey_key IN ${KEYS}`,
+    surveyKeys,
+  );
+
+/** All stored responses of the given surveys, records included. */
 export const responsesBySurveysSql = (
   surveyKeys: readonly string[],
 ): SqlQuery[] =>
@@ -602,6 +638,59 @@ export const artifactKeysSql = (surveyKeys: readonly string[]): SqlQuery[] =>
     `SELECT survey_key AS surveyKey,
             json_extract(artifact, '$.tally.cancelled') IS NOT NULL AS cancelled
      FROM tally_artifact WHERE survey_key IN ${KEYS}`,
+    surveyKeys,
+  );
+
+/**
+ * The identity keys of each survey's stored responses at or above its own
+ * slot bound. One statement per survey: the bounds differ, and the read is
+ * a range seek on the survey's index entries either way.
+ */
+export const responseIdentitiesSql = (
+  requests: readonly { surveyKey: string; fromSlot: number }[],
+): SqlQuery[] =>
+  requests.map(({ surveyKey, fromSlot }) => ({
+    sql: `SELECT survey_key AS surveyKey, role, credential, slot
+          FROM response WHERE survey_key = ? AND slot >= ?`,
+    params: [surveyKey, fromSlot],
+  }));
+
+/**
+ * Which of the given identity keys (each `[role, credential]`) appear among a
+ * survey's stored responses below a slot. One index seek per key: the keys
+ * ride as one JSON array and each is probed with an `EXISTS` on the identity
+ * index. Returns the keys found, as their JSON text.
+ */
+export const settledResponseKeysSql = (
+  requests: readonly {
+    surveyKey: string;
+    belowSlot: number;
+    keys: readonly { role: number; credential: string }[];
+  }[],
+): SqlQuery[] =>
+  requests.map(({ surveyKey, belowSlot, keys }) => ({
+    sql: `SELECT DISTINCT j.value AS key FROM json_each(?) j
+          WHERE EXISTS (
+            SELECT 1 FROM response r
+            WHERE r.survey_key = ?
+              AND r.role = json_extract(j.value, '$[0]')
+              AND r.credential = json_extract(j.value, '$[1]')
+              AND r.slot < ?)`,
+    params: [
+      JSON.stringify(keys.map((k) => [k.role, k.credential])),
+      surveyKey,
+      belowSlot,
+    ],
+  }));
+
+/** The banked settled counts of the given surveys. */
+export const responseCountBanksSql = (
+  surveyKeys: readonly string[],
+): SqlQuery[] =>
+  byKeysSql(
+    `SELECT survey_key AS surveyKey, settled_count AS settledCount,
+            below_slot AS belowSlot
+     FROM response_count_bank WHERE survey_key IN ${KEYS}`,
     surveyKeys,
   );
 

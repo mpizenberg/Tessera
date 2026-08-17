@@ -24,13 +24,11 @@
 
 import {
   refKey,
-  responseCounts,
   scriptCredentialHash,
   type CancellationRecord,
   type ChainTip,
   type Cip179Records,
   type GovLink,
-  type ResponseRecord,
   type SurveyRecord,
 } from "cip-179/domain";
 import { fromJsonSafe } from "cip-179/tally";
@@ -39,13 +37,15 @@ import type { KoiosDataSource } from "cardano-tessera-koios";
 import { cancellationRowOf, responseRowOf, surveyRowsOf } from "./materialize";
 import type {
   GovLinkStore,
+  ResponseCountBank,
+  ResponseRow,
   SettledGovEpoch,
   SlotRange,
   SnapshotMeta,
   SnapshotStore,
   TallyStore,
 } from "./store";
-import { validationKey } from "./store";
+import { responseIdentityKey, validationKey } from "./store";
 
 /** The stored-row reads and the one write a segment integration performs. */
 export type IntegrateStore = Pick<
@@ -53,7 +53,9 @@ export type IntegrateStore = Pick<
   | "responseRowsInSlotRange"
   | "cancellationRowsInSlotRange"
   | "cancellationRowsForSurveys"
-  | "responseRowsForSurveys"
+  | "responseIdentitiesFrom"
+  | "settledResponseKeys"
+  | "responseCountBanks"
   | "surveyRowsByKeys"
   | "surveyGovLinks"
   | "staleCancelledSurveyKeys"
@@ -92,6 +94,14 @@ export interface SegmentArgs {
    * link-change diff runs — nothing was re-read, so nothing may change.
    */
   readonly govPass: GovPass | null;
+  /**
+   * The run's settlement horizon: no response row below this slot can be
+   * added, replaced or deleted by this run's main segment or any later one
+   * (only the drift-healing rescan reaches below it, and it recounts what it
+   * touches from scratch). Recounted surveys bank their settled count as of
+   * this slot.
+   */
+  readonly settledBelowSlot: number;
   readonly meta: SnapshotMeta;
 }
 
@@ -118,7 +128,7 @@ export async function integrateSegment(
   source: Pick<KoiosDataSource, "txProofs">,
   args: SegmentArgs,
 ): Promise<SegmentIntegration> {
-  const { records, range, tip, govPass, meta } = args;
+  const { records, range, tip, govPass, settledBelowSlot, meta } = args;
   const inRange = (slot: number): boolean =>
     range !== null && slot >= range.fromSlot && slot <= range.toSlot;
 
@@ -227,16 +237,15 @@ export async function integrateSegment(
         !segmentCancelKeys.has(`${row.txHash}|${row.surveyKey}`),
     )
     .map((row) => fromJsonSafe(JSON.parse(row.record)) as CancellationRecord);
-  const segmentResponseKeys = new Set(
-    records.responses.map((r) => validationKey(r.txHash, r.responseIndex)),
+  const responseRows = records.responses.map(responseRowOf);
+  const { countByKey, banks } = await responderCounts(
+    store,
+    touchedKeys,
+    responseRows,
+    range,
+    preResponses,
+    settledBelowSlot,
   );
-  const storedResponses = (await store.responseRowsForSurveys(touchedKeys))
-    .filter(
-      (row) =>
-        !inRange(row.slot) &&
-        !segmentResponseKeys.has(validationKey(row.txHash, row.responseIndex)),
-    )
-    .map((row) => fromJsonSafe(JSON.parse(row.record)) as ResponseRecord);
 
   // A touched survey below the horizon with no row at all is one this segment
   // resurrects — a row lost out-of-band, which the drift-healing rescan walks
@@ -279,12 +288,11 @@ export async function integrateSegment(
   const surveyRows = surveyRowsOf(
     touchedRecords,
     [...cancellations, ...storedCancels],
-    responseCounts([...records.responses, ...storedResponses]),
+    countByKey,
     tip,
     projectedLinks,
     finalizedCancelled,
   );
-  const responseRows = records.responses.map(responseRowOf);
   const cancellationRows = cancellations.map(cancellationRowOf);
 
   const changes = await store.reconcileSegment(
@@ -292,6 +300,7 @@ export async function integrateSegment(
     surveyRows,
     responseRows,
     cancellationRows,
+    banks,
     meta,
   );
   return {
@@ -305,4 +314,150 @@ export async function integrateSegment(
       responseRows.reduce((n, r) => n + r.record.length, 0) +
       cancellationRows.reduce((n, r) => n + r.record.length, 0),
   };
+}
+
+/**
+ * The touched surveys' responder counts — distinct (role, credential) keys
+ * over each survey's response set — and the banks they write.
+ *
+ * Every touched survey is recounted, so a drifted count heals like any other
+ * re-derived column; what varies is how much of the survey the recount reads.
+ * A survey whose banked settled count still holds — the bank's slot is at or
+ * below the run's horizon and below every row this integration adds,
+ * replaces or deletes for it — is recounted from the bank plus the rows at or
+ * above its slot: a keyed range read for the window's identities and one
+ * index probe per key not yet seen. Any other survey — a change below its
+ * bank (a rescan healing a settled row), a rewind, a survey never banked — is
+ * recounted from all its identity rows. Either way no record is read, and the
+ * recount banks its settled count as of the run's horizon.
+ */
+async function responderCounts(
+  store: Pick<
+    IntegrateStore,
+    "responseIdentitiesFrom" | "settledResponseKeys" | "responseCountBanks"
+  >,
+  touchedKeys: readonly string[],
+  segmentRows: readonly ResponseRow[],
+  range: SlotRange | null,
+  storedInRange: readonly ResponseRow[],
+  settledBelowSlot: number,
+): Promise<{
+  countByKey: Record<string, number>;
+  banks: ResponseCountBank[];
+}> {
+  const inRange = (slot: number): boolean =>
+    range !== null && slot >= range.fromSlot && slot <= range.toSlot;
+  const bySurvey = <T extends { surveyKey: string }>(
+    rows: readonly T[],
+  ): Map<string, T[]> => {
+    const out = new Map<string, T[]>();
+    for (const row of rows) {
+      const list = out.get(row.surveyKey);
+      if (list) list.push(row);
+      else out.set(row.surveyKey, [row]);
+    }
+    return out;
+  };
+  const segmentBySurvey = bySurvey(segmentRows);
+  const storedBySurvey = bySurvey(storedInRange);
+  const rowKey = (r: ResponseRow): string =>
+    validationKey(r.txHash, r.responseIndex);
+
+  // The lowest slot at which this integration changes a survey's response
+  // set: a segment row that is new or differs from its stored counterpart
+  // (at either position), or a stored in-range row the segment no longer
+  // lists (about to be swept). Infinity when nothing moves. With no swept
+  // range the stored counterparts are unknown, so any segment row for the
+  // survey counts as a change from the bottom.
+  const lowestChange = (key: string): number => {
+    const segment = segmentBySurvey.get(key) ?? [];
+    if (range === null) return segment.length > 0 ? 0 : Infinity;
+    const stored = new Map(
+      (storedBySurvey.get(key) ?? []).map((r) => [rowKey(r), r]),
+    );
+    const listed = new Set(segment.map(rowKey));
+    let lowest = Infinity;
+    for (const r of segment) {
+      const before = stored.get(rowKey(r));
+      if (before === undefined) lowest = Math.min(lowest, r.slot);
+      else if (before.record !== r.record)
+        lowest = Math.min(lowest, r.slot, before.slot);
+    }
+    for (const [k, r] of stored)
+      if (!listed.has(k)) lowest = Math.min(lowest, r.slot);
+    return lowest;
+  };
+
+  const bankByKey = await store.responseCountBanks(touchedKeys);
+  const usable = (key: string): ResponseCountBank | null => {
+    const bank = bankByKey.get(key);
+    return bank &&
+      bank.belowSlot <= settledBelowSlot &&
+      bank.belowSlot <= lowestChange(key)
+      ? bank
+      : null;
+  };
+  const stored = bySurvey(
+    await store.responseIdentitiesFrom(
+      touchedKeys.map((key) => ({
+        surveyKey: key,
+        fromSlot: usable(key)?.belowSlot ?? 0,
+      })),
+    ),
+  );
+
+  // Per survey: each identity key's lowest slot across the stored rows read
+  // (in-range ones excluded — replaced by the segment or gone) and the
+  // segment's own rows.
+  type Seen = { role: number; credential: string; slot: number };
+  const windows = new Map<string, Map<string, Seen>>();
+  for (const key of touchedKeys) {
+    const keys = new Map<string, Seen>();
+    for (const r of [
+      ...(stored.get(key) ?? []).filter((r) => !inRange(r.slot)),
+      ...(segmentBySurvey.get(key) ?? []),
+    ]) {
+      const id = responseIdentityKey(r.role, r.credential);
+      const seen = keys.get(id);
+      if (!seen || r.slot < seen.slot)
+        keys.set(id, { role: r.role, credential: r.credential, slot: r.slot });
+    }
+    windows.set(key, keys);
+  }
+
+  // Against a bank, a window key counts as new only if the survey holds no
+  // row with it below the bank's slot.
+  const settledKeys = await store.settledResponseKeys(
+    touchedKeys.flatMap((key) => {
+      const bank = usable(key);
+      return bank
+        ? [
+            {
+              surveyKey: key,
+              belowSlot: bank.belowSlot,
+              keys: [...windows.get(key)!.values()],
+            },
+          ]
+        : [];
+    }),
+  );
+
+  const countByKey: Record<string, number> = {};
+  const banks: ResponseCountBank[] = [];
+  for (const key of touchedKeys) {
+    const bank = usable(key);
+    const present = settledKeys.get(key) ?? new Set<string>();
+    const fresh = [...windows.get(key)!.entries()].filter(
+      ([id]) => !bank || !present.has(id),
+    );
+    const base = bank?.settledCount ?? 0;
+    countByKey[key] = base + fresh.length;
+    banks.push({
+      surveyKey: key,
+      settledCount:
+        base + fresh.filter(([, k]) => k.slot < settledBelowSlot).length,
+      belowSlot: settledBelowSlot,
+    });
+  }
+  return { countByKey, banks };
 }

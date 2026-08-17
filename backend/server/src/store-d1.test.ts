@@ -99,6 +99,7 @@ const schema = `
     tx_hash TEXT NOT NULL,
     response_index INTEGER NOT NULL,
     survey_key TEXT NOT NULL,
+    role INTEGER NOT NULL,
     credential TEXT NOT NULL,
     slot INTEGER NOT NULL,
     record TEXT NOT NULL,
@@ -108,6 +109,12 @@ const schema = `
     ON response (survey_key, slot, tx_hash, response_index);
   CREATE INDEX response_credential ON response (credential);
   CREATE INDEX response_slot ON response (slot, tx_hash, response_index);
+  CREATE INDEX response_identity ON response (survey_key, role, credential, slot);
+  CREATE TABLE response_count_bank (
+    survey_key TEXT PRIMARY KEY,
+    settled_count INTEGER NOT NULL,
+    below_slot INTEGER NOT NULL
+  );
   CREATE TABLE scan_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     cursor_slot INTEGER,
@@ -156,6 +163,7 @@ const response = (n: number): ResponseRow => {
     txHash,
     responseIndex: 0,
     surveyKey: "survey:0",
+    role: 3,
     credential: `key:${n % 100}`,
     slot: n,
     record: JSON.stringify({ n }),
@@ -184,6 +192,7 @@ describe("D1 snapshot reconciliation", () => {
       [survey("aa:0"), survey("bb:0")],
       [],
       [],
+      [],
       meta(7),
     );
     sqlite.exec(`
@@ -196,6 +205,7 @@ describe("D1 snapshot reconciliation", () => {
       store.reconcileSegment(
         ALL_SLOTS,
         [survey("aa:0", { slot: 111 }), survey("bb:0", { slot: 999 })],
+        [],
         [],
         [],
         meta(8),
@@ -224,6 +234,7 @@ describe("D1 snapshot reconciliation", () => {
       [survey("survey:0", { responseCount: responses.length })],
       responses,
       [],
+      [],
       meta(1),
     );
 
@@ -238,6 +249,7 @@ describe("D1 snapshot reconciliation", () => {
       ALL_SLOTS,
       [survey("survey:0", { responseCount: kept.length })],
       kept,
+      [],
       [],
       meta(2),
     );
@@ -265,12 +277,14 @@ describe("D1 snapshot reconciliation", () => {
       [survey("survey:0", { slot: 20_000 })],
       responses,
       [],
+      [],
       meta(1),
     );
 
     // The segment listed nothing: every response with slot in it rolled back.
     const changes = await store.reconcileSegment(
       { fromSlot: 5_000, toSlot: 5_999 },
+      [],
       [],
       [],
       [],

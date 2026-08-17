@@ -2,9 +2,14 @@
  * Latest-valid-wins response dedupe + the record identity keys it rests on.
  *
  * This is the ONE dedupe rule (CIP-179: at most one counted response per
- * (survey, role, credential), latest wins). It lives in core so the serving
- * tier's per-survey `responseCount` and the client's audit/tally agree by
- * construction — both sides call exactly this code.
+ * (survey, role, credential), latest wins). It lives in core so the client's
+ * audit/tally and every server-side derivation agree on it. The serving
+ * tier's per-survey `responseCount` is the size of the identity-key set this
+ * rule dedupes over — `(survey, role, credential)`, in which order the
+ * responses landed being irrelevant to a count — and the serving tier counts
+ * that set from its indexed identity columns rather than by calling
+ * `responseCounts` over the records; the two agree because they count the
+ * same key.
  *
  * RULESET-PINNED BEHAVIOR: the dedup rule and its chain-order tie-break are part
  * of `RULESET_DESCRIPTOR` (see `artifact.ts`), which is hashed into every tally

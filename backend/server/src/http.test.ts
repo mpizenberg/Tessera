@@ -53,6 +53,7 @@ async function seed(
     snapshot.surveys,
     snapshot.responses,
     snapshot.cancellations,
+    [],
     {
       tip: JSON.stringify(toJsonSafe(tip)),
       incomplete: false,

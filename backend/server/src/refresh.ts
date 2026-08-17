@@ -90,6 +90,15 @@ export interface SegmentPlan {
    * that slot would delete live rows.
    */
   readonly sweepFromSlot: number;
+  /**
+   * The settlement horizon: the margin below the banked cursor. No main
+   * segment of this run or any later one reaches below it — a caught-up run
+   * re-derives from here, a catch-up continuation from above the cursor —
+   * so a per-survey aggregate over the rows below it is frozen and may be
+   * banked as of this slot. Only the drift-healing rescan walks below it,
+   * and it recounts what it touches from scratch.
+   */
+  readonly settledBelowSlot: number;
 }
 
 export function planSegment(
@@ -98,14 +107,26 @@ export function planSegment(
 ): SegmentPlan {
   const cursor = state?.cursor ?? null;
   if (cursor === null)
-    return { from: { slot: floorSlot }, sweepFromSlot: floorSlot };
+    return {
+      from: { slot: floorSlot },
+      sweepFromSlot: floorSlot,
+      settledBelowSlot: floorSlot,
+    };
+  const settledBelowSlot = Math.max(
+    floorSlot,
+    cursor.slot - SETTLEMENT_MARGIN_SLOTS,
+  );
   if (state!.caughtUp) {
-    const slot = Math.max(floorSlot, cursor.slot - SETTLEMENT_MARGIN_SLOTS);
-    return { from: { slot }, sweepFromSlot: slot };
+    return {
+      from: { slot: settledBelowSlot },
+      sweepFromSlot: settledBelowSlot,
+      settledBelowSlot,
+    };
   }
   return {
     from: { slot: cursor.slot, txHash: cursor.txHash },
     sweepFromSlot: cursor.slot + 1,
+    settledBelowSlot,
   };
 }
 
@@ -119,7 +140,7 @@ export function planSegment(
  * prefix for the rescan.
  */
 export function coveredRange(
-  plan: SegmentPlan,
+  plan: Pick<SegmentPlan, "sweepFromSlot">,
   scan: SegmentScan,
   ceilingSlot: number,
 ): SlotRange | null {
@@ -130,7 +151,7 @@ export function coveredRange(
 }
 
 /** Where the drift-healing rescan resumes, with the ceiling it stops at. */
-export interface TricklePlan extends SegmentPlan {
+export interface TricklePlan extends Omit<SegmentPlan, "settledBelowSlot"> {
   /** Inclusive slot ceiling: the top of the settled prefix. */
   readonly toSlot: number;
 }
@@ -154,7 +175,7 @@ export interface TricklePlan extends SegmentPlan {
  */
 export function planTrickle(
   state: ScanState,
-  plan: SegmentPlan,
+  plan: Pick<SegmentPlan, "sweepFromSlot">,
   floorSlot: number,
 ): TricklePlan | null {
   if (state.cursor === null || !state.caughtUp) return null;
@@ -376,6 +397,7 @@ export async function refreshSnapshot(
       govPass: govLinksReliable
         ? { links: govLinks, scope: new Set(govEpochs), floor: govFloor }
         : null,
+      settledBelowSlot: plan.settledBelowSlot,
       meta,
     });
     let rowChanges = integration.changes;
@@ -424,6 +446,7 @@ export async function refreshSnapshot(
             range: coveredRange(rotation, rescan, rotation.toSlot),
             tip,
             govPass: null,
+            settledBelowSlot: plan.settledBelowSlot,
             meta,
           });
           rowChanges += healed.changes;

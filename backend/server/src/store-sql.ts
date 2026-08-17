@@ -22,6 +22,8 @@ import type {
   DbGovEpochRow,
   RefreshRunRow,
   RefreshTotals,
+  ResponseCountBank,
+  ResponseIdentity,
   ResponseRow,
   ScanState,
   SealedRevealRow,
@@ -42,6 +44,7 @@ import type {
 import {
   govEpochFromDb,
   OPERATIONAL_RETENTION_SECONDS,
+  responseIdentityKey,
   tallyBucket,
   UPSTREAM_KINDS,
   upstreamTotalsFrom,
@@ -58,8 +61,12 @@ import {
   markFinalizedCancelledSql,
   ownedCountSql,
   respondedSql,
+  responseCountBanksSql,
+  responseIdentitiesSql,
+  responseTxHashesSql,
   responsesBySurveysSql,
   segmentReconciliationSql,
+  settledResponseKeysSql,
   snapshotMetaUpsertSql,
   surveyCountsSql,
   surveyPageSql,
@@ -837,19 +844,19 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       surveys: readonly SurveyIndexRow[],
       responses: readonly ResponseRow[],
       cancellations: readonly CancellationRow[],
+      banks: readonly ResponseCountBank[],
       meta: SnapshotMeta,
     ): Promise<number> {
-      const changes = await db.batchWrite(
-        segmentReconciliationSql(
-          range,
-          surveys,
-          responses,
-          cancellations,
-          meta,
-        ),
+      const { program, rowStatements } = segmentReconciliationSql(
+        range,
+        surveys,
+        responses,
+        cancellations,
+        banks,
+        meta,
       );
-      // The final statement is the envelope upsert, which changes every run.
-      return changes.slice(0, -1).reduce((n, c) => n + c, 0);
+      const changes = await db.batchWrite(program);
+      return changes.slice(0, rowStatements).reduce((n, c) => n + c, 0);
     },
     async surveyRowsByKeys(keys: readonly string[]): Promise<SurveyIndexRow[]> {
       if (keys.length === 0) return [];
@@ -864,6 +871,62 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
         responsesBySurveysSql(surveyKeys),
       );
       return batches.flat();
+    },
+    async responseTxHashesForSurveys(
+      surveyKeys: readonly string[],
+    ): Promise<string[]> {
+      if (surveyKeys.length === 0) return [];
+      const batches = await db.batchAll<{ txHash: string }>(
+        responseTxHashesSql(surveyKeys),
+      );
+      return batches.flat().map((r) => r.txHash);
+    },
+    async responseIdentitiesFrom(
+      requests: readonly { surveyKey: string; fromSlot: number }[],
+    ): Promise<ResponseIdentity[]> {
+      if (requests.length === 0) return [];
+      const batches = await db.batchAll<ResponseIdentity>(
+        responseIdentitiesSql(requests),
+      );
+      return batches.flat();
+    },
+    async settledResponseKeys(
+      requests: readonly {
+        surveyKey: string;
+        belowSlot: number;
+        keys: readonly { role: number; credential: string }[];
+      }[],
+    ): Promise<Map<string, Set<string>>> {
+      const out = new Map<string, Set<string>>();
+      const asked = requests.filter((r) => r.keys.length > 0);
+      if (asked.length === 0) return out;
+      const batches = await db.batchAll<{ key: string }>(
+        settledResponseKeysSql(asked),
+      );
+      asked.forEach((request, i) => {
+        out.set(
+          request.surveyKey,
+          new Set(
+            (batches[i] ?? []).map((row) => {
+              const [role, credential] = JSON.parse(row.key) as [
+                number,
+                string,
+              ];
+              return responseIdentityKey(role, credential);
+            }),
+          ),
+        );
+      });
+      return out;
+    },
+    async responseCountBanks(
+      surveyKeys: readonly string[],
+    ): Promise<Map<string, ResponseCountBank>> {
+      if (surveyKeys.length === 0) return new Map();
+      const batches = await db.batchAll<ResponseCountBank>(
+        responseCountBanksSql(surveyKeys),
+      );
+      return new Map(batches.flat().map((b) => [b.surveyKey, b]));
     },
     async responseRowsInSlotRange(range: SlotRange): Promise<ResponseRow[]> {
       return db.all<ResponseRow>(

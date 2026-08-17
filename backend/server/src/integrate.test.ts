@@ -263,6 +263,7 @@ async function runRefresh(
     range,
     tip,
     govPass: govPassFor(chain, tip, surveys),
+    settledBelowSlot: range.fromSlot,
     meta: metaAt(tip),
   });
   await store.markFinalizedCancelled([...chain.finalizedCancelled]);
@@ -488,6 +489,7 @@ describe("segment integration mechanics", () => {
       range,
       tip: tipAt(640),
       govPass: govPassFor(chain, tipAt(640)),
+      settledBelowSlot: range.fromSlot,
       meta: metaAt(tipAt(640)),
     });
     expect(changes).toBe(0);
@@ -539,6 +541,7 @@ describe("segment integration mechanics", () => {
       range,
       tip: tipAt(600),
       govPass: govPassFor(chain, tipAt(600)),
+      settledBelowSlot: range.fromSlot,
       meta: metaAt(tipAt(600)),
     });
     expect(source.txProofs).toHaveBeenCalledOnce();
@@ -574,6 +577,85 @@ describe("segment integration mechanics", () => {
     await expectOracleMatch(store, chain, tipAt(560));
   });
 
+  it("recounts a touched survey from its banked settled count, not from all its rows", async () => {
+    const store = testStore();
+    const survey = surveyAt(1, 100, 9, 3);
+    const key = refKey(survey.ref);
+    const chain: Chain = {
+      surveys: [survey],
+      responses: [
+        responseAt(2, 110, survey, 10),
+        responseAt(3, 120, survey, 11),
+        responseAt(4, 130, survey, 10), // cred 10 again — dedupes
+      ],
+      cancellations: [],
+      govLinks: [],
+      finalizedCancelled: new Set(),
+    };
+    const bank = async () => (await store.responseCountBanks([key])).get(key);
+    const count = async () =>
+      (await store.surveyRowsEndingAtOrAfter(0))[0]!.responseCount;
+
+    await runRefresh(store, chain, tipAt(200));
+    expect(await count()).toBe(2);
+    // Banked as of the run's horizon (tip − MARGIN); nothing is settled yet.
+    expect(await bank()).toEqual({
+      surveyKey: key,
+      settledCount: 0,
+      belowSlot: 80,
+    });
+
+    // A run that touches nothing of the survey leaves its bank where it was.
+    await runRefresh(store, chain, tipAt(400));
+    expect(await bank()).toEqual({
+      surveyKey: key,
+      settledCount: 0,
+      belowSlot: 80,
+    });
+
+    // Two responses land: one from a counted credential, one from a new one.
+    // The recount reads identities from the bank's slot up — every row since
+    // the survey was last touched, here all of them — and banks the two
+    // credentials whose rows are now settled.
+    chain.responses.push(
+      responseAt(5, 405, survey, 10),
+      responseAt(6, 406, survey, 12),
+    );
+    const identities = vi.spyOn(store, "responseIdentitiesFrom");
+    const probes = vi.spyOn(store, "settledResponseKeys");
+    await runRefresh(store, chain, tipAt(410));
+    expect(identities).toHaveBeenLastCalledWith([
+      { surveyKey: key, fromSlot: 80 },
+    ]);
+    expect(await count()).toBe(3);
+    expect(await bank()).toEqual({
+      surveyKey: key,
+      settledCount: 2,
+      belowSlot: 290,
+    });
+
+    // The next touch reads only the window above the bank and probes the
+    // settled rows for the window's keys: credential 10 is found there,
+    // credential 12 is not, so the count is the bank plus one.
+    chain.responses.push(responseAt(7, 415, survey, 12));
+    await runRefresh(store, chain, tipAt(420));
+    expect(identities).toHaveBeenLastCalledWith([
+      { surveyKey: key, fromSlot: 290 },
+    ]);
+    expect(probes).toHaveBeenLastCalledWith([
+      {
+        surveyKey: key,
+        belowSlot: 290,
+        keys: [
+          { role: Role.Stakeholder, credential: "key:0a", slot: 405 },
+          { role: Role.Stakeholder, credential: "key:0c", slot: 406 },
+        ],
+      },
+    ]);
+    expect(await count()).toBe(3);
+    await expectOracleMatch(store, chain, tipAt(420));
+  });
+
   it("re-derives a stored projection that drifted", async () => {
     const store = testStore();
     const chain = seedChain();
@@ -587,6 +669,7 @@ describe("segment integration mechanics", () => {
       [{ ...stored, responseCount: 99 }],
       [],
       [],
+      [],
       metaAt(tipAt(200)),
     );
 
@@ -598,6 +681,7 @@ describe("segment integration mechanics", () => {
       range: { fromSlot: 0, toSlot: 200 },
       tip,
       govPass: null,
+      settledBelowSlot: 0,
       meta: metaAt(tip),
     });
     expect(changes).toBe(1);
@@ -631,6 +715,7 @@ describe("segment integration mechanics", () => {
       [],
       [],
       [],
+      [],
       metaAt(tipAt(150)),
     );
     expect(await store.surveyRowsEndingAtOrAfter(0)).toEqual([]);
@@ -641,6 +726,7 @@ describe("segment integration mechanics", () => {
       range: { fromSlot: 0, toSlot: 120 },
       tip,
       govPass: null,
+      settledBelowSlot: 0,
       meta: metaAt(tip),
     });
     const row = (await store.surveyRowsEndingAtOrAfter(0))[0]!;
@@ -666,6 +752,7 @@ describe("segment integration mechanics", () => {
       range: null,
       tip: tipAt(210),
       govPass: govPassFor(chain, tipAt(210)),
+      settledBelowSlot: 0,
       meta: { ...metaAt(tipAt(210)), incomplete: true },
     });
     expect(await store.surveyRowsEndingAtOrAfter(0)).toHaveLength(1);
