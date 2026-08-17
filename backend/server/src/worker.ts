@@ -24,7 +24,7 @@ interface Env {
   readonly KOIOS_URL?: string;
   readonly KOIOS_TOKEN?: string;
   readonly SINCE?: string;
-  readonly SUBREQUEST_LIMIT?: string;
+  readonly WORKER_SUBREQUEST_CAP?: string;
   readonly KOIOS_DAILY_LIMIT?: string;
   readonly GIT_COMMIT?: string;
 }

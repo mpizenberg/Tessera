@@ -250,12 +250,19 @@ upstream requests but are not Koios calls. A browser using Tessera's direct
 Koios mode supplies its own token and consumes neither backend identity.
 
 `KOIOS_DAILY_LIMIT` states the tier's daily quota, which Koios does not expose
-through the API. It is a `[vars]` value rather than a secret, and nothing in the
-backend enforces it: it is only the denominator the health footer divides
-`koiosCalls` by, so a wrong value misleads a reader instead of throttling a
-request. Koios enforces the real quota with 429s, which surface as a failed
-refresh. The quota belongs to the identity, not the deployment, so Workers
-sharing one token share one budget while each footer shows only its own share.
+through the API, and `WORKER_SUBREQUEST_CAP` the platform's outbound-request
+cap per invocation (1,000 on Workers Paid). Both are `[vars]` values rather
+than secrets, and nothing in the backend enforces either: they are the
+denominators `/api/health` reports under `quotas` and the health footer
+divides `koiosCalls` and the last run's `upstreamRequests` by, so a wrong value
+misleads a reader instead of throttling a request. Koios enforces the real
+quota with 429s and Cloudflare fails the invocation past its cap; both surface
+as a failed refresh. What the backend does enforce on itself is fixed per-pass
+work ceilings — transactions enriched by validation, credentials weighted by
+finalization, ciphertexts decrypted by reveal — each resumable from what the
+pass persisted, so a burst never reaches the platform cap: it postpones. The
+Koios quota belongs to the identity, not the deployment, so Workers sharing one
+token share one budget while each footer shows only its own share.
 Budget before assuming a tier fits: the three-minute cron alone spends roughly
 2,000 Koios calls a day per network before any user traffic — four per run (tip,
 segment page, drift-rescan page, proposal scan) plus whatever new records cost.

@@ -36,10 +36,15 @@ cpu_ms = 30000
 
 [vars]
 NETWORK = "preview"
-# The Koios tier's daily request quota, which the API does not expose. Nothing
-# enforces it: the health footer divides the 24 h count by it to show usage, and
-# Koios answers 429 when the real quota runs out. A wrong value here buys a
+# The two quotas /api/health reports usage against. Neither is enforced here:
+# the health footer divides a count by each to show headroom, and the platform
+# or service enforces its own (Cloudflare fails the invocation past the
+# subrequest cap, Koios answers 429 past the tier). A wrong value buys a
 # misleading readout, not throttling.
+# The Worker's outbound-request cap per invocation: 1000 on the paid plan, 50
+# on the free plan (which cannot run this backend anyway — see the CPU limit).
+WORKER_SUBREQUEST_CAP = "1000"
+# The Koios tier's daily request quota, which the API does not expose.
 KOIOS_DAILY_LIMIT = "50000"
 
 [[d1_databases]]
@@ -55,6 +60,7 @@ migrations_dir = "migrations"
 name = "tessera-backend-preview"
 [env.preview.vars]
 NETWORK = "preview"
+WORKER_SUBREQUEST_CAP = "1000"
 KOIOS_DAILY_LIMIT = "50000"
 
 [[env.preview.d1_databases]]
@@ -71,6 +77,7 @@ cpu_ms = 30000
 
 [env.preprod.vars]
 NETWORK = "preprod"
+WORKER_SUBREQUEST_CAP = "1000"
 KOIOS_DAILY_LIMIT = "50000"
 
 [[env.preprod.d1_databases]]
@@ -83,6 +90,7 @@ migrations_dir = "migrations"
 name = "tessera-backend-mainnet"
 [env.mainnet.vars]
 NETWORK = "mainnet"
+WORKER_SUBREQUEST_CAP = "1000"
 KOIOS_DAILY_LIMIT = "50000"
 
 [[env.mainnet.d1_databases]]

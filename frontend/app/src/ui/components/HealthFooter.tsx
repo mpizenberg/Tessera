@@ -84,13 +84,14 @@ export const HealthFooter: Component = () => {
     return snap.ageSeconds + Math.max(0, fetchedAgo);
   };
 
-  // Against the *upstream* count, not the Koios one: the per-refresh budget is
-  // the Worker's subrequest cap, which every outbound request spends.
+  // Against the *upstream* count, not the Koios one: the platform's cap is on
+  // outbound requests per invocation, which every one of them spends. No cap
+  // declared (a self-hosted process has none) → no ratio, no tone.
   const refreshRatio = (): number | undefined => {
     const h = health();
-    if (!h?.lastRefresh || h.limits.upstreamRequestsPerRefresh <= 0)
-      return undefined;
-    return h.lastRefresh.upstreamRequests / h.limits.upstreamRequestsPerRefresh;
+    const cap = h?.quotas.subrequestsPerInvocation;
+    if (!h?.lastRefresh || cap === null || cap === undefined) return undefined;
+    return h.lastRefresh.upstreamRequests / cap;
   };
   const usageTone = (ratio: number): "warn" | "danger" | undefined =>
     ratio >= 1 ? "danger" : ratio >= WARN_RATIO ? "warn" : undefined;
@@ -120,10 +121,14 @@ export const HealthFooter: Component = () => {
                   tone={usageTone(refreshRatio() ?? 0)}
                   title={t("healthFooter.refreshRequestsTitle")}
                 >
-                  {t("healthFooter.refreshRequests", {
-                    calls: n(run().upstreamRequests),
-                    limit: n(h().limits.upstreamRequestsPerRefresh),
-                  })}
+                  {h().quotas.subrequestsPerInvocation !== null
+                    ? t("healthFooter.refreshRequestsWithCap", {
+                        calls: n(run().upstreamRequests),
+                        limit: n(h().quotas.subrequestsPerInvocation ?? 0),
+                      })
+                    : t("healthFooter.refreshRequests", {
+                        calls: n(run().upstreamRequests),
+                      })}
                 </Item>
                 <Show when={!run().ok}>
                   <Item tone="danger" title={run().error ?? undefined}>
@@ -135,10 +140,10 @@ export const HealthFooter: Component = () => {
           </Show>
 
           <Item title={t("healthFooter.koiosDailyTitle")}>
-            {h().limits.koiosCallsPerDay !== null
+            {h().quotas.koiosCallsPerDay !== null
               ? t("healthFooter.koiosDailyWithLimit", {
                   calls: n(h().last24h.koiosCalls),
-                  limit: n(h().limits.koiosCallsPerDay ?? 0),
+                  limit: n(h().quotas.koiosCallsPerDay ?? 0),
                 })
               : t("healthFooter.koiosDaily", {
                   calls: n(h().last24h.koiosCalls),

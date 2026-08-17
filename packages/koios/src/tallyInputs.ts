@@ -22,11 +22,14 @@
  *    account *delegated to a pool* at E; a registered account with no row
  *    counts with weight 0 ("registered but empty").
  *
- * DReps (role 0) resolve per credential (small-N by nature):
- *  - `/drep_voting_power_history?_drep_id=…&epoch_no=eq.E` — a row iff the
- *    DRep was registered at E, carrying its voting power. (The endpoint's own
- *    `_epoch_no` parameter misbehaves for current epochs — the PostgREST
- *    column filter is the reliable form, verified live.)
+ * DReps (role 0) resolve in bulk too:
+ *  - `/drep_voting_power_history?_epoch_no=E&epoch_no=eq.E&drep_id=in.(…)` —
+ *    a row per DRep registered at E, carrying its voting power; a DRep absent
+ *    from the response was not registered. Both epoch filters, deliberately:
+ *    `_epoch_no` keeps the server-side query to one epoch, and the PostgREST
+ *    column filter guards against its known misbehaviour for current epochs.
+ *    A 50-id `in.(…)` list is ~3 KB of URL, verified live to return amounts
+ *    byte-identical to the single-id form.
  *
  * Totals come from `/epoch_info` (known to fail with db-sync word128 errors on
  * some preview epochs — hence null-means-retry) and `/drep_epoch_summary`.
@@ -42,8 +45,11 @@ import { evolutionCodec } from "cip-179/evolution";
 
 import { koiosFetchJson } from "./http";
 
-/** Max stake addresses per bulk POST (matches the other Koios batch sizes). */
-const ACCOUNT_BATCH = 50;
+/**
+ * Max credentials per bulk read — stake addresses per POST, DRep ids per
+ * `in.(…)` GET (matches the other Koios batch sizes).
+ */
+const CREDENTIAL_BATCH = 50;
 
 /**
  * Rows per page when following a Koios result set. Koios caps a single response
@@ -416,8 +422,8 @@ export class KoiosTallyInputs implements TallyInputSource {
 
     const registered = new Set<string>(); // addresses registered at `epoch`
     const stakeByAddress = new Map<string, bigint>();
-    for (let i = 0; i < addresses.length; i += ACCOUNT_BATCH) {
-      const batch = addresses.slice(i, i + ACCOUNT_BATCH);
+    for (let i = 0; i < addresses.length; i += CREDENTIAL_BATCH) {
+      const batch = addresses.slice(i, i + CREDENTIAL_BATCH);
       // A credential is registered at E iff the last state-changing cert in
       // chain order (≤ E) is not a deregistration. One slot holds at most one
       // block (Praos), so only the account's deciding (newest) slot matters —
@@ -488,17 +494,32 @@ export class KoiosTallyInputs implements TallyInputSource {
     epoch: number,
     credentials: readonly Credential[],
   ): Promise<Map<string, WeightInfo>> {
-    const out = new Map<string, WeightInfo>();
+    // Pair each credential with its CIP-129 id (the form the endpoint keys on).
+    const byId = new Map<string, string>(); // drep id → credentialKey
     for (const cred of credentials) {
-      const id = evolutionCodec.drepId(cred);
+      byId.set(evolutionCodec.drepId(cred), credentialKey(cred));
+    }
+    const ids = [...byId.keys()];
+
+    const powerById = new Map<string, bigint>();
+    for (let i = 0; i < ids.length; i += CREDENTIAL_BATCH) {
+      const batch = ids.slice(i, i + CREDENTIAL_BATCH);
       const rows = await this.get<DrepPowerRow[]>(
-        `/drep_voting_power_history?_drep_id=${id}&epoch_no=eq.${epoch}`,
+        `/drep_voting_power_history?_epoch_no=${epoch}&epoch_no=eq.${epoch}` +
+          `&drep_id=in.(${batch.join(",")})`,
       );
-      const row = rows[0];
+      for (const row of rows) powerById.set(row.drep_id, BigInt(row.amount));
+    }
+
+    // Registered at E iff a power row came back; the bulk response says
+    // nothing about an absent id, so absence is derived by set difference.
+    const out = new Map<string, WeightInfo>();
+    for (const [id, credKey] of byId) {
+      const power = powerById.get(id);
       out.set(
-        credentialKey(cred),
-        row
-          ? { registered: true, weight: BigInt(row.amount) }
+        credKey,
+        power !== undefined
+          ? { registered: true, weight: power }
           : { registered: false, weight: 0n },
       );
     }

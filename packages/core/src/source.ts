@@ -114,7 +114,7 @@ export interface BackendHealth {
     readonly durationMs: number;
     /**
      * Every upstream request the run issued, whatever the host — what the
-     * per-refresh budget in {@link BackendHealth.limits} bounds.
+     * platform's per-invocation cap in {@link BackendHealth.quotas} bounds.
      */
     readonly upstreamRequests: number;
     /** The Koios share of {@link upstreamRequests}; the rest is anchor fetches. */
@@ -174,15 +174,23 @@ export interface BackendHealth {
   };
   /** Validated responses still awaiting an enrichment retry. */
   readonly validationBacklog: number;
-  /** Configured budgets the counts above are compared against. */
-  readonly limits: {
+  /**
+   * The external quotas the counts above are compared against, as the operator
+   * declared them. Neither is enforced by the backend — the platform and the
+   * service enforce their own — so each is a readout denominator, null when
+   * the operator did not state it (or it does not apply: a self-hosted process
+   * has no subrequest cap). What the backend does bound itself by is fixed
+   * per-pass work ceilings that postpone rather than fail, so a busy run never
+   * needs a number here to read as healthy.
+   */
+  readonly quotas: {
     /**
-     * Upstream requests one refresh may make (the Worker's per-invocation
-     * subrequest cap by default) — the budget `lastRefresh.upstreamRequests`
-     * spends.
+     * Outbound requests one platform invocation may make — the Cloudflare
+     * Worker's subrequest cap — the number `lastRefresh.upstreamRequests`
+     * counts against.
      */
-    readonly upstreamRequestsPerRefresh: number;
-    /** Daily Koios quota when the operator configured one, else null. */
+    readonly subrequestsPerInvocation: number | null;
+    /** Daily Koios quota of the operator's identity. */
     readonly koiosCallsPerDay: number | null;
   };
 }

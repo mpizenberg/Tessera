@@ -10,8 +10,9 @@
  *
  * Both fetches happen only for (txHash, responseIndex) keys never completed
  * before, so the steady state is zero extra subrequests per refresh; a failed
- * enrichment leaves NULLs in the row and is retried next refresh. Best-effort
- * by design: a validation hiccup must never sink the snapshot refresh.
+ * enrichment leaves NULLs in the row and is retried next refresh, and so does
+ * a response the per-pass fetch cap deferred. Best-effort by design: a
+ * validation hiccup must never sink the snapshot refresh.
  */
 
 import { validateResponse } from "cip-179";
@@ -32,6 +33,17 @@ import type { KoiosDataSource } from "cardano-tessera-koios";
 
 import type { SnapshotStore, TallyStore, ValidatedResponseRow } from "./store";
 import { validationKey } from "./store";
+
+/**
+ * Per-pass cap on transactions enriched — the request share of one cron
+ * invocation this pass may spend: `/tx_cbor` batches 25 and `/tx_info` 50, so
+ * this is at most ~15 requests against a Worker subrequest cap of 1,000. A
+ * burst of new responses is not too big to validate: the rows past the cap
+ * are written enrichment-pending, which puts their surveys on the retry list,
+ * and the backlog drains at this rate over the following passes instead of
+ * one run failing on the cap.
+ */
+const MAX_VALIDATION_TXS_PER_PASS = 250;
 
 /** What validation reads and writes: verdict state, plus stored rows. */
 export type ValidateStore = TallyStore &
@@ -182,7 +194,14 @@ export async function validateNewResponses(
   });
   if (candidates.length === 0) return;
 
-  const txHashes = [...new Set(candidates.map((r) => r.txHash))];
+  const candidateTxs = [...new Set(candidates.map((r) => r.txHash))];
+  const txHashes = candidateTxs.slice(0, MAX_VALIDATION_TXS_PER_PASS);
+  if (txHashes.length < candidateTxs.length) {
+    console.log(
+      `validation: ${candidateTxs.length - txHashes.length} of ${candidateTxs.length} ` +
+        `transactions deferred, fetch cap spent this pass`,
+    );
+  }
   // A script-credentialed response's native script may not be attached to its
   // tx (mechanism A permits chain resolution); tell `txProofs` which script hash
   // to resolve by hash for each response tx (finding 7).

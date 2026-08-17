@@ -4,9 +4,10 @@ const healthFooter: Messages = {
   updated: "données datant de {age}",
   updatedStale: "données datant de {age} — rafraîchissement peut-être bloqué",
   updatedTitle: "Âge de l'instantané on-chain servi",
-  refreshRequests: "requêtes {calls}/{limit}",
+  refreshRequests: "requêtes {calls}",
+  refreshRequestsWithCap: "requêtes {calls}/{limit}",
   refreshRequestsTitle:
-    "Requêtes sortantes du dernier rafraîchissement — lectures Koios et récupérations d'ancres de gouvernance — rapportées au budget par rafraîchissement",
+    "Requêtes sortantes du dernier rafraîchissement — lectures Koios et récupérations d'ancres de gouvernance — rapportées au plafond par invocation de la plateforme",
   koiosDaily: "Koios {calls} / 24 h",
   koiosDailyWithLimit: "Koios {calls}/{limit} / 24 h",
   koiosDailyTitle:

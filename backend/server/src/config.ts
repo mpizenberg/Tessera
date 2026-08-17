@@ -34,13 +34,14 @@ export interface ServerConfig {
    */
   readonly dbPath: string;
   /**
-   * Upstream requests one refresh may reasonably make, whatever the host — the
-   * health endpoint's per-refresh headroom denominator. Defaults to the
-   * Cloudflare Worker free-plan subrequest cap; on the paid plan (or
-   * self-hosted Node, where no platform cap exists) raise it to keep the
-   * footer's ratio meaningful.
+   * The platform's cap on outbound requests per invocation (Cloudflare's
+   * per-Worker subrequest cap: 50 free, 1,000 paid), if the operator states
+   * it — the health endpoint's per-refresh headroom denominator. `undefined`
+   * = none declared: a self-hosted Node process has no such cap, and the
+   * health payload then reports the run's count without a number to compare
+   * against. Nothing here enforces it; the platform does.
    */
-  readonly upstreamPerRefreshLimit: number;
+  readonly workerSubrequestCap: number | undefined;
   /**
    * Koios daily request quota for the configured token tier, if the operator
    * knows it (Koios tiers are account-side, not discoverable via the API).
@@ -80,15 +81,17 @@ export function loadConfig(
     sinceUnix: Math.floor(Date.parse(sinceIso) / 1000),
     secondsPerEpoch: SECONDS_PER_EPOCH[network],
   };
-  const dailyLimit = Number(env["KOIOS_DAILY_LIMIT"]);
+  const declared = (name: string): number | undefined => {
+    const value = Number(env[name]);
+    return Number.isFinite(value) && value > 0 ? value : undefined;
+  };
   return {
     app,
     port: Number(env["PORT"] ?? 8787),
     refreshSeconds: Number(env["REFRESH_SECONDS"] ?? 180),
     dbPath: env["DB_PATH"] ?? `./tessera-cache-${network}.sqlite`,
-    upstreamPerRefreshLimit: Number(env["SUBREQUEST_LIMIT"] ?? 50),
-    koiosDailyLimit:
-      Number.isFinite(dailyLimit) && dailyLimit > 0 ? dailyLimit : undefined,
+    workerSubrequestCap: declared("WORKER_SUBREQUEST_CAP"),
+    koiosDailyLimit: declared("KOIOS_DAILY_LIMIT"),
     passthroughKoiosToken: env["KOIOS_PASSTHROUGH_TOKEN"] || undefined,
     commit: env["GIT_COMMIT"] || undefined,
   };

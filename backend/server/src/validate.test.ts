@@ -518,6 +518,41 @@ describe("validateNewResponses", () => {
     });
   });
 
+  it("defers transactions past the per-pass fetch cap as pending, then drains them", async () => {
+    const store = testStore();
+    // 260 responses on 260 txs, one credential each (keyCred takes a byte, so
+    // reuse credentials across txs — dedupe is not what this test is about).
+    const many = Array.from({ length: 260 }, (_, i) =>
+      response(`tx${i}`, i % 200),
+    );
+    const proofs = Object.fromEntries(
+      many.map((r) => [r.txHash, signedProof(Number(r.txHash.slice(2)) % 200)]),
+    );
+    const source = fakeSource(
+      proofs,
+      Object.fromEntries(many.map((r) => [r.txHash, 1])),
+    );
+    await validatePass(store, records(...many), [], source);
+    // One fetch pair over the first 250 txs; every response has a row, the
+    // deferred ten as enrichment-pending.
+    expect(source.txProofs).toHaveBeenCalledTimes(1);
+    expect(source.txProofs.mock.calls[0]![0]).toHaveLength(250);
+    expect(store.validated.size).toBe(260);
+    const pending = [...store.validated.values()].filter(
+      (r) => r.proofOk === null,
+    );
+    expect(pending).toHaveLength(10);
+
+    // Next pass, with nothing in the input: the pending rows put the survey
+    // on the retry list and only the deferred txs are fetched.
+    await validatePass(store, records(...many), [], source, true, [], []);
+    expect(source.txProofs).toHaveBeenCalledTimes(2);
+    expect(source.txProofs.mock.calls[1]![0]).toHaveLength(10);
+    expect(
+      [...store.validated.values()].filter((r) => r.proofOk === null),
+    ).toHaveLength(0);
+  });
+
   it("marks ill-formed responses (ineligible role) as not well-formed", async () => {
     const store = testStore();
     const source = fakeSource({ t1: signedProof(1) }, { t1: 0 });

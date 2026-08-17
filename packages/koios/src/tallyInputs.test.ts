@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Credential } from "cip-179";
 
-import { hexToBytes } from "cip-179/domain";
+import { credentialKey, hexToBytes } from "cip-179/domain";
 import type { AppConfig } from "cardano-tessera-core";
 
 import { evolutionCodec } from "cip-179/evolution";
@@ -472,21 +472,26 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
 });
 
 describe("KoiosTallyInputs.drepWeights", () => {
-  it("registered iff a power row exists at the epoch (PostgREST filter form)", async () => {
-    let calls = 0;
+  it("reads a batch of ids in one bulk GET; registered iff a power row came back", async () => {
+    const idA = evolutionCodec.drepId(cred(HASH_A));
+    const idB = evolutionCodec.drepId(cred(HASH_B));
+    const seen: string[] = [];
     stubFetch((url) => {
-      expect(url).toContain("/drep_voting_power_history?_drep_id=drep1");
-      expect(url).toContain("epoch_no=eq.1345");
+      seen.push(url);
       // Registered with power for the first credential, absent for the second.
-      calls += 1;
-      return calls === 1
-        ? [{ drep_id: "drep1x", epoch_no: 1345, amount: "157298068" }]
-        : [];
+      return [{ drep_id: idA, epoch_no: 1345, amount: "157298068" }];
     });
     const weights = await new KoiosTallyInputs(CONFIG).drepWeights(1345, [
       cred(HASH_A),
       cred(HASH_B),
     ]);
+    expect(seen).toHaveLength(1);
+    // Both epoch filters (the endpoint's own bounds the query, the PostgREST
+    // column filter is the reliable one), and every id of the batch in one
+    // `in.(…)` list.
+    expect(seen[0]).toContain(
+      `/drep_voting_power_history?_epoch_no=1345&epoch_no=eq.1345&drep_id=in.(${idA},${idB})`,
+    );
     expect(weights.get(`key:${HASH_A}`)).toEqual({
       registered: true,
       weight: 157_298_068n,
@@ -495,6 +500,26 @@ describe("KoiosTallyInputs.drepWeights", () => {
       registered: false,
       weight: 0n,
     });
+  });
+
+  it("chunks past the batch size and merges the pages", async () => {
+    const creds = Array.from({ length: 120 }, (_, i) =>
+      cred(i.toString(16).padStart(2, "0").repeat(28)),
+    );
+    const seen: string[] = [];
+    stubFetch((url) => {
+      seen.push(url);
+      const ids = /drep_id=in\.\(([^)]*)\)/.exec(url)![1]!.split(",");
+      return ids.map((id) => ({ drep_id: id, epoch_no: 1345, amount: "7" }));
+    });
+    const weights = await new KoiosTallyInputs(CONFIG).drepWeights(1345, creds);
+    expect(seen).toHaveLength(3);
+    expect(weights.size).toBe(120);
+    for (const c of creds)
+      expect(weights.get(credentialKey(c))).toEqual({
+        registered: true,
+        weight: 7n,
+      });
   });
 });
 

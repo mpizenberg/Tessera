@@ -654,7 +654,7 @@ describe("GET /api/health", () => {
     validationBacklog: 3,
   };
 
-  it("reports snapshot freshness, last run, totals, and limits", async () => {
+  it("reports snapshot freshness, last run, totals, and quotas", async () => {
     const store = await seededStore();
     await store.putRefreshRun({ ...runRow, startedAt: NOW - 200 });
     await store.putRefreshRun({
@@ -673,7 +673,7 @@ describe("GET /api/health", () => {
     });
     const app = createApp(
       loadConfig({
-        SUBREQUEST_LIMIT: "40",
+        WORKER_SUBREQUEST_CAP: "1000",
         KOIOS_DAILY_LIMIT: "5000",
         GIT_COMMIT: "f2b86aa",
       }),
@@ -704,8 +704,8 @@ describe("GET /api/health", () => {
     });
     // Banked on the latest run row, not counted live per request.
     expect(body["validationBacklog"]).toBe(3);
-    expect(body["limits"]).toEqual({
-      upstreamRequestsPerRefresh: 40,
+    expect(body["quotas"]).toEqual({
+      subrequestsPerInvocation: 1000,
       koiosCallsPerDay: 5000,
     });
   });
@@ -799,8 +799,9 @@ describe("GET /api/health", () => {
       koiosCalls: 0,
       passthroughCalls: 0,
     });
-    expect(body["limits"]).toEqual({
-      upstreamRequestsPerRefresh: 50,
+    // Neither quota declared: no denominators, nothing invented.
+    expect(body["quotas"]).toEqual({
+      subrequestsPerInvocation: null,
       koiosCallsPerDay: null,
     });
   });

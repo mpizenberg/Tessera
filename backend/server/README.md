@@ -54,7 +54,8 @@ share `PORT`, so run one at a time or override it.
   trusting a backend.
 - `GET /api/health` — operational metrics behind the app's health footer: the
   snapshot's age, the last refresh, 24 h upstream-request and run totals, the
-  validation backlog, the scan cursor, and the configured limits.
+  validation backlog, the scan cursor, and the declared quotas the counts are
+  read against.
 - `GET /api/surveys` — the Explore-list payload, **keyset-paginated**
   (`filter`/`q`/`cursor`/`limit`): survey records + tip + gov links + raw
   cancellations + server-deduped `responseCounts` per survey, plus
@@ -138,11 +139,14 @@ health footer — every upstream request, not just the Koios ones, since a
 governance-anchor fetch costs a subrequest too. **The per-run floor is flat:
 it is set by the settlement window, not by how much history the deployment has
 accumulated**, and validation, weight snapshotting and artifact emission add
-batched calls only when there is new work. A run sits comfortably inside the
-free plan's 50-per-invocation cap; `OPERATIONS.md` carries the measured
-breakdown and the daily-quota arithmetic. Finalization is resumable: if a run
-were cut short, already-written weight rows are not re-fetched and the next
-cron picks up where it left off.
+batched calls only when there is new work — and each of those caps the work it
+takes on per pass (transactions enriched, credentials weighted, ciphertexts
+decrypted), postponing the rest to the next cron, so a burst of activity slows
+the pipeline down instead of failing a run on the platform's subrequest cap.
+Validation and finalization are resumable: what a pass persisted (verdict rows,
+weight rows, reveal outcomes) is not redone, and the next cron picks up where
+it left off. `OPERATIONS.md` carries the measured breakdown and the daily-quota
+arithmetic.
 
 CPU is the tighter limit once sealed surveys are in play: a cron under an hour
 apart gets 30 s on the paid plan and 10 ms on the free one, while a single

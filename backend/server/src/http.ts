@@ -306,8 +306,8 @@ export function createApp(
         passthroughCalls: calls["koios-passthrough"],
       },
       validationBacklog,
-      limits: {
-        upstreamRequestsPerRefresh: config.upstreamPerRefreshLimit,
+      quotas: {
+        subrequestsPerInvocation: config.workerSubrequestCap ?? null,
         koiosCallsPerDay: config.koiosDailyLimit ?? null,
       },
     };

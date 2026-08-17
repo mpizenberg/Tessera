@@ -372,9 +372,10 @@ export async function finalizeClosedSurveys(
     else byEpoch.set(s.definition.endEpoch, [s]);
   }
 
-  // Sealed decrypt budget is pass-wide (across every end epoch), so one cron
-  // never decrypts more than the cap in total.
+  // Both budgets are pass-wide (across every end epoch), so one cron never
+  // decrypts, or fetches weights for, more than the cap in total.
   let sealedDecryptBudget = MAX_SEALED_DECRYPTS_PER_PASS;
+  const weightBudget: WeightBudget = { remaining: MAX_WEIGHT_FETCHES_PER_PASS };
 
   for (const [epoch, surveys] of byEpoch) {
     // Per-epoch isolation, mirroring the per-survey guard below: the shared
@@ -387,6 +388,7 @@ export async function finalizeClosedSurveys(
       epoch,
       surveys,
       nowSec,
+      weightBudget,
     ).catch((err) => {
       console.warn(
         `finalize: epoch ${epoch} skipped this pass — ${String(err)}`,
@@ -852,15 +854,28 @@ async function countedRows(
 
 /**
  * Credentials fetched-and-persisted per step, so a mid-role failure (rate
- * limit, Worker subrequest cap) still advances the resume cursor instead of
- * re-fetching the whole role from zero next cron (finding 5). Stakeholders
- * resolve in one bulk pair of reads per ~50; DReps are one sequential GET each,
- * so persist each as it lands.
+ * limit, upstream hiccup) still advances the resume cursor instead of
+ * re-fetching the whole role from zero next cron (finding 5). Matches both
+ * sources' bulk granularity: one read pair per 50 stakeholders, one `in.(…)`
+ * GET per 50 DReps.
  */
-const WEIGHT_CHUNK_BY_ROLE: Record<number, number> = {
-  [Role.Stakeholder]: 50,
-  [Role.DRep]: 1,
-};
+const WEIGHT_CHUNK = 50;
+
+/**
+ * Per-pass cap on weight fetches across all epochs and roles — the request
+ * share of one cron invocation this pass may spend on them: at the chunk
+ * above, ~10 DRep GETs or ~10 stakeholder read pairs (two or three requests
+ * each), against a Worker subrequest cap of 1,000. A survey whose electorate
+ * exceeds it is not too big to finalize — the rows persisted per chunk are the
+ * resume cursor, so it takes as many passes as its responder count needs, and
+ * a busy run postpones instead of failing.
+ */
+const MAX_WEIGHT_FETCHES_PER_PASS = 500;
+
+/** The pass-wide fetch allowance, decremented as chunks land. */
+interface WeightBudget {
+  remaining: number;
+}
 
 /**
  * The inputs every survey ending at `epoch` shares: each survey's counted rows,
@@ -875,6 +890,7 @@ async function prepareEpoch(
   epoch: number,
   surveys: readonly SurveyRecord[],
   nowSec: number,
+  budget: WeightBudget,
 ): Promise<{
   countedBySurvey: Map<string, CountedRows>;
   weightByRole: Map<number, Map<string, WeightRow>>;
@@ -911,7 +927,7 @@ async function prepareEpoch(
   for (const [role, creds] of credsByRole) {
     weightByRole.set(
       role,
-      await fillWeights(store, inputs, epoch, role, creds, nowSec),
+      await fillWeights(store, inputs, epoch, role, creds, nowSec, budget),
     );
   }
 
@@ -924,7 +940,11 @@ async function prepareEpoch(
   return { countedBySurvey, weightByRole, totalByRole };
 }
 
-/** Ensure a weight row exists for every credential; return the row map. */
+/**
+ * Ensure a weight row exists for every credential the budget reaches; return
+ * the row map. A credential left unfetched leaves its survey incomplete
+ * (`incompleteReason`), which postpones it to a later pass.
+ */
 async function fillWeights(
   store: TallyStore,
   inputs: TallyInputSource,
@@ -932,6 +952,7 @@ async function fillWeights(
   role: number,
   credentials: ReadonlySet<string>,
   nowSec: number,
+  budget: WeightBudget,
 ): Promise<Map<string, WeightRow>> {
   const have = new Map(
     (await store.weightRows(epoch, role)).map((r) => [r.credential, r]),
@@ -956,11 +977,18 @@ async function fillWeights(
 
   // Fetch + persist in chunks: each persisted chunk is a resume point, so if a
   // later chunk throws the finished ones survive to next cron (they drop out of
-  // `missing` above). No extra Koios calls — the chunk matches the source's own
-  // batch granularity (one bulk read for stakeholders, one GET per DRep).
-  const chunkSize = WEIGHT_CHUNK_BY_ROLE[role] ?? 50;
-  for (let i = 0; i < missing.length; i += chunkSize) {
-    const slice = missing.slice(i, i + chunkSize);
+  // `missing` above). No extra Koios calls — the chunk matches the sources'
+  // own batch granularity.
+  if (missing.length > budget.remaining) {
+    console.log(
+      `finalize: role-${role} weights at epoch ${epoch} — ` +
+        `${missing.length - budget.remaining} of ${missing.length} deferred, fetch budget spent this pass`,
+    );
+  }
+  const todo = missing.slice(0, budget.remaining);
+  budget.remaining -= todo.length;
+  for (let i = 0; i < todo.length; i += WEIGHT_CHUNK) {
+    const slice = todo.slice(i, i + WEIGHT_CHUNK);
     const creds = slice.map(parseCredentialKey);
     const infos =
       role === Role.DRep

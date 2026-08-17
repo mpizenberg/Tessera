@@ -773,13 +773,25 @@ describe("finalizeClosedSurveys", () => {
     expect(artifact.tally.perRole[0]!.responders[0]!.weight).toBe("5");
   });
 
-  it("persists weights per credential so a mid-role failure resumes (finding 5)", async () => {
+  it("persists weights per chunk so a mid-role failure resumes (finding 5)", async () => {
     const store = testStore();
-    const dA = response("11".repeat(32), CRED_A, 0, 200, Role.DRep);
-    const dB = response("22".repeat(32), CRED_B, 1, 200, Role.DRep);
-    await seed(store, [validatedRow(dA), validatedRow(dB)]);
+    // 51 DReps: one full 50-id chunk and a second one holding the last.
+    const dreps = Array.from({ length: 51 }, (_, i) =>
+      response(
+        i.toString(16).padStart(2, "0").repeat(32),
+        keyCred(i.toString(16).padStart(2, "0").repeat(28)),
+        0,
+        200,
+        Role.DRep,
+      ),
+    );
+    const lastKey = credentialKey(dreps[50]!.response.credential);
+    await seed(
+      store,
+      dreps.map((r) => validatedRow(r)),
+    );
 
-    let failB = true;
+    let failLast = true;
     const inputs: TallyInputSource = {
       async stakeholderWeights() {
         return new Map();
@@ -788,7 +800,7 @@ describe("finalizeClosedSurveys", () => {
         const m = new Map<string, WeightInfo>();
         for (const c of creds) {
           const k = credentialKey(c);
-          if (k === KEY_B && failB) throw new Error("koios boom mid-role");
+          if (k === lastKey && failLast) throw new Error("koios boom mid-role");
           m.set(k, { weight: 10n, registered: true });
         }
         return m;
@@ -800,19 +812,71 @@ describe("finalizeClosedSurveys", () => {
         return 2_000n;
       },
     };
-    const recs = records(survey(), [dA, dB]);
+    const recs = records(survey(), dreps);
 
-    // First run gives up on the epoch fetching B; A's weight is already
-    // persisted, and is the resume cursor.
+    // First run gives up on the epoch fetching the second chunk; the first
+    // chunk's weights are already persisted, and are the resume cursor.
     await finalizeRecords(CONFIG, store, inputs, noProofs, recs, TIP);
-    expect(store.weights.size).toBe(1);
-    expect([...store.weights.values()][0]!.credential).toBe(KEY_A);
+    expect(store.weights.size).toBe(50);
+    expect(store.weights.has(`${END_EPOCH}|${Role.DRep}|${lastKey}`)).toBe(
+      false,
+    );
     expect(store.artifacts.size).toBe(0);
 
-    // Next cron: B now resolves, A comes from the cursor → artifact emitted.
-    failB = false;
+    // Next cron: the last resolves, the rest come from the cursor → emitted.
+    failLast = false;
     await finalizeRecords(CONFIG, store, inputs, noProofs, recs, TIP);
-    expect(store.weights.size).toBe(2);
+    expect(store.weights.size).toBe(51);
+    expect(store.artifacts.size).toBe(1);
+  });
+
+  it("stops fetching weights at the per-pass budget and resumes next pass", async () => {
+    const store = testStore();
+    const dreps = Array.from({ length: 520 }, (_, i) =>
+      response(
+        i.toString(16).padStart(4, "0").repeat(16),
+        keyCred(i.toString(16).padStart(4, "0").repeat(14)),
+        0,
+        200,
+        Role.DRep,
+      ),
+    );
+    await seed(
+      store,
+      dreps.map((r) => validatedRow(r)),
+    );
+    let fetched = 0;
+    const inputs: TallyInputSource = {
+      async stakeholderWeights() {
+        return new Map();
+      },
+      async drepWeights(_e, creds) {
+        fetched += creds.length;
+        return new Map(
+          creds.map((c) => [
+            credentialKey(c),
+            { weight: 10n, registered: true },
+          ]),
+        );
+      },
+      async stakeholderTotal() {
+        return 1_000n;
+      },
+      async drepTotal() {
+        return 2_000n;
+      },
+    };
+    const recs = records(survey(), dreps);
+
+    // 500 per pass: the survey postpones, its fetched rows banked.
+    await finalizeRecords(CONFIG, store, inputs, noProofs, recs, TIP);
+    expect(fetched).toBe(500);
+    expect(store.weights.size).toBe(500);
+    expect(store.artifacts.size).toBe(0);
+
+    // The remainder fits the next pass, and the artifact lands.
+    await finalizeRecords(CONFIG, store, inputs, noProofs, recs, TIP);
+    expect(fetched).toBe(520);
     expect(store.artifacts.size).toBe(1);
   });
 
