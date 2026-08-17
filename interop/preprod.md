@@ -76,9 +76,9 @@ sealed ciphertext for the sealed survey. Tessera has validated both
 - The host's transaction builder adds the responding credential's key hash as
   a required signer — that is the CIP-179 mechanism-A ownership proof Tessera
   validates.
-- Confirmation is polled through `GET /api/tx_status?hashes=…`; the decided
-  validation verdict and counted state are read back from the bundle's
-  `verdicts` and the list's `responseCounts`.
+- Once the response transaction has confirmed — by whatever means the host
+  already tracks its own submissions — Tessera's decision is read back from the
+  bundle's `verdicts` and the list's `responseCounts`.
 - A bundle serves its responses one page at a time. A host that only feeds
   `<tessera-respond>` needs page one, since the definition and the survey ref
   ride every page; a host that counts or displays responses itself follows
@@ -112,7 +112,7 @@ can produce. That study is the remaining deliverable of this record.
 1. Read the fixture surveys by exact reference.
 2. Render all fixture questions through `<tessera-respond>`.
 3. Submit an independent key-DRep response to a DRep-eligible survey.
-4. Poll confirmation through `/api/tx_status`.
+4. Wait for that transaction to confirm.
 5. Observe a decided positive proof verdict and a counted response.
 6. Submit a valid replacement and observe latest-valid-response-wins.
 7. Verify both applications decode the same role, credential, reference, and
