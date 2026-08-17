@@ -67,10 +67,14 @@ share `PORT`, so run one at a time or override it.
   named, for a host mirroring a chosen subset instead of paging Tessera's order.
   No `counts` or `nextCursor` (a named set has neither), the paging parameters
   are refused beside it, and a ref matching nothing is absent from the answer.
-- `GET /api/surveys/{txHash}/{index}` — one survey's self-contained bundle:
-  its definition record, ALL of its responses (sealed ciphertexts included),
-  the cancellations targeting it, its gov links, and the tip. `404` for an
-  unknown ref.
+- `GET /api/surveys/{txHash}/{index}[?cursor=…]` — one survey's self-contained
+  bundle: its definition record, one page of its responses (sealed ciphertexts
+  included) with `nextCursor` to continue, the cancellations targeting it, its
+  gov links, and the tip. The other sections describe the whole survey on every
+  page; `verdicts` is scoped to the page. A reader wanting every response follows
+  the cursor (`collectSurveyBundle` in `cardano-tessera-core`), restarting if a
+  page comes back with `resync` — the snapshot moved under it. `404` for an
+  unknown ref, `400` for a malformed cursor.
 - `GET /api/responded?credentials=key:<hex>,script:<hex>` — survey keys with at
   least one response from any of the given credentials (a wallet's payment +
   stake in one request); feeds the Explore "answered" flags.

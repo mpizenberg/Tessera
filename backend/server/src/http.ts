@@ -43,8 +43,10 @@ import { cors } from "hono/cors";
 
 import { toJsonSafe } from "cip-179/tally";
 import {
+  encodeResponseCursor,
   encodeSurveyCursor,
   isSurveyListFilter,
+  parseResponseCursor,
   parseSurveyCursor,
   searchTermsOf,
   type BackendHealth,
@@ -69,6 +71,14 @@ const UPSTREAM_TTL_MS = 20_000;
 /** Default and ceiling page sizes for the paged `/api/surveys` list. */
 const DEFAULT_PAGE_LIMIT = 50;
 const MAX_PAGE_LIMIT = 200;
+
+/**
+ * Responses per page of a survey bundle — fixed, with no request parameter to
+ * override it. Every consumer of a bundle wants the whole response set (it is a
+ * tally input, not a scrolling view), so a smaller page would only add round
+ * trips and a larger one would unbound the read this page size exists to bound.
+ */
+const RESPONSES_PER_PAGE = 200;
 
 /**
  * Upper bound on hashes one `/api/tx_status` request forwards to Koios. Real
@@ -469,28 +479,62 @@ export function createApp(
     const index = Number(c.req.param("index"));
     if (!/^[0-9a-f]{64}$/.test(txHash) || !Number.isInteger(index) || index < 0)
       return c.json({ error: "malformed survey ref" }, 404);
+    // One ETag for every page: a page is a function of the snapshot and of the
+    // cursor, and the cursor travels in the URL the validator is stored against.
     if (notModified(c, `W/"survey-${meta.fetchedAt}"`))
       return c.body(null, 304);
+    const cursorRaw = c.req.query("cursor");
+    const cursor = cursorRaw ? parseResponseCursor(cursorRaw) : null;
+    if (cursorRaw && !cursor) return c.json({ error: "malformed cursor" }, 400);
+    // A cursor from an older snapshot: answered from the current one, but
+    // flagged, because a bundle is a tally input and a response that crossed
+    // the boundary would silently change a result. The collector restarts.
+    const staleCursor =
+      cursor?.generation !== undefined && cursor.generation !== meta.fetchedAt;
     const key = `${txHash}:${index}`;
-    const [bundle, validated] = await Promise.all([
-      store.surveyBundle(key),
-      store.validatedForSurvey(key),
-    ]);
+    const bundle = await store.surveyBundle(key, {
+      cursor,
+      // One extra row decides `nextCursor` without a second query.
+      limit: RESPONSES_PER_PAGE + 1,
+    });
     if (!bundle) return c.json({ error: `unknown survey ${key}` }, 404);
+    const page = bundle.responses.slice(0, RESPONSES_PER_PAGE);
+    const last = page[page.length - 1];
+    // After the page, and narrowed to it: the survey's whole verdict set is the
+    // one read left that would grow with participation.
+    const pageKeys = new Set(
+      page.map((r) => validationKey(r.txHash, r.responseIndex)),
+    );
+    const validated = await store.validatedForSurvey(
+      key,
+      page.map((r) => r.txHash),
+    );
     const now = Math.floor(Date.now() / 1000);
     return c.json({
       survey: JSON.parse(bundle.record) as unknown,
-      responses: bundle.responses.map((r) => JSON.parse(r) as unknown),
+      responses: page.map((r) => JSON.parse(r.record) as unknown),
       cancellations: JSON.parse(bundle.cancellations) as unknown,
       govLinks: JSON.parse(bundle.govLinks) as unknown,
       tip: snapshotTip(meta),
       // Decided credential-proof verdicts only — an omitted key is *pending*,
-      // and the client must render it as such, never as failed.
+      // and the client must render it as such, never as failed. Scoped to this
+      // page's responses: a transaction can carry one the next page holds.
       verdicts: Object.fromEntries(
         validated
           .filter((r) => r.proofOk !== null)
-          .map((r) => [validationKey(r.txHash, r.responseIndex), r.proofOk]),
+          .map((r) => [validationKey(r.txHash, r.responseIndex), r.proofOk])
+          .filter(([k]) => pageKeys.has(k as string)),
       ),
+      nextCursor:
+        bundle.responses.length > RESPONSES_PER_PAGE && last
+          ? encodeResponseCursor({
+              slot: last.slot,
+              txHash: last.txHash,
+              responseIndex: last.responseIndex,
+              generation: meta.fetchedAt,
+            })
+          : null,
+      ...(staleCursor && { resync: true }),
       fetchedAt: meta.fetchedAt,
       ageSeconds: now - meta.fetchedAt,
     });

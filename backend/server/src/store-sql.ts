@@ -10,7 +10,7 @@
  * the reconciliation program — is composed in `sqlBuilders.ts`.
  */
 
-import type { SurveyListCounts } from "cardano-tessera-core";
+import type { ResponseCursor, SurveyListCounts } from "cardano-tessera-core";
 import { BINDABLE_ROLES, type GovLink, type GovLinkDoc } from "cip-179/domain";
 
 import type {
@@ -72,6 +72,8 @@ import {
   surveyCountsSql,
   surveyPageSql,
   surveysByKeysSql,
+  responsesForSurveyPageSql,
+  JSON_KEY_SET,
 } from "./sqlBuilders";
 
 const query = (sql: string, ...params: unknown[]): SqlQuery => ({
@@ -165,11 +167,6 @@ const SURVEY_GOV_LINKS_SELECT = `
 const SURVEY_BUNDLE_SELECT = `
   SELECT record, cancellations, gov_links AS govLinks
   FROM survey_index WHERE survey_key = ?`;
-
-/** Ordered so a bundle body is byte-stable across refreshes. */
-const RESPONSES_FOR_SURVEY = `
-  SELECT record FROM response WHERE survey_key = ?
-  ORDER BY slot, tx_hash, response_index`;
 
 const SCAN_STATE_UPSERT = `
   INSERT INTO scan_state
@@ -432,13 +429,23 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
     },
     async validatedForSurvey(
       surveyKey: string,
+      txHashes?: readonly string[],
     ): Promise<ValidatedResponseRow[]> {
+      if (txHashes?.length === 0) return [];
       const rows = await db.all<DbValidatedRow>(
-        query(
-          `SELECT ${VALIDATED_COLUMNS}
-           FROM validated_response WHERE survey_key = ?`,
-          surveyKey,
-        ),
+        txHashes
+          ? query(
+              `SELECT ${VALIDATED_COLUMNS}
+               FROM validated_response
+               WHERE survey_key = ? AND tx_hash IN ${JSON_KEY_SET}`,
+              surveyKey,
+              JSON.stringify([...new Set(txHashes)]),
+            )
+          : query(
+              `SELECT ${VALIDATED_COLUMNS}
+               FROM validated_response WHERE survey_key = ?`,
+              surveyKey,
+            ),
       );
       return rows.map(validatedFromDb);
     },
@@ -774,13 +781,13 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
         rows.map((r) => [r.surveyKey, JSON.parse(r.govLinks) as GovLink[]]),
       );
     },
-    async surveyBundle(surveyKey: string): Promise<SurveyBundleRows | null> {
-      // Survey and responses are read together: separately, a refresh landing
-      // between the two reads would pair one run's survey with the next's
-      // responses.
+    async surveyBundle(
+      surveyKey: string,
+      page: { cursor: ResponseCursor | null; limit: number },
+    ): Promise<SurveyBundleRows | null> {
       const [surveys, responses] = await db.batchAll([
         query(SURVEY_BUNDLE_SELECT, surveyKey),
-        query(RESPONSES_FOR_SURVEY, surveyKey),
+        responsesForSurveyPageSql(surveyKey, page.cursor, page.limit),
       ]);
       const row = surveys?.[0] as
         | { record: string; cancellations: string; govLinks: string }
@@ -788,9 +795,7 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       if (!row) return null;
       return {
         ...row,
-        responses: ((responses ?? []) as { record: string }[]).map(
-          (r) => r.record,
-        ),
+        responses: (responses ?? []) as ResponseRow[],
       };
     },
     async respondedSurveyKeys(

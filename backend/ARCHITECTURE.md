@@ -266,21 +266,39 @@ refresh materialized, and a request costs what the survey it asked for costs:
   a request costs its refs and nothing else; `counts` and `nextCursor` are absent
   because a named set has neither, and the paging parameters are refused rather
   than ignored. A ref matching no stored row is simply absent from the answer.
-- **`GET /api/surveys/{txHash}/{index}`** — the self-contained per-survey bundle:
-  the definition record, **all** its `ResponseRecord`s (sealed ciphertexts
-  included), the cancellations targeting it, and the tip. One request serves the
-  detail/respond pages _and_ the standalone verifier — a result is re-verified
-  from exactly this slice, so **the verifier never needs the whole corpus**. It
-  also carries `verdicts`, the decided `TALLY-SPEC.md` §3 rule-2 proof verdicts keyed
-  `"<txHash>:<responseIndex>"` — beside the chain data, never inside it, because
-  the verifier re-derives `SurveyBundle` and must not read the serving tier's
-  opinion as part of it. A key the map lacks is **pending, not failed**, and stays
-  counted in the live tally (counting only what is proven would make every fresh
-  response vanish until a refresh decided it); only a decided `false` excludes,
-  applied before latest-wins dedup. Beside the chain data for the same reason, it
-  carries `govLinks` — the survey's own slice of what the list payload reports
-  for a page — so a reader holding one reference needs no list read to show the
-  linkage. Empty means none as of the last successful link pass.
+- **`GET /api/surveys/{txHash}/{index}[?cursor=…]`** — the self-contained
+  per-survey bundle: the definition record, its `ResponseRecord`s (sealed
+  ciphertexts included) **a page at a time**, the cancellations targeting it, its
+  governance links, and the tip. This slice serves the detail/respond pages _and_
+  the standalone verifier — a result is re-verified from exactly it, so **the
+  verifier never needs the whole corpus**.
+
+  Responses are the section that grows with participation, so they page by the
+  keyset `(slot, txHash, responseIndex)` — the `response_survey` index's own
+  order: `nextCursor` continues, `?cursor=` resumes, and every other section
+  describes the whole survey on every page. The page size is fixed with no
+  request parameter, because every consumer of a bundle wants the whole set (it
+  is a tally input, not a scrolling view), so a knob could only add round trips
+  or unbound the read it exists to bound. Following the cursor to the end is
+  core's `collectSurveyBundle`, used by the app's indexer source and the
+  verifier's cross-check alike. A cursor minted against an older snapshot is
+  answered _and_ flagged `resync`, and the collector starts over rather than
+  stitching two generations: a response that crossed the boundary would silently
+  change a result.
+
+  Two fields ride beside the chain data, never inside it, because the verifier
+  re-derives `SurveyBundle` and must not read the serving tier's opinion as part
+  of it. `verdicts` holds the decided `TALLY-SPEC.md` §3 rule-2 proof verdicts
+  keyed `"<txHash>:<responseIndex>"`, scoped to the page's responses — the
+  survey's whole verdict set was the other read that grew with participation. A
+  key the map lacks is **pending, not failed**, and stays counted in the live
+  tally (counting only what is proven would make every fresh response vanish
+  until a refresh decided it); only a decided `false` excludes, applied before
+  latest-wins dedup. `govLinks` holds the survey's own slice of what the list
+  payload reports for a page, so a reader holding one reference needs no list
+  read to show the linkage; empty means none as of the last successful link
+  pass.
+
 - **`GET /api/responded?credentials=key:<hex>,script:<hex>`** — a slim
   `[surveyKey]` projection, so Explore can flag "surveys I answered" without
   downloading responses; the mapping is public on-chain data. Credentials travel

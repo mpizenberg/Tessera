@@ -11,6 +11,8 @@
  * AND-of-substrings search, chip counts over the search-matching set.
  */
 
+import type { ResponseCursor } from "cardano-tessera-core";
+
 import type {
   CancellationRow,
   ResponseCountBank,
@@ -556,13 +558,14 @@ export const byKeysSql = (sql: string, keys: readonly string[]): SqlQuery[] =>
     (chunk) => ({ sql, params: [chunk.json] }),
   );
 
-const KEYS = "(SELECT value FROM json_each(?))";
+/** A bound JSON array read as a key set: `… IN ${JSON_KEY_SET}`. */
+export const JSON_KEY_SET = "(SELECT value FROM json_each(?))";
 
 /** Stored projections by key. */
 export const surveysByKeysSql = (keys: readonly string[]): SqlQuery[] =>
   byKeysSql(
     `SELECT ${SURVEY_ROW_COLUMNS} FROM survey_index
-     WHERE survey_key IN ${KEYS}
+     WHERE survey_key IN ${JSON_KEY_SET}
      ORDER BY survey_key`,
     keys,
   );
@@ -573,10 +576,44 @@ export const responsesBySurveysSql = (
 ): SqlQuery[] =>
   byKeysSql(
     `SELECT ${RESPONSE_ROW_COLUMNS} FROM response
-     WHERE survey_key IN ${KEYS}
+     WHERE survey_key IN ${JSON_KEY_SET}
      ORDER BY survey_key, slot, tx_hash, response_index`,
     surveyKeys,
   );
+
+/**
+ * One survey's responses in storage order, from `cursor` exclusive. The
+ * `response_survey` index is exactly this order, so the page is a seek and a
+ * walk of its own length — no sort, and nothing read below the cursor.
+ */
+export const responsesForSurveyPageSql = (
+  surveyKey: string,
+  cursor: ResponseCursor | null,
+  limit: number,
+): SqlQuery => ({
+  sql: `SELECT ${RESPONSE_ROW_COLUMNS} FROM response
+        WHERE survey_key = ?${
+          cursor
+            ? ` AND (slot > ? OR (slot = ? AND (tx_hash > ?
+                 OR (tx_hash = ? AND response_index > ?))))`
+            : ""
+        }
+        ORDER BY slot, tx_hash, response_index
+        LIMIT ?`,
+  params: [
+    surveyKey,
+    ...(cursor
+      ? [
+          cursor.slot,
+          cursor.slot,
+          cursor.txHash,
+          cursor.txHash,
+          cursor.responseIndex,
+        ]
+      : []),
+    limit,
+  ],
+});
 
 export const CANCELLATION_ROW_COLUMNS = `tx_hash AS txHash,
        survey_key AS surveyKey, slot, record`;
@@ -587,7 +624,7 @@ export const cancellationsBySurveysSql = (
 ): SqlQuery[] =>
   byKeysSql(
     `SELECT ${CANCELLATION_ROW_COLUMNS} FROM cancellation
-     WHERE survey_key IN ${KEYS}
+     WHERE survey_key IN ${JSON_KEY_SET}
      ORDER BY survey_key, slot, tx_hash`,
     surveyKeys,
   );
@@ -598,7 +635,7 @@ export const markFinalizedCancelledSql = (
 ): SqlQuery[] =>
   byKeysSql(
     `UPDATE survey_index SET finalized_cancelled = 1, cancelled = 1
-     WHERE finalized_cancelled = 0 AND survey_key IN ${KEYS}`,
+     WHERE finalized_cancelled = 0 AND survey_key IN ${JSON_KEY_SET}`,
     surveyKeys,
   );
 
@@ -614,7 +651,7 @@ export const completedValidationsSql = (
     `SELECT tx_hash AS txHash, response_index AS responseIndex,
             linked_action_id AS linkedActionId, slot, epoch_no AS epochNo
      FROM validated_response
-     WHERE tx_hash IN ${KEYS}
+     WHERE tx_hash IN ${JSON_KEY_SET}
        AND block_index IS NOT NULL AND proof_ok IS NOT NULL`,
     txHashes,
   );
@@ -636,15 +673,15 @@ export const unclaimedTxProofHashesSql = (
     sql: `SELECT c.tx_hash AS txHash FROM tx_proof_cache c
             WHERE NOT EXISTS (
                 SELECT 1 FROM response r
-                WHERE r.tx_hash = c.tx_hash AND r.survey_key IN ${KEYS})
+                WHERE r.tx_hash = c.tx_hash AND r.survey_key IN ${JSON_KEY_SET})
               AND NOT EXISTS (
                 SELECT 1 FROM cancellation x
-                WHERE x.tx_hash = c.tx_hash AND x.survey_key IN ${KEYS})
+                WHERE x.tx_hash = c.tx_hash AND x.survey_key IN ${JSON_KEY_SET})
               AND NOT EXISTS (
                 SELECT 1 FROM survey_index s
                 WHERE s.survey_key >= c.tx_hash || ':'
                   AND s.survey_key < c.tx_hash || ';'
-                  AND s.survey_key IN ${KEYS})`,
+                  AND s.survey_key IN ${JSON_KEY_SET})`,
     params: [chunk.json, chunk.json, chunk.json],
   }));
 
@@ -658,7 +695,7 @@ export const artifactKeysSql = (surveyKeys: readonly string[]): SqlQuery[] =>
   byKeysSql(
     `SELECT survey_key AS surveyKey,
             json_extract(artifact, '$.tally.cancelled') IS NOT NULL AS cancelled
-     FROM tally_artifact WHERE survey_key IN ${KEYS}`,
+     FROM tally_artifact WHERE survey_key IN ${JSON_KEY_SET}`,
     surveyKeys,
   );
 
@@ -711,7 +748,7 @@ export const responseCountBanksSql = (
   byKeysSql(
     `SELECT survey_key AS surveyKey, settled_count AS settledCount,
             below_slot AS belowSlot
-     FROM response_count_bank WHERE survey_key IN ${KEYS}`,
+     FROM response_count_bank WHERE survey_key IN ${JSON_KEY_SET}`,
     surveyKeys,
   );
 
@@ -722,6 +759,6 @@ export const cachedByTxHashSql = (
   txHashes: readonly string[],
 ): SqlQuery[] =>
   byKeysSql(
-    `SELECT tx_hash AS txHash, ${column} FROM ${table} WHERE tx_hash IN ${KEYS}`,
+    `SELECT tx_hash AS txHash, ${column} FROM ${table} WHERE tx_hash IN ${JSON_KEY_SET}`,
     txHashes,
   );

@@ -13,6 +13,7 @@
  * async because D1 is; the node driver wraps its synchronous calls.
  */
 
+import type { ResponseCursor } from "cardano-tessera-core";
 import type { ChainTip, GovLink, GovLinkDoc } from "cip-179/domain";
 
 /** One SQL statement (SQLite dialect) and its positional bindings. */
@@ -187,7 +188,15 @@ export interface TallyStore {
   upsertValidatedResponses(
     rows: readonly ValidatedResponseRow[],
   ): Promise<void>;
-  validatedForSurvey(surveyKey: string): Promise<ValidatedResponseRow[]>;
+  /**
+   * The survey's verdict rows, or only those recorded for `txHashes` when given
+   * — the bundle route narrows to the page it is serving, so its verdict read
+   * is bounded by the page and not by the survey's participation.
+   */
+  validatedForSurvey(
+    surveyKey: string,
+    txHashes?: readonly string[],
+  ): Promise<ValidatedResponseRow[]>;
   /**
    * Prune validated rows — and any reveal outcome recorded for them — by
    * (txHash, responseIndex). Used at finalization when a counted response has
@@ -654,8 +663,12 @@ export interface SurveyBundleRows {
   readonly record: string;
   /** Wire JSON of the `CancellationRecord[]` targeting it. */
   readonly cancellations: string;
-  /** Wire JSON of each `ResponseRecord` targeting it. */
-  readonly responses: string[];
+  /**
+   * One page of the responses targeting it, in storage order (slot, carrying
+   * transaction, index within it) — coordinates included, because the page's
+   * last row is the next cursor.
+   */
+  readonly responses: ResponseRow[];
   /** Wire JSON of the `GovLink[]` discovered for it, `"[]"` when none. */
   readonly govLinks: string;
 }
@@ -784,7 +797,16 @@ export interface SnapshotStore {
    * together: separately, a refresh landing between the two reads would pair
    * one run's survey with the next run's responses.
    */
-  surveyBundle(surveyKey: string): Promise<SurveyBundleRows | null>;
+  /**
+   * One survey's row plus a page of its responses, read together: separately, a
+   * refresh landing between the two reads would pair one run's survey with the
+   * next's responses. `page.cursor` is exclusive; `page.limit` bounds the read,
+   * so no request costs a survey's whole participation.
+   */
+  surveyBundle(
+    surveyKey: string,
+    page: { cursor: ResponseCursor | null; limit: number },
+  ): Promise<SurveyBundleRows | null>;
   /**
    * Survey keys any of `credentials` responded to (`credentialKey` form). Raw
    * membership, no dedupe or validity filter — this feeds "surveys I answered".

@@ -620,26 +620,65 @@ describe("store-node response rows", () => {
   it("serves one survey's bundle in a stable order", async () => {
     store = openBackendStore(":memory:");
     await store.reconcileSegment(ALL_SLOTS, surveys, rows, [], [], meta);
+    const whole = { cursor: null, limit: 10 };
 
     // (slot, txHash, responseIndex): the same bytes on every refresh, so the
     // ETag's promise that an unchanged snapshot means an unchanged body holds.
-    expect(await store.surveyBundle("aa:0")).toEqual({
-      record: `{"k":"aa:0"}`,
-      cancellations: `[{"c":"aa:0"}]`,
-      govLinks: `[{"g":"aa:0"}]`,
-      responses: [
-        `{"tx":"cc","i":0}`,
-        `{"tx":"cc","i":1}`,
-        `{"tx":"dd","i":0}`,
-      ],
-    });
-    expect((await store.surveyBundle("bb:1"))?.responses).toEqual([
+    const bundle = await store.surveyBundle("aa:0", whole);
+    expect(bundle?.record).toBe(`{"k":"aa:0"}`);
+    expect(bundle?.cancellations).toBe(`[{"c":"aa:0"}]`);
+    expect(bundle?.govLinks).toBe(`[{"g":"aa:0"}]`);
+    expect(bundle?.responses.map((r) => r.record)).toEqual([
+      `{"tx":"cc","i":0}`,
+      `{"tx":"cc","i":1}`,
+      `{"tx":"dd","i":0}`,
+    ]);
+    const other = await store.surveyBundle("bb:1", whole);
+    expect(other?.responses.map((r) => r.record)).toEqual([
       `{"tx":"ff","i":0}`,
     ]);
-    expect((await store.surveyBundle("bb:1"))?.govLinks).toBe("[]");
+    expect(other?.govLinks).toBe("[]");
     // A survey nobody answered still has a bundle; an unknown one has none.
-    expect((await store.surveyBundle("empty:0"))?.responses).toEqual([]);
-    expect(await store.surveyBundle("unknown:0")).toBeNull();
+    expect((await store.surveyBundle("empty:0", whole))?.responses).toEqual([]);
+    expect(await store.surveyBundle("unknown:0", whole)).toBeNull();
+  });
+
+  it("pages a survey's responses by keyset, resuming after the cursor", async () => {
+    store = openBackendStore(":memory:");
+    await store.reconcileSegment(ALL_SLOTS, surveys, rows, [], [], meta);
+
+    const first = await store.surveyBundle("aa:0", { cursor: null, limit: 2 });
+    expect(first?.responses.map((r) => r.record)).toEqual([
+      `{"tx":"cc","i":0}`,
+      `{"tx":"cc","i":1}`,
+    ]);
+    // The cursor is the page's last row, so the tie inside transaction `cc` is
+    // broken by response index rather than re-serving or skipping a row.
+    const last = first!.responses[1]!;
+    const second = await store.surveyBundle("aa:0", {
+      cursor: {
+        slot: last.slot,
+        txHash: last.txHash,
+        responseIndex: last.responseIndex,
+      },
+      limit: 2,
+    });
+    expect(second?.responses.map((r) => r.record)).toEqual([
+      `{"tx":"dd","i":0}`,
+    ]);
+    // The survey's own row rides every page — it is what a page of responses
+    // hangs off, not a section of the page.
+    expect(second?.record).toBe(`{"k":"aa:0"}`);
+    // Past the end: no rows, and the page still resolves rather than 404ing.
+    const third = await store.surveyBundle("aa:0", {
+      cursor: {
+        slot: last.slot + 1_000_000,
+        txHash: "ff",
+        responseIndex: 0,
+      },
+      limit: 2,
+    });
+    expect(third?.responses).toEqual([]);
   });
 });
 

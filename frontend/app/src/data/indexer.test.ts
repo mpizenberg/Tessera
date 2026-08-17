@@ -134,6 +134,42 @@ describe("IndexerDataSource", () => {
     await expect(src.surveyList()).rejects.toThrow(/preview.*preprod/s);
   });
 
+  it("follows the bundle's cursor until the responses run out", async () => {
+    const bundlePage = (
+      responses: readonly { txHash: string }[],
+      nextCursor: string | null,
+    ): unknown => ({
+      ...(toJsonSafe({
+        survey: {
+          txHash: "deadbeef",
+          slot: 100,
+          ref: { txId: TX_ID, index: 3 },
+        },
+        responses,
+        cancellations: [],
+        tip: { epoch: 1345, slot: 999, time: 1000, epochSlot: 5 },
+      }) as Record<string, unknown>),
+      nextCursor,
+    });
+    const fetchMock = stubFetch(
+      withHealth((url) =>
+        url.includes("cursor=")
+          ? { body: bundlePage([{ txHash: "dd" }], null) }
+          : { body: bundlePage([{ txHash: "cc" }], "150:cc:0") },
+      ),
+    );
+    const src = new IndexerDataSource(BASE, "preview");
+
+    const bundle = await src.surveyBundle({ txId: TX_ID, index: 3 });
+    // The seam still hands back one whole bundle; paging is the client's.
+    expect(bundle.responses.map((r) => r.txHash)).toEqual(["cc", "dd"]);
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls.filter((u) => u.includes("/api/surveys/"))).toEqual([
+      `${BASE}/api/surveys/deadbeef/3`,
+      `${BASE}/api/surveys/deadbeef/3?cursor=150%3Acc%3A0`,
+    ]);
+  });
+
   it("fetches a survey bundle by hex ref", async () => {
     const body = toJsonSafe({
       survey: { txHash: "deadbeef", slot: 100, ref: { txId: TX_ID, index: 3 } },

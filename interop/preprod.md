@@ -79,6 +79,10 @@ sealed ciphertext for the sealed survey. Tessera has validated both
 - Confirmation is polled through `GET /api/tx_status?hashes=…`; the decided
   validation verdict and counted state are read back from the bundle's
   `verdicts` and the list's `responseCounts`.
+- A bundle serves its responses one page at a time. A host that only feeds
+  `<tessera-respond>` needs page one, since the definition and the survey ref
+  ride every page; a host that counts or displays responses itself follows
+  `nextCursor` to the end, and starts over if a page answers `resync`.
 
 ## What a host must not claim
 

@@ -103,6 +103,22 @@ export interface SurveyBundlePayload extends SurveyBundle {
    * successful link pass", never "unknown".
    */
   readonly govLinks?: readonly GovLink[];
+  /**
+   * Continuation for the next page of {@link SurveyBundle.responses} (opaque
+   * keyset cursor), `null` when this page is the last. Absent from a source
+   * that does not page its responses. Everything else in the payload — survey,
+   * cancellations, links, tip — describes the whole survey on every page;
+   * `responses` and `verdicts` are the paged sections.
+   */
+  readonly nextCursor?: string | null;
+  /**
+   * The cursor this page answered was minted against an older snapshot, so the
+   * response set may have moved across its boundary. Unlike the list's
+   * {@link SurveyListPayload.resync} this is not cosmetic — a bundle is a tally
+   * input — so a collector must restart rather than append
+   * ({@link import("./page").collectSurveyBundle}).
+   */
+  readonly resync?: boolean;
 }
 
 /**

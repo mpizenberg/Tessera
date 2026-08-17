@@ -1,5 +1,6 @@
 /**
- * Shared pagination semantics for the Explore survey list.
+ * Shared pagination semantics for the payloads that can grow without bound:
+ * the Explore survey list, and one survey's responses inside its bundle.
  *
  * The serving tier materializes per-survey rows at refresh time and answers
  * page queries in SQL (`backend/server`); the direct-Koios path holds the full
@@ -21,6 +22,15 @@
  * answers it best-effort and sets `resync` so the client can silently refresh
  * page one. Duplicates are the client's to drop (dedupe by survey key on
  * append).
+ *
+ * A survey's responses page by the same machinery and a stricter rule. Their
+ * order is the storage order — slot, then carrying transaction, then index
+ * within it — which no refresh reorders, so the only instability is the set
+ * itself changing under a live cursor. A bundle feeds a tally rather than a
+ * scrolling list, where a silently skipped response is a wrong result, so a
+ * cursor from an older generation is answered *and* flagged, and
+ * {@link collectSurveyBundle} starts over rather than stitching two
+ * generations together.
  */
 
 import type { Question } from "cip-179";
@@ -33,7 +43,7 @@ import {
   type SurveyRecord,
 } from "cip-179/domain";
 
-import type { SurveyListPayload } from "./source";
+import type { SurveyBundlePayload, SurveyListPayload } from "./source";
 import { aggregateSurveyList } from "./surveyList";
 
 /** The Explore filter chips; `mine` matches on the caller's credentials. */
@@ -116,6 +126,41 @@ export function parseSurveyCursor(s: string): SurveyCursor | null {
     bucket: Number(m[1]),
     slot: Number(m[2]),
     key: m[3] as string,
+    ...(m[4] !== undefined && { generation: Number(m[4]) }),
+  };
+}
+
+/**
+ * The keyset position of a response row inside its survey: slot, the hash of
+ * the transaction carrying it, and its index within that transaction — the
+ * storage order, which is also the order a bundle serves.
+ */
+export interface ResponseCursor {
+  readonly slot: number;
+  readonly txHash: string;
+  readonly responseIndex: number;
+  /**
+   * `fetchedAt` of the snapshot the cursor was minted against, as
+   * {@link SurveyCursor.generation}. A mismatch means the survey's response set
+   * may have moved mid-collection, which for a tally input is not a cosmetic
+   * problem — see the module header.
+   */
+  readonly generation?: number | undefined;
+}
+
+/** Wire form "<slot>:<txHex>:<index>[:<generation>]". */
+export function encodeResponseCursor(c: ResponseCursor): string {
+  const base = `${c.slot}:${c.txHash}:${c.responseIndex}`;
+  return c.generation === undefined ? base : `${base}:${c.generation}`;
+}
+
+export function parseResponseCursor(s: string): ResponseCursor | null {
+  const m = /^(\d+):([0-9a-f]{64}):(\d+)(?::(\d+))?$/.exec(s);
+  if (!m) return null;
+  return {
+    slot: Number(m[1]),
+    txHash: m[2] as string,
+    responseIndex: Number(m[3]),
     ...(m[4] !== undefined && { generation: Number(m[4]) }),
   };
 }
@@ -293,4 +338,56 @@ export function pageSurveyList(
           })
         : null,
   };
+}
+
+/**
+ * How many times {@link collectSurveyBundle} restarts before giving up. A
+ * restart happens when a refresh lands mid-collection; refreshes are minutes
+ * apart and a survey is a handful of pages, so more than a couple of restarts
+ * means something is wrong rather than merely busy, and a caller waiting on a
+ * tally deserves the error instead of a loop.
+ */
+export const MAX_BUNDLE_RESYNCS = 3;
+
+/**
+ * Read a survey's whole bundle from a paged source: page one, then each
+ * continuation, responses concatenated and verdicts merged in arrival order.
+ *
+ * A page that reports `resync` was minted against a different snapshot than the
+ * pages before it, so the collection is abandoned and restarted rather than
+ * stitched — see the module header on why a bundle is stricter than a list.
+ * A source that does not page (no `nextCursor` on its answer) returns from the
+ * first call, so this is safe to wrap around any bundle read.
+ */
+export async function collectSurveyBundle(
+  fetchPage: (cursor: string | null) => Promise<SurveyBundlePayload>,
+): Promise<SurveyBundlePayload> {
+  for (let attempt = 0; ; attempt++) {
+    const first = await fetchPage(null);
+    const responses = [...first.responses];
+    const verdicts = { ...first.verdicts };
+    let cursor = first.nextCursor ?? null;
+    let restart = false;
+    while (cursor !== null) {
+      const page = await fetchPage(cursor);
+      if (page.resync) {
+        restart = true;
+        break;
+      }
+      responses.push(...page.responses);
+      Object.assign(verdicts, page.verdicts);
+      cursor = page.nextCursor ?? null;
+    }
+    if (!restart)
+      return {
+        ...first,
+        responses,
+        ...(first.verdicts !== undefined && { verdicts }),
+        nextCursor: null,
+      };
+    if (attempt >= MAX_BUNDLE_RESYNCS)
+      throw new Error(
+        `survey bundle kept changing under pagination (${MAX_BUNDLE_RESYNCS} restarts)`,
+      );
+  }
 }

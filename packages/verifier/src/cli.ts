@@ -35,9 +35,11 @@ import {
 } from "cip-179/domain";
 import { fromJsonSafe, type TallyArtifact } from "cip-179/tally";
 import {
+  collectSurveyBundle,
   KOIOS_URL,
   SECONDS_PER_EPOCH,
   type AppConfig,
+  type SurveyBundlePayload,
 } from "cardano-tessera-core";
 import { KoiosDataSource, KoiosTallyInputs } from "cardano-tessera-koios";
 import { revealResponses } from "cip-179/tlock";
@@ -59,7 +61,18 @@ async function crossCheckBackendBundle(
 ): Promise<string[]> {
   let backend: SurveyBundle;
   try {
-    backend = fromJsonSafe(await getJson<unknown>(url)) as SurveyBundle;
+    // Every page, or the diff would report the unread tail as missing
+    // responders — a false MISMATCH.
+    backend = await collectSurveyBundle(
+      async (cursor) =>
+        fromJsonSafe(
+          await getJson<unknown>(
+            cursor === null
+              ? url
+              : `${url}?cursor=${encodeURIComponent(cursor)}`,
+          ),
+        ) as SurveyBundlePayload,
+    );
   } catch (err) {
     return [`backend bundle unavailable for cross-check (${String(err)})`];
   }

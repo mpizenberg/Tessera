@@ -8,7 +8,7 @@
  * assembled once per interval. It speaks the HTTP contract in
  * `backend/server/src/http.ts`, one route per `DataSource` method:
  *   - `GET /api/surveys`                    the Explore-list payload
- *   - `GET /api/surveys/{txHash}/{index}`   one survey's self-contained bundle
+ *   - `GET /api/surveys/{txHash}/{index}`   one survey's bundle, responses paged
  *   - `GET /api/responded?credentials=`     survey keys a credential answered
  *   - `GET /api/tx_status`                  live confirmation counts
  *
@@ -20,13 +20,14 @@
  * offline path (when no indexer URL is configured); this is an addition.
  */
 
-import type {
-  BackendHealth,
-  DataSource,
-  Network,
-  SurveyBundlePayload,
-  SurveyListParams,
-  SurveyListPayload,
+import {
+  collectSurveyBundle,
+  type BackendHealth,
+  type DataSource,
+  type Network,
+  type SurveyBundlePayload,
+  type SurveyListParams,
+  type SurveyListPayload,
 } from "cardano-tessera-core";
 import { bytesToHex } from "cip-179/domain";
 import { fromJsonSafe, type TallyArtifact } from "cip-179/tally";
@@ -88,13 +89,24 @@ export class IndexerDataSource implements DataSource {
   }
 
   async surveyBundle(ref: SurveyRef): Promise<SurveyBundlePayload> {
-    const [raw] = await Promise.all([
-      this.getJson<unknown>(
-        `${this.baseUrl}/api/surveys/${bytesToHex(ref.txId)}/${ref.index}`,
+    // The bundle's responses are paged, and every consumer here wants the whole
+    // set (the audit and tally are over all of them), so the seam hands back a
+    // complete bundle and the paging stays inside this method.
+    const url = `${this.baseUrl}/api/surveys/${bytesToHex(ref.txId)}/${ref.index}`;
+    const [bundle] = await Promise.all([
+      collectSurveyBundle(
+        async (cursor) =>
+          fromJsonSafe(
+            await this.getJson<unknown>(
+              cursor === null
+                ? url
+                : `${url}?cursor=${encodeURIComponent(cursor)}`,
+            ),
+          ) as SurveyBundlePayload,
       ),
       this.assertNetwork(),
     ]);
-    return fromJsonSafe(raw) as SurveyBundlePayload;
+    return bundle;
   }
 
   async respondedKeys(credentialKeys: readonly string[]): Promise<string[]> {

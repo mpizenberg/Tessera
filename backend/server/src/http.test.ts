@@ -16,7 +16,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Role, type Credential, type SurveyDefinition } from "cip-179";
 import { hexToBytes, refKey } from "cip-179/domain";
 import { fromJsonSafe, toJsonSafe } from "cip-179/tally";
-import { encodeSurveyCursor, parseSurveyCursor } from "cardano-tessera-core";
+import {
+  encodeResponseCursor,
+  encodeSurveyCursor,
+  parseSurveyCursor,
+} from "cardano-tessera-core";
 import type {
   CancellationRecord,
   ChainTip,
@@ -40,9 +44,14 @@ function appWith(store: TestStore) {
 async function seed(
   store: TestStore,
   govLinks: readonly GovLink[] = [],
+  extraResponses: readonly ResponseRecord[] = [],
 ): Promise<void> {
   const snapshot = materializeSnapshot(
-    { surveys: [surveyA, surveyB], responses, cancellations: [cancellation] },
+    {
+      surveys: [surveyA, surveyB],
+      responses: [...responses, ...extraResponses],
+      cancellations: [cancellation],
+    },
     tip,
     govLinks,
     (await store.artifactKeysFor([surveyA, surveyB].map((s) => refKey(s.ref))))
@@ -575,6 +584,76 @@ describe("GET /api/surveys/{txHash}/{index}", () => {
       await (await app.request(`/api/surveys/${TX_B}/1`)).json(),
     ) as Record<string, unknown>;
     expect(unlinked["govLinks"]).toEqual([]);
+  });
+
+  it("pages the responses, the survey riding every page", async () => {
+    const store = testStore();
+    // 199 more responses on A, each in its own transaction, so A holds 202 and
+    // the 200-row page boundary is crossed once with a remainder.
+    const extra = Array.from({ length: 199 }, (_, i) =>
+      response(
+        surveyA,
+        cred1,
+        970_000 + i,
+        (i + 1).toString(16).padStart(64, "0"),
+      ),
+    );
+    await seed(store, [], extra);
+    const app = appWith(store);
+    const pageOf = async (qs: string): Promise<Record<string, unknown>> => {
+      const res = await app.request(`/api/surveys/${TX_A}/0${qs}`);
+      expect(res.status).toBe(200);
+      return fromJsonSafe(await res.json()) as Record<string, unknown>;
+    };
+
+    const first = await pageOf("");
+    expect((first["responses"] as unknown[]).length).toBe(200);
+    expect(first["nextCursor"]).toBeTypeOf("string");
+    const second = await pageOf(
+      `?cursor=${encodeURIComponent(first["nextCursor"] as string)}`,
+    );
+    expect((second["responses"] as unknown[]).length).toBe(2);
+    expect(second["nextCursor"]).toBeNull();
+
+    // Every page describes the whole survey; only the responses are the page.
+    for (const page of [first, second]) {
+      expect((page["survey"] as { txHash: string }).txHash).toBe(TX_A);
+      expect(page["govLinks"]).toEqual([]);
+      expect(page["cancellations"]).toEqual([]);
+      expect(page["resync"]).toBeUndefined();
+    }
+    // No row served twice or skipped, and the order is (slot, tx, index).
+    const seen = [
+      ...(first["responses"] as { slot: number }[]),
+      ...(second["responses"] as { slot: number }[]),
+    ];
+    expect(seen.length).toBe(202);
+    expect(new Set(seen.map((r) => JSON.stringify(r))).size).toBe(202);
+    expect(seen.map((r) => r.slot)).toEqual(
+      [...seen.map((r) => r.slot)].sort((a, b) => a - b),
+    );
+  });
+
+  it("flags a cursor from an older snapshot instead of stitching", async () => {
+    const app = appWith(await seededStore());
+    const stale = encodeResponseCursor({
+      slot: 950_000,
+      txHash: "cc".repeat(32),
+      responseIndex: 0,
+      generation: FETCHED_AT - 1,
+    });
+    const body = (await (
+      await app.request(
+        `/api/surveys/${TX_A}/0?cursor=${encodeURIComponent(stale)}`,
+      )
+    ).json()) as Record<string, unknown>;
+    expect(body["resync"]).toBe(true);
+    // Still answered from the current snapshot — the flag is the contract, not
+    // an error.
+    expect((body["responses"] as unknown[]).length).toBe(2);
+    expect(
+      (await app.request(`/api/surveys/${TX_A}/0?cursor=junk`)).status,
+    ).toBe(400);
   });
 
   it("404s an unknown or malformed ref", async () => {
