@@ -153,6 +153,9 @@ env file is read. A build fails when its own network's two are missing — empty
 is a valid, explicit value — so a forgotten `.env.deploy` cannot silently ship
 a misconfigured app.
 
+A build reads the payload shapes it was built against, so a backend release
+that renames or drops a field wants the app redeployed in the same window.
+
 CIP-30 identifies both preprod and Preview as network id `0`; the app cannot
 distinguish those wallet-selected testnets through the standard wallet API, so
 users must select the exact one. Backend identity, Koios, storage, explorer

@@ -3,11 +3,15 @@
  * snapshot age, the last refresh's upstream usage against its budget, 24 h
  * volume per upstream identity, and anything alarming (failed refresh,
  * validation backlog). Display-only chrome — it renders nothing in direct-Koios
- * mode (no backend to report on) and hides itself when the health fetch fails
- * rather than adding an error of its own.
+ * mode (no backend to report on) and never adds an error of its own: whatever
+ * fails inside it, the footer collapses and the screen it decorates stands.
+ * That has to hold for more than a failed fetch — a payload whose shape this
+ * build does not know (a browser holding an older app than the backend it
+ * reads) throws while rendering — so it is a boundary, not a guarded read.
  */
 
 import {
+  ErrorBoundary,
   Show,
   createSignal,
   onCleanup,
@@ -60,10 +64,13 @@ const Item: Component<{
   </span>
 );
 
-export const HealthFooter: Component = () => {
+/** The readouts, rendered behind the boundary {@link HealthFooter} puts up. */
+const Readouts: Component = () => {
   const app = useApp();
-  // Same guarded-read pattern as Explore's snapData: `.error` first, so a
-  // failed health fetch collapses the footer instead of throwing.
+  // The expected failures — no backend, nothing fetched yet, a health read that
+  // failed — are guarded here rather than left to the boundary: a tripped
+  // boundary stays tripped until something resets it, while a guarded read
+  // collapses the footer and brings it back at the next successful fetch.
   const health = (): BackendHealth | undefined =>
     app.health.error ? undefined : (app.health() ?? undefined);
 
@@ -183,3 +190,9 @@ export const HealthFooter: Component = () => {
     </Show>
   );
 };
+
+export const HealthFooter: Component = () => (
+  <ErrorBoundary fallback={null}>
+    <Readouts />
+  </ErrorBoundary>
+);

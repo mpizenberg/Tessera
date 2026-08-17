@@ -169,6 +169,12 @@ whenever the release rewound the walker — a generation bump, or a migration th
 left no banked scan state: until `scan.caughtUp`, every run reports
 `incomplete: true` and nothing finalizes.
 
+The app is a second deployable reading these payloads, and it is always allowed
+to be older than the Worker — a browser holding it does not reload because a
+deploy happened. A release that renames or drops a field the app reads therefore
+needs `pnpm --filter tessera-app deploy:<network>` in the same window; tabs
+already open pick it up at their next load.
+
 ## Collect a comparable report
 
 The dependency-free collector reuses Wrangler's current credential. It checks
