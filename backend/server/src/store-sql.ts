@@ -161,9 +161,10 @@ const SURVEY_GOV_LINKS_SELECT = `
   SELECT survey_key AS surveyKey, gov_links AS govLinks
   FROM survey_index WHERE end_epoch >= ? AND gov_links <> '[]'`;
 
-/** The survey half of a bundle — only the two columns the body carries. */
+/** The survey half of a bundle — only the columns the body carries. */
 const SURVEY_BUNDLE_SELECT = `
-  SELECT record, cancellations FROM survey_index WHERE survey_key = ?`;
+  SELECT record, cancellations, gov_links AS govLinks
+  FROM survey_index WHERE survey_key = ?`;
 
 /** Ordered so a bundle body is byte-stable across refreshes. */
 const RESPONSES_FOR_SURVEY = `
@@ -782,7 +783,7 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
         query(RESPONSES_FOR_SURVEY, surveyKey),
       ]);
       const row = surveys?.[0] as
-        | { record: string; cancellations: string }
+        | { record: string; cancellations: string; govLinks: string }
         | undefined;
       if (!row) return null;
       return {

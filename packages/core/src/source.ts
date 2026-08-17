@@ -56,12 +56,14 @@ export interface SurveyListPayload {
   /**
    * Global per-filter totals over the search-matching set — present on paged
    * responses ({@link import("./page").pageSurveyList} / the serving tier's
-   * paged route), absent on a full unpaged payload.
+   * paged route), absent on a full unpaged payload and on one that answers a
+   * caller-named set of references (no filtered set to total).
    */
   readonly counts?: import("./page").SurveyListCounts;
   /**
    * Continuation for the next page (opaque keyset cursor), `null` when this
-   * page is the last. Absent on a full unpaged payload.
+   * page is the last. Absent on a full unpaged payload, and on one answering a
+   * caller-named set of references (no order to continue).
    */
   readonly nextCursor?: string | null;
   /**
@@ -90,6 +92,17 @@ export interface SurveyListPayload {
  */
 export interface SurveyBundlePayload extends SurveyBundle {
   readonly verdicts?: ProofVerdicts;
+  /**
+   * The governance actions linked to this survey — the same relation
+   * {@link SurveyListPayload.govLinks} carries for a page of surveys, so a
+   * reader holding one survey by reference needs no list read to show it.
+   * Outside the chain data for the same reason as {@link verdicts}: the link is
+   * the serving tier's resolution of an anchor document, not a record on chain.
+   * Present (possibly empty) from the serving tier, absent from a source with
+   * no anchor machinery — and an empty array means "none as of the last
+   * successful link pass", never "unknown".
+   */
+  readonly govLinks?: readonly GovLink[];
 }
 
 /**

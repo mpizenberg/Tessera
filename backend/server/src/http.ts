@@ -59,6 +59,8 @@ import {
   sumUpstream,
   validationKey,
   type BackendStore,
+  type SnapshotMeta,
+  type SurveyIndexRow,
 } from "./store";
 
 /** How long `/api/tip` reuses one upstream Koios call. */
@@ -144,6 +146,54 @@ function credentialsOf(c: Context): string[] | null {
     .map((s) => s.trim())
     .filter(Boolean);
   return list.length > MAX_CREDENTIALS ? null : list;
+}
+
+/**
+ * The `refs=` query list as survey keys (`"<txHash>:<index>"`), or null when a
+ * ref is malformed or the list is oversized (the caller answers 400). Only the
+ * canonical index form is accepted — a stored key spells its index without
+ * leading zeros, so `:01` would silently name nothing.
+ */
+function refsOf(raw: string): string[] | null {
+  const list = raw
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  if (list.length === 0 || list.length > MAX_PAGE_LIMIT) return null;
+  return list.every((key) => /^[0-9a-f]{64}:(0|[1-9][0-9]*)$/.test(key))
+    ? list
+    : null;
+}
+
+/**
+ * The wire form of a set of survey rows — what both selections of
+ * `/api/surveys` (a filtered page, or the refs a caller names) answer with.
+ * Stored values are already wire-form JSON text, so the body is assembled by
+ * parse-and-concatenate, never re-encoded through toJsonSafe. Paging's own
+ * `counts` and `nextCursor` ride on top of this.
+ */
+function surveyListBody(
+  rows: readonly SurveyIndexRow[],
+  meta: SnapshotMeta,
+): Record<string, unknown> {
+  return {
+    surveys: rows.map((r) => JSON.parse(r.record) as unknown),
+    cancellations: rows.flatMap(
+      (r) => JSON.parse(r.cancellations) as unknown[],
+    ),
+    govLinks: rows.flatMap((r) => JSON.parse(r.govLinks) as unknown[]),
+    tip: snapshotTip(meta),
+    responseCounts: Object.fromEntries(
+      rows.map((r) => [r.surveyKey, r.responseCount]),
+    ),
+    finalizedCancelled: rows
+      .filter((r) => r.finalizedCancelled)
+      .map((r) => r.surveyKey)
+      .sort(),
+    ...(meta.incomplete && { incomplete: true }),
+    fetchedAt: meta.fetchedAt,
+    ageSeconds: Math.floor(Date.now() / 1000) - meta.fetchedAt,
+  };
 }
 
 /**
@@ -327,6 +377,27 @@ export function createApp(
     if (notModified(c, `W/"surveys-${meta.fetchedAt}"`))
       return c.body(null, 304);
 
+    // Naming the surveys is a second selection, not a variant of the first: a
+    // set of references has no order to page and no filter to count over, so
+    // the paging parameters are refused rather than silently ignored. A ref
+    // that names no stored row is simply absent from the answer — a mirror
+    // asks for what it holds, and a rolled-back survey is legitimately gone.
+    const refsRaw = c.req.query("refs");
+    if (refsRaw !== undefined) {
+      if (
+        ["filter", "cursor", "q", "limit"].some(
+          (param) => c.req.query(param) !== undefined,
+        )
+      )
+        return c.json(
+          { error: "refs is exclusive with filter, cursor, q and limit" },
+          400,
+        );
+      const keys = refsOf(refsRaw);
+      if (!keys) return c.json({ error: "malformed refs" }, 400);
+      return c.json(surveyListBody(await store.surveyRowsByKeys(keys), meta));
+    }
+
     const limit = Number(c.req.query("limit") ?? DEFAULT_PAGE_LIMIT);
     if (!Number.isInteger(limit) || limit < 1 || limit > MAX_PAGE_LIMIT)
       return c.json({ error: "malformed limit" }, 400);
@@ -345,8 +416,6 @@ export function createApp(
     if (!credentials) return c.json({ error: "too many credentials" }, 400);
     const searchTerms = searchTermsOf(c.req.query("q"));
 
-    // Stored values are already wire-form JSON text — the body is assembled
-    // by parse-and-concatenate, never re-encoded through toJsonSafe.
     const tip = snapshotTip(meta);
     // Without a search, every chip but `mine` comes banked in the envelope
     // already in hand, so the request pays only the indexed owner count — or
@@ -373,22 +442,8 @@ export function createApp(
     ]);
     const page = rows.slice(0, limit);
     const last = page[page.length - 1];
-    const now = Math.floor(Date.now() / 1000);
     return c.json({
-      surveys: page.map((r) => JSON.parse(r.record) as unknown),
-      cancellations: page.flatMap(
-        (r) => JSON.parse(r.cancellations) as unknown[],
-      ),
-      govLinks: page.flatMap((r) => JSON.parse(r.govLinks) as unknown[]),
-      tip,
-      responseCounts: Object.fromEntries(
-        page.map((r) => [r.surveyKey, r.responseCount]),
-      ),
-      finalizedCancelled: page
-        .filter((r) => r.finalizedCancelled)
-        .map((r) => r.surveyKey)
-        .sort(),
-      ...(meta.incomplete && { incomplete: true }),
+      ...surveyListBody(page, meta),
       ...(staleCursor && { resync: true }),
       counts,
       nextCursor:
@@ -400,8 +455,6 @@ export function createApp(
               generation: meta.fetchedAt,
             })
           : null,
-      fetchedAt: meta.fetchedAt,
-      ageSeconds: now - meta.fetchedAt,
     });
   });
 
@@ -429,6 +482,7 @@ export function createApp(
       survey: JSON.parse(bundle.record) as unknown,
       responses: bundle.responses.map((r) => JSON.parse(r) as unknown),
       cancellations: JSON.parse(bundle.cancellations) as unknown,
+      govLinks: JSON.parse(bundle.govLinks) as unknown,
       tip: snapshotTip(meta),
       // Decided credential-proof verdicts only — an omitted key is *pending*,
       // and the client must render it as such, never as failed.

@@ -63,9 +63,14 @@ share `PORT`, so run one at a time or override it.
   set, not per page. A cursor records the snapshot it was minted against; one
   from an older snapshot is still answered, with `resync` set so the client
   refreshes page one.
+- `GET /api/surveys?refs=<txHash>:<index>,…` — the same payload for the surveys
+  named, for a host mirroring a chosen subset instead of paging Tessera's order.
+  No `counts` or `nextCursor` (a named set has neither), the paging parameters
+  are refused beside it, and a ref matching nothing is absent from the answer.
 - `GET /api/surveys/{txHash}/{index}` — one survey's self-contained bundle:
   its definition record, ALL of its responses (sealed ciphertexts included),
-  the cancellations targeting it, and the tip. `404` for an unknown ref.
+  the cancellations targeting it, its gov links, and the tip. `404` for an
+  unknown ref.
 - `GET /api/responded?credentials=key:<hex>,script:<hex>` — survey keys with at
   least one response from any of the given credentials (a wallet's payment +
   stake in one request); feeds the Explore "answered" flags.

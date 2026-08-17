@@ -61,7 +61,12 @@ sealed ciphertext for the sealed survey. Tessera has validated both
 
 - The host reads a survey by exact reference from
   `GET /api/surveys/{txHash}/{index}` and feeds the bundle's decoded
-  `definition` plus the survey ref into `<tessera-respond>`.
+  `definition` plus the survey ref into `<tessera-respond>`. The same bundle
+  carries the survey's `govLinks`, so a host mirroring a chosen subset of
+  surveys never has to read the list to know which action a survey is linked to
+  — read the limits on what that linkage means below. Several surveys at once
+  come from `GET /api/surveys?refs=<txHash>:<index>,…`, which answers the list
+  payload for exactly the references named.
 - The host supplies the connected responder's credential map (for the DRepTalk
   test: a key-DRep credential).
 - The widget owns answer drafting, validation, and sealing, and emits the

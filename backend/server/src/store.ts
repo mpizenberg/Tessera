@@ -656,6 +656,8 @@ export interface SurveyBundleRows {
   readonly cancellations: string;
   /** Wire JSON of each `ResponseRecord` targeting it. */
   readonly responses: string[];
+  /** Wire JSON of the `GovLink[]` discovered for it, `"[]"` when none. */
+  readonly govLinks: string;
 }
 
 /** The page-independent envelope stored alongside the materialized rows. */

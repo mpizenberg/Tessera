@@ -554,7 +554,8 @@ describe("store-node response rows", () => {
     haystack: surveyKey,
     record: `{"k":"${surveyKey}"}`,
     cancellations: `[{"c":"${surveyKey}"}]`,
-    govLinks: "[]",
+    // Only one is linked, so a bundle serving the wrong survey's links shows.
+    govLinks: surveyKey === "aa:0" ? `[{"g":"aa:0"}]` : "[]",
     responseCount: 0,
     finalizedCancelled: false,
   }));
@@ -625,6 +626,7 @@ describe("store-node response rows", () => {
     expect(await store.surveyBundle("aa:0")).toEqual({
       record: `{"k":"aa:0"}`,
       cancellations: `[{"c":"aa:0"}]`,
+      govLinks: `[{"g":"aa:0"}]`,
       responses: [
         `{"tx":"cc","i":0}`,
         `{"tx":"cc","i":1}`,
@@ -634,6 +636,7 @@ describe("store-node response rows", () => {
     expect((await store.surveyBundle("bb:1"))?.responses).toEqual([
       `{"tx":"ff","i":0}`,
     ]);
+    expect((await store.surveyBundle("bb:1"))?.govLinks).toBe("[]");
     // A survey nobody answered still has a bundle; an unknown one has none.
     expect((await store.surveyBundle("empty:0"))?.responses).toEqual([]);
     expect(await store.surveyBundle("unknown:0")).toBeNull();

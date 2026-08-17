@@ -259,6 +259,13 @@ refresh materialized, and a request costs what the survey it asked for costs:
   `proof: null` for cancellations of closed surveys, so without that overlay a
   cancelled-then-closed survey would read as plain "Ended" while its artifact says
   cancelled. The claim stays auditable against the served artifact.
+- **`GET /api/surveys?refs=<txHash>:<index>,…`** — the same payload for a set the
+  caller names, for a host that mirrors a chosen subset and reads the surveys it
+  holds rather than a page of Tessera's order. The rows come back through the
+  keyed read (one primary-key seek per ref, chunked past D1's parameter cap), so
+  a request costs its refs and nothing else; `counts` and `nextCursor` are absent
+  because a named set has neither, and the paging parameters are refused rather
+  than ignored. A ref matching no stored row is simply absent from the answer.
 - **`GET /api/surveys/{txHash}/{index}`** — the self-contained per-survey bundle:
   the definition record, **all** its `ResponseRecord`s (sealed ciphertexts
   included), the cancellations targeting it, and the tip. One request serves the
@@ -270,7 +277,10 @@ refresh materialized, and a request costs what the survey it asked for costs:
   opinion as part of it. A key the map lacks is **pending, not failed**, and stays
   counted in the live tally (counting only what is proven would make every fresh
   response vanish until a refresh decided it); only a decided `false` excludes,
-  applied before latest-wins dedup.
+  applied before latest-wins dedup. Beside the chain data for the same reason, it
+  carries `govLinks` — the survey's own slice of what the list payload reports
+  for a page — so a reader holding one reference needs no list read to show the
+  linkage. Empty means none as of the last successful link pass.
 - **`GET /api/responded?credentials=key:<hex>,script:<hex>`** — a slim
   `[surveyKey]` projection, so Explore can flag "surveys I answered" without
   downloading responses; the mapping is public on-chain data. Credentials travel

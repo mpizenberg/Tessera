@@ -299,7 +299,7 @@ describe("GET /api/surveys", () => {
   });
 });
 
-describe("GET /api/surveys pagination, filters, search", () => {
+describe("GET /api/surveys selection: paging, filters, search, refs", () => {
   const keysOf = (body: Record<string, unknown>): string[] =>
     (body["surveys"] as { txHash: string }[]).map(
       (s) => `${s.txHash}:${s.txHash === TX_A ? 0 : 1}`,
@@ -442,6 +442,57 @@ describe("GET /api/surveys pagination, filters, search", () => {
     expect((await app.request("/api/surveys?filter=bogus")).status).toBe(400);
     expect((await app.request("/api/surveys?cursor=junk")).status).toBe(400);
   });
+
+  it("answers exactly the refs named, with no counts and no cursor", async () => {
+    const store = await seededStore();
+    await seed(store, [govLinkA]);
+    const body = await getBody(appWith(store), `?refs=${TX_B}:1,${TX_A}:0`);
+    // Key order, not the caller's — the read is chunked, so its own order is
+    // the only stable one.
+    expect(keysOf(body)).toEqual([`${TX_A}:0`, `${TX_B}:1`]);
+    expect(body["responseCounts"]).toEqual({
+      [`${TX_A}:0`]: 2,
+      [`${TX_B}:1`]: 1,
+    });
+    expect((body["cancellations"] as unknown[]).length).toBe(1);
+    expect(body["govLinks"]).toEqual([govLinkA]);
+    expect(body["fetchedAt"]).toBe(FETCHED_AT);
+    // A named set has no filtered order to page and no set to count over.
+    expect(body["counts"]).toBeUndefined();
+    expect(body["nextCursor"]).toBeUndefined();
+  });
+
+  it("omits a ref that names nothing instead of failing", async () => {
+    const body = await getBody(
+      appWith(await seededStore()),
+      `?refs=${TX_A}:0,${"11".repeat(32)}:0,${TX_A}:9`,
+    );
+    expect(keysOf(body)).toEqual([`${TX_A}:0`]);
+  });
+
+  it("rejects refs beside a paging param, and malformed or oversized refs", async () => {
+    const app = appWith(await seededStore());
+    for (const qs of [
+      `?refs=${TX_A}:0&limit=1`,
+      `?refs=${TX_A}:0&filter=linked`,
+      `?refs=${TX_A}:0&q=alpha`,
+      `?refs=${TX_A}:0&cursor=junk`,
+    ])
+      expect((await app.request(`/api/surveys${qs}`)).status).toBe(400);
+    const oversized = Array.from({ length: 201 }, () => `${TX_A}:0`).join(",");
+    for (const refs of [
+      "",
+      "nothex:0",
+      TX_A,
+      `${TX_A}:01`,
+      `${TX_A}:-1`,
+      oversized,
+    ])
+      expect(
+        (await app.request(`/api/surveys?refs=${encodeURIComponent(refs)}`))
+          .status,
+      ).toBe(400);
+  });
 });
 
 describe("GET /api/surveys/{txHash}/{index}", () => {
@@ -508,6 +559,22 @@ describe("GET /api/surveys/{txHash}/{index}", () => {
       await app.request(`/api/surveys/${TX_B}/1`)
     ).json()) as { verdicts: Record<string, boolean> };
     expect(other.verdicts).toEqual({});
+  });
+
+  it("carries the survey's own governance links, and only those", async () => {
+    const store = await seededStore();
+    await seed(store, [govLinkA]);
+    const app = appWith(store);
+    const linked = fromJsonSafe(
+      await (await app.request(`/api/surveys/${TX_A}/0`)).json(),
+    ) as Record<string, unknown>;
+    expect(linked["govLinks"]).toEqual([govLinkA]);
+    // Present-but-empty on an unlinked survey: "none as of the last link pass",
+    // distinct from the field's absence on a source with no anchor machinery.
+    const unlinked = fromJsonSafe(
+      await (await app.request(`/api/surveys/${TX_B}/1`)).json(),
+    ) as Record<string, unknown>;
+    expect(unlinked["govLinks"]).toEqual([]);
   });
 
   it("404s an unknown or malformed ref", async () => {
