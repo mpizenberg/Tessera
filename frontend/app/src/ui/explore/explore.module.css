@@ -176,12 +176,19 @@
   opacity: 0.56;
 }
 
-/* ===== header row ===== */
-.header {
+/* Seven columns: form · visibility · answered · survey · eligible · ends ·
+   replies. Composed by the header, the survey rows and the loading skeletons,
+   which must agree on the template or the register stops lining up. */
+.gridRow {
   display: grid;
-  grid-template-columns: var(--cols);
+  grid-template-columns: 52px 24px 26px minmax(190px, 1fr) 122px 100px 52px;
   gap: 14px;
   align-items: center;
+}
+
+/* ===== header row ===== */
+.header {
+  composes: gridRow;
   padding: 10px 6px;
   border-bottom: 1px solid #ddd3c0;
 }
@@ -285,10 +292,7 @@
 
 /* ===== grid row ===== */
 .row {
-  display: grid;
-  grid-template-columns: var(--cols);
-  gap: 14px;
-  align-items: center;
+  composes: gridRow;
   padding: 12px 6px;
   border-bottom: 1px solid #ece2d0;
   cursor: pointer;
@@ -637,10 +641,7 @@
 }
 
 .skeletonRow {
-  display: grid;
-  grid-template-columns: var(--cols);
-  gap: 14px;
-  align-items: center;
+  composes: gridRow;
   padding: 15px 6px;
   border-bottom: 1px solid #efe8da;
 }

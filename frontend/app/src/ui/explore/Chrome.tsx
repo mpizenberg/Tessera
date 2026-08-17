@@ -10,11 +10,6 @@ import { FormMosaic, VisGlyph } from "~/ui/components/glyphs";
 import { t } from "~/i18n";
 import css from "./explore.module.css";
 
-// Seven columns: Form · visibility · answered · survey · eligible · ends · replies.
-// Bridged to the grid via the `--cols` custom property so the header, rows and
-// skeleton rows all share one definition.
-export const COLS = "52px 24px 26px minmax(190px,1fr) 122px 100px 52px";
-
 export const HeaderRow: Component = () => {
   const cell = (label: string, align?: "center" | "right"): JSX.Element => (
     <span
@@ -28,7 +23,7 @@ export const HeaderRow: Component = () => {
     </span>
   );
   return (
-    <div class={css.header} style={{ "--cols": COLS }}>
+    <div class={css.header}>
       {cell(t("explore.headerForm"), "center")}
       <span />
       <span title={t("explore.headerAnsweredTitle")} class={css.cellCenter}>
@@ -85,7 +80,7 @@ export const SkeletonRows: Component<{ narrow: boolean }> = (props) => (
           </div>
         }
       >
-        <div class={css.skeletonRow} style={{ "--cols": COLS }}>
+        <div class={css.skeletonRow}>
           <span class={css.skeletonForm} />
           <span class={css.skeletonDot} />
           <span />

@@ -19,7 +19,6 @@ import {
 } from "~/ui/format";
 import { FormMosaic, RoleChips, VisGlyph } from "~/ui/components/glyphs";
 import { t } from "~/i18n";
-import { COLS } from "./Chrome";
 import css from "./explore.module.css";
 
 /** Per-survey row flags (wallet relationship + optimistic-entry state). */
@@ -116,11 +115,7 @@ const GridRow: Component<EntryProps> = (props) => {
     // A router link, not a div+navigate: a plain click stays client-side (no
     // reload — wallet connection and snapshot survive), while cmd/ctrl/middle
     // click still opens the survey in a new tab natively.
-    <A
-      href={`/survey/${encodeURIComponent(props.a.key)}`}
-      class={css.row}
-      style={{ "--cols": COLS }}
-    >
+    <A href={`/survey/${encodeURIComponent(props.a.key)}`} class={css.row}>
       <div class={css.formCell}>
         <FormMosaic count={def().questions.length} />
         <span
