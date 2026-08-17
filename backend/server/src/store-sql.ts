@@ -51,6 +51,8 @@ import {
   CANCELLATION_ROW_COLUMNS,
   RESPONSE_ROW_COLUMNS,
   SURVEY_ROW_COLUMNS,
+  artifactKeysSql,
+  cachedByTxHashSql,
   cancellationsBySurveysSql,
   completedValidationsSql,
   markFinalizedCancelledSql,
@@ -63,9 +65,6 @@ import {
   surveyPageSql,
   surveysByKeysSql,
 } from "./sqlBuilders";
-
-/** Bound parameters per keyed read — D1 rejects a statement with more. */
-const SQL_PARAM_CHUNK = 100;
 
 const query = (sql: string, ...params: unknown[]): SqlQuery => ({
   sql,
@@ -118,23 +117,32 @@ const REFRESH_RUN_COLUMNS = `started_at AS startedAt, duration_ms AS durationMs,
 const BINDABLE = [...BINDABLE_ROLES].sort((a, b) => a - b);
 
 /**
- * The distinct link-set cursors completed verdicts are pinned to, per survey.
- * Only bindable roles: no other verdict re-evaluates on a link change, so no
- * other row can put a survey back on the candidate list.
+ * The distinct link-set cursors completed verdicts are pinned to, per survey
+ * ending at or after the bound. Only bindable roles: no other verdict
+ * re-evaluates on a link change, so no other row can put a survey back on the
+ * candidate list. Driven from `survey_index_end_epoch` into the per-survey
+ * verdict index, so verdicts of surveys below the bound are never read.
+ * Binds: (minEndEpoch).
  */
-const VALIDATED_LINK_CURSORS: SqlQuery = {
-  sql: `SELECT DISTINCT survey_key AS surveyKey,
-               linked_action_id AS linkedActionId
-        FROM validated_response
-        WHERE block_index IS NOT NULL AND proof_ok IS NOT NULL
-          AND role IN (${BINDABLE.map(() => "?").join(", ")})`,
-  params: [...BINDABLE],
-};
+const VALIDATED_LINK_CURSORS = `
+  SELECT DISTINCT survey_key AS surveyKey,
+         linked_action_id AS linkedActionId
+  FROM validated_response
+  WHERE survey_key IN (SELECT survey_key FROM survey_index WHERE end_epoch >= ?)
+    AND block_index IS NOT NULL AND proof_ok IS NOT NULL
+    AND role IN (${BINDABLE.map(() => "?").join(", ")})`;
+
+/**
+ * The enrichment-retry predicate, spelled once: it is the WHERE clause of the
+ * partial index `validated_response_incomplete`, which SQLite only uses for a
+ * query whose own WHERE clause matches it.
+ */
+const INCOMPLETE = "block_index IS NULL OR proof_ok IS NULL";
 
 /** Surveys with a verdict still awaiting an enrichment retry. */
 const INCOMPLETE_VALIDATION_SURVEYS = `
   SELECT DISTINCT survey_key AS surveyKey FROM validated_response
-  WHERE block_index IS NULL OR proof_ok IS NULL`;
+  WHERE ${INCOMPLETE}`;
 
 const SNAPSHOT_META_SELECT = `
   SELECT tip, incomplete, fetched_at AS fetchedAt, list_counts AS listCounts
@@ -359,8 +367,12 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       }
       return out;
     },
-    async validatedLinkCursors(): Promise<ValidatedLinkCursor[]> {
-      return db.all<ValidatedLinkCursor>(VALIDATED_LINK_CURSORS);
+    async validatedLinkCursors(
+      minEndEpoch: number,
+    ): Promise<ValidatedLinkCursor[]> {
+      return db.all<ValidatedLinkCursor>(
+        query(VALIDATED_LINK_CURSORS, minEndEpoch, ...BINDABLE),
+      );
     },
     async incompleteValidationSurveys(): Promise<string[]> {
       const rows = await db.all<{ surveyKey: string }>(
@@ -569,41 +581,31 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
         ),
       );
     },
-    async finalizedArtifactKeys(): Promise<ArtifactKeys> {
-      // `json_extract` returns SQL NULL both when the path is absent and when
-      // the value is JSON null, so `IS NOT NULL` is exactly "finalized as
-      // cancelled".
-      const rows = await db.all<{ surveyKey: string; cancelled: number }>(
-        query(
-          `SELECT survey_key AS surveyKey,
-                  json_extract(artifact, '$.tally.cancelled') IS NOT NULL
-                    AS cancelled
-           FROM tally_artifact`,
-        ),
-      );
-      return {
-        finalized: new Set(rows.map((r) => r.surveyKey)),
-        cancelled: new Set(
-          rows.filter((r) => r.cancelled).map((r) => r.surveyKey),
-        ),
-      };
+    async artifactKeysFor(
+      surveyKeys: readonly string[],
+    ): Promise<ArtifactKeys> {
+      const keys: ArtifactKeys = { finalized: new Set(), cancelled: new Set() };
+      if (surveyKeys.length === 0) return keys;
+      const batches = await db.batchAll<{
+        surveyKey: string;
+        cancelled: number;
+      }>(artifactKeysSql(surveyKeys));
+      for (const r of batches.flat()) {
+        keys.finalized.add(r.surveyKey);
+        if (r.cancelled) keys.cancelled.add(r.surveyKey);
+      }
+      return keys;
     },
 
     async cachedTxMetadata(
       txHashes: readonly string[],
     ): Promise<Map<string, unknown>> {
-      // One full-table read filtered in JS: the table is the same order of
-      // magnitude as the scan itself, and chunked `IN (…)` reads would cost one
-      // query per SQL_PARAM_CHUNK hashes against the very request budget this
-      // cache exists to protect.
-      const wanted = new Set(txHashes);
-      const rows = await db.all<{ txHash: string; metadata: string }>(
-        query("SELECT tx_hash AS txHash, metadata FROM tx_metadata_cache"),
-      );
       const out = new Map<string, unknown>();
-      for (const r of rows) {
-        if (wanted.has(r.txHash)) out.set(r.txHash, JSON.parse(r.metadata));
-      }
+      if (txHashes.length === 0) return out;
+      const batches = await db.batchAll<{ txHash: string; metadata: string }>(
+        cachedByTxHashSql("tx_metadata_cache", "metadata", txHashes),
+      );
+      for (const r of batches.flat()) out.set(r.txHash, JSON.parse(r.metadata));
       return out;
     },
     async putTxMetadata(entries: ReadonlyMap<string, unknown>): Promise<void> {
@@ -622,21 +624,12 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
     async cachedTxProofCbor(
       txHashes: readonly string[],
     ): Promise<Map<string, string>> {
-      // Keyed reads rather than the full-table read its metadata twin does:
-      // these rows carry whole transactions, and pruning holds the table at the
-      // live working set, so this is one query in practice.
       const out = new Map<string, string>();
-      for (let i = 0; i < txHashes.length; i += SQL_PARAM_CHUNK) {
-        const chunk = txHashes.slice(i, i + SQL_PARAM_CHUNK);
-        const rows = await db.all<{ txHash: string; cbor: string }>(
-          query(
-            `SELECT tx_hash AS txHash, cbor FROM tx_proof_cache
-             WHERE tx_hash IN (${chunk.map(() => "?").join(", ")})`,
-            ...chunk,
-          ),
-        );
-        for (const r of rows) out.set(r.txHash, r.cbor);
-      }
+      if (txHashes.length === 0) return out;
+      const batches = await db.batchAll<{ txHash: string; cbor: string }>(
+        cachedByTxHashSql("tx_proof_cache", "cbor", txHashes),
+      );
+      for (const r of batches.flat()) out.set(r.txHash, r.cbor);
       return out;
     },
     async putTxProofCbor(entries: ReadonlyMap<string, string>): Promise<void> {
@@ -667,9 +660,8 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
     async cachedGovAnchors(
       hashes: readonly string[],
     ): Promise<Map<string, GovLinkDoc | null>> {
-      // Full-table read filtered in JS, like the metadata cache: settlement
-      // prunes the bank to the anchors of unsettled epochs, so it stays about
-      // the size of the request.
+      // Full-table read filtered in JS: settlement prunes the bank to the
+      // anchors of unsettled epochs, so it stays about the size of the request.
       const wanted = new Set(hashes);
       const rows = await db.all<{ hash: string; link: string }>(
         query("SELECT anchor_hash AS hash, link FROM gov_anchor"),
@@ -1025,8 +1017,7 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
     async incompleteValidationCount(): Promise<number> {
       const row = await first<{ n: number }>(
         query(
-          `SELECT COUNT(*) AS n FROM validated_response
-           WHERE block_index IS NULL OR proof_ok IS NULL`,
+          `SELECT COUNT(*) AS n FROM validated_response WHERE ${INCOMPLETE}`,
         ),
       );
       return row?.n ?? 0;

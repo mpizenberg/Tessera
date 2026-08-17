@@ -16,7 +16,7 @@
 
 import type { ChainTip } from "cip-179/domain";
 
-import type { SnapshotStore } from "./store";
+import type { ScanCacheStore, SnapshotStore, TallyStore } from "./store";
 
 /**
  * Epochs past a survey's end after which its proofs are dropped regardless of
@@ -45,19 +45,21 @@ export async function pruneTxProofCache(
   store: Pick<
     SnapshotStore,
     "surveyRowsEndingAtOrAfter" | "responseRowsForSurveys"
-  > & {
-    cachedTxProofHashes(): Promise<readonly string[]>;
-    deleteTxProofCbor(txHashes: readonly string[]): Promise<void>;
-  },
+  > &
+    Pick<TallyStore, "artifactKeysFor"> &
+    Pick<ScanCacheStore, "cachedTxProofHashes" | "deleteTxProofCbor">,
   incomplete: boolean,
   tip: ChainTip,
-  finalized: ReadonlySet<string>,
 ): Promise<void> {
   if (incomplete) return;
 
-  const live = (
-    await store.surveyRowsEndingAtOrAfter(tip.epoch - PROOF_GRACE_EPOCHS)
-  ).filter((r) => !finalized.has(r.surveyKey));
+  const recent = await store.surveyRowsEndingAtOrAfter(
+    tip.epoch - PROOF_GRACE_EPOCHS,
+  );
+  const { finalized } = await store.artifactKeysFor(
+    recent.map((r) => r.surveyKey),
+  );
+  const live = recent.filter((r) => !finalized.has(r.surveyKey));
 
   // The wire JSON keeps every tx hash as a plain hex string, so the keep set
   // is read without reviving the full records.

@@ -75,6 +75,7 @@ export async function validateNewResponses(
   store: ValidateStore,
   responses: readonly ResponseRecord[],
   source: Pick<KoiosDataSource, "txBlockIndices" | "txProofs">,
+  finalizationFloor: number,
   govLinksReliable = true,
   unresolved: readonly UnresolvedGovAction[] = [],
 ): Promise<void> {
@@ -82,8 +83,10 @@ export async function validateNewResponses(
   // plus the surveys whose verdicts need another look. Their definitions and
   // link slices both come from their stored rows — integration has already
   // written this refresh's links there, so the row is the current answer and
-  // a survey with no row has rolled back.
-  const cursors = await store.validatedLinkCursors();
+  // a survey with no row has rolled back. The cursor read stops at the
+  // finalization floor: a survey below it froze its artifact against an
+  // already-settled link set, so none of its verdicts can go stale.
+  const cursors = await store.validatedLinkCursors(finalizationFloor);
   const retrySurveys = await store.incompleteValidationSurveys();
   const surveyRows = await store.surveyRowsByKeys([
     ...new Set([

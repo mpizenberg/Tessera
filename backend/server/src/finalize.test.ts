@@ -401,8 +401,8 @@ describe("finalizeClosedSurveys", () => {
     );
     // The pass's own emission rides back on the returned key sets, so the
     // refresh needs no second tally_artifact read.
-    expect(outcome.keys.finalized).toEqual(new Set([SURVEY_KEY]));
-    expect(outcome.keys.cancelled).toEqual(new Set());
+    expect(outcome.emitted.finalized).toEqual(new Set([SURVEY_KEY]));
+    expect(outcome.emitted.cancelled).toEqual(new Set());
 
     const row = store.artifacts.get(SURVEY_KEY);
     expect(row).toBeDefined();
@@ -559,7 +559,7 @@ describe("finalizeClosedSurveys", () => {
       recs,
       TIP,
     );
-    expect(outcome.keys.finalized).toEqual(new Set([SURVEY_KEY2]));
+    expect(outcome.emitted.finalized).toEqual(new Set([SURVEY_KEY2]));
 
     expect(store.artifacts.has(SURVEY_KEY)).toBe(false); // poisoned → skipped
     expect(store.artifacts.has(SURVEY_KEY2)).toBe(true); // healthy → finalized
@@ -1118,8 +1118,8 @@ describe("finalizeClosedSurveys", () => {
     );
     // A cancellation emission lands in both returned sets — materialize reads
     // the cancelled one for the same-refresh overlay flip.
-    expect(outcome.keys.finalized).toEqual(new Set([SURVEY_KEY]));
-    expect(outcome.keys.cancelled).toEqual(new Set([SURVEY_KEY]));
+    expect(outcome.emitted.finalized).toEqual(new Set([SURVEY_KEY]));
+    expect(outcome.emitted.cancelled).toEqual(new Set([SURVEY_KEY]));
 
     const artifact = JSON.parse(
       store.artifacts.get(SURVEY_KEY)!.artifact,
@@ -1465,7 +1465,7 @@ describe("finalizeClosedSurveys", () => {
       ),
       // …and the survey it postponed holds the frontier at its own epoch.
     ).resolves.toEqual({
-      keys: { finalized: new Set(), cancelled: new Set() },
+      emitted: { finalized: new Set(), cancelled: new Set() },
       floor: END_EPOCH,
     });
 

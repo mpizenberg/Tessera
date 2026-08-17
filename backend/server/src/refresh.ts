@@ -352,10 +352,8 @@ export async function refreshSnapshot(
     });
 
     // Integrate BEFORE the consumers run, so validation, finalization and the
-    // proof-cache prune all see this run's corpus. The overlay input is the
-    // pre-finalize artifact state; this run's own finalizations land through
-    // the targeted overlay update below.
-    const artifactKeys = await store.finalizedArtifactKeys();
+    // proof-cache prune all see this run's corpus. This run's own
+    // finalizations land through the targeted overlay update below.
     const range = coveredRange(plan, scan, tip.slot);
     const incomplete = records.incomplete === true || !scan.exhausted;
     const meta = {
@@ -378,7 +376,6 @@ export async function refreshSnapshot(
       govPass: govLinksReliable
         ? { links: govLinks, scope: new Set(govEpochs), floor: govFloor }
         : null,
-      finalizedCancelled: artifactKeys.cancelled,
       meta,
     });
     let rowChanges = integration.changes;
@@ -427,7 +424,6 @@ export async function refreshSnapshot(
             range: coveredRange(rotation, rescan, rotation.toSlot),
             tip,
             govPass: null,
-            finalizedCancelled: artifactKeys.cancelled,
             meta,
           });
           rowChanges += healed.changes;
@@ -455,10 +451,12 @@ export async function refreshSnapshot(
     // Response validation (TALLY-SPEC §3) rides the same refresh (Node loop +
     // Worker cron alike): incremental, so already-validated responses cost
     // nothing. Best-effort — the rows above are already stored either way.
+    const finalFloor = await store.finalizationFloor();
     await validateNewResponses(
       store,
       records.responses,
       source,
+      finalFloor,
       govLinksReliable,
       govUnresolved,
     ).catch((err) =>
@@ -467,11 +465,7 @@ export async function refreshSnapshot(
 
     // Finalization (ARCHITECTURE §6.2) runs on freshly validated state: weight
     // snapshotting + artifact emission for safely-closed surveys. Idempotent and
-    // resumable, so a failure here just retries next refresh. Its returned key
-    // sets carry this pass's emissions, so the prune and overlay update below
-    // need no `tally_artifact` scan of their own; a pass that died mid-way may
-    // still have emitted, so only then is the store re-read.
-    const finalFloor = await store.finalizationFloor();
+    // resumable, so a failure here just retries next refresh.
     const finalized = await finalizeClosedSurveys(
       config,
       store,
@@ -488,28 +482,31 @@ export async function refreshSnapshot(
       console.warn(`finalization failed (will retry): ${String(err)}`);
       return null;
     });
-    const finalKeys = finalized?.keys ?? (await store.finalizedArtifactKeys());
     if (finalized?.floor != null && finalized.floor !== finalFloor) {
       await store.putFinalizationFloor(finalized.floor);
     }
 
     // A survey finalized as cancelled flips its row's overlay in the same
-    // run. Idempotent over every cancelled artifact key, so it also heals a
-    // row whose flag drifted.
-    const overlayChanges = await store
-      .markFinalizedCancelled([...finalKeys.cancelled])
-      .catch((err) => {
-        console.warn(
-          `finalized-cancelled overlay update failed: ${String(err)}`,
-        );
-        return 0;
-      });
+    // run. A pass that died between emitting and this stamp leaves the row
+    // to integration, which re-derives the flag from the artifact whenever
+    // the survey is next touched — and a closed survey still flagged
+    // `cancelled` without the overlay is touched on every run until then.
+    const overlayChanges = finalized
+      ? await store
+          .markFinalizedCancelled([...finalized.emitted.cancelled])
+          .catch((err) => {
+            console.warn(
+              `finalized-cancelled overlay update failed: ${String(err)}`,
+            );
+            return 0;
+          })
+      : 0;
 
     // After finalization, so a survey that just froze its artifact releases its
     // transactions in the same run rather than a refresh later. Best-effort: a
     // cache that keeps too much is only a cache that costs storage.
-    await pruneTxProofCache(store, incomplete, tip, finalKeys.finalized).catch(
-      (err) => console.warn(`tx proof cache prune failed: ${String(err)}`),
+    await pruneTxProofCache(store, incomplete, tip).catch((err) =>
+      console.warn(`tx proof cache prune failed: ${String(err)}`),
     );
 
     // Banked chip counts move only when rows changed or the epoch turned, so

@@ -153,6 +153,7 @@ async function validatePass(
     store,
     input,
     source,
+    0,
     govLinksReliable,
     unresolved,
   );

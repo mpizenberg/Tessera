@@ -14,7 +14,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Role, type Credential, type SurveyDefinition } from "cip-179";
-import { hexToBytes } from "cip-179/domain";
+import { hexToBytes, refKey } from "cip-179/domain";
 import { fromJsonSafe, toJsonSafe } from "cip-179/tally";
 import { encodeSurveyCursor, parseSurveyCursor } from "cardano-tessera-core";
 import type {
@@ -45,7 +45,8 @@ async function seed(
     { surveys: [surveyA, surveyB], responses, cancellations: [cancellation] },
     tip,
     govLinks,
-    (await store.finalizedArtifactKeys()).cancelled,
+    (await store.artifactKeysFor([surveyA, surveyB].map((s) => refKey(s.ref))))
+      .cancelled,
   );
   await store.reconcileSegment(
     ALL_SLOTS,

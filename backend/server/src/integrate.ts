@@ -43,6 +43,7 @@ import type {
   SlotRange,
   SnapshotMeta,
   SnapshotStore,
+  TallyStore,
 } from "./store";
 import { validationKey } from "./store";
 
@@ -58,7 +59,8 @@ export type IntegrateStore = Pick<
   | "staleCancelledSurveyKeys"
   | "reconcileSegment"
 > &
-  Pick<GovLinkStore, "settledGovEpochs">;
+  Pick<GovLinkStore, "settledGovEpochs"> &
+  Pick<TallyStore, "artifactKeysFor">;
 
 /** What one refresh's governance pass answered, as integration reads it. */
 export interface GovPass {
@@ -90,8 +92,6 @@ export interface SegmentArgs {
    * link-change diff runs — nothing was re-read, so nothing may change.
    */
   readonly govPass: GovPass | null;
-  /** Surveys a tally artifact finalized as cancelled (the overlay). */
-  readonly finalizedCancelled: ReadonlySet<string>;
   readonly meta: SnapshotMeta;
 }
 
@@ -118,7 +118,7 @@ export async function integrateSegment(
   source: Pick<KoiosDataSource, "txProofs">,
   args: SegmentArgs,
 ): Promise<SegmentIntegration> {
-  const { records, range, tip, govPass, finalizedCancelled, meta } = args;
+  const { records, range, tip, govPass, meta } = args;
   const inRange = (slot: number): boolean =>
     range !== null && slot >= range.fromSlot && slot <= range.toSlot;
 
@@ -271,6 +271,11 @@ export async function integrateSegment(
     );
   });
 
+  // The finalized-cancelled overlay, read keyed by the touched surveys: the
+  // artifact is the durable fact, so a re-derived row — a resurrected one
+  // included — carries the flag whether or not the stored row did.
+  const finalizedCancelled = (await store.artifactKeysFor(touchedKeys))
+    .cancelled;
   const surveyRows = surveyRowsOf(
     touchedRecords,
     [...cancellations, ...storedCancels],

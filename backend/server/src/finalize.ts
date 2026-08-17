@@ -152,15 +152,13 @@ export interface FinalizeGates {
   readonly finalizationFloor: number;
 }
 
-/** What the pass leaves behind: its key sets, and where its frontier now is. */
+/** What the pass leaves behind: what it emitted, and where its frontier now is. */
 export interface FinalizeOutcome {
   /**
-   * The artifact key sets as they stand at the end of the pass — the refresh's
-   * one full `tally_artifact` key read, with this pass's own emissions folded
-   * in, so callers (proof-cache prune, the cancelled overlay) reuse it instead
-   * of re-scanning the table.
+   * The artifacts this pass emitted, as key sets — what the refresh stamps
+   * the cancelled overlay from without reading `tally_artifact` back.
    */
-  readonly keys: ArtifactKeys;
+  readonly emitted: ArtifactKeys;
   /**
    * The finalization floor to bank, or null when the pass decided nothing and
    * the banked one must stand.
@@ -177,19 +175,22 @@ export async function finalizeClosedSurveys(
   reveal: SealedRevealFn = tlockSealedReveal,
 ): Promise<FinalizeOutcome> {
   const { tip, incomplete, coveredThroughUnix, settlementFloor } = gates;
-  const artifactKeys = await store.finalizedArtifactKeys();
+  const artifactKeys: ArtifactKeys = {
+    finalized: new Set(),
+    cancelled: new Set(),
+  };
   // An incomplete scan (a dropped metadata batch or the page cap) may be
   // missing a responder tx or a cancellation for *any* survey, and we can't tell
   // which — so no artifact this refresh is safe to hash. Postpone all of them.
   if (incomplete) {
     console.warn("finalize: snapshot incomplete — skipping finalization");
-    return { keys: artifactKeys, floor: null };
+    return { emitted: artifactKeys, floor: null };
   }
   // Nothing integrated yet (fresh database, first run failed): nothing is
   // safely past its deadline on the covered prefix.
   if (coveredThroughUnix === null) {
     console.warn("finalize: no scan cursor banked — skipping finalization");
-    return { keys: artifactKeys, floor: null };
+    return { emitted: artifactKeys, floor: null };
   }
 
   const nowSec = Math.floor(Date.now() / 1000);
@@ -219,7 +220,7 @@ export async function finalizeClosedSurveys(
     let floor = tip.epoch;
     for (const endEpoch of undecided.values())
       floor = Math.min(floor, endEpoch);
-    return { keys: artifactKeys, floor };
+    return { emitted: artifactKeys, floor };
   };
   const cancellationsByKey = new Map(
     candidateRows.map((r) => [

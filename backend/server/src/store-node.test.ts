@@ -2,7 +2,7 @@
  * The store itself, where the SQL carries logic no behavioural test would
  * pin on its own: the migration runner (including the pre-runner databases it
  * has to recognise), the `json_extract` predicate behind
- * `finalizedArtifactKeys`, the conditional upsert behind the refresh lease,
+ * `artifactKeysFor`, the conditional upsert behind the refresh lease,
  * the join and cascade behind the sealed-reveal cursor, the paging keyset and
  * the filters no route test reaches, the segment sweep's changed-row count,
  * the changed-rows-only write contract of a reconcile, the write-once
@@ -47,7 +47,7 @@ const artifact = (surveyKey: string, tally: string, hash: string) => ({
   createdAt: 1,
 });
 
-describe("store-node finalizedArtifactKeys (json_extract)", () => {
+describe("store-node artifactKeysFor (json_extract)", () => {
   let store: BackendStore;
   afterEach(() => store.close());
 
@@ -69,7 +69,9 @@ describe("store-node finalizedArtifactKeys (json_extract)", () => {
       artifact("cc:2", `{"cancelled":null,"perRole":[]}`, "c3".repeat(32)),
     );
 
-    expect(await store.finalizedArtifactKeys()).toEqual({
+    expect(
+      await store.artifactKeysFor(["aa:0", "bb:1", "cc:2", "dd:3"]),
+    ).toEqual({
       finalized: new Set(["aa:0", "bb:1", "cc:2"]),
       cancelled: new Set(["bb:1"]),
     });
@@ -242,6 +244,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0019_cancellation_rows.sql",
       "0020_gov_settlement_floor.sql",
       "0021_finalization_floor.sql",
+      "0022_validation_backlog_index.sql",
     ]);
   });
 });

@@ -124,13 +124,12 @@ export interface ArtifactRow {
 }
 
 /**
- * The survey keys holding an artifact, split by outcome. `cancelled` ⊆
+ * Survey keys holding an artifact, split by outcome. `cancelled` ⊆
  * `finalized`: a cancellation artifact (its `tally.cancelled` is set, no
  * per-role tally) appears in both. The cancelled side feeds the list payload's
  * `finalizedCancelled` overlay so Explore keeps showing "Cancelled" after a
  * cancelled survey closes. Mutable sets on purpose: `finalizeClosedSurveys`
- * takes one read as its starting state and folds its own emissions in, so the
- * whole refresh scans `tally_artifact` once.
+ * folds its emissions into the pair it returns.
  */
 export interface ArtifactKeys {
   readonly finalized: Set<string>;
@@ -171,11 +170,14 @@ export interface TallyStore {
     surveyKeys: readonly string[],
   ): Promise<Map<string, CompletedValidation>>;
   /**
-   * Distinct link-set cursors pinned by completed bindable-role verdicts —
-   * the input to "which surveys' link sets changed since their verdicts".
-   * Bounded by the survey count, not the response count.
+   * Distinct link-set cursors pinned by completed bindable-role verdicts of
+   * the surveys ending at or after `minEndEpoch` — the input to "which
+   * surveys' link sets changed since their verdicts". Callers pass the
+   * finalization floor: a survey below it finalized against a link set that
+   * had already settled, so no verdict down there can be re-evaluated, and
+   * the read stays bounded by the undecided surveys rather than by history.
    */
-  validatedLinkCursors(): Promise<ValidatedLinkCursor[]>;
+  validatedLinkCursors(minEndEpoch: number): Promise<ValidatedLinkCursor[]>;
   /**
    * Surveys with at least one verdict still awaiting an enrichment retry.
    * Their stored responses re-enter validation even when the scan's input no
@@ -234,12 +236,13 @@ export interface TallyStore {
   /** Insert-or-ignore: an artifact, once written, is immutable. */
   putArtifact(row: ArtifactRow): Promise<void>;
   /**
-   * Both key sets in one table scan. Cancelled-ness is derived from the stored
-   * artifact JSON at query time (`json_extract`) rather than a denormalized
-   * column: artifacts are immutable and few, and the JSON stays the single
-   * source of truth.
+   * The key sets restricted to `surveyKeys` — a keyed read, so a caller's cost
+   * is the surveys it asks about, never the artifact archive. Cancelled-ness
+   * is derived from the stored artifact JSON at query time (`json_extract`)
+   * rather than a denormalized column: artifacts are immutable, and the JSON
+   * stays the single source of truth.
    */
-  finalizedArtifactKeys(): Promise<ArtifactKeys>;
+  artifactKeysFor(surveyKeys: readonly string[]): Promise<ArtifactKeys>;
   /**
    * The banked finalization floor: the lowest end epoch that still holds a
    * survey the pass expects to decide. Below it every closed survey has either

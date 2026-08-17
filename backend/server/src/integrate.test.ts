@@ -226,6 +226,26 @@ function govPassFor(
   };
 }
 
+/**
+ * The durable trace a cancellation finalization leaves: its artifact row,
+ * which integration reads the overlay from. Insert-or-ignore, so a chain's
+ * whole cancelled set is re-asserted before every refresh.
+ */
+async function emitCancelledArtifacts(
+  store: TestStore,
+  chain: Chain,
+): Promise<void> {
+  for (const surveyKey of chain.finalizedCancelled) {
+    await store.putArtifact({
+      surveyKey,
+      endEpoch: 0,
+      artifactHash: surveyKey,
+      artifact: `{"tally":{"cancelled":{"txHash":"cc"}},"provenance":{}}`,
+      createdAt: 1,
+    });
+  }
+}
+
 async function runRefresh(
   store: TestStore,
   chain: Chain,
@@ -233,6 +253,7 @@ async function runRefresh(
 ): Promise<void> {
   const range = { fromSlot: Math.max(0, tip.slot - MARGIN), toSlot: tip.slot };
   const surveys = chain.surveys.filter(inSegment(range));
+  await emitCancelledArtifacts(store, chain);
   await integrateSegment(store, emptySource, {
     records: {
       surveys,
@@ -242,7 +263,6 @@ async function runRefresh(
     range,
     tip,
     govPass: govPassFor(chain, tip, surveys),
-    finalizedCancelled: chain.finalizedCancelled,
     meta: metaAt(tip),
   });
   await store.markFinalizedCancelled([...chain.finalizedCancelled]);
@@ -468,7 +488,6 @@ describe("segment integration mechanics", () => {
       range,
       tip: tipAt(640),
       govPass: govPassFor(chain, tipAt(640)),
-      finalizedCancelled: chain.finalizedCancelled,
       meta: metaAt(tipAt(640)),
     });
     expect(changes).toBe(0);
@@ -520,7 +539,6 @@ describe("segment integration mechanics", () => {
       range,
       tip: tipAt(600),
       govPass: govPassFor(chain, tipAt(600)),
-      finalizedCancelled: new Set(),
       meta: metaAt(tipAt(600)),
     });
     expect(source.txProofs).toHaveBeenCalledOnce();
@@ -580,7 +598,6 @@ describe("segment integration mechanics", () => {
       range: { fromSlot: 0, toSlot: 200 },
       tip,
       govPass: null,
-      finalizedCancelled: new Set(),
       meta: metaAt(tip),
     });
     expect(changes).toBe(1);
@@ -624,7 +641,6 @@ describe("segment integration mechanics", () => {
       range: { fromSlot: 0, toSlot: 120 },
       tip,
       govPass: null,
-      finalizedCancelled: new Set(),
       meta: metaAt(tip),
     });
     const row = (await store.surveyRowsEndingAtOrAfter(0))[0]!;
@@ -650,7 +666,6 @@ describe("segment integration mechanics", () => {
       range: null,
       tip: tipAt(210),
       govPass: govPassFor(chain, tipAt(210)),
-      finalizedCancelled: new Set(),
       meta: { ...metaAt(tipAt(210)), incomplete: true },
     });
     expect(await store.surveyRowsEndingAtOrAfter(0)).toHaveLength(1);

@@ -518,31 +518,36 @@ export const RESPONSE_ROW_COLUMNS = `tx_hash AS txHash,
        slot, record`;
 
 /**
- * Stored projections by key. Keys ride as one bound JSON array per chunk (a
- * key list can exceed D1's 100-parameter cap); sorted first, so concatenated
- * chunk results come back in key order.
+ * A keyed read: `sql` once per chunk of keys, each chunk bound as one JSON
+ * array (`… IN (SELECT value FROM json_each(?))`) — a key list can exceed
+ * D1's 100-parameter cap. Keys are sorted first, so concatenated chunk
+ * results come back in key order.
  */
-export const surveysByKeysSql = (keys: readonly string[]): SqlQuery[] =>
+export const byKeysSql = (sql: string, keys: readonly string[]): SqlQuery[] =>
   jsonChunks([...keys].sort(compareText), SNAPSHOT_KEYS_PER_CHUNK).map(
-    (chunk) => ({
-      sql: `SELECT ${SURVEY_ROW_COLUMNS} FROM survey_index
-            WHERE survey_key IN (SELECT value FROM json_each(?))
-            ORDER BY survey_key`,
-      params: [chunk.json],
-    }),
+    (chunk) => ({ sql, params: [chunk.json] }),
+  );
+
+const KEYS = "(SELECT value FROM json_each(?))";
+
+/** Stored projections by key. */
+export const surveysByKeysSql = (keys: readonly string[]): SqlQuery[] =>
+  byKeysSql(
+    `SELECT ${SURVEY_ROW_COLUMNS} FROM survey_index
+     WHERE survey_key IN ${KEYS}
+     ORDER BY survey_key`,
+    keys,
   );
 
 /** All stored responses of the given surveys — a recount's stored half. */
 export const responsesBySurveysSql = (
   surveyKeys: readonly string[],
 ): SqlQuery[] =>
-  jsonChunks([...surveyKeys].sort(compareText), SNAPSHOT_KEYS_PER_CHUNK).map(
-    (chunk) => ({
-      sql: `SELECT ${RESPONSE_ROW_COLUMNS} FROM response
-            WHERE survey_key IN (SELECT value FROM json_each(?))
-            ORDER BY survey_key, slot, tx_hash, response_index`,
-      params: [chunk.json],
-    }),
+  byKeysSql(
+    `SELECT ${RESPONSE_ROW_COLUMNS} FROM response
+     WHERE survey_key IN ${KEYS}
+     ORDER BY survey_key, slot, tx_hash, response_index`,
+    surveyKeys,
   );
 
 export const CANCELLATION_ROW_COLUMNS = `tx_hash AS txHash,
@@ -552,26 +557,21 @@ export const CANCELLATION_ROW_COLUMNS = `tx_hash AS txHash,
 export const cancellationsBySurveysSql = (
   surveyKeys: readonly string[],
 ): SqlQuery[] =>
-  jsonChunks([...surveyKeys].sort(compareText), SNAPSHOT_KEYS_PER_CHUNK).map(
-    (chunk) => ({
-      sql: `SELECT ${CANCELLATION_ROW_COLUMNS} FROM cancellation
-            WHERE survey_key IN (SELECT value FROM json_each(?))
-            ORDER BY survey_key, slot, tx_hash`,
-      params: [chunk.json],
-    }),
+  byKeysSql(
+    `SELECT ${CANCELLATION_ROW_COLUMNS} FROM cancellation
+     WHERE survey_key IN ${KEYS}
+     ORDER BY survey_key, slot, tx_hash`,
+    surveyKeys,
   );
 
 /** Stamp the finalized-cancelled overlay where not already set. */
 export const markFinalizedCancelledSql = (
   surveyKeys: readonly string[],
 ): SqlQuery[] =>
-  jsonChunks([...surveyKeys].sort(compareText), SNAPSHOT_KEYS_PER_CHUNK).map(
-    (chunk) => ({
-      sql: `UPDATE survey_index SET finalized_cancelled = 1, cancelled = 1
-            WHERE finalized_cancelled = 0
-              AND survey_key IN (SELECT value FROM json_each(?))`,
-      params: [chunk.json],
-    }),
+  byKeysSql(
+    `UPDATE survey_index SET finalized_cancelled = 1, cancelled = 1
+     WHERE finalized_cancelled = 0 AND survey_key IN ${KEYS}`,
+    surveyKeys,
   );
 
 /**
@@ -582,13 +582,36 @@ export const markFinalizedCancelledSql = (
 export const completedValidationsSql = (
   surveyKeys: readonly string[],
 ): SqlQuery[] =>
-  jsonChunks([...surveyKeys].sort(compareText), SNAPSHOT_KEYS_PER_CHUNK).map(
-    (chunk) => ({
-      sql: `SELECT tx_hash AS txHash, response_index AS responseIndex,
-                   linked_action_id AS linkedActionId, slot, epoch_no AS epochNo
-            FROM validated_response
-            WHERE survey_key IN (SELECT value FROM json_each(?))
-              AND block_index IS NOT NULL AND proof_ok IS NOT NULL`,
-      params: [chunk.json],
-    }),
+  byKeysSql(
+    `SELECT tx_hash AS txHash, response_index AS responseIndex,
+            linked_action_id AS linkedActionId, slot, epoch_no AS epochNo
+     FROM validated_response
+     WHERE survey_key IN ${KEYS}
+       AND block_index IS NOT NULL AND proof_ok IS NOT NULL`,
+    surveyKeys,
+  );
+
+/**
+ * The artifact key sets restricted to the given surveys: which of them hold
+ * an artifact, and which of those finalized as cancelled. `json_extract`
+ * returns SQL NULL both when the path is absent and when the value is JSON
+ * null, so `IS NOT NULL` is exactly "finalized as cancelled".
+ */
+export const artifactKeysSql = (surveyKeys: readonly string[]): SqlQuery[] =>
+  byKeysSql(
+    `SELECT survey_key AS surveyKey,
+            json_extract(artifact, '$.tally.cancelled') IS NOT NULL AS cancelled
+     FROM tally_artifact WHERE survey_key IN ${KEYS}`,
+    surveyKeys,
+  );
+
+/** The cached rows of the given tx hashes, from a hash-keyed cache table. */
+export const cachedByTxHashSql = (
+  table: string,
+  column: string,
+  txHashes: readonly string[],
+): SqlQuery[] =>
+  byKeysSql(
+    `SELECT tx_hash AS txHash, ${column} FROM ${table} WHERE tx_hash IN ${KEYS}`,
+    txHashes,
   );

@@ -126,17 +126,26 @@ async function prune(
     snapshot.cancellations,
     { tip: "{}", incomplete: false, fetchedAt: 1, listCounts: null },
   );
+  for (const surveyKey of finalized) {
+    await mem.putArtifact({
+      surveyKey,
+      endEpoch: 0,
+      artifactHash: surveyKey,
+      artifact: `{"tally":{},"provenance":{}}`,
+      createdAt: 1,
+    });
+  }
   const cache = fakeCache(banked);
   await pruneTxProofCache(
     {
       surveyRowsEndingAtOrAfter: (e) => mem.surveyRowsEndingAtOrAfter(e),
       responseRowsForSurveys: (keys) => mem.responseRowsForSurveys(keys),
+      artifactKeysFor: (keys) => mem.artifactKeysFor(keys),
       cachedTxProofHashes: cache.cachedTxProofHashes,
       deleteTxProofCbor: cache.deleteTxProofCbor,
     },
     recs.incomplete === true,
     TIP,
-    finalized,
   );
   return cache;
 }
