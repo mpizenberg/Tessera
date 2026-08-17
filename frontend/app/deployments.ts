@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { parseEnv } from "node:util";
 // Relative import, not `cardano-tessera-core`: this file runs inside Vite's
@@ -33,6 +34,13 @@ export interface Deployment {
   readonly indexerUrl?: string;
   /** Deployed app URLs to cross-link from the header; self is filtered out. */
   readonly appUrls: Partial<Record<Network, string>>;
+  /**
+   * The repo state this artifact was built from — `git rev-parse HEAD`, the
+   * derivation the Worker's deploy stamps into `GIT_COMMIT`, so an app build
+   * and a backend deploy compare as strings. `-dirty` when the tree carried
+   * uncommitted changes, `unknown` when git cannot answer.
+   */
+  readonly commit: string;
 }
 
 /**
@@ -52,6 +60,17 @@ export function resolveDeployment(
   command: "build" | "serve",
   mode: string,
 ): Deployment {
+  return { ...target(command, mode), commit: buildCommit() };
+}
+
+/**
+ * What the build serves — network, backend, cross-links — before the stamp
+ * that says which repo state produced it.
+ */
+function target(
+  command: "build" | "serve",
+  mode: string,
+): Omit<Deployment, "commit"> {
   if (command === "serve") {
     const network = mode === "development" ? "preview" : requireNetwork(mode);
     const url = process.env.TESSERA_BACKEND_URL ?? "http://localhost:8787";
@@ -62,12 +81,28 @@ export function resolveDeployment(
   return buildDeployment(requireNetwork(mode));
 }
 
+/**
+ * Derived from git rather than declared, unlike everything else baked in: a
+ * stamp the environment could choose could name any commit, and its whole use
+ * is telling which build is live.
+ */
+function buildCommit(): string {
+  const git = (...args: string[]): string =>
+    execFileSync("git", args, { encoding: "utf8" }).trim();
+  try {
+    const head = git("rev-parse", "HEAD");
+    return git("status", "--porcelain") ? `${head}-dirty` : head;
+  } catch {
+    return "unknown";
+  }
+}
+
 const backendUrlKey = (network: Network): string =>
   `TESSERA_BACKEND_URL_${network.toUpperCase()}`;
 const appUrlKey = (network: Network): string =>
   `TESSERA_APP_URL_${network.toUpperCase()}`;
 
-function buildDeployment(network: Network): Deployment {
+function buildDeployment(network: Network): Omit<Deployment, "commit"> {
   const env = deployEnv();
   const backendUrl = requireVar(env, backendUrlKey(network));
   requireVar(env, appUrlKey(network));

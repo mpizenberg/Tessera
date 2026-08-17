@@ -39,6 +39,7 @@ const settings = {
   dataSourceDirect: "Direct Koios",
   endpointLabel: "Koios endpoint",
   activeTokenLabel: "Koios token",
+  buildLabel: "App build",
   tokenYours: "set",
   tokenNone: "none",
   koiosTokenLabel: "Your Koios token",

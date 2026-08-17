@@ -42,6 +42,7 @@ const settings: Messages = {
   dataSourceDirect: "Koios direct",
   endpointLabel: "Point d'accès Koios",
   activeTokenLabel: "Jeton Koios",
+  buildLabel: "Version de l'app",
   tokenYours: "défini",
   tokenNone: "aucun",
   koiosTokenLabel: "Votre jeton Koios",

@@ -21,6 +21,7 @@ import { For, Show, createSignal, type Component, type JSX } from "solid-js";
 import { useApp } from "~/state";
 import {
   activateDirectMode,
+  buildCommit,
   deactivateDirectMode,
   directModeUntil,
   envIndexerUrl,
@@ -233,6 +234,9 @@ const KoiosSection: Component = () => {
               ? t("settings.tokenYours")
               : t("settings.tokenNone")}
           </span>
+        </FactRow>
+        <FactRow label={t("settings.buildLabel")}>
+          <span class={css.endpoint}>{buildCommit()}</span>
         </FactRow>
       </dl>
 

@@ -33,6 +33,15 @@ export function envNetwork(): Network {
 }
 
 /**
+ * Which repo state this artifact was built from, as the Worker reports its own
+ * through `/api/health` — the two are the same derivation, so a skew between
+ * app and backend is a string comparison.
+ */
+export function buildCommit(): string {
+  return __DEPLOYMENT__.commit;
+}
+
+/**
  * The CIP-30 `networkId` a configured {@link Network} expects: `1` for mainnet,
  * `0` for every testnet (preview/preprod). The single source of truth for the
  * wallet-vs-app network comparison, on both the display and the submit side.

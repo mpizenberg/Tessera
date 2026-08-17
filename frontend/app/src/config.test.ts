@@ -24,8 +24,8 @@ const BACKEND = "https://backend.example";
 
 // vitest.setup.ts provides the default (preview, no backend); tests needing
 // another deployment swap the global — Vite `define` does not apply here.
-const stubDeployment = (deployment: Deployment) =>
-  vi.stubGlobal("__DEPLOYMENT__", deployment);
+const stubDeployment = (deployment: Omit<Deployment, "commit">) =>
+  vi.stubGlobal("__DEPLOYMENT__", { ...deployment, commit: "test" });
 
 beforeEach(() => {
   store.clear();

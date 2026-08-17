@@ -6,4 +6,5 @@ import type { Deployment } from "./deployments";
 (globalThis as { __DEPLOYMENT__?: Deployment }).__DEPLOYMENT__ = {
   network: "preview",
   appUrls: {},
+  commit: "test",
 };

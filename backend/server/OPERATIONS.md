@@ -175,6 +175,17 @@ deploy happened. A release that renames or drops a field the app reads therefore
 needs `pnpm --filter tessera-app deploy:<network>` in the same window; tabs
 already open pick it up at their next load.
 
+Which app build is live answers the same question `/api/health`'s `commit` does,
+from the HTML rather than from JSON:
+
+```sh
+curl -s https://<app-url>/ | grep tessera-build
+```
+
+Both stamps are `git rev-parse HEAD`, so app-versus-Worker skew is a string
+comparison. A tab already open still holds whatever it loaded — its own
+`<head>` names it, and the Settings screen shows it beside the data source.
+
 ## Collect a comparable report
 
 The dependency-free collector reuses Wrangler's current credential. It checks

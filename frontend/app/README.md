@@ -154,7 +154,10 @@ is a valid, explicit value — so a forgotten `.env.deploy` cannot silently ship
 a misconfigured app.
 
 A build reads the payload shapes it was built against, so a backend release
-that renames or drops a field wants the app redeployed in the same window.
+that renames or drops a field wants the app redeployed in the same window. Each
+build stamps the commit it came from into the served HTML
+(`curl -s <app-url>/ | grep tessera-build`) and shows it on the Settings screen,
+so which build a browser is holding never has to be guessed from the bundle.
 
 CIP-30 identifies both preprod and Preview as network id `0`; the app cannot
 distinguish those wallet-selected testnets through the standard wallet API, so
