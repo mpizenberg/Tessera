@@ -98,8 +98,8 @@ export async function validateNewResponses(
   // a survey with no row has rolled back. The cursor read stops at the
   // finalization floor: a survey below it froze its artifact against an
   // already-settled link set, so none of its verdicts can go stale.
-  const cursors = await store.validatedLinkCursors(finalizationFloor);
-  const retrySurveys = await store.incompleteValidationSurveys();
+  const { cursors, retrySurveys } =
+    await store.revalidationInputs(finalizationFloor);
   const surveyRows = await store.surveyRowsByKeys([
     ...new Set([
       ...responses.map((r) => refKey(r.response.surveyRef)),

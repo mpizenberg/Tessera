@@ -21,8 +21,10 @@ import type {
   CancellationRow,
   CompletedValidation,
   DbGovEpochRow,
+  RefreshRunInput,
   RefreshRunRow,
   RefreshTotals,
+  RevalidationInputs,
   ResponseCountBank,
   ResponseIdentity,
   ResponseRow,
@@ -70,7 +72,6 @@ import {
   responsesBySurveysSql,
   segmentReconciliationSql,
   settledResponseKeysSql,
-  unclaimedTxProofHashesSql,
   snapshotMetaUpsertSql,
   surveyCountsSql,
   surveyPageSql,
@@ -282,14 +283,30 @@ const UNFINALIZED_CLOSED_SURVEYS = `
   ORDER BY survey_key`;
 
 /**
- * Keys of the surveys still inside a caller's end-epoch horizon. Deliberately
- * unordered: with an `ORDER BY survey_key` the planner (which has no
+ * The proof-cache prune's drop set. `live` is bounded by the horizon and
+ * deliberately unordered: with an `ORDER BY` the planner (which has no
  * statistics on D1) walks the whole primary key instead of seeking
- * `survey_index_end_epoch`, turning a horizon-bounded read into a scan of the
- * archive. Binds: (minEndEpoch).
+ * `survey_index_end_epoch`. Each banked hash is then probed against the three
+ * tables that could claim it — a survey key is "<txHash>:<index>", so a
+ * definition is a prefix seek. Binds: (minEndEpoch, minEndEpoch).
  */
-const SURVEY_KEYS_ENDING_AT_OR_AFTER = `
-  SELECT survey_key AS surveyKey FROM survey_index WHERE end_epoch >= ?`;
+const UNCLAIMED_TX_PROOF_HASHES = `
+  WITH live AS MATERIALIZED (
+    SELECT survey_key FROM survey_index
+    WHERE end_epoch >= ?
+      AND survey_key NOT IN (
+        SELECT survey_key FROM tally_artifact WHERE end_epoch >= ?))
+  SELECT c.tx_hash AS txHash FROM tx_proof_cache c
+  WHERE NOT EXISTS (
+      SELECT 1 FROM response r
+      WHERE r.tx_hash = c.tx_hash AND r.survey_key IN live)
+    AND NOT EXISTS (
+      SELECT 1 FROM cancellation x
+      WHERE x.tx_hash = c.tx_hash AND x.survey_key IN live)
+    AND NOT EXISTS (
+      SELECT 1 FROM live l
+      WHERE l.survey_key >= c.tx_hash || ':'
+        AND l.survey_key < c.tx_hash || ';')`;
 
 /** As stored: booleans are 0/1 integers. */
 export interface DbSurveyRow extends Omit<
@@ -384,18 +401,19 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       }
       return out;
     },
-    async validatedLinkCursors(
-      minEndEpoch: number,
-    ): Promise<ValidatedLinkCursor[]> {
-      return db.all<ValidatedLinkCursor>(
-        query(VALIDATED_LINK_CURSORS, minEndEpoch, ...BINDABLE),
-      );
-    },
-    async incompleteValidationSurveys(): Promise<string[]> {
-      const rows = await db.all<{ surveyKey: string }>(
+    async revalidationInputs(
+      finalizationFloor: number,
+    ): Promise<RevalidationInputs> {
+      const [cursors, retry] = await db.batchAll([
+        query(VALIDATED_LINK_CURSORS, finalizationFloor, ...BINDABLE),
         query(INCOMPLETE_VALIDATION_SURVEYS),
-      );
-      return rows.map((r) => r.surveyKey);
+      ]);
+      return {
+        cursors: cursors as ValidatedLinkCursor[],
+        retrySurveys: (retry as { surveyKey: string }[]).map(
+          (r) => r.surveyKey,
+        ),
+      };
     },
     async upsertValidatedResponses(
       rows: readonly ValidatedResponseRow[],
@@ -608,22 +626,6 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
         ),
       );
     },
-    async artifactKeysFor(
-      surveyKeys: readonly string[],
-    ): Promise<ArtifactKeys> {
-      const keys: ArtifactKeys = { finalized: new Set(), cancelled: new Set() };
-      if (surveyKeys.length === 0) return keys;
-      const batches = await db.batchAll<{
-        surveyKey: string;
-        cancelled: number;
-      }>(artifactKeysSql(surveyKeys));
-      for (const r of batches.flat()) {
-        keys.finalized.add(r.surveyKey);
-        if (r.cancelled) keys.cancelled.add(r.surveyKey);
-      }
-      return keys;
-    },
-
     async cachedTxMetadata(
       txHashes: readonly string[],
     ): Promise<Map<string, unknown>> {
@@ -671,23 +673,12 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       );
     },
     async unclaimedTxProofHashes(
-      liveSurveyKeys: readonly string[],
+      minEndEpoch: number,
     ): Promise<readonly string[]> {
-      // No live survey claims anything: probe against a key nothing matches,
-      // so every banked hash comes back (an empty key list would build no
-      // statement and drop nothing).
-      const batches = await db.batchAll<{ txHash: string }>(
-        unclaimedTxProofHashesSql(
-          liveSurveyKeys.length > 0 ? liveSurveyKeys : [""],
-        ),
+      const rows = await db.all<{ txHash: string }>(
+        query(UNCLAIMED_TX_PROOF_HASHES, minEndEpoch, minEndEpoch),
       );
-      // Unclaimed by every chunk of the live set.
-      const perChunk = batches.map(
-        (rows) => new Set(rows.map((r) => r.txHash)),
-      );
-      return [...(perChunk[0] ?? [])].filter((h) =>
-        perChunk.every((chunk) => chunk.has(h)),
-      );
+      return rows.map((r) => r.txHash);
     },
     async deleteTxProofCbor(txHashes: readonly string[]): Promise<void> {
       await db.batchWrite(
@@ -1014,21 +1005,16 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       );
       return rows.map(surveyRowFromDb);
     },
-    async surveyKeysEndingAtOrAfter(minEndEpoch: number): Promise<string[]> {
-      const rows = await db.all<{ surveyKey: string }>(
-        query(SURVEY_KEYS_ENDING_AT_OR_AFTER, minEndEpoch),
-      );
-      return rows.map((r) => r.surveyKey);
-    },
 
-    async putRefreshRun(row: RefreshRunRow): Promise<void> {
+    async putRefreshRun(row: RefreshRunInput): Promise<void> {
       await db.batchWrite([
         query(
           `INSERT OR REPLACE INTO refresh_run
              (started_at, duration_ms, upstream_requests, koios_calls, ok,
               error, gov_links_ok, incomplete, surveys, responses,
               payload_bytes, validation_backlog)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                   (SELECT COUNT(*) FROM validated_response WHERE ${INCOMPLETE}))`,
           row.startedAt,
           row.durationMs,
           row.upstreamRequests,
@@ -1040,7 +1026,6 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
           row.surveys,
           row.responses,
           row.payloadBytes,
-          row.validationBacklog,
         ),
         query(
           "DELETE FROM refresh_run WHERE started_at < ?",

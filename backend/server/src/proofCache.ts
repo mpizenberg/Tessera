@@ -19,7 +19,7 @@
 
 import type { ChainTip } from "cip-179/domain";
 
-import type { ScanCacheStore, SnapshotStore, TallyStore } from "./store";
+import type { ScanCacheStore } from "./store";
 
 /**
  * Epochs past a survey's end after which its proofs are dropped regardless of
@@ -45,20 +45,14 @@ const PROOF_GRACE_EPOCHS = 5;
  * every refresh, so a run that dies before pruning loses nothing.
  */
 export async function pruneTxProofCache(
-  store: Pick<SnapshotStore, "surveyKeysEndingAtOrAfter"> &
-    Pick<TallyStore, "artifactKeysFor"> &
-    Pick<ScanCacheStore, "unclaimedTxProofHashes" | "deleteTxProofCbor">,
+  store: Pick<ScanCacheStore, "unclaimedTxProofHashes" | "deleteTxProofCbor">,
   incomplete: boolean,
   tip: ChainTip,
 ): Promise<void> {
   if (incomplete) return;
 
-  const recent = await store.surveyKeysEndingAtOrAfter(
-    tip.epoch - PROOF_GRACE_EPOCHS,
-  );
-  const { finalized } = await store.artifactKeysFor(recent);
   const hashes = await store.unclaimedTxProofHashes(
-    recent.filter((key) => !finalized.has(key)),
+    tip.epoch - PROOF_GRACE_EPOCHS,
   );
   if (hashes.length === 0) return;
   await store.deleteTxProofCbor(hashes);

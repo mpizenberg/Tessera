@@ -137,6 +137,12 @@ export interface ArtifactKeys {
   readonly cancelled: Set<string>;
 }
 
+/** See {@link TallyStore.revalidationInputs}. */
+export interface RevalidationInputs {
+  readonly cursors: ValidatedLinkCursor[];
+  readonly retrySurveys: string[];
+}
+
 /**
  * One survey's stored link-set cursor, as pinned by a completed bindable-role
  * verdict: the survey may carry several distinct cursors when its verdicts
@@ -171,20 +177,16 @@ export interface TallyStore {
     txHashes: readonly string[],
   ): Promise<Map<string, CompletedValidation>>;
   /**
-   * Distinct link-set cursors pinned by completed bindable-role verdicts of
-   * the surveys ending at or after `minEndEpoch` — the input to "which
-   * surveys' link sets changed since their verdicts". Callers pass the
-   * finalization floor: a survey below it finalized against a link set that
-   * had already settled, so no verdict down there can be re-evaluated, and
-   * the read stays bounded by the undecided surveys rather than by history.
+   * What decides which stored verdicts get another look, in one round trip:
+   * the distinct link-set cursors pinned by completed bindable-role verdicts of
+   * the surveys ending at or after `finalizationFloor` (a survey below it
+   * finalized against a link set that had already settled, so no verdict down
+   * there can be re-evaluated, and the read stays bounded by the undecided
+   * surveys rather than by history), and the surveys with at least one verdict
+   * still awaiting an enrichment retry, whose stored responses re-enter
+   * validation even when the scan's input no longer carries them.
    */
-  validatedLinkCursors(minEndEpoch: number): Promise<ValidatedLinkCursor[]>;
-  /**
-   * Surveys with at least one verdict still awaiting an enrichment retry.
-   * Their stored responses re-enter validation even when the scan's input no
-   * longer carries them.
-   */
-  incompleteValidationSurveys(): Promise<string[]>;
+  revalidationInputs(finalizationFloor: number): Promise<RevalidationInputs>;
   upsertValidatedResponses(
     rows: readonly ValidatedResponseRow[],
   ): Promise<void>;
@@ -245,14 +247,6 @@ export interface TallyStore {
   /** Insert-or-ignore: an artifact, once written, is immutable. */
   putArtifact(row: ArtifactRow): Promise<void>;
   /**
-   * The key sets restricted to `surveyKeys` — a keyed read, so a caller's cost
-   * is the surveys it asks about, never the artifact archive. Cancelled-ness
-   * is derived from the stored artifact JSON at query time (`json_extract`)
-   * rather than a denormalized column: artifacts are immutable, and the JSON
-   * stays the single source of truth.
-   */
-  artifactKeysFor(surveyKeys: readonly string[]): Promise<ArtifactKeys>;
-  /**
    * Bank the finalization floor (read back by {@link SnapshotStore.scanState}).
    * Only a complete, caught-up pass computes one: while the scan is still
    * integrating, a survey below the floor may not have all its responses yet.
@@ -285,15 +279,14 @@ export interface ScanCacheStore {
   /** Persist fetched tx CBOR (insert-or-ignore). */
   putTxProofCbor(entries: ReadonlyMap<string, string>): Promise<void>;
   /**
-   * The banked tx hashes that no live survey bears on: not a definition, a
-   * cancellation or a response of any of `liveSurveyKeys` — the prune's drop
-   * set, decided in the database by one seek per banked hash against each of
-   * the three tables, so the cost is the cache's size plus the live set's,
-   * never the archive's.
+   * The banked tx hashes no live survey bears on — the prune's drop set. A
+   * survey is live while it ends at or after `minEndEpoch` and has no
+   * artifact; a hash is claimed by being a live survey's definition, one of
+   * its responses or one of its cancellations. Decided in the database, one
+   * seek per banked hash against each of the three tables, so the cost is
+   * the cache's size plus the live set's, never the archive's.
    */
-  unclaimedTxProofHashes(
-    liveSurveyKeys: readonly string[],
-  ): Promise<readonly string[]>;
+  unclaimedTxProofHashes(minEndEpoch: number): Promise<readonly string[]>;
   /** Drop cached CBOR no live survey bears on any more. */
   deleteTxProofCbor(txHashes: readonly string[]): Promise<void>;
 }
@@ -414,10 +407,13 @@ export interface RefreshRunRow {
   /**
    * Validated rows still awaiting an enrichment retry when the run recorded
    * itself — what `/api/health` serves without re-counting the table. Null
-   * when the count failed or the row predates it; health then counts live.
+   * only on a row that predates the column; health then counts live.
    */
   readonly validationBacklog: number | null;
 }
+
+/** What a run reports about itself; the store banks the backlog. */
+export type RefreshRunInput = Omit<RefreshRunRow, "validationBacklog">;
 
 /** Keep operational history (runs, tally buckets) this long. */
 export const OPERATIONAL_RETENTION_SECONDS = 7 * 86_400;
@@ -483,9 +479,11 @@ export const sumUpstream = (totals: UpstreamTotals): number =>
 export interface HealthStore {
   /**
    * Record one run (latest-wins on a same-second collision) and prune rows
-   * older than {@link OPERATIONAL_RETENTION_SECONDS} before it.
+   * older than {@link OPERATIONAL_RETENTION_SECONDS} before it. The
+   * validation backlog is counted in the same statement, so the row banks the
+   * table's state at the instant it was written.
    */
-  putRefreshRun(row: RefreshRunRow): Promise<void>;
+  putRefreshRun(row: RefreshRunInput): Promise<void>;
   /** The most recent run, or null before the first one. */
   lastRefreshRun(): Promise<RefreshRunRow | null>;
   /** Aggregates over runs with `startedAt >= sinceUnix`. */
@@ -931,7 +929,10 @@ export interface SnapshotStore {
    * Everything a projection rebuild reads about the given surveys, in one
    * round trip: their stored rows (unknown keys absent), every stored
    * cancellation targeting them, their banked settled counts (a survey never
-   * banked is absent) and their artifact keys.
+   * banked is absent) and their artifact keys — cancelled-ness derived from
+   * the stored artifact JSON at query time (`json_extract`) rather than a
+   * denormalized column: artifacts are immutable, and the JSON stays the
+   * single source of truth.
    */
   touchedRows(surveyKeys: readonly string[]): Promise<TouchedRows>;
   /**
@@ -959,12 +960,6 @@ export interface SnapshotStore {
     floorEpoch: number,
     tipEpoch: number,
   ): Promise<SurveyIndexRow[]>;
-  /**
-   * Keys of the stored surveys with `end_epoch >= minEndEpoch` — the open set
-   * plus however many epochs of recent closers the caller's horizon covers
-   * (the proof-cache prune's live candidates).
-   */
-  surveyKeysEndingAtOrAfter(minEndEpoch: number): Promise<string[]>;
   close(): void;
 }
 

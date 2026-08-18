@@ -1,8 +1,8 @@
 /**
  * The store itself, where the SQL carries logic no behavioural test would
  * pin on its own: the migration runner (including the pre-runner databases it
- * has to recognise), the `json_extract` predicate behind
- * `artifactKeysFor`, the conditional upsert behind the refresh lease,
+ * has to recognise), the `json_extract` predicate behind a touched survey's
+ * artifact keys, the conditional upsert behind the refresh lease,
  * the join and cascade behind the sealed-reveal cursor, the paging keyset and
  * the filters no route test reaches, the segment sweep's changed-row count,
  * the changed-rows-only write contract of a reconcile, the write-once
@@ -47,7 +47,7 @@ const artifact = (surveyKey: string, tally: string, hash: string) => ({
   createdAt: 1,
 });
 
-describe("store-node artifactKeysFor (json_extract)", () => {
+describe("store-node artifact keys (json_extract)", () => {
   let store: BackendStore;
   afterEach(() => store.close());
 
@@ -70,7 +70,7 @@ describe("store-node artifactKeysFor (json_extract)", () => {
     );
 
     expect(
-      await store.artifactKeysFor(["aa:0", "bb:1", "cc:2", "dd:3"]),
+      (await store.touchedRows(["aa:0", "bb:1", "cc:2", "dd:3"])).artifacts,
     ).toEqual({
       finalized: new Set(["aa:0", "bb:1", "cc:2"]),
       cancelled: new Set(["bb:1"]),

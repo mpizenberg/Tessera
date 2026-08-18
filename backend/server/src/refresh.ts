@@ -249,12 +249,6 @@ export async function refreshSnapshot(
       | { ok: false; error: string },
   ): Promise<void> => {
     const calls = meter.counted();
-    // Banked on every run (failed ones too — the table's state is a fact
-    // either way) so /api/health serves it from the run row instead of
-    // counting validated_response per request.
-    const validationBacklog = await store
-      .incompleteValidationCount()
-      .catch(() => null);
     return (
       Promise.all([
         store.putRefreshRun({
@@ -263,7 +257,6 @@ export async function refreshSnapshot(
           upstreamRequests: sumUpstream(calls),
           koiosCalls: calls.koios,
           govLinksOk: govLinksReliable,
-          validationBacklog,
           ...(outcome.ok
             ? { ...outcome, error: null }
             : {

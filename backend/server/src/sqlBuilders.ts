@@ -657,35 +657,6 @@ export const completedValidationsSql = (
   );
 
 /**
- * Banked proof transactions no live survey bears on. Each banked hash is
- * probed against the three tables that could claim it — a survey key is
- * "<txHash>:<index>", so a definition is a prefix seek on the primary key —
- * and the live set rides as one JSON array, bound once per probe. Chunked
- * over the live keys: a hash is unclaimed only if every chunk says so.
- */
-export const unclaimedTxProofHashesSql = (
-  liveSurveyKeys: readonly string[],
-): SqlQuery[] =>
-  jsonChunks(
-    [...liveSurveyKeys].sort(compareText),
-    SNAPSHOT_KEYS_PER_CHUNK,
-  ).map((chunk) => ({
-    sql: `SELECT c.tx_hash AS txHash FROM tx_proof_cache c
-            WHERE NOT EXISTS (
-                SELECT 1 FROM response r
-                WHERE r.tx_hash = c.tx_hash AND r.survey_key IN ${JSON_KEY_SET})
-              AND NOT EXISTS (
-                SELECT 1 FROM cancellation x
-                WHERE x.tx_hash = c.tx_hash AND x.survey_key IN ${JSON_KEY_SET})
-              AND NOT EXISTS (
-                SELECT 1 FROM survey_index s
-                WHERE s.survey_key >= c.tx_hash || ':'
-                  AND s.survey_key < c.tx_hash || ';'
-                  AND s.survey_key IN ${JSON_KEY_SET})`,
-    params: [chunk.json, chunk.json, chunk.json],
-  }));
-
-/**
  * The artifact key sets restricted to the given surveys: which of them hold
  * an artifact, and which of those finalized as cancelled. `json_extract`
  * returns SQL NULL both when the path is absent and when the value is JSON

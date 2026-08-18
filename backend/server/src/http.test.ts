@@ -54,8 +54,8 @@ async function seed(
     },
     tip,
     govLinks,
-    (await store.artifactKeysFor([surveyA, surveyB].map((s) => refKey(s.ref))))
-      .cancelled,
+    (await store.touchedRows([surveyA, surveyB].map((s) => refKey(s.ref))))
+      .artifacts.cancelled,
   );
   await store.reconcileSegment(
     ALL_SLOTS,
@@ -800,11 +800,27 @@ describe("GET /api/health", () => {
     surveys: 2,
     responses: 4,
     payloadBytes: 5_000,
-    validationBacklog: 3,
   };
+  const incomplete = (txHash: string) => ({
+    txHash,
+    responseIndex: 0,
+    surveyKey: "aa:0",
+    role: 0,
+    credential: "key:11",
+    slot: 1,
+    epochNo: 500,
+    blockIndex: null,
+    proofOk: null,
+    linkedActionId: null,
+    wellFormed: true,
+    checkedAt: NOW,
+  });
 
   it("reports snapshot freshness, last run, totals, and quotas", async () => {
     const store = await seededStore();
+    await store.upsertValidatedResponses(
+      ["ab", "cd", "ef"].map((h) => incomplete(h.repeat(32))),
+    );
     await store.putRefreshRun({ ...runRow, startedAt: NOW - 200 });
     await store.putRefreshRun({
       ...runRow,
@@ -853,6 +869,16 @@ describe("GET /api/health", () => {
     });
     // Banked on the latest run row, not counted live per request.
     expect(body["validationBacklog"]).toBe(3);
+    // Rows that land after the run don't move it until the next run banks.
+    await store.upsertValidatedResponses([incomplete("99".repeat(32))]);
+    expect(
+      (
+        (await (await appWith(store).request("/api/health")).json()) as Record<
+          string,
+          unknown
+        >
+      )["validationBacklog"],
+    ).toBe(3);
     expect(body["quotas"]).toEqual({
       subrequestsPerInvocation: 1000,
       koiosCallsPerDay: 5000,
@@ -886,23 +912,9 @@ describe("GET /api/health", () => {
 
   it("falls back to a live backlog count when the run predates banking", async () => {
     const store = await seededStore();
-    await store.putRefreshRun({ ...runRow, validationBacklog: null });
-    await store.upsertValidatedResponses([
-      {
-        txHash: "ab".repeat(32),
-        responseIndex: 0,
-        surveyKey: "aa:0",
-        role: 0,
-        credential: "key:11",
-        slot: 1,
-        epochNo: 500,
-        blockIndex: null,
-        proofOk: null,
-        linkedActionId: null,
-        wellFormed: true,
-        checkedAt: NOW,
-      },
-    ]);
+    await store.putRefreshRun(runRow);
+    store.db.exec("UPDATE refresh_run SET validation_backlog = NULL");
+    await store.upsertValidatedResponses([incomplete("ab".repeat(32))]);
 
     const res = await appWith(store).request("/api/health");
     const body = (await res.json()) as Record<string, unknown>;

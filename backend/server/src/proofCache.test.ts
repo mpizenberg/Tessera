@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Role, type SurveyDefinition } from "cip-179";
 import {
   hexToBytes,
+  refKey,
   type CancellationRecord,
   type ChainTip,
   type Cip179Records,
@@ -127,7 +128,8 @@ async function prune(
   for (const surveyKey of finalized) {
     await mem.putArtifact({
       surveyKey,
-      endEpoch: 0,
+      endEpoch: recs.surveys.find((s) => refKey(s.ref) === surveyKey)!
+        .definition.endEpoch,
       artifactHash: surveyKey,
       artifact: `{"tally":{},"provenance":{}}`,
       createdAt: 1,
@@ -137,9 +139,7 @@ async function prune(
   const cache = fakeCache();
   await pruneTxProofCache(
     {
-      surveyKeysEndingAtOrAfter: (e) => mem.surveyKeysEndingAtOrAfter(e),
-      artifactKeysFor: (keys) => mem.artifactKeysFor(keys),
-      unclaimedTxProofHashes: (live) => mem.unclaimedTxProofHashes(live),
+      unclaimedTxProofHashes: (h) => mem.unclaimedTxProofHashes(h),
       deleteTxProofCbor: cache.deleteTxProofCbor,
     },
     recs.incomplete === true,

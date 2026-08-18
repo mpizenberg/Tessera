@@ -400,7 +400,6 @@ async function steadyRun(
     await store.surveyIndexCounts(TIP.epoch, [], []);
     await store.publishSnapshotMeta(meta);
   }
-  await store.incompleteValidationCount();
   await store.putRefreshRun({
     startedAt: TIP.time + 1,
     durationMs: 1,
@@ -413,7 +412,6 @@ async function steadyRun(
     surveys: 0,
     responses: segment.responses.length,
     payloadBytes: integration.payloadBytes,
-    validationBacklog: 0,
   });
   await store.pruneUpstreamTally(0);
   void corpus;
