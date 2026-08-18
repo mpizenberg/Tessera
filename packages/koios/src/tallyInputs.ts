@@ -24,12 +24,21 @@
  *
  * DReps (role 0) resolve in bulk too:
  *  - `/drep_voting_power_history?_epoch_no=E&epoch_no=eq.E&drep_id=in.(…)` —
- *    a row per DRep registered at E, carrying its voting power; a DRep absent
- *    from the response was not registered. Both epoch filters, deliberately:
- *    `_epoch_no` keeps the server-side query to one epoch, and the PostgREST
- *    column filter guards against its known misbehaviour for current epochs.
- *    A 50-id `in.(…)` list is ~3 KB of URL, verified live to return amounts
- *    byte-identical to the single-id form.
+ *    voting power, one row per DRep *some account has delegated to* at E. Both
+ *    epoch filters, deliberately: `_epoch_no` keeps the server-side query to
+ *    one epoch, and the PostgREST column filter guards against its known
+ *    misbehaviour for current epochs. A 50-id `in.(…)` list is ~3 KB of URL,
+ *    verified live to return amounts byte-identical to the single-id form.
+ *  - `/drep_updates?drep_id=in.(…)&block_time=lte.<E's end>` — registration,
+ *    read only for the ids the power read returned nothing for. A power row
+ *    proves registration, but its absence disproves nothing: Koios omits a
+ *    registered DRep nobody has delegated to, and TALLY-SPEC.md §1 counts that
+ *    DRep at weight 0 rather than excluding it as a non-member. Registered at E
+ *    iff the newest registration event at or before E's end is not a
+ *    deregistration; `updated` events are filtered out server-side, leaving
+ *    registration unchanged exactly as the delegations the stakeholder read
+ *    drops do. The endpoint carries no epoch column, so the boundary comes from
+ *    `/epoch_info`'s `end_time`.
  *
  * Totals come from `/epoch_info` (known to fail with db-sync word128 errors on
  * some preview epochs — hence null-means-retry) and `/drep_epoch_summary`.
@@ -76,9 +85,12 @@ const REGISTRATION_CERT_TYPES = new Set(["stake_registration"]);
 const DEREGISTRATION_CERT_TYPES = new Set(["stake_deregistration"]);
 
 /**
- * Runaway guard for {@link KoiosTallyInputs.postAll}: its caller reads a single
- * short page, so reaching this means Koios ignored our `offset` and the loop
- * would otherwise never end.
+ * Page cap for the two offset-paginated reads. {@link KoiosTallyInputs.postAll}
+ * reads a single short page in practice, so reaching this there means Koios
+ * ignored our `offset` and the loop would otherwise never end;
+ * {@link KoiosTallyInputs.drepRegistrations} may legitimately want a second
+ * page, and reaching the cap would mean a 50-DRep batch with a four-figure
+ * registration history above its deciding blocks.
  */
 const MAX_PAGES = 10;
 
@@ -134,6 +146,14 @@ interface DrepPowerRow {
   epoch_no: number;
   /** Lovelace as a decimal string. */
   amount: string;
+}
+
+interface DrepUpdateRow {
+  drep_id: string;
+  /** Wall clock of the carrying block — the endpoint has no epoch column. */
+  block_time: number;
+  /** `registered` | `deregistered` (`updated` is filtered out server-side). */
+  action: string;
 }
 
 export class KoiosTallyInputs implements TallyInputSource {
@@ -490,6 +510,106 @@ export class KoiosTallyInputs implements TallyInputSource {
     return out;
   }
 
+  /**
+   * Unix time `epoch` ends at. `/drep_updates` timestamps its events in wall
+   * clock and offers no epoch filter, so the registration read below needs the
+   * boundary as a time. Throws when Koios can't serve it: the epoch's surveys
+   * postpone to the next pass rather than have membership decided against a
+   * guessed boundary and frozen into a hashed artifact.
+   */
+  private async epochEndTime(epoch: number): Promise<number> {
+    const rows = await this.get<{ end_time: number | null }[]>(
+      `/epoch_info?_epoch_no=${epoch}&_include_next_epoch=false&select=end_time`,
+    );
+    const endTime = rows[0]?.end_time;
+    if (typeof endTime !== "number") {
+      throw new Error(
+        `epoch_info serves no end_time for epoch ${epoch} — retry`,
+      );
+    }
+    return endTime;
+  }
+
+  /**
+   * Which of `ids` were registered DReps at `epoch` — asked only about ids the
+   * voting-power read said nothing about, so a survey whose responders all have
+   * delegators pays nothing for this.
+   *
+   * The newest event decides and the read is newest-first, so an id's first row
+   * is its deciding one; the pass stops once every id has one and the cursor has
+   * dropped below all of them (a later page can still add to the newest block a
+   * row shares). An id with no row at all never registered by the boundary.
+   */
+  private async drepRegistrations(
+    epoch: number,
+    ids: readonly string[],
+  ): Promise<Set<string>> {
+    const endTime = await this.epochEndTime(epoch);
+    const registered = new Set<string>();
+    for (let i = 0; i < ids.length; i += CREDENTIAL_BATCH) {
+      const batch = ids.slice(i, i + CREDENTIAL_BATCH);
+      const decidingTime = new Map<string, number>();
+      const decidingActions = new Map<string, Set<string>>();
+      let cursor = Number.POSITIVE_INFINITY;
+      for (let page = 0; ; page++) {
+        if (page >= MAX_PAGES) {
+          throw new Error(
+            `drep_updates: ${batch.length} id(s) unsettled after ` +
+              `${MAX_PAGES} pages at epoch ${epoch}`,
+          );
+        }
+        const rows = await this.get<DrepUpdateRow[]>(
+          `/drep_updates?drep_id=in.(${batch.join(",")})` +
+            `&block_time=lte.${endTime}` +
+            `&action=in.(registered,deregistered)` +
+            `&select=drep_id,block_time,action` +
+            // Newest first, then a tiebreak deep enough that PostgREST can only
+            // shuffle rows this reader can't tell apart — two rows agreeing on
+            // all three columns decide the same way.
+            `&order=block_time.desc,drep_id.asc,action.asc` +
+            `&limit=${PAGE_LIMIT}&offset=${page * PAGE_LIMIT}`,
+        );
+        for (const row of rows) {
+          if (row.block_time > cursor) {
+            throw new Error(
+              "drep_updates rows are not in descending block_time order",
+            );
+          }
+          cursor = row.block_time;
+          const known = decidingTime.get(row.drep_id);
+          if (known === undefined) {
+            decidingTime.set(row.drep_id, row.block_time);
+            decidingActions.set(row.drep_id, new Set([row.action]));
+          } else if (known === row.block_time) {
+            decidingActions.get(row.drep_id)!.add(row.action);
+          }
+        }
+        if (rows.length < PAGE_LIMIT) break; // short page → exhausted
+        if (
+          decidingTime.size === batch.length &&
+          cursor < Math.min(...decidingTime.values())
+        ) {
+          break;
+        }
+      }
+      for (const id of batch) {
+        const actions = decidingActions.get(id);
+        if (!actions) continue; // no event by the boundary → never registered
+        if (actions.size > 1) {
+          // Registration and deregistration in one block: `/drep_updates`
+          // exposes no within-block order to read the ledger's verdict from,
+          // and a guess here would be immutable. Postpone instead.
+          throw new Error(
+            `drep_updates: ${id} registers and deregisters at ` +
+              `${decidingTime.get(id)} — no within-block order to resolve it`,
+          );
+        }
+        if (actions.has("registered")) registered.add(id);
+      }
+    }
+    return registered;
+  }
+
   async drepWeights(
     epoch: number,
     credentials: readonly Credential[],
@@ -511,8 +631,16 @@ export class KoiosTallyInputs implements TallyInputSource {
       for (const row of rows) powerById.set(row.drep_id, BigInt(row.amount));
     }
 
-    // Registered at E iff a power row came back; the bulk response says
-    // nothing about an absent id, so absence is derived by set difference.
+    // A power row proves registration and carries the weight. The ids it left
+    // out are either unregistered or registered with nothing delegated to them
+    // — worth 0 either way, but only the second counts (TALLY-SPEC.md §1) — so
+    // they take a second, registration-only read.
+    const absent = ids.filter((id) => !powerById.has(id));
+    const registered =
+      absent.length > 0
+        ? await this.drepRegistrations(epoch, absent)
+        : new Set<string>();
+
     const out = new Map<string, WeightInfo>();
     for (const [id, credKey] of byId) {
       const power = powerById.get(id);
@@ -520,7 +648,7 @@ export class KoiosTallyInputs implements TallyInputSource {
         credKey,
         power !== undefined
           ? { registered: true, weight: power }
-          : { registered: false, weight: 0n },
+          : { registered: registered.has(id), weight: 0n },
       );
     }
     return out;

@@ -46,6 +46,13 @@ const reg = (addr: string, slot: number, tx = "tx0") =>
 const dereg = (addr: string, slot: number, tx = "tx0") =>
   update(addr, "deregistration", slot, tx);
 
+/** A `/drep_updates` row, as the registration read projects it. */
+const drepUpdate = (drep_id: string, block_time: number, action: string) => ({
+  drep_id,
+  block_time,
+  action,
+});
+
 /** A `/tx_info` row (with `_certs:true`) for a conflicting tx. */
 const txInfoRow = (
   tx_hash: string,
@@ -472,14 +479,16 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
 });
 
 describe("KoiosTallyInputs.drepWeights", () => {
-  it("reads a batch of ids in one bulk GET; registered iff a power row came back", async () => {
+  it("weighs from the power row, and asks nothing more when every id has one", async () => {
     const idA = evolutionCodec.drepId(cred(HASH_A));
     const idB = evolutionCodec.drepId(cred(HASH_B));
     const seen: string[] = [];
     stubFetch((url) => {
       seen.push(url);
-      // Registered with power for the first credential, absent for the second.
-      return [{ drep_id: idA, epoch_no: 1345, amount: "157298068" }];
+      return [
+        { drep_id: idA, epoch_no: 1345, amount: "157298068" },
+        { drep_id: idB, epoch_no: 1345, amount: "0" },
+      ];
     });
     const weights = await new KoiosTallyInputs(CONFIG).drepWeights(1345, [
       cred(HASH_A),
@@ -497,9 +506,101 @@ describe("KoiosTallyInputs.drepWeights", () => {
       weight: 157_298_068n,
     });
     expect(weights.get(`key:${HASH_B}`)).toEqual({
+      registered: true,
+      weight: 0n,
+    });
+  });
+
+  it("reads registration for the ids the power endpoint omits, and only those", async () => {
+    const idA = evolutionCodec.drepId(cred(HASH_A));
+    const idB = evolutionCodec.drepId(cred(HASH_B));
+    const seen: string[] = [];
+    stubFetch((url) => {
+      seen.push(url);
+      if (url.includes("/drep_voting_power_history")) {
+        return [{ drep_id: idA, epoch_no: 1345, amount: "157298068" }];
+      }
+      if (url.includes("/epoch_info")) return [{ end_time: 1_700_000_000 }];
+      // Registered, and nobody delegated to it — a member at weight 0.
+      return [drepUpdate(idB, 1_699_000_000, "registered")];
+    });
+    const weights = await new KoiosTallyInputs(CONFIG).drepWeights(1345, [
+      cred(HASH_A),
+      cred(HASH_B),
+    ]);
+    const updates = seen.find((u) => u.includes("/drep_updates"))!;
+    expect(updates).toContain(`drep_id=in.(${idB})`);
+    expect(updates).toContain("block_time=lte.1700000000");
+    expect(updates).toContain("action=in.(registered,deregistered)");
+    expect(weights.get(`key:${HASH_A}`)).toEqual({
+      registered: true,
+      weight: 157_298_068n,
+    });
+    expect(weights.get(`key:${HASH_B}`)).toEqual({
+      registered: true,
+      weight: 0n,
+    });
+  });
+
+  it("excludes a DRep deregistered by the boundary, or with no event before it", async () => {
+    const idA = evolutionCodec.drepId(cred(HASH_A));
+    const idB = evolutionCodec.drepId(cred(HASH_B));
+    stubFetch((url) => {
+      if (url.includes("/drep_voting_power_history")) return [];
+      if (url.includes("/epoch_info")) return [{ end_time: 1_700_000_000 }];
+      // Newest first, as the query asks for.
+      return [
+        // A: re-registered after a deregistration — a member.
+        drepUpdate(idA, 1_699_000_500, "registered"),
+        drepUpdate(idA, 1_699_000_400, "deregistered"),
+        // B: deregistered last — not a member. C: never registered at all.
+        drepUpdate(idB, 1_699_000_300, "deregistered"),
+        drepUpdate(idB, 1_699_000_200, "registered"),
+      ];
+    });
+    const weights = await new KoiosTallyInputs(CONFIG).drepWeights(1345, [
+      cred(HASH_A),
+      cred(HASH_B),
+      cred(HASH_C),
+    ]);
+    expect(weights.get(`key:${HASH_A}`)).toEqual({
+      registered: true,
+      weight: 0n,
+    });
+    expect(weights.get(`key:${HASH_B}`)).toEqual({
       registered: false,
       weight: 0n,
     });
+    expect(weights.get(`key:${HASH_C}`)).toEqual({
+      registered: false,
+      weight: 0n,
+    });
+  });
+
+  it("postpones rather than guess a registration and deregistration in one block", async () => {
+    const idA = evolutionCodec.drepId(cred(HASH_A));
+    stubFetch((url) => {
+      if (url.includes("/drep_voting_power_history")) return [];
+      if (url.includes("/epoch_info")) return [{ end_time: 1_700_000_000 }];
+      return [
+        drepUpdate(idA, 1_699_000_500, "registered"),
+        drepUpdate(idA, 1_699_000_500, "deregistered"),
+      ];
+    });
+    await expect(
+      new KoiosTallyInputs(CONFIG).drepWeights(1345, [cred(HASH_A)]),
+    ).rejects.toThrow(/no within-block order/);
+  });
+
+  it("postpones when the epoch's end time is unavailable", async () => {
+    stubFetch((url) => {
+      if (url.includes("/drep_voting_power_history")) return [];
+      if (url.includes("/epoch_info")) return [];
+      return [];
+    });
+    await expect(
+      new KoiosTallyInputs(CONFIG).drepWeights(1345, [cred(HASH_A)]),
+    ).rejects.toThrow(/no end_time/);
   });
 
   it("chunks past the batch size and merges the pages", async () => {
