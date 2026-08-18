@@ -253,6 +253,17 @@ it produced: they are comfortable running one instance per network; a named
 optimization is required first, together with the trigger that forces it; or the
 deployment stays externally operated for now.
 
+**A corpus under one listing page is a floor, not a curve.** Koios lists 100
+transactions to a page, so a deployment whose entire label-17 history fits in one
+— preview at 84, preprod at a handful — has its drift-healing rescan cover the
+whole archive on every run and wrap immediately: its measured steady state is a
+full re-derivation every three minutes, the opposite of the regime that matters
+at scale. Such a report proves health and names the floor; it is not evidence
+about growth and must not be quoted as if it were. The growth laws come from the
+scaling bench (`src/scaling.test.ts`), which prices the archive, one survey's
+settled participation and the settlement window as separate axes against the SQL
+the deployments run.
+
 **Wall time is not a footprint.** The refresh's wall clock — the run's own
 `duration_ms`, `wrangler tail`'s `wall`, the analytics `wallTime` quantiles — is
 its D1 round trips times the distance between the cron isolate and the database.
@@ -286,7 +297,12 @@ denominators `/api/health` reports under `quotas` and the health footer
 divides `koiosCalls` and the last run's `upstreamRequests` by, so a wrong value
 misleads a reader instead of throttling a request. Koios enforces the real
 quota with 429s and Cloudflare fails the invocation past its cap; both surface
-as a failed refresh. What the backend does enforce on itself is fixed per-pass
+as a failed refresh. Measured, the provider's subrequest counter equals the run's
+Koios calls exactly — four — while the same invocation issues on the order of
+fifty D1 statements, so binding calls do not appear in the reported figure.
+Whether the enforced cap counts them is unverified; a refresh batches those
+statements into about thirty round trips, so either reading leaves twenty-fold
+headroom. What the backend does enforce on itself is fixed per-pass
 work ceilings — transactions enriched by validation, credentials weighted by
 finalization, ciphertexts decrypted by reveal — each resumable from what the
 pass persisted, so a burst never reaches the platform cap: it postpones. The

@@ -57,6 +57,20 @@ response index 0 answers the public survey (option 0), response index 1 is a
 sealed ciphertext for the sealed survey. Tessera has validated both
 (`verdicts` reports `true`) and counts one response per survey.
 
+A third survey,
+`ccaa8baac66f60db8c785b21196243999a005e64fc847b299f6e5008838b1547#0`
+(slot 131299233, epoch 307, same owner key hash), is the DRep-eligible one the
+test sequence's step 3 needs: "Survey available to DReps", public, one
+`singleChoice` question with options `A`/`B`, `eligibleRoles: [0]` (DRep), end
+epoch 308. It carries one response — transaction
+`19d5713d83a2f9c320d87bb50065bed78d2a91f7dea905633dc7b3af70c8f18d` index 0,
+DRep key credential `3982112c16446e50a58cdff82a8b48689a7d893759bc7e30a1e4e86d`,
+option 0 — which Tessera has validated (`verdicts` reports `true`) and counts.
+Its pair is not in `preprod-fixtures.json` yet: pinning it means adding both
+transactions to `generate-fixtures.mjs` and regenerating. Finalization has not
+run for it, since the survey closes at the end of epoch 308; that run is the
+first time DRep weights are fetched for a live survey.
+
 ## Minimal host contract
 
 - The host reads a survey by exact reference from

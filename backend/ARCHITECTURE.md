@@ -201,6 +201,26 @@ _Tessera-specific but pure_ before _concrete I/O and runtime_:
   `weightedTally*` run with every weight `1n`, so there is one set of counting
   rules, not a display copy of them.
 
+**What is published, and what deliberately is not.** `cip-179`,
+`cardano-tessera-respond` and `cardano-tessera-respond-react` are on npm, because
+a host embedding the widget needs exactly those. `cardano-tessera-core` stays
+unpublished: what a host wants from it is the payload types, which are erased at
+runtime, while zod schemas at the host's own boundary validate the same shapes
+without coupling it to Tessera's release cadence — and the one runtime piece,
+`fromJsonSafe`, is already published in `cip-179/tally`. `cardano-tessera-koios`
+stays unpublished because it is the backend's Koios seam and the most volatile
+code in the workspace; publishing it would freeze an internal shape for no
+consumer. `cardano-tessera-verifier` is worth publishing, being what turns a
+results claim into something a reader can re-run, but it depends on both of those
+and so needs the widget's dist-only treatment first; the first artifact worth
+inviting anyone to re-verify is one from a live DRep-eligible survey. A typed
+HTTP client over `/api` is the one candidate that would delete code — it could
+absorb `frontend/app/src/data/indexer.ts`, so the app and every host would share
+one read seam — and is deferred until the route shapes have stopped moving and a
+real host's boundary code exists to extract it from. A `cardano-tessera-host`
+_helper_ package was rejected earlier for an unrelated reason: its eligibility
+helpers were one-liners.
+
 The hashed path is **BigInt- and rational-ready** by construction (`TALLY-SPEC.md` §4):
 `weightedTally*` aggregates in BigInt and returns ratios as integer
 `{numerator, denominator}` pairs, never floats, so canonicalization has no
@@ -712,16 +732,32 @@ confirmed" note.
 - **End-to-end closure of the paths chain timing has not yet exercised** — the
   preprod fixtures recorded in `interop/` have driven public and sealed
   Stakeholder surveys from response to artifact (a sealed reveal and its
-  provenance included), but no live survey has yet exercised DRep weights or
-  mechanism-B (governance-vote) proof, both implemented and unit-tested. Both
-  need a DRep-eligible fixture, since every fixture so far admits Stakeholder
-  only, and its epoch must pass before finalization can be measured.
+  provenance included), and a DRep-eligible preprod survey now carries a
+  validated DRep response, so proof validation has run for that role. DRep
+  weights have still never been fetched for a live survey: that survey closes at
+  the end of epoch 308 and finalization is what calls them, so the batched
+  `drepWeights` (§6.1) is unexercised outside unit tests. Mechanism-B
+  (governance-vote) proof is in the same position, implemented and unit-tested.
 - **Full-text search** — `/api/surveys?q=` matches `haystack LIKE` against every
   survey row, so it is the one per-request cost that still grows with the archive,
-  and the one place §0's invariant does not hold. Deliberate for now: the banked
-  chip counts already cover the no-`q` case, which is the common one, and an index
-  (FTS5 or equivalent) is a design of its own. Trigger: search traffic heavy
+  and one of the two places §0's invariant does not hold. Deliberate for now: the
+  banked chip counts already cover the no-`q` case, which is the common one, and an
+  index (FTS5 or equivalent) is a design of its own. Trigger: search traffic heavy
   enough to show up in `d1 insights`.
+- **The banked chip counts' recompute** — the other place. `counts` is banked, but
+  the bank is rebuilt by one aggregate over the whole `survey_index` on every run
+  that changed rows or crossed an epoch, which under any activity is every run;
+  the scaling bench pins it as the only corpus-table scan a refresh still makes.
+  Index-sized rows and no record bytes, so it is not a defect at hundreds of
+  surveys, and it is the first per-archive term to price if the count reaches
+  thousands: a covering index over the flag columns makes it index-only, a
+  delta-maintained count makes it O(changes).
+- **Permanently undecodable label-17 items are never retired** — the drift rescan
+  re-lists and re-decodes the settled prefix, so an item the codec will never
+  accept (preview holds three `spec_version 4` definitions and one malformed
+  payload) is rejected again, with its warning, on every rotation. Harmless at
+  four; nothing records a permanent rejection, so whether a large corpus's
+  undecodable residue stays bounded is unknown.
 - **A reusable `<tessera-results>` element** — result rendering is app-internal
   (`domain/results.ts`, `ui/results/`), so a host that embeds `<tessera-respond>` has
   no matching way to show the outcome, and re-implementing seven question methods,
