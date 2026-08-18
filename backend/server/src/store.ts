@@ -739,6 +739,12 @@ export interface ScanState {
   readonly caughtUp: boolean;
   readonly generation: number;
   readonly trickle: ScanCursor | null;
+  /**
+   * The chain the cursor is a position on. A refresh configured for another
+   * network refuses to walk from it. Null only on a row banked before the
+   * column existed; the next bank stamps it.
+   */
+  readonly network: string | null;
 }
 
 /**

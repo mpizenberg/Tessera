@@ -28,9 +28,9 @@ export interface ServerConfig {
   /** Snapshot refresh interval, seconds. */
   readonly refreshSeconds: number;
   /**
-   * SQLite file path, or ":memory:". Defaults per network because the cache
-   * stores no network of its own: one file fed by two networks would reconcile
-   * each one's rows away as absent from the other's authoritative scan.
+   * SQLite file path, or ":memory:". Defaults per network: a store banks the
+   * network it was walked for and refuses another, so one shared default
+   * path would only ever serve the first network to open it.
    */
   readonly dbPath: string;
   /**

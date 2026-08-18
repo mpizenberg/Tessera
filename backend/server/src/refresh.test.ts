@@ -25,6 +25,7 @@ const state = (over: Partial<ScanState>): ScanState => ({
   caughtUp: true,
   generation: SCAN_GENERATION,
   trickle: null,
+  network: "preview",
   ...over,
 });
 

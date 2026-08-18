@@ -246,6 +246,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0021_finalization_floor.sql",
       "0022_validation_backlog_index.sql",
       "0023_response_identity.sql",
+      "0024_scan_state_network.sql",
     ]);
   });
 });
@@ -696,6 +697,7 @@ describe("store-node scan state", () => {
       caughtUp: true,
       generation: 3,
       trickle: { slot: 1_200, txHash: "bb".repeat(32) },
+      network: "preview",
     };
     await store.putScanState(walked);
     expect((await store.scanState()).walker).toEqual(walked);
@@ -707,6 +709,7 @@ describe("store-node scan state", () => {
       caughtUp: false,
       generation: 4,
       trickle: null,
+      network: "preview",
     };
     await store.putScanState(rewound);
     expect((await store.scanState()).walker).toEqual(rewound);
@@ -729,6 +732,7 @@ describe("store-node scan state", () => {
       caughtUp: true,
       generation: 3,
       trickle: null,
+      network: "preview",
     };
     await store.putScanState(walked);
     await store.putSettlementFloor(511);

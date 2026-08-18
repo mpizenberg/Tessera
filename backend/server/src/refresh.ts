@@ -312,6 +312,14 @@ export async function refreshSnapshot(
 
     const bank = await store.scanState();
     const banked = bank.walker;
+    // The one check no later step can make: every row below is a mirror of
+    // whatever chain the cursor was walked on, and a run configured for
+    // another would list that chain, integrate its records and sweep the real
+    // ones away as rolled back.
+    if (banked?.network != null && banked.network !== config.app.network)
+      throw new Error(
+        `store is banked for ${banked.network}, config names ${config.app.network}`,
+      );
     const rewound = banked !== null && banked.generation !== SCAN_GENERATION;
     if (rewound) {
       console.log(
@@ -420,6 +428,7 @@ export async function refreshSnapshot(
         cursor,
         caughtUp: scan.exhausted,
         generation: SCAN_GENERATION,
+        network: config.app.network,
         // A rewind nulls the whole banked state, so the rotation restarts at
         // the config floor with the walk it heals behind.
         trickle: state?.trickle ?? null,

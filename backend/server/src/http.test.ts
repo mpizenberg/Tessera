@@ -872,6 +872,7 @@ describe("GET /api/health", () => {
       caughtUp: false,
       generation: 1,
       trickle: null,
+      network: "preview",
     });
     const during = (await (
       await appWith(store).request("/api/health")

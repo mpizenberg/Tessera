@@ -124,7 +124,8 @@ const schema = `
     trickle_slot INTEGER,
     trickle_tx_hash TEXT,
     settlement_floor INTEGER NOT NULL DEFAULT 0,
-    finalization_floor INTEGER NOT NULL DEFAULT 0
+    finalization_floor INTEGER NOT NULL DEFAULT 0,
+    network TEXT
   );
   CREATE TABLE cancellation (
     tx_hash TEXT NOT NULL,
@@ -320,6 +321,7 @@ describe("D1 snapshot reconciliation", () => {
       caughtUp: true,
       generation: 1,
       trickle: null,
+      network: "preview",
     };
     await store.putScanState(state);
     expect((await store.scanState()).walker).toEqual(state);

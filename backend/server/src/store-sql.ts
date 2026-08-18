@@ -172,21 +172,22 @@ const SURVEY_BUNDLE_SELECT = `
 const SCAN_STATE_UPSERT = `
   INSERT INTO scan_state
     (id, cursor_slot, cursor_tx_hash, caught_up, generation, trickle_slot,
-     trickle_tx_hash)
-  VALUES (1, ?, ?, ?, ?, ?, ?)
+     trickle_tx_hash, network)
+  VALUES (1, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
     cursor_slot = excluded.cursor_slot,
     cursor_tx_hash = excluded.cursor_tx_hash,
     caught_up = excluded.caught_up,
     generation = excluded.generation,
     trickle_slot = excluded.trickle_slot,
-    trickle_tx_hash = excluded.trickle_tx_hash`;
+    trickle_tx_hash = excluded.trickle_tx_hash,
+    network = excluded.network`;
 
 const SCAN_STATE_SELECT = `
   SELECT cursor_slot AS cursorSlot, cursor_tx_hash AS cursorTxHash,
          caught_up AS caughtUp, generation,
          trickle_slot AS trickleSlot, trickle_tx_hash AS trickleTxHash,
-         settlement_floor AS settlementFloor,
+         network, settlement_floor AS settlementFloor,
          finalization_floor AS finalizationFloor
   FROM scan_state WHERE id = 1`;
 
@@ -198,6 +199,7 @@ interface DbScanStateRow {
   readonly generation: number;
   readonly trickleSlot: number | null;
   readonly trickleTxHash: string | null;
+  readonly network: string | null;
   readonly settlementFloor: number;
   readonly finalizationFloor: number;
 }
@@ -217,6 +219,7 @@ const bankedScanFromDb = (r: DbScanStateRow | null): BankedScan => ({
             r.trickleSlot === null || r.trickleTxHash === null
               ? null
               : { slot: r.trickleSlot, txHash: r.trickleTxHash },
+          network: r.network,
         },
   settlementFloor: r?.settlementFloor ?? 0,
   finalizationFloor: r?.finalizationFloor ?? 0,
@@ -845,6 +848,7 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
           state.generation,
           state.trickle?.slot ?? null,
           state.trickle?.txHash ?? null,
+          state.network,
         ),
       );
     },

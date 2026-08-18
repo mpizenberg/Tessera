@@ -310,6 +310,7 @@ async function seed(store: BackendStore, profile: Profile): Promise<Corpus> {
     caughtUp: true,
     generation: SCAN_GENERATION,
     trickle: null,
+    network: CONFIG.app.network,
   });
   const govFloor = TIP_EPOCH + 1;
   await store.putSettlementFloor(govFloor);
@@ -376,6 +377,7 @@ async function steadyRun(
     caughtUp: true,
     generation: SCAN_GENERATION,
     trickle: null,
+    network: CONFIG.app.network,
   });
   const finalFloor = bank.finalizationFloor;
   await validateNewResponses(store, segment.responses, noKoios, finalFloor);
