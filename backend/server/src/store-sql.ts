@@ -35,6 +35,8 @@ import type {
   SqlDriver,
   SqlQuery,
   SurveyBundleRows,
+  SweepInputs,
+  TouchedRows,
   SurveyIndexRow,
   SurveyPageQuery,
   UpstreamCalls,
@@ -779,14 +781,6 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       if (!row) return null;
       return { ...row, incomplete: row.incomplete !== 0 };
     },
-    async surveyGovLinks(minEndEpoch: number): Promise<Map<string, GovLink[]>> {
-      const rows = await db.all<{ surveyKey: string; govLinks: string }>(
-        query(SURVEY_GOV_LINKS_SELECT, minEndEpoch),
-      );
-      return new Map(
-        rows.map((r) => [r.surveyKey, JSON.parse(r.govLinks) as GovLink[]]),
-      );
-    },
     async surveyBundle(
       surveyKey: string,
       page: { cursor: ResponseCursor | null; limit: number },
@@ -929,41 +923,72 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       });
       return out;
     },
-    async responseCountBanks(
-      surveyKeys: readonly string[],
-    ): Promise<Map<string, ResponseCountBank>> {
-      if (surveyKeys.length === 0) return new Map();
-      const batches = await db.batchAll<ResponseCountBank>(
-        responseCountBanksSql(surveyKeys),
-      );
-      return new Map(batches.flat().map((b) => [b.surveyKey, b]));
-    },
-    async responsesInSlotRange(range: SlotRange): Promise<StoredResponse[]> {
-      return db.all<StoredResponse>(
-        query(RESPONSES_IN_SLOT_RANGE, range.fromSlot, range.toSlot),
-      );
-    },
-    async cancellationRowsForSurveys(
-      surveyKeys: readonly string[],
-    ): Promise<CancellationRow[]> {
-      if (surveyKeys.length === 0) return [];
-      const batches = await db.batchAll<CancellationRow>(
-        cancellationsBySurveysSql(surveyKeys),
-      );
-      return batches.flat();
-    },
-    async cancellationRowsInSlotRange(
-      range: SlotRange,
-    ): Promise<CancellationRow[]> {
-      return db.all<CancellationRow>(
-        query(CANCELLATIONS_IN_SLOT_RANGE, range.fromSlot, range.toSlot),
-      );
-    },
-    async staleCancelledSurveyKeys(tipEpoch: number): Promise<string[]> {
-      const rows = await db.all<{ surveyKey: string }>(
+    async sweepInputs(
+      range: SlotRange | null,
+      linkHorizon: number | null,
+      tipEpoch: number,
+    ): Promise<SweepInputs> {
+      const wanted = [
+        range && query(RESPONSES_IN_SLOT_RANGE, range.fromSlot, range.toSlot),
+        range &&
+          query(CANCELLATIONS_IN_SLOT_RANGE, range.fromSlot, range.toSlot),
+        linkHorizon === null
+          ? null
+          : query(SURVEY_GOV_LINKS_SELECT, linkHorizon),
         query(STALE_CANCELLED_SURVEYS, tipEpoch),
+      ];
+      const batches = await db.batchAll(
+        wanted.filter((q): q is SqlQuery => q !== null),
       );
-      return rows.map((r) => r.surveyKey);
+      const [responses, cancellations, links, stale] = wanted.map((q) =>
+        q === null ? [] : batches.shift()!,
+      );
+      return {
+        responses: responses as StoredResponse[],
+        cancellations: cancellations as CancellationRow[],
+        govLinks: new Map(
+          (links as { surveyKey: string; govLinks: string }[]).map((r) => [
+            r.surveyKey,
+            JSON.parse(r.govLinks) as GovLink[],
+          ]),
+        ),
+        staleCancelled: (stale as { surveyKey: string }[]).map(
+          (r) => r.surveyKey,
+        ),
+      };
+    },
+    async touchedRows(surveyKeys: readonly string[]): Promise<TouchedRows> {
+      const artifacts: ArtifactKeys = {
+        finalized: new Set(),
+        cancelled: new Set(),
+      };
+      if (surveyKeys.length === 0)
+        return { surveys: [], cancellations: [], banks: new Map(), artifacts };
+      const parts = [
+        surveysByKeysSql(surveyKeys),
+        cancellationsBySurveysSql(surveyKeys),
+        responseCountBanksSql(surveyKeys),
+        artifactKeysSql(surveyKeys),
+      ];
+      const batches = await db.batchAll(parts.flat());
+      const [surveys, cancellations, banks, artifactRows] = parts.map((p) =>
+        batches.splice(0, p.length).flat(),
+      );
+      for (const r of artifactRows as {
+        surveyKey: string;
+        cancelled: number;
+      }[]) {
+        artifacts.finalized.add(r.surveyKey);
+        if (r.cancelled) artifacts.cancelled.add(r.surveyKey);
+      }
+      return {
+        surveys: (surveys as DbSurveyRow[]).map(surveyRowFromDb),
+        cancellations: cancellations as CancellationRow[],
+        banks: new Map(
+          (banks as ResponseCountBank[]).map((b) => [b.surveyKey, b]),
+        ),
+        artifacts,
+      };
     },
     async markFinalizedCancelled(
       surveyKeys: readonly string[],

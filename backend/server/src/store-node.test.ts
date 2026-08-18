@@ -389,7 +389,7 @@ describe("store-node migration to cancellation rows", () => {
     const store = openBackendStore(path);
     try {
       expect(
-        (await store.cancellationRowsForSurveys(["aa:0"])).map((r) => [
+        (await store.touchedRows(["aa:0"])).cancellations.map((r) => [
           r.txHash,
           r.surveyKey,
           r.slot,
@@ -399,10 +399,9 @@ describe("store-node migration to cancellation rows", () => {
         ["c2", "aa:0", 160],
       ]);
       // Each row's record is that cancellation's own slice of the projection.
-      const rows = await store.cancellationRowsInSlotRange({
-        fromSlot: 150,
-        toSlot: 150,
-      });
+      const rows = (
+        await store.sweepInputs({ fromSlot: 150, toSlot: 150 }, null, 0)
+      ).cancellations;
       expect(JSON.parse(rows[0]!.record)).toEqual(
         JSON.parse(record("c1", 150)),
       );

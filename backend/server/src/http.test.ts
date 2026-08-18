@@ -284,7 +284,9 @@ describe("GET /api/surveys", () => {
       await (await appWith(store).request("/api/surveys")).json(),
     ) as Record<string, unknown>;
 
-    const recovered = [...(await store.surveyGovLinks(0)).values()].flat();
+    const recovered = [
+      ...(await store.sweepInputs(null, 0, 0)).govLinks.values(),
+    ].flat();
     expect(recovered).toEqual([govLinkA]);
     await seed(store, recovered); // the next refresh, gov links unreachable
     const body = fromJsonSafe(

@@ -595,6 +595,22 @@ export interface ResponseRow {
 /** A stored response's coordinates and identity, without its record. */
 export type StoredResponse = Omit<ResponseRow, "record">;
 
+/** See {@link SnapshotStore.sweepInputs}. */
+export interface SweepInputs {
+  readonly responses: StoredResponse[];
+  readonly cancellations: CancellationRow[];
+  readonly govLinks: Map<string, GovLink[]>;
+  readonly staleCancelled: string[];
+}
+
+/** See {@link SnapshotStore.touchedRows}. */
+export interface TouchedRows {
+  readonly surveys: SurveyIndexRow[];
+  readonly cancellations: CancellationRow[];
+  readonly banks: Map<string, ResponseCountBank>;
+  readonly artifacts: ArtifactKeys;
+}
+
 /**
  * A response's identity key and chain position, without its record — what a
  * responder count reads. `role` and `credential` together are the key CIP-179
@@ -791,14 +807,6 @@ export interface SnapshotStore {
   /** The envelope, or null before the first refresh — the readiness signal. */
   snapshotMeta(): Promise<SnapshotMeta | null>;
   /**
-   * The stored governance links of the surveys ending at or after
-   * `minEndEpoch`, keyed by survey (rows whose link slice is non-empty) —
-   * the link-set change detection's stored side. Bounded because only an
-   * unsettled epoch's links can change: below the settlement floor a row's
-   * slice IS the frozen truth, so there is nothing to compare it against.
-   */
-  surveyGovLinks(minEndEpoch: number): Promise<Map<string, GovLink[]>>;
-  /**
    * One survey's bundle slice, or null if the snapshot doesn't have it. The
    * responses are ALL of them, raw and undeduped — client-side audit and
    * re-tally need the whole set — ordered by (slot, txHash, responseIndex) so
@@ -902,35 +910,30 @@ export interface SnapshotStore {
       keys: readonly { role: number; credential: string }[];
     }[],
   ): Promise<Map<string, Set<string>>>;
-  /** The banked settled counts of the given surveys; a survey never banked is absent. */
-  responseCountBanks(
-    surveyKeys: readonly string[],
-  ): Promise<Map<string, ResponseCountBank>>;
   /**
-   * The stored responses with slot in `range`, records excluded — the
-   * pre-sweep window state. Read before {@link reconcileSegment}: a row here
-   * that the segment listing lacks is about to be swept, and its survey needs
-   * a recount; a row whose slot differs from the listing's has moved.
+   * What integration reads before it knows which surveys a segment touches,
+   * in one round trip: the stored responses and cancellations with slot in
+   * `range` (records excluded for responses) — the pre-sweep window state,
+   * where a row the listing lacks is about to be swept and a row whose slot
+   * moved needs a recount; the stored link slices of surveys ending at or
+   * after `linkHorizon` (a survey whose slice differs from the current pass
+   * re-projects even when no tx touched it; null skips the read); and the
+   * surveys whose verified-while-open cancellation just expired at `tipEpoch`
+   * — `cancelled` set, no finalized overlay, closed — whose projections went
+   * stale the moment their epoch turned. Empty lists for a null `range`.
    */
-  responsesInSlotRange(range: SlotRange): Promise<StoredResponse[]>;
+  sweepInputs(
+    range: SlotRange | null,
+    linkHorizon: number | null,
+    tipEpoch: number,
+  ): Promise<SweepInputs>;
   /**
-   * Every stored cancellation of the given surveys — a touched survey's
-   * `cancellations` projection is rebuilt over these merged with the
-   * segment's own listing.
+   * Everything a projection rebuild reads about the given surveys, in one
+   * round trip: their stored rows (unknown keys absent), every stored
+   * cancellation targeting them, their banked settled counts (a survey never
+   * banked is absent) and their artifact keys.
    */
-  cancellationRowsForSurveys(
-    surveyKeys: readonly string[],
-  ): Promise<CancellationRow[]>;
-  /** The stored cancellations with slot in `range` — see {@link responseRowsInSlotRange}. */
-  cancellationRowsInSlotRange(range: SlotRange): Promise<CancellationRow[]>;
-  /**
-   * Surveys whose verified-while-open cancellation just expired: `cancelled`
-   * set, no finalized-cancelled overlay, and closed at `tipEpoch`. Client-side
-   * cancellation verification only holds while a survey is open, so these
-   * rows' projections are stale the moment their epoch turns — they go back
-   * on the touched list. Empty in steady state.
-   */
-  staleCancelledSurveyKeys(tipEpoch: number): Promise<string[]>;
+  touchedRows(surveyKeys: readonly string[]): Promise<TouchedRows>;
   /**
    * Stamp the finalized-cancelled overlay (and the `cancelled` flag it
    * implies) onto the given surveys' rows where not already set, returning

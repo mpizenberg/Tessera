@@ -44,26 +44,19 @@ import type {
   SnapshotMeta,
   SnapshotStore,
   StoredResponse,
-  TallyStore,
 } from "./store";
 import { responseIdentityKey, validationKey } from "./store";
 
 /** The stored-row reads and the one write a segment integration performs. */
 export type IntegrateStore = Pick<
   SnapshotStore,
-  | "responsesInSlotRange"
-  | "cancellationRowsInSlotRange"
-  | "cancellationRowsForSurveys"
+  | "sweepInputs"
+  | "touchedRows"
   | "responseIdentitiesFrom"
   | "settledResponseKeys"
-  | "responseCountBanks"
-  | "surveyRowsByKeys"
-  | "surveyGovLinks"
-  | "staleCancelledSurveyKeys"
   | "reconcileSegment"
 > &
-  Pick<GovLinkStore, "settledGovEpochs"> &
-  Pick<TallyStore, "artifactKeysFor">;
+  Pick<GovLinkStore, "settledGovEpochs">;
 
 /** What one refresh's governance pass answered, as integration reads it. */
 export interface GovPass {
@@ -135,10 +128,15 @@ export async function integrateSegment(
 
   // A stored row in the swept range that the segment listing lacks is about
   // to be deleted — a rollback — and its survey's aggregates must shed it.
-  const preResponses = range ? await store.responsesInSlotRange(range) : [];
-  const preCancels = range
-    ? await store.cancellationRowsInSlotRange(range)
-    : [];
+  // The stored side of the link diff stops at the settlement horizon: only
+  // an unsettled epoch's links can move.
+  const sweep = await store.sweepInputs(
+    range,
+    govPass ? Math.max(0, govPass.floor - 1) : null,
+    tip.epoch,
+  );
+  const preResponses = sweep.responses;
+  const preCancels = sweep.cancellations;
 
   // A survey whose current link slice differs from its stored one re-projects
   // even when no tx touched it (links resolve out-of-band, a proposal can
@@ -152,9 +150,7 @@ export async function integrateSegment(
   }
   const linkTouched: string[] = [];
   if (govPass) {
-    // Only an unsettled epoch's links can move, so the stored side of the
-    // diff stops at the settlement horizon.
-    const stored = await store.surveyGovLinks(Math.max(0, govPass.floor - 1));
+    const stored = sweep.govLinks;
     for (const key of new Set([...stored.keys(), ...currentLinks.keys()])) {
       if (
         linkSliceText(stored.get(key)) !== linkSliceText(currentLinks.get(key))
@@ -170,8 +166,13 @@ export async function integrateSegment(
     ...preResponses.map((r) => r.surveyKey),
     ...preCancels.map((r) => r.surveyKey),
     ...linkTouched,
-    ...(await store.staleCancelledSurveyKeys(tip.epoch)),
+    ...sweep.staleCancelled,
   ]);
+
+  // Everything stored about the touched surveys, read once. A touched key
+  // whose row rolled back (below) drops out of the rebuild; whatever else
+  // was read for it is simply never looked up.
+  const stored = await store.touchedRows([...touched]);
 
   // Definitions: the segment's records are authoritative for what they carry;
   // every other touched survey revives from its stored row. A stored
@@ -179,7 +180,7 @@ export async function integrateSegment(
   // not re-list has rolled back — projecting it would resurrect the row the
   // sweep is about to delete.
   const segmentKeys = new Set(records.surveys.map((s) => refKey(s.ref)));
-  const storedRows = await store.surveyRowsByKeys([...touched]);
+  const storedRows = stored.surveys;
   const rowByKey = new Map(storedRows.map((row) => [row.surveyKey, row]));
   const storedRecords = storedRows
     .filter((row) => !segmentKeys.has(row.surveyKey) && !inRange(row.slot))
@@ -231,7 +232,7 @@ export async function integrateSegment(
   const segmentCancelKeys = new Set(
     cancellations.map((c) => `${c.txHash}|${refKey(c.target)}`),
   );
-  const storedCancels = (await store.cancellationRowsForSurveys(touchedKeys))
+  const storedCancels = stored.cancellations
     .filter(
       (row) =>
         !inRange(row.slot) &&
@@ -242,6 +243,7 @@ export async function integrateSegment(
   const { countByKey, banks } = await responderCounts(
     store,
     touchedKeys,
+    stored.banks,
     responseRows,
     range,
     preResponses,
@@ -284,8 +286,7 @@ export async function integrateSegment(
   // The finalized-cancelled overlay, read keyed by the touched surveys: the
   // artifact is the durable fact, so a re-derived row — a resurrected one
   // included — carries the flag whether or not the stored row did.
-  const finalizedCancelled = (await store.artifactKeysFor(touchedKeys))
-    .cancelled;
+  const finalizedCancelled = stored.artifacts.cancelled;
   const surveyRows = surveyRowsOf(
     touchedRecords,
     [...cancellations, ...storedCancels],
@@ -333,11 +334,9 @@ export async function integrateSegment(
  * recount banks its settled count as of the run's horizon.
  */
 async function responderCounts(
-  store: Pick<
-    IntegrateStore,
-    "responseIdentitiesFrom" | "settledResponseKeys" | "responseCountBanks"
-  >,
+  store: Pick<IntegrateStore, "responseIdentitiesFrom" | "settledResponseKeys">,
   touchedKeys: readonly string[],
+  bankByKey: ReadonlyMap<string, ResponseCountBank>,
   segmentRows: readonly ResponseRow[],
   range: SlotRange | null,
   storedInRange: readonly StoredResponse[],
@@ -390,7 +389,6 @@ async function responderCounts(
     return lowest;
   };
 
-  const bankByKey = await store.responseCountBanks(touchedKeys);
   const usable = (key: string): ResponseCountBank | null => {
     const bank = bankByKey.get(key);
     return bank &&

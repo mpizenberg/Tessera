@@ -292,9 +292,9 @@ async function expectOracleMatch(
     );
   expect(bySurveyKey(store.surveyRows)).toEqual(bySurveyKey(oracle.surveys));
   expect(byTx(store.responseRows)).toEqual(byTx(oracle.responses));
-  expect(byTx(await store.cancellationRowsInSlotRange(ALL_SLOTS))).toEqual(
-    byTx(oracle.cancellations),
-  );
+  expect(
+    byTx((await store.sweepInputs(ALL_SLOTS, null, 0)).cancellations),
+  ).toEqual(byTx(oracle.cancellations));
   const counts = await store.surveyIndexCounts(tip.epoch, [], []);
   expect(listCountsOf(oracle.surveys, tip.epoch)).toEqual({
     all: counts.all,
@@ -586,7 +586,7 @@ describe("segment integration mechanics", () => {
       govLinks: [],
       finalizedCancelled: new Set(),
     };
-    const bank = async () => (await store.responseCountBanks([key])).get(key);
+    const bank = async () => (await store.touchedRows([key])).banks.get(key);
     const count = async () => store.surveyRows[0]!.responseCount;
 
     await runRefresh(store, chain, tipAt(200));
