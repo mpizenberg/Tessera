@@ -310,7 +310,8 @@ export async function refreshSnapshot(
     const previous = await store.snapshotMeta();
     const tip = await source.chainTip(previous ? snapshotTip(previous) : null);
 
-    const banked = await store.scanState();
+    const bank = await store.scanState();
+    const banked = bank.walker;
     const rewound = banked !== null && banked.generation !== SCAN_GENERATION;
     if (rewound) {
       console.log(
@@ -347,7 +348,7 @@ export async function refreshSnapshot(
     // segment's, so a survey first seen this run links in the same run. Below
     // the horizon every epoch is decided and its links already live in the
     // rows they were projected into, so the pass never asks again.
-    const govFloor = await store.settlementFloor();
+    const govFloor = bank.settlementFloor;
     const govEpochs = [
       ...new Set([
         ...(await store.surveyEndEpochs(Math.max(0, govFloor - 1))),
@@ -474,7 +475,7 @@ export async function refreshSnapshot(
     // Response validation (TALLY-SPEC §3) rides the same refresh (Node loop +
     // Worker cron alike): incremental, so already-validated responses cost
     // nothing. Best-effort — the rows above are already stored either way.
-    const finalFloor = await store.finalizationFloor();
+    const finalFloor = rewound ? 0 : bank.finalizationFloor;
     await validateNewResponses(
       store,
       records.responses,

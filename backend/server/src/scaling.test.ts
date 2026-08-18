@@ -348,8 +348,8 @@ async function steadyRun(
   segment: Cip179Records,
 ): Promise<void> {
   const previous = await store.snapshotMeta();
-  await store.scanState();
-  const govFloor = await store.settlementFloor();
+  const bank = await store.scanState();
+  const govFloor = bank.settlementFloor;
   const govEpochs = [
     ...new Set([
       ...(await store.surveyEndEpochs(Math.max(0, govFloor - 1))),
@@ -377,7 +377,7 @@ async function steadyRun(
     generation: SCAN_GENERATION,
     trickle: null,
   });
-  const finalFloor = await store.finalizationFloor();
+  const finalFloor = bank.finalizationFloor;
   await validateNewResponses(store, segment.responses, noKoios, finalFloor);
   const finalized = await finalizeClosedSurveys(
     CONFIG,

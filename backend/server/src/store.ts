@@ -253,17 +253,9 @@ export interface TallyStore {
    */
   artifactKeysFor(surveyKeys: readonly string[]): Promise<ArtifactKeys>;
   /**
-   * The banked finalization floor: the lowest end epoch that still holds a
-   * survey the pass expects to decide. Below it every closed survey has either
-   * emitted its artifact or been judged permanently untalliable, so no later
-   * pass reads it back out — and 0, the value before anything is banked, reads
-   * the whole archive once.
-   */
-  finalizationFloor(): Promise<number>;
-  /**
-   * Bank the floor. Only a complete, caught-up pass computes one: while the
-   * scan is still integrating, a survey below the floor may not have all its
-   * responses yet.
+   * Bank the finalization floor (read back by {@link SnapshotStore.scanState}).
+   * Only a complete, caught-up pass computes one: while the scan is still
+   * integrating, a survey below the floor may not have all its responses yet.
    */
   putFinalizationFloor(endEpoch: number): Promise<void>;
 }
@@ -353,15 +345,10 @@ export interface GovLinkStore {
   /** Record an epoch as settled (insert-or-ignore: settlement is once and final). */
   putSettledGovEpoch(row: SettledGovEpoch): Promise<void>;
   /**
-   * The banked settlement floor: the lowest expiration epoch not yet settled.
-   * Everything below it is decided for good, so the pass never asks about it
-   * again — and 0, the value before anything is banked, asks about everything.
-   */
-  settlementFloor(): Promise<number>;
-  /**
-   * Bank the floor. Written only once the refresh that computed it has
-   * reconciled its rows: a floor that ran ahead of the rows would freeze a
-   * survey's links at whatever its row happened to hold.
+   * Bank the settlement floor (read back by {@link SnapshotStore.scanState}).
+   * Written only once the refresh that computed it has reconciled its rows: a
+   * floor that ran ahead of the rows would freeze a survey's links at whatever
+   * its row happened to hold.
    */
   putSettlementFloor(expiration: number): Promise<void>;
 }
@@ -754,6 +741,22 @@ export interface ScanState {
   readonly trickle: ScanCursor | null;
 }
 
+/**
+ * The scan row as banked: the walker (null before the first windowed run) and
+ * the two frontiers that ride the same row and are written on their own. The
+ * settlement floor is the lowest expiration epoch not yet settled — everything
+ * below it is decided for good, so the governance pass never asks about it
+ * again. The finalization floor is the lowest end epoch still holding a survey
+ * finalization expects to decide — below it every closed survey has emitted
+ * its artifact or been judged permanently untalliable. Both read 0 before
+ * anything is banked, which asks about everything once.
+ */
+export interface BankedScan {
+  readonly walker: ScanState | null;
+  readonly settlementFloor: number;
+  readonly finalizationFloor: number;
+}
+
 /** A page query against the survey index (see `cardano-tessera-core` `page.ts`). */
 export interface SurveyPageQuery {
   /** The snapshot tip's epoch — the open/closed boundary. */
@@ -832,8 +835,8 @@ export interface SnapshotStore {
    * `survey_index_owner` index.
    */
   ownedSurveyCount(credentials: readonly string[]): Promise<number>;
-  /** The banked walker state, or null before the first windowed run. */
-  scanState(): Promise<ScanState | null>;
+  /** The banked scan row, whole — one read serves the walker and both floors. */
+  scanState(): Promise<BankedScan>;
   /**
    * Bank the walker state, whole. Written only after the segment it describes
    * has been reconciled: a banked cursor past unreconciled slots would settle

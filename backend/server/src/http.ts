@@ -329,7 +329,7 @@ export function createApp(
         store.lastRefreshRun(),
         store.refreshTotalsSince(now - 86_400),
         store.upstreamTotalsSince(now - 86_400),
-        store.scanState(),
+        store.scanState().then((bank) => bank.walker),
       ]);
       // Banked by the refresh; the live count only backs up runs that predate
       // the column (or whose own count failed).

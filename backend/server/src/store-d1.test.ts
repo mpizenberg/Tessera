@@ -313,7 +313,7 @@ describe("D1 snapshot reconciliation", () => {
 
   it("reports no scan state before the walker first banks one", async () => {
     const { sqlite, store } = fakeStore();
-    expect(await store.scanState()).toBeNull();
+    expect((await store.scanState()).walker).toBeNull();
 
     const state = {
       cursor: { slot: 7_000, txHash: "ab".repeat(32) },
@@ -322,15 +322,18 @@ describe("D1 snapshot reconciliation", () => {
       trickle: null,
     };
     await store.putScanState(state);
-    expect(await store.scanState()).toEqual(state);
+    expect((await store.scanState()).walker).toEqual(state);
 
     // Both floors ride the same row but are written on their own, so a later
     // cursor write can't drop them.
     await store.putSettlementFloor(512);
     await store.putFinalizationFloor(499);
     await store.putScanState({ ...state, cursor: null, caughtUp: false });
-    expect(await store.settlementFloor()).toBe(512);
-    expect(await store.finalizationFloor()).toBe(499);
+    expect(await store.scanState()).toEqual({
+      walker: { ...state, cursor: null, caughtUp: false },
+      settlementFloor: 512,
+      finalizationFloor: 499,
+    });
     sqlite.close();
   });
 });

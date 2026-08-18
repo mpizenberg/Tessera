@@ -689,7 +689,7 @@ describe("store-node scan state", () => {
   it("round-trips the walker state, including a generation rewind", async () => {
     store = openBackendStore(":memory:");
     // No row yet is the "never walked" signal, distinct from any cursor value.
-    expect(await store.scanState()).toBeNull();
+    expect((await store.scanState()).walker).toBeNull();
 
     const walked = {
       cursor: { slot: 5_000, txHash: "aa".repeat(32) },
@@ -698,7 +698,7 @@ describe("store-node scan state", () => {
       trickle: { slot: 1_200, txHash: "bb".repeat(32) },
     };
     await store.putScanState(walked);
-    expect(await store.scanState()).toEqual(walked);
+    expect((await store.scanState()).walker).toEqual(walked);
 
     // A rewind rewrites the whole row: null cursor, new generation, trickle
     // reset — nothing of the previous walk may survive by omission.
@@ -709,7 +709,7 @@ describe("store-node scan state", () => {
       trickle: null,
     };
     await store.putScanState(rewound);
-    expect(await store.scanState()).toEqual(rewound);
+    expect((await store.scanState()).walker).toEqual(rewound);
   });
 
   it("banks both floors without disturbing the cursor", async () => {
@@ -718,8 +718,11 @@ describe("store-node scan state", () => {
     // everything — is exactly what a database with no history owes.
     await store.putSettlementFloor(511);
     await store.putFinalizationFloor(498);
-    expect(await store.settlementFloor()).toBe(0);
-    expect(await store.finalizationFloor()).toBe(0);
+    expect(await store.scanState()).toEqual({
+      walker: null,
+      settlementFloor: 0,
+      finalizationFloor: 0,
+    });
 
     const walked = {
       cursor: { slot: 5_000, txHash: "aa".repeat(32) },
@@ -730,14 +733,20 @@ describe("store-node scan state", () => {
     await store.putScanState(walked);
     await store.putSettlementFloor(511);
     await store.putFinalizationFloor(498);
-    expect(await store.settlementFloor()).toBe(511);
-    expect(await store.finalizationFloor()).toBe(498);
+    expect(await store.scanState()).toEqual({
+      walker: walked,
+      settlementFloor: 511,
+      finalizationFloor: 498,
+    });
 
     // The cursor write leaves both alone: neither frontier is the scan's
     // coverage, and an incomplete scan that banks no cursor must not lose them.
     await store.putScanState({ ...walked, cursor: null, caughtUp: false });
-    expect(await store.settlementFloor()).toBe(511);
-    expect(await store.finalizationFloor()).toBe(498);
+    expect(await store.scanState()).toEqual({
+      walker: { ...walked, cursor: null, caughtUp: false },
+      settlementFloor: 511,
+      finalizationFloor: 498,
+    });
   });
 });
 

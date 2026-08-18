@@ -17,6 +17,7 @@ import type {
   ArtifactKeys,
   ArtifactRow,
   BackendStore,
+  BankedScan,
   CancellationRow,
   CompletedValidation,
   DbGovEpochRow,
@@ -184,7 +185,9 @@ const SCAN_STATE_UPSERT = `
 const SCAN_STATE_SELECT = `
   SELECT cursor_slot AS cursorSlot, cursor_tx_hash AS cursorTxHash,
          caught_up AS caughtUp, generation,
-         trickle_slot AS trickleSlot, trickle_tx_hash AS trickleTxHash
+         trickle_slot AS trickleSlot, trickle_tx_hash AS trickleTxHash,
+         settlement_floor AS settlementFloor,
+         finalization_floor AS finalizationFloor
   FROM scan_state WHERE id = 1`;
 
 /** As stored: each cursor is a pair of columns, NULL together. */
@@ -195,19 +198,28 @@ interface DbScanStateRow {
   readonly generation: number;
   readonly trickleSlot: number | null;
   readonly trickleTxHash: string | null;
+  readonly settlementFloor: number;
+  readonly finalizationFloor: number;
 }
 
-const scanStateFromDb = (r: DbScanStateRow): ScanState => ({
-  cursor:
-    r.cursorSlot === null || r.cursorTxHash === null
+const bankedScanFromDb = (r: DbScanStateRow | null): BankedScan => ({
+  walker:
+    r === null
       ? null
-      : { slot: r.cursorSlot, txHash: r.cursorTxHash },
-  caughtUp: r.caughtUp !== 0,
-  generation: r.generation,
-  trickle:
-    r.trickleSlot === null || r.trickleTxHash === null
-      ? null
-      : { slot: r.trickleSlot, txHash: r.trickleTxHash },
+      : {
+          cursor:
+            r.cursorSlot === null || r.cursorTxHash === null
+              ? null
+              : { slot: r.cursorSlot, txHash: r.cursorTxHash },
+          caughtUp: r.caughtUp !== 0,
+          generation: r.generation,
+          trickle:
+            r.trickleSlot === null || r.trickleTxHash === null
+              ? null
+              : { slot: r.trickleSlot, txHash: r.trickleTxHash },
+        },
+  settlementFloor: r?.settlementFloor ?? 0,
+  finalizationFloor: r?.finalizationFloor ?? 0,
 });
 
 /**
@@ -219,18 +231,9 @@ const scanStateFromDb = (r: DbScanStateRow): ScanState => ({
 const SETTLEMENT_FLOOR_UPDATE = `
   UPDATE scan_state SET settlement_floor = ? WHERE id = 1`;
 
-const SETTLEMENT_FLOOR_SELECT = `
-  SELECT settlement_floor AS settlementFloor FROM scan_state WHERE id = 1`;
-
-/**
- * The finalization floor, on the same row and by the same rule: written on its
- * own, and 0 before there is a row to write.
- */
+/** The finalization floor, on the same row and by the same rule. */
 const FINALIZATION_FLOOR_UPDATE = `
   UPDATE scan_state SET finalization_floor = ? WHERE id = 1`;
-
-const FINALIZATION_FLOOR_SELECT = `
-  SELECT finalization_floor AS finalizationFloor FROM scan_state WHERE id = 1`;
 
 /** The window's stored responses, records excluded. Binds: (fromSlot, toSlot). */
 const RESPONSES_IN_SLOT_RANGE = `
@@ -827,9 +830,10 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       const row = await first<{ n: number }>(ownedCountSql(credentials));
       return row?.n ?? 0;
     },
-    async scanState(): Promise<ScanState | null> {
-      const row = await first<DbScanStateRow>(query(SCAN_STATE_SELECT));
-      return row === null ? null : scanStateFromDb(row);
+    async scanState(): Promise<BankedScan> {
+      return bankedScanFromDb(
+        await first<DbScanStateRow>(query(SCAN_STATE_SELECT)),
+      );
     },
     async putScanState(state: ScanState): Promise<void> {
       await write(
@@ -844,20 +848,8 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
         ),
       );
     },
-    async settlementFloor(): Promise<number> {
-      const row = await first<{ settlementFloor: number }>(
-        query(SETTLEMENT_FLOOR_SELECT),
-      );
-      return row?.settlementFloor ?? 0;
-    },
     async putSettlementFloor(expiration: number): Promise<void> {
       await write(query(SETTLEMENT_FLOOR_UPDATE, expiration));
-    },
-    async finalizationFloor(): Promise<number> {
-      const row = await first<{ finalizationFloor: number }>(
-        query(FINALIZATION_FLOOR_SELECT),
-      );
-      return row?.finalizationFloor ?? 0;
     },
     async putFinalizationFloor(endEpoch: number): Promise<void> {
       await write(query(FINALIZATION_FLOOR_UPDATE, endEpoch));
