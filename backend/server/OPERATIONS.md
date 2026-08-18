@@ -253,6 +253,18 @@ it produced: they are comfortable running one instance per network; a named
 optimization is required first, together with the trigger that forces it; or the
 deployment stays externally operated for now.
 
+**Wall time is not a footprint.** The refresh's wall clock — the run's own
+`duration_ms`, `wrangler tail`'s `wall`, the analytics `wallTime` quantiles — is
+its D1 round trips times the distance between the cron isolate and the database.
+Cron Triggers carry no placement promise: the same code against the same
+database has measured 1.3–2 s from an isolate near the D1 region and 7–15 s from
+one on another continent, the level holds for hours or days and moves when a
+deploy or the platform re-places the isolate, without a code change. Nothing is
+billed by wall and nothing user-facing waits on the refresh, so a step in it is
+not evidence about the code. The signals that are: CPU time, the per-run round
+trips the scaling bench prints, and the D1 rows and query totals. If wall ever
+approaches the cron's own limit, count round trips first.
+
 ## Koios quota separation
 
 `KOIOS_TOKEN` is used by operator-critical snapshot scans, proof validation,

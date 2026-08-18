@@ -9,7 +9,10 @@
  * (rows and bytes into the process), and each statement's query plan, in
  * which a `SCAN` of a corpus table is exactly a read proportional to that
  * table. A refresh whose plans are all keyed and whose returned rows do not
- * move with the archive has no per-archive term.
+ * move with the archive has no per-archive term. It also counts driver round
+ * trips: on the Worker each one crosses whatever distance separates the cron
+ * isolate from the D1 region, so trips, not statements, are the wall-clock
+ * term (ARCHITECTURE.md §3).
  *
  * No chain, no Koios: the passes take their I/O as parameters and the corpus
  * is generated in-process, written through the store's own reconcile path.
@@ -61,6 +64,8 @@ interface Statement {
 
 interface Meter {
   readonly statements: Statement[];
+  /** Driver calls — one round trip each, however many statements it carries. */
+  trips: number;
   reset(): void;
 }
 
@@ -116,33 +121,40 @@ function meteredStore(): { store: BackendStore; meter: Meter } {
       plan: explain(q),
     });
   };
+  const meter: Meter = {
+    statements,
+    trips: 0,
+    reset: () => {
+      statements.length = 0;
+      meter.trips = 0;
+    },
+  };
+  // An empty batch is short-circuited by the D1 driver too: no trip.
+  const trip = (n: number): void => {
+    if (n > 0) meter.trips += 1;
+  };
   const driver: SqlDriver = {
     async all<T>(q: SqlQuery): Promise<T[]> {
+      trip(1);
       const rows = await inner.all<T>(q);
       record(q, rows);
       return rows;
     },
     async batchAll<T>(queries: readonly SqlQuery[]): Promise<T[][]> {
+      trip(queries.length);
       const batches = await inner.batchAll<T>(queries);
       queries.forEach((q, i) => record(q, batches[i]!));
       return batches;
     },
     async batchWrite(queries: readonly SqlQuery[]): Promise<number[]> {
+      trip(queries.length);
       for (const q of queries)
         statements.push({ sql: q.sql, rows: 0, bytes: 0, plan: explain(q) });
       return inner.batchWrite(queries);
     },
     close: () => inner.close(),
   };
-  return {
-    store: sqlBackendStore(driver),
-    meter: {
-      statements,
-      reset: () => {
-        statements.length = 0;
-      },
-    },
-  };
+  return { store: sqlBackendStore(driver), meter };
 }
 
 // --- the corpus -------------------------------------------------------------
@@ -418,13 +430,15 @@ async function steadyRun(
 }
 
 interface Cost {
+  readonly trips: number;
   readonly statements: number;
   readonly rows: number;
   readonly bytes: number;
   readonly scans: string[];
 }
 
-const costOf = (statements: readonly Statement[]): Cost => ({
+const costOf = ({ trips, statements }: Meter): Cost => ({
+  trips,
   statements: statements.length,
   rows: statements.reduce((n, s) => n + s.rows, 0),
   bytes: statements.reduce((n, s) => n + s.bytes, 0),
@@ -449,7 +463,7 @@ async function measure(
     await steadyRun(store, corpus, corpus.segment);
     meter.reset();
     await steadyRun(store, corpus, corpus.segment);
-    const quiet = costOf(meter.statements);
+    const quiet = costOf(meter);
     if (process.env["BENCH_DUMP"])
       console.log(
         [...meter.statements]
@@ -472,7 +486,7 @@ async function measure(
       ...corpus.segment,
       responses: [...corpus.segment.responses, landed],
     });
-    const active = costOf(meter.statements);
+    const active = costOf(meter);
     return { quiet, active };
   } finally {
     store.close();
@@ -497,8 +511,8 @@ describe("scaling bench: one steady-state refresh against corpus size", () => {
         const profile = { ...BASE, [axis]: size };
         const { quiet, active } = await measure(profile);
         lines.push(
-          `${axis.padEnd(14)} ${String(size).padStart(6)} | quiet ${String(quiet.statements).padStart(3)} stmts ${String(quiet.rows).padStart(6)} rows ${String(quiet.bytes).padStart(8)} B` +
-            ` | active ${String(active.statements).padStart(3)} stmts ${String(active.rows).padStart(6)} rows ${String(active.bytes).padStart(8)} B` +
+          `${axis.padEnd(14)} ${String(size).padStart(6)} | quiet ${String(quiet.trips).padStart(2)} trips ${String(quiet.statements).padStart(3)} stmts ${String(quiet.rows).padStart(6)} rows ${String(quiet.bytes).padStart(8)} B` +
+            ` | active ${String(active.trips).padStart(2)} trips ${String(active.statements).padStart(3)} stmts ${String(active.rows).padStart(6)} rows ${String(active.bytes).padStart(8)} B` +
             (quiet.scans.length + active.scans.length > 0
               ? ` | scans: ${[...new Set([...quiet.scans, ...active.scans])].join("; ")}`
               : ""),
@@ -516,7 +530,7 @@ describe("scaling bench: one steady-state refresh against corpus size", () => {
     }
     console.log(
       [
-        "per-refresh store cost by corpus profile (rows and bytes returned to the process)",
+        "per-refresh store cost by corpus profile (driver round trips; rows and bytes returned to the process)",
         ...lines,
       ].join("\n"),
     );

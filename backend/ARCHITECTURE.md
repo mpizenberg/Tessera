@@ -148,10 +148,25 @@ core, a thin swappable runtime/storage adapter, and a portable HTTP contract.
 - **One deployment serves exactly one network.** Each backend and frontend parses
   its network strictly at startup — no path segment, no runtime switch — and
   `IndexerDataSource` verifies its backend against `/health`, so a misconfigured
-  pairing fails loudly instead of quietly mixing two chains' data. This is not
-  fastidiousness: preview and preprod both report CIP-30 network id 0, so wallet
-  selection cannot tell them apart, while their Koios hosts, storage, explorers
-  and transaction-builder chain parameters are all different.
+  pairing fails loudly instead of quietly mixing two chains' data. The store
+  closes the last gap: the scan row banks the network its rows were walked for
+  (`scan_state.network`), and a refresh whose config names another refuses to
+  run before it has asked the chain anything. This is not fastidiousness:
+  preview and preprod both report CIP-30 network id 0, so wallet selection
+  cannot tell them apart, while their Koios hosts, storage, explorers and
+  transaction-builder chain parameters are all different.
+- **The refresh's wall clock is placement, not code.** A D1 database lives in
+  one region, chosen at creation; a Cron Trigger's isolate runs wherever the
+  platform has capacity, with no placement promise, and every store round trip
+  crosses that distance. A steady-state refresh is ~30 round trips (28 serial),
+  which is 1.5 s from a nearby colo and 7–15 s from another continent, on the
+  same code — the level moves when a deploy or the platform re-places the
+  isolate. Wall is not billed and nothing user-facing waits on it, so the
+  refresh batches what its data dependencies allow (each pass reads in one trip
+  what it can) and stops there; a Durable Object with a location hint would pin
+  the run next to the database but rests on a best-effort hint and adds a
+  second execution model for an unbilled number (§10). The scaling bench prints
+  round trips beside statements so the count is watched, not the wall.
 
 ---
 
@@ -756,3 +771,10 @@ the reason costs more than reading it.
   scan is bounded by its 24 h predicate on the primary key, not by table size.
   Retention moves storage only; it is not a read lever.
 - **D1 read replicas** — a latency feature. Rows bill the same either way.
+- **Running the refresh in a Durable Object with a location hint** so the cron's
+  work sits next to the D1 primary — it would take a 7–15 s run back to ~1.5 s
+  from any colo, but the hint is best-effort, it adds a second execution model
+  (a DO class, a wrangler migration, cron → stub → run) to protect a number
+  nobody is billed for, and its whole value rests on the platform keeping cron
+  placement loose and DO placement sticky. Round trips were cut instead (§3),
+  which holds from any colo. Revisit only if wall threatens the cron's own limit.

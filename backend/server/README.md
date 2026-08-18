@@ -46,7 +46,15 @@ path. Unknown network names fail startup rather than falling back to Preview.
 ignoring whatever `.env` selects; every other `.env` value still applies. Each
 network caches into its own `./tessera-cache-$NETWORK.sqlite` by default, so
 switching between them never mixes two chains' records into one file — but they
-share `PORT`, so run one at a time or override it.
+share `PORT`, so run one at a time or override it. A store also banks the
+network it was walked for and refuses a run configured for another, so a
+mismatch fails at the head of the first refresh instead of overwriting rows.
+
+**`wrangler dev` reads `.env` too**, and its values override the `[vars]` of the
+`--env` you pass — `wrangler dev --env preprod` with `NETWORK=preview` in `.env`
+runs preview code against the preprod database. With `--remote`, that database
+is the live one. Leave `NETWORK` out of `.env` when using `wrangler dev`, or
+expect the store's guard to refuse the run.
 
 ## Endpoints
 
