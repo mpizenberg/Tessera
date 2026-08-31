@@ -107,7 +107,16 @@ discovery reads the action's anchor, not label 17.
   validates.
 - Once the response transaction has confirmed — by whatever means the host
   already tracks its own submissions — Tessera's decision is read back from the
-  bundle's `verdicts` and the list's `responseCounts`.
+  bundle's `verdicts` and the list's `responseCounts`. A host holding an
+  optimistic record of its own submission settles it against the exact
+  transaction with `GET /api/responses/{txHash}`; an empty answer means "not
+  indexed yet", never "rejected".
+- A survey and a governance action link only when the action's expiry epoch —
+  Koios `expiration − 1` — **equals** the survey's `endEpoch`. An action
+  proposed in epoch `e` therefore pairs with a survey ending at
+  `e + govActionLifetime` (6 on preprod, reported in every `tip` payload), and
+  a pair missing that alignment gets no link at all, not a weaker one. This is
+  the constraint most likely to be missed by someone publishing a pair.
 - A bundle serves its responses one page at a time. A host that only feeds
   `<tessera-respond>` needs page one, since the definition and the survey ref
   ride every page; a host that counts or displays responses itself follows
