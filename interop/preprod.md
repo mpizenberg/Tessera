@@ -71,6 +71,21 @@ transactions to `generate-fixtures.mjs` and regenerating. Finalization has not
 run for it, since the survey closes at the end of epoch 308; that run is the
 first time DRep weights are fetched for a live survey.
 
+A fourth survey exercises the governance linkage end to end: `Example survey`,
+`49389974ab55f52219255a80a20aaf398af3bdd4ea24d19cf18442cbc861d70c#0`
+(slot 132500324, epoch 310, same owner key hash — public, DRep-eligible, one
+`singleChoice` question `Choose` with options `A`/`B`, end epoch 316). It is
+advertised by the Info Action
+`gov_action15c5vxjafy0y67853ydygnwhmfmpytdypm73ex0slcr0gptujucwsqcvdpj0`
+("GA attached to a survey"), whose voting also ends at epoch 316 — the
+alignment CIP-179 requires. Both the linked CIP-108 anchor document and the
+action were produced by Tessera's own link tool (`/survey/:key/link`), the
+survey bundle's `govLinks` reports the link, and an external DRep tool
+recognizes the action and renders its anchor — so this pair is the live case
+for the `govLinks` claim in the host contract below. It is not a
+`preprod-fixtures.json` entry: that file pins label-17 metadata, and link
+discovery reads the action's anchor, not label 17.
+
 ## Minimal host contract
 
 - The host reads a survey by exact reference from

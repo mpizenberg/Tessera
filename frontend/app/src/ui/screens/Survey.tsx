@@ -451,7 +451,9 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
 
 /**
  * Owner-only entry to the link tool (`/survey/:key/link`), shown while the
- * survey has no discovered advertising action. CIP-179 v5 allows several
+ * survey has no discovered advertising action. Owner-gating is a Tessera
+ * product choice about whom the tool helps — CIP-179 lets anyone propose a
+ * linking action, and a link never implies common authorship. CIP-179 v5 allows several
  * links and the tool itself still accepts an already-linked survey, but the
  * card disappears once one exists — the linked-action badge already tells the
  * story. It also closes once the submission window has passed: an action
