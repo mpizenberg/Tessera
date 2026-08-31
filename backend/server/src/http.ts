@@ -4,7 +4,7 @@
  *   - GET /api/surveys                    Explore-list payload: surveys + tip +
  *                                         gov links + raw cancellations +
  *                                         deduped per-survey response counts +
- *                                         finalized-cancelled survey keys
+ *                                         per-survey final states
  *   - GET /api/surveys/{txHash}/{index}   one survey's self-contained bundle:
  *                                         definition, ALL its responses (sealed
  *                                         ciphertexts included), cancellations
@@ -200,10 +200,17 @@ function surveyListBody(
     responseCounts: Object.fromEntries(
       rows.map((r) => [r.surveyKey, r.responseCount]),
     ),
-    finalizedCancelled: rows
-      .filter((r) => r.finalizedCancelled)
-      .map((r) => r.surveyKey)
-      .sort(),
+    finalState: Object.fromEntries(
+      rows
+        .filter((r) => r.finalState !== null)
+        .map((r) => [
+          r.surveyKey,
+          {
+            state: r.finalState,
+            ...(r.artifactHash !== null && { artifactHash: r.artifactHash }),
+          },
+        ]),
+    ),
     ...(meta.incomplete && { incomplete: true }),
     fetchedAt: meta.fetchedAt,
     ageSeconds: Math.floor(Date.now() / 1000) - meta.fetchedAt,
@@ -383,8 +390,8 @@ export function createApp(
   // `survey_index` rows. Query params mirror `cardano-tessera-core`'s
   // `SurveyListParams`; semantics (ordering, filters, counts, cursor) are the
   // core `pageSurveyList` spec, implemented in SQL (`sqlBuilders.ts`). The
-  // finalized-cancelled overlay is baked into the rows at refresh time,
-  // consistent with the snapshot the ETag versions.
+  // final-state overlay is baked into the rows at refresh time, consistent
+  // with the snapshot the ETag versions.
   app.get("/api/surveys", async (c) => {
     const meta = await store.snapshotMeta();
     if (!meta) return c.json({ error: "snapshot not ready" }, 503);

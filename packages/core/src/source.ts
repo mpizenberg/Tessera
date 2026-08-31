@@ -26,6 +26,18 @@ import type {
 import type { TallyArtifact } from "cip-179/tally";
 
 /**
+ * One survey's final decision as the serving tier reports it. `finalized` and
+ * `cancelled` carry the emitted artifact's content hash; `untalliable` means
+ * the finalizer decided — permanently — that no artifact will ever exist
+ * (spec-invalid definition, unproven owner credential, or a sealed survey on
+ * an undecryptable drand chain). A survey with no entry is simply not decided
+ * yet.
+ */
+export type SurveyFinalState =
+  | { readonly state: "finalized" | "cancelled"; readonly artifactHash: string }
+  | { readonly state: "untalliable" };
+
+/**
  * Everything the survey *list* page (Explore) renders from — one bounded
  * payload regardless of participation volume. Responses are the only unbounded
  * record set, and the list only needs their per-survey count, so they're
@@ -41,16 +53,17 @@ export interface SurveyListPayload {
   /** Distinct responders per survey key ("<txHex>:<index>"), latest-valid-wins. */
   readonly responseCounts: Record<string, number>;
   /**
-   * Survey keys the serving tier finalized as **cancelled** (their tally
-   * artifact records an owner-proven, in-window cancellation and no per-role
-   * tally). Client-side proof verification can't reach this state: the scan
-   * keeps `proof: null` for cancellations of closed surveys, so without this
-   * overlay a cancelled-then-closed survey would display as plain "Ended".
-   * Trusting it adds nothing new — the same server already supplies the whole
-   * record set, and the claim stays auditable against the served artifact.
-   * Absent in direct-Koios mode (no artifacts exist there).
+   * The serving tier's final decision per survey key, present only for decided
+   * surveys. Client-side verification can't reach these states on its own: the
+   * scan keeps `proof: null` for cancellations of closed surveys (so a
+   * cancelled-then-closed survey would display as plain "Ended"), and the
+   * unproven-owner half of untalliability needs evidence only the finalizer
+   * fetches. Trusting it adds nothing new — the same server already supplies
+   * the whole record set, and a state carrying an artifact hash stays
+   * auditable against the served artifact. Absent in direct-Koios mode (no
+   * finalization exists there).
    */
-  readonly finalizedCancelled?: readonly string[];
+  readonly finalState?: Readonly<Record<string, SurveyFinalState>>;
   /** Mirrors {@link import("cip-179/domain").Cip179Records.incomplete} for the scan behind this list. */
   readonly incomplete?: boolean;
   /**
@@ -85,7 +98,7 @@ export interface SurveyListPayload {
  * verdicts. The verdicts stay OFF {@link SurveyBundle} itself: that type is
  * the chain-data contract the verifier re-derives and the direct Koios source
  * also produces, and the serving tier's opinion must never read as chain data
- * (same trust posture as {@link SurveyListPayload.finalizedCancelled}). When
+ * (same trust posture as {@link SurveyListPayload.finalState}). When
  * present the map is complete over *decided* verdicts — a response key it
  * lacks is pending, not failed. Absent entirely when the source has no proof
  * machinery (the direct Koios path).

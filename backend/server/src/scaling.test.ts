@@ -47,6 +47,7 @@ import { integrateSegment } from "./integrate";
 import { materializeSnapshot } from "./materialize";
 import { pruneTxProofCache } from "./proofCache";
 import { SCAN_GENERATION, SETTLEMENT_MARGIN_SLOTS } from "./refresh";
+import { finalStateEntries } from "./store";
 import type { BackendStore, SqlDriver, SqlQuery } from "./store";
 import { nodeSqlDriver } from "./store-node";
 import { sqlBackendStore } from "./store-sql";
@@ -274,7 +275,7 @@ async function seed(store: BackendStore, profile: Profile): Promise<Corpus> {
     responses.push(responseAt(tx++, windowStart + 1 + r, other, 9_000 + r));
 
   const stored: Cip179Records = { surveys, responses, cancellations: [] };
-  const snapshot = materializeSnapshot(stored, TIP, [], new Set());
+  const snapshot = materializeSnapshot(stored, TIP, [], new Map());
   const meta = {
     tip: JSON.stringify({ epoch: TIP.epoch }),
     incomplete: false,
@@ -406,7 +407,7 @@ async function steadyRun(
       finalizationFloor: finalFloor,
     },
   );
-  await store.markFinalizedCancelled([...finalized.emitted.cancelled]);
+  await store.markFinalStates(finalStateEntries(finalized.emitted));
   await pruneTxProofCache(store, false, TIP);
   if (integration.changes > 0) {
     await store.surveyIndexCounts(TIP.epoch, [], []);

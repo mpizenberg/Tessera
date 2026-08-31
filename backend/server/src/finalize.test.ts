@@ -351,7 +351,7 @@ async function finalizeRecords(
   settlementFloor = Number.MAX_SAFE_INTEGER,
   finalizationFloor = 0,
 ) {
-  const snapshot = materializeSnapshot(recs, tip, govLinks, new Set());
+  const snapshot = materializeSnapshot(recs, tip, govLinks, new Map());
   await store.reconcileSegment(
     ALL_SLOTS,
     snapshot.surveys,
@@ -400,12 +400,15 @@ describe("finalizeClosedSurveys", () => {
       records(survey(), [rA, rB]),
       TIP,
     );
-    // The pass's own emission rides back on the returned key sets, so the
-    // refresh needs no second tally_artifact read.
-    expect(outcome.emitted.finalized).toEqual(new Set([SURVEY_KEY]));
-    expect(outcome.emitted.cancelled).toEqual(new Set());
-
     const row = store.artifacts.get(SURVEY_KEY);
+    // The pass's own decisions ride back on the returned map, hashes included,
+    // so the refresh needs no second tally_artifact read.
+    expect(outcome.emitted).toEqual(
+      new Map([
+        [SURVEY_KEY, { state: "finalized", artifactHash: row!.artifactHash }],
+      ]),
+    );
+
     expect(row).toBeDefined();
     const artifact = JSON.parse(row!.artifact) as TallyArtifact;
     // The stored hash is the content address of the canonical tally body.
@@ -560,7 +563,7 @@ describe("finalizeClosedSurveys", () => {
       recs,
       TIP,
     );
-    expect(outcome.emitted.finalized).toEqual(new Set([SURVEY_KEY2]));
+    expect([...outcome.emitted.keys()]).toEqual([SURVEY_KEY2]);
 
     expect(store.artifacts.has(SURVEY_KEY)).toBe(false); // poisoned → skipped
     expect(store.artifacts.has(SURVEY_KEY2)).toBe(true); // healthy → finalized
@@ -612,6 +615,10 @@ describe("finalizeClosedSurveys", () => {
     );
     expect(store.artifacts.has(SURVEY_KEY)).toBe(false); // untalliable → no artifact
     expect(store.artifacts.has(SURVEY_KEY2)).toBe(true); // valid → finalized
+    // The verdict is reported and persisted: with no artifact row to survive
+    // in, `untalliable_survey` is what a later projection rebuild reads.
+    expect(outcome.emitted.get(SURVEY_KEY)).toEqual({ state: "untalliable" });
+    expect(store.untalliable.has(SURVEY_KEY)).toBe(true);
     // Both are decided — one emitted, one permanently untalliable — so neither
     // holds the frontier down and the residue stops being re-read forever.
     expect(outcome.floor).toBe(TIP.epoch);
@@ -1181,10 +1188,19 @@ describe("finalizeClosedSurveys", () => {
       records(survey(), [rA], [cancellation]),
       TIP,
     );
-    // A cancellation emission lands in both returned sets — materialize reads
-    // the cancelled one for the same-refresh overlay flip.
-    expect(outcome.emitted.finalized).toEqual(new Set([SURVEY_KEY]));
-    expect(outcome.emitted.cancelled).toEqual(new Set([SURVEY_KEY]));
+    // A cancellation emission rides back as a cancelled state with its hash —
+    // what the refresh stamps for the same-run overlay flip.
+    expect(outcome.emitted).toEqual(
+      new Map([
+        [
+          SURVEY_KEY,
+          {
+            state: "cancelled",
+            artifactHash: store.artifacts.get(SURVEY_KEY)!.artifactHash,
+          },
+        ],
+      ]),
+    );
 
     const artifact = JSON.parse(
       store.artifacts.get(SURVEY_KEY)!.artifact,
@@ -1530,7 +1546,7 @@ describe("finalizeClosedSurveys", () => {
       ),
       // …and the survey it postponed holds the frontier at its own epoch.
     ).resolves.toEqual({
-      emitted: { finalized: new Set(), cancelled: new Set() },
+      emitted: new Map(),
       floor: END_EPOCH,
     });
 

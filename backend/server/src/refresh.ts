@@ -28,6 +28,7 @@ import { integrateSegment } from "./integrate";
 import { upstreamMeter } from "./meter";
 import { pruneTxProofCache } from "./proofCache";
 import {
+  finalStateEntries,
   OPERATIONAL_RETENTION_SECONDS,
   REFRESH_LEASE_SECONDS,
   snapshotTip,
@@ -512,18 +513,16 @@ export async function refreshSnapshot(
       await store.putFinalizationFloor(finalized.floor);
     }
 
-    // A survey finalized as cancelled flips its row's overlay in the same
-    // run. A pass that died between emitting and this stamp leaves the row
-    // to integration, which re-derives the flag from the artifact whenever
-    // the survey is next touched — and a closed survey still flagged
-    // `cancelled` without the overlay is touched on every run until then.
+    // What the pass decided lands on the survey rows in the same run. A pass
+    // that died between deciding and this stamp leaves the row to integration,
+    // which re-derives the state from the ground-truth tables whenever the
+    // survey is next touched — and a closed survey still flagged `cancelled`
+    // without a decided state is touched on every run until then.
     const overlayChanges = finalized
       ? await store
-          .markFinalizedCancelled([...finalized.emitted.cancelled])
+          .markFinalStates(finalStateEntries(finalized.emitted))
           .catch((err) => {
-            console.warn(
-              `finalized-cancelled overlay update failed: ${String(err)}`,
-            );
+            console.warn(`final-state overlay update failed: ${String(err)}`);
             return 0;
           })
       : 0;

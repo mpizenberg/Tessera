@@ -51,6 +51,8 @@ export interface StoredRows {
   readonly validated: Map<string, ValidatedResponseRow>;
   readonly weights: Map<string, WeightRow>;
   readonly artifacts: Map<string, ArtifactRow>;
+  /** Persisted untalliable verdicts. */
+  readonly untalliable: Set<string>;
   /** Banked anchor classifications by hash; null = verified non-link. */
   readonly govAnchors: Map<string, GovLinkDoc | null>;
   readonly govEpochs: Map<number, SettledGovEpoch>;
@@ -105,6 +107,14 @@ export function testStore(): TestStore {
           rows<ArtifactRow>(
             `SELECT ${ARTIFACT_COLUMNS} FROM tally_artifact`,
           ).map((r) => [r.surveyKey, r]),
+        ),
+    ),
+    untalliable: view(
+      () =>
+        new Set(
+          rows<{ surveyKey: string }>(
+            "SELECT survey_key AS surveyKey FROM untalliable_survey",
+          ).map((r) => r.surveyKey),
         ),
     ),
     govAnchors: view(

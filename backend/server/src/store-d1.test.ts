@@ -86,7 +86,8 @@ const schema = `
     cancellations TEXT NOT NULL,
     gov_links TEXT NOT NULL,
     response_count INTEGER NOT NULL,
-    finalized_cancelled INTEGER NOT NULL
+    final_state TEXT,
+    artifact_hash TEXT
   );
   CREATE TABLE snapshot_meta (
     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -154,7 +155,8 @@ const survey = (
   cancellations: "[]",
   govLinks: "[]",
   responseCount: 0,
-  finalizedCancelled: false,
+  finalState: null,
+  artifactHash: null,
   ...over,
 });
 

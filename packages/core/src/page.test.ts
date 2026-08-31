@@ -81,7 +81,7 @@ function payload(
     govLinks,
     tip: TIP,
     responseCounts: Object.fromEntries(surveys.map((s, i) => [keyOf(s), i])),
-    finalizedCancelled: [],
+    finalState: {},
   };
 }
 

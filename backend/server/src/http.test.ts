@@ -55,7 +55,7 @@ async function seed(
     tip,
     govLinks,
     (await store.touchedRows([surveyA, surveyB].map((s) => refKey(s.ref))))
-      .artifacts.cancelled,
+      .finalStates,
   );
   await store.reconcileSegment(
     ALL_SLOTS,
@@ -241,7 +241,7 @@ describe("GET /api/surveys", () => {
     expect(again.status).toBe(304);
   });
 
-  it("lists finalized-cancelled survey keys, not normally-finalized ones", async () => {
+  it("reports each decided survey's final state with its artifact hash", async () => {
     const store = await seededStore();
     await store.putArtifact({
       surveyKey: `${TX_A}:0`,
@@ -263,15 +263,30 @@ describe("GET /api/surveys", () => {
     await seed(store);
     const res = await appWith(store).request("/api/surveys");
     const body = fromJsonSafe(await res.json()) as Record<string, unknown>;
-    expect(body["finalizedCancelled"]).toEqual([`${TX_B}:1`]);
+    expect(body["finalState"]).toEqual({
+      [`${TX_A}:0`]: { state: "finalized", artifactHash: "a1".repeat(32) },
+      [`${TX_B}:1`]: { state: "cancelled", artifactHash: "b2".repeat(32) },
+    });
   });
 
-  it("finalizedCancelled is empty with no artifacts", async () => {
+  it("reports a persisted untalliable verdict, hash-less", async () => {
+    const store = await seededStore();
+    await store.putUntalliable([`${TX_B}:1`], 1);
+    await seed(store);
+    const body = fromJsonSafe(
+      await (await appWith(store).request("/api/surveys")).json(),
+    ) as Record<string, unknown>;
+    expect(body["finalState"]).toEqual({
+      [`${TX_B}:1`]: { state: "untalliable" },
+    });
+  });
+
+  it("finalState is empty with nothing decided", async () => {
     const app = appWith(await seededStore());
     const body = fromJsonSafe(
       await (await app.request("/api/surveys")).json(),
     ) as Record<string, unknown>;
-    expect(body["finalizedCancelled"]).toEqual([]);
+    expect(body["finalState"]).toEqual({});
   });
 
   // A refresh whose gov-links fetch failed re-projects nothing from a set it

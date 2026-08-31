@@ -25,7 +25,8 @@ import {
 
 import { integrateSegment, type GovPass } from "./integrate";
 import { listCountsOf, materializeSnapshot } from "./materialize";
-import type { SlotRange, SnapshotMeta } from "./store";
+import { finalStateEntries } from "./store";
+import type { FinalStates, SlotRange, SnapshotMeta } from "./store";
 import { ALL_SLOTS, testStore, type TestStore } from "./testing/store";
 
 // --- fixtures ------------------------------------------------------------------
@@ -246,6 +247,15 @@ async function emitCancelledArtifacts(
   }
 }
 
+/** The chain's cancelled set as final states (hash = key, per the fake rows). */
+const finalStatesOf = (chain: Chain): FinalStates =>
+  new Map(
+    [...chain.finalizedCancelled].map((k) => [
+      k,
+      { state: "cancelled", artifactHash: k },
+    ]),
+  );
+
 async function runRefresh(
   store: TestStore,
   chain: Chain,
@@ -266,7 +276,7 @@ async function runRefresh(
     settledBelowSlot: range.fromSlot,
     meta: metaAt(tip),
   });
-  await store.markFinalizedCancelled([...chain.finalizedCancelled]);
+  await store.markFinalStates(finalStateEntries(finalStatesOf(chain)));
 }
 
 async function expectOracleMatch(
@@ -278,7 +288,7 @@ async function expectOracleMatch(
     fullRecords(chain),
     tip,
     chain.govLinks,
-    chain.finalizedCancelled,
+    finalStatesOf(chain),
   );
   const bySurveyKey = <T extends { surveyKey: string }>(rows: T[]): T[] =>
     [...rows].sort((a, b) => (a.surveyKey < b.surveyKey ? -1 : 1));

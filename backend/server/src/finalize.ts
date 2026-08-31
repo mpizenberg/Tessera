@@ -25,7 +25,13 @@
  * Sealed surveys additionally wait for their drand round to publish, then
  * decrypt their in-window responses — over as many passes as the decrypt budget
  * needs — and tally the revealed answers; a sealed survey on an unsupported
- * (non-quicknet) drand chain is skipped forever.
+ * (non-quicknet) drand chain is untalliable.
+ *
+ * Every permanent no-artifact verdict — spec-invalid definition, unproven
+ * owner credential, unsupported drand chain — is persisted to
+ * `untalliable_survey` before the pass banks its floor: the floor then rises
+ * past the survey for good, so the verdict must survive somewhere a
+ * projection rebuild can read it.
  */
 
 import { isSurveyTalliable, Role, type SurveyResponse } from "cip-179";
@@ -65,7 +71,7 @@ import { isQuicknet, roundIsAvailable } from "cip-179/tlock";
 import type { ServerConfig } from "./config";
 import { tlockSealedReveal, type SealedRevealFn } from "./sealedReveal";
 import type {
-  ArtifactKeys,
+  FinalStates,
   SealedRevealRow,
   SnapshotStore,
   TallyStore,
@@ -152,13 +158,14 @@ export interface FinalizeGates {
   readonly finalizationFloor: number;
 }
 
-/** What the pass leaves behind: what it emitted, and where its frontier now is. */
+/** What the pass leaves behind: what it decided, and where its frontier now is. */
 export interface FinalizeOutcome {
   /**
-   * The artifacts this pass emitted, as key sets — what the refresh stamps
-   * the cancelled overlay from without reading `tally_artifact` back.
+   * The decisions this pass reached — artifacts emitted (with their hashes)
+   * and untalliable verdicts — what the refresh stamps onto the survey rows
+   * without reading the ground-truth tables back.
    */
-  readonly emitted: ArtifactKeys;
+  readonly emitted: FinalStates;
   /**
    * The finalization floor to bank, or null when the pass decided nothing and
    * the banked one must stand.
@@ -175,22 +182,19 @@ export async function finalizeClosedSurveys(
   reveal: SealedRevealFn = tlockSealedReveal,
 ): Promise<FinalizeOutcome> {
   const { tip, incomplete, coveredThroughUnix, settlementFloor } = gates;
-  const artifactKeys: ArtifactKeys = {
-    finalized: new Set(),
-    cancelled: new Set(),
-  };
+  const emitted: FinalStates = new Map();
   // An incomplete scan (a dropped metadata batch or the page cap) may be
   // missing a responder tx or a cancellation for *any* survey, and we can't tell
   // which — so no artifact this refresh is safe to hash. Postpone all of them.
   if (incomplete) {
     console.warn("finalize: snapshot incomplete — skipping finalization");
-    return { emitted: artifactKeys, floor: null };
+    return { emitted, floor: null };
   }
   // Nothing integrated yet (fresh database, first run failed): nothing is
   // safely past its deadline on the covered prefix.
   if (coveredThroughUnix === null) {
     console.warn("finalize: no scan cursor banked — skipping finalization");
-    return { emitted: artifactKeys, floor: null };
+    return { emitted, floor: null };
   }
 
   const nowSec = Math.floor(Date.now() / 1000);
@@ -215,12 +219,18 @@ export async function finalizeClosedSurveys(
   const undecided = new Map(
     candidateRows.map((r) => [r.surveyKey, r.endEpoch]),
   );
-  const settle = (): FinalizeOutcome => {
-    for (const key of artifactKeys.finalized) undecided.delete(key);
+  const settle = async (): Promise<FinalizeOutcome> => {
+    // Untalliable verdicts have no artifact row to survive in, so they get
+    // their own durable record before the floor rises past them for good.
+    const untalliable = [...emitted]
+      .filter(([, s]) => s.state === "untalliable")
+      .map(([key]) => key);
+    if (untalliable.length > 0) await store.putUntalliable(untalliable, nowSec);
+    for (const key of emitted.keys()) undecided.delete(key);
     let floor = tip.epoch;
     for (const endEpoch of undecided.values())
       floor = Math.min(floor, endEpoch);
-    return { emitted: artifactKeys, floor };
+    return { emitted, floor };
   };
   const cancellationsByKey = new Map(
     candidateRows.map((r) => [
@@ -280,7 +290,7 @@ export async function finalizeClosedSurveys(
   const needEvidence = candidates.filter((s) => {
     if (isSurveyTalliable(s)) return true;
     untalliable.push(refKey(s.ref));
-    undecided.delete(refKey(s.ref));
+    emitted.set(refKey(s.ref), { state: "untalliable" });
     return false;
   });
   // One line rather than one per survey: a floor reset re-reads the whole
@@ -311,7 +321,7 @@ export async function finalizeClosedSurveys(
       console.warn(
         `finalize: ${refKey(s.ref)} owner credential unproven — untalliable, no artifact`,
       );
-      undecided.delete(refKey(s.ref));
+      emitted.set(refKey(s.ref), { state: "untalliable" });
       continue;
     }
     talliable.push(s);
@@ -328,20 +338,20 @@ export async function finalizeClosedSurveys(
     cancellationsByKey,
     talliable,
     nowSec,
-    artifactKeys,
+    emitted,
   );
 
   // A sealed survey on a drand chain the bundled tlock can't decrypt is
   // permanently unrevealable — its votes are undecryptable forever (vote-time
-  // guard aside, an old survey may predate it). Drop it entirely: no weight
-  // work, no artifact, and decided as far as the floor is concerned.
+  // guard aside, an old survey may predate it). Untalliable: no weight work,
+  // no artifact, and decided as far as the floor is concerned.
   const open = notCancelled.filter((s) => {
     const mode = s.definition.submissionMode;
     if (mode.type === "sealed" && !isQuicknet(mode.chainHash)) {
       console.warn(
-        `finalize: ${refKey(s.ref)} sealed on unsupported drand chain — skipped (no artifact)`,
+        `finalize: ${refKey(s.ref)} sealed on unsupported drand chain — untalliable, no artifact`,
       );
-      undecided.delete(refKey(s.ref));
+      emitted.set(refKey(s.ref), { state: "untalliable" });
       return false;
     }
     return true;
@@ -580,7 +590,7 @@ export async function finalizeClosedSurveys(
             artifact: artifact.json,
             createdAt: nowSec,
           });
-          artifactKeys.finalized.add(key);
+          emitted.set(key, { state: "finalized", artifactHash: artifact.hash });
           console.log(
             `finalize: ${key} → sealed artifact ${artifact.hash} ` +
               `(counted ${audit.counted.length}, superseded ${audit.superseded.length}, ` +
@@ -620,7 +630,7 @@ export async function finalizeClosedSurveys(
           artifact: artifact.json,
           createdAt: nowSec,
         });
-        artifactKeys.finalized.add(key);
+        emitted.set(key, { state: "finalized", artifactHash: artifact.hash });
         console.log(`finalize: ${key} → artifact ${artifact.hash}`);
       } catch (err) {
         console.warn(`finalize: ${key} skipped this pass — ${String(err)}`);
@@ -677,7 +687,8 @@ async function withOwnerProofs(
  * a genuinely-cancelled survey tallied in full, or a winner the verifier will
  * refetch to a different (earlier) one → false MISMATCH.
  *
- * Each emitted cancellation artifact is folded into `artifactKeys` (both sets).
+ * Each emitted cancellation artifact is folded into `emitted` as a cancelled
+ * final state.
  */
 async function withCancellations(
   config: ServerConfig,
@@ -686,7 +697,7 @@ async function withCancellations(
   cancellationsByKey: ReadonlyMap<string, readonly CancellationRecord[]>,
   candidates: readonly SurveyRecord[],
   nowSec: number,
-  artifactKeys: ArtifactKeys,
+  emitted: FinalStates,
 ): Promise<SurveyRecord[]> {
   const ownerByKey = new Map(
     candidates.map((s) => [refKey(s.ref), s.definition.owner]),
@@ -775,15 +786,15 @@ async function withCancellations(
         byRole: [],
       },
     };
+    const hash = artifactHash(body);
     await store.putArtifact({
       surveyKey: key,
       endEpoch: s.definition.endEpoch,
-      artifactHash: artifactHash(body),
+      artifactHash: hash,
       artifact: JSON.stringify(artifact),
       createdAt: nowSec,
     });
-    artifactKeys.finalized.add(key);
-    artifactKeys.cancelled.add(key);
+    emitted.set(key, { state: "cancelled", artifactHash: hash });
     console.log(`finalize: ${key} cancelled by ${winning.txHash}`);
   }
   return open;

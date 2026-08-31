@@ -19,12 +19,19 @@ import type { SurveyListPayload } from "./source";
 export function aggregateSurveyList(
   list: SurveyListPayload,
 ): SurveyAggregate[] {
+  // `aggregate` only needs the cancelled overlay: the other final states never
+  // change how a survey aggregates, they only describe what finalization left.
+  const cancelled = new Set(
+    Object.entries(list.finalState ?? {})
+      .filter(([, s]) => s.state === "cancelled")
+      .map(([key]) => key),
+  );
   return aggregate(
     list.surveys,
     list.cancellations,
     list.responseCounts,
     list.tip,
     list.govLinks,
-    new Set(list.finalizedCancelled ?? []),
+    cancelled,
   );
 }

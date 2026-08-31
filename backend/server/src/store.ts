@@ -13,7 +13,7 @@
  * async because D1 is; the node driver wraps its synchronous calls.
  */
 
-import type { ResponseCursor } from "cardano-tessera-core";
+import type { ResponseCursor, SurveyFinalState } from "cardano-tessera-core";
 import type { ChainTip, GovLink, GovLinkDoc } from "cip-179/domain";
 
 /** One SQL statement (SQLite dialect) and its positional bindings. */
@@ -125,17 +125,29 @@ export interface ArtifactRow {
 }
 
 /**
- * Survey keys holding an artifact, split by outcome. `cancelled` ⊆
- * `finalized`: a cancellation artifact (its `tally.cancelled` is set, no
- * per-role tally) appears in both. The cancelled side feeds the list payload's
- * `finalizedCancelled` overlay so Explore keeps showing "Cancelled" after a
- * cancelled survey closes. Mutable sets on purpose: `finalizeClosedSurveys`
- * folds its emissions into the pair it returns.
+ * The finalizer's decisions per survey key — the wire `SurveyFinalState` read
+ * back from durable ground truth: `tally_artifact` for the two artifact-backed
+ * states, `untalliable_survey` for the verdicts that never produce one. Feeds
+ * the list payload's `finalState` overlay and the `cancelled` flag it implies.
+ * Mutable on purpose: `finalizeClosedSurveys` folds its emissions into the map
+ * it returns.
  */
-export interface ArtifactKeys {
-  readonly finalized: Set<string>;
-  readonly cancelled: Set<string>;
+export type FinalStates = Map<string, SurveyFinalState>;
+
+/** One survey's decision as `markFinalStates` stamps it onto its row. */
+export interface FinalStateEntry {
+  readonly surveyKey: string;
+  readonly state: SurveyFinalState["state"];
+  /** The emitted artifact's content hash; null for `untalliable`. */
+  readonly artifactHash: string | null;
 }
+
+export const finalStateEntries = (states: FinalStates): FinalStateEntry[] =>
+  [...states].map(([surveyKey, s]) => ({
+    surveyKey,
+    state: s.state,
+    artifactHash: "artifactHash" in s ? s.artifactHash : null,
+  }));
 
 /** See {@link TallyStore.revalidationInputs}. */
 export interface RevalidationInputs {
@@ -246,6 +258,16 @@ export interface TallyStore {
   artifactByHash(artifactHash: string): Promise<ArtifactRow | null>;
   /** Insert-or-ignore: an artifact, once written, is immutable. */
   putArtifact(row: ArtifactRow): Promise<void>;
+  /**
+   * Persist untalliable verdicts — the finalizer's "no artifact, ever"
+   * decisions, which have no artifact row to survive in. Insert-or-ignore: an
+   * independent pass re-reaching the verdict is the normal path after a floor
+   * reset.
+   */
+  putUntalliable(
+    surveyKeys: readonly string[],
+    decidedAt: number,
+  ): Promise<void>;
   /**
    * Bank the finalization floor (read back by {@link SnapshotStore.scanState}).
    * Only a complete, caught-up pass computes one: while the scan is still
@@ -563,8 +585,10 @@ export interface SurveyIndexRow {
   /** Wire JSON of the `GovLink[]` naming this survey (aligned or not). */
   readonly govLinks: string;
   readonly responseCount: number;
-  /** The tally artifact finalized this survey as cancelled (overlay flag). */
-  readonly finalizedCancelled: boolean;
+  /** The finalizer's decision, or null while undecided. */
+  readonly finalState: SurveyFinalState["state"] | null;
+  /** The emitted artifact's content hash; null unless `finalState` names one. */
+  readonly artifactHash: string | null;
 }
 
 /**
@@ -606,7 +630,7 @@ export interface TouchedRows {
   readonly surveys: SurveyIndexRow[];
   readonly cancellations: CancellationRow[];
   readonly banks: Map<string, ResponseCountBank>;
-  readonly artifacts: ArtifactKeys;
+  readonly finalStates: FinalStates;
 }
 
 /**
@@ -925,7 +949,7 @@ export interface SnapshotStore {
    * after `linkHorizon` (a survey whose slice differs from the current pass
    * re-projects even when no tx touched it; null skips the read); and the
    * surveys whose verified-while-open cancellation just expired at `tipEpoch`
-   * — `cancelled` set, no finalized overlay, closed — whose projections went
+   * — `cancelled` set, no final state decided, closed — whose projections went
    * stale the moment their epoch turned. Empty lists for a null `range`.
    */
   sweepInputs(
@@ -937,20 +961,21 @@ export interface SnapshotStore {
    * Everything a projection rebuild reads about the given surveys, in one
    * round trip: their stored rows (unknown keys absent), every stored
    * cancellation targeting them, their banked settled counts (a survey never
-   * banked is absent) and their artifact keys — cancelled-ness derived from
-   * the stored artifact JSON at query time (`json_extract`) rather than a
-   * denormalized column: artifacts are immutable, and the JSON stays the
-   * single source of truth.
+   * banked is absent) and their final states — the artifact-backed ones
+   * derived from the stored artifact JSON at query time (`json_extract`)
+   * rather than a denormalized column (artifacts are immutable, and the JSON
+   * stays the single source of truth), the untalliable ones read from
+   * `untalliable_survey`.
    */
   touchedRows(surveyKeys: readonly string[]): Promise<TouchedRows>;
   /**
-   * Stamp the finalized-cancelled overlay (and the `cancelled` flag it
-   * implies) onto the given surveys' rows where not already set, returning
-   * how many rows flipped. Idempotent — called every refresh with every
-   * cancelled artifact's key, it applies this pass's finalizations and heals
-   * drift in one statement.
+   * Stamp final states (and the `cancelled` flag a cancelled one implies)
+   * onto the given surveys' rows where not already decided, returning how
+   * many rows changed. Idempotent — called every refresh with everything the
+   * pass decided, it applies this pass's finalizations and heals drift in one
+   * statement.
    */
-  markFinalizedCancelled(surveyKeys: readonly string[]): Promise<number>;
+  markFinalStates(entries: readonly FinalStateEntry[]): Promise<number>;
   /**
    * Distinct `end_epoch` values at or after `minEndEpoch` across the stored
    * surveys, ascending — the governance-link pass's input. The bound is the

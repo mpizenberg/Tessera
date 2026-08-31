@@ -70,11 +70,14 @@ describe("store-node artifact keys (json_extract)", () => {
     );
 
     expect(
-      (await store.touchedRows(["aa:0", "bb:1", "cc:2", "dd:3"])).artifacts,
-    ).toEqual({
-      finalized: new Set(["aa:0", "bb:1", "cc:2"]),
-      cancelled: new Set(["bb:1"]),
-    });
+      (await store.touchedRows(["aa:0", "bb:1", "cc:2", "dd:3"])).finalStates,
+    ).toEqual(
+      new Map([
+        ["aa:0", { state: "finalized", artifactHash: "a1".repeat(32) }],
+        ["bb:1", { state: "cancelled", artifactHash: "b2".repeat(32) }],
+        ["cc:2", { state: "finalized", artifactHash: "c3".repeat(32) }],
+      ]),
+    );
   });
 });
 
@@ -247,6 +250,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0022_validation_backlog_index.sql",
       "0023_response_identity.sql",
       "0024_scan_state_network.sql",
+      "0025_final_state.sql",
     ]);
   });
 });
@@ -434,7 +438,8 @@ describe("store-node survey_index paging SQL", () => {
     cancellations: "[]",
     govLinks: "[]",
     responseCount: 1,
-    finalizedCancelled: false,
+    finalState: null,
+    artifactHash: null,
     ...over,
   });
   const meta = {
@@ -557,7 +562,8 @@ describe("store-node response rows", () => {
     // Only one is linked, so a bundle serving the wrong survey's links shows.
     govLinks: surveyKey === "aa:0" ? `[{"g":"aa:0"}]` : "[]",
     responseCount: 0,
-    finalizedCancelled: false,
+    finalState: null,
+    artifactHash: null,
   }));
 
   it("writes only changed domain rows on reconciliation", async () => {
@@ -780,7 +786,8 @@ describe("store-node segment reconciliation", () => {
     cancellations: "[]",
     govLinks: "[]",
     responseCount: 0,
-    finalizedCancelled: false,
+    finalState: null,
+    artifactHash: null,
     ...over,
   });
   const resp = (

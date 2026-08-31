@@ -116,7 +116,7 @@ async function prune(
   finalized: ReadonlySet<string>,
 ) {
   const mem = testStore();
-  const snapshot = materializeSnapshot(recs, TIP, [], new Set());
+  const snapshot = materializeSnapshot(recs, TIP, [], new Map());
   await mem.reconcileSegment(
     ALL_SLOTS,
     snapshot.surveys,

@@ -26,7 +26,7 @@ import {
   type SurveyRecord,
 } from "cip-179/domain";
 import { toJsonSafe } from "cip-179/tally";
-import { surveyHaystack } from "cardano-tessera-core";
+import { surveyHaystack, type SurveyFinalState } from "cardano-tessera-core";
 
 import type {
   BankedListCounts,
@@ -61,7 +61,7 @@ export function surveyRowsOf(
   countByKey: Record<string, number>,
   tip: ChainTip,
   govLinks: readonly GovLink[],
-  finalizedCancelled: ReadonlySet<string>,
+  finalStates: ReadonlyMap<string, SurveyFinalState>,
 ): SurveyIndexRow[] {
   // Grouped in chain order, so the projected JSON is identical whether the
   // inputs arrive in scan order (the oracle) or as stored-plus-segment merges
@@ -82,6 +82,13 @@ export function surveyRowsOf(
     if (list) list.push(l);
     else linksByKey.set(l.surveyKey, [l]);
   }
+  // `aggregate` only needs the cancelled overlay; the other final states never
+  // change how a survey aggregates.
+  const finalizedCancelled = new Set(
+    [...finalStates]
+      .filter(([, s]) => s.state === "cancelled")
+      .map(([key]) => key),
+  );
   return aggregate(
     surveys,
     cancellations,
@@ -89,23 +96,30 @@ export function surveyRowsOf(
     tip,
     govLinks,
     finalizedCancelled,
-  ).map((a) => ({
-    surveyKey: a.key,
-    slot: a.record.slot,
-    endEpoch: a.record.definition.endEpoch,
-    sealed: a.sealed,
-    cancelled: a.cancelled,
-    govLinked: a.govLinks.length > 0,
-    owner: credentialKey(a.record.definition.owner),
-    haystack: surveyHaystack(a.record, a.govLinks),
-    record: JSON.stringify(toJsonSafe(a.record)),
-    cancellations: JSON.stringify(
-      toJsonSafe(cancellationsByKey.get(a.key) ?? []),
-    ),
-    govLinks: JSON.stringify(toJsonSafe(linksByKey.get(a.key) ?? [])),
-    responseCount: a.responseCount,
-    finalizedCancelled: finalizedCancelled.has(a.key),
-  }));
+  ).map((a) => {
+    const finalState = finalStates.get(a.key) ?? null;
+    return {
+      surveyKey: a.key,
+      slot: a.record.slot,
+      endEpoch: a.record.definition.endEpoch,
+      sealed: a.sealed,
+      cancelled: a.cancelled,
+      govLinked: a.govLinks.length > 0,
+      owner: credentialKey(a.record.definition.owner),
+      haystack: surveyHaystack(a.record, a.govLinks),
+      record: JSON.stringify(toJsonSafe(a.record)),
+      cancellations: JSON.stringify(
+        toJsonSafe(cancellationsByKey.get(a.key) ?? []),
+      ),
+      govLinks: JSON.stringify(toJsonSafe(linksByKey.get(a.key) ?? [])),
+      responseCount: a.responseCount,
+      finalState: finalState?.state ?? null,
+      artifactHash:
+        finalState && "artifactHash" in finalState
+          ? finalState.artifactHash
+          : null,
+    };
+  });
 }
 
 export const responseRowOf = (r: ResponseRecord): ResponseRow => ({
@@ -144,7 +158,7 @@ export function materializeSnapshot(
   records: Cip179Records,
   tip: ChainTip,
   govLinks: readonly GovLink[],
-  finalizedCancelled: ReadonlySet<string>,
+  finalStates: ReadonlyMap<string, SurveyFinalState>,
 ): MaterializedSnapshot {
   const surveys = surveyRowsOf(
     records.surveys,
@@ -152,7 +166,7 @@ export function materializeSnapshot(
     responseCounts(records.responses),
     tip,
     govLinks,
-    finalizedCancelled,
+    finalStates,
   );
   return {
     listCounts: listCountsOf(surveys, tip.epoch),

@@ -123,7 +123,7 @@ async function publish(
   recs: Cip179Records,
   links: readonly GovLink[] = [],
 ) {
-  const snapshot = materializeSnapshot(recs, TIP, links, new Set());
+  const snapshot = materializeSnapshot(recs, TIP, links, new Map());
   await store.reconcileSegment(
     ALL_SLOTS,
     snapshot.surveys,

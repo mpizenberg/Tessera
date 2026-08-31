@@ -38,14 +38,16 @@ const survey = (index: number, d: SurveyDefinition): SurveyRecord => ({
   definition: d,
 });
 
-describe("aggregateSurveyList — finalized-cancelled overlay (finding 19)", () => {
+describe("aggregateSurveyList — final-state overlay (finding 19)", () => {
   // A cancelled-then-closed survey: the scan ships its cancellation with
   // proof: null (it only verifies proofs for open surveys), so client-side
   // verification alone would show it as "Ended" with only an unverified-claim
-  // warning. The serving tier's finalizedCancelled keys carry the artifact's
+  // warning. The serving tier's cancelled final state carries the artifact's
   // verdict past close, which also supersedes that claim warning.
   const closed = survey(0, def(keyOwner(1), 8)); // endEpoch 8 < tip epoch 10
-  const list = (finalizedCancelled?: readonly string[]): SurveyListPayload => ({
+  const list = (
+    finalState?: SurveyListPayload["finalState"],
+  ): SurveyListPayload => ({
     surveys: [closed],
     cancellations: [
       {
@@ -59,11 +61,18 @@ describe("aggregateSurveyList — finalized-cancelled overlay (finding 19)", () 
     govLinks: [],
     tip: TIP,
     responseCounts: {},
-    ...(finalizedCancelled && { finalizedCancelled }),
+    ...(finalState && { finalState }),
   });
 
-  it("a finalized-cancelled key marks the closed survey cancelled", () => {
-    const a = aggregateSurveyList(list([refKey(closed.ref)]))[0]!;
+  it("a cancelled final state marks the closed survey cancelled", () => {
+    const a = aggregateSurveyList(
+      list({
+        [refKey(closed.ref)]: {
+          state: "cancelled",
+          artifactHash: "ab".repeat(32),
+        },
+      }),
+    )[0]!;
     expect(a.cancelled).toBe(true);
     expect(a.cancellationClaimed).toBe(false);
     expect(a.status).toBe("cancelled");
@@ -73,6 +82,14 @@ describe("aggregateSurveyList — finalized-cancelled overlay (finding 19)", () 
     const a = aggregateSurveyList(list())[0]!;
     expect(a.cancelled).toBe(false);
     expect(a.cancellationClaimed).toBe(true);
+    expect(a.status).toBe("ended");
+  });
+
+  it("the non-cancelled states leave aggregation untouched", () => {
+    const a = aggregateSurveyList(
+      list({ [refKey(closed.ref)]: { state: "untalliable" } }),
+    )[0]!;
+    expect(a.cancelled).toBe(false);
     expect(a.status).toBe("ended");
   });
 });

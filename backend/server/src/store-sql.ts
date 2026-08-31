@@ -14,10 +14,11 @@ import type { ResponseCursor, SurveyListCounts } from "cardano-tessera-core";
 import { BINDABLE_ROLES, type GovLink, type GovLinkDoc } from "cip-179/domain";
 
 import type {
-  ArtifactKeys,
   ArtifactRow,
   BackendStore,
   BankedScan,
+  FinalStateEntry,
+  FinalStates,
   CancellationRow,
   CompletedValidation,
   DbGovEpochRow,
@@ -60,12 +61,14 @@ import {
   CANCELLATION_ROW_COLUMNS,
   STORED_RESPONSE_COLUMNS,
   SURVEY_ROW_COLUMNS,
-  artifactKeysSql,
+  artifactStatesSql,
   cachedByTxHashSql,
   cancellationsBySurveysSql,
   completedValidationsSql,
-  markFinalizedCancelledSql,
+  markFinalStatesSql,
   ownedCountSql,
+  putUntalliableSql,
+  untalliableKeysSql,
   respondedSql,
   responseCountBanksSql,
   responseIdentitiesSql,
@@ -262,12 +265,12 @@ const CANCELLATIONS_IN_SLOT_RANGE = `
   ORDER BY slot, tx_hash`;
 
 /**
- * Surveys whose verified-while-open cancellation expired at close (no
- * finalized overlay yet backs it). Binds: (tipEpoch).
+ * Surveys whose verified-while-open cancellation expired at close (no final
+ * state decided yet backs it). Binds: (tipEpoch).
  */
 const STALE_CANCELLED_SURVEYS = `
   SELECT survey_key AS surveyKey FROM survey_index
-  WHERE cancelled = 1 AND finalized_cancelled = 0 AND end_epoch < ?`;
+  WHERE cancelled = 1 AND final_state IS NULL AND end_epoch < ?`;
 
 /**
  * The governance pass's input: which end epochs any stored survey has, from
@@ -320,12 +323,11 @@ const UNCLAIMED_TX_PROOF_HASHES = `
 /** As stored: booleans are 0/1 integers. */
 export interface DbSurveyRow extends Omit<
   SurveyIndexRow,
-  "sealed" | "cancelled" | "govLinked" | "finalizedCancelled"
+  "sealed" | "cancelled" | "govLinked"
 > {
   readonly sealed: number;
   readonly cancelled: number;
   readonly govLinked: number;
-  readonly finalizedCancelled: number;
 }
 
 /** A page row additionally carries its computed section bucket. */
@@ -338,7 +340,6 @@ export const surveyRowFromDb = (r: DbSurveyRow): SurveyIndexRow => ({
   sealed: r.sealed !== 0,
   cancelled: r.cancelled !== 0,
   govLinked: r.govLinked !== 0,
-  finalizedCancelled: r.finalizedCancelled !== 0,
 });
 
 const surveyIndexRowFromDb = (
@@ -634,6 +635,13 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
           row.createdAt,
         ),
       );
+    },
+    async putUntalliable(
+      surveyKeys: readonly string[],
+      decidedAt: number,
+    ): Promise<void> {
+      if (surveyKeys.length === 0) return;
+      await db.batchWrite(putUntalliableSql(surveyKeys, decidedAt));
     },
     async cachedTxMetadata(
       txHashes: readonly string[],
@@ -961,28 +969,38 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       };
     },
     async touchedRows(surveyKeys: readonly string[]): Promise<TouchedRows> {
-      const artifacts: ArtifactKeys = {
-        finalized: new Set(),
-        cancelled: new Set(),
-      };
+      const finalStates: FinalStates = new Map();
       if (surveyKeys.length === 0)
-        return { surveys: [], cancellations: [], banks: new Map(), artifacts };
+        return {
+          surveys: [],
+          cancellations: [],
+          banks: new Map(),
+          finalStates,
+        };
       const parts = [
         surveysByKeysSql(surveyKeys),
         cancellationsBySurveysSql(surveyKeys),
         responseCountBanksSql(surveyKeys),
-        artifactKeysSql(surveyKeys),
+        artifactStatesSql(surveyKeys),
+        untalliableKeysSql(surveyKeys),
       ];
       const batches = await db.batchAll(parts.flat());
-      const [surveys, cancellations, banks, artifactRows] = parts.map((p) =>
-        batches.splice(0, p.length).flat(),
-      );
+      const [surveys, cancellations, banks, artifactRows, untalliableRows] =
+        parts.map((p) => batches.splice(0, p.length).flat());
+      for (const r of untalliableRows as { surveyKey: string }[]) {
+        finalStates.set(r.surveyKey, { state: "untalliable" });
+      }
+      // After the untalliable read: an artifact, should both somehow exist,
+      // is the stronger claim — it is content-addressed and served.
       for (const r of artifactRows as {
         surveyKey: string;
+        artifactHash: string;
         cancelled: number;
       }[]) {
-        artifacts.finalized.add(r.surveyKey);
-        if (r.cancelled) artifacts.cancelled.add(r.surveyKey);
+        finalStates.set(r.surveyKey, {
+          state: r.cancelled ? "cancelled" : "finalized",
+          artifactHash: r.artifactHash,
+        });
       }
       return {
         surveys: (surveys as DbSurveyRow[]).map(surveyRowFromDb),
@@ -990,16 +1008,14 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
         banks: new Map(
           (banks as ResponseCountBank[]).map((b) => [b.surveyKey, b]),
         ),
-        artifacts,
+        finalStates,
       };
     },
-    async markFinalizedCancelled(
-      surveyKeys: readonly string[],
+    async markFinalStates(
+      entries: readonly FinalStateEntry[],
     ): Promise<number> {
-      if (surveyKeys.length === 0) return 0;
-      const changes = await db.batchWrite(
-        markFinalizedCancelledSql(surveyKeys),
-      );
+      if (entries.length === 0) return 0;
+      const changes = await db.batchWrite(markFinalStatesSql([...entries]));
       return changes.reduce((n, c) => n + c, 0);
     },
     async surveyEndEpochs(minEndEpoch: number): Promise<number[]> {

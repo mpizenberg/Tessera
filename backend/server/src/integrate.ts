@@ -283,17 +283,17 @@ export async function integrateSegment(
     );
   });
 
-  // The finalized-cancelled overlay, read keyed by the touched surveys: the
-  // artifact is the durable fact, so a re-derived row — a resurrected one
-  // included — carries the flag whether or not the stored row did.
-  const finalizedCancelled = stored.artifacts.cancelled;
+  // Final states, read keyed by the touched surveys: the artifact (or the
+  // persisted untalliable verdict) is the durable fact, so a re-derived row —
+  // a resurrected one included — carries its decision whether or not the
+  // stored row did.
   const surveyRows = surveyRowsOf(
     touchedRecords,
     [...cancellations, ...storedCancels],
     countByKey,
     tip,
     projectedLinks,
-    finalizedCancelled,
+    stored.finalStates,
   );
   const cancellationRows = cancellations.map(cancellationRowOf);
 

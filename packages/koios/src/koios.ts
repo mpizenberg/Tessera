@@ -614,9 +614,9 @@ export class KoiosDataSource implements DataSource {
     //
     // The gap that leaves HERE: a cancelled-then-closed survey looks merely
     // "ended". The serving tier covers it from the artifact instead
-    // (`finalizedCancelled` in the list payload); direct-Koios mode has no
-    // artifacts and accepts the gap. Mirrors `cancellationStates` in
-    // cardano-tessera-core's survey.ts.
+    // (a `cancelled` entry in the list payload's `finalState`); direct-Koios
+    // mode has no artifacts and accepts the gap. Mirrors `cancellationStates`
+    // in cardano-tessera-core's survey.ts.
     const refKeyOf = (ref: SurveyRef): string =>
       `${bytesToHex(ref.txId)}:${ref.index}`;
     const openSurveyKeys = new Set(

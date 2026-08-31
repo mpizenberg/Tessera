@@ -321,8 +321,8 @@ export function pageSurveyList(
     responseCounts: Object.fromEntries(
       page.map((r) => [r.a.key, r.a.responseCount]),
     ),
-    finalizedCancelled: (full.finalizedCancelled ?? []).filter((k) =>
-      keys.has(k),
+    finalState: Object.fromEntries(
+      Object.entries(full.finalState ?? {}).filter(([k]) => keys.has(k)),
     ),
     ...(full.incomplete !== undefined && { incomplete: full.incomplete }),
     ...(full.fetchedAt !== undefined && { fetchedAt: full.fetchedAt }),

@@ -67,10 +67,13 @@ expect the store's guard to refuse the run.
 - `GET /api/surveys` — the Explore-list payload, **keyset-paginated**
   (`filter`/`q`/`cursor`/`limit`): survey records + tip + gov links + raw
   cancellations + server-deduped `responseCounts` per survey, plus
-  `fetchedAt` / `ageSeconds`. Filter chip counts are global over the matching
-  set, not per page. A cursor records the snapshot it was minted against; one
-  from an older snapshot is still answered, with `resync` set so the client
-  refreshes page one.
+  `fetchedAt` / `ageSeconds`. `finalState` maps each decided survey key to the
+  finalizer's verdict — `finalized` or `cancelled` with the artifact's hash, or
+  `untalliable` (no artifact will ever exist) — so a mirror can stop
+  re-refreshing a decided survey. Filter chip counts are global over the
+  matching set, not per page. A cursor records the snapshot it was minted
+  against; one from an older snapshot is still answered, with `resync` set so
+  the client refreshes page one.
 - `GET /api/surveys?refs=<txHash>:<index>,…` — the same payload for the surveys
   named, for a host mirroring a chosen subset instead of paging Tessera's order.
   No `counts` or `nextCursor` (a named set has neither), the paging parameters

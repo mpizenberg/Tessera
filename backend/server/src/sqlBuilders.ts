@@ -90,7 +90,7 @@ export function surveyPageSql(q: SurveyPageQuery): SqlQuery {
       WITH rows AS (
         SELECT survey_key, slot, end_epoch, sealed, cancelled, gov_linked,
                owner, haystack, record, cancellations, gov_links,
-               response_count, finalized_cancelled,
+               response_count, final_state, artifact_hash,
                ${BUCKET} AS bucket
         FROM survey_index
         WHERE ${search.sql} AND ${filter.sql}
@@ -99,7 +99,7 @@ export function surveyPageSql(q: SurveyPageQuery): SqlQuery {
              cancelled, gov_linked AS govLinked, owner, haystack, record,
              cancellations, gov_links AS govLinks,
              response_count AS responseCount,
-             finalized_cancelled AS finalizedCancelled, bucket
+             final_state AS finalState, artifact_hash AS artifactHash, bucket
       FROM rows
       WHERE ${cursor.sql}
       ORDER BY bucket, slot DESC, survey_key
@@ -148,7 +148,7 @@ const SURVEY_INDEX_RECONCILE = `
   INSERT INTO survey_index
     (survey_key, slot, end_epoch, sealed, cancelled, gov_linked, owner,
      haystack, record, cancellations, gov_links, response_count,
-     finalized_cancelled)
+     final_state, artifact_hash)
   SELECT json_extract(value, '$.surveyKey'),
          json_extract(value, '$.slot'),
          json_extract(value, '$.endEpoch'),
@@ -161,7 +161,8 @@ const SURVEY_INDEX_RECONCILE = `
          json_extract(value, '$.cancellations'),
          json_extract(value, '$.govLinks'),
          json_extract(value, '$.responseCount'),
-         json_extract(value, '$.finalizedCancelled')
+         json_extract(value, '$.finalState'),
+         json_extract(value, '$.artifactHash')
   FROM json_each(?)
   WHERE 1
   ON CONFLICT(survey_key) DO UPDATE SET
@@ -176,7 +177,8 @@ const SURVEY_INDEX_RECONCILE = `
     cancellations = excluded.cancellations,
     gov_links = excluded.gov_links,
     response_count = excluded.response_count,
-    finalized_cancelled = excluded.finalized_cancelled
+    final_state = excluded.final_state,
+    artifact_hash = excluded.artifact_hash
   WHERE survey_index.slot IS NOT excluded.slot
      OR survey_index.end_epoch IS NOT excluded.end_epoch
      OR survey_index.sealed IS NOT excluded.sealed
@@ -188,7 +190,8 @@ const SURVEY_INDEX_RECONCILE = `
      OR survey_index.cancellations IS NOT excluded.cancellations
      OR survey_index.gov_links IS NOT excluded.gov_links
      OR survey_index.response_count IS NOT excluded.response_count
-     OR survey_index.finalized_cancelled IS NOT excluded.finalized_cancelled`;
+     OR survey_index.final_state IS NOT excluded.final_state
+     OR survey_index.artifact_hash IS NOT excluded.artifact_hash`;
 
 const SNAPSHOT_META_UPSERT = `
   INSERT INTO snapshot_meta (id, tip, incomplete, fetched_at, list_counts)
@@ -539,7 +542,7 @@ export const SURVEY_ROW_COLUMNS = `survey_key AS surveyKey, slot,
        end_epoch AS endEpoch, sealed, cancelled, gov_linked AS govLinked,
        owner, haystack, record, cancellations, gov_links AS govLinks,
        response_count AS responseCount,
-       finalized_cancelled AS finalizedCancelled`;
+       final_state AS finalState, artifact_hash AS artifactHash`;
 
 export const STORED_RESPONSE_COLUMNS = `tx_hash AS txHash,
        response_index AS responseIndex, survey_key AS surveyKey, role,
@@ -629,14 +632,42 @@ export const cancellationsBySurveysSql = (
     surveyKeys,
   );
 
-/** Stamp the finalized-cancelled overlay where not already set. */
-export const markFinalizedCancelledSql = (
-  surveyKeys: readonly string[],
+/**
+ * Stamp final states onto undecided rows. A cancelled state implies the
+ * `cancelled` flag; the other states leave it as the projection derived it.
+ */
+export const markFinalStatesSql = (
+  entries: readonly {
+    surveyKey: string;
+    state: string;
+    artifactHash: string | null;
+  }[],
 ): SqlQuery[] =>
-  byKeysSql(
-    `UPDATE survey_index SET finalized_cancelled = 1, cancelled = 1
-     WHERE finalized_cancelled = 0 AND survey_key IN ${JSON_KEY_SET}`,
-    surveyKeys,
+  jsonChunks([...entries], SNAPSHOT_ROWS_PER_CHUNK).map((chunk) => ({
+    sql: `UPDATE survey_index
+          SET final_state = json_extract(e.value, '$.state'),
+              artifact_hash = json_extract(e.value, '$.artifactHash'),
+              cancelled = CASE WHEN json_extract(e.value, '$.state') = 'cancelled'
+                               THEN 1 ELSE cancelled END
+          FROM json_each(?) AS e
+          WHERE survey_index.survey_key = json_extract(e.value, '$.surveyKey')
+            AND survey_index.final_state IS NULL`,
+    params: [chunk.json],
+  }));
+
+/** Persist untalliable verdicts; re-reaching one is a no-op. */
+export const putUntalliableSql = (
+  surveyKeys: readonly string[],
+  decidedAt: number,
+): SqlQuery[] =>
+  jsonChunks([...surveyKeys].sort(compareText), SNAPSHOT_KEYS_PER_CHUNK).map(
+    (chunk) => ({
+      sql: `INSERT INTO untalliable_survey (survey_key, decided_at)
+            SELECT value, ? FROM json_each(?)
+            WHERE 1
+            ON CONFLICT(survey_key) DO NOTHING`,
+      params: [decidedAt, chunk.json],
+    }),
   );
 
 /**
@@ -657,16 +688,24 @@ export const completedValidationsSql = (
   );
 
 /**
- * The artifact key sets restricted to the given surveys: which of them hold
- * an artifact, and which of those finalized as cancelled. `json_extract`
- * returns SQL NULL both when the path is absent and when the value is JSON
- * null, so `IS NOT NULL` is exactly "finalized as cancelled".
+ * The artifact-backed final states restricted to the given surveys: which of
+ * them hold an artifact, its hash, and whether it finalized them as cancelled.
+ * `json_extract` returns SQL NULL both when the path is absent and when the
+ * value is JSON null, so `IS NOT NULL` is exactly "finalized as cancelled".
  */
-export const artifactKeysSql = (surveyKeys: readonly string[]): SqlQuery[] =>
+export const artifactStatesSql = (surveyKeys: readonly string[]): SqlQuery[] =>
   byKeysSql(
-    `SELECT survey_key AS surveyKey,
+    `SELECT survey_key AS surveyKey, artifact_hash AS artifactHash,
             json_extract(artifact, '$.tally.cancelled') IS NOT NULL AS cancelled
      FROM tally_artifact WHERE survey_key IN ${JSON_KEY_SET}`,
+    surveyKeys,
+  );
+
+/** Which of the given surveys hold a persisted untalliable verdict. */
+export const untalliableKeysSql = (surveyKeys: readonly string[]): SqlQuery[] =>
+  byKeysSql(
+    `SELECT survey_key AS surveyKey FROM untalliable_survey
+     WHERE survey_key IN ${JSON_KEY_SET}`,
     surveyKeys,
   );
 

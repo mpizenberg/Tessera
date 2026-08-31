@@ -289,11 +289,16 @@ refresh materialized, and a request costs what the survey it asked for costs:
   the set. A cursor carries the snapshot generation it was minted against, and one
   from an older generation is still answered — with `resync` set, so the client
   silently refreshes page one, since rows may have crossed the cursor boundary
-  when their bucket changed. The payload also carries `finalizedCancelled`, the
-  survey keys whose artifact finalized them as cancelled: the scan keeps
-  `proof: null` for cancellations of closed surveys, so without that overlay a
-  cancelled-then-closed survey would read as plain "Ended" while its artifact says
-  cancelled. The claim stays auditable against the served artifact.
+  when their bucket changed. The payload also carries `finalState`, the
+  finalizer's decision per decided survey key: `finalized` or `cancelled` with
+  the emitted artifact's hash, or `untalliable` for the permanent no-artifact
+  verdicts. The client can't reach these states on its own — the scan keeps
+  `proof: null` for cancellations of closed surveys (a cancelled-then-closed
+  survey would read as plain "Ended" while its artifact says cancelled), and the
+  unproven-owner half of untalliability needs evidence only the finalizer
+  fetches. A state carrying a hash stays auditable against the served artifact,
+  and a mirror uses any decided state to stop re-refreshing the survey — the
+  difference between a bounded and an unbounded working set.
 - **`GET /api/surveys?refs=<txHash>:<index>,…`** — the same payload for a set the
   caller names, for a host that mirrors a chosen subset and reads the surveys it
   holds rather than a page of Tessera's order. The rows come back through the
@@ -494,14 +499,14 @@ sweeps nothing — an unfetched tx is indistinguishable from a vanished one.
 
 A settled survey row can still change, and every cause has a bounded driver:
 
-| change                              | driver                                                                                  |
-| ----------------------------------- | --------------------------------------------------------------------------------------- |
-| response / cancellation arrives     | segment tx targeting it → touched-survey re-projection                                  |
-| response / cancellation rolls back  | segment sweep removes it → same re-projection                                           |
-| open → closed                       | nothing — computed at query time from `end_epoch` vs tip                                |
-| governance links resolve or settle  | the pass's epoch set (§5.2) → link-change diff → touched                                |
-| `finalized_cancelled` overlay flips | this run's finalization → one idempotent targeted UPDATE                                |
-| banked chip counts move             | any run that changed rows, flipped the overlay, or crossed an epoch → one SQL aggregate |
+| change                             | driver                                                                                  |
+| ---------------------------------- | --------------------------------------------------------------------------------------- |
+| response / cancellation arrives    | segment tx targeting it → touched-survey re-projection                                  |
+| response / cancellation rolls back | segment sweep removes it → same re-projection                                           |
+| open → closed                      | nothing — computed at query time from `end_epoch` vs tip                                |
+| governance links resolve or settle | the pass's epoch set (§5.2) → link-change diff → touched                                |
+| `final_state` overlay stamps       | this run's finalization → one idempotent targeted UPDATE                                |
+| banked chip counts move            | any run that changed rows, flipped the overlay, or crossed an epoch → one SQL aggregate |
 
 **What is traded away.** Retroactive semantics changes stop being free: a deploy
 that changes derivation must bump the generation, or old rows keep the old
@@ -624,15 +629,18 @@ registered, provenance}`, plus per-`(epoch, role)` totals. This table is shared
   permanently untalliable (spec-invalid definition, unproven owner credential,
   a sealed survey on an unsupported drand chain) counts as _decided_ and stops
   holding the floor down: without that, one junk label-17 transaction would pin
-  it at its epoch forever. The consequence is that such a survey is never looked
-  at again — a generation rewind, which resets the floor to 0, is the way back.
+  it at its epoch forever. Because such a survey is then never looked at again
+  (a generation rewind, which resets the floor to 0, is the way back), the
+  verdict is persisted to `untalliable_survey` before the floor banks — the
+  ground truth the row's `untalliable` final state is rebuilt from, playing the
+  role `tally_artifact` plays for the emitted states.
 - **Sealed surveys** freeze weights the same way (the credential union is
   identical pre- and post-dedup, so the deadline snapshot is correct), then add
   a reveal step: emission waits until the definition's drand round has published
   (`roundIsAvailable`), decrypts the **pre-dedup** in-window set (one
   BLS-verified `fetchBeacon` per survey), runs reveal→validate→dedup, and emits a
   `sealed=true` artifact. A transient reveal failure postpones (never aborts)
-  the pass; a non-quicknet sealed survey is skipped forever (no artifact).
+  the pass; a non-quicknet sealed survey is untalliable (no artifact, ever).
 - **Reveal is bounded by Worker CPU, not by subrequests.** One
   `decryptWithBeacon` measures ~20 ms on workerd, against the 30 s a cron under
   an hour apart gets on the paid plan (`limits.cpu_ms` cannot raise that; the
