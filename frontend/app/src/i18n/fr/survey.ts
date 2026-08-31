@@ -48,25 +48,13 @@ const survey: Messages = {
   keep: "Conserver",
   switchNetwork: "Basculez votre portefeuille sur {network} pour annuler",
 
-  // Link survey to a governance action (tout type — CIP-179 v5)
-  linkOptional: "Optionnel",
+  // Lier le sondage à une action de gouvernance (entrée vers /survey/:key/link)
   linkTitle: "Lier ce sondage à une action de gouvernance",
-  linkBody1: "Le lien va",
-  linkBodyDirection: "Action → Sondage",
-  linkBody2:
-    " : votre sondage existe déjà, l'action de gouvernance ne fait donc que le désigner. Imbriquez cet objet en tant que",
-  linkBody3: "dans le",
-  linkBody4: "CIP-108 de l'action (et ajoutez les termes",
-  linkBody5:
-    "de CIP-179, conformément à la spécification, pour que l'ancre reste un document JSON-LD valide). L'epoch d'expiration de l'action doit être égale au",
-  linkBody6: " de ce sondage, sinon l'outillage ne l'attachera pas.",
-  copied: "Copié ✓",
-  copyJson: "Copier le JSON",
-  linkContextHint:
-    "Fusionnez ces termes dans le « @context » de votre ancre (l'espace de noms CIP179 à la racine, le terme cip179 dans le contexte du corps) afin que le lien soit canonicalisé et couvert par le témoin d'auteur :",
-  copyContext: "Copier les termes @context",
-  linkFootnote:
-    "tout type d'action de gouvernance peut établir un lien · le lien sert à la découverte + à l'alignement d'epoch, jamais de critère d'éligibilité",
+  linkHint:
+    "Annoncez-le depuis une action de gouvernance Conway : Tessera produit le document d'ancre CIP-108 lié, et peut construire et soumettre une Info Action qui le porte.",
+  linkCta: "Ouvrir l'outil de liaison",
+  linkWindowClosed:
+    "La fenêtre de liaison est fermée — une action de gouvernance correspondante devait être proposée pendant l'époque {submitEpoch}, et une action proposée maintenant survivrait au sondage.",
 
   // Header
   refTitle:

@@ -46,34 +46,14 @@ const survey = {
   keep: "Keep",
   switchNetwork: "Switch your wallet to {network} to cancel",
 
-  // Link survey to a governance action (any kind — CIP-179 v5)
-  linkOptional: "Optional",
+  // Link survey to a governance action (entry to /survey/:key/link)
   linkTitle: "Link this survey to a governance action",
-  /**
-   * Linkage explainer, split into prose runs around four styled inline tokens:
-   * a bold "Action → Survey", and the mono code literals `cip179`, `body`,
-   * `@context`, `end_epoch <n>` (all untranslatable, kept literal in JSX). Each
-   * linkBodyN below is one whole translatable run; the segment boundaries (and
-   * their surrounding spaces) must be preserved when translating.
-   */
-  linkBody1: "Linkage is",
-  /** Bold run between linkBody1 and linkBody2. */
-  linkBodyDirection: "Action → Survey",
-  linkBody2:
-    ": your survey already exists, so the governance action just points at it. Nest this object as",
-  linkBody3: "inside the action's CIP-108",
-  linkBody4: "(and add the CIP-179",
-  linkBody5:
-    "terms, per the spec, so the anchor stays valid JSON-LD). The action's expiry epoch must equal this survey's",
-  linkBody6: ", or tooling won't attach it.",
-  copied: "Copied ✓",
-  copyJson: "Copy JSON",
-  /** Intro for the ready-made `@context` additions offered below the link JSON. */
-  linkContextHint:
-    "Merge these terms into your anchor's @context (the CIP179 namespace at the root, the cip179 term inside the body context) so the link is canonicalized and covered by the author witness:",
-  copyContext: "Copy @context terms",
-  linkFootnote:
-    "any governance action kind may link · linkage is discovery + epoch-alignment, never an eligibility gate",
+  linkHint:
+    "Advertise it from a Conway governance action: Tessera produces the linked CIP-108 anchor document, and can build and submit an Info Action carrying it.",
+  linkCta: "Open the link tool",
+  /** {submitEpoch} is a raw epoch number (not translated). */
+  linkWindowClosed:
+    "The linking window has closed — a matching governance action had to be proposed during epoch {submitEpoch}, and one proposed now would outlive the survey.",
 
   // Header
   refTitle: "Full survey ref — defining transaction hash and output index",

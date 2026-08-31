@@ -9,11 +9,10 @@ import {
   type JSX,
 } from "solid-js";
 import { A, useParams } from "@solidjs/router";
-import { SPEC_VERSION, type SurveyDefinition, type SurveyRef } from "cip-179";
+import type { SurveyDefinition } from "cip-179";
 
 import {
   auditResponses,
-  bytesToHex,
   findSurvey,
   type ChainTip,
   type ProofVerdicts,
@@ -24,6 +23,7 @@ import {
 import type { TallyArtifact } from "cip-179/tally";
 
 import { useApp } from "~/state";
+import { computeAlignment } from "~/domain/anchorLink";
 import { roleBreakdown } from "~/domain/results";
 import { walletCanProveOwner, walletOwns } from "~/domain/roles";
 import { usePresentation } from "~/enrichment/usePresentation";
@@ -227,11 +227,11 @@ export const Survey: Component = () => {
               >
                 <OwnerControls s={sv()} />
               </Show>
-              {/* A survey may be advertised by several governance actions
-                  (CIP-179 v5), so the copy-paste linking helper stays available
-                  even after one link exists. */}
-              <LinkActionPanel
-                surveyRef={sv().record.ref}
+              {/* Linking signs nothing, so the outer walletOwns gate is
+                  enough — a script-owned survey can still be advertised even
+                  though it can't be cancelled from here. */}
+              <LinkSurveyCta
+                keyStr={key()}
                 endEpoch={sv().record.definition.endEpoch}
               />
             </Show>
@@ -442,100 +442,55 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
 };
 
 // ----------------------------------------------------------------------------
-// Owner: link this survey to a governance Info Action
+// Owner: link this survey to a governance action
 // ----------------------------------------------------------------------------
 
 /**
- * Linkage is canonicalized **Action → Survey**: the survey already exists, so an
- * Info Action just advertises it by carrying this JSON in its anchor metadata.
- * Shown to the owner of an active survey; purely a copy-paste helper (no tx).
- * Tooling attaches the link only if the action's voting end epoch equals this
- * survey's `end_epoch`.
+ * Owner-only entry to the link tool (`/survey/:key/link`). A survey may be
+ * advertised by several governance actions (CIP-179 v5), so the link stays
+ * offered after one exists — but not once the submission window has passed:
+ * an action proposed after `end_epoch − gov_action_lifetime` outlives the
+ * survey and can never link it.
  */
-const LinkActionPanel: Component<{ surveyRef: SurveyRef; endEpoch: number }> = (
+const LinkSurveyCta: Component<{ keyStr: string; endEpoch: number }> = (
   props,
 ) => {
-  // The `cip179` object to nest inside the action's CIP-108 `body` (so it is
-  // part of the canonicalized, author-witnessed body).
-  const json = () =>
-    JSON.stringify(
-      {
-        specVersion: SPEC_VERSION,
-        kind: "survey-link",
-        surveyTxId: bytesToHex(props.surveyRef.txId),
-        surveyIndex: props.surveyRef.index,
-      },
-      null,
-      2,
-    );
-  // The matching `@context` additions (CIP-179 linkage Change 3): without them
-  // the link is dropped during JSON-LD canonicalization and falls outside the
-  // author witness. Handing the author the ready-made snippet — rather than
-  // pointing at the spec — is the fix for review finding 7.
-  const contextJson = () =>
-    JSON.stringify(
-      {
-        CIP179:
-          "https://github.com/cardano-foundation/CIPs/blob/master/CIP-0179/README.md#",
-        body: {
-          "@context": {
-            cip179: {
-              "@id": "CIP179:link",
-              "@context": {
-                specVersion: "CIP179:specVersion",
-                kind: "CIP179:kind",
-                surveyTxId: "CIP179:surveyTxId",
-                surveyIndex: "CIP179:surveyIndex",
-              },
-            },
-          },
-        },
-      },
-      null,
-      2,
-    );
-  const [copied, setCopied] = createSignal(false);
-  const [contextCopied, setContextCopied] = createSignal(false);
-  const copyText = async (text: string, mark: (v: boolean) => void) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      mark(true);
-      setTimeout(() => mark(false), 1600);
-    } catch {
-      /* clipboard unavailable — the JSON is on screen to copy manually */
-    }
+  const app = useApp();
+  const tip = () => (app.list.error ? undefined : app.list())?.tip;
+  const alignment = createMemo(() =>
+    computeAlignment({
+      hasLink: true,
+      tip: tip(),
+      surveyEndEpoch: props.endEpoch,
+      secondsPerEpoch: app.config.secondsPerEpoch,
+    }),
+  );
+  const passedWindow = () => {
+    const w = alignment()?.window;
+    const now = tip();
+    return w && now && now.epoch > w.submitEpoch ? w : undefined;
   };
-  const copy = () => copyText(json(), setCopied);
-  const copyContext = () => copyText(contextJson(), setContextCopied);
   return (
     <div class={css.linkPanel}>
-      <div class={css.linkHead}>
-        <span class={css.linkOptional}>{t("survey.linkOptional")}</span>
-        <h3 class={css.linkTitle}>{t("survey.linkTitle")}</h3>
-      </div>
-      <p class={css.linkBody}>
-        {t("survey.linkBody1")} <b>{t("survey.linkBodyDirection")}</b>
-        {t("survey.linkBody2")} <span class={css.linkMono}>cip179</span>{" "}
-        {t("survey.linkBody3")} <span class={css.linkMono}>body</span>{" "}
-        {t("survey.linkBody4")} <span class={css.linkMono}>@context</span>{" "}
-        {t("survey.linkBody5")}{" "}
-        <span class={css.linkMono}>end_epoch {props.endEpoch}</span>
-        {t("survey.linkBody6")}
-      </p>
-      <div class={css.linkCodeBox}>
-        <button onClick={() => void copy()} class={css.linkCopy}>
-          {copied() ? t("survey.copied") : t("survey.copyJson")}
-        </button>
-        <pre class={css.linkCode}>{json()}</pre>
-      </div>
-      <p class={css.linkContextHint}>{t("survey.linkContextHint")}</p>
-      <div class={css.linkCodeBox}>
-        <button onClick={() => void copyContext()} class={css.linkCopy}>
-          {contextCopied() ? t("survey.copied") : t("survey.copyContext")}
-        </button>
-        <pre class={css.linkCode}>{contextJson()}</pre>
-      </div>
-      <div class={css.linkFootnote}>{t("survey.linkFootnote")}</div>
+      <h3 class={css.linkTitle}>{t("survey.linkTitle")}</h3>
+      <Show
+        when={!passedWindow()}
+        fallback={
+          <p class={css.linkBody}>
+            {t("survey.linkWindowClosed", {
+              submitEpoch: passedWindow()!.submitEpoch,
+            })}
+          </p>
+        }
+      >
+        <p class={css.linkBody}>{t("survey.linkHint")}</p>
+        <A
+          href={`/survey/${encodeURIComponent(props.keyStr)}/link`}
+          class={css.linkCta}
+        >
+          {t("survey.linkCta")} →
+        </A>
+      </Show>
     </div>
   );
 };
