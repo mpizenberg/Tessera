@@ -299,7 +299,7 @@ export function validateAnchorShape(text: string): {
     return {
       surveyRef: null,
       problems: [
-        t("proposeInfoAction.problemNotJson", {
+        t("linkSurvey.problemNotJson", {
           message: (e as Error).message,
         }),
       ],
@@ -312,7 +312,7 @@ export function validateAnchorShape(text: string): {
   if (!hasContext) {
     // The discovery layer doesn't require a `@context`, but a linking anchor is
     // a JSON-LD document and needs one — flag its absence.
-    result.problems.unshift(t("proposeInfoAction.problemMissingContext"));
+    result.problems.unshift(t("linkSurvey.problemMissingContext"));
   } else {
     // CIP-179 linkage: when the doc carries a `body.cip179` link, its
     // `@context` MUST map the CIP-179 terms, or the link is dropped during RDF
@@ -321,34 +321,10 @@ export function validateAnchorShape(text: string): {
     const body = isObject(parsed) ? parsed["body"] : undefined;
     const hasLink = isObject(body) && isObject(body["cip179"]);
     if (hasLink && !anchorContextMapsCip179Terms(parsed)) {
-      result.problems.unshift(
-        t("proposeInfoAction.problemContextMissingCip179Terms"),
-      );
+      result.problems.unshift(t("linkSurvey.problemContextMissingCip179Terms"));
     }
   }
   return result;
-}
-
-/**
- * Read a chosen file as raw bytes (never re-encoded), hash it, and parse the
- * survey ref. Reading the bytes verbatim is what keeps the on-chain hash valid
- * against the document that later gets pinned/hosted. Throws if the file can't
- * be read.
- */
-export async function loadAnchorFile(file: File): Promise<LoadedAnchor> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const text = new TextDecoder().decode(bytes);
-  const hash = blake2b(bytes, { dkLen: 32 });
-  const { surveyRef, problems } = validateAnchorShape(text);
-  return {
-    fileName: file.name,
-    bytes,
-    text,
-    hash,
-    hashHex: bytesToHex(hash),
-    surveyRef,
-    problems,
-  };
 }
 
 // ----------------------------------------------------------------------------
@@ -395,18 +371,17 @@ export function computeAlignment(params: {
 }): Alignment | null {
   if (!params.hasLink) return null; // no link → nothing to align
   const { tip } = params;
-  if (!tip)
-    return { level: "warn", text: t("proposeInfoAction.alignTipNotLoaded") };
+  if (!tip) return { level: "warn", text: t("linkSurvey.alignTipNotLoaded") };
   if (params.surveyEndEpoch === undefined)
     return {
       level: "warn",
-      text: t("proposeInfoAction.alignSurveyNotOnchain"),
+      text: t("linkSurvey.alignSurveyNotOnchain"),
     };
   const lifetime = tip.govActionLifetime;
   if (lifetime <= 0)
     return {
       level: "warn",
-      text: t("proposeInfoAction.alignLifetimeUnknown"),
+      text: t("linkSurvey.alignLifetimeUnknown"),
     };
   const surveyEnd = params.surveyEndEpoch;
   const submitEpoch = surveyEnd - lifetime;
@@ -424,7 +399,7 @@ export function computeAlignment(params: {
     return {
       level: "ok",
       window,
-      text: t("proposeInfoAction.alignAligned", {
+      text: t("linkSurvey.alignAligned", {
         epoch: tip.epoch,
         end: surveyEnd,
         windowEnd: when(window.endUnix),
@@ -434,7 +409,7 @@ export function computeAlignment(params: {
     return {
       level: "danger",
       window,
-      text: t("proposeInfoAction.alignTooEarly", {
+      text: t("linkSurvey.alignTooEarly", {
         submitEpoch,
         windowStart: when(window.startUnix),
         windowEnd: when(window.endUnix),
@@ -446,7 +421,7 @@ export function computeAlignment(params: {
   return {
     level: "danger",
     window,
-    text: t("proposeInfoAction.alignWindowPassed", {
+    text: t("linkSurvey.alignWindowPassed", {
       end: surveyEnd,
       submitEpoch,
       windowStart: when(window.startUnix),

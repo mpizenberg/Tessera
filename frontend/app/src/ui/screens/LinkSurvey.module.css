@@ -1,5 +1,5 @@
 /*
- * Co-located styles for ProposeInfoAction.tsx.
+ * Co-located styles for LinkSurvey.tsx.
  *
  * Convention: one `Foo.module.css` next to `Foo.tsx`, imported as `s` and
  * applied via `class={s.x}`. Static styles live here; design tokens
@@ -8,7 +8,7 @@
  * inline `style` prop — only real DOM `style={}` attributes are migrated here.
  *
  * The step layout primitives (stepHead / card / hint / btn / mono) live in
- * LinkAnchorSection.module.css — the anchor-prep widget this screen embeds —
+ * LinkAnchorSection.module.css — the hosting-half widget this screen embeds —
  * and are imported from there.
  */
 
@@ -129,4 +129,91 @@
 .queueBtn:disabled {
   color: var(--faint);
   cursor: not-allowed;
+}
+
+/* Step 1: the two entry choices, side by side until the viewport is narrow. */
+.choiceRow {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.choiceBtn {
+  flex: 1 1 240px;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--gov-line);
+  border-radius: var(--r-md);
+  padding: 13px 15px;
+}
+
+.choiceTitle {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--gov);
+}
+
+.choiceHint {
+  font-size: 12px;
+  color: var(--dim);
+  line-height: 1.5;
+  margin-top: 5px;
+}
+
+/* "Start over" — swaps the chosen branch back to the entry question. */
+.switchBtn {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--muted);
+  background: none;
+  border: none;
+  padding: 0;
+  margin-top: 12px;
+  text-decoration: underline;
+}
+
+.formField {
+  margin-top: 12px;
+}
+.formField:first-child {
+  margin-top: 0;
+}
+
+.formLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.formInput {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 13.5px;
+  color: var(--ink);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.formArea {
+  composes: formInput;
+  resize: vertical;
+  min-height: 72px;
+}
+
+/* The survey being linked: its title, above the mono ref line. */
+.surveyTitle {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 4px;
 }

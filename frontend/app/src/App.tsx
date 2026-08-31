@@ -10,7 +10,7 @@ import { Survey } from "~/ui/screens/Survey";
 import { Respond } from "~/ui/respond";
 import { Create } from "~/ui/create";
 import { Settings } from "~/ui/screens/Settings";
-import { ProposeInfoAction } from "~/ui/screens/ProposeInfoAction";
+import { LinkSurvey } from "~/ui/screens/LinkSurvey";
 import { BottomNav } from "~/ui/components/BottomNav";
 
 // Dev-only reference host for the embeddable `<tessera-respond>` widget.
@@ -44,8 +44,8 @@ export default function App() {
       <Route path="/" component={Explore} />
       <Route path="/survey/:key" component={Survey} />
       <Route path="/survey/:key/respond" component={Respond} />
+      <Route path="/survey/:key/link" component={LinkSurvey} />
       <Route path="/create" component={Create} />
-      <Route path="/propose-info-action" component={ProposeInfoAction} />
       <Route path="/settings" component={Settings} />
       {import.meta.env.DEV && DevWidgetHost && (
         <Route path="/dev/widget/:key" component={DevWidgetHost} />

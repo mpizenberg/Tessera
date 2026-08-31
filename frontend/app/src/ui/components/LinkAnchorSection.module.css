@@ -1,8 +1,8 @@
 /*
- * Co-located styles for LinkAnchorSection.tsx — the reusable, action-kind-
- * independent anchor-preparation widget. Also the home of the gov-tinted step
- * layout primitives (stepHead / card / hint / btn), which host screens
- * (ProposeInfoAction) compose or import for their own kind-specific steps.
+ * Co-located styles for LinkAnchorSection.tsx — the hosting half of the link
+ * tool. Also the home of the gov-tinted step layout primitives (stepHead /
+ * card / hint / btn), which the LinkSurvey screen composes or imports for its
+ * own steps.
  */
 
 .stepHead {
@@ -133,6 +133,12 @@
   color: var(--ink);
   outline: none;
   box-sizing: border-box;
+}
+
+/* The URL input follows the document preview inside the same card. */
+.inputSpaced {
+  composes: input;
+  margin-top: 12px;
 }
 
 .settingsLink {

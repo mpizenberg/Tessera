@@ -16,8 +16,8 @@ import explore from "./explore";
 import feedback from "./feedback";
 import header from "./header";
 import healthFooter from "./healthFooter";
+import linkSurvey from "./linkSurvey";
 import onchainPreview from "./onchainPreview";
-import proposeInfoAction from "./proposeInfoAction";
 import respond from "./respond";
 import roles from "./roles";
 import settings from "./settings";
@@ -36,8 +36,8 @@ const fr: Dict = {
   feedback,
   header,
   healthFooter,
+  linkSurvey,
   onchainPreview,
-  proposeInfoAction,
   respond,
   roles,
   settings,
