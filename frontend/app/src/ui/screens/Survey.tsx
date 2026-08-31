@@ -229,11 +229,15 @@ export const Survey: Component = () => {
               </Show>
               {/* Linking signs nothing, so the outer walletOwns gate is
                   enough — a script-owned survey can still be advertised even
-                  though it can't be cancelled from here. */}
-              <LinkSurveyCta
-                keyStr={key()}
-                endEpoch={sv().record.definition.endEpoch}
-              />
+                  though it can't be cancelled from here. Once an advertising
+                  action is discovered the badge card above announces it and
+                  this card would read as an undone to-do, so it goes away. */}
+              <Show when={sv().govLinks.length === 0}>
+                <LinkSurveyCta
+                  keyStr={key()}
+                  endEpoch={sv().record.definition.endEpoch}
+                />
+              </Show>
             </Show>
 
             {/* Results render from the survey's own bundle; until it lands (or
@@ -446,11 +450,13 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
 // ----------------------------------------------------------------------------
 
 /**
- * Owner-only entry to the link tool (`/survey/:key/link`). A survey may be
- * advertised by several governance actions (CIP-179 v5), so the link stays
- * offered after one exists — but not once the submission window has passed:
- * an action proposed after `end_epoch − gov_action_lifetime` outlives the
- * survey and can never link it.
+ * Owner-only entry to the link tool (`/survey/:key/link`), shown while the
+ * survey has no discovered advertising action. CIP-179 v5 allows several
+ * links and the tool itself still accepts an already-linked survey, but the
+ * card disappears once one exists — the linked-action badge already tells the
+ * story. It also closes once the submission window has passed: an action
+ * proposed after `end_epoch − gov_action_lifetime` outlives the survey and
+ * can never link it.
  */
 const LinkSurveyCta: Component<{ keyStr: string; endEpoch: number }> = (
   props,
