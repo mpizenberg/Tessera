@@ -193,12 +193,14 @@ describe("GET /health", () => {
 
 describe("before the first refresh", () => {
   const app = appWith(testStore());
-  it.each(["/api/surveys", `/api/surveys/${TX_A}/0`, "/api/responded"])(
-    "%s answers 503",
-    async (path) => {
-      expect((await app.request(path)).status).toBe(503);
-    },
-  );
+  it.each([
+    "/api/surveys",
+    `/api/surveys/${TX_A}/0`,
+    "/api/responded",
+    `/api/responses/${"cc".repeat(32)}`,
+  ])("%s answers 503", async (path) => {
+    expect((await app.request(path)).status).toBe(503);
+  });
 });
 
 describe("GET /api/surveys", () => {
@@ -781,6 +783,78 @@ describe("GET /api/responded", () => {
         400,
       );
     }
+  });
+});
+
+describe("GET /api/responses/{txHash}", () => {
+  const TX_CC = "cc".repeat(32);
+
+  // One transaction carrying two responses, like a batch submission: the
+  // fixture "cc" response (index 0, survey A) plus a second at index 1.
+  const secondInSameTx: ResponseRecord = {
+    ...response(surveyB, cred1, 950_000, TX_CC),
+    responseIndex: 1,
+  };
+
+  const storeWithBatchTx = async (): Promise<TestStore> => {
+    const store = testStore();
+    await seed(store, [], [secondInSameTx]);
+    return store;
+  };
+
+  it("serves the transaction's responses in index order", async () => {
+    const app = appWith(await storeWithBatchTx());
+    const res = await app.request(`/api/responses/${TX_CC}`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      responses: [
+        {
+          txHash: TX_CC,
+          responseIndex: 0,
+          surveyKey: `${TX_A}:0`,
+          role: Role.Stakeholder,
+          credential: "key:11",
+          slot: 950_000,
+        },
+        {
+          txHash: TX_CC,
+          responseIndex: 1,
+          surveyKey: `${TX_B}:1`,
+          role: Role.Stakeholder,
+          credential: "key:11",
+          slot: 950_000,
+        },
+      ],
+      fetchedAt: FETCHED_AT,
+    });
+  });
+
+  // A submission the snapshot hasn't caught up to is the normal case this
+  // route exists for — absence is an answer, never an error.
+  it("answers an unknown transaction with an empty list, not 404", async () => {
+    const app = appWith(await seededStore());
+    const res = await app.request(`/api/responses/${"12".repeat(32)}`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      responses: [],
+      fetchedAt: FETCHED_AT,
+    });
+  });
+
+  it("rejects a malformed hash", async () => {
+    const app = appWith(await seededStore());
+    expect((await app.request("/api/responses/nothex")).status).toBe(404);
+  });
+
+  it("revalidates by fetchedAt: 304 on matching If-None-Match", async () => {
+    const app = appWith(await seededStore());
+    const first = await app.request(`/api/responses/${TX_CC}`);
+    const etag = first.headers.get("ETag");
+    expect(etag).toBe(`W/"responses-${FETCHED_AT}"`);
+    const revalidated = await app.request(`/api/responses/${TX_CC}`, {
+      headers: { "If-None-Match": etag ?? "" },
+    });
+    expect(revalidated.status).toBe(304);
   });
 });
 

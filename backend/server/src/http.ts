@@ -15,6 +15,10 @@
  *                                         separated — a wallet controls both a
  *                                         payment and a stake credential, so one
  *                                         request carries the whole identity)
+ *   - GET /api/responses/{txHash}         the responses that transaction
+ *                                         carried — coordinates and identity,
+ *                                         no records; how a mirror settles an
+ *                                         optimistic row for its own submission
  *   - GET /api/tip                        near-live chain tip (short cache)
  *   - GET /api/tx_status                  live confirmation counts
  *   - GET /api/pparams                    latest-epoch protocol parameters, so
@@ -549,6 +553,27 @@ export function createApp(
     if (!credentials) return c.json({ error: "too many credentials" }, 400);
     return c.json({
       surveyKeys: await store.respondedSurveyKeys(credentials),
+      fetchedAt: meta.fetchedAt,
+    });
+  });
+
+  // The responses one transaction carried. `/api/responded` answers membership
+  // per credential, which cannot tell a replacement from the response it
+  // superseded — a mirror holding an optimistic "pending" row for a submission
+  // it made needs to know that *that transaction* was indexed. A well-formed
+  // hash with no stored responses answers an empty list, never 404: "not
+  // indexed yet" is the ordinary state this route reports, and its consumer
+  // reads any non-2xx as an outage.
+  app.get("/api/responses/:txHash", async (c) => {
+    const meta = await store.snapshotMeta();
+    if (!meta) return c.json({ error: "snapshot not ready" }, 503);
+    const txHash = c.req.param("txHash").toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(txHash))
+      return c.json({ error: "malformed tx hash" }, 404);
+    if (notModified(c, `W/"responses-${meta.fetchedAt}"`))
+      return c.body(null, 304);
+    return c.json({
+      responses: await store.responsesByTx(txHash),
       fetchedAt: meta.fetchedAt,
     });
   });

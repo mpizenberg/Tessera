@@ -828,6 +828,14 @@ export interface SnapshotStore {
    */
   respondedSurveyKeys(credentials: readonly string[]): Promise<string[]>;
   /**
+   * The stored responses one transaction carried, in response-index order —
+   * exact-transaction membership, which `respondedSurveyKeys` cannot answer:
+   * per-credential membership can't tell a replacement from the response it
+   * superseded. A transaction with no stored responses is an empty list, not
+   * an error — "not indexed yet" is its ordinary meaning.
+   */
+  responsesByTx(txHash: string): Promise<StoredResponse[]>;
+  /**
    * One page in (bucket ASC, slot DESC, key ASC) order, where bucket is
    * 0 gov-linked / 1 open / 2 closed computed against `tipEpoch`. Each row
    * carries its computed bucket (the cursor needs it).

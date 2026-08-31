@@ -86,6 +86,13 @@ expect the store's guard to refuse the run.
 - `GET /api/responded?credentials=key:<hex>,script:<hex>` — survey keys with at
   least one response from any of the given credentials (a wallet's payment +
   stake in one request); feeds the Explore "answered" flags.
+- `GET /api/responses/{txHash}` — the responses that transaction carried:
+  `surveyKey`, `responseIndex`, `role`, `credential`, `slot` per row, no
+  records. This is how a mirror settles an optimistic row for a submission it
+  made — per-credential membership can't tell a replacement from the response
+  it superseded. A well-formed hash the snapshot holds nothing for answers
+  `200` with an empty list: "not indexed yet" is the state the route exists to
+  report, not an error.
 - `GET /api/tip` — near-live chain tip (~20 s cache, so request bursts collapse
   into one Koios call).
 - `GET /api/tx_status?hashes=<h1>,<h2>` — live confirmation counts.

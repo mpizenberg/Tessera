@@ -172,6 +172,15 @@ const SURVEY_BUNDLE_SELECT = `
   SELECT record, cancellations, gov_links AS govLinks
   FROM survey_index WHERE survey_key = ?`;
 
+/**
+ * One transaction's stored responses — a prefix seek on the
+ * (tx_hash, response_index) primary key. Binds: (txHash).
+ */
+const RESPONSES_BY_TX_SELECT = `
+  SELECT ${STORED_RESPONSE_COLUMNS} FROM response
+  WHERE tx_hash = ?
+  ORDER BY response_index`;
+
 const SCAN_STATE_UPSERT = `
   INSERT INTO scan_state
     (id, cursor_slot, cursor_tx_hash, caught_up, generation, trickle_slot,
@@ -797,6 +806,9 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
         respondedSql(credentials),
       );
       return rows.map((r) => r.surveyKey);
+    },
+    async responsesByTx(txHash: string): Promise<StoredResponse[]> {
+      return db.all<StoredResponse>(query(RESPONSES_BY_TX_SELECT, txHash));
     },
     async surveyIndexPage(
       q: SurveyPageQuery,

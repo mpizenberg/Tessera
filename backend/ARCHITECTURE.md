@@ -339,6 +339,16 @@ refresh materialized, and a request costs what the survey it asked for costs:
   downloading responses; the mapping is public on-chain data. Credentials travel
   in the core `credentialKey` form, and several fit one request since a wallet
   controls both a payment and a stake credential.
+- **`GET /api/responses/{txHash}`** — the responses one transaction carried, as
+  coordinates and identity (`surveyKey`, `responseIndex`, `role`, `credential`,
+  `slot`) without records: a prefix seek on the response table's
+  `(tx_hash, response_index)` primary key. It answers the question `/api/responded`
+  cannot — per-credential membership can't tell a replacement from the response
+  it superseded, so a mirror holding an optimistic "pending" row for a
+  submission it made settles it against exactly this transaction. A well-formed
+  hash with no stored responses is `200` with an empty list, never 404: "not
+  indexed yet" is this route's ordinary answer, and its consumers treat an
+  unexpected status as an outage.
 - **`GET /api/surveys/{txHash}/{index}/artifact`** and
   **`GET /api/artifacts/{hash}`** — the final tally artifact (`TALLY-SPEC.md` §5), by ref or by
   content address. The stored JSON text is served **verbatim** (byte identity with
