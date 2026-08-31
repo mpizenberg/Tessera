@@ -19,17 +19,20 @@ computed client-side directly from chain data.
 
 ## Governance linkage
 
-A survey can be advertised by a Conway **governance Info Action** (CIP-179
+A survey can be advertised by a Conway **governance action** (CIP-179
 _Action → Survey_ linkage): the action's anchor metadata carries the survey's
 ref, and Tessera surfaces the link on the explore and survey pages once the
 action's voting deadline matches the survey's end epoch.
 
-The app ships a small helper page at **`/propose-info-action`** to build, sign,
-and submit that Info Action from a CIP-30 wallet: load a CIP-108 anchor
-document, and the page validates its shape, extracts the linked survey, and
-checks the epoch alignment before letting you submit. You can pin the exact
-anchor bytes to your configured IPFS providers (or host them yourself) so the
-served document matches the on-chain hash.
+The survey page offers its owner a link tool at **`/survey/:key/link`** that
+produces the linked CIP-108 anchor document — from a minimal built-in form, or
+by inserting the link (and its `@context` terms) into a document your
+governance tooling produced. It states the one epoch the action must be
+proposed in, with dates; hashes the exact emitted bytes and pins them to your
+configured IPFS providers (or you host them yourself) so the served document
+matches the on-chain hash; and can build, sign, and submit an **Info Action**
+carrying the anchor from a CIP-30 wallet. For other action kinds, take the
+document, hash, and URL to your own tooling.
 
 ## Repository layout
 

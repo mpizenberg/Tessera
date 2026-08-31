@@ -7,14 +7,14 @@ are signed and submitted by the user's CIP-30 wallet.
 
 ## Screens
 
-| Route                  | Screen                                                                                                                                                      |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`                    | **Explore** — all surveys, response counts, deadlines, governance links, "answered" flags for the connected wallet.                                         |
-| `/survey/:key`         | **Survey** — definition, live raw tally while open; once finalized, the backend's **final weighted results** (per-role, stake-weighted, verifiable).        |
-| `/survey/:key/respond` | **Respond** — answer the questions and submit; sealed surveys are timelock-encrypted ([drand][drand]) client-side before submission.                        |
-| `/create`              | **Create** — author a survey (roles, questions, end epoch, public/sealed) and submit it.                                                                    |
-| `/propose-info-action` | **Propose Info Action** — build and submit a Conway governance Info Action advertising a survey (CIP-179 _Action → Survey_ linkage), from a CIP-108 anchor. |
-| `/settings`            | **Settings** — network info, backend URL override, Koios token (direct mode), IPFS pinning provider tokens, language (en/fr).                               |
+| Route                  | Screen                                                                                                                                               |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`                    | **Explore** — all surveys, response counts, deadlines, governance links, "answered" flags for the connected wallet.                                  |
+| `/survey/:key`         | **Survey** — definition, live raw tally while open; once finalized, the backend's **final weighted results** (per-role, stake-weighted, verifiable). |
+| `/survey/:key/respond` | **Respond** — answer the questions and submit; sealed surveys are timelock-encrypted ([drand][drand]) client-side before submission.                 |
+| `/survey/:key/link`    | **Link** — owner tool: produce the survey-linked CIP-108 anchor (form or uploaded document), host its bytes, and submit the advertising Info Action. |
+| `/create`              | **Create** — author a survey (roles, questions, end epoch, public/sealed) and submit it.                                                             |
+| `/settings`            | **Settings** — network info, backend URL override, Koios token (direct mode), IPFS pinning provider tokens, language (en/fr).                        |
 
 ## Data modes
 
