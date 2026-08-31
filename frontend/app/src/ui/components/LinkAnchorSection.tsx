@@ -87,13 +87,11 @@ export const LinkAnchorSection: Component<LinkAnchorSectionProps> = (props) => {
 
   const alignment = createMemo(() => {
     const a = anchor();
-    const tip = (app.list.error ? undefined : app.list())?.tip;
     return computeAlignment({
       hasLink: !!a?.surveyRef,
-      tip: tip
-        ? { epoch: tip.epoch, govActionLifetime: tip.govActionLifetime }
-        : undefined,
+      tip: (app.list.error ? undefined : app.list())?.tip,
       surveyEndEpoch: linkedSurvey()?.record.definition.endEpoch,
+      secondsPerEpoch: app.config.secondsPerEpoch,
     });
   });
 

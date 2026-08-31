@@ -31,11 +31,11 @@ const proposeInfoAction: Messages = {
   alignLifetimeUnknown:
     "gov_action_lifetime est inconnu — impossible de calculer l'échéance du vote.",
   alignAligned:
-    "Aligné — soumettre maintenant (époque {epoch}) fixe l'échéance du vote à l'époque {end}, correspondant au end_epoch du sondage.",
+    "Aligné — l'époque courante {epoch} est l'époque de soumission : proposer maintenant fixe l'échéance du vote à l'époque {end}, correspondant au end_epoch du sondage. Cette fenêtre se ferme le {windowEnd}.",
   alignTooEarly:
-    "Trop tôt — soumettez à l'époque {submitEpoch} (dans {remaining} de plus) pour correspondre au end_epoch {end} du sondage. Soumettre maintenant fixerait l'échéance à {deadline}.",
+    "Trop tôt — proposez pendant l'époque {submitEpoch} ({windowStart} → {windowEnd}) pour que l'échéance de l'action corresponde au end_epoch {end} du sondage. L'époque courante est {epoch} ; proposer maintenant fixerait l'échéance à l'époque {deadline}.",
   alignWindowPassed:
-    "Fenêtre dépassée — le sondage se termine à l'époque {end}, donc cette action devait être soumise à l'époque {submitEpoch}. Soumise maintenant (époque {epoch}), elle expirerait à {deadline} et ne peut plus être liée à ce sondage.",
+    "Fenêtre dépassée — le sondage se termine à l'époque {end}, donc l'action devait être proposée pendant l'époque {submitEpoch} ({windowStart} → {windowEnd}). L'époque courante est {epoch} ; le lien vers ce sondage ne peut plus se former.",
 
   // Notes de section : partie générique vs partie spécifique aux Info Actions.
   genericSectionNote:

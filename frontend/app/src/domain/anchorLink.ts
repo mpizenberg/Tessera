@@ -19,10 +19,12 @@ import {
   anchorContextMapsCip179Terms,
   bytesToHex,
   parseCip179Link,
+  voteDeadlineUnix,
+  type ChainTip,
   type SurveyRefLite,
 } from "cip-179/domain";
 
-import { t, n } from "~/i18n";
+import { t, d } from "~/i18n";
 
 // ----------------------------------------------------------------------------
 // Emitting a linked document
@@ -356,6 +358,22 @@ export async function loadAnchorFile(file: File): Promise<LoadedAnchor> {
 /** The three alignment severities, matching {@link Note}'s `kind` values. */
 export type AlignmentLevel = "ok" | "warn" | "danger";
 
+export interface Alignment {
+  readonly level: AlignmentLevel;
+  readonly text: string;
+  /**
+   * The one submission window: proposing during `submitEpoch` — and only then —
+   * yields an action whose expiry equals the survey's `end_epoch`. The unix
+   * range is that epoch's wall clock, `[startUnix, endUnix)`. Absent while the
+   * tip or the survey's end epoch is unknown (the `warn` levels).
+   */
+  readonly window?: {
+    readonly submitEpoch: number;
+    readonly startUnix: number;
+    readonly endUnix: number;
+  };
+}
+
 /**
  * Whether an anchor's linked survey aligns in time with the action that will
  * carry it. An action submitted in the current epoch gets an expiry epoch of
@@ -364,14 +382,17 @@ export type AlignmentLevel = "ok" | "warn" | "danger";
  * `end_epoch` equals that expiry. So the two align exactly when the action is
  * submitted in epoch `survey.end_epoch − gov_action_lifetime`.
  *
- * Returns `null` when the anchor carries no link (nothing to align). The copy is
- * phrased around "your governance action", so it fits any action kind.
+ * The verdict expires with the epoch, so the copy states the window as dates a
+ * user who walks away with a prepared document can come back to. Returns
+ * `null` when there is no link (nothing to align). The copy is phrased around
+ * "your governance action", so it fits any action kind.
  */
 export function computeAlignment(params: {
   hasLink: boolean;
-  tip: { epoch: number; govActionLifetime: number } | undefined;
+  tip: ChainTip | undefined;
   surveyEndEpoch: number | undefined;
-}): { level: AlignmentLevel; text: string } | null {
+  secondsPerEpoch: number;
+}): Alignment | null {
   if (!params.hasLink) return null; // no link → nothing to align
   const { tip } = params;
   if (!tip)
@@ -388,33 +409,49 @@ export function computeAlignment(params: {
       text: t("proposeInfoAction.alignLifetimeUnknown"),
     };
   const surveyEnd = params.surveyEndEpoch;
-  const deadlineIfNow = tip.epoch + lifetime;
   const submitEpoch = surveyEnd - lifetime;
-  if (deadlineIfNow === surveyEnd)
+  // The submit epoch's wall clock: `voteDeadlineUnix(e)` is the *start* of
+  // epoch e+1, so the window for proposing during `submitEpoch` runs from the
+  // deadline of the epoch before it to its own.
+  const window = {
+    submitEpoch,
+    startUnix: voteDeadlineUnix(submitEpoch - 1, tip, params.secondsPerEpoch),
+    endUnix: voteDeadlineUnix(submitEpoch, tip, params.secondsPerEpoch),
+  };
+  const when = (unix: number) =>
+    d(unix, { dateStyle: "medium", timeStyle: "short" });
+  if (tip.epoch === submitEpoch)
     return {
       level: "ok",
+      window,
       text: t("proposeInfoAction.alignAligned", {
         epoch: tip.epoch,
         end: surveyEnd,
+        windowEnd: when(window.endUnix),
       }),
     };
   if (tip.epoch < submitEpoch)
     return {
       level: "danger",
+      window,
       text: t("proposeInfoAction.alignTooEarly", {
         submitEpoch,
-        remaining: n(submitEpoch - tip.epoch),
+        windowStart: when(window.startUnix),
+        windowEnd: when(window.endUnix),
         end: surveyEnd,
-        deadline: deadlineIfNow,
+        epoch: tip.epoch,
+        deadline: tip.epoch + lifetime,
       }),
     };
   return {
     level: "danger",
+    window,
     text: t("proposeInfoAction.alignWindowPassed", {
       end: surveyEnd,
       submitEpoch,
+      windowStart: when(window.startUnix),
+      windowEnd: when(window.endUnix),
       epoch: tip.epoch,
-      deadline: deadlineIfNow,
     }),
   };
 }

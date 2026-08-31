@@ -29,13 +29,16 @@ const proposeInfoAction = {
     "Linked survey isn't on-chain yet — can't verify its end_epoch. Make sure it's published and indexed.",
   alignLifetimeUnknown:
     "gov_action_lifetime is unknown — can't compute the voting deadline.",
-  /** {epoch}/{end} are raw epoch numbers (not translated). */
+  /**
+   * {epoch}/{end}/{submitEpoch}/{deadline} are raw epoch numbers and
+   * {windowStart}/{windowEnd} locale-formatted dates (none translated).
+   */
   alignAligned:
-    "Aligned — submitting now (epoch {epoch}) gives a voting deadline of epoch {end}, matching the survey's end_epoch.",
+    "Aligned — the current epoch {epoch} is the submission epoch: proposing now gives a voting deadline of epoch {end}, matching the survey's end_epoch. This window closes {windowEnd}.",
   alignTooEarly:
-    "Too early — submit in epoch {submitEpoch} (in {remaining} more) to match the survey's end_epoch {end}. Submitting now would set the deadline to {deadline}.",
+    "Too early — propose during epoch {submitEpoch} ({windowStart} → {windowEnd}) so the action's deadline matches the survey's end_epoch {end}. The current epoch is {epoch}; proposing now would set the deadline to epoch {deadline}.",
   alignWindowPassed:
-    "Window passed — the survey ends at epoch {end}, so this action had to be submitted in epoch {submitEpoch}. Submitted now (epoch {epoch}) it would expire at {deadline} and can no longer link to that survey.",
+    "Window passed — the survey ends at epoch {end}, so the action had to be proposed during epoch {submitEpoch} ({windowStart} → {windowEnd}). The current epoch is {epoch}, and a link to that survey can no longer form.",
 
   // Section notes framing the generic vs Info-Action-specific halves.
   genericSectionNote:

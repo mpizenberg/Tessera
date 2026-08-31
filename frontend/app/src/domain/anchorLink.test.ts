@@ -163,46 +163,67 @@ describe("injectSurveyLink", () => {
 });
 
 describe("computeAlignment", () => {
-  const tip = (epoch: number) => ({ epoch, govActionLifetime: 6 });
+  // Current epoch started at unix 1_900_000 and spans 432_000 s (5 days).
+  const SPE = 432_000;
+  const tip = (epoch: number) => ({
+    epoch,
+    slot: 130_000_000,
+    time: 2_000_000,
+    epochSlot: 100_000,
+    govActionLifetime: 6,
+  });
+  const align = (epoch: number, surveyEndEpoch: number | undefined) =>
+    computeAlignment({
+      hasLink: true,
+      tip: tip(epoch),
+      surveyEndEpoch,
+      secondsPerEpoch: SPE,
+    });
 
   it("is ok exactly when now + lifetime hits the survey's end epoch", () => {
-    const r = computeAlignment({
-      hasLink: true,
-      tip: tip(310),
-      surveyEndEpoch: 316,
-    });
+    const r = align(310, 316);
     expect(r?.level).toBe("ok");
+    // The submit epoch is the current one, so its window is this epoch's wall
+    // clock: [epoch start, epoch end).
+    expect(r?.window).toEqual({
+      submitEpoch: 310,
+      startUnix: 1_900_000,
+      endUnix: 1_900_000 + SPE,
+    });
+    expect(r?.text).not.toMatch(/\{\w+\}/);
   });
 
-  it("is danger before and after the one aligned epoch", () => {
-    const early = computeAlignment({
-      hasLink: true,
-      tip: tip(308),
-      surveyEndEpoch: 316,
-    });
+  it("is danger before and after the one aligned epoch, window stated", () => {
+    const early = align(308, 316);
     expect(early?.level).toBe("danger");
-    const late = computeAlignment({
-      hasLink: true,
-      tip: tip(311),
-      surveyEndEpoch: 316,
+    expect(early?.window).toEqual({
+      submitEpoch: 310,
+      startUnix: 1_900_000 + 2 * SPE,
+      endUnix: 1_900_000 + 3 * SPE,
     });
+    const late = align(311, 316);
     expect(late?.level).toBe("danger");
+    expect(late?.window?.submitEpoch).toBe(310);
+    expect(late?.text).not.toMatch(/\{\w+\}/);
   });
 
-  it("is null without a link, warn without the data to judge", () => {
-    expect(
-      computeAlignment({ hasLink: false, tip: tip(1), surveyEndEpoch: 2 }),
-    ).toBeNull();
-    expect(
-      computeAlignment({ hasLink: true, tip: undefined, surveyEndEpoch: 2 })
-        ?.level,
-    ).toBe("warn");
+  it("is null without a link, warn (windowless) without data to judge", () => {
     expect(
       computeAlignment({
-        hasLink: true,
+        hasLink: false,
         tip: tip(1),
-        surveyEndEpoch: undefined,
-      })?.level,
-    ).toBe("warn");
+        surveyEndEpoch: 2,
+        secondsPerEpoch: SPE,
+      }),
+    ).toBeNull();
+    const noTip = computeAlignment({
+      hasLink: true,
+      tip: undefined,
+      surveyEndEpoch: 2,
+      secondsPerEpoch: SPE,
+    });
+    expect(noTip).toMatchObject({ level: "warn" });
+    expect(noTip?.window).toBeUndefined();
+    expect(align(1, undefined)?.level).toBe("warn");
   });
 });
