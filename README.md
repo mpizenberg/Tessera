@@ -138,15 +138,9 @@ are not needed for any of this; to fetch them anyway:
 
 ## Contributing
 
-Contributions are welcome. Until a `CONTRIBUTING.md` lands, the basics:
-
-- Open an issue to discuss substantial changes before investing in a PR.
-- Keep the build green — CI runs these on every PR, in this order:
-  `pnpm -r test`, `pnpm test:operator-scripts`, `pnpm -r type-check`,
-  `pnpm format:check`. Tests come before type-check because the widget's test
-  script builds the rolled-up `d.ts` its typed tests need. CI then runs
-  `pnpm -r build`, which needs a `frontend/app/.env.deploy` to exist.
-- Match the existing code style — Prettier is the source of truth for formatting.
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the CI
+checks a PR must pass and the versioning rules of the surfaces with outside
+consumers.
 
 ## License
 

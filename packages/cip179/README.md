@@ -214,8 +214,10 @@ The count and stake-weighted tally rules, the JSON-safe wire codec
 pairs), the canonical-JSON (RFC 8785 / JCS subset) encoding, and the
 content-addressed tally artifact.
 
-`fromJsonSafe` is lenient by design — it rebuilds tagged values wherever they
-appear and returns `unknown`. A record received over a wire goes through
+`JsonSafe<T>` is the type of a `T` after `toJsonSafe` and a trip through JSON,
+so a producer can type what it sends against the interface its consumer decodes
+into. `fromJsonSafe` is lenient by design — it rebuilds tagged values wherever
+they appear and returns `unknown`. A record received over a wire goes through
 `decodeSurveyRecord`, `decodeResponseRecord` or `decodeCancellationRecord`
 instead: the same rebuild followed by a structural check of every field the
 record type declares, throwing `Cip179DecodeError` with the offending path, so

@@ -1,6 +1,10 @@
 /**
  * The HTTP contract `IndexerDataSource` speaks (`backend/ARCHITECTURE.md`
- * §2, §5.1, §7). Routes mirror the `DataSource` seam one-to-one:
+ * §2, §5.1, §7), versioned by `API_VERSION` and described normatively in
+ * `README.md`; `CHANGELOG.md` records every change to it. Every body is typed
+ * against the `cardano-tessera-core` payload it serves, in wire form. Routes
+ * mirror the `DataSource` seam one-to-one:
+ *   - GET /health                         liveness, served network, apiVersion
  *   - GET /api/surveys                    Explore-list payload: surveys + tip +
  *                                         gov links + raw cancellations +
  *                                         deduped per-survey response counts +
@@ -45,8 +49,15 @@ import type { Context } from "hono";
 import { compress } from "hono/compress";
 import { cors } from "hono/cors";
 
-import { toJsonSafe } from "cip-179/tally";
+import type {
+  CancellationRecord,
+  GovLink,
+  ResponseRecord,
+  SurveyRecord,
+} from "cip-179/domain";
+import { toJsonSafe, type JsonSafe } from "cip-179/tally";
 import {
+  API_VERSION,
   encodeResponseCursor,
   encodeSurveyCursor,
   isSurveyListFilter,
@@ -54,12 +65,19 @@ import {
   parseSurveyCursor,
   searchTermsOf,
   type BackendHealth,
+  type BackendLiveness,
+  type RespondedPayload,
+  type SurveyBundlePayload,
+  type SurveyListPayload,
+  type SurveyFinalState,
+  type TxResponsesPayload,
 } from "cardano-tessera-core";
 import { KoiosDataSource } from "cardano-tessera-koios";
 
 import type { ServerConfig } from "./config";
 import { upstreamMeter } from "./meter";
 import {
+  rowFinalState,
   snapshotListCounts,
   snapshotTip,
   sumUpstream,
@@ -189,13 +207,13 @@ function refsOf(raw: string): string[] | null {
 function surveyListBody(
   rows: readonly SurveyIndexRow[],
   meta: SnapshotMeta,
-): Record<string, unknown> {
+): JsonSafe<SurveyListPayload> {
   return {
-    surveys: rows.map((r) => JSON.parse(r.record) as unknown),
+    surveys: rows.map((r) => JSON.parse(r.record) as JsonSafe<SurveyRecord>),
     cancellations: rows.flatMap(
-      (r) => JSON.parse(r.cancellations) as unknown[],
+      (r) => JSON.parse(r.cancellations) as JsonSafe<CancellationRecord>[],
     ),
-    govLinks: rows.flatMap((r) => JSON.parse(r.govLinks) as unknown[]),
+    govLinks: rows.flatMap((r) => JSON.parse(r.govLinks) as GovLink[]),
     tip: snapshotTip(meta),
     responseCounts: Object.fromEntries(
       rows.map((r) => [r.surveyKey, r.responseCount]),
@@ -209,15 +227,10 @@ function surveyListBody(
       ]),
     ),
     finalState: Object.fromEntries(
-      rows
-        .filter((r) => r.finalState !== null)
-        .map((r) => [
-          r.surveyKey,
-          {
-            state: r.finalState,
-            ...(r.artifactHash !== null && { artifactHash: r.artifactHash }),
-          },
-        ]),
+      rows.flatMap((r): [string, SurveyFinalState][] => {
+        const state = rowFinalState(r);
+        return state ? [[r.surveyKey, state]] : [];
+      }),
     ),
     ...(meta.incomplete && { incomplete: true }),
     fetchedAt: meta.fetchedAt,
@@ -329,7 +342,14 @@ export function createApp(
     async () => toJsonSafe(await source.protocolParameters()),
   );
 
-  app.get("/health", (c) => c.json({ ok: true, network: config.app.network }));
+  app.get("/health", (c) => {
+    const body: BackendLiveness = {
+      ok: true,
+      network: config.app.network,
+      apiVersion: API_VERSION,
+    };
+    return c.json(body);
+  });
 
   // The 24 h aggregates only move when a refresh run lands (every run writes a
   // row, failures included — so a string of failed refreshes still re-keys
@@ -369,6 +389,7 @@ export function createApp(
       await Promise.all([store.snapshotMeta(), cachedHealthAggregates()]);
     const body: BackendHealth = {
       network: config.app.network,
+      apiVersion: API_VERSION,
       commit: config.commit ?? null,
       snapshot: meta
         ? { fetchedAt: meta.fetchedAt, ageSeconds: now - meta.fetchedAt }
@@ -391,7 +412,7 @@ export function createApp(
       },
     };
     c.header("Cache-Control", "no-store");
-    return c.json(body as unknown as Record<string, unknown>);
+    return c.json(body);
   });
 
   // The paged Explore list, answered from the refresh-materialized
@@ -471,7 +492,7 @@ export function createApp(
     ]);
     const page = rows.slice(0, limit);
     const last = page[page.length - 1];
-    return c.json({
+    const body: JsonSafe<SurveyListPayload> = {
       ...surveyListBody(page, meta),
       ...(staleCursor && { resync: true }),
       counts,
@@ -484,7 +505,8 @@ export function createApp(
               generation: meta.fetchedAt,
             })
           : null,
-    });
+    };
+    return c.json(body);
   });
 
   // One survey's self-contained bundle, plus the per-response proof verdicts
@@ -529,20 +551,24 @@ export function createApp(
       page.map((r) => r.txHash),
     );
     const now = Math.floor(Date.now() / 1000);
-    return c.json({
-      survey: JSON.parse(bundle.record) as unknown,
-      responses: page.map((r) => JSON.parse(r.record) as unknown),
-      cancellations: JSON.parse(bundle.cancellations) as unknown,
-      govLinks: JSON.parse(bundle.govLinks) as unknown,
+    const body: JsonSafe<SurveyBundlePayload> = {
+      survey: JSON.parse(bundle.record) as JsonSafe<SurveyRecord>,
+      responses: page.map(
+        (r) => JSON.parse(r.record) as JsonSafe<ResponseRecord>,
+      ),
+      cancellations: JSON.parse(
+        bundle.cancellations,
+      ) as JsonSafe<CancellationRecord>[],
+      govLinks: JSON.parse(bundle.govLinks) as GovLink[],
       tip: snapshotTip(meta),
       // Decided credential-proof verdicts only — an omitted key is *pending*,
       // and the client must render it as such, never as failed. Scoped to this
       // page's responses: a transaction can carry one the next page holds.
       verdicts: Object.fromEntries(
-        validated
-          .filter((r) => r.proofOk !== null)
-          .map((r) => [validationKey(r.txHash, r.responseIndex), r.proofOk])
-          .filter(([k]) => pageKeys.has(k as string)),
+        validated.flatMap((r): [string, boolean][] => {
+          const k = validationKey(r.txHash, r.responseIndex);
+          return r.proofOk !== null && pageKeys.has(k) ? [[k, r.proofOk]] : [];
+        }),
       ),
       nextCursor:
         bundle.responses.length > RESPONSES_PER_PAGE && last
@@ -556,7 +582,8 @@ export function createApp(
       ...(staleCursor && { resync: true }),
       fetchedAt: meta.fetchedAt,
       ageSeconds: now - meta.fetchedAt,
-    });
+    };
+    return c.json(body);
   });
 
   app.get("/api/responded", async (c) => {
@@ -566,10 +593,11 @@ export function createApp(
       return c.body(null, 304);
     const credentials = credentialsOf(c);
     if (!credentials) return c.json({ error: "too many credentials" }, 400);
-    return c.json({
+    const body: RespondedPayload = {
       surveyKeys: await store.respondedSurveyKeys(credentials),
       fetchedAt: meta.fetchedAt,
-    });
+    };
+    return c.json(body);
   });
 
   // The responses one transaction carried. `/api/responded` answers membership
@@ -587,10 +615,19 @@ export function createApp(
       return c.json({ error: "malformed tx hash" }, 404);
     if (notModified(c, `W/"responses-${meta.fetchedAt}"`))
       return c.body(null, 304);
-    return c.json({
-      responses: await store.responsesByTx(txHash),
+    const body: TxResponsesPayload = {
+      responses: (await store.responsesByTx(txHash)).map(
+        ({ surveyKey, responseIndex, role, credential, slot }) => ({
+          surveyKey,
+          responseIndex,
+          role,
+          credential,
+          slot,
+        }),
+      ),
       fetchedAt: meta.fetchedAt,
-    });
+    };
+    return c.json(body);
   });
 
   // Final tally artifacts (TALLY-SPEC §5): immutable, content-addressed. The

@@ -58,15 +58,31 @@ expect the store's guard to refuse the run.
 
 ## Endpoints
 
-- `GET /health` — liveness + active network. The app checks this before
-  trusting a backend.
+This section is the normative description of the HTTP contract. The contract
+carries a version, `apiVersion` on `/health` and `/api/health` as
+`major.minor`: a minor adds (a field, a selection, a route), a major replaces
+(a field renamed, removed or re-typed, a selection whose semantics changed),
+and after a major the backend serves the new shape only. A consumer compares
+majors and refuses a mismatch; it may warn on a minor it does not know.
+[CHANGELOG.md](CHANGELOG.md) records every change; the payload types are in
+`cardano-tessera-core` (`source.ts`), with the version constant beside them.
+
+A survey key is `<txHash>:<index>` matching `^[0-9a-f]{64}:(0|[1-9][0-9]*)$`
+— lowercase hex, index without leading zeros — wherever the contract carries
+one: `refs=`, the keys of `responseCounts` / `countedByRole` / `finalState`,
+and the answers of `/api/responded` and `/api/responses`.
+
+- `GET /health` — liveness, active network and `apiVersion`. The app checks
+  both before trusting a backend: another network is a configuration error,
+  another major is a contract it does not speak.
 - `GET /api/health` — operational metrics behind the app's health footer: the
   snapshot's age, the last refresh, 24 h upstream-request and run totals, the
   validation backlog, the scan cursor, and the declared quotas the counts are
-  read against.
+  read against; `apiVersion` beside the deployed `commit`.
 - `GET /api/surveys` — the Explore-list payload, **keyset-paginated**
-  (`filter`/`q`/`cursor`/`limit`): survey records + tip + gov links + raw
-  cancellations + server-deduped `responseCounts` per survey, plus
+  (`filter`/`q`/`cursor`/`limit`, with `limit` 1–200 and 50 by default): survey
+  records + tip + gov links + raw cancellations + server-deduped
+  `responseCounts` per survey, plus
   `fetchedAt` / `ageSeconds`. `countedByRole` is the _audited_ figure beside
   that total: per survey key and CIP-179 role, the responses that are in
   window, valid against the definition and not refuted by a credential-proof
@@ -74,7 +90,11 @@ expect the store's guard to refuse the run.
   where nothing counts. `finalState` maps each decided survey key to the
   finalizer's verdict — `finalized` or `cancelled` with the artifact's hash, or
   `untalliable` (no artifact will ever exist) — so a mirror can stop
-  re-refreshing a decided survey. Filter chip counts are global over the
+  re-refreshing a decided survey. A survey admitted as talliable can still
+  finalize `untalliable`: the owner proof is fetched only at finalization, and
+  a sealed survey on an unsupported drand chain is decided there too, so a
+  host holding a survey must handle the late verdict. Filter chip counts are
+  global over the
   matching set, not per page. A cursor records the snapshot it was minted
   against; one from an older snapshot is still answered, with `resync` set so
   the client refreshes page one.
@@ -114,11 +134,14 @@ expect the store's guard to refuse the run.
 - `GET /api/artifacts/{hash}` — the same artifact addressed by its content
   hash directly.
 
-Snapshot-derived routes answer `503` until the first refresh completes, and
-carry an `ETag` versioned by `fetchedAt`, so revalidation between refreshes is
-a bodiless `304`. `fetchedAt` is when the producing scan _started_ reading —
-the instant its `tip` was taken — so `ageSeconds` counts from when the data was
-true, not from when the refresh finished writing it.
+Snapshot-derived routes answer `503` with `{"error":"snapshot not ready"}`
+until the first refresh completes, and carry an `ETag` versioned by
+`fetchedAt`, so revalidation between refreshes is a bodiless `304`. The ETag is
+the refresh generation, not a change signal: it moves on every refresh whether
+or not a row changed, so a conditional GET tells a poller nothing about the
+rows. `fetchedAt` is when the producing scan _started_ reading — the instant
+its `tip` was taken — so `ageSeconds` counts from when the data was true, not
+from when the refresh finished writing it.
 
 Payloads use the `cardano-tessera-core` JSON-safe wire form (bytes → hex under
 `$bytes`, big integers → decimal strings under `$bigint`) so they round-trip

@@ -15,8 +15,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Role, type Credential, type SurveyDefinition } from "cip-179";
 import { hexToBytes, refKey } from "cip-179/domain";
-import { fromJsonSafe, toJsonSafe } from "cip-179/tally";
 import {
+  decodeCancellationRecord,
+  decodeResponseRecord,
+  decodeSurveyRecord,
+  fromJsonSafe,
+  toJsonSafe,
+  type JsonSafe,
+} from "cip-179/tally";
+import {
+  API_VERSION,
+  type SurveyBundlePayload,
+  type SurveyListPayload,
   encodeResponseCursor,
   encodeSurveyCursor,
   parseSurveyCursor,
@@ -198,7 +208,11 @@ describe("GET /health", () => {
     });
     const res = await app.request("/health");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, network: "preprod" });
+    expect(await res.json()).toEqual({
+      ok: true,
+      network: "preprod",
+      apiVersion: API_VERSION,
+    });
   });
 });
 
@@ -244,6 +258,29 @@ describe("GET /api/surveys", () => {
       public: 1,
       mine: 0,
     });
+  });
+
+  // The wire form the routes assemble by concatenating stored JSON text is
+  // what the published decoders accept — the two halves of the contract meet
+  // here, on real rows, rather than in a fixture each side wrote for itself.
+  it("serves records the published decoders accept, equal to what was indexed", async () => {
+    const app = appWith(await seededStore());
+    const list = (await (
+      await app.request("/api/surveys")
+    ).json()) as JsonSafe<SurveyListPayload>;
+    expect(list.surveys.map(decodeSurveyRecord)).toEqual([surveyA, surveyB]);
+    expect(list.cancellations.map(decodeCancellationRecord)).toEqual([
+      cancellation,
+    ]);
+    const bundle = (await (
+      await app.request(`/api/surveys/${TX_A}/0`)
+    ).json()) as JsonSafe<SurveyBundlePayload>;
+    expect(decodeSurveyRecord(bundle.survey)).toEqual(surveyA);
+    expect(
+      bundle.responses
+        .map(decodeResponseRecord)
+        .sort((a, b) => a.txHash.localeCompare(b.txHash)),
+    ).toEqual(responses.slice(0, 3));
   });
 
   it("revalidates by fetchedAt: 304 on matching If-None-Match", async () => {
@@ -848,7 +885,6 @@ describe("GET /api/responses/{txHash}", () => {
     expect(await res.json()).toEqual({
       responses: [
         {
-          txHash: TX_CC,
           responseIndex: 0,
           surveyKey: `${TX_A}:0`,
           role: Role.Stakeholder,
@@ -856,7 +892,6 @@ describe("GET /api/responses/{txHash}", () => {
           slot: 950_000,
         },
         {
-          txHash: TX_CC,
           responseIndex: 1,
           surveyKey: `${TX_B}:1`,
           role: Role.Stakeholder,
@@ -964,6 +999,7 @@ describe("GET /api/health", () => {
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     const body = (await res.json()) as Record<string, unknown>;
     expect(body["network"]).toBe("preview");
+    expect(body["apiVersion"]).toBe(API_VERSION);
     expect(body["commit"]).toBe("f2b86aa");
     expect(body["snapshot"]).toMatchObject({ fetchedAt: FETCHED_AT });
     expect(body["lastRefresh"]).toMatchObject({

@@ -149,6 +149,24 @@ export const finalStateEntries = (states: FinalStates): FinalStateEntry[] =>
     artifactHash: "artifactHash" in s ? s.artifactHash : null,
   }));
 
+/**
+ * The inverse of {@link finalStateEntries}: a row's two columns back to the
+ * wire `SurveyFinalState`, or null while undecided. An artifact-backed state
+ * without its hash is a row `markFinalStates` never writes, so it is an
+ * invariant failure rather than a third shape.
+ */
+export const rowFinalState = (
+  row: Pick<SurveyIndexRow, "surveyKey" | "finalState" | "artifactHash">,
+): SurveyFinalState | null => {
+  if (row.finalState === null) return null;
+  if (row.finalState === "untalliable") return { state: "untalliable" };
+  if (row.artifactHash === null)
+    throw new Error(
+      `${row.surveyKey}: final state ${row.finalState} without an artifact hash`,
+    );
+  return { state: row.finalState, artifactHash: row.artifactHash };
+};
+
 /** See {@link TallyStore.revalidationInputs}. */
 export interface RevalidationInputs {
   readonly cursors: ValidatedLinkCursor[];

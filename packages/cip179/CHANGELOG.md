@@ -22,6 +22,11 @@ definition)`, for readers holding a definition and no aggregate. `talliable`
 - `QUICKNET_CHAIN_HASH_HEX`, `QUICKNET_CHAIN_HASH` and `isQuicknet` now live
   in `./domain` (they are a constant and a byte compare, not tlock machinery);
   `./tlock` re-exports them, so existing imports keep working.
+- **`JsonSafe<T>`** (`./tally`): the type-level image of `toJsonSafe` —
+  bytes, bigints and maps as their tagged forms, arrays and objects
+  recursively, optional fields that were `undefined` absent — so a producer
+  can type a wire body as `JsonSafe<Payload>` against the same interface a
+  consumer decodes into.
 - **Typed record decoders** `decodeSurveyRecord`, `decodeResponseRecord`,
   `decodeCancellationRecord` (`./tally`): `fromJsonSafe` followed by a
   structural check of every field the record type declares, throwing

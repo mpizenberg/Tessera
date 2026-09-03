@@ -26,6 +26,29 @@ import type {
 import type { TallyArtifact } from "cip-179/tally";
 
 /**
+ * The version of the HTTP contract these payload types describe, as
+ * `major.minor`, reported by the serving tier on `GET /health` and
+ * `GET /api/health`. A minor adds (a field, a selection, a route); a major
+ * replaces (a field renamed, removed or re-typed, a selection's semantics
+ * changed), and the backend then serves the new shape only. A consumer
+ * compares majors with {@link apiMajor} and refuses a mismatch; it may warn
+ * on a minor it does not know. Every change is a line in
+ * `backend/server/CHANGELOG.md`.
+ */
+export const API_VERSION = "1.0";
+
+/** The major of a `major.minor` contract version — the part a consumer must match. */
+export const apiMajor = (version: string): string =>
+  version.split(".")[0] ?? version;
+
+/** `GET /health`: liveness, the served network, and the contract version. */
+export interface BackendLiveness {
+  readonly ok: true;
+  readonly network: string;
+  readonly apiVersion: string;
+}
+
+/**
  * One survey's final decision as the serving tier reports it. `finalized` and
  * `cancelled` carry the emitted artifact's content hash; `untalliable` means
  * the finalizer decided — permanently — that no artifact will ever exist
@@ -45,7 +68,7 @@ export type SurveyFinalState =
  * source. Cancellations ride raw (they're tiny) so owner-proof verification
  * stays client-side.
  */
-export interface SurveyListPayload {
+export interface SurveyListPayload extends SnapshotStamp {
   readonly surveys: readonly SurveyRecord[];
   readonly cancellations: readonly CancellationRecord[];
   readonly govLinks: readonly GovLink[];
@@ -95,17 +118,30 @@ export interface SurveyListPayload {
    */
   readonly nextCursor?: string | null;
   /**
-   * Unix seconds the snapshot behind this payload was scanned — the paging
-   * generation minted into `nextCursor`. Serving tier only.
-   */
-  readonly fetchedAt?: number;
-  /**
    * The request's cursor was minted against an older snapshot generation, so
    * rows may have crossed the cursor boundary (duplicated or skipped). The
    * page itself is still a best-effort answer; the client should silently
    * refresh page one.
    */
   readonly resync?: boolean;
+}
+
+/**
+ * The freshness stamp the serving tier appends to a snapshot-derived body.
+ * Absent in direct-Koios mode, which has no snapshot.
+ */
+export interface SnapshotStamp {
+  /**
+   * Unix seconds the scan behind this body started reading — the instant its
+   * `tip` was taken, and the paging generation minted into a `nextCursor`.
+   */
+  readonly fetchedAt?: number;
+  /**
+   * Seconds between {@link fetchedAt} and the moment the body was answered.
+   * Drifts within a refresh window and is not part of the ETag; a reader
+   * wanting live staleness derives it from `fetchedAt` instead.
+   */
+  readonly ageSeconds?: number;
 }
 
 /**
@@ -118,7 +154,7 @@ export interface SurveyListPayload {
  * lacks is pending, not failed. Absent entirely when the source has no proof
  * machinery (the direct Koios path).
  */
-export interface SurveyBundlePayload extends SurveyBundle {
+export interface SurveyBundlePayload extends SurveyBundle, SnapshotStamp {
   readonly verdicts?: ProofVerdicts;
   /**
    * The governance actions linked to this survey — the same relation
@@ -150,6 +186,41 @@ export interface SurveyBundlePayload extends SurveyBundle {
 }
 
 /**
+ * `GET /api/responded?credentials=`: the survey keys ("<txHex>:<index>") with
+ * at least one response from any of the named credentials.
+ */
+export interface RespondedPayload {
+  readonly surveyKeys: readonly string[];
+  readonly fetchedAt: number;
+}
+
+/**
+ * One response as `GET /api/responses/{txHash}` reports it: coordinates and
+ * identity, no record. `credential` is the core `credentialKey` form.
+ */
+export interface TxResponse {
+  /** Position within the carrying payload's `responses` array. */
+  readonly responseIndex: number;
+  /** Target survey ("<txHex>:<index>"). */
+  readonly surveyKey: string;
+  /** Claimed CIP-179 role. */
+  readonly role: number;
+  /** Responder identity ("key:<hex>" | "script:<hex>"). */
+  readonly credential: string;
+  readonly slot: number;
+}
+
+/**
+ * `GET /api/responses/{txHash}`: the responses one transaction carried. Empty
+ * for a well-formed hash the snapshot holds nothing for — "not indexed yet",
+ * never an error.
+ */
+export interface TxResponsesPayload {
+  readonly responses: readonly TxResponse[];
+  readonly fetchedAt: number;
+}
+
+/**
  * Operational health of a serving-tier backend (`GET /api/health`) — what the
  * app's thin health footer renders. Wire-plain by design (no bytes/bigints),
  * so it round-trips as ordinary JSON. Only the indexer path produces it; the
@@ -157,6 +228,8 @@ export interface SurveyBundlePayload extends SurveyBundle {
  */
 export interface BackendHealth {
   readonly network: string;
+  /** The HTTP contract version served, see {@link API_VERSION}. */
+  readonly apiVersion: string;
   /** Git commit of the deployed code, or null when the deploy didn't stamp one. */
   readonly commit: string | null;
   /** Freshness of the served snapshot, or null before the first refresh. */

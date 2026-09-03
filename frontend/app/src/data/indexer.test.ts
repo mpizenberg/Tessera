@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { Role, type Metadatum } from "cip-179";
+import type { ResponseRecord, SurveyRecord } from "cip-179/domain";
 import { toJsonSafe } from "cip-179/tally";
+import { API_VERSION } from "cardano-tessera-core";
 
 import { IndexerDataSource } from "~/data/indexer";
 
@@ -12,40 +15,79 @@ const BASE = "http://localhost:8787";
 const TX_ID = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
 const BIG = 45_000_000_000_000_000n;
 
-/** A response body shaped like the server's `/api/surveys` (see http.ts). */
-function surveyListBody(): unknown {
-  const list = {
-    surveys: [
+const survey: SurveyRecord = {
+  txHash: "deadbeef",
+  slot: 100,
+  epochNo: 1340,
+  ref: { txId: TX_ID, index: 3 },
+  definition: {
+    specVersion: 5,
+    owner: { type: "key", keyHash: new Uint8Array([0x11]) },
+    title: "T",
+    description: "",
+    eligibleRoles: [Role.DRep],
+    endEpoch: 1345,
+    submissionMode: { type: "public" },
+    questions: [
       {
-        txHash: "aa",
-        slot: 100,
-        ref: { txId: TX_ID, index: 0 },
-        definition: {
-          title: "T",
-          stake: BIG,
-          custom: new Map<number, string>([[1, "one"]]),
-        },
+        type: "custom",
+        prompt: "c",
+        methodSchema: { uri: "ipfs://schema", hash: new Uint8Array([1]) },
       },
+      { type: "numericRange", prompt: "n", constraints: { min: 0n, max: BIG } },
     ],
+  },
+};
+
+const responseAt = (txHash: string): ResponseRecord => ({
+  txHash,
+  slot: 150,
+  epochNo: 1341,
+  responseIndex: 0,
+  response: {
+    specVersion: 5,
+    surveyRef: survey.ref,
+    role: Role.DRep,
+    credential: { type: "key", keyHash: new Uint8Array([0x22]) },
+    answers: {
+      type: "public",
+      answers: [
+        {
+          questionIndex: 0,
+          type: "custom",
+          value: new Map<Metadatum, Metadatum>([[1n, "one"]]),
+        },
+        { questionIndex: 1, type: "numeric", value: BIG },
+      ],
+    },
+  },
+});
+
+const tip = {
+  epoch: 1345,
+  slot: 999,
+  time: 1000,
+  epochSlot: 5,
+  govActionLifetime: 6,
+};
+
+/** A response body shaped like the server's `/api/surveys` (see http.ts). */
+function surveyListBody(): Record<string, unknown> {
+  const list = {
+    surveys: [survey],
     cancellations: [],
     govLinks: [
       {
-        surveyKey: "aa:0",
+        surveyKey: "deadbeef:3",
         actionId: "gov_action1abc",
         endEpoch: 1345,
         title: "Linked",
       },
     ],
-    tip: {
-      epoch: 1345,
-      slot: 999,
-      time: 1000,
-      epochSlot: 5,
-      govActionLifetime: 6,
-    },
-    responseCounts: { "deadbeef:0": 2 },
+    tip,
+    responseCounts: { "deadbeef:3": 2 },
     // Audited, per role: one survey counts a DRep, the other counts nobody.
-    countedByRole: { "deadbeef:0": { "0": 1 }, "aa:0": {} },
+    countedByRole: { "deadbeef:3": { "0": 1 }, "aa:0": {} },
   };
   // The server wire-encodes the payload, then appends the freshness fields.
   return {
@@ -55,13 +97,17 @@ function surveyListBody(): unknown {
   };
 }
 
-/** The decoded shape we assert on (looser than the real domain types). */
-interface DecodedView {
-  surveys: {
-    ref: { txId: Uint8Array; index: number };
-    definition: { title: string; stake: bigint; custom: Map<number, string> };
-  }[];
-}
+/** One page of the server's `/api/surveys/{txHash}/{index}` body. */
+const bundlePage = (
+  responses: readonly ResponseRecord[],
+  nextCursor: string | null,
+): unknown => ({
+  ...(toJsonSafe({ survey, responses, cancellations: [], tip }) as Record<
+    string,
+    unknown
+  >),
+  nextCursor,
+});
 
 /** Install a fetch stub returning real `Response`s; returns the mock for asserts. */
 function stubFetch(
@@ -75,13 +121,16 @@ function stubFetch(
   return mock;
 }
 
-/** The stub's `/health` answer (network check) alongside per-route bodies. */
+/** The stub's `/health` answer (network and version check) alongside per-route bodies. */
 function withHealth(
   handler: (url: string) => { status?: number; body: unknown },
   network = "preview",
+  apiVersion = API_VERSION,
 ): (url: string) => { status?: number; body: unknown } {
   return (url) =>
-    url.endsWith("/health") ? { body: { ok: true, network } } : handler(url);
+    url.endsWith("/health")
+      ? { body: { ok: true, network, apiVersion } }
+      : handler(url);
 }
 
 afterEach(() => {
@@ -101,28 +150,38 @@ describe("IndexerDataSource", () => {
     const list = await src.surveyList();
     expect(fetchMock).toHaveBeenCalledTimes(2); // /health + /api/surveys
 
-    const survey = (list as unknown as DecodedView).surveys[0];
-    expect(survey.ref.txId).toBeInstanceOf(Uint8Array);
-    expect([...survey.ref.txId]).toEqual([0xde, 0xad, 0xbe, 0xef]);
-    expect(survey.definition.stake).toBe(BIG);
-    expect(survey.definition.custom).toBeInstanceOf(Map);
-    expect(survey.definition.custom.get(1)).toBe("one");
+    // The record comes back equal to what was encoded: bytes as bytes, the
+    // out-of-double-range bound as a bigint.
+    expect(list.surveys).toEqual([survey]);
+    expect(list.surveys[0]!.ref.txId).toBeInstanceOf(Uint8Array);
+    const range = list.surveys[0]!.definition.questions[1]!;
+    expect(range.type === "numericRange" && range.constraints.max).toBe(BIG);
 
     expect(list.tip.epoch).toBe(1345);
     expect(list.tip.govActionLifetime).toBe(6);
+    expect(list.fetchedAt).toBe(1_710_000_000);
 
     expect(list.govLinks).toHaveLength(1);
-    expect(list.govLinks[0]!.surveyKey).toBe("aa:0");
+    expect(list.govLinks[0]!.surveyKey).toBe("deadbeef:3");
     expect(list.govLinks[0]!.title).toBe("Linked");
 
     // Counts are plain JSON, untouched by the wire decode. A survey nothing
     // counts for carries an empty object, never a missing key — "none" and
     // "this source does not audit" must not read the same.
-    expect(list.responseCounts).toEqual({ "deadbeef:0": 2 });
+    expect(list.responseCounts).toEqual({ "deadbeef:3": 2 });
     expect(list.countedByRole).toEqual({
-      "deadbeef:0": { "0": 1 },
+      "deadbeef:3": { "0": 1 },
       "aa:0": {},
     });
+  });
+
+  it("reports a record that does not fit its type by the field's path", async () => {
+    const body = surveyListBody();
+    const [wireSurvey] = body["surveys"] as Record<string, unknown>[];
+    (wireSurvey!["definition"] as Record<string, unknown>)["questions"] = 7;
+    stubFetch(withHealth(() => ({ body })));
+    const src = new IndexerDataSource(BASE, "preview");
+    await expect(src.surveyList()).rejects.toThrow(/definition\.questions/);
   });
 
   it("refetches the list on each new load, checking the network once", async () => {
@@ -142,28 +201,24 @@ describe("IndexerDataSource", () => {
     await expect(src.surveyList()).rejects.toThrow(/preview.*preprod/s);
   });
 
+  it("refuses a backend on another contract major, accepts an unknown minor", async () => {
+    stubFetch(withHealth(() => ({ body: surveyListBody() }), "preview", "2.0"));
+    await expect(
+      new IndexerDataSource(BASE, "preview").surveyList(),
+    ).rejects.toThrow(/API version 2\.0/);
+
+    stubFetch(withHealth(() => ({ body: surveyListBody() }), "preview", "1.9"));
+    await expect(
+      new IndexerDataSource(BASE, "preview").surveyList(),
+    ).resolves.toBeDefined();
+  });
+
   it("follows the bundle's cursor until the responses run out", async () => {
-    const bundlePage = (
-      responses: readonly { txHash: string }[],
-      nextCursor: string | null,
-    ): unknown => ({
-      ...(toJsonSafe({
-        survey: {
-          txHash: "deadbeef",
-          slot: 100,
-          ref: { txId: TX_ID, index: 3 },
-        },
-        responses,
-        cancellations: [],
-        tip: { epoch: 1345, slot: 999, time: 1000, epochSlot: 5 },
-      }) as Record<string, unknown>),
-      nextCursor,
-    });
     const fetchMock = stubFetch(
       withHealth((url) =>
         url.includes("cursor=")
-          ? { body: bundlePage([{ txHash: "dd" }], null) }
-          : { body: bundlePage([{ txHash: "cc" }], "150:cc:0") },
+          ? { body: bundlePage([responseAt("dd")], null) }
+          : { body: bundlePage([responseAt("cc")], "150:cc:0") },
       ),
     );
     const src = new IndexerDataSource(BASE, "preview");
@@ -179,26 +234,19 @@ describe("IndexerDataSource", () => {
   });
 
   it("fetches a survey bundle by hex ref", async () => {
-    const body = toJsonSafe({
-      survey: { txHash: "deadbeef", slot: 100, ref: { txId: TX_ID, index: 3 } },
-      responses: [{ txHash: "cc", slot: 150, response: { big: BIG } }],
-      cancellations: [],
-      tip: { epoch: 1345, slot: 999, time: 1000, epochSlot: 5 },
-    });
     const fetchMock = stubFetch(
       withHealth((url) => {
         expect(url).toBe(`${BASE}/api/surveys/deadbeef/3`);
-        return { body };
+        return { body: bundlePage([responseAt("cc")], null) };
       }),
     );
     const src = new IndexerDataSource(BASE, "preview");
 
     const bundle = await src.surveyBundle({ txId: TX_ID, index: 3 });
     expect(fetchMock).toHaveBeenCalledTimes(2); // /health + the bundle
-    expect(bundle.survey.ref.txId).toBeInstanceOf(Uint8Array);
-    expect(
-      (bundle.responses[0]!.response as unknown as { big: bigint }).big,
-    ).toBe(BIG);
+    expect(bundle.survey).toEqual(survey);
+    // A custom answer's map and a numeric answer's bigint both survive.
+    expect(bundle.responses).toEqual([responseAt("cc")]);
     expect(bundle.tip.epoch).toBe(1345);
   });
 
@@ -224,7 +272,7 @@ describe("IndexerDataSource", () => {
     );
     const src = new IndexerDataSource(BASE, "preview");
 
-    // Wire-plain: decimal strings arrive as-is, no fromJsonSafe decode.
+    // Wire-plain: decimal strings arrive as-is, no wire decode.
     expect(await src.artifact({ txId: TX_ID, index: 3 })).toEqual(artifact);
     expect(await src.artifact({ txId: TX_ID, index: 9 })).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(2); // no /health round-trip

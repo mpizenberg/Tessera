@@ -12,29 +12,69 @@
  *   - `GET /api/responded?credentials=`     survey keys a credential answered
  *   - `GET /api/tx_status`                  live confirmation counts
  *
- * Bodies arrive in the `cardano-tessera-core` JSON-safe wire form (bytes → hex,
- * bigint → decimal string) and are decoded with {@link fromJsonSafe} back to
- * the exact `Uint8Array`/`bigint`/`Map`-bearing shapes the domain layer
- * expects — so the rest of the app can't tell whether Koios or the indexer
- * produced them. `KoiosDataSource` stays available as the direct/power-user/
- * offline path (when no indexer URL is configured); this is an addition.
+ * Bodies arrive in the `cip-179/tally` JSON-safe wire form (`JsonSafe<T>`:
+ * bytes → hex, bigint → decimal string, Map → tagged pairs). The records in
+ * them go through the typed decoders, so a shape error names its field
+ * instead of surfacing as a crash later; the rest of an envelope is plain JSON
+ * already. The result is the exact `Uint8Array`/`bigint`/`Map`-bearing shape
+ * the domain layer expects — so the rest of the app can't tell whether Koios
+ * or the indexer produced it. `KoiosDataSource` stays available as the
+ * direct/power-user/offline path (when no indexer URL is configured); this is
+ * an addition.
  */
 
 import {
+  API_VERSION,
+  apiMajor,
   collectSurveyBundle,
   type BackendHealth,
+  type BackendLiveness,
   type DataSource,
   type Network,
+  type RespondedPayload,
   type SurveyBundlePayload,
   type SurveyListParams,
   type SurveyListPayload,
 } from "cardano-tessera-core";
 import { bytesToHex } from "cip-179/domain";
-import { fromJsonSafe, type TallyArtifact } from "cip-179/tally";
+import {
+  decodeCancellationRecord,
+  decodeResponseRecord,
+  decodeSurveyRecord,
+  type JsonSafe,
+  type TallyArtifact,
+} from "cip-179/tally";
 import type { SurveyRef } from "cip-179";
 
 /** Abort a serving-tier request that hangs (all routes are cache-served, fast). */
 const REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * A list body back to its payload. The envelope is taken at its wire type —
+ * the one cast left on this path — and only the record sections need
+ * decoding; every other field is already the JSON the payload type declares.
+ */
+function decodeList(raw: unknown): SurveyListPayload {
+  const { surveys, cancellations, ...rest } =
+    raw as JsonSafe<SurveyListPayload>;
+  return {
+    ...rest,
+    surveys: surveys.map(decodeSurveyRecord),
+    cancellations: cancellations.map(decodeCancellationRecord),
+  };
+}
+
+/** One page of a bundle back to its payload; see {@link decodeList}. */
+function decodeBundlePage(raw: unknown): SurveyBundlePayload {
+  const { survey, responses, cancellations, ...rest } =
+    raw as JsonSafe<SurveyBundlePayload>;
+  return {
+    ...rest,
+    survey: decodeSurveyRecord(survey),
+    responses: responses.map(decodeResponseRecord),
+    cancellations: cancellations.map(decodeCancellationRecord),
+  };
+}
 
 export class IndexerDataSource implements DataSource {
   /**
@@ -59,17 +99,12 @@ export class IndexerDataSource implements DataSource {
     private readonly network: Network,
   ) {}
 
-  /**
-   * The wire form of every per-page route body is the JSON-safe encoding of the
-   * decoded records ({@link fromJsonSafe} reverses it), plus the freshness
-   * stamp the server appends — extra fields the seam types simply don't expose.
-   */
   async surveyList(): Promise<SurveyListPayload> {
     const [raw] = await Promise.all([
       this.getJson<unknown>(`${this.baseUrl}/api/surveys`),
       this.assertNetwork(),
     ]);
-    return fromJsonSafe(raw) as SurveyListPayload;
+    return decodeList(raw);
   }
 
   /** One server-paged Explore page (`?limit&cursor&filter&credentials&q`). */
@@ -85,7 +120,7 @@ export class IndexerDataSource implements DataSource {
       this.getJson<unknown>(`${this.baseUrl}/api/surveys?${qs.toString()}`),
       this.assertNetwork(),
     ]);
-    return fromJsonSafe(raw) as SurveyListPayload;
+    return decodeList(raw);
   }
 
   async surveyBundle(ref: SurveyRef): Promise<SurveyBundlePayload> {
@@ -94,15 +129,14 @@ export class IndexerDataSource implements DataSource {
     // complete bundle and the paging stays inside this method.
     const url = `${this.baseUrl}/api/surveys/${bytesToHex(ref.txId)}/${ref.index}`;
     const [bundle] = await Promise.all([
-      collectSurveyBundle(
-        async (cursor) =>
-          fromJsonSafe(
-            await this.getJson<unknown>(
-              cursor === null
-                ? url
-                : `${url}?cursor=${encodeURIComponent(cursor)}`,
-            ),
-          ) as SurveyBundlePayload,
+      collectSurveyBundle(async (cursor) =>
+        decodeBundlePage(
+          await this.getJson<unknown>(
+            cursor === null
+              ? url
+              : `${url}?cursor=${encodeURIComponent(cursor)}`,
+          ),
+        ),
       ),
       this.assertNetwork(),
     ]);
@@ -113,12 +147,12 @@ export class IndexerDataSource implements DataSource {
     if (credentialKeys.length === 0) return [];
     const qs = new URLSearchParams({ credentials: credentialKeys.join(",") });
     const [body] = await Promise.all([
-      this.getJson<{ surveyKeys: string[] }>(
+      this.getJson<RespondedPayload>(
         `${this.baseUrl}/api/responded?${qs.toString()}`,
       ),
       this.assertNetwork(),
     ]);
-    return body.surveyKeys;
+    return [...body.surveyKeys];
   }
 
   /**
@@ -140,9 +174,9 @@ export class IndexerDataSource implements DataSource {
   }
 
   /**
-   * Backend operational health (the Explore footer). Wire-plain JSON — no
-   * `fromJsonSafe` decode — and no network assertion: the footer is display-
-   * only chrome and must not gate on the snapshot handshake.
+   * Backend operational health (the Explore footer). Wire-plain JSON, and no
+   * network assertion: the footer is display-only chrome and must not gate on
+   * the snapshot handshake.
    */
   async health(): Promise<BackendHealth> {
     return this.getJson<BackendHealth>(`${this.baseUrl}/api/health`);
@@ -159,18 +193,29 @@ export class IndexerDataSource implements DataSource {
     return new Map(Object.entries(body));
   }
 
-  /** See {@link networkOk}. */
+  /**
+   * See {@link networkOk}. The same read checks the contract's major: a
+   * backend on another major serves shapes this app does not decode, so it is
+   * refused up front rather than failing field by field.
+   */
   private assertNetwork(): Promise<void> {
     if (!this.networkOk) {
       const p = (async (): Promise<void> => {
-        const health = await this.getJson<{ network?: string }>(
+        const live = await this.getJson<BackendLiveness>(
           `${this.baseUrl}/health`,
         );
-        if (health.network !== this.network) {
+        if (live.network !== this.network) {
           throw new Error(
-            `Backend at ${this.baseUrl} serves network "${health.network}", ` +
+            `Backend at ${this.baseUrl} serves network "${live.network}", ` +
               `but this app is built for "${this.network}" — fix the backend ` +
               `URL (.env.deploy or the Settings override).`,
+          );
+        }
+        if (apiMajor(String(live.apiVersion)) !== apiMajor(API_VERSION)) {
+          throw new Error(
+            `Backend at ${this.baseUrl} serves API version ` +
+              `${String(live.apiVersion)}, but this app speaks ${API_VERSION} ` +
+              `— deploy the matching backend.`,
           );
         }
       })();

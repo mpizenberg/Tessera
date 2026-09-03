@@ -88,6 +88,10 @@ discovery reads the action's anchor, not label 17.
 
 ## Minimal host contract
 
+- The host reads `apiVersion` from `GET /health`, beside the `network` it
+  already checks, and refuses a backend whose major differs from the one its
+  client was written against; a minor it does not know may warn and continue.
+  The version's rules and history are `backend/server/CHANGELOG.md`.
 - The host reads a survey by exact reference from
   `GET /api/surveys/{txHash}/{index}` and feeds the bundle's decoded
   `definition` plus the survey ref into `<tessera-respond>`. The same bundle

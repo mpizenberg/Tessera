@@ -25,6 +25,29 @@
 import { bytesToHex, hexToBytes } from "../domain/index.js";
 import { canonicalJson } from "./canonical.js";
 
+/**
+ * The type-level image of {@link toJsonSafe}: what a `T` looks like once the
+ * codec has run and the result has crossed `JSON.stringify` / `JSON.parse`.
+ * Bytes and big integers become their tagged objects, a `Map` becomes its
+ * sorted `$map` pair list, arrays and objects recurse, and an optional field
+ * whose value was `undefined` is absent — the codec drops it because JSON
+ * cannot carry it — so the property stays optional but never holds
+ * `undefined`. Everything else is already JSON and maps to itself. A producer
+ * typing a body as `JsonSafe<Payload>` and a consumer decoding into `Payload`
+ * compile against one interface.
+ */
+export type JsonSafe<T> = T extends Uint8Array
+  ? { $bytes: string }
+  : T extends bigint
+    ? { $bigint: string }
+    : T extends ReadonlyMap<infer K, infer V>
+      ? { $map: [JsonSafe<K>, JsonSafe<V>][] }
+      : T extends readonly (infer E)[]
+        ? JsonSafe<E>[]
+        : T extends object
+          ? { [P in keyof T]: JsonSafe<Exclude<T[P], undefined>> }
+          : T;
+
 /** Recursively replace bytes/bigint/Map with tagged JSON-safe equivalents. */
 export function toJsonSafe(value: unknown): unknown {
   if (value instanceof Uint8Array) return { $bytes: bytesToHex(value) };
