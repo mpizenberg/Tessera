@@ -107,7 +107,9 @@ discovery reads the action's anchor, not label 17.
   validates.
 - Once the response transaction has confirmed — by whatever means the host
   already tracks its own submissions — Tessera's decision is read back from the
-  bundle's `verdicts` and the list's `responseCounts`. A host holding an
+  bundle's `verdicts` and the list's `countedByRole` — the per-role count of
+  responses Tessera actually counts, which `responseCounts` (every distinct
+  responder, whatever its role, deadline or proof) is not. A host holding an
   optimistic record of its own submission settles it against the exact
   transaction with `GET /api/responses/{txHash}`; an empty answer means "not
   indexed yet", never "rejected".
@@ -124,7 +126,7 @@ discovery reads the action's anchor, not label 17.
 
 ## What a host must not claim
 
-The host is the surface that can overstate this data, so four limits travel with
+The host is the surface that can overstate this data, so five limits travel with
 the contract above:
 
 - A **sealed** response hides its answers until the pinned drand round, and
@@ -137,6 +139,10 @@ the contract above:
 - Results are **per-role and never merged** into a single figure
   (`backend/TALLY-SPEC.md` §1), and a weighted aggregate is a Tessera profile
   rather than a CIP-179 result: name the policy and its ruleset.
+- `countedByRole` is **provisional while a survey has no artifact**. A proof
+  verdict not yet reached still counts, and the artifact additionally applies
+  role membership at the end epoch, so the final figure can only be lower.
+  "Counted so far" is the honest label; "final" belongs to the artifact.
 
 ## The operating question
 

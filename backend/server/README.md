@@ -67,7 +67,11 @@ expect the store's guard to refuse the run.
 - `GET /api/surveys` — the Explore-list payload, **keyset-paginated**
   (`filter`/`q`/`cursor`/`limit`): survey records + tip + gov links + raw
   cancellations + server-deduped `responseCounts` per survey, plus
-  `fetchedAt` / `ageSeconds`. `finalState` maps each decided survey key to the
+  `fetchedAt` / `ageSeconds`. `countedByRole` is the _audited_ figure beside
+  that total: per survey key and CIP-179 role, the responses that are in
+  window, valid against the definition and not refuted by a credential-proof
+  verdict, one per responder. Every survey in the payload has an entry, `{}`
+  where nothing counts. `finalState` maps each decided survey key to the
   finalizer's verdict — `finalized` or `cancelled` with the artifact's hash, or
   `untalliable` (no artifact will ever exist) — so a mirror can stop
   re-refreshing a decided survey. Filter chip counts are global over the
