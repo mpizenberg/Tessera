@@ -121,6 +121,22 @@ export interface TxProof extends MechanismAProof {
   readonly votes: readonly VoteBinding[];
 }
 
+/**
+ * The mechanism-A part of a proof and nothing else, or `null` for no proof. A
+ * `TxProof` is assignable to `MechanismAProof` by subtyping, but a record
+ * stores and serves exactly the fields its type declares: attach this, not the
+ * transaction proof.
+ */
+export const mechanismAProofOf = (
+  proof: MechanismAProof | null | undefined,
+): MechanismAProof | null =>
+  proof
+    ? {
+        requiredSigners: proof.requiredSigners,
+        nativeScripts: proof.nativeScripts,
+      }
+    : null;
+
 /** A cancellation as published on-chain (references the cancelled survey). */
 export interface CancellationRecord extends ChainPos {
   readonly target: SurveyRef;

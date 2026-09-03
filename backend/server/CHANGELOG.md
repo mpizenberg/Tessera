@@ -34,3 +34,6 @@ description; this entry is the baseline later entries diff against.
   (`surveyKey`, `responseIndex`, `role`, `credential`, `slot`). The storage
   projection's `txHash` (the request's own path) and `countable` (an internal
   column) no longer ride along.
+- `ageSeconds` leaves the `/api/surveys` and bundle bodies. It drifted within
+  a refresh window and was outside the ETag, and no consumer read it; staleness
+  derives from `fetchedAt`. `GET /api/health`'s `snapshot.ageSeconds` stays.

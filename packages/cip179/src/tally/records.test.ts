@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { Cip179DecodeError, Role, type Metadatum } from "../index.js";
+import {
+  Cip179DecodeError,
+  Role,
+  decodeSurveyDefinition,
+  decodeSurveyResponse,
+  encodeSurveyDefinition,
+  encodeSurveyResponse,
+  type Metadatum,
+} from "../index.js";
 import type {
   CancellationRecord,
   ResponseRecord,
@@ -191,6 +199,29 @@ describe("typed record decoders", () => {
     const decoded = decodeSurveyRecord(wire(bare));
     expect(decoded).toEqual(bare);
     expect("proof" in decoded).toBe(false);
+  });
+
+  it("re-encodes a decoded record to the codec's own wire text", () => {
+    // Key order is part of the stored and served text, so a record decoded
+    // from a row and written back must reproduce the codec's bytes.
+    const codecSurvey: SurveyRecord = {
+      ...survey,
+      definition: decodeSurveyDefinition(
+        encodeSurveyDefinition(survey.definition),
+      ),
+    };
+    const codecResponse: ResponseRecord = {
+      ...response,
+      response: decodeSurveyResponse(encodeSurveyResponse(response.response)),
+    };
+    const text = (r: unknown) => JSON.stringify(toJsonSafe(r));
+    expect(text(decodeSurveyRecord(wire(codecSurvey)))).toBe(text(codecSurvey));
+    expect(text(decodeResponseRecord(wire(codecResponse)))).toBe(
+      text(codecResponse),
+    );
+    expect(text(decodeCancellationRecord(wire(cancellation)))).toBe(
+      text(cancellation),
+    );
   });
 
   it("round-trips a cancellation with and without a proof", () => {

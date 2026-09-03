@@ -136,12 +136,6 @@ export interface SnapshotStamp {
    * `tip` was taken, and the paging generation minted into a `nextCursor`.
    */
   readonly fetchedAt?: number;
-  /**
-   * Seconds between {@link fetchedAt} and the moment the body was answered.
-   * Drifts within a refresh window and is not part of the ETag; a reader
-   * wanting live staleness derives it from `fetchedAt` instead.
-   */
-  readonly ageSeconds?: number;
 }
 
 /**

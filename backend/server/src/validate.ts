@@ -28,7 +28,7 @@ import {
   type SurveyRecord,
   type UnresolvedGovAction,
 } from "cip-179/domain";
-import { fromJsonSafe } from "cip-179/tally";
+import { decodeResponseRecord, decodeSurveyRecord } from "cip-179/tally";
 import type { KoiosDataSource } from "cardano-tessera-koios";
 
 import type { SnapshotStore, TallyStore, ValidatedResponseRow } from "./store";
@@ -114,7 +114,7 @@ export async function validateNewResponses(
   // actions (CIP-179 v5), so index a list per key.
   const linksByKey = new Map<string, GovLink[]>();
   for (const row of surveyRows) {
-    const record = fromJsonSafe(JSON.parse(row.record)) as SurveyRecord;
+    const record = decodeSurveyRecord(JSON.parse(row.record));
     defByKey.set(row.surveyKey, record.definition);
     const aligned = (JSON.parse(row.govLinks) as GovLink[]).filter(
       (l) => l.endEpoch === record.definition.endEpoch,
@@ -158,7 +158,7 @@ export async function validateNewResponses(
     responses.map((r) => validationKey(r.txHash, r.responseIndex)),
   );
   const revived = (await store.responseRowsForSurveys(revivalKeys))
-    .map((row) => fromJsonSafe(JSON.parse(row.record)) as ResponseRecord)
+    .map((row) => decodeResponseRecord(JSON.parse(row.record)))
     .filter((r) => !inputKeys.has(validationKey(r.txHash, r.responseIndex)));
   const pool = [...responses, ...revived];
 

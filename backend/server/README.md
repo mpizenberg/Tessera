@@ -83,7 +83,7 @@ and the answers of `/api/responded` and `/api/responses`.
   (`filter`/`q`/`cursor`/`limit`, with `limit` 1–200 and 50 by default): survey
   records + tip + gov links + raw cancellations + server-deduped
   `responseCounts` per survey, plus
-  `fetchedAt` / `ageSeconds`. `countedByRole` is the _audited_ figure beside
+  `fetchedAt`. `countedByRole` is the _audited_ figure beside
   that total: per survey key and CIP-179 role, the responses that are in
   window, valid against the definition and not refuted by a credential-proof
   verdict, one per responder. Every survey in the payload has an entry, `{}`
@@ -140,8 +140,8 @@ until the first refresh completes, and carry an `ETag` versioned by
 the refresh generation, not a change signal: it moves on every refresh whether
 or not a row changed, so a conditional GET tells a poller nothing about the
 rows. `fetchedAt` is when the producing scan _started_ reading — the instant
-its `tip` was taken — so `ageSeconds` counts from when the data was true, not
-from when the refresh finished writing it.
+its `tip` was taken — so a staleness derived from it counts from when the data
+was true, not from when the refresh finished writing it.
 
 Payloads use the `cardano-tessera-core` JSON-safe wire form (bytes → hex under
 `$bytes`, big integers → decimal strings under `$bigint`) so they round-trip

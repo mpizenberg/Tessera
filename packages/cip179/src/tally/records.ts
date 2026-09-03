@@ -221,54 +221,55 @@ const question = (v: unknown, path: string): Question => {
   const o = obj(v, path);
   const prompt = str(o.prompt, at(path, "prompt"));
   const required = opt(o.required, at(path, "required"), bool);
-  const base = { prompt, ...(required === undefined ? {} : { required }) };
+  const withRequired = <Q extends Question>(q: Q): Q =>
+    required === undefined ? q : { ...q, required };
   const options = () => optionsOrCount(o.options, at(path, "options"));
   switch (o.type) {
     case "custom":
-      return {
-        ...base,
+      return withRequired({
         type: "custom",
+        prompt,
         methodSchema: contentAnchor(o.methodSchema, at(path, "methodSchema")),
-      };
+      });
     case "singleChoice":
-      return { ...base, type: "singleChoice", options: options() };
+      return withRequired({ type: "singleChoice", prompt, options: options() });
     case "multiSelect":
-      return {
-        ...base,
+      return withRequired({
         type: "multiSelect",
+        prompt,
         options: options(),
         minSelections: int(o.minSelections, at(path, "minSelections")),
         maxSelections: int(o.maxSelections, at(path, "maxSelections")),
-      };
+      });
     case "ranking":
-      return {
-        ...base,
+      return withRequired({
         type: "ranking",
+        prompt,
         options: options(),
         minRanked: int(o.minRanked, at(path, "minRanked")),
         maxRanked: int(o.maxRanked, at(path, "maxRanked")),
-      };
+      });
     case "numericRange":
-      return {
-        ...base,
+      return withRequired({
         type: "numericRange",
+        prompt,
         constraints: numericConstraints(o.constraints, at(path, "constraints")),
-      };
+      });
     case "pointsAllocation":
-      return {
-        ...base,
+      return withRequired({
         type: "pointsAllocation",
+        prompt,
         options: options(),
         budget: int(o.budget, at(path, "budget")),
-      };
+      });
     case "rating":
-      return {
-        ...base,
+      return withRequired({
         type: "rating",
+        prompt,
         options: options(),
         scale: ratingScale(o.scale, at(path, "scale")),
         requireAll: bool(o.requireAll, at(path, "requireAll")),
-      };
+      });
     default:
       return fail(`unknown question type ${String(o.type)}`, at(path, "type"));
   }
@@ -305,36 +306,36 @@ const answerItem = (v: unknown, path: string): AnswerItem => {
   switch (o.type) {
     case "custom":
       return isMetadatum(o.value)
-        ? { questionIndex, type: "custom", value: o.value }
+        ? { type: "custom", questionIndex, value: o.value }
         : fail("expected metadatum", at(path, "value"));
     case "singleChoice":
       return {
-        questionIndex,
         type: "singleChoice",
+        questionIndex,
         optionIndex: int(o.optionIndex, at(path, "optionIndex")),
       };
     case "multiSelect":
       return {
-        questionIndex,
         type: "multiSelect",
+        questionIndex,
         optionIndices: list(o.optionIndices, at(path, "optionIndices"), int),
       };
     case "ranking":
       return {
-        questionIndex,
         type: "ranking",
+        questionIndex,
         ranking: list(o.ranking, at(path, "ranking"), int),
       };
     case "numeric":
       return {
-        questionIndex,
         type: "numeric",
+        questionIndex,
         value: big(o.value, at(path, "value")),
       };
     case "pointsAllocation":
       return {
-        questionIndex,
         type: "pointsAllocation",
+        questionIndex,
         allocations: list(o.allocations, at(path, "allocations"), (x, p) => {
           const a = obj(x, p);
           return {
@@ -345,8 +346,8 @@ const answerItem = (v: unknown, path: string): AnswerItem => {
       };
     case "rating":
       return {
-        questionIndex,
         type: "rating",
+        questionIndex,
         ratings: list(o.ratings, at(path, "ratings"), (x, p) => {
           const r = obj(x, p);
           return {

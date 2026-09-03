@@ -58,6 +58,9 @@ import {
   artifactHash,
   assembleTallyBody,
   cancelledTallyBody,
+  decodeCancellationRecord,
+  decodeResponseRecord,
+  decodeSurveyRecord,
   fromJsonSafe,
   toJsonSafe,
   type RoleTally,
@@ -235,7 +238,9 @@ export async function finalizeClosedSurveys(
   const cancellationsByKey = new Map(
     candidateRows.map((r) => [
       r.surveyKey,
-      fromJsonSafe(JSON.parse(r.cancellations)) as CancellationRecord[],
+      (JSON.parse(r.cancellations) as unknown[]).map((c) =>
+        decodeCancellationRecord(c),
+      ),
     ]),
   );
   // An artifact's provenance is an immutable record of what its verdicts were
@@ -252,7 +257,7 @@ export async function finalizeClosedSurveys(
   );
   let unsettledLinks = 0;
   const candidates = candidateRows
-    .map((r) => fromJsonSafe(JSON.parse(r.record)) as SurveyRecord)
+    .map((r) => decodeSurveyRecord(JSON.parse(r.record)))
     .filter((s) => {
       if (s.definition.endEpoch + 1 >= settlementFloor) {
         unsettledLinks++;
@@ -369,7 +374,7 @@ export async function finalizeClosedSurveys(
   )) {
     responseByKey.set(
       `${row.txHash}:${row.responseIndex}`,
-      fromJsonSafe(JSON.parse(row.record)) as ResponseRecord,
+      decodeResponseRecord(JSON.parse(row.record)),
     );
   }
   const presentResponses = new Set(responseByKey.keys());

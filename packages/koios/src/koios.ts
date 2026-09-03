@@ -25,6 +25,7 @@ import {
   hexToBytes,
   refKey,
   responseCounts,
+  mechanismAProofOf,
   scriptCredentialHash,
 } from "cip-179/domain";
 import type {
@@ -670,14 +671,14 @@ export class KoiosDataSource implements DataSource {
     return {
       surveys: surveys.map((s) =>
         openSurveyKeys.has(refKeyOf(s.ref))
-          ? { ...s, proof: proofs.get(s.txHash) ?? null }
+          ? { ...s, proof: mechanismAProofOf(proofs.get(s.txHash)) }
           : s,
       ),
       responses,
       cancellations: [
         ...openCancellations.map((c) => ({
           ...c,
-          proof: proofs.get(c.txHash) ?? null,
+          proof: mechanismAProofOf(proofs.get(c.txHash)),
         })),
         ...closedCancellations,
       ],

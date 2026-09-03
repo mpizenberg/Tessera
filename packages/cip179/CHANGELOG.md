@@ -32,9 +32,14 @@ definition)`, for readers holding a definition and no aggregate. `talliable`
   structural check of every field the record type declares, throwing
   `Cip179DecodeError` with the path of the field that does not fit. For a
   record received over a wire, where a cast would surface a shape error as a
-  crash several calls later. Shape only: `validateDefinition` and
+  crash several calls later. A decoded record re-encodes to the codec's own
+  wire text, key order included. Shape only: `validateDefinition` and
   `validateResponse` still judge spec validity, and unknown keys are dropped,
   not refused.
+- `mechanismAProofOf(proof)` (`./domain`): the `MechanismAProof` part of a
+  `TxProof`, or `null`. A `TxProof` is assignable to a record's `proof` slot by
+  subtyping, and attaching one stored its `votes` under a type that does not
+  declare them; data sources now attach the projection.
 
 ## [0.3.0] - 2026-08-01
 

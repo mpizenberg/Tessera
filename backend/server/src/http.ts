@@ -234,7 +234,6 @@ function surveyListBody(
     ),
     ...(meta.incomplete && { incomplete: true }),
     fetchedAt: meta.fetchedAt,
-    ageSeconds: Math.floor(Date.now() / 1000) - meta.fetchedAt,
   };
 }
 
@@ -243,10 +242,8 @@ function surveyListBody(
  * each is fully determined by which refresh produced it, so `fetchedAt` is the
  * version: `no-cache` makes the browser revalidate every time, and an unchanged
  * snapshot answers 304 with no body — checked BEFORE any row is read, so a
- * revalidation costs one envelope lookup. (`ageSeconds` drifts within a refresh
- * window — clients wanting live staleness should derive it from `fetchedAt`,
- * which is why the ETag deliberately ignores it. The ETag doesn't need to
- * encode the query/path either: caches key entries by full URL.)
+ * revalidation costs one envelope lookup. (The ETag doesn't need to encode the
+ * query/path: caches key entries by full URL.)
  */
 function notModified(c: Context, etag: string): boolean {
   c.header("Cache-Control", "no-cache");
@@ -550,7 +547,6 @@ export function createApp(
       key,
       page.map((r) => r.txHash),
     );
-    const now = Math.floor(Date.now() / 1000);
     const body: JsonSafe<SurveyBundlePayload> = {
       survey: JSON.parse(bundle.record) as JsonSafe<SurveyRecord>,
       responses: page.map(
@@ -581,7 +577,6 @@ export function createApp(
           : null,
       ...(staleCursor && { resync: true }),
       fetchedAt: meta.fetchedAt,
-      ageSeconds: now - meta.fetchedAt,
     };
     return c.json(body);
   });

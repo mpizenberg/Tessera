@@ -89,11 +89,10 @@ function surveyListBody(): Record<string, unknown> {
     // Audited, per role: one survey counts a DRep, the other counts nobody.
     countedByRole: { "deadbeef:3": { "0": 1 }, "aa:0": {} },
   };
-  // The server wire-encodes the payload, then appends the freshness fields.
+  // The server wire-encodes the payload, then appends the freshness stamp.
   return {
     ...(toJsonSafe(list) as Record<string, unknown>),
     fetchedAt: 1_710_000_000,
-    ageSeconds: 12,
   };
 }
 

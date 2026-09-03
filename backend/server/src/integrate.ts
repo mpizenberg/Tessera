@@ -28,16 +28,19 @@
  */
 
 import {
+  mechanismAProofOf,
   refKey,
   scriptCredentialHash,
-  type CancellationRecord,
   type ChainTip,
   type Cip179Records,
   type GovLink,
   type ResponseRecord,
-  type SurveyRecord,
 } from "cip-179/domain";
-import { fromJsonSafe } from "cip-179/tally";
+import {
+  decodeCancellationRecord,
+  decodeResponseRecord,
+  decodeSurveyRecord,
+} from "cip-179/tally";
 import type { KoiosDataSource } from "cardano-tessera-koios";
 
 import {
@@ -199,7 +202,7 @@ export async function integrateSegment(
   const rowByKey = new Map(storedRows.map((row) => [row.surveyKey, row]));
   const storedRecords = storedRows
     .filter((row) => !segmentKeys.has(row.surveyKey) && !inRange(row.slot))
-    .map((row) => fromJsonSafe(JSON.parse(row.record)) as SurveyRecord);
+    .map((row) => decodeSurveyRecord(JSON.parse(row.record)));
   const touchedRecords = [...records.surveys, ...storedRecords];
   const defByKey = new Map(
     touchedRecords.map((s) => [refKey(s.ref), s.definition]),
@@ -237,7 +240,9 @@ export async function integrateSegment(
       });
     const attach = new Set(needProof);
     cancellations = records.cancellations.map((c) =>
-      attach.has(c) ? { ...c, proof: proofs.get(c.txHash) ?? null } : c,
+      attach.has(c)
+        ? { ...c, proof: mechanismAProofOf(proofs.get(c.txHash)) }
+        : c,
     );
   }
 
@@ -253,7 +258,7 @@ export async function integrateSegment(
         !inRange(row.slot) &&
         !segmentCancelKeys.has(`${row.txHash}|${row.surveyKey}`),
     )
-    .map((row) => fromJsonSafe(JSON.parse(row.record)) as CancellationRecord);
+    .map((row) => decodeCancellationRecord(JSON.parse(row.record)));
   // A response row's countability is judged against its survey's definition,
   // so a survey entering or leaving the rows restates every response it holds:
   // a rolled-back survey's responses stop being countable, a revived one's
@@ -280,9 +285,7 @@ export async function integrateSegment(
                 validationKey(row.txHash, row.responseIndex),
               ),
           )
-          .map((row) =>
-            toRow(fromJsonSafe(JSON.parse(row.record)) as ResponseRecord),
-          )
+          .map((row) => toRow(decodeResponseRecord(JSON.parse(row.record))))
       : [];
   const responseRows = records.responses.map(toRow);
   const { counts, banks } = await responderCounts(
