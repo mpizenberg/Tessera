@@ -44,6 +44,8 @@ function surveyListBody(): unknown {
       govActionLifetime: 6,
     },
     responseCounts: { "deadbeef:0": 2 },
+    // Audited, per role: one survey counts a DRep, the other counts nobody.
+    countedByRole: { "deadbeef:0": { "0": 1 }, "aa:0": {} },
   };
   // The server wire-encodes the payload, then appends the freshness fields.
   return {
@@ -113,8 +115,14 @@ describe("IndexerDataSource", () => {
     expect(list.govLinks[0]!.surveyKey).toBe("aa:0");
     expect(list.govLinks[0]!.title).toBe("Linked");
 
-    // Counts are plain JSON, untouched by the wire decode.
+    // Counts are plain JSON, untouched by the wire decode. A survey nothing
+    // counts for carries an empty object, never a missing key — "none" and
+    // "this source does not audit" must not read the same.
     expect(list.responseCounts).toEqual({ "deadbeef:0": 2 });
+    expect(list.countedByRole).toEqual({
+      "deadbeef:0": { "0": 1 },
+      "aa:0": {},
+    });
   });
 
   it("refetches the list on each new load, checking the network once", async () => {

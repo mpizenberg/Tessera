@@ -53,6 +53,21 @@ export interface SurveyListPayload {
   /** Distinct responders per survey key ("<txHex>:<index>"), latest-valid-wins. */
   readonly responseCounts: Record<string, number>;
   /**
+   * The *audited* count per survey key and CIP-179 role (the role integer as
+   * an object key): `auditResponses`' counted set — in-window, valid against
+   * the definition, latest-valid-wins, refuted proofs dropped, pending
+   * verdicts counted — grouped by the responder's role. Every survey in the
+   * payload has an entry, empty when nothing counts, so a missing key means
+   * the source does not compute it rather than "none".
+   *
+   * Provisional, and lower than {@link responseCounts} by construction: a
+   * pending verdict counts (not-yet-checked must never read as failed), and a
+   * survey's artifact additionally applies end-epoch role membership, so the
+   * final per-role set can only be smaller. Absent in direct-Koios mode, which
+   * has no proof verdicts to audit against.
+   */
+  readonly countedByRole?: Readonly<Record<string, Record<string, number>>>;
+  /**
    * The serving tier's final decision per survey key, present only for decided
    * surveys. Client-side verification can't reach these states on its own: the
    * scan keeps `proof: null` for cancellations of closed surveys (so a

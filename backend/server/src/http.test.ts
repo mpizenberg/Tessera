@@ -95,8 +95,10 @@ const cred1: Credential = { type: "key", keyHash: hexToBytes("11") };
 const cred2: Credential = { type: "script", scriptHash: hexToBytes("22") };
 
 // The per-survey routes never look inside a definition, but the list index
-// builder aggregates real fields (owner, submission mode, searchable text) —
-// so the stand-in carries the minimum honest set.
+// builder aggregates real fields (owner, submission mode, searchable text) and
+// the audited count validates the responses against it — so the stand-in
+// carries the minimum honest set: a role its responders can claim, and a
+// question they can answer.
 const defFor = (
   endEpoch: number,
   owner: Credential,
@@ -107,10 +109,16 @@ const defFor = (
     owner,
     title,
     description: "",
-    eligibleRoles: [],
+    eligibleRoles: [Role.Stakeholder],
     endEpoch,
     submissionMode: { type: "public" },
-    questions: [],
+    questions: [
+      {
+        type: "singleChoice",
+        prompt: "",
+        options: { type: "options", labels: ["a", "b"] },
+      },
+    ],
   }) as unknown as SurveyDefinition;
 
 // A is open at the fixture tip (epoch 500 ≤ 510) and owned by cred1;
@@ -143,11 +151,14 @@ function response(
     epochNo: 500,
     responseIndex: 0,
     response: {
-      specVersion: 1,
+      specVersion: 5,
       surveyRef: survey.ref,
       role: Role.Stakeholder,
       credential,
-      answers: { type: "public", answers: [] },
+      answers: {
+        type: "public",
+        answers: [{ type: "singleChoice", questionIndex: 0, optionIndex: 0 }],
+      },
     },
   };
 }
@@ -215,6 +226,12 @@ describe("GET /api/surveys", () => {
     expect(body["responseCounts"]).toEqual({
       [`${TX_A}:0`]: 2,
       [`${TX_B}:1`]: 1,
+    });
+    // The audited figure is not the total: B closed at epoch 499 and its one
+    // response landed in 500, so nothing counts for it.
+    expect(body["countedByRole"]).toEqual({
+      [`${TX_A}:0`]: { [Role.Stakeholder]: 2 },
+      [`${TX_B}:1`]: {},
     });
     expect((body["tip"] as ChainTip).epoch).toBe(tip.epoch);
     expect(body["fetchedAt"]).toBe(FETCHED_AT);
@@ -348,6 +365,9 @@ describe("GET /api/surveys selection: paging, filters, search, refs", () => {
     expect(page1["nextCursor"]).toBeTypeOf("string");
     // Page slices ride restricted to their page's surveys.
     expect(page1["responseCounts"]).toEqual({ [`${TX_A}:0`]: 2 });
+    expect(page1["countedByRole"]).toEqual({
+      [`${TX_A}:0`]: { [Role.Stakeholder]: 2 },
+    });
     expect((page1["cancellations"] as unknown[]).length).toBe(0);
 
     const page2 = await getBody(
@@ -481,6 +501,10 @@ describe("GET /api/surveys selection: paging, filters, search, refs", () => {
     expect(body["responseCounts"]).toEqual({
       [`${TX_A}:0`]: 2,
       [`${TX_B}:1`]: 1,
+    });
+    expect(body["countedByRole"]).toEqual({
+      [`${TX_A}:0`]: { [Role.Stakeholder]: 2 },
+      [`${TX_B}:1`]: {},
     });
     expect((body["cancellations"] as unknown[]).length).toBe(1);
     expect(body["govLinks"]).toEqual([govLinkA]);

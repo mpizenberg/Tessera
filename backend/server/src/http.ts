@@ -200,6 +200,14 @@ function surveyListBody(
     responseCounts: Object.fromEntries(
       rows.map((r) => [r.surveyKey, r.responseCount]),
     ),
+    // Every row gets an entry, `{}` where nothing counts: a client must be
+    // able to tell "no counted response" from "this source does not audit".
+    countedByRole: Object.fromEntries(
+      rows.map((r) => [
+        r.surveyKey,
+        JSON.parse(r.countedByRole) as Record<string, number>,
+      ]),
+    ),
     finalState: Object.fromEntries(
       rows
         .filter((r) => r.finalState !== null)

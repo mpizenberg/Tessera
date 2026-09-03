@@ -324,6 +324,11 @@ export function pageSurveyList(
     finalState: Object.fromEntries(
       Object.entries(full.finalState ?? {}).filter(([k]) => keys.has(k)),
     ),
+    ...(full.countedByRole && {
+      countedByRole: Object.fromEntries(
+        Object.entries(full.countedByRole).filter(([k]) => keys.has(k)),
+      ),
+    }),
     ...(full.incomplete !== undefined && { incomplete: full.incomplete }),
     ...(full.fetchedAt !== undefined && { fetchedAt: full.fetchedAt }),
     ...(staleCursor && { resync: true }),
