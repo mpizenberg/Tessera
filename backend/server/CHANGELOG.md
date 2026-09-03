@@ -2,8 +2,8 @@
 
 The HTTP contract of the Tessera serving backend — every route under `/api/`
 and `/health` — as the Endpoints section of [README.md](README.md) describes
-it. The version is `API_VERSION` in `packages/core/src/source.ts`, beside the
-payload types it versions, and is reported by `GET /health` and
+it. The version is `API_VERSION` in `packages/client/src/payloads.ts`, beside
+the payload types it versions, and is reported by `GET /health` and
 `GET /api/health` as `apiVersion`.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).

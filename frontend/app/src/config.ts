@@ -1,19 +1,19 @@
 /** Cardano network selection and per-network endpoints. */
 
 import {
-  KOIOS_URL,
   NETWORKS,
   SECONDS_PER_EPOCH,
-  type AppConfig,
   type Network,
-} from "cardano-tessera-core";
+} from "cardano-tessera-client";
+import { KOIOS_URL, type AppConfig } from "cardano-tessera-core";
 
 // The config *shape* + endpoint tables are shared with the serving tier and
-// live in `cardano-tessera-core`; this module owns only how the browser *resolves*
-// them (localStorage overrides + the `__DEPLOYMENT__` baked in from
-// deployments.ts). Re-export the types so the many `~/config` consumers keep
-// their import path.
-export type { AppConfig, Network } from "cardano-tessera-core";
+// live in `cardano-tessera-core` (the networks in `cardano-tessera-client`);
+// this module owns only how the browser *resolves* them (localStorage overrides
+// + the `__DEPLOYMENT__` baked in from deployments.ts). Re-export the types so
+// the many `~/config` consumers keep their import path.
+export type { AppConfig } from "cardano-tessera-core";
+export type { Network } from "cardano-tessera-client";
 
 /** CIP-179 went live around here — ignore older label-17 history. */
 const SURVEYS_SINCE_ISO = "2026-06-01T00:00:00Z";

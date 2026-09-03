@@ -1,6 +1,7 @@
 packages:
   - frontend/app
   - packages/cip179
+  - packages/client
   - packages/core
   - packages/koios
   - packages/respond-core

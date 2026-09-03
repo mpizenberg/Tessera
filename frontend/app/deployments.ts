@@ -4,7 +4,7 @@ import { parseEnv } from "node:util";
 // Relative import, not `cardano-tessera-core`: this file runs inside Vite's
 // bundled config, where the workspace alias (vite.config.ts) doesn't exist
 // and Node cannot load the package's TS source through its bare specifier.
-import { NETWORKS, type Network } from "../../packages/core/src/config";
+import { NETWORKS, type Network } from "../../packages/client/src/network";
 
 /**
  * One deployed Tessera app. Everything here is public configuration baked

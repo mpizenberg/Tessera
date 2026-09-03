@@ -24,13 +24,16 @@ response is a live query rather than a figure recorded here.
 
 ## Packages
 
-A host reaches the widget and codec through the published packages `cip-179`
-(metadatum codec, domain model, and validation rules),
-`cardano-tessera-respond` (the framework-free `<tessera-respond>` answering
-widget), and `cardano-tessera-respond-react` (React wrapper — see
-`examples/react-host`; a Svelte host lives in `examples/svelte-host`). Pin the
-versions current on npm when the test run starts and record them with its
-results.
+A host reaches the backend, the widget and the codec through the published
+packages `cardano-tessera-client` (the typed client over the endpoint below:
+one method per route, bodies decoded, the contract version checked, and the
+epoch calendar a host feeds the widget as `tipEpoch`), `cip-179` (metadatum
+codec, domain model, and validation rules), `cardano-tessera-respond` (the
+framework-free `<tessera-respond>` answering widget), and
+`cardano-tessera-respond-react` (React wrapper — see `examples/react-host`,
+which reads a recorded preprod bundle through the client; a Svelte host lives
+in `examples/svelte-host`). Pin the versions current on npm when the test run
+starts and record them with its results.
 
 ## Fixtures
 

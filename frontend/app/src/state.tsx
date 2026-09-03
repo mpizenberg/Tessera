@@ -44,15 +44,17 @@ import {
 } from "~/enrichment/providers";
 import { KoiosDataSource } from "cardano-tessera-koios";
 import { IndexerDataSource } from "~/data/indexer";
+import type {
+  BackendHealth,
+  SurveyListCounts,
+  SurveyListFilter,
+  SurveyListParams,
+  SurveyListPayload,
+} from "cardano-tessera-client";
 import {
   aggregateSurveyList,
   pageSurveyList,
-  type BackendHealth,
   type DataSource,
-  type SurveyListCounts,
-  type SurveyListFilter,
-  type SurveyListParams,
-  type SurveyListPayload,
 } from "cardano-tessera-core";
 import {
   aggregateSurveys,

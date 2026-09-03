@@ -20,7 +20,7 @@ import {
 } from "solid-js";
 
 import { useApp } from "~/state";
-import type { BackendHealth } from "cardano-tessera-core";
+import type { BackendHealth } from "cardano-tessera-client";
 import { t, n } from "~/i18n";
 import css from "./HealthFooter.module.css";
 

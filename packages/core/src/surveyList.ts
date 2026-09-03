@@ -9,7 +9,7 @@
 
 import { aggregate, type SurveyAggregate } from "cip-179/domain";
 
-import type { SurveyListPayload } from "./source";
+import type { SurveyListPayload } from "cardano-tessera-client";
 
 /**
  * Build per-survey aggregates from a `surveyList()` payload, whose response

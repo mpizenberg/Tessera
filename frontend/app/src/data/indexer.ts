@@ -1,243 +1,83 @@
 /**
- * `IndexerDataSource` — the browser's read path against the Tier-1 serving
- * backend (`backend/ARCHITECTURE.md` §2, §5, §7).
- *
- * Where {@link import("cardano-tessera-koios").KoiosDataSource} makes every browser
- * re-scan Koios (a shared token baked in the bundle; load scaling with
- * users × refreshes), this fetches a single snapshot the server already
- * assembled once per interval. It speaks the HTTP contract in
- * `backend/server/src/http.ts`, one route per `DataSource` method:
- *   - `GET /api/surveys`                    the Explore-list payload
- *   - `GET /api/surveys/{txHash}/{index}`   one survey's bundle, responses paged
- *   - `GET /api/responded?credentials=`     survey keys a credential answered
- *   - `GET /api/tx_status`                  live confirmation counts
- *
- * Bodies arrive in the `cip-179/tally` JSON-safe wire form (`JsonSafe<T>`:
- * bytes → hex, bigint → decimal string, Map → tagged pairs). The records in
- * them go through the typed decoders, so a shape error names its field
- * instead of surfacing as a crash later; the rest of an envelope is plain JSON
- * already. The result is the exact `Uint8Array`/`bigint`/`Map`-bearing shape
- * the domain layer expects — so the rest of the app can't tell whether Koios
- * or the indexer produced it. `KoiosDataSource` stays available as the
- * direct/power-user/offline path (when no indexer URL is configured); this is
- * an addition.
+ * `IndexerDataSource` — the `DataSource` seam over `cardano-tessera-client`:
+ * the browser's read path against the serving backend
+ * (`backend/ARCHITECTURE.md` §2, §5, §7). Where
+ * {@link import("cardano-tessera-koios").KoiosDataSource} makes every browser
+ * re-scan Koios, this reads the snapshot the server assembled once per
+ * interval. Each seam method is one client call; the seam's contract throws
+ * where the client answers a typed not-ready state, and hands back a whole
+ * bundle where the client pages. `KoiosDataSource` stays the direct /
+ * power-user / offline path when no backend URL is configured.
  */
 
 import {
-  API_VERSION,
-  apiMajor,
-  collectSurveyBundle,
+  createTesseraClient,
   type BackendHealth,
-  type BackendLiveness,
-  type DataSource,
   type Network,
-  type RespondedPayload,
+  type SnapshotAnswer,
   type SurveyBundlePayload,
   type SurveyListParams,
   type SurveyListPayload,
-} from "cardano-tessera-core";
-import { bytesToHex } from "cip-179/domain";
-import {
-  decodeCancellationRecord,
-  decodeResponseRecord,
-  decodeSurveyRecord,
-  type JsonSafe,
-  type TallyArtifact,
-} from "cip-179/tally";
+  type TesseraClient,
+} from "cardano-tessera-client";
+import type { DataSource } from "cardano-tessera-core";
 import type { SurveyRef } from "cip-179";
-
-/** Abort a serving-tier request that hangs (all routes are cache-served, fast). */
-const REQUEST_TIMEOUT_MS = 30_000;
-
-/**
- * A list body back to its payload. The envelope is taken at its wire type —
- * the one cast left on this path — and only the record sections need
- * decoding; every other field is already the JSON the payload type declares.
- */
-function decodeList(raw: unknown): SurveyListPayload {
-  const { surveys, cancellations, ...rest } =
-    raw as JsonSafe<SurveyListPayload>;
-  return {
-    ...rest,
-    surveys: surveys.map(decodeSurveyRecord),
-    cancellations: cancellations.map(decodeCancellationRecord),
-  };
-}
-
-/** One page of a bundle back to its payload; see {@link decodeList}. */
-function decodeBundlePage(raw: unknown): SurveyBundlePayload {
-  const { survey, responses, cancellations, ...rest } =
-    raw as JsonSafe<SurveyBundlePayload>;
-  return {
-    ...rest,
-    survey: decodeSurveyRecord(survey),
-    responses: responses.map(decodeResponseRecord),
-    cancellations: cancellations.map(decodeCancellationRecord),
-  };
-}
+import type { TallyArtifact } from "cip-179/tally";
 
 export class IndexerDataSource implements DataSource {
-  /**
-   * One-time confirmation that the backend serves the network this app was
-   * built for. Deployments are single-network on both sides, so a mismatch is
-   * always a configuration error (wrong URL in the env or the Settings
-   * override) — and silently mixing networks would show the wrong surveys and
-   * feed the wrong protocol parameters into transaction building. Checked
-   * against `/health` alongside the first snapshot fetch; memoized on success,
-   * evicted on failure so a transient error doesn't poison later loads.
-   */
-  private networkOk: Promise<void> | null = null;
+  private readonly client: TesseraClient;
 
   /**
    * @param baseUrl serving-tier origin (no trailing slash), e.g.
-   * `http://localhost:8787`. May be a same-origin path prefix; routes are joined
-   * as plain strings so a prefix is preserved.
+   * `http://localhost:8787`. May be a same-origin path prefix.
    * @param network the network this app serves; the backend must match.
    */
   constructor(
     private readonly baseUrl: string,
-    private readonly network: Network,
-  ) {}
-
-  async surveyList(): Promise<SurveyListPayload> {
-    const [raw] = await Promise.all([
-      this.getJson<unknown>(`${this.baseUrl}/api/surveys`),
-      this.assertNetwork(),
-    ]);
-    return decodeList(raw);
+    network: Network,
+  ) {
+    this.client = createTesseraClient({ baseUrl, network });
   }
 
-  /** One server-paged Explore page (`?limit&cursor&filter&credentials&q`). */
+  private ready<T>(answer: SnapshotAnswer<T>): T {
+    if (!answer.ready)
+      throw new Error(
+        `Backend at ${this.baseUrl} has not completed its first snapshot yet`,
+      );
+    return answer.body;
+  }
+
+  async surveyList(): Promise<SurveyListPayload> {
+    return this.ready(await this.client.surveys());
+  }
+
   async surveyListPage(params: SurveyListParams): Promise<SurveyListPayload> {
-    const qs = new URLSearchParams({ limit: String(params.limit) });
-    if (params.cursor) qs.set("cursor", params.cursor);
-    if (params.filter && params.filter !== "all")
-      qs.set("filter", params.filter);
-    if (params.credentials?.length)
-      qs.set("credentials", params.credentials.join(","));
-    if (params.search?.trim()) qs.set("q", params.search.trim());
-    const [raw] = await Promise.all([
-      this.getJson<unknown>(`${this.baseUrl}/api/surveys?${qs.toString()}`),
-      this.assertNetwork(),
-    ]);
-    return decodeList(raw);
+    return this.ready(await this.client.surveys(params));
   }
 
   async surveyBundle(ref: SurveyRef): Promise<SurveyBundlePayload> {
-    // The bundle's responses are paged, and every consumer here wants the whole
-    // set (the audit and tally are over all of them), so the seam hands back a
-    // complete bundle and the paging stays inside this method.
-    const url = `${this.baseUrl}/api/surveys/${bytesToHex(ref.txId)}/${ref.index}`;
-    const [bundle] = await Promise.all([
-      collectSurveyBundle(async (cursor) =>
-        decodeBundlePage(
-          await this.getJson<unknown>(
-            cursor === null
-              ? url
-              : `${url}?cursor=${encodeURIComponent(cursor)}`,
-          ),
-        ),
-      ),
-      this.assertNetwork(),
-    ]);
-    return bundle;
+    return this.ready(await this.client.wholeBundle(ref));
   }
 
   async respondedKeys(credentialKeys: readonly string[]): Promise<string[]> {
     if (credentialKeys.length === 0) return [];
-    const qs = new URLSearchParams({ credentials: credentialKeys.join(",") });
-    const [body] = await Promise.all([
-      this.getJson<RespondedPayload>(
-        `${this.baseUrl}/api/responded?${qs.toString()}`,
-      ),
-      this.assertNetwork(),
-    ]);
-    return [...body.surveyKeys];
+    return [
+      ...this.ready(await this.client.responded(credentialKeys)).surveyKeys,
+    ];
   }
 
-  /**
-   * The survey's final artifact, or null if none exists yet (404). Artifacts
-   * are wire-plain by design (weights are decimal strings, no bytes/bigints),
-   * so this is a plain `JSON.parse` — no `fromJsonSafe` decode.
-   */
-  async artifact(ref: SurveyRef): Promise<TallyArtifact | null> {
-    const url =
-      `${this.baseUrl}/api/surveys/` +
-      `${bytesToHex(ref.txId)}/${ref.index}/artifact`;
-    const res = await fetch(url, {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-    if (res.status === 404) return null;
-    if (!res.ok) throw new Error(`Indexer ${url} → ${res.status}`);
-    return (await res.json()) as TallyArtifact;
+  artifact(ref: SurveyRef): Promise<TallyArtifact | null> {
+    return this.client.artifact(ref);
   }
 
-  /**
-   * Backend operational health (the Explore footer). Wire-plain JSON, and no
-   * network assertion: the footer is display-only chrome and must not gate on
-   * the snapshot handshake.
-   */
-  async health(): Promise<BackendHealth> {
-    return this.getJson<BackendHealth>(`${this.baseUrl}/api/health`);
+  /** Display-only chrome: not gated on the compatibility handshake. */
+  health(): Promise<BackendHealth> {
+    return this.client.health();
   }
 
   async txStatus(
     txHashes: readonly string[],
   ): Promise<Map<string, number | null>> {
-    if (txHashes.length === 0) return new Map();
-    const qs = new URLSearchParams({ hashes: txHashes.join(",") });
-    const body = await this.getJson<Record<string, number | null>>(
-      `${this.baseUrl}/api/tx_status?${qs.toString()}`,
-    );
-    return new Map(Object.entries(body));
-  }
-
-  /**
-   * See {@link networkOk}. The same read checks the contract's major: a
-   * backend on another major serves shapes this app does not decode, so it is
-   * refused up front rather than failing field by field.
-   */
-  private assertNetwork(): Promise<void> {
-    if (!this.networkOk) {
-      const p = (async (): Promise<void> => {
-        const live = await this.getJson<BackendLiveness>(
-          `${this.baseUrl}/health`,
-        );
-        if (live.network !== this.network) {
-          throw new Error(
-            `Backend at ${this.baseUrl} serves network "${live.network}", ` +
-              `but this app is built for "${this.network}" — fix the backend ` +
-              `URL (.env.deploy or the Settings override).`,
-          );
-        }
-        if (apiMajor(String(live.apiVersion)) !== apiMajor(API_VERSION)) {
-          throw new Error(
-            `Backend at ${this.baseUrl} serves API version ` +
-              `${String(live.apiVersion)}, but this app speaks ${API_VERSION} ` +
-              `— deploy the matching backend.`,
-          );
-        }
-      })();
-      this.networkOk = p;
-      p.catch(() => {
-        if (this.networkOk === p) this.networkOk = null;
-      });
-    }
-    return this.networkOk;
-  }
-
-  private async getJson<T>(url: string): Promise<T> {
-    const res = await fetch(url, {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-    if (!res.ok) {
-      // 503 = the server hasn't completed its first snapshot refresh yet.
-      const hint =
-        res.status === 503 ? " — serving-tier snapshot not ready yet" : "";
-      throw new Error(`Indexer ${url} → ${res.status}${hint}`);
-    }
-    return res.json() as Promise<T>;
+    return new Map(Object.entries(await this.client.txStatus(txHashes)));
   }
 }

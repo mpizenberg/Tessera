@@ -1,24 +1,12 @@
 /**
- * Portable network selection + endpoints, shared by the browser app and the
- * serving tier. Only the *values* live here; how each runtime *resolves* them
- * (localStorage + Vite env in the app, `process.env` in the backend) stays in
- * that runtime.
+ * Portable endpoints and the read configuration, shared by the browser app and
+ * the serving tier. Only the *values* live here; how each runtime *resolves*
+ * them (localStorage + Vite env in the app, `process.env` in the backend) stays
+ * in that runtime. The networks themselves, and their epoch calendars, are
+ * `cardano-tessera-client`'s.
  */
 
-export const NETWORKS = ["mainnet", "preprod", "preview"] as const;
-
-export type Network = (typeof NETWORKS)[number];
-
-/** Parse a network at an environment or HTTP boundary; unknown values fail closed. */
-export function parseNetwork(value: unknown): Network {
-  if (
-    typeof value === "string" &&
-    (NETWORKS as readonly string[]).includes(value)
-  ) {
-    return value as Network;
-  }
-  throw new Error(`Unsupported Cardano network: ${String(value)}`);
-}
+import type { Network } from "cardano-tessera-client";
 
 export interface AppConfig {
   readonly network: Network;
@@ -48,11 +36,4 @@ export const KOIOS_URL: Record<Network, string> = {
   mainnet: "https://api.koios.rest/api/v1",
   preprod: "https://preprod.koios.rest/api/v1",
   preview: "https://preview.koios.rest/api/v1",
-};
-
-/** Epoch length per network, in seconds. */
-export const SECONDS_PER_EPOCH: Record<Network, number> = {
-  mainnet: 432000,
-  preprod: 432000,
-  preview: 86400,
 };

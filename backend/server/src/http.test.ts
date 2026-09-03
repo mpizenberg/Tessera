@@ -27,6 +27,8 @@ import {
   API_VERSION,
   type SurveyBundlePayload,
   type SurveyListPayload,
+} from "cardano-tessera-client";
+import {
   encodeResponseCursor,
   encodeSurveyCursor,
   parseSurveyCursor,

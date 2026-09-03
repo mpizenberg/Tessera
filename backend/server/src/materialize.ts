@@ -36,7 +36,8 @@ import {
   type SurveyRecord,
 } from "cip-179/domain";
 import { toJsonSafe } from "cip-179/tally";
-import { surveyHaystack, type SurveyFinalState } from "cardano-tessera-core";
+import type { SurveyFinalState } from "cardano-tessera-client";
+import { surveyHaystack } from "cardano-tessera-core";
 
 import type {
   BankedListCounts,

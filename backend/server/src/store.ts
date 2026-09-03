@@ -13,7 +13,12 @@
  * async because D1 is; the node driver wraps its synchronous calls.
  */
 
-import type { ResponseCursor, SurveyFinalState } from "cardano-tessera-core";
+import type {
+  SurveyFinalState,
+  SurveyListCounts,
+  SurveyListFilter,
+} from "cardano-tessera-client";
+import type { ResponseCursor } from "cardano-tessera-core";
 import type { ChainTip, GovLink, GovLinkDoc } from "cip-179/domain";
 
 /** One SQL statement (SQLite dialect) and its positional bindings. */
@@ -798,10 +803,7 @@ export interface SnapshotMeta {
  * boundary, since `active`/`sealed`/`public` move at epoch turnover even
  * when the rows do not.
  */
-export type BankedListCounts = Omit<
-  import("cardano-tessera-core").SurveyListCounts,
-  "mine"
->;
+export type BankedListCounts = Omit<SurveyListCounts, "mine">;
 
 export const snapshotListCounts = (
   meta: SnapshotMeta,
@@ -876,7 +878,7 @@ export interface BankedScan {
 export interface SurveyPageQuery {
   /** The snapshot tip's epoch — the open/closed boundary. */
   readonly tipEpoch: number;
-  readonly filter: import("cardano-tessera-core").SurveyListFilter;
+  readonly filter: SurveyListFilter;
   /** `credentialKey` strings the `mine` filter matches owners against. */
   readonly credentials: readonly string[];
   /** Lowercased AND search terms. */
@@ -943,7 +945,7 @@ export interface SnapshotStore {
     tipEpoch: number,
     credentials: readonly string[],
     searchTerms: readonly string[],
-  ): Promise<import("cardano-tessera-core").SurveyListCounts>;
+  ): Promise<SurveyListCounts>;
   /**
    * Surveys owned by any of `credentials` — the `mine` chip, the one count
    * the banked {@link BankedListCounts} cannot carry. O(owned) via the

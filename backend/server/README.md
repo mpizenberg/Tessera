@@ -65,7 +65,9 @@ carries a version, `apiVersion` on `/health` and `/api/health` as
 and after a major the backend serves the new shape only. A consumer compares
 majors and refuses a mismatch; it may warn on a minor it does not know.
 [CHANGELOG.md](CHANGELOG.md) records every change; the payload types are in
-`cardano-tessera-core` (`source.ts`), with the version constant beside them.
+`cardano-tessera-client` (`payloads.ts`), with the version constant and the
+request limits beside them, and that package's client is the reference
+consumer.
 
 A survey key is `<txHash>:<index>` matching `^[0-9a-f]{64}:(0|[1-9][0-9]*)$`
 — lowercase hex, index without leading zeros — wherever the contract carries
@@ -107,7 +109,7 @@ and the answers of `/api/responded` and `/api/responses`.
   included) with `nextCursor` to continue, the cancellations targeting it, its
   gov links, and the tip. The other sections describe the whole survey on every
   page; `verdicts` is scoped to the page. A reader wanting every response follows
-  the cursor (`collectSurveyBundle` in `cardano-tessera-core`), restarting if a
+  the cursor (`collectSurveyBundle` in `cardano-tessera-client`), restarting if a
   page comes back with `resync` — the snapshot moved under it. `404` for an
   unknown ref, `400` for a malformed cursor.
 - `GET /api/responded?credentials=key:<hex>,script:<hex>` — survey keys with at
@@ -143,7 +145,7 @@ rows. `fetchedAt` is when the producing scan _started_ reading — the instant
 its `tip` was taken — so a staleness derived from it counts from when the data
 was true, not from when the refresh finished writing it.
 
-Payloads use the `cardano-tessera-core` JSON-safe wire form (bytes → hex under
+Payloads use the `cip-179/tally` JSON-safe wire form (bytes → hex under
 `$bytes`, big integers → decimal strings under `$bigint`) so they round-trip
 losslessly to the browser. The `/api/*` routes send permissive CORS headers
 (the data is public and cookieless), so the browser app can read them

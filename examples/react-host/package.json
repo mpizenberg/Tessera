@@ -2,7 +2,7 @@
   "name": "example-react-host",
   "version": "0.0.0",
   "private": true,
-  "description": "Minimal React host for <tessera-respond> via cardano-tessera-respond-react — built in CI so framework compatibility regressions fail a build instead of an integrator.",
+  "description": "Minimal React host: reads a preprod survey bundle through cardano-tessera-client and renders it with <tessera-respond> via cardano-tessera-respond-react — built in CI so a compatibility regression fails a build instead of an integrator.",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,9 @@
     "type-check": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "cardano-tessera-client": "workspace:*",
     "cardano-tessera-respond-react": "workspace:*",
+    "cip-179": "workspace:*",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

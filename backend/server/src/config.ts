@@ -12,12 +12,8 @@
  * cadence from the cron trigger.
  */
 
-import {
-  KOIOS_URL,
-  SECONDS_PER_EPOCH,
-  parseNetwork,
-  type AppConfig,
-} from "cardano-tessera-core";
+import { SECONDS_PER_EPOCH, parseNetwork } from "cardano-tessera-client";
+import { KOIOS_URL, type AppConfig } from "cardano-tessera-core";
 
 /** CIP-179 went live around here — ignore older label-17 history. */
 const SURVEYS_SINCE_ISO_DEFAULT = "2026-06-01T00:00:00Z";

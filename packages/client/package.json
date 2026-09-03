@@ -1,0 +1,62 @@
+{
+  "name": "cardano-tessera-client",
+  "version": "0.1.0",
+  "description": "Typed HTTP client for a Tessera serving backend: the CIP-179 survey list, bundles, per-transaction responses, artifacts and health, decoded into cip-179 types, with the contract's version check, its constants and the per-network epoch calendar.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mpizenberg/Tessera.git",
+    "directory": "packages/client"
+  },
+  "homepage": "https://github.com/mpizenberg/Tessera/tree/main/packages/client#readme",
+  "bugs": "https://github.com/mpizenberg/Tessera/issues",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "CHANGELOG.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "prepublishOnly": "pnpm run build && node ../../scripts/check-publishable.mjs",
+    "type-check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "cardano",
+    "cip-179",
+    "survey",
+    "poll",
+    "governance",
+    "tessera"
+  ],
+  "peerDependencies": {
+    "cip-179": "^0.4.0"
+  },
+  "devDependencies": {
+    "cip-179": "workspace:*",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

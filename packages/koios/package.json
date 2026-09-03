@@ -18,6 +18,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "cardano-tessera-client": "workspace:*",
     "cardano-tessera-core": "workspace:*",
     "cip-179": "workspace:*",
     "@evolution-sdk/evolution": "^0.5.9"

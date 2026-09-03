@@ -24,13 +24,14 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "cardano-tessera-client": "workspace:*",
     "cardano-tessera-core": "workspace:*",
     "cardano-tessera-koios": "workspace:*",
     "cip-179": "workspace:*",
     "@evolution-sdk/evolution": "^0.5.9",
-    "@mattpiz/tlock-js": "0.10.0",
+    "hono": "^4.6.0",
     "@hono/node-server": "^1.13.0",
-    "hono": "^4.6.0"
+    "@mattpiz/tlock-js": "0.10.0"
   },
   "devDependencies": {
     "cardano-tessera-verifier": "workspace:*",

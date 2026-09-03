@@ -186,12 +186,20 @@ _Tessera-specific but pure_ before _concrete I/O and runtime_:
   txproof/tlock stacks inject their Cardano-serialization primitives through
   `TxProofCodec` / `MetadatumCodec` ports, so evolution-sdk is confined to that
   adapter; see `packages/cip179/README.md`.
+- **`cardano-tessera-client`** (`packages/client`) — the consumer side of the
+  serving tier's HTTP contract: the payload types and request limits
+  (`payloads.ts`, with `API_VERSION` beside them), a client with one method per
+  route that decodes bodies into `cip-179` types and refuses a backend on
+  another contract major (`client.ts`), the bundle collector, and the
+  per-network epoch calendar (`network.ts`). Pure over an injected `fetch`;
+  `cip-179` is a peer dependency, never bundled, so a host using both sees one
+  copy of every error class.
 - **`cardano-tessera-core`** (`packages/core`) — the Tessera seam and nothing
-  else: the `DataSource` read interface with the Explore-list and health payload
-  shapes (`source.ts`), keyset paging (`page.ts`), the list-aggregation adapter
-  (`surveyList.ts`), portable config. It imports the `cip-179` subpaths and
-  never re-exports them, so no consumer can reach reusable semantics _through_
-  Tessera.
+  else: the `DataSource` read interface (`source.ts`), in-memory keyset paging
+  over a full list payload (`page.ts`), the list-aggregation adapter
+  (`surveyList.ts`), the read configuration (`config.ts`). It imports the
+  client and the `cip-179` subpaths and never re-exports them, so no consumer
+  can reach either _through_ Tessera.
 - **`cardano-tessera-koios`** (`packages/koios`) — the concrete Koios reader and
   tally inputs. Outside the pure packages, shared by the browser's direct path
   and the serving tier's refresh.
@@ -202,24 +210,31 @@ _Tessera-specific but pure_ before _concrete I/O and runtime_:
   rules, not a display copy of them.
 
 **What is published, and what deliberately is not.** `cip-179`,
-`cardano-tessera-respond` and `cardano-tessera-respond-react` are on npm, because
-a host embedding the widget needs exactly those. `cardano-tessera-core` stays
-unpublished: what a host wants from it is the payload types, which are erased at
-runtime, while zod schemas at the host's own boundary validate the same shapes
-without coupling it to Tessera's release cadence — and the one runtime piece,
-`fromJsonSafe`, is already published in `cip-179/tally`. `cardano-tessera-koios`
-stays unpublished because it is the backend's Koios seam and the most volatile
-code in the workspace; publishing it would freeze an internal shape for no
-consumer. `cardano-tessera-verifier` is worth publishing, being what turns a
-results claim into something a reader can re-run, but it depends on both of those
-and so needs the widget's dist-only treatment first; the first artifact worth
-inviting anyone to re-verify is one from a live DRep-eligible survey. A typed
-HTTP client over `/api` is the one candidate that would delete code — it could
-absorb `frontend/app/src/data/indexer.ts`, so the app and every host would share
-one read seam — and is deferred until the route shapes have stopped moving and a
-real host's boundary code exists to extract it from. A `cardano-tessera-host`
-_helper_ package was rejected earlier for an unrelated reason: its eligibility
-helpers were one-liners.
+`cardano-tessera-client`, `cardano-tessera-respond` and
+`cardano-tessera-respond-react` are on npm. The first three are what a host
+needs to read a survey, render it and attach the answer; the fourth is the
+React binding. The client earned its place by deleting code: the first outside
+host hand-wrote the consumer side of `/api` (types copied into zod schemas,
+the bundle collector, the version and network checks, some 750 lines) and
+the app carried a second copy in `frontend/app/src/data/indexer.ts`, and both
+drifted from the backend independently. One package now holds that seam, the
+app, the verifier and the example host read through it, and the backend
+compiles its bodies against its types. It is best-effort and 0.x: the
+stability promise is the HTTP contract's own version (`API_VERSION`, the
+backend's `CHANGELOG.md`), because the API is first the seam between
+Tessera's own frontend and backend, and the client tracks it rather than
+promising anything on top. `cardano-tessera-core` stays unpublished: what is
+left in it is the app's `DataSource` seam, in-memory paging for the
+direct-Koios mode, and the read configuration — Tessera-shaped and of no use
+to a host. `cardano-tessera-koios` stays unpublished because it is the
+backend's Koios seam and the most volatile code in the workspace; publishing
+it would freeze an internal shape for no consumer. `cardano-tessera-verifier`
+is worth publishing, being what turns a results claim into something a reader
+can re-run, but it depends on koios and so needs the widget's dist-only
+treatment first; the first artifact worth inviting anyone to re-verify is one
+from a live DRep-eligible survey. A `cardano-tessera-host` _helper_ package
+was rejected earlier for an unrelated reason: its eligibility helpers were
+one-liners.
 
 The hashed path is **BigInt- and rational-ready** by construction (`TALLY-SPEC.md` §4):
 `weightedTally*` aggregates in BigInt and returns ratios as integer
@@ -320,8 +335,8 @@ refresh materialized, and a request costs what the survey it asked for costs:
   request parameter, because every consumer of a bundle wants the whole set (it
   is a tally input, not a scrolling view), so a knob could only add round trips
   or unbound the read it exists to bound. Following the cursor to the end is
-  core's `collectSurveyBundle`, used by the app's indexer source and the
-  verifier's cross-check alike. A cursor minted against an older snapshot is
+  the client's `collectSurveyBundle`, behind its `wholeBundle`, which the app's
+  indexer source and the verifier's cross-check both read. A cursor minted against an older snapshot is
   answered _and_ flagged `resync`, and the collector starts over rather than
   stitching two generations: a response that crossed the boundary would silently
   change a result.

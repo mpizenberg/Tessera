@@ -19,6 +19,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "cardano-tessera-client": "workspace:*",
     "cardano-tessera-core": "workspace:*",
     "cardano-tessera-koios": "workspace:*",
     "cip-179": "workspace:*",

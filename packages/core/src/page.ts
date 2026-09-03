@@ -28,9 +28,9 @@
  * within it — which no refresh reorders, so the only instability is the set
  * itself changing under a live cursor. A bundle feeds a tally rather than a
  * scrolling list, where a silently skipped response is a wrong result, so a
- * cursor from an older generation is answered *and* flagged, and
- * {@link collectSurveyBundle} starts over rather than stitching two
- * generations together.
+ * cursor from an older generation is answered *and* flagged, and a collector
+ * (`collectSurveyBundle` in `cardano-tessera-client`) starts over rather than
+ * stitching two generations together.
  */
 
 import type { Question } from "cip-179";
@@ -43,61 +43,15 @@ import {
   type SurveyRecord,
 } from "cip-179/domain";
 
-import type { SurveyBundlePayload, SurveyListPayload } from "./source";
+import {
+  DEFAULT_PAGE_LIMIT,
+  type SurveyListCounts,
+  type SurveyListFilter,
+  type SurveyListParams,
+  type SurveyListPayload,
+} from "cardano-tessera-client";
+
 import { aggregateSurveyList } from "./surveyList";
-
-/** The Explore filter chips; `mine` matches on the caller's credentials. */
-export type SurveyListFilter =
-  | "all"
-  | "linked"
-  | "active"
-  | "sealed"
-  | "public"
-  | "mine";
-
-const SURVEY_LIST_FILTERS: readonly SurveyListFilter[] = [
-  "all",
-  "linked",
-  "active",
-  "sealed",
-  "public",
-  "mine",
-];
-
-export function isSurveyListFilter(x: unknown): x is SurveyListFilter {
-  return SURVEY_LIST_FILTERS.includes(x as SurveyListFilter);
-}
-
-/**
- * Global per-chip totals over the search-matching set (not the page), so the
- * chips stay accurate however few rows are loaded. Mirrors Explore's rule that
- * counts reflect the active search: each chip reads "N matching & <filter>".
- */
-export interface SurveyListCounts {
-  readonly all: number;
-  readonly linked: number;
-  readonly active: number;
-  readonly sealed: number;
-  readonly public: number;
-  /** Owned by the caller's credentials; 0 when none were provided. */
-  readonly mine: number;
-}
-
-export interface SurveyListParams {
-  /** Page size (rows). */
-  readonly limit: number;
-  /** Opaque continuation from the previous page's `nextCursor`. */
-  readonly cursor?: string | undefined;
-  /** Filter chip; defaults to "all". */
-  readonly filter?: SurveyListFilter | undefined;
-  /**
-   * The caller's wallet credentials (core `credentialKey` form) — the `mine`
-   * filter and count match survey owners against these.
-   */
-  readonly credentials?: readonly string[] | undefined;
-  /** Free-text search: whitespace-separated terms, ANDed as substrings. */
-  readonly search?: string | undefined;
-}
 
 /** The keyset position of a row: section bucket, slot, ref key. */
 export interface SurveyCursor {
@@ -309,7 +263,8 @@ export function pageSurveyList(
       (r) => !cursor || afterCursor(r.bucket, r.a.record.slot, r.a.key, cursor),
     );
 
-  const page = matching.slice(0, params.limit);
+  const limit = params.limit ?? DEFAULT_PAGE_LIMIT;
+  const page = matching.slice(0, limit);
   const last = page[page.length - 1];
   const keys = new Set(page.map((r) => r.a.key));
 
@@ -334,7 +289,7 @@ export function pageSurveyList(
     ...(staleCursor && { resync: true }),
     counts,
     nextCursor:
-      matching.length > params.limit && last
+      matching.length > limit && last
         ? encodeSurveyCursor({
             bucket: last.bucket,
             slot: last.a.record.slot,
@@ -343,56 +298,4 @@ export function pageSurveyList(
           })
         : null,
   };
-}
-
-/**
- * How many times {@link collectSurveyBundle} restarts before giving up. A
- * restart happens when a refresh lands mid-collection; refreshes are minutes
- * apart and a survey is a handful of pages, so more than a couple of restarts
- * means something is wrong rather than merely busy, and a caller waiting on a
- * tally deserves the error instead of a loop.
- */
-export const MAX_BUNDLE_RESYNCS = 3;
-
-/**
- * Read a survey's whole bundle from a paged source: page one, then each
- * continuation, responses concatenated and verdicts merged in arrival order.
- *
- * A page that reports `resync` was minted against a different snapshot than the
- * pages before it, so the collection is abandoned and restarted rather than
- * stitched — see the module header on why a bundle is stricter than a list.
- * A source that does not page (no `nextCursor` on its answer) returns from the
- * first call, so this is safe to wrap around any bundle read.
- */
-export async function collectSurveyBundle(
-  fetchPage: (cursor: string | null) => Promise<SurveyBundlePayload>,
-): Promise<SurveyBundlePayload> {
-  for (let attempt = 0; ; attempt++) {
-    const first = await fetchPage(null);
-    const responses = [...first.responses];
-    const verdicts = { ...first.verdicts };
-    let cursor = first.nextCursor ?? null;
-    let restart = false;
-    while (cursor !== null) {
-      const page = await fetchPage(cursor);
-      if (page.resync) {
-        restart = true;
-        break;
-      }
-      responses.push(...page.responses);
-      Object.assign(verdicts, page.verdicts);
-      cursor = page.nextCursor ?? null;
-    }
-    if (!restart)
-      return {
-        ...first,
-        responses,
-        ...(first.verdicts !== undefined && { verdicts }),
-        nextCursor: null,
-      };
-    if (attempt >= MAX_BUNDLE_RESYNCS)
-      throw new Error(
-        `survey bundle kept changing under pagination (${MAX_BUNDLE_RESYNCS} restarts)`,
-      );
-  }
 }

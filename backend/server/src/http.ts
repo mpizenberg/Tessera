@@ -2,7 +2,7 @@
  * The HTTP contract `IndexerDataSource` speaks (`backend/ARCHITECTURE.md`
  * §2, §5.1, §7), versioned by `API_VERSION` and described normatively in
  * `README.md`; `CHANGELOG.md` records every change to it. Every body is typed
- * against the `cardano-tessera-core` payload it serves, in wire form. Routes
+ * against the `cardano-tessera-client` payload it serves, in wire form. Routes
  * mirror the `DataSource` seam one-to-one:
  *   - GET /health                         liveness, served network, apiVersion
  *   - GET /api/surveys                    Explore-list payload: surveys + tip +
@@ -58,12 +58,12 @@ import type {
 import { toJsonSafe, type JsonSafe } from "cip-179/tally";
 import {
   API_VERSION,
-  encodeResponseCursor,
-  encodeSurveyCursor,
+  DEFAULT_PAGE_LIMIT,
+  MAX_CREDENTIALS,
+  MAX_PAGE_LIMIT,
+  MAX_TX_STATUS_HASHES,
+  SURVEY_KEY_RE,
   isSurveyListFilter,
-  parseResponseCursor,
-  parseSurveyCursor,
-  searchTermsOf,
   type BackendHealth,
   type BackendLiveness,
   type RespondedPayload,
@@ -71,6 +71,13 @@ import {
   type SurveyListPayload,
   type SurveyFinalState,
   type TxResponsesPayload,
+} from "cardano-tessera-client";
+import {
+  encodeResponseCursor,
+  encodeSurveyCursor,
+  parseResponseCursor,
+  parseSurveyCursor,
+  searchTermsOf,
 } from "cardano-tessera-core";
 import { KoiosDataSource } from "cardano-tessera-koios";
 
@@ -90,10 +97,6 @@ import {
 /** How long `/api/tip` reuses one upstream Koios call. */
 const UPSTREAM_TTL_MS = 20_000;
 
-/** Default and ceiling page sizes for the paged `/api/surveys` list. */
-const DEFAULT_PAGE_LIMIT = 50;
-const MAX_PAGE_LIMIT = 200;
-
 /**
  * Responses per page of a survey bundle — fixed, with no request parameter to
  * override it. Every consumer of a bundle wants the whole response set (it is a
@@ -101,22 +104,6 @@ const MAX_PAGE_LIMIT = 200;
  * trips and a larger one would unbound the read this page size exists to bound.
  */
 const RESPONSES_PER_PAGE = 200;
-
-/**
- * Upper bound on hashes one `/api/tx_status` request forwards to Koios. Real
- * submit flows have a handful of pending txs; this only rejects abusively
- * oversized lists (the actual DoS defense is the segregated token below —
- * comfort polling can't touch the refresh/finalize quota regardless).
- */
-const MAX_TX_STATUS_HASHES = 20;
-
-/**
- * Upper bound on credentials one request may filter by. A wallet controls a
- * payment and a stake credential, so real callers send two; the bound keeps an
- * abusive list from reaching the store, where it would become an `IN (…)` past
- * D1's 100-parameter cap.
- */
-const MAX_CREDENTIALS = 20;
 
 /**
  * Memoize an async producer for `ttlMs`. The in-flight promise is shared, so a
@@ -192,9 +179,7 @@ function refsOf(raw: string): string[] | null {
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
   if (list.length === 0 || list.length > MAX_PAGE_LIMIT) return null;
-  return list.every((key) => /^[0-9a-f]{64}:(0|[1-9][0-9]*)$/.test(key))
-    ? list
-    : null;
+  return list.every((key) => SURVEY_KEY_RE.test(key)) ? list : null;
 }
 
 /**

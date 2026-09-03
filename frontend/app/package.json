@@ -21,17 +21,18 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "cardano-tessera-client": "workspace:*",
+    "cardano-tessera-core": "workspace:*",
+    "cardano-tessera-koios": "workspace:*",
+    "cardano-tessera-respond": "workspace:*",
+    "cardano-tessera-respond-core": "workspace:*",
+    "cardano-tessera-respond-ui": "workspace:*",
+    "cip-179": "workspace:*",
     "@evolution-sdk/evolution": "^0.5.9",
     "@mattpiz/tlock-js": "0.10.0",
     "@noble/hashes": "^2.2.0",
-    "@solidjs/router": "^0.16.1",
-    "cardano-tessera-core": "workspace:*",
-    "cardano-tessera-koios": "workspace:*",
-    "cardano-tessera-respond-core": "workspace:*",
-    "cardano-tessera-respond-ui": "workspace:*",
-    "cardano-tessera-respond": "workspace:*",
-    "cip-179": "workspace:*",
-    "solid-js": "^1.9.14"
+    "solid-js": "^1.9.14",
+    "@solidjs/router": "^0.16.1"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",

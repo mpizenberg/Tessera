@@ -25,27 +25,24 @@
 
 import { exit } from "node:process";
 
-import { isSurveyTalliable, surveyErrors, type SurveyRef } from "cip-179";
+import { isSurveyTalliable, surveyErrors } from "cip-179";
 
 import {
-  hexToBytes,
   refKey,
   scriptCredentialHash,
   type SurveyBundle,
 } from "cip-179/domain";
-import { fromJsonSafe, type TallyArtifact } from "cip-179/tally";
 import {
-  collectSurveyBundle,
-  KOIOS_URL,
+  createTesseraClient,
+  parseNetwork,
   SECONDS_PER_EPOCH,
-  type AppConfig,
-  type SurveyBundlePayload,
-} from "cardano-tessera-core";
+  type TesseraClient,
+} from "cardano-tessera-client";
+import { KOIOS_URL, type AppConfig } from "cardano-tessera-core";
 import { KoiosDataSource, KoiosTallyInputs } from "cardano-tessera-koios";
 import { revealResponses } from "cip-179/tlock";
 import { evolutionCodec } from "cip-179/evolution";
 
-import { networkFromHealth } from "./network";
 import { diffResponseSets, linkedActionIdsFor, verifyArtifact } from "./verify";
 
 /**
@@ -56,27 +53,20 @@ import { diffResponseSets, linkedActionIdsFor, verifyArtifact } from "./verify";
  * a fetch/parse failure yields a single note and no cross-check.
  */
 async function crossCheckBackendBundle(
-  url: string,
+  client: TesseraClient,
+  key: string,
   chain: SurveyBundle,
 ): Promise<string[]> {
-  let backend: SurveyBundle;
   try {
     // Every page, or the diff would report the unread tail as missing
     // responders — a false MISMATCH.
-    backend = await collectSurveyBundle(
-      async (cursor) =>
-        fromJsonSafe(
-          await getJson<unknown>(
-            cursor === null
-              ? url
-              : `${url}?cursor=${encodeURIComponent(cursor)}`,
-          ),
-        ) as SurveyBundlePayload,
-    );
+    const answer = await client.wholeBundle(key);
+    if (!answer.ready)
+      return ["backend snapshot not ready — no bundle to cross-check"];
+    return diffResponseSets(chain.responses, answer.body.responses);
   } catch (err) {
     return [`backend bundle unavailable for cross-check (${String(err)})`];
   }
-  return diffResponseSets(chain.responses, backend.responses);
 }
 
 /** Matches the backend's snapshot floor; only affects gov-link discovery. */
@@ -95,24 +85,19 @@ function argOf(name: string): string | undefined {
   return i >= 0 ? process.argv[i + 1] : undefined;
 }
 
-async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!res.ok) throw new Error(`${url} → ${res.status}`);
-  return res.json() as Promise<T>;
-}
-
 async function main(): Promise<void> {
   const backend = argOf("backend");
   const surveyArg = argOf("survey");
   if (!backend || !surveyArg) usage();
   const m = /^([0-9a-fA-F]{64}):(\d+)$/.exec(surveyArg);
   if (!m) usage();
-  const [, txHash, index] = m;
-  const base = backend.replace(/\/$/, "");
+  const txHash = m[1]!.toLowerCase();
+  const index = m[2]!;
+  const key = `${txHash}:${index}`;
+  const client = createTesseraClient({ baseUrl: backend });
 
   // The backend's network decides which Koios instance re-verifies it.
-  const health = await getJson<unknown>(`${base}/health`);
-  const network = networkFromHealth(health);
+  const network = parseNetwork((await client.liveness()).network);
   const config: AppConfig = {
     network,
     koiosUrl: argOf("koios") ?? KOIOS_URL[network],
@@ -129,16 +114,7 @@ async function main(): Promise<void> {
   // 404 is NOT decided yet: it may mean "not finalized" or "untalliable" (an
   // invalid definition legitimately has no artifact) — the independent scan
   // below distinguishes them, so defer the verdict.
-  const artifactRes = await fetch(
-    `${base}/api/surveys/${txHash}/${index}/artifact`,
-    { headers: { Accept: "application/json" } },
-  );
-  if (!artifactRes.ok && artifactRes.status !== 404)
-    throw new Error(`artifact fetch → ${artifactRes.status}`);
-  const artifact =
-    artifactRes.status === 404
-      ? undefined
-      : ((await artifactRes.json()) as TallyArtifact);
+  const artifact = await client.artifact(key);
 
   // 2. Independently reconstruct the survey's on-chain slice from a Koios
   // label-17 scan — the definition, the response *set*, and every response's
@@ -146,9 +122,7 @@ async function main(): Promise<void> {
   // the records the tally is built from, so it cannot omit or alter a response
   // and still reproduce the hash.
   const source = new KoiosDataSource(config);
-  const ref: SurveyRef = { txId: hexToBytes(txHash!), index: Number(index) };
   const records = await source.fetchAll();
-  const key = refKey(ref);
   const survey = records.surveys.find((s) => refKey(s.ref) === key);
   if (!survey) {
     console.error(
@@ -205,12 +179,7 @@ async function main(): Promise<void> {
         "MISMATCH may be a false alarm (missing responders); a MATCH is still sound",
     );
   }
-  preNotes.push(
-    ...(await crossCheckBackendBundle(
-      `${base}/api/surveys/${txHash}/${index}`,
-      bundle,
-    )),
-  );
+  preNotes.push(...(await crossCheckBackendBundle(client, key, bundle)));
 
   // 3. The remaining independent inputs, all straight from Koios.
   const txHashes = [

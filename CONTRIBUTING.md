@@ -22,18 +22,20 @@ with its changelog line in the same PR.
 - **The HTTP contract** of the serving backend — every `/api/*` route and
   `/health`, described normatively in the Endpoints section of
   `backend/server/README.md`. Its version is `API_VERSION` in
-  `packages/core/src/source.ts`, as `major.minor`, and its changelog is
-  `backend/server/CHANGELOG.md`. A new field, selection or route bumps the
+  `packages/client/src/payloads.ts`, as `major.minor`, beside the payload
+  types, and its changelog is `backend/server/CHANGELOG.md`. A new field, selection or route bumps the
   minor. A field renamed, removed or re-typed, or a selection whose semantics
   change, bumps the major, and the backend then serves the new shape only — no
   transition window. Update the README's Endpoints section in the same change,
   and `interop/preprod.md` when the host contract it states moves.
-- **The published packages** — `cip-179`, `cardano-tessera-respond` and
-  `cardano-tessera-respond-react` — follow semver, with the pre-1.0 convention
-  that a breaking change bumps the minor. `packages/cip179/CHANGELOG.md`
-  records the codec, domain, tally and tlock changes; a change to a counting
-  rule also changes `rulesetHash()` and gets a new row in that package's
-  README table, never an edited one.
+- **The published packages** — `cip-179`, `cardano-tessera-client`,
+  `cardano-tessera-respond` and `cardano-tessera-respond-react` — follow
+  semver, with the pre-1.0 convention that a breaking change bumps the minor.
+  `packages/cip179/CHANGELOG.md` records the codec, domain, tally and tlock
+  changes; a change to a counting rule also changes `rulesetHash()` and gets a
+  new row in that package's README table, never an edited one.
+  `packages/client/CHANGELOG.md` records the client's own changes; a contract
+  change reaches it as a new `API_VERSION` and lands in both changelogs.
 
 `backend/ARCHITECTURE.md` and `backend/TALLY-SPEC.md` are cited from code by
 section number, so their numbering is part of the interface: add sections at

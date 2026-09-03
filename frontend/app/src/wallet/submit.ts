@@ -47,7 +47,7 @@ import type { ProtocolParameters } from "@evolution-sdk/evolution/sdk/provider/P
 import { METADATA_LABEL, encodePayload, type Cip179Payload } from "cip-179";
 
 import { hexToBytes } from "cip-179/domain";
-import { fromJsonSafe } from "cip-179/tally";
+import { createTesseraClient } from "cardano-tessera-client";
 
 import { expectedNetworkId, type AppConfig } from "~/config";
 import { metadatumToCbor, toTxMetadatum } from "./cbor";
@@ -86,11 +86,8 @@ export function evolutionChain(network: AppConfig["network"]): typeof mainnet {
 async function fetchBackendPParams(
   indexerUrl: string,
 ): Promise<ProtocolParameters> {
-  const res = await fetch(`${indexerUrl}/api/pparams`, {
-    headers: { Accept: "application/json" },
-  });
-  if (!res.ok) throw new Error(`Indexer /api/pparams → ${res.status}`);
-  return fromJsonSafe(await res.json()) as ProtocolParameters;
+  const client = createTesseraClient({ baseUrl: indexerUrl });
+  return (await client.pparams()) as ProtocolParameters;
 }
 
 /** The two halves of a CIP-30 UTxO: `[transaction_input, transaction_output]`. */

@@ -1,4 +1,4 @@
-import { NETWORKS } from "cardano-tessera-core";
+import { NETWORKS } from "cardano-tessera-client";
 import { describe, expect, test } from "vitest";
 
 import { loadConfig } from "./config";

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Credential, SurveyDefinition } from "cip-179";
 import { refKey, type ChainTip, type SurveyRecord } from "cip-179/domain";
 
-import type { SurveyListPayload } from "./source";
+import type { SurveyListPayload } from "cardano-tessera-client";
 import { aggregateSurveyList } from "./surveyList";
 
 const TIP: ChainTip = {

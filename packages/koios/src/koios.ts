@@ -41,11 +41,8 @@ import type {
   TxProof,
 } from "cip-179/domain";
 import type { TallyArtifact } from "cip-179/tally";
-import type {
-  AppConfig,
-  DataSource,
-  SurveyListPayload,
-} from "cardano-tessera-core";
+import type { SurveyListPayload } from "cardano-tessera-client";
+import type { AppConfig, DataSource } from "cardano-tessera-core";
 import { Koios } from "@evolution-sdk/evolution/sdk/provider/Koios";
 import type { ProtocolParameters } from "@evolution-sdk/evolution/sdk/provider/Provider";
 import { koiosJsonToMetadatum, type KoiosJson } from "./metadatum";

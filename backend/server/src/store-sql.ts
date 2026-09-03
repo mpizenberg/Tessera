@@ -10,7 +10,8 @@
  * the reconciliation program — is composed in `sqlBuilders.ts`.
  */
 
-import type { ResponseCursor, SurveyListCounts } from "cardano-tessera-core";
+import type { SurveyListCounts } from "cardano-tessera-client";
+import type { ResponseCursor } from "cardano-tessera-core";
 import { BINDABLE_ROLES, type GovLink, type GovLinkDoc } from "cip-179/domain";
 
 import type {
