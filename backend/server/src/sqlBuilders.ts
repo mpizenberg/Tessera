@@ -90,7 +90,8 @@ export function surveyPageSql(q: SurveyPageQuery): SqlQuery {
       WITH rows AS (
         SELECT survey_key, slot, end_epoch, sealed, cancelled, gov_linked,
                owner, haystack, record, cancellations, gov_links,
-               response_count, final_state, artifact_hash,
+               response_count, counted_by_role, refuted_count,
+               final_state, artifact_hash,
                ${BUCKET} AS bucket
         FROM survey_index
         WHERE ${search.sql} AND ${filter.sql}
@@ -99,6 +100,8 @@ export function surveyPageSql(q: SurveyPageQuery): SqlQuery {
              cancelled, gov_linked AS govLinked, owner, haystack, record,
              cancellations, gov_links AS govLinks,
              response_count AS responseCount,
+             counted_by_role AS countedByRole,
+             refuted_count AS refutedCount,
              final_state AS finalState, artifact_hash AS artifactHash, bucket
       FROM rows
       WHERE ${cursor.sql}
@@ -148,7 +151,7 @@ const SURVEY_INDEX_RECONCILE = `
   INSERT INTO survey_index
     (survey_key, slot, end_epoch, sealed, cancelled, gov_linked, owner,
      haystack, record, cancellations, gov_links, response_count,
-     final_state, artifact_hash)
+     counted_by_role, refuted_count, final_state, artifact_hash)
   SELECT json_extract(value, '$.surveyKey'),
          json_extract(value, '$.slot'),
          json_extract(value, '$.endEpoch'),
@@ -161,6 +164,8 @@ const SURVEY_INDEX_RECONCILE = `
          json_extract(value, '$.cancellations'),
          json_extract(value, '$.govLinks'),
          json_extract(value, '$.responseCount'),
+         json_extract(value, '$.countedByRole'),
+         json_extract(value, '$.refutedCount'),
          json_extract(value, '$.finalState'),
          json_extract(value, '$.artifactHash')
   FROM json_each(?)
@@ -177,6 +182,8 @@ const SURVEY_INDEX_RECONCILE = `
     cancellations = excluded.cancellations,
     gov_links = excluded.gov_links,
     response_count = excluded.response_count,
+    counted_by_role = excluded.counted_by_role,
+    refuted_count = excluded.refuted_count,
     final_state = excluded.final_state,
     artifact_hash = excluded.artifact_hash
   WHERE survey_index.slot IS NOT excluded.slot
@@ -190,6 +197,8 @@ const SURVEY_INDEX_RECONCILE = `
      OR survey_index.cancellations IS NOT excluded.cancellations
      OR survey_index.gov_links IS NOT excluded.gov_links
      OR survey_index.response_count IS NOT excluded.response_count
+     OR survey_index.counted_by_role IS NOT excluded.counted_by_role
+     OR survey_index.refuted_count IS NOT excluded.refuted_count
      OR survey_index.final_state IS NOT excluded.final_state
      OR survey_index.artifact_hash IS NOT excluded.artifact_hash`;
 
@@ -216,13 +225,15 @@ export const snapshotMetaUpsertSql = (meta: SnapshotMeta): SqlQuery => ({
  */
 const RESPONSE_RECONCILE = `
   INSERT INTO response
-    (tx_hash, response_index, survey_key, role, credential, slot, record)
+    (tx_hash, response_index, survey_key, role, credential, slot,
+     countable, record)
   SELECT json_extract(value, '$.txHash'),
          json_extract(value, '$.responseIndex'),
          json_extract(value, '$.surveyKey'),
          json_extract(value, '$.role'),
          json_extract(value, '$.credential'),
          json_extract(value, '$.slot'),
+         json_extract(value, '$.countable'),
          json_extract(value, '$.record')
   FROM json_each(?)
   WHERE 1
@@ -231,20 +242,25 @@ const RESPONSE_RECONCILE = `
     role = excluded.role,
     credential = excluded.credential,
     slot = excluded.slot,
+    countable = excluded.countable,
     record = excluded.record
   WHERE response.slot IS NOT excluded.slot
+     OR response.countable IS NOT excluded.countable
      OR response.record IS NOT excluded.record`;
 
 /** A recounted survey's bank, overwritten whole. */
 const RESPONSE_COUNT_BANK_UPSERT = `
-  INSERT INTO response_count_bank (survey_key, settled_count, below_slot)
+  INSERT INTO response_count_bank
+    (survey_key, settled_count, settled_by_role, below_slot)
   SELECT json_extract(value, '$.surveyKey'),
          json_extract(value, '$.settledCount'),
+         json_extract(value, '$.settledByRole'),
          json_extract(value, '$.belowSlot')
   FROM json_each(?)
   WHERE 1
   ON CONFLICT(survey_key) DO UPDATE SET
     settled_count = excluded.settled_count,
+    settled_by_role = excluded.settled_by_role,
     below_slot = excluded.below_slot`;
 
 /** Same reposition rule as {@link RESPONSE_RECONCILE}. */
@@ -542,13 +558,14 @@ export const SURVEY_ROW_COLUMNS = `survey_key AS surveyKey, slot,
        end_epoch AS endEpoch, sealed, cancelled, gov_linked AS govLinked,
        owner, haystack, record, cancellations, gov_links AS govLinks,
        response_count AS responseCount,
+       counted_by_role AS countedByRole, refuted_count AS refutedCount,
        final_state AS finalState, artifact_hash AS artifactHash`;
 
 export const STORED_RESPONSE_COLUMNS = `tx_hash AS txHash,
        response_index AS responseIndex, survey_key AS surveyKey, role,
        credential, slot`;
 
-export const RESPONSE_ROW_COLUMNS = `${STORED_RESPONSE_COLUMNS}, record`;
+export const RESPONSE_ROW_COLUMNS = `${STORED_RESPONSE_COLUMNS}, countable, record`;
 
 /**
  * A keyed read: `sql` once per chunk of keys, each chunk bound as one JSON
@@ -710,24 +727,28 @@ export const untalliableKeysSql = (surveyKeys: readonly string[]): SqlQuery[] =>
   );
 
 /**
- * The identity keys of each survey's stored responses at or above its own
- * slot bound. One statement per survey: the bounds differ, and the read is
- * a range seek on the survey's index entries either way.
+ * The identity of each survey's stored responses at or above its own slot
+ * bound, records excluded. One statement per survey: the bounds differ, and
+ * the read is a range seek on the survey's index entries either way. The
+ * transaction identity rides along so the caller can tell a refuted response
+ * from its neighbours sharing the same (role, credential).
  */
 export const responseIdentitiesSql = (
   requests: readonly { surveyKey: string; fromSlot: number }[],
 ): SqlQuery[] =>
   requests.map(({ surveyKey, fromSlot }) => ({
-    sql: `SELECT survey_key AS surveyKey, role, credential, slot
+    sql: `SELECT tx_hash AS txHash, response_index AS responseIndex,
+                 survey_key AS surveyKey, role, credential, slot, countable
           FROM response WHERE survey_key = ? AND slot >= ?`,
     params: [surveyKey, fromSlot],
   }));
 
 /**
- * Which of the given identity keys (each `[role, credential]`) appear among a
- * survey's stored responses below a slot. One index seek per key: the keys
- * ride as one JSON array and each is probed with an `EXISTS` on the identity
- * index. Returns the keys found, as their JSON text.
+ * What each of the given identity keys (`[role, credential]`) looks like among
+ * a survey's stored responses below a slot: whether any row bears it, whether
+ * a countable one does, and whether a countable one does whose proof was not
+ * refuted. The keys ride as one JSON array and each is probed on the identity
+ * index; a key with no row down there returns no line at all.
  */
 export const settledResponseKeysSql = (
   requests: readonly {
@@ -737,13 +758,20 @@ export const settledResponseKeysSql = (
   }[],
 ): SqlQuery[] =>
   requests.map(({ surveyKey, belowSlot, keys }) => ({
-    sql: `SELECT DISTINCT j.value AS key FROM json_each(?) j
-          WHERE EXISTS (
-            SELECT 1 FROM response r
-            WHERE r.survey_key = ?
-              AND r.role = json_extract(j.value, '$[0]')
-              AND r.credential = json_extract(j.value, '$[1]')
-              AND r.slot < ?)`,
+    sql: `SELECT j.value AS key,
+                 MAX(r.countable) AS countable,
+                 MAX(r.countable AND NOT EXISTS (
+                   SELECT 1 FROM validated_response v
+                   WHERE v.tx_hash = r.tx_hash
+                     AND v.response_index = r.response_index
+                     AND v.proof_ok = 0)) AS counted
+          FROM json_each(?) j
+          JOIN response r
+            ON r.survey_key = ?
+           AND r.role = json_extract(j.value, '$[0]')
+           AND r.credential = json_extract(j.value, '$[1]')
+           AND r.slot < ?
+          GROUP BY j.value`,
     params: [
       JSON.stringify(keys.map((k) => [k.role, k.credential])),
       surveyKey,
@@ -751,13 +779,49 @@ export const settledResponseKeysSql = (
     ],
   }));
 
+/**
+ * The identity of each of the given surveys' refuted responses, one line per
+ * refuted row. `proof_ok = 0` is the WHERE clause of the partial index
+ * `validated_response_refuted`, spelled the same way here so SQLite uses it:
+ * the read then costs what the refutations are, not what participation is.
+ */
+export const refutedIdentitiesSql = (
+  surveyKeys: readonly string[],
+): SqlQuery[] =>
+  byKeysSql(
+    `SELECT survey_key AS surveyKey, tx_hash AS txHash,
+            response_index AS responseIndex, role, credential
+     FROM validated_response
+     WHERE proof_ok = 0 AND survey_key IN ${JSON_KEY_SET}`,
+    surveyKeys,
+  );
+
+/**
+ * Surveys whose stored refutation stamp no longer matches their refuted rows.
+ * A verdict is decided after the integration that projected the row, and may
+ * land on a survey no segment touches, so without this the audited count
+ * would stay stale until something else touched it. Driven from the refuted
+ * partial index, plus the rows that stamped a refutation they no longer hold.
+ */
+export const STALE_REFUTED_SURVEYS = `
+  SELECT s.survey_key AS surveyKey
+  FROM (SELECT survey_key, COUNT(*) AS n FROM validated_response
+        WHERE proof_ok = 0 GROUP BY survey_key) v
+  JOIN survey_index s ON s.survey_key = v.survey_key
+  WHERE s.refuted_count <> v.n
+  UNION
+  SELECT survey_key AS surveyKey FROM survey_index
+  WHERE refuted_count > 0
+    AND survey_key NOT IN (SELECT survey_key FROM validated_response
+                           WHERE proof_ok = 0)`;
+
 /** The banked settled counts of the given surveys. */
 export const responseCountBanksSql = (
   surveyKeys: readonly string[],
 ): SqlQuery[] =>
   byKeysSql(
     `SELECT survey_key AS surveyKey, settled_count AS settledCount,
-            below_slot AS belowSlot
+            settled_by_role AS settledByRole, below_slot AS belowSlot
      FROM response_count_bank WHERE survey_key IN ${JSON_KEY_SET}`,
     surveyKeys,
   );

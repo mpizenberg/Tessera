@@ -25,6 +25,7 @@ import type {
   RefreshRunInput,
   RefreshRunRow,
   RefreshTotals,
+  RefutedResponse,
   RevalidationInputs,
   ResponseCountBank,
   ResponseIdentity,
@@ -33,6 +34,7 @@ import type {
   StoredResponse,
   SealedRevealRow,
   SettledGovEpoch,
+  SettledIdentity,
   SlotRange,
   SnapshotMeta,
   SqlDriver,
@@ -70,12 +72,14 @@ import {
   putUntalliableSql,
   untalliableKeysSql,
   respondedSql,
+  refutedIdentitiesSql,
   responseCountBanksSql,
   responseIdentitiesSql,
   responsesBySurveysSql,
   segmentReconciliationSql,
   settledResponseKeysSql,
   snapshotMetaUpsertSql,
+  STALE_REFUTED_SURVEYS,
   surveyCountsSql,
   surveyPageSql,
   surveysByKeysSql,
@@ -258,6 +262,15 @@ const RESPONSES_IN_SLOT_RANGE = `
   SELECT ${STORED_RESPONSE_COLUMNS} FROM response
   WHERE slot BETWEEN ? AND ?`;
 
+/**
+ * The window's stored survey keys — which of them the segment no longer lists
+ * is a rolled-back definition, and its responses stop being countable against
+ * a rule that no longer exists. Binds: (fromSlot, toSlot).
+ */
+const SURVEYS_IN_SLOT_RANGE = `
+  SELECT survey_key AS surveyKey FROM survey_index
+  WHERE slot BETWEEN ? AND ?`;
+
 /** The window's stored cancellations. Binds: (fromSlot, toSlot). */
 const CANCELLATIONS_IN_SLOT_RANGE = `
   SELECT ${CANCELLATION_ROW_COLUMNS} FROM cancellation
@@ -340,6 +353,16 @@ export const surveyRowFromDb = (r: DbSurveyRow): SurveyIndexRow => ({
   sealed: r.sealed !== 0,
   cancelled: r.cancelled !== 0,
   govLinked: r.govLinked !== 0,
+});
+
+/** How a `response` row arrives: its one boolean is an integer. */
+export interface DbResponseRow extends Omit<ResponseRow, "countable"> {
+  readonly countable: number;
+}
+
+export const responseRowFromDb = (r: DbResponseRow): ResponseRow => ({
+  ...r,
+  countable: r.countable !== 0,
 });
 
 const surveyIndexRowFromDb = (
@@ -484,6 +507,21 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
             ),
       );
       return rows.map(validatedFromDb);
+    },
+    async refutedIdentities(
+      surveyKeys: readonly string[],
+    ): Promise<Map<string, RefutedResponse[]>> {
+      const out = new Map<string, RefutedResponse[]>();
+      if (surveyKeys.length === 0) return out;
+      const batches = await db.batchAll<
+        RefutedResponse & { surveyKey: string }
+      >(refutedIdentitiesSql(surveyKeys));
+      for (const { surveyKey, ...r } of batches.flat()) {
+        const list = out.get(surveyKey);
+        if (list) list.push(r);
+        else out.set(surveyKey, [r]);
+      }
+      return out;
     },
     async deleteValidatedResponses(
       keys: readonly { txHash: string; responseIndex: number }[],
@@ -803,7 +841,9 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       if (!row) return null;
       return {
         ...row,
-        responses: (responses ?? []) as ResponseRow[],
+        responses: ((responses ?? []) as DbResponseRow[]).map(
+          responseRowFromDb,
+        ),
       };
     },
     async respondedSurveyKeys(
@@ -891,19 +931,21 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       surveyKeys: readonly string[],
     ): Promise<ResponseRow[]> {
       if (surveyKeys.length === 0) return [];
-      const batches = await db.batchAll<ResponseRow>(
+      const batches = await db.batchAll<DbResponseRow>(
         responsesBySurveysSql(surveyKeys),
       );
-      return batches.flat();
+      return batches.flat().map(responseRowFromDb);
     },
     async responseIdentitiesFrom(
       requests: readonly { surveyKey: string; fromSlot: number }[],
     ): Promise<ResponseIdentity[]> {
       if (requests.length === 0) return [];
-      const batches = await db.batchAll<ResponseIdentity>(
-        responseIdentitiesSql(requests),
-      );
-      return batches.flat();
+      const batches = await db.batchAll<
+        Omit<ResponseIdentity, "countable"> & { countable: number }
+      >(responseIdentitiesSql(requests));
+      return batches
+        .flat()
+        .map((r) => ({ ...r, countable: r.countable !== 0 }));
     },
     async settledResponseKeys(
       requests: readonly {
@@ -911,23 +953,28 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
         belowSlot: number;
         keys: readonly { role: number; credential: string }[];
       }[],
-    ): Promise<Map<string, Set<string>>> {
-      const out = new Map<string, Set<string>>();
+    ): Promise<Map<string, Map<string, SettledIdentity>>> {
+      const out = new Map<string, Map<string, SettledIdentity>>();
       const asked = requests.filter((r) => r.keys.length > 0);
       if (asked.length === 0) return out;
-      const batches = await db.batchAll<{ key: string }>(
-        settledResponseKeysSql(asked),
-      );
+      const batches = await db.batchAll<{
+        key: string;
+        countable: number;
+        counted: number;
+      }>(settledResponseKeysSql(asked));
       asked.forEach((request, i) => {
         out.set(
           request.surveyKey,
-          new Set(
+          new Map(
             (batches[i] ?? []).map((row) => {
               const [role, credential] = JSON.parse(row.key) as [
                 number,
                 string,
               ];
-              return responseIdentityKey(role, credential);
+              return [
+                responseIdentityKey(role, credential),
+                { countable: row.countable !== 0, counted: row.counted !== 0 },
+              ];
             }),
           ),
         );
@@ -940,6 +987,7 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       tipEpoch: number,
     ): Promise<SweepInputs> {
       const wanted = [
+        range && query(SURVEYS_IN_SLOT_RANGE, range.fromSlot, range.toSlot),
         range && query(RESPONSES_IN_SLOT_RANGE, range.fromSlot, range.toSlot),
         range &&
           query(CANCELLATIONS_IN_SLOT_RANGE, range.fromSlot, range.toSlot),
@@ -947,14 +995,15 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
           ? null
           : query(SURVEY_GOV_LINKS_SELECT, linkHorizon),
         query(STALE_CANCELLED_SURVEYS, tipEpoch),
+        query(STALE_REFUTED_SURVEYS),
       ];
       const batches = await db.batchAll(
         wanted.filter((q): q is SqlQuery => q !== null),
       );
-      const [responses, cancellations, links, stale] = wanted.map((q) =>
-        q === null ? [] : batches.shift()!,
-      );
+      const [surveys, responses, cancellations, links, stale, staleRefuted] =
+        wanted.map((q) => (q === null ? [] : batches.shift()!));
       return {
+        surveys: (surveys as { surveyKey: string }[]).map((r) => r.surveyKey),
         responses: responses as StoredResponse[],
         cancellations: cancellations as CancellationRow[],
         govLinks: new Map(
@@ -964,6 +1013,9 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
           ]),
         ),
         staleCancelled: (stale as { surveyKey: string }[]).map(
+          (r) => r.surveyKey,
+        ),
+        staleRefuted: (staleRefuted as { surveyKey: string }[]).map(
           (r) => r.surveyKey,
         ),
       };
@@ -1006,7 +1058,20 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
         surveys: (surveys as DbSurveyRow[]).map(surveyRowFromDb),
         cancellations: cancellations as CancellationRow[],
         banks: new Map(
-          (banks as ResponseCountBank[]).map((b) => [b.surveyKey, b]),
+          (
+            banks as (Omit<ResponseCountBank, "settledByRole"> & {
+              settledByRole: string;
+            })[]
+          ).map((b) => [
+            b.surveyKey,
+            {
+              ...b,
+              settledByRole: JSON.parse(b.settledByRole) as Record<
+                string,
+                number
+              >,
+            },
+          ]),
         ),
         finalStates,
       };

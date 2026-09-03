@@ -212,6 +212,19 @@ export interface TallyStore {
     txHashes?: readonly string[],
   ): Promise<ValidatedResponseRow[]>;
   /**
+   * The `(role, credential)` key of each of the given surveys' *refuted*
+   * responses — one entry per refuted row, so the list's length is also the
+   * projection's staleness stamp. A refuted credential proof is the only
+   * verdict an audited per-role count reacts to (a pending one counts, and so
+   * does a proven one), and the count drops a key only when every countable
+   * response bearing it was refuted, so the identity is what the correction
+   * needs. Read from the partial index over refuted rows, so it costs what the
+   * refutations are rather than what participation is.
+   */
+  refutedIdentities(
+    surveyKeys: readonly string[],
+  ): Promise<Map<string, RefutedResponse[]>>;
+  /**
    * Prune validated rows — and any reveal outcome recorded for them — by
    * (txHash, responseIndex). Used at finalization when a counted response has
    * vanished from a *complete* snapshot (reorged out): the scan floor means it
@@ -585,6 +598,10 @@ export interface SurveyIndexRow {
   /** Wire JSON of the `GovLink[]` naming this survey (aligned or not). */
   readonly govLinks: string;
   readonly responseCount: number;
+  /** Wire JSON of {@link import("./materialize").SurveyCounts.countedByRole}. */
+  readonly countedByRole: string;
+  /** {@link import("./materialize").SurveyCounts.refuted} — the staleness stamp. */
+  readonly refutedCount: number;
   /** The finalizer's decision, or null while undecided. */
   readonly finalState: SurveyFinalState["state"] | null;
   /** The emitted artifact's content hash; null unless `finalState` names one. */
@@ -610,6 +627,8 @@ export interface ResponseRow {
   /** Responder identity ("key:<hex>" | "script:<hex>"). */
   readonly credential: string;
   readonly slot: number;
+  /** {@link import("./materialize").responseCountable} against its survey. */
+  readonly countable: boolean;
   /** Wire JSON of the `ResponseRecord`. */
   readonly record: string;
 }
@@ -619,10 +638,13 @@ export type StoredResponse = Omit<ResponseRow, "record">;
 
 /** See {@link SnapshotStore.sweepInputs}. */
 export interface SweepInputs {
+  /** The window's stored survey keys — a rollback is one the segment omits. */
+  readonly surveys: string[];
   readonly responses: StoredResponse[];
   readonly cancellations: CancellationRow[];
   readonly govLinks: Map<string, GovLink[]>;
   readonly staleCancelled: string[];
+  readonly staleRefuted: string[];
 }
 
 /** See {@link SnapshotStore.touchedRows}. */
@@ -637,13 +659,37 @@ export interface TouchedRows {
  * A response's identity key and chain position, without its record — what a
  * responder count reads. `role` and `credential` together are the key CIP-179
  * counts at most one response per; `slot` is where the row sits relative to a
- * survey's banked settled count.
+ * survey's banked settled count; the transaction identity tells one row from
+ * another sharing that key, which is what a per-response proof verdict needs.
  */
 export interface ResponseIdentity {
+  readonly txHash: string;
+  readonly responseIndex: number;
   readonly surveyKey: string;
   readonly role: number;
   readonly credential: string;
   readonly slot: number;
+  /** {@link ResponseRow.countable} — the audited count's row filter. */
+  readonly countable: boolean;
+}
+
+/** One refuted response: which row it is, and the identity key it bears. */
+export interface RefutedResponse {
+  readonly txHash: string;
+  readonly responseIndex: number;
+  readonly role: number;
+  readonly credential: string;
+}
+
+/**
+ * What a survey's settled rows say about one identity key — the two bits the
+ * count arithmetic needs below a bank's slot.
+ */
+export interface SettledIdentity {
+  /** A countable row bears this key: it is already in the banked per-role count. */
+  readonly countable: boolean;
+  /** A countable row bears it whose proof was not refuted: the key still counts. */
+  readonly counted: boolean;
 }
 
 /** The (role, credential) identity key as one string: "<role>|<credential>". */
@@ -651,15 +697,22 @@ export const responseIdentityKey = (role: number, credential: string): string =>
   `${role}|${credential}`;
 
 /**
- * A survey's banked settled responder count: `settledCount` distinct
- * (role, credential) keys among its response rows with slot below
- * `belowSlot`. Frozen because those rows lie below the settlement window and
- * cannot move; usable by an integration only when every response row it may
- * add, replace or delete lies at or above `belowSlot`.
+ * A survey's banked settled responder counts over its response rows with slot
+ * below `belowSlot`: `settledCount` distinct (role, credential) keys, and
+ * `settledByRole` the same count per role over the *countable* rows alone.
+ * Frozen because those rows lie below the settlement window and cannot move;
+ * usable by an integration only when every response row it may add, replace or
+ * delete lies at or above `belowSlot`.
+ *
+ * `settledByRole` is deliberately refutation-blind — countability is immutable,
+ * a proof verdict is not, and a bank that moved with verdicts would be thrown
+ * away by every refutation. The refuted keys are subtracted at projection
+ * instead, at one probe each.
  */
 export interface ResponseCountBank {
   readonly surveyKey: string;
   readonly settledCount: number;
+  readonly settledByRole: Record<string, number>;
   readonly belowSlot: number;
 }
 
@@ -928,10 +981,11 @@ export interface SnapshotStore {
     requests: readonly { surveyKey: string; fromSlot: number }[],
   ): Promise<ResponseIdentity[]>;
   /**
-   * For each survey, which of the given identity keys already appear among
-   * its stored responses below `belowSlot` — the probe that tells a window
-   * key apart from a new responder against a banked settled count. One index
-   * seek per key.
+   * For each survey, what the given identity keys already look like among its
+   * stored responses below `belowSlot` — the probe that tells a window key
+   * apart from a new responder against a banked settled count, and a refuted
+   * key that survives elsewhere from one that does not. A key absent from the
+   * inner map has no row down there at all. One index seek per key.
    */
   settledResponseKeys(
     requests: readonly {
@@ -939,18 +993,21 @@ export interface SnapshotStore {
       belowSlot: number;
       keys: readonly { role: number; credential: string }[];
     }[],
-  ): Promise<Map<string, Set<string>>>;
+  ): Promise<Map<string, Map<string, SettledIdentity>>>;
   /**
    * What integration reads before it knows which surveys a segment touches,
-   * in one round trip: the stored responses and cancellations with slot in
-   * `range` (records excluded for responses) — the pre-sweep window state,
+   * in one round trip: the stored surveys, responses and cancellations with
+   * slot in `range` (records excluded for both) — the pre-sweep window state,
    * where a row the listing lacks is about to be swept and a row whose slot
    * moved needs a recount; the stored link slices of surveys ending at or
    * after `linkHorizon` (a survey whose slice differs from the current pass
    * re-projects even when no tx touched it; null skips the read); and the
    * surveys whose verified-while-open cancellation just expired at `tipEpoch`
    * — `cancelled` set, no final state decided, closed — whose projections went
-   * stale the moment their epoch turned. Empty lists for a null `range`.
+   * stale the moment their epoch turned; and the surveys whose stored
+   * `refuted_count` no longer matches their refuted rows, whose audited counts
+   * went stale when a verdict landed after their last projection. Empty
+   * response and cancellation lists for a null `range`.
    */
   sweepInputs(
     range: SlotRange | null,

@@ -251,6 +251,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0023_response_identity.sql",
       "0024_scan_state_network.sql",
       "0025_final_state.sql",
+      "0026_counted_by_role.sql",
     ]);
   });
 });
@@ -294,7 +295,18 @@ describe("store-node migration to identity columns", () => {
     try {
       expect(
         await store.responseIdentitiesFrom([{ surveyKey: "s:0", fromSlot: 0 }]),
-      ).toEqual([{ surveyKey: "s:0", role: 3, credential: "key:11", slot: 5 }]);
+      ).toEqual([
+        {
+          txHash: "aa",
+          responseIndex: 0,
+          surveyKey: "s:0",
+          role: 3,
+          credential: "key:11",
+          slot: 5,
+          // No verdict says otherwise, so 0026's backfill leaves it countable.
+          countable: true,
+        },
+      ]);
     } finally {
       store.close();
       rmSync(dir, { recursive: true, force: true });
@@ -438,6 +450,8 @@ describe("store-node survey_index paging SQL", () => {
     cancellations: "[]",
     govLinks: "[]",
     responseCount: 1,
+    countedByRole: "{}",
+    refutedCount: 0,
     finalState: null,
     artifactHash: null,
     ...over,
@@ -537,6 +551,7 @@ describe("store-node response rows", () => {
     role: 3,
     credential,
     slot,
+    countable: true,
     record: `{"tx":"${txHash}","i":${responseIndex}}`,
   });
 
@@ -562,6 +577,8 @@ describe("store-node response rows", () => {
     // Only one is linked, so a bundle serving the wrong survey's links shows.
     govLinks: surveyKey === "aa:0" ? `[{"g":"aa:0"}]` : "[]",
     responseCount: 0,
+    countedByRole: "{}",
+    refutedCount: 0,
     finalState: null,
     artifactHash: null,
   }));
@@ -786,6 +803,8 @@ describe("store-node segment reconciliation", () => {
     cancellations: "[]",
     govLinks: "[]",
     responseCount: 0,
+    countedByRole: "{}",
+    refutedCount: 0,
     finalState: null,
     artifactHash: null,
     ...over,
@@ -802,6 +821,7 @@ describe("store-node segment reconciliation", () => {
     role: 3,
     credential: "key:11",
     slot,
+    countable: true,
     record,
   });
 

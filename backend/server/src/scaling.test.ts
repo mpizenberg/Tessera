@@ -88,7 +88,11 @@ const CORPUS_TABLES = new Set([
   "sealed_reveal",
   "response_count_bank",
 ]);
-const BOUNDED_INDEXES = new Set(["validated_response_incomplete"]);
+const BOUNDED_INDEXES = new Set([
+  "validated_response_incomplete",
+  "validated_response_refuted",
+  "survey_index_refuted",
+]);
 
 const corpusScans = (statement: Statement): string[] =>
   statement.plan.filter((detail) => {

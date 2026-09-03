@@ -10,18 +10,28 @@
  * client would derive from the full payload; the segment integration counts
  * responders from the stored identity columns instead of the records, over
  * the same `(survey, role, credential)` key `dedupeResponses` collapses.
+ *
+ * The counts here are the oracle's spelling — `responseCounts` and
+ * `auditResponses` over whole records. Integration reaches the same numbers
+ * from banked identity columns, and the differential test is what holds the
+ * two spellings together.
  */
 
+import type { SurveyDefinition } from "cip-179";
 import {
   aggregate,
+  auditResponses,
   byCancellationChainOrder,
   credentialKey,
+  proofVerdictKey,
   refKey,
   responseCounts,
+  responseIsCountable,
   type CancellationRecord,
   type ChainTip,
   type Cip179Records,
   type GovLink,
+  type ProofVerdicts,
   type ResponseRecord,
   type SurveyRecord,
 } from "cip-179/domain";
@@ -48,17 +58,112 @@ export interface MaterializedSnapshot {
   readonly listCounts: BankedListCounts;
 }
 
+/** The three per-survey figures a row's count columns carry. */
+export interface SurveyCounts {
+  /** Distinct responders across roles — no validity, deadline or proof filter. */
+  readonly responders: number;
+  /**
+   * The audited count per CIP-179 role (the role integer as an object key):
+   * `auditResponses`' counted set — in-window, valid against the definition,
+   * latest-valid-wins, refuted proofs dropped, pending verdicts counted —
+   * grouped by the responder's role. Empty rather than absent when nothing
+   * counts, so the wire never distinguishes "zero" from "unknown".
+   *
+   * Provisional by construction: a pending verdict counts (not-yet-checked
+   * must never read as failed), and the artifact additionally applies
+   * end-epoch role membership, so the final per-role set can only be smaller.
+   */
+  readonly countedByRole: Record<string, number>;
+  /**
+   * How many refuted proofs {@link countedByRole} was computed against — the
+   * row's stamp. A refutation is decided after the integration that projected
+   * the row, and can land on a survey no segment touches, so a stamp that
+   * disagrees with the live count is what makes the row stale.
+   */
+  readonly refuted: number;
+}
+
+const NO_COUNTS: SurveyCounts = {
+  responders: 0,
+  countedByRole: {},
+  refuted: 0,
+};
+
+/**
+ * Role counts as stored and served, in ascending role order. The oracle builds
+ * the map in response order and the segment integration in banked-then-window
+ * order, and the two projections have to be the same bytes.
+ */
+const roleCountsJson = (counts: Record<string, number>): string =>
+  JSON.stringify(
+    Object.fromEntries(
+      Object.entries(counts).sort(([a], [b]) => Number(a) - Number(b)),
+    ),
+  );
+
+/**
+ * The static half of the audit rule: in-window (the record's authoritative
+ * epoch against the survey's deadline) and valid against the definition.
+ * Both operands are immutable, so this is settled when a response row is
+ * projected and is stored on it — only a refuted credential proof can still
+ * take a countable response out of the count.
+ */
+export const responseCountable = (
+  definition: SurveyDefinition,
+  r: ResponseRecord,
+): boolean =>
+  r.epochNo <= definition.endEpoch &&
+  responseIsCountable(definition, r.response);
+
+/**
+ * Every count column of the given surveys, from whole records — the oracle's
+ * spelling of the rule, and the reference the segment integration's banked
+ * arithmetic is held to.
+ */
+export function surveyCountsOf(
+  surveys: readonly SurveyRecord[],
+  responses: readonly ResponseRecord[],
+  refuted: ReadonlySet<string>,
+): Record<string, SurveyCounts> {
+  const verdicts: ProofVerdicts = Object.fromEntries(
+    [...refuted].map((key) => [key, false]),
+  );
+  const responders = responseCounts(responses);
+  const bySurvey = new Map<string, ResponseRecord[]>();
+  for (const r of responses) {
+    const key = refKey(r.response.surveyRef);
+    const list = bySurvey.get(key);
+    if (list) list.push(r);
+    else bySurvey.set(key, [r]);
+  }
+  const out: Record<string, SurveyCounts> = {};
+  for (const s of surveys) {
+    const key = refKey(s.ref);
+    const own = bySurvey.get(key) ?? [];
+    const countedByRole: Record<string, number> = {};
+    for (const r of auditResponses(own, s.definition, verdicts).counted)
+      countedByRole[r.response.role] =
+        (countedByRole[r.response.role] ?? 0) + 1;
+    out[key] = {
+      responders: responders[key] ?? 0,
+      countedByRole,
+      refuted: own.filter((r) => refuted.has(proofVerdictKey(r))).length,
+    };
+  }
+  return out;
+}
+
 /**
  * Project the given surveys' index rows from their full aggregation inputs:
  * each survey's definition record, every cancellation targeting it, its
- * deduped response count, and the current links/tip/overlay. Callers own the
- * scoping — the oracle passes the whole corpus, the segment integration
- * passes the touched surveys with their merged stored+segment inputs.
+ * counts, and the current links/tip/overlay. Callers own the scoping — the
+ * oracle passes the whole corpus, the segment integration passes the touched
+ * surveys with their merged stored+segment inputs.
  */
 export function surveyRowsOf(
   surveys: readonly SurveyRecord[],
   cancellations: readonly CancellationRecord[],
-  countByKey: Record<string, number>,
+  counts: Record<string, SurveyCounts>,
   tip: ChainTip,
   govLinks: readonly GovLink[],
   finalStates: ReadonlyMap<string, SurveyFinalState>,
@@ -92,12 +197,15 @@ export function surveyRowsOf(
   return aggregate(
     surveys,
     cancellations,
-    countByKey,
+    Object.fromEntries(
+      Object.entries(counts).map(([key, c]) => [key, c.responders]),
+    ),
     tip,
     govLinks,
     finalizedCancelled,
   ).map((a) => {
     const finalState = finalStates.get(a.key) ?? null;
+    const count = counts[a.key] ?? NO_COUNTS;
     return {
       surveyKey: a.key,
       slot: a.record.slot,
@@ -113,6 +221,8 @@ export function surveyRowsOf(
       ),
       govLinks: JSON.stringify(toJsonSafe(linksByKey.get(a.key) ?? [])),
       responseCount: a.responseCount,
+      countedByRole: roleCountsJson(count.countedByRole),
+      refutedCount: count.refuted,
       finalState: finalState?.state ?? null,
       artifactHash:
         finalState && "artifactHash" in finalState
@@ -122,13 +232,23 @@ export function surveyRowsOf(
   });
 }
 
-export const responseRowOf = (r: ResponseRecord): ResponseRow => ({
+/**
+ * `definition` is the target survey's, or undefined when no record holds it —
+ * a response to a survey that rolled back or predates the scan floor, which
+ * cannot be counted against a rule that does not exist. Its survey has no row
+ * either; if one revives, the rescan re-derives the response with it.
+ */
+export const responseRowOf = (
+  r: ResponseRecord,
+  definition: SurveyDefinition | undefined,
+): ResponseRow => ({
   txHash: r.txHash,
   responseIndex: r.responseIndex,
   surveyKey: refKey(r.response.surveyRef),
   role: r.response.role,
   credential: credentialKey(r.response.credential),
   slot: r.slot,
+  countable: definition !== undefined && responseCountable(definition, r),
   record: JSON.stringify(toJsonSafe(r)),
 });
 
@@ -159,19 +279,25 @@ export function materializeSnapshot(
   tip: ChainTip,
   govLinks: readonly GovLink[],
   finalStates: ReadonlyMap<string, SurveyFinalState>,
+  refuted: ReadonlySet<string> = new Set(),
 ): MaterializedSnapshot {
   const surveys = surveyRowsOf(
     records.surveys,
     records.cancellations,
-    responseCounts(records.responses),
+    surveyCountsOf(records.surveys, records.responses, refuted),
     tip,
     govLinks,
     finalStates,
   );
+  const defByKey = new Map(
+    records.surveys.map((s) => [refKey(s.ref), s.definition]),
+  );
   return {
     listCounts: listCountsOf(surveys, tip.epoch),
     surveys,
-    responses: records.responses.map(responseRowOf),
+    responses: records.responses.map((r) =>
+      responseRowOf(r, defByKey.get(refKey(r.response.surveyRef))),
+    ),
     cancellations: records.cancellations.map(cancellationRowOf),
   };
 }

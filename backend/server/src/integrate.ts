@@ -9,9 +9,14 @@
  * segment carries its definition, a response or cancellation targeting it,
  * when a stored response/cancellation in the swept range is about to vanish
  * (rolled back), when its governance link set differs from the stored one, or
- * when its verified-while-open cancellation expired at close. Every per-survey
- * aggregate is recomputed over stored rows merged with the segment's records,
- * never maintained by deltas.
+ * when its verified-while-open cancellation expired at close, or when a proof
+ * verdict was refuted after its last projection. Every per-survey aggregate is
+ * recomputed over stored rows merged with the segment's records, never
+ * maintained by deltas.
+ *
+ * Response rows are the exception to "the segment's records and nothing else":
+ * a response carries whether it is countable against its survey's definition,
+ * so a survey entering or leaving the rows restates every response it holds.
  *
  * Governance links are the one input that is not always re-derived: this
  * refresh's pass covers only the epochs whose links can still move, and below
@@ -29,12 +34,18 @@ import {
   type ChainTip,
   type Cip179Records,
   type GovLink,
+  type ResponseRecord,
   type SurveyRecord,
 } from "cip-179/domain";
 import { fromJsonSafe } from "cip-179/tally";
 import type { KoiosDataSource } from "cardano-tessera-koios";
 
-import { cancellationRowOf, responseRowOf, surveyRowsOf } from "./materialize";
+import {
+  cancellationRowOf,
+  responseRowOf,
+  surveyRowsOf,
+  type SurveyCounts,
+} from "./materialize";
 import type {
   GovLinkStore,
   ResponseCountBank,
@@ -44,6 +55,7 @@ import type {
   SnapshotMeta,
   SnapshotStore,
   StoredResponse,
+  TallyStore,
 } from "./store";
 import { responseIdentityKey, validationKey } from "./store";
 
@@ -53,10 +65,12 @@ export type IntegrateStore = Pick<
   | "sweepInputs"
   | "touchedRows"
   | "responseIdentitiesFrom"
+  | "responseRowsForSurveys"
   | "settledResponseKeys"
   | "reconcileSegment"
 > &
-  Pick<GovLinkStore, "settledGovEpochs">;
+  Pick<GovLinkStore, "settledGovEpochs"> &
+  Pick<TallyStore, "refutedIdentities">;
 
 /** What one refresh's governance pass answered, as integration reads it. */
 export interface GovPass {
@@ -167,6 +181,7 @@ export async function integrateSegment(
     ...preCancels.map((r) => r.surveyKey),
     ...linkTouched,
     ...sweep.staleCancelled,
+    ...sweep.staleRefuted,
   ]);
 
   // Everything stored about the touched surveys, read once. A touched key
@@ -239,12 +254,43 @@ export async function integrateSegment(
         !segmentCancelKeys.has(`${row.txHash}|${row.surveyKey}`),
     )
     .map((row) => fromJsonSafe(JSON.parse(row.record)) as CancellationRecord);
-  const responseRows = records.responses.map(responseRowOf);
-  const { countByKey, banks } = await responderCounts(
+  // A response row's countability is judged against its survey's definition,
+  // so a survey entering or leaving the rows restates every response it holds:
+  // a rolled-back survey's responses stop being countable, a revived one's
+  // start again. Both are rare, and the read is empty in the steady state —
+  // the segment's own surveys already have rows.
+  const presenceChanged = [
+    ...touchedRecords
+      .map((s) => refKey(s.ref))
+      .filter((key) => !rowByKey.has(key)),
+    ...sweep.surveys.filter((key) => !segmentKeys.has(key)),
+  ];
+  const segmentResponseKeys = new Set(
+    records.responses.map((r) => validationKey(r.txHash, r.responseIndex)),
+  );
+  const toRow = (r: ResponseRecord): ResponseRow =>
+    responseRowOf(r, defByKey.get(refKey(r.response.surveyRef)));
+  const restatedRows =
+    presenceChanged.length > 0
+      ? (await store.responseRowsForSurveys(presenceChanged))
+          .filter(
+            (row) =>
+              !inRange(row.slot) &&
+              !segmentResponseKeys.has(
+                validationKey(row.txHash, row.responseIndex),
+              ),
+          )
+          .map((row) =>
+            toRow(fromJsonSafe(JSON.parse(row.record)) as ResponseRecord),
+          )
+      : [];
+  const responseRows = records.responses.map(toRow);
+  const { counts, banks } = await responderCounts(
     store,
     touchedKeys,
     stored.banks,
     responseRows,
+    restatedRows,
     range,
     preResponses,
     settledBelowSlot,
@@ -290,7 +336,7 @@ export async function integrateSegment(
   const surveyRows = surveyRowsOf(
     touchedRecords,
     [...cancellations, ...storedCancels],
-    countByKey,
+    counts,
     tip,
     projectedLinks,
     stored.finalStates,
@@ -300,7 +346,7 @@ export async function integrateSegment(
   const changes = await store.reconcileSegment(
     range,
     surveyRows,
-    responseRows,
+    [...responseRows, ...restatedRows],
     cancellationRows,
     banks,
     meta,
@@ -319,30 +365,43 @@ export async function integrateSegment(
 }
 
 /**
- * The touched surveys' responder counts — distinct (role, credential) keys
- * over each survey's response set — and the banks they write.
+ * The touched surveys' count columns — the distinct-responder total, the
+ * audited per-role counts, and the refutation stamp — and the banks they
+ * write.
  *
  * Every touched survey is recounted, so a drifted count heals like any other
  * re-derived column; what varies is how much of the survey the recount reads.
- * A survey whose banked settled count still holds — the bank's slot is at or
- * below the run's horizon and below every row this integration adds,
- * replaces or deletes for it — is recounted from the bank plus the rows at or
- * above its slot: a keyed range read for the window's identities and one
- * index probe per key not yet seen. Any other survey — a change below its
- * bank (a rescan healing a settled row), a rewind, a survey never banked — is
- * recounted from all its identity rows. Either way no record is read, and the
- * recount banks its settled count as of the run's horizon.
+ * A survey whose banked settled counts still hold — the bank's slot is at or
+ * below the run's horizon and below every row this integration adds, replaces
+ * or deletes for it — is recounted from the bank plus the rows at or above
+ * its slot: a keyed range read for the window's identities and one index probe
+ * per key not yet seen. Any other survey — a change below its bank (a rescan
+ * healing a settled row), a rewind, a survey never banked — is recounted from
+ * all its identity rows. Either way no record is read, and the recount banks
+ * its settled counts as of the run's horizon.
+ *
+ * The audited count rides the same machinery over the `countable` column: the
+ * static half of the audit rule (in-window, valid against the definition) is
+ * decided when a response row is projected, so a key is in the banked per-role
+ * count exactly when a countable row bears it. The bank stays refutation-blind
+ * — a verdict moves and countability does not — and the refuted keys are
+ * subtracted afterwards, one probe each, which is what keeps a refutation from
+ * throwing a busy survey's bank away.
  */
 async function responderCounts(
-  store: Pick<IntegrateStore, "responseIdentitiesFrom" | "settledResponseKeys">,
+  store: Pick<
+    IntegrateStore,
+    "responseIdentitiesFrom" | "settledResponseKeys" | "refutedIdentities"
+  >,
   touchedKeys: readonly string[],
   bankByKey: ReadonlyMap<string, ResponseCountBank>,
   segmentRows: readonly ResponseRow[],
+  restatedRows: readonly ResponseRow[],
   range: SlotRange | null,
   storedInRange: readonly StoredResponse[],
   settledBelowSlot: number,
 ): Promise<{
-  countByKey: Record<string, number>;
+  counts: Record<string, SurveyCounts>;
   banks: ResponseCountBank[];
 }> {
   const inRange = (slot: number): boolean =>
@@ -359,8 +418,12 @@ async function responderCounts(
     return out;
   };
   const segmentBySurvey = bySurvey(segmentRows);
+  // Restated rows re-judge a stored response's countability without being a
+  // listing of anything, so they join the window merge and stay out of the
+  // change detection below.
+  const restatedBySurvey = bySurvey(restatedRows);
   const storedBySurvey = bySurvey(storedInRange);
-  const rowKey = (r: StoredResponse): string =>
+  const rowKey = (r: { txHash: string; responseIndex: number }): string =>
     validationKey(r.txHash, r.responseIndex);
 
   // The lowest slot at which this integration changes a survey's response
@@ -397,67 +460,152 @@ async function responderCounts(
       ? bank
       : null;
   };
-  const stored = bySurvey(
-    await store.responseIdentitiesFrom(
-      touchedKeys.map((key) => ({
-        surveyKey: key,
-        fromSlot: usable(key)?.belowSlot ?? 0,
-      })),
-    ),
-  );
+  const [refuted, stored] = await Promise.all([
+    store.refutedIdentities(touchedKeys),
+    store
+      .responseIdentitiesFrom(
+        touchedKeys.map((key) => ({
+          surveyKey: key,
+          fromSlot: usable(key)?.belowSlot ?? 0,
+        })),
+      )
+      .then(bySurvey),
+  ]);
 
-  // Per survey: each identity key's lowest slot across the stored rows read
-  // (in-range ones excluded — replaced by the segment or gone) and the
-  // segment's own rows.
-  type Seen = { role: number; credential: string; slot: number };
+  // Per survey: what its window rows say about each identity key — the lowest
+  // slot they sit at, whether any of them is countable, and whether any
+  // countable one survived its proof verdict. In-range stored rows are
+  // excluded: the segment either replaced them or the sweep is deleting them.
+  interface Seen {
+    role: number;
+    credential: string;
+    slot: number;
+    countable: boolean;
+    counted: boolean;
+  }
   const windows = new Map<string, Map<string, Seen>>();
   for (const key of touchedKeys) {
-    const keys = new Map<string, Seen>();
+    const refutedRows = new Set((refuted.get(key) ?? []).map(rowKey));
+    // One entry per response, restatements and the segment's own listing
+    // overriding the stored read they re-judge, then folded onto the identity
+    // key CIP-179 counts at most one response per.
+    const rows = new Map<string, Omit<Seen, "counted">>();
     for (const r of [
       ...(stored.get(key) ?? []).filter((r) => !inRange(r.slot)),
+      ...(restatedBySurvey.get(key) ?? []),
       ...(segmentBySurvey.get(key) ?? []),
     ]) {
-      const id = responseIdentityKey(r.role, r.credential);
-      const seen = keys.get(id);
-      if (!seen || r.slot < seen.slot)
-        keys.set(id, { role: r.role, credential: r.credential, slot: r.slot });
+      rows.set(rowKey(r), {
+        role: r.role,
+        credential: r.credential,
+        slot: r.slot,
+        countable: r.countable,
+      });
+    }
+    const keys = new Map<string, Seen>();
+    for (const [id, r] of rows) {
+      const identity = responseIdentityKey(r.role, r.credential);
+      const counted = r.countable && !refutedRows.has(id);
+      const seen = keys.get(identity);
+      if (!seen) keys.set(identity, { ...r, counted });
+      else {
+        seen.slot = Math.min(seen.slot, r.slot);
+        seen.countable ||= r.countable;
+        seen.counted ||= counted;
+      }
     }
     windows.set(key, keys);
   }
 
-  // Against a bank, a window key counts as new only if the survey holds no
-  // row with it below the bank's slot.
-  const settledKeys = await store.settledResponseKeys(
+  // Against a bank, what the settled rows say about a key decides whether it
+  // is new. Asked for the window's keys and for the refuted ones: a refuted
+  // key drops out of the audited count only when nothing below the bank still
+  // carries it either.
+  const probeKeys = (key: string): Seen[] => {
+    const win = windows.get(key)!;
+    const asked = new Map(win);
+    for (const r of refuted.get(key) ?? []) {
+      const id = responseIdentityKey(r.role, r.credential);
+      if (!asked.has(id))
+        asked.set(id, {
+          role: r.role,
+          credential: r.credential,
+          slot: Infinity,
+          countable: false,
+          counted: false,
+        });
+    }
+    return [...asked.values()];
+  };
+  const settled = await store.settledResponseKeys(
     touchedKeys.flatMap((key) => {
       const bank = usable(key);
       return bank
-        ? [
-            {
-              surveyKey: key,
-              belowSlot: bank.belowSlot,
-              keys: [...windows.get(key)!.values()],
-            },
-          ]
+        ? [{ surveyKey: key, belowSlot: bank.belowSlot, keys: probeKeys(key) }]
         : [];
     }),
   );
 
-  const countByKey: Record<string, number> = {};
+  const counts: Record<string, SurveyCounts> = {};
   const banks: ResponseCountBank[] = [];
   for (const key of touchedKeys) {
     const bank = usable(key);
-    const present = settledKeys.get(key) ?? new Set<string>();
-    const fresh = [...windows.get(key)!.entries()].filter(
-      ([id]) => !bank || !present.has(id),
+    const below = settled.get(key);
+    const win = windows.get(key)!;
+    // A key the bank already counts contributes nothing; without a bank the
+    // window is the whole survey, so every key it holds is new.
+    const fresh = [...win].filter(([id]) => !bank || !below?.get(id));
+    const freshCountable = [...win].filter(
+      ([id, k]) => k.countable && (!bank || !below?.get(id)?.countable),
     );
-    const base = bank?.settledCount ?? 0;
-    countByKey[key] = base + fresh.length;
+
+    const countedByRole: Record<string, number> = {
+      ...(bank?.settledByRole ?? {}),
+    };
+    for (const [, k] of freshCountable)
+      countedByRole[k.role] = (countedByRole[k.role] ?? 0) + 1;
+    // Refuted keys, subtracted where nothing else carries them: a responder
+    // whose countable answers were all refuted stops counting. A role left at
+    // zero is dropped, so the map lists exactly the roles someone counts for.
+    const refutedByIdentity = new Map(
+      (refuted.get(key) ?? []).map((r) => [
+        responseIdentityKey(r.role, r.credential),
+        r.role,
+      ]),
+    );
+    for (const [id, role] of refutedByIdentity) {
+      const seen = win.get(id);
+      const settledKey = below?.get(id);
+      if (
+        (seen?.countable === true || settledKey?.countable === true) &&
+        seen?.counted !== true &&
+        settledKey?.counted !== true
+      ) {
+        const left = (countedByRole[role] ?? 0) - 1;
+        if (left > 0) countedByRole[role] = left;
+        else delete countedByRole[role];
+      }
+    }
+
+    counts[key] = {
+      responders: (bank?.settledCount ?? 0) + fresh.length,
+      countedByRole,
+      refuted: (refuted.get(key) ?? []).length,
+    };
+    const settledByRole: Record<string, number> = {
+      ...(bank?.settledByRole ?? {}),
+    };
+    for (const [, k] of freshCountable)
+      if (k.slot < settledBelowSlot)
+        settledByRole[k.role] = (settledByRole[k.role] ?? 0) + 1;
     banks.push({
       surveyKey: key,
       settledCount:
-        base + fresh.filter(([, k]) => k.slot < settledBelowSlot).length,
+        (bank?.settledCount ?? 0) +
+        fresh.filter(([, k]) => k.slot < settledBelowSlot).length,
+      settledByRole,
       belowSlot: settledBelowSlot,
     });
   }
-  return { countByKey, banks };
+  return { counts, banks };
 }

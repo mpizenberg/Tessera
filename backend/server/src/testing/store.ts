@@ -29,8 +29,10 @@ import { nodeBackendStore } from "../store-node";
 import {
   ARTIFACT_COLUMNS,
   VALIDATED_COLUMNS,
+  responseRowFromDb,
   surveyRowFromDb,
   validatedFromDb,
+  type DbResponseRow,
   type DbSurveyRow,
   type DbValidatedRow,
 } from "../store-sql";
@@ -75,7 +77,9 @@ export function testStore(): TestStore {
       ),
     ),
     responseRows: view(() =>
-      rows<ResponseRow>(`SELECT ${RESPONSE_ROW_COLUMNS} FROM response`),
+      rows<DbResponseRow>(`SELECT ${RESPONSE_ROW_COLUMNS} FROM response`).map(
+        responseRowFromDb,
+      ),
     ),
     validated: view(
       () =>

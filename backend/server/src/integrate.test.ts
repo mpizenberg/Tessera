@@ -279,6 +279,14 @@ async function runRefresh(
   await store.markFinalStates(finalStateEntries(finalStatesOf(chain)));
 }
 
+/** The refuted proofs the store holds — the audit's one verdict input. */
+const refutedOf = (store: TestStore): Set<string> =>
+  new Set(
+    [...store.validated]
+      .filter(([, r]) => r.proofOk === false)
+      .map(([key]) => key),
+  );
+
 async function expectOracleMatch(
   store: TestStore,
   chain: Chain,
@@ -289,6 +297,7 @@ async function expectOracleMatch(
     tip,
     chain.govLinks,
     finalStatesOf(chain),
+    refutedOf(store),
   );
   const bySurveyKey = <T extends { surveyKey: string }>(rows: T[]): T[] =>
     [...rows].sort((a, b) => (a.surveyKey < b.surveyKey ? -1 : 1));
@@ -605,6 +614,7 @@ describe("segment integration mechanics", () => {
     expect(await bank()).toEqual({
       surveyKey: key,
       settledCount: 0,
+      settledByRole: {},
       belowSlot: 80,
     });
 
@@ -613,6 +623,7 @@ describe("segment integration mechanics", () => {
     expect(await bank()).toEqual({
       surveyKey: key,
       settledCount: 0,
+      settledByRole: {},
       belowSlot: 80,
     });
 
@@ -634,6 +645,7 @@ describe("segment integration mechanics", () => {
     expect(await bank()).toEqual({
       surveyKey: key,
       settledCount: 2,
+      settledByRole: { [Role.Stakeholder]: 2 },
       belowSlot: 290,
     });
 
@@ -650,8 +662,20 @@ describe("segment integration mechanics", () => {
         surveyKey: key,
         belowSlot: 290,
         keys: [
-          { role: Role.Stakeholder, credential: "key:0a", slot: 405 },
-          { role: Role.Stakeholder, credential: "key:0c", slot: 406 },
+          {
+            role: Role.Stakeholder,
+            credential: "key:0a",
+            slot: 405,
+            countable: true,
+            counted: true,
+          },
+          {
+            role: Role.Stakeholder,
+            credential: "key:0c",
+            slot: 406,
+            countable: true,
+            counted: true,
+          },
         ],
       },
     ]);
@@ -760,5 +784,203 @@ describe("segment integration mechanics", () => {
     });
     expect(store.surveyRows).toHaveLength(1);
     expect(store.responseRows).toHaveLength(1);
+  });
+});
+
+describe("audited per-role counts", () => {
+  /** A survey's stored `countedByRole`, parsed. */
+  const counted = (store: TestStore): Record<string, number> =>
+    JSON.parse(store.surveyRows[0]!.countedByRole) as Record<string, number>;
+
+  /** A response with a role and answers of the caller's choosing. */
+  const answerAt = (
+    n: number,
+    slot: number,
+    target: SurveyRecord,
+    credByte: number,
+    over: Partial<ResponseRecord["response"]> = {},
+  ): ResponseRecord => {
+    const base = responseAt(n, slot, target, credByte);
+    return { ...base, response: { ...base.response, ...over } };
+  };
+
+  it("counts one per (role, credential), grouped by role", async () => {
+    const store = testStore();
+    const survey = surveyAt(1, 100, 9, 3);
+    const chain: Chain = {
+      surveys: [survey],
+      responses: [
+        responseAt(2, 110, survey, 10),
+        responseAt(3, 120, survey, 11),
+        // Same credential answering twice — latest-valid-wins collapses it.
+        responseAt(4, 130, survey, 10),
+        answerAt(5, 140, survey, 12, { role: Role.DRep }),
+      ],
+      cancellations: [],
+      govLinks: [],
+      finalizedCancelled: new Set(),
+    };
+    await runRefresh(store, chain, tipAt(200));
+    expect(counted(store)).toEqual({
+      [Role.DRep]: 1,
+      [Role.Stakeholder]: 2,
+    });
+    expect(store.surveyRows[0]!.responseCount).toBe(3);
+    await expectOracleMatch(store, chain, tipAt(200));
+  });
+
+  it("is an empty object, never a missing survey, when nothing counts", async () => {
+    const store = testStore();
+    const chain: Chain = {
+      surveys: [surveyAt(1, 100, 9, 3)],
+      responses: [],
+      cancellations: [],
+      govLinks: [],
+      finalizedCancelled: new Set(),
+    };
+    await runRefresh(store, chain, tipAt(200));
+    expect(store.surveyRows[0]!.countedByRole).toBe("{}");
+  });
+
+  it("drops what the total counts: past the deadline, and ineligible", async () => {
+    const store = testStore();
+    // Ends at epoch 0; a response at slot 300 lands in epoch 1.
+    const survey = surveyAt(1, 100, 0, 3);
+    const chain: Chain = {
+      surveys: [survey],
+      responses: [
+        responseAt(2, 110, survey, 10),
+        responseAt(3, 300, survey, 11),
+        answerAt(4, 120, survey, 12, { role: Role.CC }),
+      ],
+      cancellations: [],
+      govLinks: [],
+      finalizedCancelled: new Set(),
+    };
+    // The late response is only in the segment of the later run.
+    await runRefresh(store, chain, tipAt(200));
+    await runRefresh(store, chain, tipAt(400));
+    expect(store.surveyRows[0]!.responseCount).toBe(3);
+    expect(counted(store)).toEqual({ [Role.Stakeholder]: 1 });
+    await expectOracleMatch(store, chain, tipAt(400));
+  });
+
+  it("drops a refuted proof, and re-projects the survey when it lands", async () => {
+    const store = testStore();
+    const survey = surveyAt(1, 100, 9, 3);
+    const forged = responseAt(3, 120, survey, 11);
+    const chain: Chain = {
+      surveys: [survey],
+      responses: [responseAt(2, 110, survey, 10), forged],
+      cancellations: [],
+      govLinks: [],
+      finalizedCancelled: new Set(),
+    };
+    await runRefresh(store, chain, tipAt(200));
+    expect(counted(store)).toEqual({ [Role.Stakeholder]: 2 });
+
+    // Validation refutes the second responder's credential proof after the
+    // integration that projected the row, and no segment touches the survey
+    // again: the refutation stamp is what puts it back on the touched list.
+    await store.upsertValidatedResponses([
+      {
+        txHash: forged.txHash,
+        responseIndex: 0,
+        surveyKey: refKey(survey.ref),
+        role: Role.Stakeholder,
+        credential: "key:0b",
+        slot: forged.slot,
+        epochNo: forged.epochNo,
+        blockIndex: 0,
+        proofOk: false,
+        linkedActionId: null,
+        wellFormed: true,
+        checkedAt: 1,
+      },
+    ]);
+    const quiet = tipAt(1000);
+    await integrateSegment(store, emptySource, {
+      records: { surveys: [], responses: [], cancellations: [] },
+      range: { fromSlot: quiet.slot - MARGIN, toSlot: quiet.slot },
+      tip: quiet,
+      govPass: null,
+      settledBelowSlot: quiet.slot - MARGIN,
+      meta: metaAt(quiet),
+    });
+    expect(counted(store)).toEqual({ [Role.Stakeholder]: 1 });
+    expect(store.surveyRows[0]!.refutedCount).toBe(1);
+    // The total is verdict-blind and does not move.
+    expect(store.surveyRows[0]!.responseCount).toBe(2);
+    await expectOracleMatch(store, chain, quiet);
+  });
+
+  it("keeps a refuted responder who also answered validly", async () => {
+    const store = testStore();
+    const survey = surveyAt(1, 100, 9, 3);
+    const forged = responseAt(3, 120, survey, 10);
+    const chain: Chain = {
+      surveys: [survey],
+      responses: [responseAt(2, 110, survey, 10), forged],
+      cancellations: [],
+      govLinks: [],
+      finalizedCancelled: new Set(),
+    };
+    await store.upsertValidatedResponses([
+      {
+        txHash: forged.txHash,
+        responseIndex: 0,
+        surveyKey: refKey(survey.ref),
+        role: Role.Stakeholder,
+        credential: "key:0a",
+        slot: forged.slot,
+        epochNo: forged.epochNo,
+        blockIndex: 0,
+        proofOk: false,
+        linkedActionId: null,
+        wellFormed: true,
+        checkedAt: 1,
+      },
+    ]);
+    await runRefresh(store, chain, tipAt(200));
+    expect(counted(store)).toEqual({ [Role.Stakeholder]: 1 });
+    await expectOracleMatch(store, chain, tipAt(200));
+  });
+
+  it("counts a settled responder from the bank, refuted or not", async () => {
+    const store = testStore();
+    const survey = surveyAt(1, 100, 9, 3);
+    const settled = responseAt(2, 110, survey, 10);
+    const chain: Chain = {
+      surveys: [survey],
+      responses: [settled, responseAt(3, 120, survey, 11)],
+      cancellations: [],
+      govLinks: [],
+      finalizedCancelled: new Set(),
+    };
+    // Two runs: the second banks both responders below the horizon, so the
+    // third reads them from the bank rather than from their rows.
+    await runRefresh(store, chain, tipAt(200));
+    await runRefresh(store, chain, tipAt(400));
+    expect(counted(store)).toEqual({ [Role.Stakeholder]: 2 });
+
+    await store.upsertValidatedResponses([
+      {
+        txHash: settled.txHash,
+        responseIndex: 0,
+        surveyKey: refKey(survey.ref),
+        role: Role.Stakeholder,
+        credential: "key:0a",
+        slot: settled.slot,
+        epochNo: settled.epochNo,
+        blockIndex: 0,
+        proofOk: false,
+        linkedActionId: null,
+        wellFormed: true,
+        checkedAt: 1,
+      },
+    ]);
+    await runRefresh(store, chain, tipAt(500));
+    expect(counted(store)).toEqual({ [Role.Stakeholder]: 1 });
+    await expectOracleMatch(store, chain, tipAt(500));
   });
 });

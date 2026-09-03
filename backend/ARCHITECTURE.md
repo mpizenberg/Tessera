@@ -520,8 +520,9 @@ identical to what a from-scratch rebuild would produce, after every step.
 
 ### 5.5 What the refresh banks
 
-Four tables exist so that a later run never redoes work an earlier one
-finished — the growth invariant applied to storage rather than to queries.
+Four tables — and two columns on the projections themselves — exist so that a
+later run never redoes work an earlier one finished: the growth invariant
+applied to storage rather than to queries.
 
 - **`validated_response`** (`migrations/0002`) — the `TALLY-SPEC.md` §3 rules 1–3
   verdicts per `(tx_hash, response_index)`, filled incrementally as responses
@@ -541,15 +542,32 @@ finished — the growth invariant applied to storage rather than to queries.
   tomorrow, so a merged proof is true only as of its fetch. A hash Koios returned
   no row for is a node that is behind, not an answer, and is banked as nothing.
 
-- **`response_count_bank`** (`migrations/0023`) — per survey, the distinct
-  `(role, credential)` count over its response rows below a slot, banked as of
-  the run's settlement horizon whenever the survey is recounted. Below the
-  horizon a survey's response set cannot move, so a later re-projection merges
-  only the rows at or above the banked slot — a keyed range read of identity
-  columns plus one index probe per key not yet seen — instead of re-reading
-  its whole participation. A change below the banked slot (the drift-healing
-  rescan, a rewind) recounts the survey from all its identity rows and banks
-  afresh; no record is read either way.
+- **`response_count_bank`** (`migrations/0023`, `0026`) — per survey, the
+  distinct `(role, credential)` count over its response rows below a slot, and
+  the same count per role over the countable ones, banked as of the run's
+  settlement horizon whenever the survey is recounted. Below the horizon a
+  survey's response set cannot move, so a later re-projection merges only the
+  rows at or above the banked slot — a keyed range read of identity columns
+  plus one index probe per key not yet seen — instead of re-reading its whole
+  participation. A change below the banked slot (the drift-healing rescan, a
+  rewind) recounts the survey from all its identity rows and banks afresh; no
+  record is read either way.
+
+  The per-role half is the audited count served as `countedByRole`, and it
+  needs two things the identity columns did not carry. Whether a response is
+  countable at all — in window, valid against the definition — reads two
+  immutable inputs, so it is decided once, when the response row is projected,
+  and stored on it (`response.countable`, `0026`); deriving it per refresh
+  instead would read every record of every touched survey, which the scaling
+  bench measures at 8.2 MB per run for one survey with 10,000 responders.
+  Whether its credential proof was _refuted_ is the one verdict that moves, so
+  it stays out of the bank and is subtracted at projection from the partial
+  index over refuted rows — bounded by the refutations, not by participation —
+  with one probe per refuted key to see whether anything else still carries it.
+  A refutation is decided after the integration that projected the row, and on
+  a survey no segment need touch, so the row records how many it was computed
+  against (`survey_index.refuted_count`) and a stamp that disagrees with the
+  live count makes the survey stale, the way an expired cancellation does.
 
 `tx_proof_cache` is the one that is **evicted** (`proofCache.ts`): its rows are
 whole transactions, and a proof stops being read once nothing can still be decided

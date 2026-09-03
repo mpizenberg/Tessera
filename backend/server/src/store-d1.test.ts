@@ -86,6 +86,8 @@ const schema = `
     cancellations TEXT NOT NULL,
     gov_links TEXT NOT NULL,
     response_count INTEGER NOT NULL,
+    counted_by_role TEXT NOT NULL DEFAULT '{}',
+    refuted_count INTEGER NOT NULL DEFAULT 0,
     final_state TEXT,
     artifact_hash TEXT
   );
@@ -103,6 +105,7 @@ const schema = `
     role INTEGER NOT NULL,
     credential TEXT NOT NULL,
     slot INTEGER NOT NULL,
+    countable INTEGER NOT NULL DEFAULT 1,
     record TEXT NOT NULL,
     PRIMARY KEY (tx_hash, response_index)
   );
@@ -114,6 +117,7 @@ const schema = `
   CREATE TABLE response_count_bank (
     survey_key TEXT PRIMARY KEY,
     settled_count INTEGER NOT NULL,
+    settled_by_role TEXT NOT NULL DEFAULT '{}',
     below_slot INTEGER NOT NULL
   );
   CREATE TABLE scan_state (
@@ -155,6 +159,8 @@ const survey = (
   cancellations: "[]",
   govLinks: "[]",
   responseCount: 0,
+  countedByRole: "{}",
+  refutedCount: 0,
   finalState: null,
   artifactHash: null,
   ...over,
@@ -169,6 +175,7 @@ const response = (n: number): ResponseRow => {
     role: 3,
     credential: `key:${n % 100}`,
     slot: n,
+    countable: true,
     record: JSON.stringify({ n }),
   };
 };
