@@ -521,20 +521,15 @@ async function responderCounts(
   // is new. Asked for the window's keys and for the refuted ones: a refuted
   // key drops out of the audited count only when nothing below the bank still
   // carries it either.
-  const probeKeys = (key: string): Seen[] => {
-    const win = windows.get(key)!;
-    const asked = new Map(win);
-    for (const r of refuted.get(key) ?? []) {
-      const id = responseIdentityKey(r.role, r.credential);
-      if (!asked.has(id))
-        asked.set(id, {
-          role: r.role,
-          credential: r.credential,
-          slot: Infinity,
-          countable: false,
-          counted: false,
-        });
-    }
+  const probeKeys = (key: string): { role: number; credential: string }[] => {
+    const asked = new Map<string, { role: number; credential: string }>();
+    for (const [id, k] of windows.get(key)!)
+      asked.set(id, { role: k.role, credential: k.credential });
+    for (const r of refuted.get(key) ?? [])
+      asked.set(responseIdentityKey(r.role, r.credential), {
+        role: r.role,
+        credential: r.credential,
+      });
     return [...asked.values()];
   };
   const settled = await store.settledResponseKeys(

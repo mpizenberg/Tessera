@@ -662,20 +662,8 @@ describe("segment integration mechanics", () => {
         surveyKey: key,
         belowSlot: 290,
         keys: [
-          {
-            role: Role.Stakeholder,
-            credential: "key:0a",
-            slot: 405,
-            countable: true,
-            counted: true,
-          },
-          {
-            role: Role.Stakeholder,
-            credential: "key:0c",
-            slot: 406,
-            countable: true,
-            counted: true,
-          },
+          { role: Role.Stakeholder, credential: "key:0a" },
+          { role: Role.Stakeholder, credential: "key:0c" },
         ],
       },
     ]);
