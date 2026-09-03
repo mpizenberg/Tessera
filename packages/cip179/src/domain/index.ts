@@ -11,6 +11,7 @@
 
 export * from "./records.js";
 export * from "./hex.js";
+export * from "./quicknet.js";
 export * from "./answer.js";
 export * from "./govLink.js";
 export * from "./dedupe.js";

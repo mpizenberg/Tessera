@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 while `< 1.0.0`, breaking changes bump the **minor** version.
 
+## [0.4.0] - unreleased
+
+### Added
+
+- **`SurveyAggregate.sealedUnsupported`** (`./domain`): `true` for a sealed
+  survey pinned to a drand chain other than quicknet. Its answers are
+  undecryptable by every conformant reader, a finalizer decides it untalliable
+  after close, and a UI should block responding — so a consumer admitting
+  surveys from the aggregate learns it up front rather than as `untalliable`
+  once the survey has closed. Computed by the new `isSealedUnsupported(
+definition)`, for readers holding a definition and no aggregate. `talliable`
+  is unchanged: this verdict is not part of the tally ruleset, and
+  `rulesetHash()` is the same as 0.3.0's.
+- `QUICKNET_CHAIN_HASH_HEX`, `QUICKNET_CHAIN_HASH` and `isQuicknet` now live
+  in `./domain` (they are a constant and a byte compare, not tlock machinery);
+  `./tlock` re-exports them, so existing imports keep working.
+- **Typed record decoders** `decodeSurveyRecord`, `decodeResponseRecord`,
+  `decodeCancellationRecord` (`./tally`): `fromJsonSafe` followed by a
+  structural check of every field the record type declares, throwing
+  `Cip179DecodeError` with the path of the field that does not fit. For a
+  record received over a wire, where a cast would surface a shape error as a
+  crash several calls later. Shape only: `validateDefinition` and
+  `validateResponse` still judge spec validity, and unknown keys are dropped,
+  not refused.
+
 ## [0.3.0] - 2026-08-01
 
 ### Changed (breaking)

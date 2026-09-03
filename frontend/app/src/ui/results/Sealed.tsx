@@ -20,7 +20,7 @@ import {
   type RevealedAudit,
   type SurveyAggregate,
 } from "cip-179/domain";
-import { isQuicknet, revealResponses, roundIsAvailable } from "cip-179/tlock";
+import { revealResponses, roundIsAvailable } from "cip-179/tlock";
 
 import { formatRevealDate } from "~/tlock/drand";
 import { t, n } from "~/i18n";
@@ -57,10 +57,6 @@ export const SealedResults: Component<{
   // Pre-reveal responder count: role + credential are plaintext, so structural
   // latest-wins dedup is knowable now; only the answers wait for the reveal.
   const sealedCount = (): number => dedupeResponses(props.inWindow).length;
-  const supported = () => {
-    const m = mode();
-    return m ? isQuicknet(m.chainHash) : false;
-  };
   const revealable = () => {
     const m = mode();
     return !!m && roundIsAvailable(m.round, props.nowUnix);
@@ -87,7 +83,12 @@ export const SealedResults: Component<{
   // genuine membership change but stays stable across ticks and object identity.
   const revealKey = (): string | null => {
     if (
-      !(revealRequested() && revealable() && supported() && !props.s.cancelled)
+      !(
+        revealRequested() &&
+        revealable() &&
+        !props.s.sealedUnsupported &&
+        !props.s.cancelled
+      )
     )
       return null;
     const hashes = props.inWindow.map((r) => r.txHash).sort();
@@ -137,7 +138,7 @@ export const SealedResults: Component<{
           body={t("survey.sealedCancelledBody")}
         />
       </Match>
-      <Match when={!supported()}>
+      <Match when={props.s.sealedUnsupported}>
         <SealedStateNotice
           tone="warn"
           title={t("survey.sealedUnsupportedTitle")}

@@ -197,6 +197,11 @@ Pure functions over the raw, decoded on-chain **record shapes** (`SurveyRecord`,
 …). It implements the parts of CIP-179 that need chain data but not fetching:
 latest-wins dedupe, owner-proven cancellation, mechanism-A/B credential proof,
 response audit, answer rendering, and survey aggregation / lifecycle status.
+The aggregate carries the two verdicts a definition alone decides: `talliable`
+(spec-valid enough to count) and `sealedUnsupported` (sealed on a drand chain
+other than quicknet, so never revealable — block responding, expect no
+artifact); `isSurveyTalliable` and `isSealedUnsupported` answer the same from a
+bare record or definition.
 
 How the records are _fetched_ is deliberately out of scope — that seam is
 application-specific. The record shapes are the input contract, so a Koios scan,
@@ -208,6 +213,13 @@ The count and stake-weighted tally rules, the JSON-safe wire codec
 (`toJsonSafe` / `fromJsonSafe`: bytes→hex, bigint→decimal string, Map→tagged
 pairs), the canonical-JSON (RFC 8785 / JCS subset) encoding, and the
 content-addressed tally artifact.
+
+`fromJsonSafe` is lenient by design — it rebuilds tagged values wherever they
+appear and returns `unknown`. A record received over a wire goes through
+`decodeSurveyRecord`, `decodeResponseRecord` or `decodeCancellationRecord`
+instead: the same rebuild followed by a structural check of every field the
+record type declares, throwing `Cip179DecodeError` with the offending path, so
+a shape mismatch is a decode error at the boundary and not a crash later.
 
 The artifact is **content-addressed**: `RULESET_DESCRIPTOR` names the exact
 rules applied (covered roles, per-role weight measures, dedup/window/proof

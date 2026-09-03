@@ -10,6 +10,7 @@ import type {
   Cip179Records,
   SurveyRecord,
 } from "./records.js";
+import { QUICKNET_CHAIN_HASH } from "./quicknet.js";
 import { aggregateSurveys, voteDeadlineUnix } from "./survey.js";
 
 // Cancellation tri-state keys off tip.epoch vs the survey's end_epoch: a survey
@@ -190,6 +191,32 @@ describe("aggregateSurveys — talliable flag (findings 10, 11)", () => {
       recs([survey(0, { ...validDef(keyOwner(1), 10), specVersion: 6 })], []),
     );
     expect(a.talliable).toBe(false);
+  });
+});
+
+describe("aggregateSurveys — sealedUnsupported", () => {
+  const sealedOn = (chainHash: Uint8Array): SurveyDefinition => ({
+    ...def(keyOwner(1), 10),
+    submissionMode: { type: "sealed", chainHash, round: 1, paddingSize: 1 },
+  });
+
+  it("is false for a sealed survey on quicknet", () => {
+    const a = agg1(recs([survey(0, sealedOn(QUICKNET_CHAIN_HASH))], []));
+    expect(a.sealed).toBe(true);
+    expect(a.sealedUnsupported).toBe(false);
+  });
+
+  it("is true for a sealed survey on any other chain", () => {
+    const other = new Uint8Array(QUICKNET_CHAIN_HASH);
+    other[0] ^= 0xff;
+    const a = agg1(recs([survey(0, sealedOn(other))], []));
+    expect(a.sealedUnsupported).toBe(true);
+  });
+
+  it("is never true for a public survey", () => {
+    const a = agg1(recs([survey(0, def(keyOwner(1), 10))], []));
+    expect(a.sealed).toBe(false);
+    expect(a.sealedUnsupported).toBe(false);
   });
 });
 

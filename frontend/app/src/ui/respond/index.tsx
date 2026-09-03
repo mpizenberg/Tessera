@@ -27,11 +27,7 @@ import { QuestionList } from "./Question";
 import { RationaleSection, createRationale } from "./Rationale";
 import { SubmitBar, SubmittedPanel } from "./Submit";
 import { createDeadline } from "./deadline";
-import {
-  createOnchainPreview,
-  createSubmission,
-  sealedUnsupported,
-} from "./submission";
+import { createOnchainPreview, createSubmission } from "./submission";
 import css from "./respond.module.css";
 
 export const Respond: Component = () => {
@@ -109,10 +105,11 @@ export const Respond: Component = () => {
   const preview = createOnchainPreview(source, rationale);
   const submission = createSubmission({ source, deadline, rationale });
 
+  const sealedUnsupported = (): boolean => survey()?.sealedUnsupported ?? false;
+
   /** Why submitting is impossible right now, if it is. */
   const submitBlocked = (): string | undefined => {
-    if (sealedUnsupported(sealedMode))
-      return t("respond.sealedUnsupportedNote");
+    if (sealedUnsupported()) return t("respond.sealedUnsupportedNote");
     if (deadline.passedNow()) return t("respond.deadlinePassed");
     return undefined;
   };
@@ -190,7 +187,7 @@ export const Respond: Component = () => {
               <Show when={sealedMode()}>
                 {(m) => <SealedBanner round={m().round} />}
               </Show>
-              <Show when={sealedUnsupported(sealedMode)}>
+              <Show when={sealedUnsupported()}>
                 <Notice
                   tone="warn"
                   title={t("respond.sealedUnsupportedTitle")}

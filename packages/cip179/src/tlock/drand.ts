@@ -4,8 +4,9 @@
  * Sealed (commit-reveal) surveys timelock-encrypt responses to a future drand
  * round; the round becomes decryptable once the quicknet beacon for it
  * publishes. We pin **quicknet** (the only chain the bundled tlock supports),
- * so the chain hash is a constant and the round ↔ time mapping is linear in the
- * 3-second period.
+ * so the round ↔ time mapping is linear in the 3-second period. The chain's
+ * identity (`QUICKNET_CHAIN_HASH`, `isQuicknet`) is a definition-level fact and
+ * lives in `cip-179/domain`; it is re-exported here for existing importers.
  *
  * The actual encrypt/decrypt lives in the lazy `./client` seam; this module
  * only does the arithmetic the UI and the finalizer need (which round, when it
@@ -13,24 +14,15 @@
  * frontend — they are presentation, not domain math, and pull in locale APIs.
  */
 
-import { hexToBytes } from "../domain/index.js";
-
-/** Drand quicknet chain hash (hex) — matches the bundled tlock client. */
-export const QUICKNET_CHAIN_HASH_HEX =
-  "52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971";
-
-/** Drand quicknet chain hash (32 bytes), for a sealed survey's submission mode. */
-export const QUICKNET_CHAIN_HASH = hexToBytes(QUICKNET_CHAIN_HASH_HEX);
+export {
+  QUICKNET_CHAIN_HASH,
+  QUICKNET_CHAIN_HASH_HEX,
+  isQuicknet,
+} from "../domain/quicknet.js";
 
 /** Quicknet genesis time (unix seconds) and round period (seconds). */
 const GENESIS_TIME = 1692803367;
 const PERIOD = 3;
-
-/** Is this chain hash the quicknet chain we can encrypt/decrypt against? */
-export function isQuicknet(chainHash: Uint8Array): boolean {
-  if (chainHash.length !== QUICKNET_CHAIN_HASH.length) return false;
-  return chainHash.every((b, i) => b === QUICKNET_CHAIN_HASH[i]);
-}
 
 /**
  * The first drand round whose beacon publishes at or after `unix` — i.e. the

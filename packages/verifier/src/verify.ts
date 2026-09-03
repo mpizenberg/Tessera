@@ -29,6 +29,7 @@ import {
   bytesToHex,
   mechanismAProven,
   credentialKey,
+  isSealedUnsupported,
   laterInChain,
   refKey,
   responseCredentialProof,
@@ -49,7 +50,6 @@ import {
   type TallyInputSource,
   type WeightedResponder,
 } from "cip-179/tally";
-import { isQuicknet } from "cip-179/tlock";
 
 /** Everything the rebuild needs — all independently (re)fetched by the CLI. */
 export interface VerifyInputs {
@@ -289,7 +289,7 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
   if (sealed) {
     const mode = def.submissionMode;
     if (mode.type !== "sealed") throw new Error("unreachable");
-    if (!isQuicknet(mode.chainHash)) {
+    if (isSealedUnsupported(def)) {
       // The emitter can't reveal a non-quicknet sealed survey either, so it
       // emits no artifact. Rebuild an empty tally: a served artifact for one is
       // spurious, and the loud MISMATCH that follows is the correct verdict.

@@ -20,6 +20,7 @@ import type {
   SurveyRecord,
 } from "./records.js";
 import { mechanismAProven } from "./mechanismA.js";
+import { isSealedUnsupported } from "./quicknet.js";
 
 // The dedupe rule and its identity keys live in `./dedupe` (the server's
 // per-survey `responseCount` calls the same code); re-exported here so
@@ -46,6 +47,15 @@ export interface SurveyAggregate {
    * talliable.
    */
   readonly talliable: boolean;
+  /**
+   * The second definition-derived verdict, beside `talliable` and outside the
+   * ruleset: a sealed survey pinned to a drand chain other than quicknet
+   * ({@link isSealedUnsupported}). Its answers are undecryptable forever, a
+   * finalizer decides it untalliable after close, and a conformant UI blocks
+   * responding. A consumer admitting surveys from this aggregate reads it here
+   * rather than learning `untalliable` once the survey has closed.
+   */
+  readonly sealedUnsupported: boolean;
   /**
    * Epoch-aligned governance actions linking this survey (any action kind —
    * CIP-179 v5). Empty when standalone; a survey MAY be linked by several
@@ -249,6 +259,7 @@ export function aggregate(
       sealed: record.definition.submissionMode.type === "sealed",
       external: record.definition.contentAnchor !== undefined,
       talliable: isSurveyTalliable(record),
+      sealedUnsupported: isSealedUnsupported(record.definition),
       govLinks,
       responseCount: countByKey[key] ?? 0,
       status: statusOf(record.definition.endEpoch, cancelled, tip.epoch),

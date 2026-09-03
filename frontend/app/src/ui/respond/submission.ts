@@ -22,7 +22,7 @@ import {
   type SurveyDefinition,
   type SurveyRef,
 } from "cip-179";
-import { isQuicknet, sealAnswers, sealedCiphertextSize } from "cip-179/tlock";
+import { sealAnswers, sealedCiphertextSize } from "cip-179/tlock";
 import {
   buildResponse,
   buildSealedResponse,
@@ -68,19 +68,6 @@ function partsOf(src: ResponseSource): Parts | undefined {
   return def && ref && role !== null && credential
     ? { def, ref, role, credential }
     : undefined;
-}
-
-/**
- * A sealed survey pinned to a drand chain the bundled tlock cannot decrypt: such
- * a vote would be permanently undecryptable, so submission is blocked outright
- * rather than warned about. Every survey Tessera creates uses quicknet; this
- * only fires for an externally-built definition on another chain.
- */
-export function sealedUnsupported(
-  sealedMode: Accessor<SealedSubmissionMode | null>,
-): boolean {
-  const m = sealedMode();
-  return m !== null && !isQuicknet(m.chainHash);
 }
 
 export type OnchainPreview = {

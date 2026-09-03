@@ -36,8 +36,8 @@ import {
   type Question,
   type SurveyDefinition,
 } from "cip-179";
-import { surveyStatus } from "cip-179/domain";
-import { isQuicknet, unixTimeForRound } from "cip-179/tlock";
+import { isSealedUnsupported, surveyStatus } from "cip-179/domain";
+import { unixTimeForRound } from "cip-179/tlock";
 
 import {
   buildResponse,
@@ -147,12 +147,9 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     return mode.type === "sealed" ? mode : null;
   });
 
-  // A sealed survey pinned to a drand chain the bundled tlock can't decrypt
-  // would be permanently undecryptable, so block submission outright.
-  const sealedUnsupported = createMemo(() => {
-    const m = sealedMode();
-    return m !== null && !isQuicknet(m.chainHash);
-  });
+  const sealedUnsupported = createMemo(() =>
+    isSealedUnsupported(props.definition),
+  );
 
   // Open/closed from the host's chain tip + cancellation flag.
   const view = createMemo<"public" | "sealed" | "ended" | "cancelled">(() => {
