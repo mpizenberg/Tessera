@@ -11,7 +11,7 @@
  * never write.
  */
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Role, type Credential, type SurveyDefinition } from "cip-179";
 import { hexToBytes, refKey } from "cip-179/domain";
@@ -42,11 +42,15 @@ import type {
   SurveyRecord,
 } from "cip-179/domain";
 
+import { changesCursorAt, encodeChangesCursor } from "./changes";
 import { loadConfig } from "./config";
 import { createApp, keyedCache } from "./http";
 import { materializeSnapshot } from "./materialize";
 import { ALL_SLOTS, testStore, type TestStore } from "./testing/store";
-import type { ValidatedResponseRow } from "./store";
+import {
+  OPERATIONAL_RETENTION_SECONDS,
+  type ValidatedResponseRow,
+} from "./store";
 
 function appWith(store: TestStore) {
   return createApp(loadConfig({}), store, { compress: false });
@@ -57,6 +61,7 @@ async function seed(
   store: TestStore,
   govLinks: readonly GovLink[] = [],
   extraResponses: readonly ResponseRecord[] = [],
+  fetchedAt = FETCHED_AT,
 ): Promise<void> {
   const snapshot = materializeSnapshot(
     {
@@ -75,13 +80,14 @@ async function seed(
     snapshot.responses,
     snapshot.cancellations,
     [],
-    {
-      tip: JSON.stringify(toJsonSafe(tip)),
-      incomplete: false,
-      fetchedAt: FETCHED_AT,
-      listCounts: JSON.stringify(snapshot.listCounts),
-    },
+    fetchedAt,
   );
+  await store.publishSnapshotMeta({
+    tip: JSON.stringify(toJsonSafe(tip)),
+    incomplete: false,
+    fetchedAt,
+    listCounts: JSON.stringify(snapshot.listCounts),
+  });
 }
 
 async function seededStore(): Promise<TestStore> {
@@ -583,6 +589,181 @@ describe("GET /api/surveys selection: paging, filters, search, refs", () => {
         (await app.request(`/api/surveys?refs=${encodeURIComponent(refs)}`))
           .status,
       ).toBe(400);
+  });
+});
+
+describe("GET /api/surveys selection: changes", () => {
+  const KEY_A = `${TX_A}:0`;
+  const KEY_B = `${TX_B}:1`;
+  const keysOf = (body: Record<string, unknown>): string[] =>
+    (body["surveys"] as { txHash: string }[]).map((s) =>
+      s.txHash === TX_A ? KEY_A : KEY_B,
+    );
+  const get = async (
+    app: ReturnType<typeof appWith>,
+    qs: string,
+  ): Promise<Record<string, unknown>> => {
+    const res = await app.request(`/api/surveys${qs}`);
+    expect(res.status).toBe(200);
+    return (await res.json()) as Record<string, unknown>;
+  };
+  const changes = (
+    app: ReturnType<typeof appWith>,
+    cursor: string,
+    limit?: number,
+  ) =>
+    get(
+      app,
+      `?changes=${encodeURIComponent(cursor)}${limit === undefined ? "" : `&limit=${limit}`}`,
+    );
+  const walked = encodeChangesCursor(changesCursorAt(FETCHED_AT));
+  // A responder neither fixture survey has heard from, so a response of
+  // theirs moves a count (cred2's would only replace their earlier one).
+  const cred3: Credential = { type: "key", keyHash: hexToBytes("33") };
+
+  // The retention check reads the wall clock; the fixture generation sits a
+  // minute before it.
+  beforeEach(() => vi.setSystemTime((FETCHED_AT + 60) * 1000));
+  afterEach(() => vi.useRealTimers());
+
+  it("every paged answer carries the walk's changesCursor; the refs answer does not", async () => {
+    const app = appWith(await seededStore());
+    const page1 = await get(app, "?limit=1");
+    expect(page1["changesCursor"]).toBe(walked);
+    const page2 = await get(
+      app,
+      `?limit=1&cursor=${encodeURIComponent(page1["nextCursor"] as string)}`,
+    );
+    expect(page2["changesCursor"]).toBe(walked);
+    expect((await get(app, `?refs=${KEY_A}`))["changesCursor"]).toBeUndefined();
+  });
+
+  it("answers an empty delta from a fresh walk, continuing at the same position", async () => {
+    const body = await changes(appWith(await seededStore()), walked);
+    expect(body["surveys"]).toEqual([]);
+    expect(body["removed"]).toEqual([]);
+    expect(body["nextCursor"]).toBe(walked);
+    expect(body["counts"]).toBeUndefined();
+    expect(body["resync"]).toBeUndefined();
+    expect(body["fetchedAt"]).toBe(FETCHED_AT);
+  });
+
+  it("delivers a moved projection once, then nothing", async () => {
+    const store = await seededStore();
+    const app = appWith(store);
+    // A refresh lands a response to A: its count moves, B is untouched.
+    await seed(
+      store,
+      [],
+      [response(surveyA, cred3, 980_000, "ab".repeat(32))],
+      FETCHED_AT + 60,
+    );
+    const delta = await changes(app, walked);
+    expect(keysOf(delta)).toEqual([KEY_A]);
+    expect(delta["responseCounts"]).toEqual({ [KEY_A]: 3 });
+    expect(delta["removed"]).toEqual([]);
+    expect(delta["nextCursor"]).toBe(
+      encodeChangesCursor(changesCursorAt(FETCHED_AT + 60)),
+    );
+    const quiet = await changes(app, delta["nextCursor"] as string);
+    expect(keysOf(quiet)).toEqual([]);
+    expect(quiet["nextCursor"]).toBe(delta["nextCursor"]);
+  });
+
+  it("reports a swept survey as removed, and a re-landed one as a row", async () => {
+    const store = await seededStore();
+    const app = appWith(store);
+    // The segment covering B's slot no longer lists it.
+    await store.reconcileSegment(
+      { fromSlot: 905_000, toSlot: 915_000 },
+      [],
+      [],
+      [],
+      [],
+      FETCHED_AT + 60,
+    );
+    await store.publishSnapshotMeta({
+      ...(await store.snapshotMeta())!,
+      fetchedAt: FETCHED_AT + 60,
+    });
+    const swept = await changes(app, walked);
+    expect(keysOf(swept)).toEqual([]);
+    expect(swept["removed"]).toEqual([KEY_B]);
+
+    // It re-lands: a row to the consumer that saw the removal, and not a
+    // removal to one that never did.
+    await seed(store, [], [], FETCHED_AT + 120);
+    const relanded = await changes(app, swept["nextCursor"] as string);
+    expect(keysOf(relanded)).toEqual([KEY_B]);
+    expect(relanded["removed"]).toEqual([]);
+    const fromWalk = await changes(app, walked);
+    expect(keysOf(fromWalk)).toEqual([KEY_B]);
+    expect(fromWalk["removed"]).toEqual([]);
+  });
+
+  it("pages each axis by limit: a full page continues from its last item", async () => {
+    const store = await seededStore();
+    const app = appWith(store);
+    // A full re-seed at a new generation restamps nothing — the rows did not
+    // move — so move both: a response to each.
+    await seed(
+      store,
+      [],
+      [
+        response(surveyA, cred3, 980_000, "ab".repeat(32)),
+        response(surveyB, cred1, 981_000, "ac".repeat(32)),
+      ],
+      FETCHED_AT + 60,
+    );
+    const first = await changes(app, walked, 1);
+    expect(keysOf(first)).toEqual([KEY_A]);
+    expect(first["nextCursor"]).toBe(
+      encodeChangesCursor({
+        rows: { stamp: FETCHED_AT + 60, key: KEY_A },
+        removed: { stamp: FETCHED_AT + 60, key: null },
+      }),
+    );
+    const second = await changes(app, first["nextCursor"] as string, 1);
+    expect(keysOf(second)).toEqual([KEY_B]);
+    expect(second["nextCursor"]).toBe(
+      encodeChangesCursor(changesCursorAt(FETCHED_AT + 60)),
+    );
+  });
+
+  it("answers resync with no continuation past the retention window", async () => {
+    const app = appWith(await seededStore());
+    const old =
+      Math.floor(Date.now() / 1000) - OPERATIONAL_RETENTION_SECONDS - 1;
+    const body = await changes(app, encodeChangesCursor(changesCursorAt(old)));
+    expect(body["resync"]).toBe(true);
+    expect(body["nextCursor"]).toBeNull();
+    expect(body["surveys"]).toEqual([]);
+    expect(body["removed"]).toEqual([]);
+  });
+
+  it("composes with limit only, and refuses a cursor it did not mint", async () => {
+    const app = appWith(await seededStore());
+    for (const qs of [
+      `?changes=${walked}&filter=linked`,
+      `?changes=${walked}&q=alpha`,
+      `?changes=${walked}&cursor=junk`,
+      `?changes=${walked}&credentials=key:11`,
+      `?changes=${walked}&refs=${KEY_A}`,
+      `?changes=${walked}&limit=0`,
+      `?changes=junk`,
+      `?changes=`,
+    ])
+      expect((await app.request(`/api/surveys${qs}`)).status, qs).toBe(400);
+  });
+
+  it("revalidates by fetchedAt: 304 on matching If-None-Match", async () => {
+    const app = appWith(await seededStore());
+    const res = await app.request(`/api/surveys?changes=${walked}`);
+    const etag = res.headers.get("ETag")!;
+    const again = await app.request(`/api/surveys?changes=${walked}`, {
+      headers: { "If-None-Match": etag },
+    });
+    expect(again.status).toBe(304);
   });
 });
 

@@ -44,8 +44,8 @@ if (!answer.ready) {
 }
 ```
 
-Every snapshot-derived method (`surveys`, `surveysByRefs`, `bundle`,
-`wholeBundle`, `responded`, `responsesByTx`) answers
+Every snapshot-derived method (`surveys`, `surveysByRefs`, `changes`,
+`bundle`, `wholeBundle`, `responded`, `responsesByTx`) answers
 `{ ready: true, body } | { ready: false }`; the false branch is the backend's
 own `503 {"error":"snapshot not ready"}`, an ordinary state before its first
 refresh. Any other non-2xx answer throws `TesseraHttpError` with the status.
@@ -60,26 +60,60 @@ and no request: a survey key not matching `SURVEY_KEY_RE`, a `limit` outside
 
 ## Methods
 
-| Method                                      | Route                               | Answer                                |
-| :------------------------------------------ | :---------------------------------- | :------------------------------------ |
-| `liveness()`                                | `GET /health`                       | `BackendLiveness`                     |
-| `health()`                                  | `GET /api/health`                   | `BackendHealth`                       |
-| `surveys(params?)`                          | `GET /api/surveys` (paged)          | `SnapshotAnswer<SurveyListPayload>`   |
-| `surveysByRefs(keys)`                       | `GET /api/surveys?refs=`            | `SnapshotAnswer<SurveyListPayload>`   |
-| `bundle(survey, cursor?)`                   | `GET /api/surveys/{txHash}/{index}` | `SnapshotAnswer<SurveyBundlePayload>` |
-| `wholeBundle(survey)`                       | every page of the above             | `SnapshotAnswer<SurveyBundlePayload>` |
-| `responded(credentials)`                    | `GET /api/responded`                | `SnapshotAnswer<RespondedPayload>`    |
-| `responsesByTx(txHash)`                     | `GET /api/responses/{txHash}`       | `SnapshotAnswer<TxResponsesPayload>`  |
-| `artifact(survey)` / `artifactByHash(hash)` | the artifact routes                 | `TallyArtifact \| null`               |
-| `tip()`                                     | `GET /api/tip`                      | `ChainTip`                            |
-| `txStatus(hashes)`                          | `GET /api/tx_status`                | `Record<string, number \| null>`      |
-| `pparams()`                                 | `GET /api/pparams`                  | `unknown` (evolution-sdk's shape)     |
+| Method                                      | Route                               | Answer                                 |
+| :------------------------------------------ | :---------------------------------- | :------------------------------------- |
+| `liveness()`                                | `GET /health`                       | `BackendLiveness`                      |
+| `health()`                                  | `GET /api/health`                   | `BackendHealth`                        |
+| `surveys(params?)`                          | `GET /api/surveys` (paged)          | `SnapshotAnswer<SurveyListPayload>`    |
+| `surveysByRefs(keys)`                       | `GET /api/surveys?refs=`            | `SnapshotAnswer<SurveyListPayload>`    |
+| `changes(cursor, limit?)`                   | `GET /api/surveys?changes=`         | `SnapshotAnswer<SurveyChangesPayload>` |
+| `bundle(survey, cursor?)`                   | `GET /api/surveys/{txHash}/{index}` | `SnapshotAnswer<SurveyBundlePayload>`  |
+| `wholeBundle(survey)`                       | every page of the above             | `SnapshotAnswer<SurveyBundlePayload>`  |
+| `responded(credentials)`                    | `GET /api/responded`                | `SnapshotAnswer<RespondedPayload>`     |
+| `responsesByTx(txHash)`                     | `GET /api/responses/{txHash}`       | `SnapshotAnswer<TxResponsesPayload>`   |
+| `artifact(survey)` / `artifactByHash(hash)` | the artifact routes                 | `TallyArtifact \| null`                |
+| `tip()`                                     | `GET /api/tip`                      | `ChainTip`                             |
+| `txStatus(hashes)`                          | `GET /api/tx_status`                | `Record<string, number \| null>`       |
+| `pparams()`                                 | `GET /api/pparams`                  | `unknown` (evolution-sdk's shape)      |
 
 A survey is named by its record's `ref` or by its key, `<txHash>:<index>`.
 `bundle` is one page — enough for a host that only renders the survey, since
 the definition rides every page; `wholeBundle` follows `nextCursor` to the end
 with `collectSurveyBundle`'s restart rule, for anything that counts or
 displays responses.
+
+## Mirror the surveys
+
+A host that keeps its own copy of the surveys walks the list once and then
+asks only for what changed:
+
+```ts
+let cursor = load(); // the string from the last tick, or null
+if (cursor === null) {
+  let page = await client.surveys({ limit: 200 });
+  for (;;) {
+    if (!page.ready) return;
+    if (page.body.resync) return; // walk again next tick
+    apply(page.body);
+    if (page.body.nextCursor === null) break;
+    page = await client.surveys({ limit: 200, cursor: page.body.nextCursor });
+  }
+  cursor = page.body.changesCursor!;
+} else {
+  const delta = await client.changes(cursor);
+  if (!delta.ready) return;
+  for (const key of delta.body.removed) forget(key); // before the rows
+  apply(delta.body);
+  cursor = delta.body.nextCursor; // null beside resync: walk again
+}
+save(cursor);
+```
+
+A change is delivered once and never missed, and the consumer never handles
+a generation number. A removal is advisory and can be transient (a reorg
+re-lands the transaction at a new slot), so state that cannot be rebuilt is
+confirmed with `surveysByRefs` before it is destroyed. The delta carries no
+filter and no `counts`: filter locally.
 
 ## Which epoch a host passes as `tipEpoch`
 

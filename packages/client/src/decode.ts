@@ -21,6 +21,7 @@ import type {
   BackendLiveness,
   RespondedPayload,
   SurveyBundlePayload,
+  SurveyChangesPayload,
   SurveyFinalState,
   SurveyListCounts,
   SurveyListPayload,
@@ -126,29 +127,27 @@ const counts = (v: unknown, path: string): SurveyListCounts => {
   };
 };
 
-/** The optional fields a paged or stamped body may carry, absent when absent. */
+/** The optional fields a paged body may carry, absent when absent. */
 const paging = (
   o: Obj,
 ): {
-  fetchedAt?: number;
   nextCursor?: string | null;
   resync?: boolean;
 } => {
-  const fetchedAt = opt(o.fetchedAt, "fetchedAt", num);
   const nextCursor = opt(o.nextCursor, "nextCursor", (x, p) =>
     nullable(x, p, str),
   );
   const resync = opt(o.resync, "resync", bool);
   return {
-    ...(fetchedAt === undefined ? {} : { fetchedAt }),
     ...(nextCursor === undefined ? {} : { nextCursor }),
     ...(resync === undefined ? {} : { resync }),
   };
 };
 
-/** `GET /api/surveys`, both selections. */
-export function decodeSurveyList(json: unknown): SurveyListPayload {
-  const o = obj(json, "");
+/** The list body every selection of `/api/surveys` shares. */
+function surveyListBody(
+  o: Obj,
+): Omit<SurveyListPayload, "counts" | "nextCursor" | "resync"> {
   const countedByRole = opt(o.countedByRole, "countedByRole", (x, p) =>
     dict(x, p, (y, q) => dict(y, q, num)),
   );
@@ -156,7 +155,7 @@ export function decodeSurveyList(json: unknown): SurveyListPayload {
     dict(x, p, finalState),
   );
   const incomplete = opt(o.incomplete, "incomplete", bool);
-  const chipCounts = opt(o.counts, "counts", counts);
+  const fetchedAt = opt(o.fetchedAt, "fetchedAt", num);
   return {
     surveys: list(o.surveys, "surveys", decodeSurveyRecord),
     cancellations: list(
@@ -170,8 +169,32 @@ export function decodeSurveyList(json: unknown): SurveyListPayload {
     ...(countedByRole === undefined ? {} : { countedByRole }),
     ...(finalStates === undefined ? {} : { finalState: finalStates }),
     ...(incomplete === undefined ? {} : { incomplete }),
+    ...(fetchedAt === undefined ? {} : { fetchedAt }),
+  };
+}
+
+/** `GET /api/surveys`, the paged and by-reference selections. */
+export function decodeSurveyList(json: unknown): SurveyListPayload {
+  const o = obj(json, "");
+  const chipCounts = opt(o.counts, "counts", counts);
+  const changesCursor = opt(o.changesCursor, "changesCursor", str);
+  return {
+    ...surveyListBody(o),
     ...(chipCounts === undefined ? {} : { counts: chipCounts }),
+    ...(changesCursor === undefined ? {} : { changesCursor }),
     ...paging(o),
+  };
+}
+
+/** `GET /api/surveys?changes=`, the change selection. */
+export function decodeSurveyChanges(json: unknown): SurveyChangesPayload {
+  const o = obj(json, "");
+  const resync = opt(o.resync, "resync", bool);
+  return {
+    ...surveyListBody(o),
+    removed: list(o.removed, "removed", str),
+    nextCursor: nullable(o.nextCursor, "nextCursor", str),
+    ...(resync === undefined ? {} : { resync }),
   };
 }
 
@@ -180,6 +203,7 @@ export function decodeSurveyBundle(json: unknown): SurveyBundlePayload {
   const o = obj(json, "");
   const verdicts = opt(o.verdicts, "verdicts", (x, p) => dict(x, p, bool));
   const govLinks = opt(o.govLinks, "govLinks", (x, p) => list(x, p, govLink));
+  const fetchedAt = opt(o.fetchedAt, "fetchedAt", num);
   return {
     survey: decodeSurveyRecord(o.survey),
     responses: list(o.responses, "responses", decodeResponseRecord),
@@ -191,6 +215,7 @@ export function decodeSurveyBundle(json: unknown): SurveyBundlePayload {
     tip: tip(o.tip, "tip"),
     ...(verdicts === undefined ? {} : { verdicts }),
     ...(govLinks === undefined ? {} : { govLinks }),
+    ...(fetchedAt === undefined ? {} : { fetchedAt }),
     ...paging(o),
   };
 }

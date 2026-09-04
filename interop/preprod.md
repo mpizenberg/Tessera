@@ -103,6 +103,17 @@ discovery reads the action's anchor, not label 17.
   — read the limits on what that linkage means below. Several surveys at once
   come from `GET /api/surveys?refs=<txHash>:<index>,…`, which answers the list
   payload for exactly the references named.
+- A host that mirrors the surveys walks the paged list once (any `filter`),
+  keeps the `changesCursor` of a walk that finished without `resync`, and from
+  then on asks `GET /api/surveys?changes=<cursor>` once per tick, storing each
+  answer's `nextCursor` — the client's `changes(cursor)`. It gets every row
+  whose projection moved and every key `removed`, once each, never missed, and
+  never handles a generation number. Within one answer it applies `removed`
+  before the rows; it treats a removal as advisory and possibly transient (a
+  reorg re-lands the transaction), confirming by `refs` before destroying state
+  it cannot rebuild; and on `resync` (a cursor older than the 7-day retention
+  window, answered with `nextCursor: null`) it walks the list again. `refs` is
+  no longer how a mirror learns that a survey it holds is gone.
 - The host supplies the connected responder's credential map (for the DRepTalk
   test: a key-DRep credential).
 - The widget owns answer drafting, validation, and sealing, and emits the

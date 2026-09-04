@@ -358,7 +358,7 @@ async function finalizeRecords(
     snapshot.responses,
     snapshot.cancellations,
     [],
-    { tip: "{}", incomplete: false, fetchedAt: 1, listCounts: null },
+    1,
   );
   // A caught-up cursor: the covered prefix reaches the wall clock, so the
   // cursor gate reduces to the deadline-plus-margin check.

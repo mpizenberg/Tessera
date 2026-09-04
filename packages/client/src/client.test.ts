@@ -550,3 +550,72 @@ describe("the other routes", () => {
     await expect(client.tip()).rejects.toThrow(`${BASE}/api/tip → 500: "boom"`);
   });
 });
+
+describe("changes", () => {
+  /** A body shaped like the server's `/api/surveys?changes=`. */
+  const changesBody = (): Record<string, unknown> => ({
+    ...(toJsonSafe({
+      surveys: [survey],
+      cancellations: [],
+      govLinks: [],
+      tip,
+      responseCounts: { [KEY]: 2 },
+      countedByRole: { [KEY]: { "0": 1 } },
+      finalState: {},
+    }) as Record<string, unknown>),
+    fetchedAt: 1_710_000_000,
+    removed: ["aa".repeat(32) + ":0"],
+    nextCursor: "1710000000.-.1710000000.-",
+  });
+
+  it("asks from the cursor with the limit and decodes the delta", async () => {
+    const { client, urls } = clientOver((url) =>
+      url.includes("changes=") ? { body: changesBody() } : undefined,
+    );
+    const body = ready(await client.changes("5.-.5.-", 20));
+    const url = new URL(urls().find((u) => u.includes("changes="))!);
+    expect(url.searchParams.get("changes")).toBe("5.-.5.-");
+    expect(url.searchParams.get("limit")).toBe("20");
+    expect(body.surveys).toEqual([survey]);
+    expect(body.removed).toEqual(["aa".repeat(32) + ":0"]);
+    expect(body.nextCursor).toBe("1710000000.-.1710000000.-");
+    expect(body.resync).toBeUndefined();
+    expect("counts" in body).toBe(false);
+  });
+
+  it("reads a resync answer: no continuation, the flag set", async () => {
+    const { client } = clientOver(() => ({
+      body: {
+        ...changesBody(),
+        surveys: [],
+        removed: [],
+        nextCursor: null,
+        resync: true,
+      },
+    }));
+    const body = ready(await client.changes("5.-.5.-"));
+    expect(body).toMatchObject({ surveys: [], removed: [], nextCursor: null });
+    expect(body.resync).toBe(true);
+  });
+
+  it("keeps the paged list's changesCursor", async () => {
+    const { client } = clientOver(() => ({
+      body: { ...listBody(), changesCursor: "7.-.7.-" },
+    }));
+    expect(ready(await client.surveys()).changesCursor).toBe("7.-.7.-");
+    const { client: refs } = clientOver(() => ({ body: listBody() }));
+    expect(
+      ready(await refs.surveysByRefs([KEY])).changesCursor,
+    ).toBeUndefined();
+  });
+
+  it("refuses an empty cursor or a bad limit before any request", () => {
+    const { client, fetchMock } = clientOver(() => undefined);
+    expect(() => client.changes("")).toThrow(RangeError);
+    expect(() => client.changes("5.-.5.-", 0)).toThrow(RangeError);
+    expect(() => client.changes("5.-.5.-", MAX_PAGE_LIMIT + 1)).toThrow(
+      RangeError,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

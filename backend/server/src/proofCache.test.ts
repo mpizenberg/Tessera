@@ -123,7 +123,7 @@ async function prune(
     snapshot.responses,
     snapshot.cancellations,
     [],
-    { tip: "{}", incomplete: false, fetchedAt: 1, listCounts: null },
+    1,
   );
   for (const surveyKey of finalized) {
     await mem.putArtifact({

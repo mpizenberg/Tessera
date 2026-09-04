@@ -15,6 +15,7 @@ import {
   decodeLiveness,
   decodeResponded,
   decodeSurveyBundle,
+  decodeSurveyChanges,
   decodeSurveyList,
   decodeTip,
   decodeTxResponses,
@@ -32,6 +33,7 @@ import {
   type BackendLiveness,
   type RespondedPayload,
   type SurveyBundlePayload,
+  type SurveyChangesPayload,
   type SurveyListParams,
   type SurveyListPayload,
   type TxResponsesPayload,
@@ -103,6 +105,18 @@ export interface TesseraClient {
     keys: readonly string[],
   ): Promise<SnapshotAnswer<SurveyListPayload>>;
   /**
+   * `GET /api/surveys?changes=`, the change selection: what moved since
+   * `cursor` — a `changesCursor` from a full walk, or the previous answer's
+   * `nextCursor` — with at most `limit` rows and `limit` removals
+   * (1–{@link MAX_PAGE_LIMIT}, {@link DEFAULT_PAGE_LIMIT} when absent). The
+   * mirror's loop: one call per tick, storing `nextCursor`; on `resync`, walk
+   * the list again and start from its `changesCursor`.
+   */
+  changes(
+    cursor: string,
+    limit?: number,
+  ): Promise<SnapshotAnswer<SurveyChangesPayload>>;
+  /**
    * One page of a survey's bundle (`GET /api/surveys/{txHash}/{index}`); pass
    * the previous page's `nextCursor` to continue. An unknown survey is a
    * {@link TesseraHttpError} with status 404.
@@ -164,6 +178,14 @@ const surveyKeyOf = (survey: SurveyId): string => {
 const hex64 = (value: string, what: string): string => {
   if (!HEX64.test(value)) throw new RangeError(`malformed ${what}: ${value}`);
   return value;
+};
+
+const limitQuery = (limit: number): string => {
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_PAGE_LIMIT)
+    throw new RangeError(
+      `limit must be an integer from 1 to ${MAX_PAGE_LIMIT}, got ${limit}`,
+    );
+  return String(limit);
 };
 
 const credentialsQuery = (credentials: readonly string[]): string => {
@@ -274,17 +296,7 @@ export function createTesseraClient(
 
     surveys: (params = {}) => {
       const qs = new URLSearchParams();
-      if (params.limit !== undefined) {
-        if (
-          !Number.isInteger(params.limit) ||
-          params.limit < 1 ||
-          params.limit > MAX_PAGE_LIMIT
-        )
-          throw new RangeError(
-            `limit must be an integer from 1 to ${MAX_PAGE_LIMIT}, got ${params.limit}`,
-          );
-        qs.set("limit", String(params.limit));
-      }
+      if (params.limit !== undefined) qs.set("limit", limitQuery(params.limit));
       if (params.cursor) qs.set("cursor", params.cursor);
       if (params.filter && params.filter !== "all")
         qs.set("filter", params.filter);
@@ -307,6 +319,13 @@ export function createTesseraClient(
       for (const key of keys) surveyKeyOf(key);
       const qs = new URLSearchParams({ refs: keys.join(",") });
       return snapshot(`${base}/api/surveys?${qs}`, decodeSurveyList);
+    },
+
+    changes: (cursor, limit) => {
+      if (cursor === "") throw new RangeError("empty changes cursor");
+      const qs = new URLSearchParams({ changes: cursor });
+      if (limit !== undefined) qs.set("limit", limitQuery(limit));
+      return snapshot(`${base}/api/surveys?${qs}`, decodeSurveyChanges);
     },
 
     bundle,

@@ -15,6 +15,18 @@ no dual-serving. A consumer compares majors and refuses a mismatch; it may warn
 on a minor it does not know. Every bump has a line here, and the README's
 Endpoints section changes in the same commit.
 
+## [1.1] - unreleased
+
+### Added
+
+- `GET /api/surveys?changes=<cursor>`, the change selection: the list payload
+  for the surveys whose stored projection moved since a server-minted
+  position, the survey keys `removed` since, and a `nextCursor`. Composes
+  with `limit` only; a cursor older than the retention window answers
+  `resync: true` with `nextCursor: null`.
+- `changesCursor` on every paged `GET /api/surveys` answer: where a full walk
+  at that snapshot hands over to `changes`.
+
 ## [1.0] - unreleased
 
 The contract as deployed on preprod, now versioned: the paged and

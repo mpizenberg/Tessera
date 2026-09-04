@@ -13,6 +13,7 @@
 
 import type { ResponseCursor } from "cardano-tessera-core";
 
+import type { AxisPosition } from "./changes";
 import type {
   CancellationRow,
   ResponseCountBank,
@@ -147,11 +148,17 @@ export function surveyCountsSql(
   };
 }
 
+/**
+ * Binds: (generation, rows JSON). The generation lands in `changed_at` only
+ * through the SET list, and the WHERE that gates the update does not mention
+ * it — so the stamp moves exactly when a row moves, and a quiet refresh
+ * writes what it wrote before this column existed: nothing.
+ */
 const SURVEY_INDEX_RECONCILE = `
   INSERT INTO survey_index
     (survey_key, slot, end_epoch, sealed, cancelled, gov_linked, owner,
      haystack, record, cancellations, gov_links, response_count,
-     counted_by_role, refuted_count, final_state, artifact_hash)
+     counted_by_role, refuted_count, final_state, artifact_hash, changed_at)
   SELECT json_extract(value, '$.surveyKey'),
          json_extract(value, '$.slot'),
          json_extract(value, '$.endEpoch'),
@@ -167,7 +174,8 @@ const SURVEY_INDEX_RECONCILE = `
          json_extract(value, '$.countedByRole'),
          json_extract(value, '$.refutedCount'),
          json_extract(value, '$.finalState'),
-         json_extract(value, '$.artifactHash')
+         json_extract(value, '$.artifactHash'),
+         ?
   FROM json_each(?)
   WHERE 1
   ON CONFLICT(survey_key) DO UPDATE SET
@@ -185,7 +193,8 @@ const SURVEY_INDEX_RECONCILE = `
     counted_by_role = excluded.counted_by_role,
     refuted_count = excluded.refuted_count,
     final_state = excluded.final_state,
-    artifact_hash = excluded.artifact_hash
+    artifact_hash = excluded.artifact_hash,
+    changed_at = excluded.changed_at
   WHERE survey_index.slot IS NOT excluded.slot
      OR survey_index.end_epoch IS NOT excluded.end_epoch
      OR survey_index.sealed IS NOT excluded.sealed
@@ -211,7 +220,7 @@ const SNAPSHOT_META_UPSERT = `
     fetched_at = excluded.fetched_at,
     list_counts = excluded.list_counts`;
 
-/** The envelope write, alone (recomputed counts) or ending a reconcile. */
+/** The envelope write — the end-of-run publish, never part of a reconcile. */
 export const snapshotMetaUpsertSql = (meta: SnapshotMeta): SqlQuery => ({
   sql: SNAPSHOT_META_UPSERT,
   params: [meta.tip, meta.incomplete ? 1 : 0, meta.fetchedAt, meta.listCounts],
@@ -334,18 +343,17 @@ const slotBound = (range: SlotRange): SqlQuery => ({
   params: [range.fromSlot, range.toSlot],
 });
 
-function surveyDeletionSql(
+/**
+ * The rows a sweep removes from `survey_index`: slot in `range`, key not among
+ * `keys` — one predicate per key chunk. Both heads below apply the same one,
+ * so what is tombstoned and what is deleted cannot drift apart.
+ */
+function sweptSurveysSql(
   keys: readonly { readonly surveyKey: string }[],
   range: SlotRange,
 ): SqlQuery[] {
   const bound = slotBound(range);
-  if (keys.length === 0)
-    return [
-      {
-        sql: `DELETE FROM survey_index WHERE ${bound.sql}`,
-        params: [...bound.params],
-      },
-    ];
+  if (keys.length === 0) return [bound];
   const chunks = jsonChunks(keys, SNAPSHOT_KEYS_PER_CHUNK);
   return chunks.map((chunk, index) => {
     const lower = index === 0 ? null : chunk.values[0]!.surveyKey;
@@ -362,14 +370,39 @@ function surveyDeletionSql(
     }
     params.push(chunk.json);
     return {
-      sql: `DELETE FROM survey_index
-            WHERE ${bounds.join(" AND ")}
+      sql: `${bounds.join(" AND ")}
               AND survey_key NOT IN (
                 SELECT json_extract(value, '$.surveyKey') FROM json_each(?)
               )`,
       params,
     };
   });
+}
+
+/**
+ * Capture, then delete: each swept key lands in `survey_tombstone` under the
+ * sweeping generation before its row goes, so the change selection can report
+ * the removal. A key swept before keeps one tombstone, restamped.
+ */
+function surveyDeletionSql(
+  keys: readonly { readonly surveyKey: string }[],
+  range: SlotRange,
+  generation: number,
+): { captures: SqlQuery[]; deletes: SqlQuery[] } {
+  const swept = sweptSurveysSql(keys, range);
+  return {
+    captures: swept.map((p) => ({
+      sql: `INSERT INTO survey_tombstone (survey_key, deleted_at)
+            SELECT survey_key, ? FROM survey_index WHERE ${p.sql}
+            ON CONFLICT(survey_key) DO UPDATE SET
+              deleted_at = excluded.deleted_at`,
+      params: [generation, ...p.params],
+    })),
+    deletes: swept.map((p) => ({
+      sql: `DELETE FROM survey_index WHERE ${p.sql}`,
+      params: [...p.params],
+    })),
+  };
 }
 
 interface ResponseKey {
@@ -462,6 +495,16 @@ function cancellationDeletionSql(
   });
 }
 
+/** One statement of a reconcile program, and whether it counts as a row write. */
+export interface ReconcileStatement {
+  readonly query: SqlQuery;
+  /**
+   * A write to a row the snapshot serves. The tombstone captures and the bank
+   * upserts are not: a caller counting changed rows leaves them out.
+   */
+  readonly rowWrite: boolean;
+}
+
 /**
  * One atomic reconciliation program for either SQLite adapter. JSON
  * table-valued parameters keep first materialization and large reorgs to
@@ -469,9 +512,10 @@ function cancellationDeletionSql(
  * slot in `range` are deletion candidates — settled history outside the
  * segment is never swept, however little of the chain one call covers; a null
  * `range` (an incomplete scan, whose unlisted txs are indistinguishable from
- * vanished ones) sweeps nothing. The first `rowStatements` statements are the
- * row writes; the bank upserts and the envelope upsert follow, so a caller
- * counting changed rows can exclude them (freshness moves every run).
+ * vanished ones) sweeps nothing. Every survey row written or swept is stamped
+ * with `generation`; the envelope is not written here — it is published once
+ * the whole run has stamped, so a published generation never has a stamp
+ * still to land behind it.
  */
 export function segmentReconciliationSql(
   range: SlotRange | null,
@@ -479,8 +523,8 @@ export function segmentReconciliationSql(
   responses: readonly ResponseRow[],
   cancellations: readonly CancellationRow[],
   banks: readonly ResponseCountBank[],
-  meta: SnapshotMeta,
-): { program: SqlQuery[]; rowStatements: number } {
+  generation: number,
+): ReconcileStatement[] {
   const sortedSurveys = [...surveys].sort((a, b) =>
     compareText(a.surveyKey, b.surveyKey),
   );
@@ -492,15 +536,28 @@ export function segmentReconciliationSql(
     (a, b) =>
       compareText(a.txHash, b.txHash) || compareText(a.surveyKey, b.surveyKey),
   );
+  const rowWrite = (query: SqlQuery): ReconcileStatement => ({
+    query,
+    rowWrite: true,
+  });
+  const bookkeeping = (query: SqlQuery): ReconcileStatement => ({
+    query,
+    rowWrite: false,
+  });
 
+  const swept =
+    range === null
+      ? { captures: [], deletes: [] }
+      : surveyDeletionSql(
+          sortedSurveys.map(({ surveyKey }) => ({ surveyKey })),
+          range,
+          generation,
+        );
   const deletions =
     range === null
       ? []
       : [
-          ...surveyDeletionSql(
-            sortedSurveys.map(({ surveyKey }) => ({ surveyKey })),
-            range,
-          ),
+          ...swept.deletes,
           ...responseDeletionSql(
             sortedResponses.map(({ txHash, responseIndex }) => ({
               txHash,
@@ -517,34 +574,25 @@ export function segmentReconciliationSql(
           ),
         ];
 
-  const rows = [
-    ...jsonChunks(sortedSurveys, SNAPSHOT_ROWS_PER_CHUNK).map((chunk) => ({
-      sql: SURVEY_INDEX_RECONCILE,
-      params: [chunk.json],
-    })),
-    ...jsonChunks(sortedResponses, SNAPSHOT_ROWS_PER_CHUNK).map((chunk) => ({
-      sql: RESPONSE_RECONCILE,
-      params: [chunk.json],
-    })),
-    ...jsonChunks(sortedCancellations, SNAPSHOT_ROWS_PER_CHUNK).map(
-      (chunk) => ({
-        sql: CANCELLATION_RECONCILE,
-        params: [chunk.json],
+  return [
+    ...jsonChunks(sortedSurveys, SNAPSHOT_ROWS_PER_CHUNK).map((chunk) =>
+      rowWrite({
+        sql: SURVEY_INDEX_RECONCILE,
+        params: [generation, chunk.json],
       }),
     ),
-    ...deletions,
+    ...jsonChunks(sortedResponses, SNAPSHOT_ROWS_PER_CHUNK).map((chunk) =>
+      rowWrite({ sql: RESPONSE_RECONCILE, params: [chunk.json] }),
+    ),
+    ...jsonChunks(sortedCancellations, SNAPSHOT_ROWS_PER_CHUNK).map((chunk) =>
+      rowWrite({ sql: CANCELLATION_RECONCILE, params: [chunk.json] }),
+    ),
+    ...swept.captures.map(bookkeeping),
+    ...deletions.map(rowWrite),
+    ...jsonChunks(banks, SNAPSHOT_ROWS_PER_CHUNK).map((chunk) =>
+      bookkeeping({ sql: RESPONSE_COUNT_BANK_UPSERT, params: [chunk.json] }),
+    ),
   ];
-  return {
-    program: [
-      ...rows,
-      ...jsonChunks(banks, SNAPSHOT_ROWS_PER_CHUNK).map((chunk) => ({
-        sql: RESPONSE_COUNT_BANK_UPSERT,
-        params: [chunk.json],
-      })),
-      snapshotMetaUpsertSql(meta),
-    ],
-    rowStatements: rows.length,
-  };
 }
 
 /** Distinct surveys answered by any of `credentials`. */
@@ -650,8 +698,9 @@ export const cancellationsBySurveysSql = (
   );
 
 /**
- * Stamp final states onto undecided rows. A cancelled state implies the
- * `cancelled` flag; the other states leave it as the projection derived it.
+ * Stamp final states onto undecided rows, under the deciding run's
+ * generation. A cancelled state implies the `cancelled` flag; the other
+ * states leave it as the projection derived it.
  */
 export const markFinalStatesSql = (
   entries: readonly {
@@ -659,18 +708,80 @@ export const markFinalStatesSql = (
     state: string;
     artifactHash: string | null;
   }[],
+  generation: number,
 ): SqlQuery[] =>
   jsonChunks([...entries], SNAPSHOT_ROWS_PER_CHUNK).map((chunk) => ({
     sql: `UPDATE survey_index
           SET final_state = json_extract(e.value, '$.state'),
               artifact_hash = json_extract(e.value, '$.artifactHash'),
               cancelled = CASE WHEN json_extract(e.value, '$.state') = 'cancelled'
-                               THEN 1 ELSE cancelled END
+                               THEN 1 ELSE cancelled END,
+              changed_at = ?
           FROM json_each(?) AS e
           WHERE survey_index.survey_key = json_extract(e.value, '$.surveyKey')
             AND survey_index.final_state IS NULL`,
-    params: [chunk.json],
+    params: [generation, chunk.json],
   }));
+
+/**
+ * One axis of the change selection: strictly after `position`, at or below
+ * `publishedAt`. Spelled as a range on the stamp column with the key as a
+ * filter — the `a > ? OR (a = ? AND k > ?)` keyset form the list uses would
+ * have SQLite seek on the upper bound alone and step from the oldest row.
+ */
+const changesAxisSql = (
+  column: string,
+  position: AxisPosition,
+  publishedAt: number,
+): SqlQuery =>
+  position.key === null
+    ? {
+        sql: `${column} > ? AND ${column} <= ?`,
+        params: [position.stamp, publishedAt],
+      }
+    : {
+        sql: `${column} >= ? AND ${column} <= ? AND (${column} > ? OR survey_key > ?)`,
+        params: [position.stamp, publishedAt, position.stamp, position.key],
+      };
+
+/** The rows stamped after `position`, in the delta's own order. */
+export const changedSurveysSql = (
+  position: AxisPosition,
+  publishedAt: number,
+  limit: number,
+): SqlQuery => {
+  const axis = changesAxisSql("changed_at", position, publishedAt);
+  return {
+    sql: `SELECT ${SURVEY_ROW_COLUMNS}, changed_at AS changedAt
+          FROM survey_index
+          WHERE ${axis.sql}
+          ORDER BY changed_at, survey_key
+          LIMIT ?`,
+    params: [...axis.params, limit],
+  };
+};
+
+/**
+ * The keys tombstoned after `position` that no row holds — a swept survey
+ * that re-landed is not a removal, and needs no un-tombstoning to say so.
+ */
+export const removedSurveysSql = (
+  position: AxisPosition,
+  publishedAt: number,
+  limit: number,
+): SqlQuery => {
+  const axis = changesAxisSql("deleted_at", position, publishedAt);
+  return {
+    sql: `SELECT survey_key AS surveyKey, deleted_at AS deletedAt
+          FROM survey_tombstone
+          WHERE ${axis.sql}
+            AND NOT EXISTS (SELECT 1 FROM survey_index
+                            WHERE survey_index.survey_key = survey_tombstone.survey_key)
+          ORDER BY deleted_at, survey_key
+          LIMIT ?`,
+    params: [...axis.params, limit],
+  };
+};
 
 /** Persist untalliable verdicts; re-reaching one is a no-op. */
 export const putUntalliableSql = (

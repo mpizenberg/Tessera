@@ -21,6 +21,8 @@ import type {
 import type { ResponseCursor } from "cardano-tessera-core";
 import type { ChainTip, GovLink, GovLinkDoc } from "cip-179/domain";
 
+import type { ChangesCursor } from "./changes";
+
 /** One SQL statement (SQLite dialect) and its positional bindings. */
 export interface SqlQuery {
   readonly sql: string;
@@ -473,7 +475,11 @@ export interface RefreshRunRow {
 /** What a run reports about itself; the store banks the backlog. */
 export type RefreshRunInput = Omit<RefreshRunRow, "validationBacklog">;
 
-/** Keep operational history (runs, tally buckets) this long. */
+/**
+ * Keep operational history — refresh runs, tally buckets, survey tombstones —
+ * this long. The tombstones make it a contract figure: a change-selection
+ * cursor older than this is answered `resync`.
+ */
 export const OPERATIONAL_RETENTION_SECONDS = 7 * 86_400;
 
 /** Outcomes over a window of refresh runs. */
@@ -554,8 +560,13 @@ export interface HealthStore {
   addUpstreamCalls(nowSec: number, calls: UpstreamCalls): Promise<void>;
   /** Per-kind totals over buckets at or after `sinceUnix`. */
   upstreamTotalsSince(sinceUnix: number): Promise<UpstreamTotals>;
-  /** Drop tally buckets before `beforeUnix` — the refresh's job, not serving's. */
-  pruneUpstreamTally(beforeUnix: number): Promise<void>;
+  /**
+   * Drop the retention-bounded history before `beforeUnix` — tally buckets
+   * and survey tombstones — in one write. The refresh's job, not serving's: a
+   * cursor older than the window is answered `resync` rather than an
+   * incomplete removal list.
+   */
+  pruneOperationalHistory(beforeUnix: number): Promise<void>;
   /**
    * Validated-response rows still awaiting an enrichment retry (`blockIndex`
    * or `proofOk` null) — a persistently nonzero backlog means something is
@@ -874,6 +885,20 @@ export interface BankedScan {
   readonly finalizationFloor: number;
 }
 
+/**
+ * One answer of the change selection: the rows stamped after the cursor's
+ * row position and the keys tombstoned after its removed position, both at
+ * or below the published generation, each in its own keyset order and each
+ * bounded by the caller's limit on its own.
+ */
+export interface SurveyChanges {
+  readonly rows: (SurveyIndexRow & { readonly changedAt: number })[];
+  readonly removed: {
+    readonly surveyKey: string;
+    readonly deletedAt: number;
+  }[];
+}
+
 /** A page query against the survey index (see `cardano-tessera-core` `page.ts`). */
 export interface SurveyPageQuery {
   /** The snapshot tip's epoch — the open/closed boundary. */
@@ -894,9 +919,10 @@ export interface SurveyPageQuery {
  */
 export interface SnapshotStore {
   /**
-   * Republish only the envelope, leaving the materialized rows untouched —
-   * how the refresh lands recomputed banked counts after the segment
-   * reconcile already published this run's freshness.
+   * Publish the envelope — the run's one write to it, at the end, once every
+   * row it stamps with its generation has landed. Rows stamped by a run that
+   * died before this stay invisible to the change selection until a later
+   * run publishes over them, which is the honest reading.
    */
   publishSnapshotMeta(meta: SnapshotMeta): Promise<void>;
   /** The envelope, or null before the first refresh — the readiness signal. */
@@ -969,10 +995,12 @@ export interface SnapshotStore {
    * see has rolled back. Rows outside `range` are never deletion candidates,
    * so settled history survives however little the segment covers; a null
    * `range` (an incomplete scan — a listed tx may be missing its record)
-   * upserts without sweeping anything. Writes the recounted surveys' banks
-   * and publishes `meta` in the same transaction. Returns the number of rows
-   * the reconcile actually changed (the envelope and banks excluded, since
-   * freshness moves every run) — the banked list counts' recompute trigger.
+   * upserts without sweeping anything. Writes the recounted surveys' banks in
+   * the same transaction. Every survey row written is stamped with
+   * `generation` and every one swept leaves a tombstone under it, for the
+   * change selection. Returns the number of rows the reconcile actually
+   * changed (banks and tombstones excluded) — the banked list counts'
+   * recompute trigger.
    */
   reconcileSegment(
     range: SlotRange | null,
@@ -980,8 +1008,18 @@ export interface SnapshotStore {
     responses: readonly ResponseRow[],
     cancellations: readonly CancellationRow[],
     banks: readonly ResponseCountBank[],
-    meta: SnapshotMeta,
+    generation: number,
   ): Promise<number>;
+  /**
+   * The change selection's read: rows and removals strictly after `cursor`
+   * and at or below `publishedAt`, at most `limit` of each. Two keyed reads
+   * in one round trip — a refresh cannot land between them.
+   */
+  surveyChanges(
+    cursor: ChangesCursor,
+    publishedAt: number,
+    limit: number,
+  ): Promise<SurveyChanges>;
   /** The stored projections of `keys`, in key order; unknown keys are absent. */
   surveyRowsByKeys(keys: readonly string[]): Promise<SurveyIndexRow[]>;
   /**
@@ -1047,12 +1085,15 @@ export interface SnapshotStore {
   touchedRows(surveyKeys: readonly string[]): Promise<TouchedRows>;
   /**
    * Stamp final states (and the `cancelled` flag a cancelled one implies)
-   * onto the given surveys' rows where not already decided, returning how
-   * many rows changed. Idempotent — called every refresh with everything the
-   * pass decided, it applies this pass's finalizations and heals drift in one
-   * statement.
+   * onto the given surveys' rows where not already decided, under the
+   * deciding run's `generation`, returning how many rows changed. Idempotent
+   * — called every refresh with everything the pass decided, it applies this
+   * pass's finalizations and heals drift in one statement.
    */
-  markFinalStates(entries: readonly FinalStateEntry[]): Promise<number>;
+  markFinalStates(
+    entries: readonly FinalStateEntry[],
+    generation: number,
+  ): Promise<number>;
   /**
    * Distinct `end_epoch` values at or after `minEndEpoch` across the stored
    * surveys, ascending — the governance-link pass's input. The bound is the

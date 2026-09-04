@@ -100,10 +100,30 @@ and the answers of `/api/responded` and `/api/responses`.
   matching set, not per page. A cursor records the snapshot it was minted
   against; one from an older snapshot is still answered, with `resync` set so
   the client refreshes page one.
+  Every paged answer also carries `changesCursor`, where a mirror that walked
+  the whole list at this snapshot continues with the change selection below.
 - `GET /api/surveys?refs=<txHash>:<index>,…` — the same payload for the surveys
   named, for a host mirroring a chosen subset instead of paging Tessera's order.
   No `counts` or `nextCursor` (a named set has neither), the paging parameters
   are refused beside it, and a ref matching nothing is absent from the answer.
+- `GET /api/surveys?changes=<cursor>[&limit=…]` — what changed since a position
+  the server minted: the list payload for the surveys whose stored projection
+  moved (a new survey, a count, a link, a cancellation, a final state), the
+  survey keys `removed` since, and the `nextCursor` to ask from next tick. The
+  cursor is opaque; a mirror starts from the `changesCursor` of a full walk
+  that finished without `resync`, stores each answer's `nextCursor`, and asks
+  again next tick. A change is delivered once and never missed; within one
+  answer apply `removed` before the rows. A removal is advisory and can be
+  transient (a reorg re-lands the transaction at a new slot), so state that
+  cannot be rebuilt is confirmed by `refs` before it is destroyed; removing a
+  key never held is a no-op. `limit` bounds the rows and the removals each; no
+  `counts`, and `filter`, `q`, `cursor` and `credentials` are refused beside it
+  (a row leaving a filter is neither returned nor tombstoned, so a filtered
+  delta could not be complete — filter locally). A cursor older than the
+  operational retention window (7 days) is answered `resync: true` with
+  `nextCursor: null`: its removals may be pruned, and the mirror walks the
+  full list again. A quiet mirror never gets there — every answer advances an
+  exhausted axis to the published snapshot.
 - `GET /api/surveys/{txHash}/{index}[?cursor=…]` — one survey's self-contained
   bundle: its definition record, one page of its responses (sealed ciphertexts
   included) with `nextCursor` to continue, the cancellations targeting it, its

@@ -26,7 +26,7 @@ import {
 import { integrateSegment, type GovPass } from "./integrate";
 import { listCountsOf, materializeSnapshot } from "./materialize";
 import { finalStateEntries } from "./store";
-import type { FinalStates, SlotRange, SnapshotMeta } from "./store";
+import type { FinalStates, SlotRange } from "./store";
 import { ALL_SLOTS, testStore, type TestStore } from "./testing/store";
 
 // --- fixtures ------------------------------------------------------------------
@@ -139,13 +139,6 @@ const govLinkTo = (
   actionId,
   endEpoch,
   title: `title of ${actionId}`,
-});
-
-const metaAt = (tip: ChainTip): SnapshotMeta => ({
-  tip: JSON.stringify({ epoch: tip.epoch }),
-  incomplete: false,
-  fetchedAt: tip.time,
-  listCounts: null,
 });
 
 /** A source whose proof fetch must not be needed (all evidence in-record). */
@@ -274,9 +267,12 @@ async function runRefresh(
     tip,
     govPass: govPassFor(chain, tip, surveys),
     settledBelowSlot: range.fromSlot,
-    meta: metaAt(tip),
+    generation: tip.time,
   });
-  await store.markFinalStates(finalStateEntries(finalStatesOf(chain)));
+  await store.markFinalStates(
+    finalStateEntries(finalStatesOf(chain)),
+    tip.time,
+  );
 }
 
 /** The refuted proofs the store holds — the audit's one verdict input. */
@@ -503,7 +499,7 @@ describe("segment integration mechanics", () => {
       tip: tipAt(640),
       govPass: govPassFor(chain, tipAt(640)),
       settledBelowSlot: range.fromSlot,
-      meta: metaAt(tipAt(640)),
+      generation: tipAt(640).time,
     });
     expect(changes).toBe(0);
   });
@@ -555,7 +551,7 @@ describe("segment integration mechanics", () => {
       tip: tipAt(600),
       govPass: govPassFor(chain, tipAt(600)),
       settledBelowSlot: range.fromSlot,
-      meta: metaAt(tipAt(600)),
+      generation: tipAt(600).time,
     });
     expect(source.txProofs).toHaveBeenCalledOnce();
     const row = store.surveyRows[0]!;
@@ -685,7 +681,7 @@ describe("segment integration mechanics", () => {
       [],
       [],
       [],
-      metaAt(tipAt(200)),
+      tipAt(200).time,
     );
 
     // The rescan asks the governance pass nothing: whatever the main segment
@@ -697,7 +693,7 @@ describe("segment integration mechanics", () => {
       tip,
       govPass: null,
       settledBelowSlot: 0,
-      meta: metaAt(tip),
+      generation: tip.time,
     });
     expect(changes).toBe(1);
     await expectOracleMatch(store, chain, tip);
@@ -731,7 +727,7 @@ describe("segment integration mechanics", () => {
       [],
       [],
       [],
-      metaAt(tipAt(150)),
+      tipAt(150).time,
     );
     expect(store.surveyRows).toEqual([]);
 
@@ -742,7 +738,7 @@ describe("segment integration mechanics", () => {
       tip,
       govPass: null,
       settledBelowSlot: 0,
-      meta: metaAt(tip),
+      generation: tip.time,
     });
     const row = store.surveyRows[0]!;
     expect(row.responseCount).toBe(1);
@@ -768,7 +764,7 @@ describe("segment integration mechanics", () => {
       tip: tipAt(210),
       govPass: govPassFor(chain, tipAt(210)),
       settledBelowSlot: 0,
-      meta: { ...metaAt(tipAt(210)), incomplete: true },
+      generation: tipAt(210).time,
     });
     expect(store.surveyRows).toHaveLength(1);
     expect(store.responseRows).toHaveLength(1);
@@ -893,7 +889,7 @@ describe("audited per-role counts", () => {
       tip: quiet,
       govPass: null,
       settledBelowSlot: quiet.slot - MARGIN,
-      meta: metaAt(quiet),
+      generation: quiet.time,
     });
     expect(counted(store)).toEqual({ [Role.Stakeholder]: 1 });
     expect(store.surveyRows[0]!.refutedCount).toBe(1);

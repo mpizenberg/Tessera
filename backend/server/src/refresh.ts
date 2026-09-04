@@ -270,9 +270,12 @@ export async function refreshSnapshot(
               }),
         }),
         meter.drain(startedAt),
-        // The tally's only writer that can afford to prune: the serving path adds
-        // to it on requests that must stay one write.
-        store.pruneUpstreamTally(startedAt - OPERATIONAL_RETENTION_SECONDS),
+        // The retention prune rides here, off the reconcile path: the serving
+        // path adds to the tally on requests that must stay one write, and a
+        // tombstone older than the window is one no answerable cursor needs.
+        store.pruneOperationalHistory(
+          startedAt - OPERATIONAL_RETENTION_SECONDS,
+        ),
       ])
         .then(() => undefined)
         // Stats are best-effort: recording must never mask the run's own outcome.
@@ -377,18 +380,11 @@ export async function refreshSnapshot(
 
     // Integrate BEFORE the consumers run, so validation, finalization and the
     // proof-cache prune all see this run's corpus. This run's own
-    // finalizations land through the targeted overlay update below.
+    // finalizations land through the targeted overlay update below. Every row
+    // written from here to that overlay is stamped with the run's generation,
+    // `startedAt`; the envelope that publishes it is written last.
     const range = coveredRange(plan, scan, tip.slot);
     const incomplete = records.incomplete === true || !scan.exhausted;
-    const meta = {
-      tip: JSON.stringify(toJsonSafe(tip)),
-      incomplete,
-      // Stamped with the scan's start, not this write: `tip` was read then, so
-      // the pair describes one instant, and age counts from when the data was
-      // true rather than from when it happened to land.
-      fetchedAt: startedAt,
-      listCounts: previous?.listCounts ?? null,
-    };
     const integration = await integrateSegment(store, source, {
       records,
       range,
@@ -401,7 +397,7 @@ export async function refreshSnapshot(
         ? { links: govLinks, scope: new Set(govEpochs), floor: govFloor }
         : null,
       settledBelowSlot: plan.settledBelowSlot,
-      meta,
+      generation: startedAt,
     });
     let rowChanges = integration.changes;
 
@@ -451,7 +447,7 @@ export async function refreshSnapshot(
             tip,
             govPass: null,
             settledBelowSlot: plan.settledBelowSlot,
-            meta,
+            generation: startedAt,
           });
           rowChanges += healed.changes;
           if (healed.changes > 0) {
@@ -520,7 +516,7 @@ export async function refreshSnapshot(
     // without a decided state is touched on every run until then.
     const overlayChanges = finalized
       ? await store
-          .markFinalStates(finalStateEntries(finalized.emitted))
+          .markFinalStates(finalStateEntries(finalized.emitted), startedAt)
           .catch((err) => {
             console.warn(`final-state overlay update failed: ${String(err)}`);
             return 0;
@@ -536,29 +532,37 @@ export async function refreshSnapshot(
 
     // Banked chip counts move only when rows changed or the epoch turned, so
     // recompute the aggregate only then; every other run republishes the
-    // previous counts with this run's freshness (already done above).
+    // previous counts.
     const previousEpoch = previous ? snapshotTip(previous).epoch : null;
-    if (
+    const recount =
       rowChanges > 0 ||
       overlayChanges > 0 ||
       previousEpoch !== tip.epoch ||
-      previous?.listCounts == null
-    ) {
-      const counts = await store.surveyIndexCounts(tip.epoch, [], []);
-      const bankedCounts: BankedListCounts = {
-        all: counts.all,
-        linked: counts.linked,
-        active: counts.active,
-        sealed: counts.sealed,
-        public: counts.public,
-      };
-      await store.publishSnapshotMeta({
-        tip: JSON.stringify(toJsonSafe(tip)),
-        incomplete,
-        fetchedAt: startedAt,
-        listCounts: JSON.stringify(bankedCounts),
-      });
-    }
+      previous?.listCounts == null;
+    const listCounts = recount
+      ? await store
+          .surveyIndexCounts(tip.epoch, [], [])
+          .then((counts): string =>
+            JSON.stringify({
+              all: counts.all,
+              linked: counts.linked,
+              active: counts.active,
+              sealed: counts.sealed,
+              public: counts.public,
+            } satisfies BankedListCounts),
+          )
+      : previous.listCounts;
+    // The generation becomes visible here, after the last stamp of the run:
+    // a change selection bounded by the published generation can then never
+    // advance past a row still about to be stamped behind it. `fetchedAt` is
+    // the scan's start, not this write — `tip` was read then, so the pair
+    // describes one instant, and age counts from when the data was true.
+    await store.publishSnapshotMeta({
+      tip: JSON.stringify(toJsonSafe(tip)),
+      incomplete,
+      fetchedAt: startedAt,
+      listCounts,
+    });
 
     // Read before recording: recording drains the meter.
     const summary = callSummary(meter.counted());

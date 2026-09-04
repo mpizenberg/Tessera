@@ -130,7 +130,7 @@ async function publish(
     snapshot.responses,
     snapshot.cancellations,
     [],
-    { tip: "{}", incomplete: false, fetchedAt: 1, listCounts: null },
+    1,
   );
 }
 

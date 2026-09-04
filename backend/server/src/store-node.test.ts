@@ -36,8 +36,10 @@ import {
   TALLY_BUCKET_SECONDS,
   tallyBucket,
 } from "./store";
+import { changesCursorAt } from "./changes";
+import { changedSurveysSql, removedSurveysSql } from "./sqlBuilders";
 import { openBackendStore } from "./store-node";
-import { ALL_SLOTS } from "./testing/store";
+import { ALL_SLOTS, testStore, type TestStore } from "./testing/store";
 
 const artifact = (surveyKey: string, tally: string, hash: string) => ({
   surveyKey,
@@ -202,7 +204,8 @@ describe("store-node migration of a pre-runner database", () => {
         (await store.completedValidationsForTxs(["bb"])).get("bb:1"),
       ).toMatchObject({ linkedActionId: "gov#0" });
       // Missing tables were created by their migrations, not the baseline.
-      await store.reconcileSegment(ALL_SLOTS, [], [], [], [], {
+      await store.reconcileSegment(ALL_SLOTS, [], [], [], [], 7);
+      await store.publishSnapshotMeta({
         tip: "{}",
         incomplete: false,
         fetchedAt: 7,
@@ -252,6 +255,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0024_scan_state_network.sql",
       "0025_final_state.sql",
       "0026_counted_by_role.sql",
+      "0027_change_selection.sql",
     ]);
   });
 });
@@ -352,7 +356,7 @@ describe("store-node migration to per-response rows", () => {
       // surveys whose responses have silently vanished.
       expect(await store.snapshotMeta()).toBeNull();
       // And the next refresh publishes into the new shape.
-      await store.reconcileSegment(ALL_SLOTS, [], [], [], [], {
+      await store.publishSnapshotMeta({
         tip: "{}",
         incomplete: false,
         fetchedAt: 100,
@@ -456,12 +460,7 @@ describe("store-node survey_index paging SQL", () => {
     artifactHash: null,
     ...over,
   });
-  const meta = {
-    tip: `{"epoch":${TIP_EPOCH}}`,
-    incomplete: false,
-    fetchedAt: 7,
-    listCounts: null,
-  };
+  const GENERATION = 7;
 
   // linked (bucket 0), three open (cb/cc slot-tied, so the key tie-break the
   // cursor rests on has a witness), one closed.
@@ -486,7 +485,7 @@ describe("store-node survey_index paging SQL", () => {
 
   it("orders by bucket, slot desc, key — and follows the keyset cursor", async () => {
     store = openBackendStore(":memory:");
-    await store.reconcileSegment(ALL_SLOTS, rows, [], [], [], meta);
+    await store.reconcileSegment(ALL_SLOTS, rows, [], [], [], GENERATION);
 
     const all = await page({});
     expect(all.map((r) => r.surveyKey)).toEqual([
@@ -510,7 +509,7 @@ describe("store-node survey_index paging SQL", () => {
   // behavioural witness.
   it("filters sealed and public against the active set", async () => {
     store = openBackendStore(":memory:");
-    await store.reconcileSegment(ALL_SLOTS, rows, [], [], [], meta);
+    await store.reconcileSegment(ALL_SLOTS, rows, [], [], [], GENERATION);
 
     expect((await page({ filter: "sealed" })).map((r) => r.surveyKey)).toEqual([
       "cc:0",
@@ -532,12 +531,7 @@ describe("store-node response rows", () => {
     storeDir = null;
   });
 
-  const meta = {
-    tip: `{"epoch":500}`,
-    incomplete: false,
-    fetchedAt: 7,
-    listCounts: null,
-  };
+  const GENERATION = 7;
   const resp = (
     txHash: string,
     surveyKey: string,
@@ -583,11 +577,11 @@ describe("store-node response rows", () => {
     artifactHash: null,
   }));
 
-  it("writes only changed domain rows on reconciliation", async () => {
+  it("writes only changed rows on reconciliation, and never the envelope", async () => {
     storeDir = mkdtempSync(join(tmpdir(), "tessera-reconcile-"));
     const path = join(storeDir, "store.sqlite");
     store = openBackendStore(path);
-    await store.reconcileSegment(ALL_SLOTS, surveys, rows, [], [], meta);
+    await store.reconcileSegment(ALL_SLOTS, surveys, rows, [], [], GENERATION);
 
     const audit = new DatabaseSync(path);
     audit.exec(`
@@ -602,21 +596,24 @@ describe("store-node response rows", () => {
         BEGIN INSERT INTO reconcile_audit VALUES ('response:insert:' || NEW.tx_hash || ':' || NEW.response_index); END;
       CREATE TRIGGER audit_response_delete AFTER DELETE ON response
         BEGIN INSERT INTO reconcile_audit VALUES ('response:delete:' || OLD.tx_hash || ':' || OLD.response_index); END;
+      CREATE TRIGGER audit_tombstone AFTER INSERT ON survey_tombstone
+        BEGIN INSERT INTO reconcile_audit VALUES ('tombstone:' || NEW.survey_key); END;
+      CREATE TRIGGER audit_meta_insert AFTER INSERT ON snapshot_meta
+        BEGIN INSERT INTO reconcile_audit VALUES ('meta:insert'); END;
       CREATE TRIGGER audit_meta_update AFTER UPDATE ON snapshot_meta
         BEGIN INSERT INTO reconcile_audit VALUES ('meta:update'); END;
     `);
     audit.close();
 
-    await store.reconcileSegment(ALL_SLOTS, surveys, rows, [], [], {
-      ...meta,
-      fetchedAt: 8,
-    });
+    // A quiet refresh under a new generation writes nothing at all: the
+    // generation reaches a row only through the SET list of a changed one.
+    await store.reconcileSegment(ALL_SLOTS, surveys, rows, [], [], 8);
     const check = new DatabaseSync(path);
-    expect(check.prepare("SELECT event FROM reconcile_audit").all()).toEqual([
-      { event: "meta:update" },
-    ]);
-    check.exec("DELETE FROM reconcile_audit");
+    expect(check.prepare("SELECT event FROM reconcile_audit").all()).toEqual(
+      [],
+    );
     check.close();
+    expect(await store.snapshotMeta()).toBeNull();
 
     const newResponse = resp("gg", "aa:0", "key:11", 970_000);
     await store.reconcileSegment(
@@ -629,20 +626,19 @@ describe("store-node response rows", () => {
       [...rows, newResponse],
       [],
       [],
-      { ...meta, fetchedAt: 9 },
+      9,
     );
     const changed = new DatabaseSync(path);
     expect(changed.prepare("SELECT event FROM reconcile_audit").all()).toEqual([
       { event: "survey:update:aa:0" },
       { event: "response:insert:gg:0" },
-      { event: "meta:update" },
     ]);
     changed.close();
   });
 
   it("serves one survey's bundle in a stable order", async () => {
     store = openBackendStore(":memory:");
-    await store.reconcileSegment(ALL_SLOTS, surveys, rows, [], [], meta);
+    await store.reconcileSegment(ALL_SLOTS, surveys, rows, [], [], GENERATION);
     const whole = { cursor: null, limit: 10 };
 
     // (slot, txHash, responseIndex): the same bytes on every refresh, so the
@@ -668,7 +664,7 @@ describe("store-node response rows", () => {
 
   it("pages a survey's responses by keyset, resuming after the cursor", async () => {
     store = openBackendStore(":memory:");
-    await store.reconcileSegment(ALL_SLOTS, surveys, rows, [], [], meta);
+    await store.reconcileSegment(ALL_SLOTS, surveys, rows, [], [], GENERATION);
 
     const first = await store.surveyBundle("aa:0", { cursor: null, limit: 2 });
     expect(first?.responses.map((r) => r.record)).toEqual([
@@ -780,12 +776,6 @@ describe("store-node segment reconciliation", () => {
   let store: BackendStore;
   afterEach(() => store.close());
 
-  const meta = (fetchedAt: number) => ({
-    tip: `{"epoch":500}`,
-    incomplete: false,
-    fetchedAt,
-    listCounts: null,
-  });
   const survey = (
     surveyKey: string,
     slot: number,
@@ -846,7 +836,7 @@ describe("store-node segment reconciliation", () => {
       seededResponses,
       [],
       [],
-      meta(1),
+      1,
     );
 
     // The segment [300, 600] saw: survey bb:0 gone (rolled back), response r2
@@ -858,9 +848,10 @@ describe("store-node segment reconciliation", () => {
       [resp("r2", "aa:0", 450, `{"tx":"drifted"}`), resp("r4", "aa:0", 500)],
       [],
       [],
-      meta(2),
+      2,
     );
-    // aa:0 updated, r2 updated, r4 inserted, bb:0 and r5 swept.
+    // aa:0 updated, r2 updated, r4 inserted, bb:0 and r5 swept — bb:0's
+    // tombstone is bookkeeping, not a sixth row change.
     expect(changes).toBe(5);
 
     // bb:0 was in range and unlisted → swept; cc:0 out of range → untouched.
@@ -885,7 +876,6 @@ describe("store-node segment reconciliation", () => {
       ["r4", `{"tx":"r4"}`],
       ["r3", `{"tx":"r3"}`],
     ]);
-    expect((await store.snapshotMeta())?.fetchedAt).toBe(2);
   });
 });
 
@@ -1126,7 +1116,232 @@ describe("store-node refresh_run health metrics", () => {
     await store.addUpstreamCalls(t, { koios: 4 });
     await store.addUpstreamCalls(t + TALLY_BUCKET_SECONDS, { koios: 6 });
 
-    await store.pruneUpstreamTally(t + TALLY_BUCKET_SECONDS);
+    await store.pruneOperationalHistory(t + TALLY_BUCKET_SECONDS);
     expect(await store.upstreamTotalsSince(0)).toMatchObject({ koios: 6 });
+  });
+});
+
+describe("store-node change selection", () => {
+  let store: TestStore;
+  afterEach(() => store.close());
+
+  const row = (
+    surveyKey: string,
+    slot: number,
+    over: Partial<SurveyIndexRow> = {},
+  ): SurveyIndexRow => ({
+    surveyKey,
+    slot,
+    endEpoch: 500,
+    sealed: false,
+    cancelled: false,
+    govLinked: false,
+    owner: "key:11",
+    haystack: surveyKey,
+    record: `{"k":"${surveyKey}"}`,
+    cancellations: "[]",
+    govLinks: "[]",
+    responseCount: 0,
+    countedByRole: "{}",
+    refutedCount: 0,
+    finalState: null,
+    artifactHash: null,
+    ...over,
+  });
+  const stamps = () =>
+    Object.fromEntries(
+      (
+        store.db
+          .prepare(
+            "SELECT survey_key AS k, changed_at AS at FROM survey_index ORDER BY k",
+          )
+          .all() as { k: string; at: number }[]
+      ).map((r) => [r.k, r.at]),
+    );
+  const tombstones = () =>
+    store.db
+      .prepare(
+        "SELECT survey_key AS surveyKey, deleted_at AS deletedAt FROM survey_tombstone ORDER BY survey_key",
+      )
+      .all();
+
+  it("stamps a row with the generation that moved it, and only then", async () => {
+    store = testStore();
+    const rows = [row("aa:0", 100), row("bb:0", 200)];
+    await store.reconcileSegment(ALL_SLOTS, rows, [], [], [], 1);
+    expect(stamps()).toEqual({ "aa:0": 1, "bb:0": 1 });
+
+    // A quiet refresh leaves every stamp where it was.
+    await store.reconcileSegment(ALL_SLOTS, rows, [], [], [], 2);
+    expect(stamps()).toEqual({ "aa:0": 1, "bb:0": 1 });
+
+    // A moved count stamps its row alone.
+    await store.reconcileSegment(
+      ALL_SLOTS,
+      [row("aa:0", 100, { responseCount: 1 }), row("bb:0", 200)],
+      [],
+      [],
+      [],
+      3,
+    );
+    expect(stamps()).toEqual({ "aa:0": 3, "bb:0": 1 });
+
+    // A final state stamps with the deciding run; re-stamping the same
+    // decision touches nothing.
+    const decided = [
+      { surveyKey: "bb:0", state: "untalliable" as const, artifactHash: null },
+    ];
+    expect(await store.markFinalStates(decided, 4)).toBe(1);
+    expect(await store.markFinalStates(decided, 5)).toBe(0);
+    expect(stamps()).toEqual({ "aa:0": 3, "bb:0": 4 });
+  });
+
+  it("tombstones a swept survey, and a re-landed one is not a removal", async () => {
+    store = testStore();
+    await store.reconcileSegment(
+      ALL_SLOTS,
+      [row("aa:0", 100), row("bb:0", 200)],
+      [],
+      [],
+      [],
+      1,
+    );
+    // bb:0 rolled back: the segment covering its slot no longer lists it.
+    await store.reconcileSegment(
+      { fromSlot: 150, toSlot: 250 },
+      [],
+      [],
+      [],
+      [],
+      2,
+    );
+    expect(tombstones()).toEqual([{ surveyKey: "bb:0", deletedAt: 2 }]);
+    expect(await store.surveyChanges(changesCursorAt(1), 2, 10)).toEqual({
+      rows: [],
+      removed: [{ surveyKey: "bb:0", deletedAt: 2 }],
+    });
+
+    // It re-lands at a new slot: a row again, and the removal is gone from
+    // the delta without the tombstone being touched.
+    await store.reconcileSegment(
+      ALL_SLOTS,
+      [row("aa:0", 100), row("bb:0", 210)],
+      [],
+      [],
+      [],
+      3,
+    );
+    const relanded = await store.surveyChanges(changesCursorAt(1), 3, 10);
+    expect(relanded.rows.map((r) => [r.surveyKey, r.changedAt])).toEqual([
+      ["bb:0", 3],
+    ]);
+    expect(relanded.removed).toEqual([]);
+    expect(tombstones()).toEqual([{ surveyKey: "bb:0", deletedAt: 2 }]);
+
+    // Swept again: the one tombstone is restamped, and the removal shows to a
+    // consumer positioned after the re-landing.
+    await store.reconcileSegment(
+      { fromSlot: 150, toSlot: 250 },
+      [],
+      [],
+      [],
+      [],
+      4,
+    );
+    expect(tombstones()).toEqual([{ surveyKey: "bb:0", deletedAt: 4 }]);
+    expect(
+      (await store.surveyChanges(changesCursorAt(3), 4, 10)).removed,
+    ).toEqual([{ surveyKey: "bb:0", deletedAt: 4 }]);
+
+    await store.pruneOperationalHistory(4);
+    expect(tombstones()).toEqual([{ surveyKey: "bb:0", deletedAt: 4 }]);
+    await store.pruneOperationalHistory(5);
+    expect(tombstones()).toEqual([]);
+  });
+
+  it("reads strictly after the position, at or below the generation, in its own order", async () => {
+    store = testStore();
+    const at = (n: number) => row("a".repeat(n) + ":0", 100 * n);
+    // Later generations touch one or two rows each and sweep nothing.
+    await store.reconcileSegment(
+      ALL_SLOTS,
+      [at(1), at(2), at(3)],
+      [],
+      [],
+      [],
+      1,
+    );
+    await store.reconcileSegment(
+      null,
+      [{ ...at(2), responseCount: 1 }],
+      [],
+      [],
+      [],
+      2,
+    );
+    await store.reconcileSegment(
+      null,
+      [{ ...at(3), responseCount: 1 }, at(4)],
+      [],
+      [],
+      [],
+      3,
+    );
+    await store.reconcileSegment(
+      null,
+      [{ ...at(1), responseCount: 1 }],
+      [],
+      [],
+      [],
+      4,
+    );
+    expect(stamps()).toEqual({ "a:0": 4, "aa:0": 2, "aaa:0": 3, "aaaa:0": 3 });
+
+    const keysOf = (delta: { rows: { surveyKey: string }[] }) =>
+      delta.rows.map((r) => r.surveyKey);
+    // Everything after generation 1, published at 3: the row stamped 4 waits.
+    expect(
+      keysOf(await store.surveyChanges(changesCursorAt(1), 3, 10)),
+    ).toEqual(["aa:0", "aaa:0", "aaaa:0"]);
+    // Continuing from a key inside generation 3, published at 4.
+    expect(
+      keysOf(
+        await store.surveyChanges(
+          {
+            rows: { stamp: 3, key: "aaa:0" },
+            removed: { stamp: 3, key: null },
+          },
+          4,
+          10,
+        ),
+      ),
+    ).toEqual(["aaaa:0", "a:0"]);
+    expect(keysOf(await store.surveyChanges(changesCursorAt(1), 3, 2))).toEqual(
+      ["aa:0", "aaa:0"],
+    );
+    expect(
+      keysOf(await store.surveyChanges(changesCursorAt(4), 4, 10)),
+    ).toEqual([]);
+  });
+
+  it("seeks both axes on their own index, in either cursor form", () => {
+    store = testStore();
+    const planOf = ({ sql, params }: { sql: string; params: unknown[] }) =>
+      (
+        store.db
+          .prepare(`EXPLAIN QUERY PLAN ${sql}`)
+          .all(...(params as (string | number)[])) as { detail: string }[]
+      ).map((r) => r.detail);
+    for (const position of [
+      { stamp: 5, key: null },
+      { stamp: 5, key: "aa:0" },
+    ]) {
+      expect(planOf(changedSurveysSql(position, 9, 10))).toEqual([
+        "SEARCH survey_index USING INDEX survey_index_changed (changed_at>? AND changed_at<?)",
+      ]);
+      expect(planOf(removedSurveysSql(position, 9, 10))[0]).toBe(
+        "SEARCH survey_tombstone USING COVERING INDEX survey_tombstone_deleted (deleted_at>? AND deleted_at<?)",
+      );
+    }
   });
 });

@@ -321,6 +321,23 @@ refresh materialized, and a request costs what the survey it asked for costs:
   a request costs its refs and nothing else; `counts` and `nextCursor` are absent
   because a named set has neither, and the paging parameters are refused rather
   than ignored. A ref matching no stored row is simply absent from the answer.
+- **`GET /api/surveys?changes=<cursor>`** — what changed since a position the
+  server minted, for a mirror that would otherwise re-read every row it holds
+  each tick. Every write to a survey row stamps the run's generation into
+  `changed_at` (`migrations/0027_change_selection.sql`) — the reconcile upsert
+  through its SET list only, so a quiet refresh still writes nothing — and a
+  sweep captures the keys it deletes into `survey_tombstone` under the same
+  predicate. The read is two keyed seeks in the delta's own order,
+  `(changed_at, survey_key)` and `(deleted_at, survey_key)`, both bounded above
+  by the published generation; the generation is published once, at the end of
+  the run, after the final-state overlay, so a published bound never has a
+  stamp still to land behind it. The cursor packs the two positions and no
+  generation: an exhausted axis advances to the published one, so a quiet
+  corpus never ages a cursor, and the one `resync` is a cursor older than the
+  tombstone retention window. A removal is "tombstoned and absent from
+  `survey_index`", so a re-landed survey needs no un-tombstoning. No filter: a
+  row leaving a filter is neither returned nor tombstoned, and the
+  epoch-dependent filters turn with no row write at all.
 - **`GET /api/surveys/{txHash}/{index}[?cursor=…]`** — the self-contained
   per-survey bundle: the definition record, its `ResponseRecord`s (sealed
   ciphertexts included) **a page at a time**, the cancellations targeting it, its

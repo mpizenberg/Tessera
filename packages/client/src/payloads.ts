@@ -23,7 +23,7 @@ import type {
  * and refuses a mismatch; it may warn on a minor it does not know. Every
  * change is a line in the backend's `CHANGELOG.md`.
  */
-export const API_VERSION = "1.0";
+export const API_VERSION = "1.1";
 
 /** The major of a `major.minor` contract version — the part a consumer must match. */
 export const apiMajor = (version: string): string =>
@@ -204,6 +204,40 @@ export interface SurveyListPayload extends SnapshotStamp {
    * refresh page one.
    */
   readonly resync?: boolean;
+  /**
+   * Where a mirror that walked the whole list at this snapshot's generation
+   * continues with the change selection (`changes`). Present on the paged
+   * selection from the serving tier; keep the one from a walk that finished
+   * without `resync`.
+   */
+  readonly changesCursor?: string;
+}
+
+/**
+ * `GET /api/surveys?changes=<cursor>`: what changed since a position the
+ * server minted — the list body for the surveys whose stored projection moved
+ * (a new survey, a count, a link, a cancellation, a final state), the keys
+ * `removed` since, and the position to ask from next tick. A consumer stores
+ * one string; a change is delivered once and never missed. Within one answer
+ * apply `removed` before the rows. A removal is advisory and can be transient
+ * (a reorg re-lands the transaction at a new slot), so local state that cannot
+ * be rebuilt is confirmed by `refs` before it is destroyed; removing a key one
+ * never held is a no-op. No `counts` (the banked totals cover the whole set,
+ * not the delta) and no filter: the consumer filters locally.
+ */
+export interface SurveyChangesPayload extends Omit<
+  SurveyListPayload,
+  "counts" | "changesCursor"
+> {
+  /** Survey keys removed since the cursor's position. */
+  readonly removed: readonly string[];
+  /**
+   * The position to ask from next — never null on a complete answer, since
+   * an exhausted axis advances to the published generation. Null only beside
+   * `resync`: the cursor is older than the retention window, its removals may
+   * be pruned, and the consumer walks the full list again.
+   */
+  readonly nextCursor: string | null;
 }
 
 /**

@@ -11,23 +11,24 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
 
 ## [0.1.0] - unreleased
 
-First release, speaking contract `1.0`.
+First release, speaking contract `1.1`.
 
 - The payload types of every route (`SurveyListPayload`,
-  `SurveyBundlePayload`, `SurveyFinalState`, `BackendHealth`,
+  `SurveyChangesPayload`, `SurveyBundlePayload`, `SurveyFinalState`, `BackendHealth`,
   `BackendLiveness`, `RespondedPayload`, `TxResponsesPayload`), the list's
   filter, counts and parameters, and the contract's constants: `API_VERSION`
   with `apiMajor`, `SURVEY_KEY_RE`, `DEFAULT_PAGE_LIMIT`, `MAX_PAGE_LIMIT`,
   `MAX_CREDENTIALS`, `MAX_TX_STATUS_HASHES`.
 - `createTesseraClient({ baseUrl, network?, fetch?, timeoutMs? })` with one
   method per route — `liveness`, `health`, `surveys`, `surveysByRefs`,
-  `bundle`, `wholeBundle`, `responded`, `responsesByTx`, `artifact`,
+  `changes`, `bundle`, `wholeBundle`, `responded`, `responsesByTx`, `artifact`,
   `artifactByHash`, `tip`, `txStatus`, `pparams` — decoding bodies into
   `cip-179` types, refusing malformed input with a `RangeError` before any
   request, answering the backend's not-ready state as `{ ready: false }`,
   and refusing a backend on another network or another contract major on the
   first snapshot read.
-- The envelope decoders (`decodeSurveyList`, `decodeSurveyBundle`, …), for a
+- The envelope decoders (`decodeSurveyList`, `decodeSurveyChanges`,
+  `decodeSurveyBundle`, …), for a
   body obtained by other means; a shape error is a `Cip179DecodeError`
   naming the field.
 - `collectSurveyBundle` and `MAX_BUNDLE_RESYNCS`, the paged-bundle collector

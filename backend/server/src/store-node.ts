@@ -62,8 +62,10 @@ const LEGACY_PROBES: readonly (readonly [migration: string, probe: string])[] =
  * Bring `db` to the latest schema: apply the `migrations/*.sql` files (in
  * name order, each in its own transaction) that `schema_migration` doesn't
  * list yet — the node:sqlite equivalent of `wrangler d1 migrations apply`.
+ * Exported for the D1 driver's tests, which run the same files against the
+ * in-memory database their fake D1 wraps.
  */
-function applyMigrations(db: DatabaseSync): void {
+export function applyMigrations(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migration (
       name       TEXT PRIMARY KEY,

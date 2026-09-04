@@ -6,8 +6,9 @@ import {
 
 import { describe, expect, it } from "vitest";
 
-import type { ResponseRow, SnapshotMeta, SurveyIndexRow } from "./store";
+import type { ResponseRow, SurveyIndexRow } from "./store";
 import { d1BackendStore, type D1Like } from "./store-d1";
+import { applyMigrations } from "./store-node";
 import { ALL_SLOTS } from "./testing/store";
 
 class FakeD1Statement {
@@ -72,77 +73,6 @@ class FakeD1 implements D1Like {
   }
 }
 
-const schema = `
-  CREATE TABLE survey_index (
-    survey_key TEXT PRIMARY KEY,
-    slot INTEGER NOT NULL,
-    end_epoch INTEGER NOT NULL,
-    sealed INTEGER NOT NULL,
-    cancelled INTEGER NOT NULL,
-    gov_linked INTEGER NOT NULL,
-    owner TEXT NOT NULL,
-    haystack TEXT NOT NULL,
-    record TEXT NOT NULL,
-    cancellations TEXT NOT NULL,
-    gov_links TEXT NOT NULL,
-    response_count INTEGER NOT NULL,
-    counted_by_role TEXT NOT NULL DEFAULT '{}',
-    refuted_count INTEGER NOT NULL DEFAULT 0,
-    final_state TEXT,
-    artifact_hash TEXT
-  );
-  CREATE TABLE snapshot_meta (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    tip TEXT NOT NULL,
-    incomplete INTEGER NOT NULL,
-    fetched_at INTEGER NOT NULL,
-    list_counts TEXT
-  );
-  CREATE TABLE response (
-    tx_hash TEXT NOT NULL,
-    response_index INTEGER NOT NULL,
-    survey_key TEXT NOT NULL,
-    role INTEGER NOT NULL,
-    credential TEXT NOT NULL,
-    slot INTEGER NOT NULL,
-    countable INTEGER NOT NULL DEFAULT 1,
-    record TEXT NOT NULL,
-    PRIMARY KEY (tx_hash, response_index)
-  );
-  CREATE INDEX response_survey
-    ON response (survey_key, slot, tx_hash, response_index);
-  CREATE INDEX response_credential ON response (credential);
-  CREATE INDEX response_slot ON response (slot, tx_hash, response_index);
-  CREATE INDEX response_identity ON response (survey_key, role, credential, slot);
-  CREATE TABLE response_count_bank (
-    survey_key TEXT PRIMARY KEY,
-    settled_count INTEGER NOT NULL,
-    settled_by_role TEXT NOT NULL DEFAULT '{}',
-    below_slot INTEGER NOT NULL
-  );
-  CREATE TABLE scan_state (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    cursor_slot INTEGER,
-    cursor_tx_hash TEXT,
-    caught_up INTEGER NOT NULL DEFAULT 0,
-    generation INTEGER NOT NULL,
-    trickle_slot INTEGER,
-    trickle_tx_hash TEXT,
-    settlement_floor INTEGER NOT NULL DEFAULT 0,
-    finalization_floor INTEGER NOT NULL DEFAULT 0,
-    network TEXT
-  );
-  CREATE TABLE cancellation (
-    tx_hash TEXT NOT NULL,
-    survey_key TEXT NOT NULL,
-    slot INTEGER NOT NULL,
-    record TEXT NOT NULL,
-    PRIMARY KEY (tx_hash, survey_key)
-  );
-  CREATE INDEX cancellation_survey ON cancellation (survey_key);
-  CREATE INDEX cancellation_slot ON cancellation (slot, tx_hash);
-`;
-
 const survey = (
   surveyKey: string,
   over: Partial<SurveyIndexRow> = {},
@@ -180,22 +110,15 @@ const response = (n: number): ResponseRow => {
   };
 };
 
-const meta = (fetchedAt: number): SnapshotMeta => ({
-  tip: JSON.stringify({ epoch: 500, fetchedAt }),
-  incomplete: false,
-  fetchedAt,
-  listCounts: null,
-});
-
 function fakeStore() {
   const sqlite = new DatabaseSync(":memory:");
-  sqlite.exec(schema);
+  applyMigrations(sqlite);
   const d1 = new FakeD1(sqlite);
   return { d1, sqlite, store: d1BackendStore(d1) };
 }
 
 describe("D1 snapshot reconciliation", () => {
-  it("rolls row changes and the envelope back as one generation", async () => {
+  it("rolls a failed reconcile's row changes back whole", async () => {
     const { sqlite, store } = fakeStore();
     await store.reconcileSegment(
       ALL_SLOTS,
@@ -203,7 +126,7 @@ describe("D1 snapshot reconciliation", () => {
       [],
       [],
       [],
-      meta(7),
+      7,
     );
     sqlite.exec(`
       CREATE TRIGGER reject_bb BEFORE UPDATE ON survey_index
@@ -218,7 +141,7 @@ describe("D1 snapshot reconciliation", () => {
         [],
         [],
         [],
-        meta(8),
+        8,
       ),
     ).rejects.toThrow(/reject bb/);
 
@@ -232,7 +155,6 @@ describe("D1 snapshot reconciliation", () => {
       { survey_key: "aa:0", slot: 100 },
       { survey_key: "bb:0", slot: 100 },
     ]);
-    expect(await store.snapshotMeta()).toEqual(meta(7));
     sqlite.close();
   });
 
@@ -245,7 +167,7 @@ describe("D1 snapshot reconciliation", () => {
       responses,
       [],
       [],
-      meta(1),
+      1,
     );
 
     expect(d1.batchSizes.at(-1)).toBeLessThan(100);
@@ -261,7 +183,7 @@ describe("D1 snapshot reconciliation", () => {
       kept,
       [],
       [],
-      meta(2),
+      2,
     );
 
     expect(d1.batchSizes.at(-1)).toBeLessThan(100);
@@ -275,7 +197,6 @@ describe("D1 snapshot reconciliation", () => {
           .get(n.toString(16).padStart(64, "0")),
       ).toBeUndefined();
     }
-    expect(await store.snapshotMeta()).toEqual(meta(2));
     sqlite.close();
   });
 
@@ -288,7 +209,7 @@ describe("D1 snapshot reconciliation", () => {
       responses,
       [],
       [],
-      meta(1),
+      1,
     );
 
     // The segment listed nothing: every response with slot in it rolled back.
@@ -298,7 +219,7 @@ describe("D1 snapshot reconciliation", () => {
       [],
       [],
       [],
-      meta(2),
+      2,
     );
 
     expect(changes).toBe(1_000);
@@ -317,7 +238,6 @@ describe("D1 snapshot reconciliation", () => {
     expect(
       sqlite.prepare("SELECT COUNT(*) AS n FROM survey_index").get(),
     ).toEqual({ n: 1 });
-    expect(await store.snapshotMeta()).toEqual(meta(2));
     sqlite.close();
   });
 

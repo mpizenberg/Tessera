@@ -14,6 +14,7 @@ import type { SurveyListCounts } from "cardano-tessera-client";
 import type { ResponseCursor } from "cardano-tessera-core";
 import { BINDABLE_ROLES, type GovLink, type GovLinkDoc } from "cip-179/domain";
 
+import type { ChangesCursor } from "./changes";
 import type {
   ArtifactRow,
   BackendStore,
@@ -41,6 +42,7 @@ import type {
   SqlDriver,
   SqlQuery,
   SurveyBundleRows,
+  SurveyChanges,
   SweepInputs,
   TouchedRows,
   SurveyIndexRow,
@@ -67,6 +69,7 @@ import {
   artifactStatesSql,
   cachedByTxHashSql,
   cancellationsBySurveysSql,
+  changedSurveysSql,
   completedValidationsSql,
   markFinalStatesSql,
   ownedCountSql,
@@ -74,6 +77,7 @@ import {
   untalliableKeysSql,
   respondedSql,
   refutedIdentitiesSql,
+  removedSurveysSql,
   responseCountBanksSql,
   responseIdentitiesSql,
   responsesBySurveysSql,
@@ -910,18 +914,34 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       responses: readonly ResponseRow[],
       cancellations: readonly CancellationRow[],
       banks: readonly ResponseCountBank[],
-      meta: SnapshotMeta,
+      generation: number,
     ): Promise<number> {
-      const { program, rowStatements } = segmentReconciliationSql(
+      const program = segmentReconciliationSql(
         range,
         surveys,
         responses,
         cancellations,
         banks,
-        meta,
+        generation,
       );
-      const changes = await db.batchWrite(program);
-      return changes.slice(0, rowStatements).reduce((n, c) => n + c, 0);
+      const changes = await db.batchWrite(program.map((s) => s.query));
+      return changes.reduce((n, c, i) => (program[i]!.rowWrite ? n + c : n), 0);
+    },
+    async surveyChanges(
+      cursor: ChangesCursor,
+      publishedAt: number,
+      limit: number,
+    ): Promise<SurveyChanges> {
+      const [rows, removed] = await db.batchAll([
+        changedSurveysSql(cursor.rows, publishedAt, limit),
+        removedSurveysSql(cursor.removed, publishedAt, limit),
+      ]);
+      return {
+        rows: ((rows ?? []) as (DbSurveyRow & { changedAt: number })[]).map(
+          (r) => ({ ...surveyRowFromDb(r), changedAt: r.changedAt }),
+        ),
+        removed: (removed ?? []) as SurveyChanges["removed"],
+      };
     },
     async surveyRowsByKeys(keys: readonly string[]): Promise<SurveyIndexRow[]> {
       if (keys.length === 0) return [];
@@ -1079,9 +1099,12 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
     },
     async markFinalStates(
       entries: readonly FinalStateEntry[],
+      generation: number,
     ): Promise<number> {
       if (entries.length === 0) return 0;
-      const changes = await db.batchWrite(markFinalStatesSql([...entries]));
+      const changes = await db.batchWrite(
+        markFinalStatesSql([...entries], generation),
+      );
       return changes.reduce((n, c) => n + c, 0);
     },
     async surveyEndEpochs(minEndEpoch: number): Promise<number[]> {
@@ -1181,13 +1204,14 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
         ),
       );
     },
-    async pruneUpstreamTally(beforeUnix: number): Promise<void> {
-      await write(
+    async pruneOperationalHistory(beforeUnix: number): Promise<void> {
+      await db.batchWrite([
         query(
           "DELETE FROM upstream_tally WHERE bucket < ?",
           tallyBucket(beforeUnix),
         ),
-      );
+        query("DELETE FROM survey_tombstone WHERE deleted_at < ?", beforeUnix),
+      ]);
     },
     async incompleteValidationCount(): Promise<number> {
       const row = await first<{ n: number }>(

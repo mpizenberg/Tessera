@@ -55,7 +55,6 @@ import type {
   ResponseRow,
   SettledGovEpoch,
   SlotRange,
-  SnapshotMeta,
   SnapshotStore,
   StoredResponse,
   TallyStore,
@@ -113,11 +112,16 @@ export interface SegmentArgs {
    * this slot.
    */
   readonly settledBelowSlot: number;
-  readonly meta: SnapshotMeta;
+  /**
+   * The run's generation — its start instant, the `fetchedAt` it publishes
+   * once every stamp has landed. Every survey row this integration writes or
+   * sweeps is stamped with it, for the change selection.
+   */
+  readonly generation: number;
 }
 
 export interface SegmentIntegration {
-  /** Rows the reconcile changed (the envelope excluded). */
+  /** Rows the reconcile changed. */
   readonly changes: number;
   /** Wire JSON bytes across the rows this run upserted — the growth metric. */
   readonly payloadBytes: number;
@@ -139,7 +143,7 @@ export async function integrateSegment(
   source: Pick<KoiosDataSource, "txProofs">,
   args: SegmentArgs,
 ): Promise<SegmentIntegration> {
-  const { records, range, tip, govPass, settledBelowSlot, meta } = args;
+  const { records, range, tip, govPass, settledBelowSlot, generation } = args;
   const inRange = (slot: number): boolean =>
     range !== null && slot >= range.fromSlot && slot <= range.toSlot;
 
@@ -352,7 +356,7 @@ export async function integrateSegment(
     [...responseRows, ...restatedRows],
     cancellationRows,
     banks,
-    meta,
+    generation,
   );
   return {
     changes,

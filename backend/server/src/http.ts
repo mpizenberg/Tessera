@@ -8,7 +8,9 @@
  *   - GET /api/surveys                    Explore-list payload: surveys + tip +
  *                                         gov links + raw cancellations +
  *                                         deduped per-survey response counts +
- *                                         per-survey final states
+ *                                         per-survey final states — a page of
+ *                                         the list, the refs a caller names,
+ *                                         or what changed since a cursor
  *   - GET /api/surveys/{txHash}/{index}   one survey's self-contained bundle:
  *                                         definition, ALL its responses (sealed
  *                                         ciphertexts included), cancellations
@@ -68,6 +70,7 @@ import {
   type BackendLiveness,
   type RespondedPayload,
   type SurveyBundlePayload,
+  type SurveyChangesPayload,
   type SurveyListPayload,
   type SurveyFinalState,
   type TxResponsesPayload,
@@ -81,9 +84,16 @@ import {
 } from "cardano-tessera-core";
 import { KoiosDataSource } from "cardano-tessera-koios";
 
+import {
+  advanceAxis,
+  changesCursorAt,
+  encodeChangesCursor,
+  parseChangesCursor,
+} from "./changes";
 import type { ServerConfig } from "./config";
 import { upstreamMeter } from "./meter";
 import {
+  OPERATIONAL_RETENTION_SECONDS,
   rowFinalState,
   snapshotListCounts,
   snapshotTip,
@@ -182,9 +192,22 @@ function refsOf(raw: string): string[] | null {
   return list.every((key) => SURVEY_KEY_RE.test(key)) ? list : null;
 }
 
+/** The `limit=` query parameter, or null when malformed (the caller answers 400). */
+function limitOf(c: Context): number | null {
+  const limit = Number(c.req.query("limit") ?? DEFAULT_PAGE_LIMIT);
+  return Number.isInteger(limit) && limit >= 1 && limit <= MAX_PAGE_LIMIT
+    ? limit
+    : null;
+}
+
+/** Which of `params` the request carries, for a selection that refuses them. */
+const carried = (c: Context, params: readonly string[]): string[] =>
+  params.filter((param) => c.req.query(param) !== undefined);
+
 /**
- * The wire form of a set of survey rows — what both selections of
- * `/api/surveys` (a filtered page, or the refs a caller names) answer with.
+ * The wire form of a set of survey rows — what every selection of
+ * `/api/surveys` (a filtered page, the refs a caller names, the rows that
+ * changed) answers with.
  * Stored values are already wire-form JSON text, so the body is assembled by
  * parse-and-concatenate, never re-encoded through toJsonSafe. Paging's own
  * `counts` and `nextCursor` ride on top of this.
@@ -406,8 +429,6 @@ export function createApp(
   app.get("/api/surveys", async (c) => {
     const meta = await store.snapshotMeta();
     if (!meta) return c.json({ error: "snapshot not ready" }, 503);
-    if (notModified(c, `W/"surveys-${meta.fetchedAt}"`))
-      return c.body(null, 304);
 
     // Naming the surveys is a second selection, not a variant of the first: a
     // set of references has no order to page and no filter to count over, so
@@ -416,13 +437,14 @@ export function createApp(
     // asks for what it holds, and a rolled-back survey is legitimately gone.
     const refsRaw = c.req.query("refs");
     if (refsRaw !== undefined) {
-      if (
-        ["filter", "cursor", "q", "limit"].some(
-          (param) => c.req.query(param) !== undefined,
-        )
-      )
+      if (notModified(c, `W/"surveys-${meta.fetchedAt}"`))
+        return c.body(null, 304);
+      if (carried(c, ["filter", "cursor", "q", "limit", "changes"]).length > 0)
         return c.json(
-          { error: "refs is exclusive with filter, cursor, q and limit" },
+          {
+            error:
+              "refs is exclusive with filter, cursor, q, limit and changes",
+          },
           400,
         );
       const keys = refsOf(refsRaw);
@@ -430,9 +452,75 @@ export function createApp(
       return c.json(surveyListBody(await store.surveyRowsByKeys(keys), meta));
     }
 
-    const limit = Number(c.req.query("limit") ?? DEFAULT_PAGE_LIMIT);
-    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_PAGE_LIMIT)
-      return c.json({ error: "malformed limit" }, 400);
+    const limit = limitOf(c);
+    if (limit === null) return c.json({ error: "malformed limit" }, 400);
+
+    // The third selection: what changed since a position this server minted.
+    // Rows are read in their own keyset order, `(changed_at, survey_key)`,
+    // and removals from the tombstones in theirs, both at or below the
+    // published generation — so a refresh landing mid-walk is invisible, and
+    // a row still to be stamped by a run in flight cannot be skipped past. No
+    // filter: a row leaving a filter is neither returned nor tombstoned, and
+    // `active`/`sealed`/`public` turn with the epoch with no row write at all,
+    // so a filtered delta could not be complete. The consumer filters locally.
+    const changesRaw = c.req.query("changes");
+    if (changesRaw !== undefined) {
+      const others = carried(c, ["filter", "cursor", "q", "credentials"]);
+      if (others.length > 0)
+        return c.json(
+          { error: `changes is exclusive with ${others.join(", ")}` },
+          400,
+        );
+      const cursor = parseChangesCursor(changesRaw);
+      if (!cursor) return c.json({ error: "malformed changes cursor" }, 400);
+      // Removals older than the retention window may be pruned, so the delta
+      // cannot be promised complete: no continuation, and the consumer walks
+      // the full list again. A live consumer never gets here — every answer
+      // advances an exhausted axis to the published generation.
+      const horizon =
+        Math.floor(Date.now() / 1000) - OPERATIONAL_RETENTION_SECONDS;
+      if (cursor.removed.stamp < horizon) {
+        c.header("Cache-Control", "no-store");
+        const body: JsonSafe<SurveyChangesPayload> = {
+          ...surveyListBody([], meta),
+          removed: [],
+          resync: true,
+          nextCursor: null,
+        };
+        return c.json(body);
+      }
+      if (notModified(c, `W/"surveys-${meta.fetchedAt}"`))
+        return c.body(null, 304);
+      // One extra row per axis decides where its position lands.
+      const changes = await store.surveyChanges(
+        cursor,
+        meta.fetchedAt,
+        limit + 1,
+      );
+      const body: JsonSafe<SurveyChangesPayload> = {
+        ...surveyListBody(changes.rows.slice(0, limit), meta),
+        removed: changes.removed.slice(0, limit).map((r) => r.surveyKey),
+        nextCursor: encodeChangesCursor({
+          rows: advanceAxis(
+            changes.rows.map((r) => ({ stamp: r.changedAt, key: r.surveyKey })),
+            limit,
+            meta.fetchedAt,
+          ),
+          removed: advanceAxis(
+            changes.removed.map((r) => ({
+              stamp: r.deletedAt,
+              key: r.surveyKey,
+            })),
+            limit,
+            meta.fetchedAt,
+          ),
+        }),
+      };
+      return c.json(body);
+    }
+
+    if (notModified(c, `W/"surveys-${meta.fetchedAt}"`))
+      return c.body(null, 304);
     const filter = c.req.query("filter") ?? "all";
     if (!isSurveyListFilter(filter))
       return c.json({ error: "unknown filter" }, 400);
@@ -487,6 +575,9 @@ export function createApp(
               generation: meta.fetchedAt,
             })
           : null,
+      // Where a walk of this generation leaves a mirror: a consumer that
+      // finished the list without `resync` continues from here with `changes`.
+      changesCursor: encodeChangesCursor(changesCursorAt(meta.fetchedAt)),
     };
     return c.json(body);
   });

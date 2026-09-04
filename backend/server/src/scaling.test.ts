@@ -87,6 +87,8 @@ const CORPUS_TABLES = new Set([
   "weight_snapshot",
   "sealed_reveal",
   "response_count_bank",
+  // `survey_tombstone` is absent for the same reason as `tx_proof_cache`:
+  // retention-bounded, and pruned by a keyed read.
 ]);
 const BOUNDED_INDEXES = new Set([
   "validated_response_incomplete",
@@ -292,8 +294,9 @@ async function seed(store: BackendStore, profile: Profile): Promise<Corpus> {
     snapshot.responses,
     snapshot.cancellations,
     [],
-    meta,
+    TIP.time,
   );
+  await store.publishSnapshotMeta(meta);
   await store.upsertValidatedResponses(
     responses.map((r) => ({
       txHash: r.txHash,
@@ -387,7 +390,7 @@ async function steadyRun(
     tip: TIP,
     govPass: { links: [], scope: new Set(govEpochs), floor: govFloor },
     settledBelowSlot: HORIZON,
-    meta,
+    generation: meta.fetchedAt,
   });
   await store.putScanState({
     cursor: { slot: TIP.slot, txHash: "" },
@@ -411,12 +414,13 @@ async function steadyRun(
       finalizationFloor: finalFloor,
     },
   );
-  await store.markFinalStates(finalStateEntries(finalized.emitted));
+  await store.markFinalStates(
+    finalStateEntries(finalized.emitted),
+    meta.fetchedAt,
+  );
   await pruneTxProofCache(store, false, TIP);
-  if (integration.changes > 0) {
-    await store.surveyIndexCounts(TIP.epoch, [], []);
-    await store.publishSnapshotMeta(meta);
-  }
+  if (integration.changes > 0) await store.surveyIndexCounts(TIP.epoch, [], []);
+  await store.publishSnapshotMeta(meta);
   await store.putRefreshRun({
     startedAt: TIP.time + 1,
     durationMs: 1,
@@ -430,7 +434,7 @@ async function steadyRun(
     responses: segment.responses.length,
     payloadBytes: integration.payloadBytes,
   });
-  await store.pruneUpstreamTally(0);
+  await store.pruneOperationalHistory(0);
   void corpus;
 }
 
