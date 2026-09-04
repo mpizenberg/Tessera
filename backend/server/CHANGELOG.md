@@ -15,7 +15,7 @@ no dual-serving. A consumer compares majors and refuses a mismatch; it may warn
 on a minor it does not know. Every bump has a line here, and the README's
 Endpoints section changes in the same commit.
 
-## [1.1] - unreleased
+## [1.1] - 2026-09-04
 
 ### Added
 
@@ -27,7 +27,7 @@ Endpoints section changes in the same commit.
 - `changesCursor` on every paged `GET /api/surveys` answer: where a full walk
   at that snapshot hands over to `changes`.
 
-## [1.0] - unreleased
+## [1.0] - 2026-09-04
 
 The contract as deployed on preprod, now versioned: the paged and
 by-reference selections of `/api/surveys` (`countedByRole` and `finalState`
