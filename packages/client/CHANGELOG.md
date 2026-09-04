@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 while `< 1.0.0`, breaking changes bump the **minor** version.
 
-## [0.1.0] - unreleased
+## [0.1.0] - 2026-09-04
 
 First release, speaking contract `1.1`.
 
