@@ -87,8 +87,7 @@ const CORPUS_TABLES = new Set([
   "weight_snapshot",
   "sealed_reveal",
   "response_count_bank",
-  // `survey_tombstone` is absent for the same reason as `tx_proof_cache`:
-  // retention-bounded, and pruned by a keyed read.
+  "survey_tombstone",
 ]);
 const BOUNDED_INDEXES = new Set([
   "validated_response_incomplete",
@@ -434,7 +433,7 @@ async function steadyRun(
     responses: segment.responses.length,
     payloadBytes: integration.payloadBytes,
   });
-  await store.pruneOperationalHistory(0);
+  await store.pruneUpstreamTally(0);
   void corpus;
 }
 

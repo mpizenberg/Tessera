@@ -1204,14 +1204,13 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
         ),
       );
     },
-    async pruneOperationalHistory(beforeUnix: number): Promise<void> {
-      await db.batchWrite([
+    async pruneUpstreamTally(beforeUnix: number): Promise<void> {
+      await write(
         query(
           "DELETE FROM upstream_tally WHERE bucket < ?",
           tallyBucket(beforeUnix),
         ),
-        query("DELETE FROM survey_tombstone WHERE deleted_at < ?", beforeUnix),
-      ]);
+      );
     },
     async incompleteValidationCount(): Promise<number> {
       const row = await first<{ n: number }>(

@@ -475,11 +475,7 @@ export interface RefreshRunRow {
 /** What a run reports about itself; the store banks the backlog. */
 export type RefreshRunInput = Omit<RefreshRunRow, "validationBacklog">;
 
-/**
- * Keep operational history — refresh runs, tally buckets, survey tombstones —
- * this long. The tombstones make it a contract figure: a change-selection
- * cursor older than this is answered `resync`.
- */
+/** Keep operational history — refresh runs and tally buckets — this long. */
 export const OPERATIONAL_RETENTION_SECONDS = 7 * 86_400;
 
 /** Outcomes over a window of refresh runs. */
@@ -561,12 +557,11 @@ export interface HealthStore {
   /** Per-kind totals over buckets at or after `sinceUnix`. */
   upstreamTotalsSince(sinceUnix: number): Promise<UpstreamTotals>;
   /**
-   * Drop the retention-bounded history before `beforeUnix` — tally buckets
-   * and survey tombstones — in one write. The refresh's job, not serving's: a
-   * cursor older than the window is answered `resync` rather than an
-   * incomplete removal list.
+   * Drop the metering buckets before `beforeUnix`. The refresh's job, not
+   * serving's: the serving path adds to the tally on requests that must stay
+   * one write.
    */
-  pruneOperationalHistory(beforeUnix: number): Promise<void>;
+  pruneUpstreamTally(beforeUnix: number): Promise<void>;
   /**
    * Validated-response rows still awaiting an enrichment retry (`blockIndex`
    * or `proofOk` null) — a persistently nonzero backlog means something is

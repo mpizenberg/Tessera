@@ -270,12 +270,9 @@ export async function refreshSnapshot(
               }),
         }),
         meter.drain(startedAt),
-        // The retention prune rides here, off the reconcile path: the serving
-        // path adds to the tally on requests that must stay one write, and a
-        // tombstone older than the window is one no answerable cursor needs.
-        store.pruneOperationalHistory(
-          startedAt - OPERATIONAL_RETENTION_SECONDS,
-        ),
+        // The metering prune rides here, off the reconcile path: the serving
+        // path adds to the tally on requests that must stay one write.
+        store.pruneUpstreamTally(startedAt - OPERATIONAL_RETENTION_SECONDS),
       ])
         .then(() => undefined)
         // Stats are best-effort: recording must never mask the run's own outcome.

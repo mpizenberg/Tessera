@@ -256,6 +256,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0025_final_state.sql",
       "0026_counted_by_role.sql",
       "0027_change_selection.sql",
+      "0028_backfill_change_stamps.sql",
     ]);
   });
 });
@@ -311,6 +312,96 @@ describe("store-node migration to identity columns", () => {
           countable: true,
         },
       ]);
+    } finally {
+      store.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("store-node migration to chain-dated change stamps", () => {
+  it("dates every unstamped row by its latest chain event, below the published generation", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tessera-store-"));
+    const path = join(dir, "cache.sqlite");
+    // A database at 0027 exactly: rows carry the 0 that migration backfilled,
+    // which `since` would read as "invisible to every query".
+    const migrationsDir = fileURLToPath(
+      new URL("../migrations", import.meta.url),
+    );
+    const before = readdirSync(migrationsDir)
+      .filter((f) => f.endsWith(".sql") && f < "0028")
+      .sort();
+    const old = new DatabaseSync(path);
+    old.exec(`CREATE TABLE schema_migration (
+      name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL
+    );`);
+    for (const file of before) {
+      old.exec(readFileSync(join(migrationsDir, file), "utf8"));
+      old.prepare("INSERT INTO schema_migration VALUES (?, 1)").run(file);
+    }
+    // Slot 900 000 at unix 1 000 000, so a slot dates at slot + 100 000.
+    const published = 1_000_100;
+    old
+      .prepare(
+        "INSERT INTO snapshot_meta (id, tip, incomplete, fetched_at) VALUES (1, ?, 0, ?)",
+      )
+      .run(
+        JSON.stringify({ epoch: 9, slot: 900_000, time: 1_000_000 }),
+        published,
+      );
+    const survey = old.prepare(
+      `INSERT INTO survey_index (survey_key, slot, end_epoch, sealed, cancelled,
+         gov_linked, owner, haystack, record, cancellations, gov_links, response_count)
+       VALUES (?, ?, 9, 0, 0, 0, 'key:1', '', '{}', '[]', '[]', 0)`,
+    );
+    for (const key of ["own:0", "resp:0", "cancel:0", "art:0", "unt:0"])
+      survey.run(key, 1_000);
+    old
+      .prepare(
+        `INSERT INTO response (tx_hash, response_index, survey_key, credential, slot, record)
+         VALUES ('aa', 0, 'resp:0', 'key:2', ?, '{}')`,
+      )
+      .run(2_000);
+    old
+      .prepare(
+        "INSERT INTO cancellation (tx_hash, survey_key, slot, record) VALUES ('bb', 'cancel:0', ?, '{}')",
+      )
+      .run(3_000);
+    old
+      .prepare(
+        `INSERT INTO tally_artifact (survey_key, end_epoch, artifact_hash, artifact, created_at)
+         VALUES ('art:0', 9, 'h', '{}', ?)`,
+      )
+      .run(500_000);
+    old
+      .prepare(
+        "INSERT INTO untalliable_survey (survey_key, decided_at) VALUES ('unt:0', ?)",
+      )
+      .run(400_000);
+    old.close();
+
+    const store = openBackendStore(path);
+    try {
+      const changes = await store.surveyChanges(
+        changesCursorAt(0),
+        published,
+        10,
+      );
+      expect(changes.rows.map((r) => [r.surveyKey, r.changedAt])).toEqual([
+        // Its own transaction, when nothing later touched it.
+        ["own:0", 101_000],
+        ["resp:0", 102_000],
+        ["cancel:0", 103_000],
+        // The finalizer's decision, already unix seconds, when it is later.
+        ["unt:0", 400_000],
+        ["art:0", 500_000],
+      ]);
+      // The property the backfill exists for: chain time lands below the
+      // published generation, so a live cursor is not re-sent the corpus.
+      expect(
+        (await store.surveyChanges(changesCursorAt(published), published, 10))
+          .rows,
+      ).toEqual([]);
     } finally {
       store.close();
       rmSync(dir, { recursive: true, force: true });
@@ -1116,7 +1207,7 @@ describe("store-node refresh_run health metrics", () => {
     await store.addUpstreamCalls(t, { koios: 4 });
     await store.addUpstreamCalls(t + TALLY_BUCKET_SECONDS, { koios: 6 });
 
-    await store.pruneOperationalHistory(t + TALLY_BUCKET_SECONDS);
+    await store.pruneUpstreamTally(t + TALLY_BUCKET_SECONDS);
     expect(await store.upstreamTotalsSince(0)).toMatchObject({ koios: 6 });
   });
 });
@@ -1252,11 +1343,6 @@ describe("store-node change selection", () => {
     expect(
       (await store.surveyChanges(changesCursorAt(3), 4, 10)).removed,
     ).toEqual([{ surveyKey: "bb:0", deletedAt: 4 }]);
-
-    await store.pruneOperationalHistory(4);
-    expect(tombstones()).toEqual([{ surveyKey: "bb:0", deletedAt: 4 }]);
-    await store.pruneOperationalHistory(5);
-    expect(tombstones()).toEqual([]);
   });
 
   it("reads strictly after the position, at or below the generation, in its own order", async () => {
