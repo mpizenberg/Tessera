@@ -23,7 +23,7 @@ import type {
  * and refuses a mismatch; it may warn on a minor it does not know. Every
  * change is a line in the backend's `CHANGELOG.md`.
  */
-export const API_VERSION = "1.1";
+export const API_VERSION = "1.2";
 
 /** The major of a `major.minor` contract version — the part a consumer must match. */
 export const apiMajor = (version: string): string =>
@@ -227,17 +227,16 @@ export interface SurveyListPayload extends SnapshotStamp {
  */
 export interface SurveyChangesPayload extends Omit<
   SurveyListPayload,
-  "counts" | "changesCursor"
+  "counts" | "changesCursor" | "resync"
 > {
   /** Survey keys removed since the cursor's position. */
   readonly removed: readonly string[];
   /**
-   * The position to ask from next — never null on a complete answer, since
-   * an exhausted axis advances to the published generation. Null only beside
-   * `resync`: the cursor is older than the retention window, its removals may
-   * be pruned, and the consumer walks the full list again.
+   * The position to ask from next, always: no position is unanswerable, since
+   * tombstones are kept for the life of the corpus and an exhausted axis
+   * advances to the published generation. A delta is never a `resync`.
    */
-  readonly nextCursor: string | null;
+  readonly nextCursor: string;
 }
 
 /**

@@ -579,23 +579,27 @@ describe("changes", () => {
     expect(body.surveys).toEqual([survey]);
     expect(body.removed).toEqual(["aa".repeat(32) + ":0"]);
     expect(body.nextCursor).toBe("1710000000.-.1710000000.-");
-    expect(body.resync).toBeUndefined();
     expect("counts" in body).toBe(false);
   });
 
-  it("reads a resync answer: no continuation, the flag set", async () => {
+  it("asks from an instant the caller names, and refuses one that is not a whole second", async () => {
+    const { client, urls } = clientOver((url) =>
+      url.includes("since=") ? { body: changesBody() } : undefined,
+    );
+    const body = ready(await client.changesSince(1_709_000_000, 20));
+    const url = new URL(urls().find((u) => u.includes("since="))!);
+    expect(url.searchParams.get("since")).toBe("1709000000");
+    expect(url.searchParams.get("limit")).toBe("20");
+    expect(body.nextCursor).toBe("1710000000.-.1710000000.-");
+    expect(() => client.changesSince(-1)).toThrow(RangeError);
+    expect(() => client.changesSince(1.5)).toThrow(RangeError);
+  });
+
+  it("refuses a delta with no continuation: every position is answerable", async () => {
     const { client } = clientOver(() => ({
-      body: {
-        ...changesBody(),
-        surveys: [],
-        removed: [],
-        nextCursor: null,
-        resync: true,
-      },
+      body: { ...changesBody(), nextCursor: null },
     }));
-    const body = ready(await client.changes("5.-.5.-"));
-    expect(body).toMatchObject({ surveys: [], removed: [], nextCursor: null });
-    expect(body.resync).toBe(true);
+    await expect(client.changes("5.-.5.-")).rejects.toThrow(/nextCursor/);
   });
 
   it("keeps the paged list's changesCursor", async () => {

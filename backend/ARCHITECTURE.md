@@ -333,11 +333,18 @@ refresh materialized, and a request costs what the survey it asked for costs:
   the run, after the final-state overlay, so a published bound never has a
   stamp still to land behind it. The cursor packs the two positions and no
   generation: an exhausted axis advances to the published one, so a quiet
-  corpus never ages a cursor, and the one `resync` is a cursor older than the
-  tombstone retention window. A removal is "tombstoned and absent from
-  `survey_index`", so a re-landed survey needs no un-tombstoning. No filter: a
-  row leaving a filter is neither returned nor tombstoned, and the
-  epoch-dependent filters turn with no row write at all.
+  corpus never ages a cursor, and no position is unanswerable — tombstones are
+  kept for the life of the corpus, one row per distinct survey ever swept,
+  which is bounded by the corpus and not by elapsed time. A removal is
+  "tombstoned and absent from `survey_index`", so a re-landed survey needs no
+  un-tombstoning. No filter: a row leaving a filter is neither returned nor
+  tombstoned, and the epoch-dependent filters turn with no row write at all.
+  The same answer is served from an instant the caller names,
+  **`?since=<unix seconds>`**, which is the cursor both axes stand at: a
+  consumer bootstraps from a date instead of paying a walk. Rows written
+  before the selection deployed carry chain-time stamps
+  (`migrations/0028_backfill_change_stamps.sql`) — a flat instant would have
+  sat above every live cursor and re-sent the corpus to every mirror.
 - **`GET /api/surveys/{txHash}/{index}[?cursor=…]`** — the self-contained
   per-survey bundle: the definition record, its `ResponseRecord`s (sealed
   ciphertexts included) **a page at a time**, the cancellations targeting it, its

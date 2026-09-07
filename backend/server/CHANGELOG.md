@@ -15,6 +15,36 @@ no dual-serving. A consumer compares majors and refuses a mismatch; it may warn
 on a minor it does not know. Every bump has a line here, and the README's
 Endpoints section changes in the same commit.
 
+## [1.2] - unreleased
+
+### Added
+
+- `GET /api/surveys?since=<unix seconds>`, the change selection from an instant
+  the caller names rather than a position the server minted: the same answer as
+  `changes`, for everything stamped strictly after `since`. Composes with
+  `limit` only, and is refused beside `changes`, `refs`, `filter`, `q`,
+  `cursor` and `credentials`. `nextCursor` is an ordinary minted cursor, so a
+  consumer bootstraps once from a date and follows `changes` after. A `since`
+  above the published generation answers an empty delta, not an error.
+
+### Changed
+
+- The change selection has no horizon. Tombstones are kept for the life of the
+  corpus instead of the operational retention window, so every position is
+  answerable: `changes` never answers `resync`, and its `nextCursor` is never
+  null. Nothing a 1.1 consumer could read disappears — its `resync` and null
+  branches become unreachable — so this is a minor.
+- Removals reach back to the first change-selection deploy on each network
+  (2026-09-04 on both). A `since` older than that reports rows without the
+  removals of that era; a consumer whose knowledge predates it starts from a
+  walk.
+- Change stamps on rows written before 2026-09-04 are dated by chain time —
+  the survey's transaction, its newest response or cancellation, or the
+  finalizer's decision — so a `since` below that deploy is answered at the
+  resolution of a row's last chain event. A governance-link change carries no
+  date, so a row whose only pre-deploy change was its link set is dated by its
+  last chain event instead.
+
 ## [1.1] - 2026-09-04
 
 ### Added

@@ -9,6 +9,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 while `< 1.0.0`, breaking changes bump the **minor** version.
 
+## [0.2.0] - unreleased
+
+Speaks contract `1.2`.
+
+### Added
+
+- `changesSince(sinceUnix, limit?)` — `GET /api/surveys?since=`, the change
+  selection from an instant the caller names: everything stamped strictly
+  after it, rows and removals alike. A consumer that knows when it last ran
+  bootstraps from that date instead of walking the list, then follows
+  `changes` with the ordinary `nextCursor` it gets back. A non-integer or
+  negative instant is a `RangeError` before any request.
+
+### Changed
+
+- `SurveyChangesPayload.nextCursor` is `string`, not `string | null`, and the
+  payload no longer carries `resync`: the backend keeps tombstones for the
+  life of the corpus, so no position is unanswerable and a delta always
+  continues. `decodeSurveyChanges` rejects a null `nextCursor`. Consumers that
+  branched on either can delete those branches; nothing else changes.
+
 ## [0.1.0] - 2026-09-04
 
 First release, speaking contract `1.1`.

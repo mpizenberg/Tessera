@@ -1,6 +1,6 @@
 {
   "name": "cardano-tessera-client",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Typed HTTP client for a Tessera serving backend: the CIP-179 survey list, bundles, per-transaction responses, artifacts and health, decoded into cip-179 types, with the contract's version check, its constants and the per-network epoch calendar.",
   "type": "module",
   "license": "Apache-2.0",

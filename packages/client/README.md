@@ -45,7 +45,7 @@ if (!answer.ready) {
 ```
 
 Every snapshot-derived method (`surveys`, `surveysByRefs`, `changes`,
-`bundle`, `wholeBundle`, `responded`, `responsesByTx`) answers
+`changesSince`, `bundle`, `wholeBundle`, `responded`, `responsesByTx`) answers
 `{ ready: true, body } | { ready: false }`; the false branch is the backend's
 own `503 {"error":"snapshot not ready"}`, an ordinary state before its first
 refresh. Any other non-2xx answer throws `TesseraHttpError` with the status.
@@ -67,6 +67,7 @@ and no request: a survey key not matching `SURVEY_KEY_RE`, a `limit` outside
 | `surveys(params?)`                          | `GET /api/surveys` (paged)          | `SnapshotAnswer<SurveyListPayload>`    |
 | `surveysByRefs(keys)`                       | `GET /api/surveys?refs=`            | `SnapshotAnswer<SurveyListPayload>`    |
 | `changes(cursor, limit?)`                   | `GET /api/surveys?changes=`         | `SnapshotAnswer<SurveyChangesPayload>` |
+| `changesSince(sinceUnix, limit?)`           | `GET /api/surveys?since=`           | `SnapshotAnswer<SurveyChangesPayload>` |
 | `bundle(survey, cursor?)`                   | `GET /api/surveys/{txHash}/{index}` | `SnapshotAnswer<SurveyBundlePayload>`  |
 | `wholeBundle(survey)`                       | every page of the above             | `SnapshotAnswer<SurveyBundlePayload>`  |
 | `responded(credentials)`                    | `GET /api/responded`                | `SnapshotAnswer<RespondedPayload>`     |
@@ -84,12 +85,13 @@ displays responses.
 
 ## Mirror the surveys
 
-A host that keeps its own copy of the surveys walks the list once and then
-asks only for what changed:
+A host that keeps its own copy of the surveys walks the list once — or names
+the instant it last ran — and then asks only for what changed:
 
 ```ts
 let cursor = load(); // the string from the last tick, or null
-if (cursor === null) {
+if (cursor === null && lastRunUnix === null) {
+  // Nothing to resume from: walk the list once, and keep where it ends.
   let page = await client.surveys({ limit: 200 });
   for (;;) {
     if (!page.ready) return;
@@ -98,22 +100,31 @@ if (cursor === null) {
     if (page.body.nextCursor === null) break;
     page = await client.surveys({ limit: 200, cursor: page.body.nextCursor });
   }
-  cursor = page.body.changesCursor!;
-} else {
-  const delta = await client.changes(cursor);
-  if (!delta.ready) return;
-  for (const key of delta.body.removed) forget(key); // before the rows
-  apply(delta.body);
-  cursor = delta.body.nextCursor; // null beside resync: walk again
+  save(page.body.changesCursor!);
+  return;
 }
-save(cursor);
+
+// Resume: from the last tick's cursor, or from when this copy last ran.
+const delta =
+  cursor === null
+    ? await client.changesSince(lastRunUnix!)
+    : await client.changes(cursor);
+if (!delta.ready) return;
+for (const key of delta.body.removed) forget(key); // before the rows
+apply(delta.body);
+save(delta.body.nextCursor);
 ```
 
-A change is delivered once and never missed, and the consumer never handles
-a generation number. A removal is advisory and can be transient (a reorg
-re-lands the transaction at a new slot), so state that cannot be rebuilt is
-confirmed with `surveysByRefs` before it is destroyed. The delta carries no
-filter and no `counts`: filter locally.
+A change is delivered once and never missed, and the consumer never handles a
+generation number. A delta always continues: `nextCursor` is never null, and
+the change selection never answers `resync`. A removal is advisory and can be
+transient (a reorg re-lands the transaction at a new slot), so state that
+cannot be rebuilt is confirmed with `surveysByRefs` before it is destroyed.
+The delta carries no filter and no `counts`: filter locally.
+
+`changesSince` reports removals back to the first change-selection deploy on
+that backend (2026-09-04 on both testnets). A copy older than that gets its
+rows but not the sweeps of that era, so it starts from the walk instead.
 
 ## Which epoch a host passes as `tipEpoch`
 

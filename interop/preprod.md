@@ -109,11 +109,18 @@ discovery reads the action's anchor, not label 17.
   answer's `nextCursor` — the client's `changes(cursor)`. It gets every row
   whose projection moved and every key `removed`, once each, never missed, and
   never handles a generation number. Within one answer it applies `removed`
-  before the rows; it treats a removal as advisory and possibly transient (a
-  reorg re-lands the transaction), confirming by `refs` before destroying state
-  it cannot rebuild; and on `resync` (a cursor older than the 7-day retention
-  window, answered with `nextCursor: null`) it walks the list again. `refs` is
-  no longer how a mirror learns that a survey it holds is gone.
+  before the rows, and it treats a removal as advisory and possibly transient
+  (a reorg re-lands the transaction), confirming by `refs` before destroying
+  state it cannot rebuild. The delta always continues: no position is too old,
+  so `nextCursor` is never null and this selection never answers `resync`.
+  `refs` is no longer how a mirror learns that a survey it holds is gone.
+- A host that knows when it last ran but holds no cursor skips the walk:
+  `GET /api/surveys?since=<unix seconds>` — the client's
+  `changesSince(sinceUnix)` — answers the same delta from that instant, and
+  hands back an ordinary `nextCursor` to follow with `changes`. Removals reach
+  back to 2026-09-04, when the change selection first deployed here; a copy
+  older than that gets its rows but not the sweeps of that era, so it walks
+  the list instead.
 - The host supplies the connected responder's credential map (for the DRepTalk
   test: a key-DRep credential).
 - The widget owns answer drafting, validation, and sealing, and emits the

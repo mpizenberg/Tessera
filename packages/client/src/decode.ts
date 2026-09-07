@@ -189,12 +189,10 @@ export function decodeSurveyList(json: unknown): SurveyListPayload {
 /** `GET /api/surveys?changes=`, the change selection. */
 export function decodeSurveyChanges(json: unknown): SurveyChangesPayload {
   const o = obj(json, "");
-  const resync = opt(o.resync, "resync", bool);
   return {
     ...surveyListBody(o),
     removed: list(o.removed, "removed", str),
-    nextCursor: nullable(o.nextCursor, "nextCursor", str),
-    ...(resync === undefined ? {} : { resync }),
+    nextCursor: str(o.nextCursor, "nextCursor"),
   };
 }
 

@@ -117,6 +117,19 @@ export interface TesseraClient {
     limit?: number,
   ): Promise<SnapshotAnswer<SurveyChangesPayload>>;
   /**
+   * `GET /api/surveys?since=`, the same delta from an instant the caller
+   * names: everything stamped strictly after `sinceUnix` (unix seconds), rows
+   * and removals alike. What a consumer bootstraps with when it knows when it
+   * last ran but holds no cursor — the answer's `nextCursor` is an ordinary
+   * one, so it bootstraps once and follows {@link changes} after. Removals
+   * reach back to the first change-selection deploy on that backend
+   * (2026-09-04); a consumer whose knowledge predates that starts from a walk.
+   */
+  changesSince(
+    sinceUnix: number,
+    limit?: number,
+  ): Promise<SnapshotAnswer<SurveyChangesPayload>>;
+  /**
    * One page of a survey's bundle (`GET /api/surveys/{txHash}/{index}`); pass
    * the previous page's `nextCursor` to continue. An unknown survey is a
    * {@link TesseraHttpError} with status 404.
@@ -324,6 +337,16 @@ export function createTesseraClient(
     changes: (cursor, limit) => {
       if (cursor === "") throw new RangeError("empty changes cursor");
       const qs = new URLSearchParams({ changes: cursor });
+      if (limit !== undefined) qs.set("limit", limitQuery(limit));
+      return snapshot(`${base}/api/surveys?${qs}`, decodeSurveyChanges);
+    },
+
+    changesSince: (sinceUnix, limit) => {
+      if (!Number.isInteger(sinceUnix) || sinceUnix < 0)
+        throw new RangeError(
+          `since must be a non-negative integer, got ${sinceUnix}`,
+        );
+      const qs = new URLSearchParams({ since: String(sinceUnix) });
       if (limit !== undefined) qs.set("limit", limitQuery(limit));
       return snapshot(`${base}/api/surveys?${qs}`, decodeSurveyChanges);
     },

@@ -119,11 +119,20 @@ and the answers of `/api/responded` and `/api/responses`.
   key never held is a no-op. `limit` bounds the rows and the removals each; no
   `counts`, and `filter`, `q`, `cursor` and `credentials` are refused beside it
   (a row leaving a filter is neither returned nor tombstoned, so a filtered
-  delta could not be complete — filter locally). A cursor older than the
-  operational retention window (7 days) is answered `resync: true` with
-  `nextCursor: null`: its removals may be pruned, and the mirror walks the
-  full list again. A quiet mirror never gets there — every answer advances an
-  exhausted axis to the published snapshot.
+  delta could not be complete — filter locally). Every position is answerable:
+  tombstones live as long as the corpus, so this selection never answers
+  `resync` and its `nextCursor` is never null.
+- `GET /api/surveys?since=<unix seconds>[&limit=…]` — the same delta from an
+  instant the caller names instead of a position the server minted:
+  everything stamped strictly after `since`, rows and removals alike. What a
+  consumer bootstraps with when it knows when it last ran but holds no cursor;
+  the answer's `nextCursor` is an ordinary one, so it follows `changes` after.
+  Refused beside `changes` and beside everything `changes` refuses. A `since`
+  above the published generation answers an empty delta, not an error.
+  Removals reach back to the first deploy of the change selection (2026-09-04);
+  rows written before it are stamped with chain time — the survey's own
+  transaction, its newest response or cancellation, or the finalizer's
+  decision — so an earlier `since` is answered at that resolution.
 - `GET /api/surveys/{txHash}/{index}[?cursor=…]` — one survey's self-contained
   bundle: its definition record, one page of its responses (sealed ciphertexts
   included) with `nextCursor` to continue, the cancellations targeting it, its
