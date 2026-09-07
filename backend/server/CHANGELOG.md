@@ -15,7 +15,7 @@ no dual-serving. A consumer compares majors and refuses a mismatch; it may warn
 on a minor it does not know. Every bump has a line here, and the README's
 Endpoints section changes in the same commit.
 
-## [1.2] - unreleased
+## [1.2] - 2026-09-07
 
 ### Added
 
