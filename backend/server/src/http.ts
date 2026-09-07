@@ -84,6 +84,7 @@ import {
 } from "cardano-tessera-core";
 import { KoiosDataSource } from "cardano-tessera-koios";
 
+import type { ChangesCursor } from "./changes";
 import {
   advanceAxis,
   changesCursorAt,
@@ -93,7 +94,6 @@ import {
 import type { ServerConfig } from "./config";
 import { upstreamMeter } from "./meter";
 import {
-  OPERATIONAL_RETENTION_SECONDS,
   rowFinalState,
   snapshotListCounts,
   snapshotTip,
@@ -190,6 +190,15 @@ function refsOf(raw: string): string[] | null {
     .filter(Boolean);
   if (list.length === 0 || list.length > MAX_PAGE_LIMIT) return null;
   return list.every((key) => SURVEY_KEY_RE.test(key)) ? list : null;
+}
+
+/**
+ * The `since=` query parameter as a position both change axes stand at:
+ * everything stamped strictly after it. Null when malformed — a non-integer
+ * or a negative instant.
+ */
+function sinceOf(raw: string): ChangesCursor | null {
+  return /^\d+$/.test(raw) ? changesCursorAt(Number(raw)) : null;
 }
 
 /** The `limit=` query parameter, or null when malformed (the caller answers 400). */
@@ -439,11 +448,14 @@ export function createApp(
     if (refsRaw !== undefined) {
       if (notModified(c, `W/"surveys-${meta.fetchedAt}"`))
         return c.body(null, 304);
-      if (carried(c, ["filter", "cursor", "q", "limit", "changes"]).length > 0)
+      if (
+        carried(c, ["filter", "cursor", "q", "limit", "changes", "since"])
+          .length > 0
+      )
         return c.json(
           {
             error:
-              "refs is exclusive with filter, cursor, q, limit and changes",
+              "refs is exclusive with filter, cursor, q, limit, changes and since",
           },
           400,
         );
@@ -455,7 +467,8 @@ export function createApp(
     const limit = limitOf(c);
     if (limit === null) return c.json({ error: "malformed limit" }, 400);
 
-    // The third selection: what changed since a position this server minted.
+    // The third selection: what changed since a position — one this server
+    // minted (`changes`), or one the caller names (`since=<unix seconds>`).
     // Rows are read in their own keyset order, `(changed_at, survey_key)`,
     // and removals from the tombstones in theirs, both at or below the
     // published generation — so a refresh landing mid-walk is invisible, and
@@ -464,31 +477,31 @@ export function createApp(
     // `active`/`sealed`/`public` turn with the epoch with no row write at all,
     // so a filtered delta could not be complete. The consumer filters locally.
     const changesRaw = c.req.query("changes");
-    if (changesRaw !== undefined) {
-      const others = carried(c, ["filter", "cursor", "q", "credentials"]);
+    const sinceRaw = c.req.query("since");
+    if (changesRaw !== undefined || sinceRaw !== undefined) {
+      const named = changesRaw !== undefined ? "changes" : "since";
+      const others = carried(c, [
+        "filter",
+        "cursor",
+        "q",
+        "credentials",
+        "changes",
+        "since",
+      ]).filter((param) => param !== named);
       if (others.length > 0)
         return c.json(
-          { error: `changes is exclusive with ${others.join(", ")}` },
+          { error: `${named} is exclusive with ${others.join(", ")}` },
           400,
         );
-      const cursor = parseChangesCursor(changesRaw);
-      if (!cursor) return c.json({ error: "malformed changes cursor" }, 400);
-      // Removals older than the retention window may be pruned, so the delta
-      // cannot be promised complete: no continuation, and the consumer walks
-      // the full list again. A live consumer never gets here — every answer
-      // advances an exhausted axis to the published generation.
-      const horizon =
-        Math.floor(Date.now() / 1000) - OPERATIONAL_RETENTION_SECONDS;
-      if (cursor.removed.stamp < horizon) {
-        c.header("Cache-Control", "no-store");
-        const body: JsonSafe<SurveyChangesPayload> = {
-          ...surveyListBody([], meta),
-          removed: [],
-          resync: true,
-          nextCursor: null,
-        };
-        return c.json(body);
-      }
+      // A named instant is a position both axes stand at, so it walks the
+      // same reads. Above the published generation it selects an empty range
+      // and the answer carries a cursor at that generation: clock skew costs
+      // a consumer one empty page, not an error.
+      const cursor =
+        changesRaw !== undefined
+          ? parseChangesCursor(changesRaw)
+          : sinceOf(sinceRaw!);
+      if (!cursor) return c.json({ error: `malformed ${named}` }, 400);
       if (notModified(c, `W/"surveys-${meta.fetchedAt}"`))
         return c.body(null, 304);
       // One extra row per axis decides where its position lands.

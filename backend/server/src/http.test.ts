@@ -11,7 +11,7 @@
  * never write.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Role, type Credential, type SurveyDefinition } from "cip-179";
 import { hexToBytes, refKey } from "cip-179/domain";
@@ -47,10 +47,7 @@ import { loadConfig } from "./config";
 import { createApp, keyedCache } from "./http";
 import { materializeSnapshot } from "./materialize";
 import { ALL_SLOTS, testStore, type TestStore } from "./testing/store";
-import {
-  OPERATIONAL_RETENTION_SECONDS,
-  type ValidatedResponseRow,
-} from "./store";
+import { type ValidatedResponseRow } from "./store";
 
 function appWith(store: TestStore) {
   return createApp(loadConfig({}), store, { compress: false });
@@ -616,15 +613,12 @@ describe("GET /api/surveys selection: changes", () => {
       app,
       `?changes=${encodeURIComponent(cursor)}${limit === undefined ? "" : `&limit=${limit}`}`,
     );
+  const since = (app: ReturnType<typeof appWith>, at: number, limit?: number) =>
+    get(app, `?since=${at}${limit === undefined ? "" : `&limit=${limit}`}`);
   const walked = encodeChangesCursor(changesCursorAt(FETCHED_AT));
   // A responder neither fixture survey has heard from, so a response of
   // theirs moves a count (cred2's would only replace their earlier one).
   const cred3: Credential = { type: "key", keyHash: hexToBytes("33") };
-
-  // The retention check reads the wall clock; the fixture generation sits a
-  // minute before it.
-  beforeEach(() => vi.setSystemTime((FETCHED_AT + 60) * 1000));
-  afterEach(() => vi.useRealTimers());
 
   it("every paged answer carries the walk's changesCursor; the refs answer does not", async () => {
     const app = appWith(await seededStore());
@@ -730,15 +724,23 @@ describe("GET /api/surveys selection: changes", () => {
     );
   });
 
-  it("answers resync with no continuation past the retention window", async () => {
+  it("answers from an instant the caller names, and hands back a minted cursor", async () => {
     const app = appWith(await seededStore());
-    const old =
-      Math.floor(Date.now() / 1000) - OPERATIONAL_RETENTION_SECONDS - 1;
-    const body = await changes(app, encodeChangesCursor(changesCursorAt(old)));
-    expect(body["resync"]).toBe(true);
-    expect(body["nextCursor"]).toBeNull();
-    expect(body["surveys"]).toEqual([]);
-    expect(body["removed"]).toEqual([]);
+    // Below every stamp: the whole corpus, which is how a consumer bootstraps
+    // from a date instead of walking.
+    const all = await since(app, 0);
+    expect(keysOf(all).sort()).toEqual([KEY_A, KEY_B].sort());
+    expect(all["removed"]).toEqual([]);
+    expect(all["nextCursor"]).toBe(walked);
+    // Strictly after: the fixture generation itself selects nothing.
+    expect(keysOf(await since(app, FETCHED_AT))).toEqual([]);
+    // Above the published generation — a skewed clock — is an empty page and
+    // a cursor at that generation, not an error.
+    const skewed = await since(app, FETCHED_AT + 3600);
+    expect(keysOf(skewed)).toEqual([]);
+    expect(skewed["nextCursor"]).toBe(walked);
+    // It pages like the minted cursor does.
+    expect(keysOf(await since(app, 0, 1))).toEqual([KEY_A]);
   });
 
   it("composes with limit only, and refuses a cursor it did not mint", async () => {
@@ -752,6 +754,16 @@ describe("GET /api/surveys selection: changes", () => {
       `?changes=${walked}&limit=0`,
       `?changes=junk`,
       `?changes=`,
+      `?since=0&filter=linked`,
+      `?since=0&q=alpha`,
+      `?since=0&cursor=junk`,
+      `?since=0&credentials=key:11`,
+      `?since=0&refs=${KEY_A}`,
+      `?since=0&changes=${walked}`,
+      `?since=-1`,
+      `?since=1.5`,
+      `?since=abc`,
+      `?since=`,
     ])
       expect((await app.request(`/api/surveys${qs}`)).status, qs).toBe(400);
   });
