@@ -414,6 +414,10 @@ and LSQ _requires_ a local one. Once you accept running a node, "authoritative" 
 
 ## 9. Revised bottom line
 
+> **Narrower question, answered separately (2026-09):** reproducing _one_ finished
+> artifact without an oracle — not running an authority — is `RESEARCH-AUDIT.md`.
+> Its trust ladder and tool matrix supersede §8.4–8.5 for that goal.
+
 - **The hard requirement is no longer "decode the metadata" but "obtain authoritative,
   point-in-time stake + governance state."** Validation is cert-derivable and light; the
   _authority's weighted result_ needs full ledger state, which the live node can't serve for
