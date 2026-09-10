@@ -245,6 +245,10 @@ importers:
         version: 2.1.9(@types/node@25.9.4)(happy-dom@20.10.6)(supports-color@10.2.2)
 
   packages/mithril:
+    dependencies:
+      cip-179:
+        specifier: workspace:*
+        version: link:../cip179
     devDependencies:
       '@types/node':
         specifier: ^25.9.3

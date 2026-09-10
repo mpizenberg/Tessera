@@ -50,3 +50,17 @@ later; run the commands from this directory.
 The ledger state is `snapshots/<name>/ledger/<slot>/state`, the CBOR of the
 node's `ExtLedgerState` without the UTxO; `meta` names the UTxO backend.
 `snapshots/` is gitignored.
+
+## Reading the ledger facts
+
+```sh
+pnpm facts snapshots/$NAME/ledger/*/state --stake key:<hex> script:<hex> --drep key:<hex>
+```
+
+prints, as JSON with lovelace as decimal strings, the snapshot's epoch and
+slot; the totals and sizes of the `mark`, `set` and `go` stake snapshots; the
+DRep voting-power distribution with and without the `abstain` and
+`noConfidence` buckets; and, for each named credential, its registration,
+deposit, reward, pool and DRep delegation and its stake in each snapshot, or
+for a DRep its registration, expiry and voting power. `src/ledger.ts` lists
+the positional layout it reads.

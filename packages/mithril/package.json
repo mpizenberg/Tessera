@@ -8,9 +8,13 @@
     "node": ">=22.15"
   },
   "scripts": {
+    "facts": "tsx src/facts.ts",
     "verify": "tsx src/verify.ts",
     "type-check": "tsc -p tsconfig.json",
     "test": "vitest run"
+  },
+  "dependencies": {
+    "cip-179": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",
