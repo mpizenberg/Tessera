@@ -246,6 +246,15 @@ importers:
 
   packages/mithril:
     dependencies:
+      cardano-tessera-client:
+        specifier: workspace:*
+        version: link:../client
+      cardano-tessera-core:
+        specifier: workspace:*
+        version: link:../core
+      cardano-tessera-koios:
+        specifier: workspace:*
+        version: link:../koios
       cborg:
         specifier: ^6.1.2
         version: 6.1.2

@@ -14,9 +14,16 @@ export interface Account {
   readonly drep: string | undefined;
 }
 
+/** One row of a stake snapshot: what a credential had staked, and where. */
+export interface Delegation {
+  readonly stake: bigint;
+  /** Pool id hex, possibly of a pool that has retired since. */
+  readonly pool: string;
+}
+
 export interface StakeSnapshot {
-  /** Stake per credential (`credentialKey` form), delegated accounts only. */
-  readonly stake: ReadonlyMap<string, bigint>;
+  /** Per credential (`credentialKey` form), delegated accounts only. */
+  readonly stake: ReadonlyMap<string, Delegation>;
   readonly total: bigint;
 }
 
@@ -42,6 +49,8 @@ export interface LedgerState {
   readonly epoch: number;
   readonly slot: number;
   readonly accounts: ReadonlyMap<string, Account>;
+  /** Ids of the pools registered now. */
+  readonly pools: ReadonlySet<string>;
   readonly mark: StakeSnapshot;
   readonly set: StakeSnapshot;
   readonly go: StakeSnapshot;
@@ -83,6 +92,7 @@ const tags: Record<number, (read: () => Cbor) => Cbor> = {
  *   SnapShots             [mark, set, go, fee]; a SnapShot is [{cred: [stake, pool]}, {pool: params}]
  *   LedgerState           [CertState, UTxOState]
  *   ConwayCertState       [VState, PState, DState]
+ *   PState                [{vrfKeyHash: count}, {pool: params}, {pool: futureParams}, {pool: retiringEpoch}]
  *   VState                [{cred: DRepState}, committeeState, dormantEpochs]
  *   DRepState             [expiry, anchor, deposit, delegators]
  *   DState                [UMap, futureGenDelegs, genDelegs, instantaneousRewards]
@@ -99,13 +109,14 @@ export function readLedgerState(bytes: Uint8Array): LedgerState {
   const state: Cbor = decodeCbor(bytes, { useMaps: true, tags });
   const [[tip], nes] = state[1][0].at(-1)[1][1];
   const epochState = nes[3];
-  const [[vstate, , dstate], utxoState] = epochState[1];
+  const [[vstate, pstate, dstate], utxoState] = epochState[1];
   const snapshots = epochState[2];
   const pulsing = utxoState[3][6][0];
   return {
     epoch: num(nes[0]),
     slot: num(tip[0]),
     accounts: readMap(dstate[0], credKey, readAccount),
+    pools: new Set(readMap(pstate[1], hex, () => 0).keys()),
     mark: readSnapshot(snapshots[0]),
     set: readSnapshot(snapshots[1]),
     go: readSnapshot(snapshots[2]),
@@ -124,8 +135,12 @@ function readAccount([reward, deposit, pool, drep]: Cbor): Account {
 }
 
 function readSnapshot(snapshot: Cbor): StakeSnapshot {
-  const stake = readMap(snapshot[0], credKey, (row) => int(row[0]));
-  return { stake, total: sum(stake.values()) };
+  const stake = readMap(snapshot[0], credKey, readDelegation);
+  return { stake, total: sum(Array.from(stake.values(), (d) => d.stake)) };
+}
+
+function readDelegation([stake, pool]: Cbor): Delegation {
+  return { stake: int(stake), pool: hex(pool) };
 }
 
 function readDRepRegistration([

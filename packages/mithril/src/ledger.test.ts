@@ -28,7 +28,7 @@ describe.skipIf(!existsSync(STATE))("the preview epoch-1414 state file", () => {
     expect(
       state.go.stake.get(
         "script:7aa4312097def38936c7b69fb380f9e8685dfa17c52c68151781ea03",
-      ),
+      )?.stake,
     ).toBe(962877672146n);
     expect(
       state.drepDistribution.power.get(

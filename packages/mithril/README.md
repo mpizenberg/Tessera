@@ -21,11 +21,14 @@ later; run the commands from this directory.
    Preprod and mainnet use `aggregator.release-preprod` and
    `aggregator.release-mainnet`. Archives sit on the CDN at
    `https://storage.googleapis.com/cdn.<aggregator host>/cardano-database/ancillary/<network>-e<epoch>-i<immutable>.ancillary.tar.zst`
-   and stay 28 days. Every Cardano network completes twenty immutables per
-   epoch, so for an epoch older than the listing, subtract twenty per epoch
-   from the newest beacon and probe neighbours with `curl -I`; a missing
-   object answers 403. The last archive of an epoch is the one before the
-   first archive of the next.
+   and stay 28 days. An archive is named by the epoch the aggregator was in
+   when it made it and by the newest completed immutable; its ledger state
+   is the state after that immutable's last block. Every Cardano network
+   completes twenty immutables per epoch, and on preview epoch `E` owns
+   immutables `20E` to `20E+19`, so the state after the last block of `E` is
+   in `preview-e<E+1>-i<20E+19>`, the label having already rolled over. For
+   an epoch older than the listing, probe the name with `curl -I`; a missing
+   object answers 403.
 
 2. Download, and extract everything but the UTxO tables (preview: 259 MB
    down, 50 MB kept):
@@ -61,6 +64,24 @@ prints, as JSON with lovelace as decimal strings, the snapshot's epoch and
 slot; the totals and sizes of the `mark`, `set` and `go` stake snapshots; the
 DRep voting-power distribution with and without the `abstain` and
 `noConfidence` buckets; and, for each named credential, its registration,
-deposit, reward, pool and DRep delegation and its stake in each snapshot, or
+deposit, reward, pool and DRep delegation and its stake and pool in each
+snapshot, or
 for a DRep its registration, expiry and voting power. `src/ledger.ts` lists
 the positional layout it reads.
+
+## Comparing with Koios
+
+```sh
+pnpm compare preview snapshots/$NAME/ledger/*/state 1412
+```
+
+draws ten credentials of every kind a tally can meet from the state itself
+(delegated with rewards, registered without a pool, stake in a pool that has
+since retired, registered but in no stake snapshot, deregistered since a
+snapshot, script credentials; DReps active, expired, retired or registered
+since the distribution was taken, script, zero power), asks Koios the four
+`TallyInputSource` questions for the named epoch about them, and prints per
+kind how many agree with each candidate reading of the state, then every
+disagreement with both sides. A kind the state has none of is listed with
+zero. `KOIOS_TOKEN` in the environment is used when set; the anonymous tier
+is enough for one run.

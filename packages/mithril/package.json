@@ -9,11 +9,15 @@
   },
   "scripts": {
     "facts": "tsx src/facts.ts",
+    "compare": "tsx src/compare.ts",
     "verify": "tsx src/verify.ts",
     "type-check": "tsc -p tsconfig.json",
     "test": "vitest run"
   },
   "dependencies": {
+    "cardano-tessera-client": "workspace:*",
+    "cardano-tessera-core": "workspace:*",
+    "cardano-tessera-koios": "workspace:*",
     "cborg": "^6.1.2",
     "cip-179": "workspace:*"
   },
