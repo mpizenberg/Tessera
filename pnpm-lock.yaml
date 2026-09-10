@@ -246,6 +246,9 @@ importers:
 
   packages/mithril:
     dependencies:
+      cborg:
+        specifier: ^6.1.2
+        version: 6.1.2
       cip-179:
         specifier: workspace:*
         version: link:../cip179
@@ -1769,6 +1772,10 @@ packages:
 
   caniuse-lite@1.0.30001799:
     resolution: {integrity: sha512-hG1bReV+OUU+MOqK4t/ZWI0tZOyz3rqS9XuhOUz1cIcbwBKjOyJEJuw9ER5JuNyqxNk8u/JUVbGibBOL1yrjFw==}
+
+  cborg@6.1.2:
+    resolution: {integrity: sha512-hQfFh6FuuCDoycN68FtUpjtQx5kCtxOLA8msbpJZxjtxaMqxgHl+4GNwO+0YexH/lHmVzhhAKa0ua+vtmTRoVw==}
+    hasBin: true
 
   chai@5.3.3:
     resolution: {integrity: sha512-4zNhdJD/iOjSH0A05ea+Ke6MU5mmpQcbQsSOkgdaUMJ9zTlDTD/GYlwohmIE2u0gaxHYiVHEn1Fw9mZ/ktJWgw==}
@@ -3458,6 +3465,8 @@ snapshots:
   cac@6.7.14: {}
 
   caniuse-lite@1.0.30001799: {}
+
+  cborg@6.1.2: {}
 
   chai@5.3.3:
     dependencies:

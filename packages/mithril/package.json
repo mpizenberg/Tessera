@@ -14,6 +14,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "cborg": "^6.1.2",
     "cip-179": "workspace:*"
   },
   "devDependencies": {
