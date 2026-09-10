@@ -4,6 +4,7 @@ packages:
   - packages/client
   - packages/core
   - packages/koios
+  - packages/mithril
   - packages/respond-core
   - packages/respond-react
   - packages/respond-react/react18

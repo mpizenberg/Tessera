@@ -244,6 +244,21 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@25.9.4)(happy-dom@20.10.6)(supports-color@10.2.2)
 
+  packages/mithril:
+    devDependencies:
+      '@types/node':
+        specifier: ^25.9.3
+        version: 25.9.4
+      tsx:
+        specifier: ^4.19.0
+        version: 4.22.4
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@25.9.4)(happy-dom@20.10.6)(supports-color@10.2.2)
+
   packages/respond-core:
     dependencies:
       cip-179:

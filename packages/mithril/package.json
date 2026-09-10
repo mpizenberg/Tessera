@@ -1,0 +1,21 @@
+{
+  "name": "cardano-tessera-mithril",
+  "version": "0.0.0",
+  "description": "Tessera's tally inputs read from a Mithril ancillary ledger state instead of Koios.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.15"
+  },
+  "scripts": {
+    "verify": "tsx src/verify.ts",
+    "type-check": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
