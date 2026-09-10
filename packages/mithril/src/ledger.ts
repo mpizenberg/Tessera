@@ -137,7 +137,7 @@ function readDRepRegistration([
   return {
     expiry: num(expiry),
     deposit: int(deposit),
-    delegators: delegators.length,
+    delegators: num(delegators.length),
   };
 }
 
