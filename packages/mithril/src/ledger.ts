@@ -51,19 +51,23 @@ export interface LedgerState {
 }
 
 /**
+ * A node in the decoded file. The layout below is positional and has no
+ * schema, so the walk indexes freely and every value it keeps goes through a
+ * conversion that throws on the wrong shape.
+ */
+type Cbor = any;
+
+/**
  * cborg refuses a tag it has no decoder for, so this table is also the record
  * of what a state file carries: big integers, the rationals of the protocol
  * parameters, and sets. A rational and a set are read as their contents.
  */
-const tags: ((read: () => unknown) => unknown)[] = [];
-tags[2] = (read) => bignum(read());
-tags[3] = (read) => -1n - bignum(read());
-tags[30] = (read) => read();
-tags[258] = (read) => read();
-
-function bignum(value: unknown): bigint {
-  return BigInt(`0x${hex(value) || "0"}`);
-}
+const tags: Record<number, (read: () => Cbor) => Cbor> = {
+  2: (read) => BigInt(`0x${hex(read()) || "0"}`),
+  3: (read) => -1n - BigInt(`0x${hex(read()) || "0"}`),
+  30: (read) => read(),
+  258: (read) => read(),
+};
 
 /**
  * The file is the node's `ExtLedgerState`, read here by position through
@@ -92,29 +96,25 @@ function bignum(value: unknown): bigint {
  * [3] no confidence.
  */
 export function readLedgerState(bytes: Uint8Array): LedgerState {
-  const state: unknown = decodeCbor(bytes, { useMaps: true, tags });
-  const era = last(arr(at(state, 1, 0)));
-  const ledger = arr(at(era, 1, 1));
-  const nes = arr(ledger[1]);
-  const epochState = arr(nes[3]);
-  const [certState, utxoState] = arr(epochState[1]).map(arr);
-  const [vstate, , dstate] = arr(certState).map(arr);
-  const snapshots = arr(epochState[2]);
-  const pulsing = arr(at(utxoState!, 3, 6, 0));
+  const state: Cbor = decodeCbor(bytes, { useMaps: true, tags });
+  const [[tip], nes] = state[1][0].at(-1)[1][1];
+  const epochState = nes[3];
+  const [[vstate, , dstate], utxoState] = epochState[1];
+  const snapshots = epochState[2];
+  const pulsing = utxoState[3][6][0];
   return {
     epoch: num(nes[0]),
-    slot: num(at(ledger[0], 0, 0)),
-    accounts: readMap(dstate![0], credKey, readAccount),
+    slot: num(tip[0]),
+    accounts: readMap(dstate[0], credKey, readAccount),
     mark: readSnapshot(snapshots[0]),
     set: readSnapshot(snapshots[1]),
     go: readSnapshot(snapshots[2]),
-    dreps: readMap(vstate![0], credKey, readDRepRegistration),
+    dreps: readMap(vstate[0], credKey, readDRepRegistration),
     drepDistribution: readDRepDistribution(pulsing[1], pulsing[2]),
   };
 }
 
-function readAccount(row: unknown): Account {
-  const [reward, deposit, pool, drep] = arr(row);
+function readAccount([reward, deposit, pool, drep]: Cbor): Account {
   return {
     reward: int(reward),
     deposit: int(deposit),
@@ -123,24 +123,25 @@ function readAccount(row: unknown): Account {
   };
 }
 
-function readSnapshot(snapshot: unknown): StakeSnapshot {
-  const stake = readMap(arr(snapshot)[0], credKey, (row) => int(arr(row)[0]));
+function readSnapshot(snapshot: Cbor): StakeSnapshot {
+  const stake = readMap(snapshot[0], credKey, (row) => int(row[0]));
   return { stake, total: sum(stake.values()) };
 }
 
-function readDRepRegistration(row: unknown): DRepRegistration {
-  const [expiry, , deposit, delegators] = arr(row);
+function readDRepRegistration([
+  expiry,
+  ,
+  deposit,
+  delegators,
+]: Cbor): DRepRegistration {
   return {
     expiry: num(expiry),
     deposit: int(deposit),
-    delegators: arr(delegators).length,
+    delegators: delegators.length,
   };
 }
 
-function readDRepDistribution(
-  distr: unknown,
-  states: unknown,
-): DRepDistribution {
+function readDRepDistribution(distr: Cbor, states: Cbor): DRepDistribution {
   const all = readMap(distr, drepKey, int);
   const power = new Map([...all].filter(([key]) => key.includes(":")));
   return {
@@ -152,8 +153,7 @@ function readDRepDistribution(
   };
 }
 
-function credKey(cbor: unknown): string {
-  const [tag, hash] = arr(cbor);
+function credKey([tag, hash]: Cbor): string {
   return credentialKey(credential(num(tag), bytes(hash)));
 }
 
@@ -163,56 +163,42 @@ function credential(tag: number, hash: Uint8Array): Credential {
   throw new Error(`ledger state: credential tag ${tag}`);
 }
 
-function drepKey(cbor: unknown): string {
-  const [tag, hash] = arr(cbor);
-  if (tag === 2) return "abstain";
-  if (tag === 3) return "noConfidence";
-  return credentialKey(credential(num(tag), bytes(hash)));
+function drepKey(drep: Cbor): string {
+  if (drep[0] === 2) return "abstain";
+  if (drep[0] === 3) return "noConfidence";
+  return credKey(drep);
 }
 
 function readMap<V>(
-  cbor: unknown,
-  key: (k: unknown) => string,
-  value: (v: unknown) => V,
+  map: Cbor,
+  key: (k: Cbor) => string,
+  value: (v: Cbor) => V,
 ): Map<string, V> {
-  if (!(cbor instanceof Map)) throw new Error("ledger state: expected a map");
+  if (!(map instanceof Map)) throw new Error("ledger state: expected a map");
   const out = new Map<string, V>();
-  for (const [k, v] of cbor) out.set(key(k), value(v));
+  for (const [k, v] of map) out.set(key(k), value(v));
   return out;
 }
 
-function at(cbor: unknown, ...path: number[]): unknown {
-  return path.reduce((node, index) => arr(node)[index], cbor);
+/** Throws rather than return NaN, so a wrong path cannot pass for a number. */
+function num(value: Cbor): number {
+  return Number(int(value));
 }
 
-function last(items: unknown[]): unknown {
-  return items[items.length - 1];
-}
-
-function arr(cbor: unknown): unknown[] {
-  if (!Array.isArray(cbor)) throw new Error("ledger state: expected an array");
-  return cbor;
-}
-
-function num(cbor: unknown): number {
-  if (typeof cbor !== "number")
-    throw new Error("ledger state: expected an integer");
-  return cbor;
-}
-
-function int(cbor: unknown): bigint {
-  if (typeof cbor === "number" || typeof cbor === "bigint") return BigInt(cbor);
+function int(value: Cbor): bigint {
+  if (typeof value === "number" || typeof value === "bigint")
+    return BigInt(value);
   throw new Error("ledger state: expected an integer");
 }
 
-function bytes(cbor: unknown): Uint8Array {
-  if (!(cbor instanceof Uint8Array))
+function bytes(value: Cbor): Uint8Array {
+  if (!(value instanceof Uint8Array))
     throw new Error("ledger state: expected bytes");
-  return cbor;
+  return value;
 }
 
-function hex(cbor: unknown): string {
-  return Buffer.from(bytes(cbor)).toString("hex");
+function hex(value: Cbor): string {
+  return Buffer.from(bytes(value)).toString("hex");
 }
 
 function sum(values: Iterable<bigint>): bigint {
