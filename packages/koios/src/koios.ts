@@ -285,8 +285,10 @@ export class KoiosDataSource implements DataSource {
    * snapshot. `gov_action_lifetime` is a protocol parameter, fixed for the whole
    * of an epoch, so when the banked tip names the epoch just read its value is
    * reused and the `/epoch_params` request is skipped outright. Exact rather
-   * than a TTL: the epoch number *is* the cache key. Callers holding nothing
-   * (the browser, the verifier) pass nothing and pay the read.
+   * than a TTL: the epoch number *is* the cache key. A banked 0 is a failed
+   * read rather than a value — the ledger rejects a lifetime of 0 — so it is
+   * read again. Callers holding nothing (the browser, the verifier) pass
+   * nothing and pay the read.
    */
   async chainTip(
     banked?: { epoch: number; govActionLifetime: number } | null,
@@ -298,7 +300,7 @@ export class KoiosDataSource implements DataSource {
       time: tip.block_time,
       epochSlot: tip.epoch_slot,
       govActionLifetime:
-        banked?.epoch === tip.epoch_no
+        banked?.epoch === tip.epoch_no && banked.govActionLifetime > 0
           ? banked.govActionLifetime
           : await this.govActionLifetime(tip.epoch_no),
     };

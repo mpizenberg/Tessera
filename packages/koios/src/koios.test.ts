@@ -1321,6 +1321,14 @@ describe("chainTip — /epoch_params is read once per epoch, not once per call",
     expect(stale.govActionLifetime).toBe(0);
     expect(requested(fetchMock, "/epoch_params")).toHaveLength(2);
   });
+
+  it("re-reads a banked 0, which is a failed read rather than a value", async () => {
+    const fetchMock = stubKoios();
+    const source = new KoiosDataSource(CONFIG);
+
+    await source.chainTip({ epoch: 1_346, govActionLifetime: 0 });
+    expect(requested(fetchMock, "/epoch_params")).toHaveLength(1);
+  });
 });
 
 describe("scan — the records are cut off at the tip published with them", () => {
