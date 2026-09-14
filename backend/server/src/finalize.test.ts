@@ -32,6 +32,7 @@ import {
 import { loadConfig, type ServerConfig } from "./config";
 import { finalizeClosedSurveys } from "./finalize";
 import { materializeSnapshot } from "./materialize";
+import { coveredThroughUnix } from "./refresh";
 import type { SealedRevealFn } from "./sealedReveal";
 import type { ValidatedResponseRow } from "./store";
 import { ALL_SLOTS, testStore, type TestStore } from "./testing/store";
@@ -350,6 +351,9 @@ async function finalizeRecords(
   // finalization normally finds a closed survey in.
   settlementFloor = Number.MAX_SAFE_INTEGER,
   finalizationFloor = 0,
+  // A caught-up cursor with every listed tx fetched: the covered prefix
+  // reaches the wall clock, so the gate reduces to deadline plus margin.
+  coveredThroughUnix = Number.MAX_SAFE_INTEGER,
 ) {
   const snapshot = materializeSnapshot(recs, tip, govLinks, new Map());
   await store.reconcileSegment(
@@ -360,8 +364,6 @@ async function finalizeRecords(
     [],
     1,
   );
-  // A caught-up cursor: the covered prefix reaches the wall clock, so the
-  // cursor gate reduces to the deadline-plus-margin check.
   return finalizeClosedSurveys(
     config,
     store,
@@ -370,7 +372,7 @@ async function finalizeRecords(
     {
       tip,
       incomplete: recs.incomplete === true,
-      coveredThroughUnix: Number.MAX_SAFE_INTEGER,
+      coveredThroughUnix,
       settlementFloor,
       finalizationFloor,
     },
@@ -1788,6 +1790,83 @@ describe("finalizeClosedSurveys", () => {
       TIP,
     );
     expect(store.artifacts.size).toBe(1);
+  });
+
+  it("holds only the surveys closing after a listed tx Koios has not served", async () => {
+    const store = testStore();
+    // One epoch past TIP, so a survey ending at END_EPOCH + 1 is past its
+    // deadline plus margin too, and only the unfetched tx can hold it.
+    const tip: ChainTip = {
+      ...TIP,
+      epoch: TIP.epoch + 1,
+      slot: TIP.slot + 86_400,
+      time: TIP.time + 86_400,
+    };
+    const late: SurveyRecord = {
+      txHash: SURVEY_TX2,
+      slot: 100,
+      epochNo: 495,
+      ref: { txId: hexToBytes(SURVEY_TX2), index: 0 },
+      definition: definition({ endEpoch: END_EPOCH + 1 }),
+    };
+    const r1 = response("11".repeat(32), CRED_A, 0);
+    const r2 = response(
+      "33".repeat(32),
+      CRED_A,
+      0,
+      200,
+      Role.Stakeholder,
+      SURVEY_TX2,
+    );
+    await seed(store, [validatedRow(r1), validatedRow(r2)]);
+    const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
+    const recs: Cip179Records = {
+      surveys: [survey(), late],
+      responses: [r1, r2],
+      cancellations: [],
+    };
+    // Epoch END_EPOCH + 1 spans [tip.slot − 172 800, tip.slot − 86 400): the
+    // tx lands after the first survey's deadline, inside the second's window,
+    // where it could be a response the second survey's tally needs.
+    const cursor = { slot: tip.slot, txHash: "55".repeat(32) };
+    const scan = {
+      records: recs,
+      unfetched: [{ txHash: "66".repeat(32), slot: tip.slot - 100_000 }],
+      cursor,
+      exhausted: true,
+    };
+    const held = await finalizeRecords(
+      CONFIG,
+      store,
+      inputs,
+      noProofs,
+      recs,
+      tip,
+      undefined,
+      [],
+      undefined,
+      0,
+      coveredThroughUnix(cursor, scan, tip)!,
+    );
+    expect([...store.artifacts.keys()]).toEqual([SURVEY_KEY]);
+    // The held survey keeps the frontier down, so the next pass still reads it.
+    expect(held.floor).toBe(END_EPOCH + 1);
+
+    // A later run is served the tx: nothing holds the gate any more.
+    await finalizeRecords(
+      CONFIG,
+      store,
+      inputs,
+      noProofs,
+      recs,
+      tip,
+      undefined,
+      [],
+      undefined,
+      held.floor!,
+      coveredThroughUnix(cursor, { ...scan, unfetched: [] }, tip)!,
+    );
+    expect(store.artifacts.has(`${SURVEY_TX2}:0`)).toBe(true);
   });
 
   it("leaves still-open or too-recent surveys alone", async () => {

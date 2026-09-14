@@ -12,11 +12,13 @@ import type { SegmentScan } from "cardano-tessera-koios";
 
 import {
   coveredRange,
+  coveredThroughUnix,
   nextTrickle,
   planSegment,
   planTrickle,
   SCAN_GENERATION,
   SETTLEMENT_MARGIN_SLOTS,
+  wholeThroughSlot,
 } from "./refresh";
 import { snapshotTip, type ScanState } from "./store";
 
@@ -63,6 +65,7 @@ describe("planSegment", () => {
 
 const scanWith = (over: Partial<SegmentScan>): SegmentScan => ({
   records: { surveys: [], responses: [], cancellations: [], incomplete: false },
+  unfetched: [],
   cursor: { slot: 950_000, txHash: "dd" },
   exhausted: true,
   ...over,
@@ -103,6 +106,22 @@ describe("coveredRange", () => {
     ).toBeNull();
   });
 
+  it("stops below the oldest listed tx Koios has not served", () => {
+    // Its record may be the one a stored row stands for; a sweep over its slot
+    // would take a lagging instance for a rollback.
+    const scan = scanWith({
+      unfetched: [
+        { txHash: "ee", slot: 820_000 },
+        { txHash: "ff", slot: 800_000 },
+      ],
+    });
+    expect(wholeThroughSlot(scan)).toBe(799_999);
+    expect(coveredRange(plan, scan, 960_000)).toEqual({
+      fromSlot: 700_000,
+      toSlot: 799_999,
+    });
+  });
+
   it("covers nothing when the walk never left its starting slot", () => {
     expect(
       coveredRange(
@@ -111,6 +130,24 @@ describe("coveredRange", () => {
         960_000,
       ),
     ).toBeNull();
+  });
+});
+
+describe("coveredThroughUnix", () => {
+  const tip = { slot: 960_000, time: 1_750_000_000 } as ChainTip;
+  const cursor = { slot: 960_000, txHash: "dd" };
+
+  it("reaches the banked cursor when every listed tx was fetched", () => {
+    expect(coveredThroughUnix(cursor, scanWith({}), tip)).toBe(tip.time);
+  });
+
+  it("holds below the oldest unfetched tx, though the cursor advanced past it", () => {
+    const scan = scanWith({ unfetched: [{ txHash: "ee", slot: 950_000 }] });
+    expect(coveredThroughUnix(cursor, scan, tip)).toBe(tip.time - 10_001);
+  });
+
+  it("is null before any cursor", () => {
+    expect(coveredThroughUnix(null, scanWith({}), tip)).toBeNull();
   });
 });
 

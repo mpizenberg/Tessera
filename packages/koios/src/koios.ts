@@ -64,6 +64,9 @@ const TX_METADATA_BATCH = 50;
 /** Max tx hashes per /tx_cbor POST — raw CBOR is bulky, so a smaller page (100 returns 413). */
 const TX_CBOR_BATCH = 25;
 
+/** Unfetched hashes named in the scan's warning before it degrades to a count. */
+const UNFETCHED_LOG_HASHES = 10;
+
 /** Max script hashes per /script_info POST (native-script resolution by hash). */
 const SCRIPT_INFO_BATCH = 50;
 
@@ -150,7 +153,9 @@ interface ScriptInfoRow {
  * subrequest cap, timeout) banks the batches it did fetch, and the next run
  * fetches only the remainder. Snapshot membership still comes from the fresh
  * label-index scan, so a rolled-back tx simply stops being requested — a stale
- * entry is inert, never served.
+ * entry is inert, never served. Only metadata carrying label 17 is ever put:
+ * the scan asks only about hashes the label index listed, so an answer without
+ * it comes from a Koios instance that has not caught up, and is no answer.
  *
  * Proof CBOR is the credential-proof evidence behind owner-proofs and response
  * proofs, and saves the `/tx_cbor` batches an open survey would otherwise pay
@@ -189,9 +194,22 @@ export interface ScanSegment {
   readonly pageBudget?: number;
 }
 
+/** A listed label-17 transaction whose metadata a scan did not obtain. */
+export interface UnfetchedTx {
+  readonly txHash: string;
+  readonly slot: number;
+}
+
 /** What one segment walk covered — see {@link KoiosDataSource.fetchSegment}. */
 export interface SegmentScan {
   readonly records: Cip179Records;
+  /**
+   * Listed transactions the records hold nothing for: a dropped batch's, and
+   * those Koios answered without their label-17 metadata. Nothing is cached
+   * for them, so the next walk listing them asks again; until then the records
+   * are whole only below the oldest one's slot.
+   */
+  readonly unfetched: readonly UnfetchedTx[];
   /** The last row listed — the next run's `from`; null when nothing was listed. */
   readonly cursor: { readonly slot: number; readonly txHash: string } | null;
   /** A short page was reached: nothing in the segment is left unlisted. */
@@ -361,7 +379,12 @@ export class KoiosDataSource implements DataSource {
         `tx_by_metalabel exceeded ${MAX_PAGES * PAGE_SIZE} rows; snapshot is incomplete`,
       );
     }
-    return this.recordsFrom(posByHash, tip.epoch, failed || !exhausted);
+    const { records } = await this.recordsFrom(
+      posByHash,
+      tip.epoch,
+      failed || !exhausted,
+    );
+    return records;
   }
 
   /**
@@ -396,8 +419,14 @@ export class KoiosDataSource implements DataSource {
       "asc",
       pageBudget ?? MAX_PAGES,
     );
+    const { records, unfetched } = await this.recordsFrom(
+      posByHash,
+      at.epoch,
+      failed,
+    );
     return {
-      records: await this.recordsFrom(posByHash, at.epoch, failed),
+      records,
+      unfetched,
       cursor: last && { slot: last.absolute_slot, txHash: last.tx_hash },
       exhausted,
     };
@@ -469,13 +498,14 @@ export class KoiosDataSource implements DataSource {
    * cache, fetch the remainder in batches, decode and classify, then attach
    * owner-proof evidence for surveys still open at `tipEpoch`.
    * `listingIncomplete` seeds the flag for failures the listing already
-   * suffered; a dropped metadata batch adds to it.
+   * suffered; a dropped metadata batch adds to it. Listed hashes left without
+   * metadata come back as `unfetched`.
    */
   private async recordsFrom(
     posByHash: ReadonlyMap<string, { slot: number; epochNo: number }>,
     tipEpoch: number,
     listingIncomplete: boolean,
-  ): Promise<Cip179Records> {
+  ): Promise<{ records: Cip179Records; unfetched: UnfetchedTx[] }> {
     let incomplete = listingIncomplete;
     const hashes = [...posByHash.keys()];
 
@@ -483,7 +513,10 @@ export class KoiosDataSource implements DataSource {
     const responses: ResponseRecord[] = [];
     const cancellations: CancellationRecord[] = [];
     if (hashes.length === 0)
-      return { surveys, responses, cancellations, incomplete };
+      return {
+        records: { surveys, responses, cancellations, incomplete },
+        unfetched: [],
+      };
 
     // Consult the fetch-once cache first (serving tier only): tx metadata is
     // immutable, so anything fetched by an earlier run never hits Koios again.
@@ -508,15 +541,20 @@ export class KoiosDataSource implements DataSource {
     // Each fulfilled batch is banked into the cache *before* it resolves — a
     // run that dies mid-scan (subrequest budget, timeout) keeps the progress it
     // made, so repeated over-budget runs still converge instead of re-fetching
-    // the same batches forever. Hashes a fulfilled batch returned no row for
-    // are banked as null (answered authoritatively: no metadata) so they are
-    // not re-requested every run either.
+    // the same batches forever.
+    //
+    // Only rows carrying label 17 are answers, and only those are banked. Every
+    // hash asked about came from the label-17 index, so a hash with no row, or
+    // a row without that label, means the instance answering is behind the one
+    // that listed it: banked, the transaction would stay hidden for good; left
+    // out, the next walk listing it asks again.
     //
     // Capped at MAX_INFLIGHT_BATCHES in flight (finding 39): firing every batch
     // at once is the shape that trips Koios's rate limiter, whose 429s would
     // otherwise cascade batches into `incomplete` and postpone finalization.
     // `mapSettled` keeps the same per-batch settle semantics as the former
     // `Promise.allSettled`, just throttled.
+    const label = String(METADATA_LABEL);
     const metaPages = await mapSettled(
       batches,
       MAX_INFLIGHT_BATCHES,
@@ -525,16 +563,15 @@ export class KoiosDataSource implements DataSource {
           "/tx_metadata?select=tx_hash,metadata",
           { _tx_hashes: batch },
         );
-        if (this.cache) {
-          const byHash = new Map<string, unknown>(batch.map((h) => [h, null]));
-          for (const r of rows) byHash.set(r.tx_hash, r.metadata);
+        const served = rows.filter((r) => r.metadata?.[label] !== undefined);
+        if (this.cache && served.length > 0) {
           await this.cache
-            .putMetadata(byHash)
+            .putMetadata(new Map(served.map((r) => [r.tx_hash, r.metadata])))
             .catch((err) =>
               console.warn(`tx metadata cache write failed: ${String(err)}`),
             );
         }
-        return rows;
+        return served;
       },
     );
     const metas: TxMetadata[] = [];
@@ -558,9 +595,20 @@ export class KoiosDataSource implements DataSource {
       }
     }
 
+    const obtained = new Set(metas.map((m) => m.tx_hash));
+    const unfetched = hashes
+      .filter((h) => !obtained.has(h))
+      .map((txHash) => ({ txHash, slot: posByHash.get(txHash)!.slot }));
+    if (unfetched.length > 0) {
+      const named = unfetched.slice(0, UNFETCHED_LOG_HASHES);
+      console.warn(
+        `no label-17 metadata yet for ${unfetched.length} listed tx(s): ` +
+          named.map((u) => `${u.txHash}@${u.slot}`).join(", ") +
+          (unfetched.length > named.length ? ", …" : ""),
+      );
+    }
+
     for (const row of metas) {
-      const raw = row.metadata?.[String(METADATA_LABEL)];
-      if (raw === undefined) continue;
       // Every metadata row was requested by tx_hash from posByHash, so a miss is
       // impossible. Throw rather than fabricate {slot:0, epochNo:0}, which would
       // silently mark the response on-time and collapse every dedup tie.
@@ -568,7 +616,11 @@ export class KoiosDataSource implements DataSource {
       if (!pos) throw new Error(`metadata for unknown tx ${row.tx_hash}`);
       let decoded: DecodedPayloadItems;
       try {
-        decoded = decodePayloadItems(koiosJsonToMetadatum(raw));
+        // Only label-17 rows are banked or kept, so the label is present; a row
+        // breaking that lands in the warning below rather than vanishing.
+        decoded = decodePayloadItems(
+          koiosJsonToMetadatum(row.metadata![label]!),
+        );
       } catch (err) {
         // Envelope-level failure (unknown tag, not an array): nothing to keep.
         console.warn(`skipping label-17 tx ${row.tx_hash}: ${String(err)}`);
@@ -666,20 +718,23 @@ export class KoiosDataSource implements DataSource {
         : await this.txProofs(proofTxs, neededScripts);
 
     return {
-      surveys: surveys.map((s) =>
-        openSurveyKeys.has(refKeyOf(s.ref))
-          ? { ...s, proof: mechanismAProofOf(proofs.get(s.txHash)) }
-          : s,
-      ),
-      responses,
-      cancellations: [
-        ...openCancellations.map((c) => ({
-          ...c,
-          proof: mechanismAProofOf(proofs.get(c.txHash)),
-        })),
-        ...closedCancellations,
-      ],
-      incomplete,
+      records: {
+        surveys: surveys.map((s) =>
+          openSurveyKeys.has(refKeyOf(s.ref))
+            ? { ...s, proof: mechanismAProofOf(proofs.get(s.txHash)) }
+            : s,
+        ),
+        responses,
+        cancellations: [
+          ...openCancellations.map((c) => ({
+            ...c,
+            proof: mechanismAProofOf(proofs.get(c.txHash)),
+          })),
+          ...closedCancellations,
+        ],
+        incomplete,
+      },
+      unfetched,
     };
   }
 
@@ -823,8 +878,7 @@ export class KoiosDataSource implements DataSource {
         // Only bytes Koios actually returned are banked. A hash it returned no
         // row for is a node that hasn't caught up, not an answer — banking it
         // as "no evidence" would turn a retryable unknown into a permanent
-        // unproven. (Its metadata twin banks absences precisely because an empty
-        // metadata row *is* an answer.)
+        // unproven.
         if (this.cache && fetched.size > 0) {
           await this.cache
             .putProofCbor(fetched)

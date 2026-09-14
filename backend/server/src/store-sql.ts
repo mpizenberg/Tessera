@@ -704,7 +704,7 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
             `INSERT OR IGNORE INTO tx_metadata_cache (tx_hash, metadata)
              VALUES (?, ?)`,
             hash,
-            JSON.stringify(metadata ?? null),
+            JSON.stringify(metadata),
           ),
         ),
       );

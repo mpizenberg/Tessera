@@ -596,6 +596,74 @@ describe("fetchSegment — slot-bounded ascending scan", () => {
     expect(scan.records.responses).toHaveLength(2);
     expect(scan.exhausted).toBe(false);
   });
+
+  it("reports a listed tx Koios has not served as unfetched, and asks again", async () => {
+    // LAG_TX: no row at all (an instance that has not seen the block).
+    // BARE_TX: a row without label 17 (same lag, other shape). Neither is an
+    // answer for a hash the label-17 index listed.
+    const LAG_TX = "e1".repeat(32);
+    const BARE_TX = "e2".repeat(32);
+    let lagServed = false;
+    const metadataBodies: string[][] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/tx_by_metalabel")) {
+          return new Response(
+            JSON.stringify([
+              { tx_hash: RESP_TX, absolute_slot: 5_000, epoch_no: 1_340 },
+              { tx_hash: LAG_TX, absolute_slot: 6_000, epoch_no: 1_341 },
+              { tx_hash: BARE_TX, absolute_slot: 7_000, epoch_no: 1_342 },
+            ]),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/tx_metadata")) {
+          const { _tx_hashes } = JSON.parse(String(init?.body)) as {
+            _tx_hashes: string[];
+          };
+          metadataBodies.push(_tx_hashes);
+          const all = [
+            { tx_hash: RESP_TX, metadata: responsesMetadata() },
+            { tx_hash: BARE_TX, metadata: null },
+            ...(lagServed
+              ? [{ tx_hash: LAG_TX, metadata: responsesMetadata() }]
+              : []),
+          ];
+          return new Response(
+            JSON.stringify(all.filter((r) => _tx_hashes.includes(r.tx_hash))),
+            { status: 200 },
+          );
+        }
+        return new Response("[]", { status: 200 });
+      }),
+    );
+    const cache = memCache();
+    const walk = () =>
+      new KoiosDataSource(CONFIG, undefined, cache).fetchSegment(
+        { from: { slot: 4_000 } },
+        SEGMENT_TIP,
+      );
+
+    const first = await walk();
+    // Not a dropped batch: the walk is complete and its cursor may advance,
+    // but the records are whole only below LAG_TX.
+    expect(first.records.incomplete).toBe(false);
+    expect(first.records.responses).toHaveLength(2);
+    expect(first.unfetched).toEqual([
+      { txHash: LAG_TX, slot: 6_000 },
+      { txHash: BARE_TX, slot: 7_000 },
+    ]);
+    expect([...cache.map.keys()]).toEqual([RESP_TX]);
+
+    lagServed = true;
+    const second = await walk();
+    expect(metadataBodies[1]).toEqual([LAG_TX, BARE_TX]);
+    expect(second.records.responses).toHaveLength(4);
+    expect(second.unfetched).toEqual([{ txHash: BARE_TX, slot: 7_000 }]);
+    expect(cache.map.has(LAG_TX)).toBe(true);
+  });
 });
 
 // --- fetchAll: scan resume via the tx-metadata cache (finding 5) -------------
@@ -691,8 +759,8 @@ describe("fetchAll — tx metadata cache (finding 5)", () => {
               { status: 200 },
             );
           }
-          // The filler batch: fails on run 1, fulfills empty (answered: these
-          // txs carry no label-17 payload) on run 2.
+          // The filler batch: fails on run 1, then fulfills without a row —
+          // an instance behind the listing, not an answer.
           return fillersFail
             ? new Response("boom", { status: 500 })
             : new Response("[]", { status: 200 });
@@ -724,21 +792,21 @@ describe("fetchAll — tx metadata cache (finding 5)", () => {
     expect(cache.map.has(FILLERS[0]!)).toBe(false); // failed batch not banked
 
     // Run 2: only the failed batch re-fetches (one request, the 50 fillers) —
-    // RESP_TX comes from the cache. No-row hashes are banked as null.
+    // RESP_TX comes from the cache. The unserved fillers bank nothing.
     fillersFail = false;
     metadataBatches.length = 0;
     const run2 = await source().fetchAll();
     expect(run2.incomplete).toBe(false);
     expect(run2.responses).toHaveLength(2);
     expect(metadataBatches).toEqual([FILLERS]);
-    expect(cache.map.get(FILLERS[0]!)).toBeNull();
+    expect(cache.map.has(FILLERS[0]!)).toBe(false);
 
-    // Run 3: everything cached → zero metadata requests. The scan has converged.
+    // Run 3: RESP_TX has converged and costs nothing; the fillers, still listed
+    // and still unserved, are asked about again.
     metadataBatches.length = 0;
     const run3 = await source().fetchAll();
-    expect(run3.incomplete).toBe(false);
     expect(run3.responses).toHaveLength(2);
-    expect(metadataBatches).toEqual([]);
+    expect(metadataBatches).toEqual([FILLERS]);
   });
 });
 

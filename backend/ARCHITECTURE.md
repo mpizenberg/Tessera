@@ -534,7 +534,13 @@ keyset continuation never sweeps the cursor's own slot (rows at-or-before the
 cursor hash were not re-listed) and a budget-capped walk stops one slot below its
 last listed one (that slot may hold further unlisted txs). A failed page or a
 dropped metadata batch flags the envelope `incomplete`, banks no cursor and
-sweeps nothing — an unfetched tx is indistinguishable from a vanished one.
+sweeps nothing — an unfetched tx is indistinguishable from a vanished one. A
+listed transaction Koios answers without its label-17 metadata (an instance
+behind the one that listed it) is known by hash and slot instead, so it holds
+back only what it could affect: the sweep and finalization's covered instant
+stop one slot below it, while the cursor advances and every run whose segment
+re-lists it asks again. One never served stops holding them once the
+settlement margin no longer re-lists it.
 
 A settled survey row can still change, and every cause has a bounded driver:
 
@@ -571,6 +577,9 @@ applied to storage rather than to queries.
 - **`tx_metadata_cache`** (`migrations/0005`) — fetch-once label-17 metadata per
   tx hash. Metadata is immutable, so each fulfilled batch is banked as it
   completes and a refresh cut short by the subrequest cap keeps what it fetched.
+  Only metadata carrying label 17 is banked: every hash asked about came from
+  the label index, so a missing row, or one without the label, is an instance
+  that has not caught up, and banking it would hide the transaction for good.
   Corpus membership comes from the label-index listing, not from this cache: a
   rolled-back transaction is swept out of the rows by the segment that no longer
   lists it, and its cache entry simply stops being requested.
@@ -672,7 +681,10 @@ registered, provenance}`, plus per-`(epoch, role)` totals. This table is shared
   it has no artifact row yet, and **the integrated prefix has covered its vote
   deadline plus 600 s** — the reorg margin, measured on the chain the scan has
   actually banked rather than on the wall clock, so a survey whose window a
-  catch-up has not reached yet cannot finalize early. Its governance epoch must
+  catch-up has not reached yet cannot finalize early. The covered instant also
+  stops below any transaction the segment listed but could not fetch (§5.4), so
+  a response one Koios instance has not served yet cannot be frozen out of an
+  artifact. Its governance epoch must
   also be settled (§5.2): an artifact's provenance is immutable, so it may only
   ever commit a link set that can no longer move. Fill any missing snapshot rows
   from Koios, then emit each survey's artifact once complete: every counted

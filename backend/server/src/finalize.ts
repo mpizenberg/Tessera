@@ -207,9 +207,10 @@ export async function finalizeClosedSurveys(
   // yet, from the frontier up — revived from their wire JSON. Each row also
   // carries every cancellation targeting its survey, which is exactly the
   // evidence the cancellation walk below needs. A survey finalizes only once
-  // the scan cursor has covered its vote deadline plus the reorg margin: the
-  // covered instant can never exceed the wall clock, and during catch-up a
-  // survey's responses may not all be integrated yet.
+  // the integrated prefix has covered its vote deadline plus the reorg margin:
+  // the covered instant can never exceed the wall clock, and during catch-up,
+  // or while a listed transaction is still unfetched, a survey's responses may
+  // not all be integrated yet.
   const candidateRows = await store.unfinalizedClosedSurveyRows(
     gates.finalizationFloor,
     tip.epoch,

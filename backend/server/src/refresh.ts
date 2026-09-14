@@ -14,6 +14,7 @@
  * snapshot.
  */
 
+import type { ChainTip } from "cip-179/domain";
 import { toJsonSafe } from "cip-179/tally";
 import {
   KoiosDataSource,
@@ -132,13 +133,27 @@ export function planSegment(
 }
 
 /**
+ * The last slot a scan's records are whole through: one below the oldest
+ * transaction it listed but holds no record for, since that record may be the
+ * response, cancellation or definition a row depends on. Unbounded when every
+ * listed transaction was fetched.
+ */
+export function wholeThroughSlot(scan: SegmentScan): number {
+  return scan.unfetched.reduce(
+    (min, tx) => Math.min(min, tx.slot - 1),
+    Number.POSITIVE_INFINITY,
+  );
+}
+
+/**
  * The slot range this scan safely covered — the sweep's deletion scope — or
  * null when nothing may be swept: an incomplete scan (an unfetched tx is
- * indistinguishable from a vanished one), or a budget-capped walk whose last
- * listed slot may hold further unlisted txs (the covered prefix then ends one
- * slot earlier; a range that inverts covers nothing). `ceilingSlot` is what an
- * exhausted walk reached: the tip for the main segment, the top of the settled
- * prefix for the rescan.
+ * indistinguishable from a vanished one, and which were dropped is unknown),
+ * or a budget-capped walk whose last listed slot may hold further unlisted txs
+ * (the covered prefix then ends one slot earlier). A known unfetched tx ends it
+ * below that tx's slot instead. A range that inverts covers nothing.
+ * `ceilingSlot` is what an exhausted walk reached: the tip for the main
+ * segment, the top of the settled prefix for the rescan.
  */
 export function coveredRange(
   plan: Pick<SegmentPlan, "sweepFromSlot">,
@@ -146,9 +161,31 @@ export function coveredRange(
   ceilingSlot: number,
 ): SlotRange | null {
   if (scan.records.incomplete) return null;
-  const toSlot = scan.exhausted ? ceilingSlot : scan.cursor!.slot - 1;
+  const toSlot = Math.min(
+    scan.exhausted ? ceilingSlot : scan.cursor!.slot - 1,
+    wholeThroughSlot(scan),
+  );
   if (toSlot < plan.sweepFromSlot) return null;
   return { fromSlot: plan.sweepFromSlot, toSlot };
+}
+
+/**
+ * The instant the integrated prefix reaches, on the chain's own clock, or null
+ * before any cursor — finalization's safety gate. The banked cursor bounds it
+ * during catch-up, and the main segment's oldest unfetched transaction bounds
+ * it while Koios has yet to serve one: a survey closing after that slot may be
+ * waiting on its record. The cursor still advances past it, so a transaction
+ * never served stops holding the gate once the settlement margin no longer
+ * re-lists it.
+ */
+export function coveredThroughUnix(
+  cursor: ScanCursor | null,
+  scan: SegmentScan,
+  tip: ChainTip,
+): number | null {
+  if (cursor === null) return null;
+  const slot = Math.min(cursor.slot, wholeThroughSlot(scan));
+  return tip.time + (slot - tip.slot);
 }
 
 /** Where the drift-healing rescan resumes, with the ceiling it stops at. */
@@ -342,6 +379,7 @@ export async function refreshSnapshot(
       `segment scanned: ${records.surveys.length} surveys, ` +
         `${records.responses.length} responses, ` +
         `${records.cancellations.length} cancellations` +
+        `${scan.unfetched.length > 0 ? `, ${scan.unfetched.length} unfetched` : ""}` +
         `${records.incomplete ? " (incomplete)" : ""}` +
         `${scan.exhausted ? "" : " (catching up)"}`,
     );
@@ -463,10 +501,6 @@ export async function refreshSnapshot(
     // links this pass settled are written, so the epochs behind it can leave
     // the query set for good.
     if (nextGovFloor !== govFloor) await store.putSettlementFloor(nextGovFloor);
-    // The instant the integrated prefix reaches, on the chain's own clock —
-    // finalization's safety gate during catch-up.
-    const coveredThroughUnix =
-      cursor === null ? null : tip.time + (cursor.slot - tip.slot);
 
     // Response validation (TALLY-SPEC §3) rides the same refresh (Node loop +
     // Worker cron alike): incremental, so already-validated responses cost
@@ -494,7 +528,7 @@ export async function refreshSnapshot(
       {
         tip,
         incomplete,
-        coveredThroughUnix,
+        coveredThroughUnix: coveredThroughUnix(cursor, scan, tip),
         settlementFloor: nextGovFloor,
         finalizationFloor: finalFloor,
       },

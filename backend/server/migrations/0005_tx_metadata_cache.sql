@@ -5,5 +5,5 @@
 -- cache — a rolled-back tx's entry just stops being requested.
 CREATE TABLE tx_metadata_cache (
   tx_hash  TEXT PRIMARY KEY,
-  metadata TEXT NOT NULL  -- raw Koios `metadata` JSON ("null" when the tx had none)
+  metadata TEXT NOT NULL  -- raw Koios `metadata` JSON, always carrying label 17
 );
