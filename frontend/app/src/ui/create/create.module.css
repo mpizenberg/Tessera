@@ -198,6 +198,29 @@
   border-color: var(--card-line);
 }
 
+/* A form restored from an earlier visit: neutral box with a way out. */
+.restoredNote {
+  composes: sealedNote;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-top: 16px;
+}
+
+.startOver {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: var(--r-control);
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+}
+
 /* ---- roles ---------------------------------------------------------------- */
 
 .rowWrap {

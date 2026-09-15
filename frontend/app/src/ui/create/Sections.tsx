@@ -1,12 +1,6 @@
 /** The six numbered meta sections of the builder, in the order they render. */
 
-import {
-  For,
-  Show,
-  createEffect,
-  createSignal,
-  type Component,
-} from "solid-js";
+import { For, Show, createEffect, type Component } from "solid-js";
 import type { SetStoreFunction } from "solid-js/store";
 import { A } from "@solidjs/router";
 import { ROLE_VALUES, Role } from "cip-179";
@@ -125,20 +119,23 @@ export const RolesSection: Component<{
 export const TimingSection: Component<{
   value: string;
   onInput: (v: string) => void;
+  /**
+   * Whether the creator plans to tie this survey to a governance Info Action.
+   * The link itself is Action → Survey and lives off-chain in the action's
+   * anchor, so this toggle changes no on-chain field directly. Its effect here
+   * is that the end epoch is no longer free: it must equal the voting end epoch
+   * of the Info Action that will advertise this survey, so we compute and lock
+   * it instead of letting the creator type one that wouldn't match.
+   */
+  govLinked: boolean;
+  onGovLinked: (linked: boolean) => void;
   tip: ChainTip | undefined;
   secondsPerEpoch: number;
   network: Network;
 }> = (props) => {
   const tipEpoch = (): number | undefined => props.tip?.epoch;
   const govActionLifetime = (): number => props.tip?.govActionLifetime ?? 0;
-
-  // Whether the creator plans to tie this survey to a governance Info Action.
-  // The link itself is Action → Survey and lives off-chain in the action's
-  // anchor, so this toggle changes no on-chain field directly. Its effect here
-  // is that the end epoch is no longer free: it must equal the voting end epoch
-  // of the Info Action that will advertise this survey, so we compute and lock
-  // it instead of letting the creator type one that wouldn't match.
-  const [govLinked, setGovLinked] = createSignal(false);
+  const govLinked = (): boolean => props.govLinked;
 
   // The voting deadline of an Info Action submitted in the current epoch:
   // `current + gov_action_lifetime` (the live protocol parameter, read from the
@@ -198,7 +195,7 @@ export const TimingSection: Component<{
           type="button"
           role="switch"
           aria-checked={govLinked()}
-          onClick={() => setGovLinked((v) => !v)}
+          onClick={() => props.onGovLinked(!props.govLinked)}
           class={css.govToggleRow}
         >
           <span

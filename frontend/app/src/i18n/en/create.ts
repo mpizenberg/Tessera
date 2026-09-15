@@ -6,6 +6,8 @@ const create = {
   pageTitle: "Create a survey",
   pageSubtitle:
     "Define the questions, who may respond, when it closes, and whether answers are public or sealed, then sign to publish the definition on-chain under metadata label 17.",
+  restoredDraft: "Restored your unpublished draft.",
+  startOver: "Start over",
 
   // --- Submit progress overlay ---
   progressTitle: "Publishing your survey",

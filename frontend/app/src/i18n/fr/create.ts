@@ -10,6 +10,8 @@ const create: Messages = {
   pageTitle: "Créer un sondage",
   pageSubtitle:
     "Définissez les questions, qui peut répondre, quand le sondage se clôture et si les réponses sont publiques ou scellées, puis signez pour publier la définition on-chain sous le label de métadonnées 17.",
+  restoredDraft: "Votre brouillon non publié a été restauré.",
+  startOver: "Recommencer",
 
   // --- Submit progress overlay ---
   progressTitle: "Publication de votre sondage",

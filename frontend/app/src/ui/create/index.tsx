@@ -10,10 +10,10 @@ import { createStore, unwrap } from "solid-js/store";
 import { A } from "@solidjs/router";
 import {
   QuestionTag,
-  Role,
   encodePayload,
   type Credential,
   type Metadatum,
+  type Role,
 } from "cip-179";
 import { autoRevealRound } from "cip-179/tlock";
 
@@ -41,6 +41,7 @@ import type { Action } from "~/wallet/action";
 import type { WalletIdentity } from "~/wallet/types";
 import { t } from "~/i18n";
 import { problemText } from "~/i18n/problem";
+import { blankDraft, loadDraft, storeDraft, type DrandMode } from "./draft";
 import { intOf } from "./Fields";
 import { QuestionEditor } from "./Question";
 import {
@@ -113,24 +114,26 @@ export const Create: Component = () => {
     return id ? ownerCredential(id) : undefined;
   });
 
+  // The form starts from the draft an earlier visit left, so there is never a
+  // moment where blank stores could be written over it.
+  const restoredDraft = loadDraft();
+  const initial = restoredDraft ?? blankDraft();
+  const [restored, setRestored] = createSignal(restoredDraft !== undefined);
   const [meta, setMeta] = createStore<DefinitionMeta>({
-    title: "",
-    description: "",
-    eligibleRoles: [Role.Stakeholder],
-    contentMode: "embedded",
-    endEpoch: "",
-    mode: "public",
+    ...initial.meta,
     sealedRound: 0,
-    sealedPadding: 0, // 0 = auto (worst-case size, computed in buildDefinition)
   });
   const [questions, setQuestions] = createStore<QuestionDraft[]>([
-    initQuestionDraft("singleChoice"),
+    ...initial.questions,
   ]);
+  const [govLinked, setGovLinked] = createSignal(initial.govLinked);
 
   // Sealed config: derive the reveal round from the end epoch ("auto"), or let
   // the creator pin a round directly ("manual").
-  const [drandMode, setDrandMode] = createSignal<"auto" | "manual">("auto");
-  const [drandRoundText, setDrandRoundText] = createSignal("");
+  const [drandMode, setDrandMode] = createSignal<DrandMode>(initial.drandMode);
+  const [drandRoundText, setDrandRoundText] = createSignal(
+    initial.drandRoundText,
+  );
 
   // Seed a sensible default end epoch once the tip is known (don't clobber
   // input): the next epoch, the soonest a survey can still be open on arrival.
@@ -207,6 +210,44 @@ export const Create: Component = () => {
   const [txHash, setTxHash] = createSignal<string | null>(null);
   const [queued, setQueued] = createSignal(false);
   const [showProblems, setShowProblems] = createSignal(false);
+
+  // Storage holds the form until the survey is on chain or in the cart, which
+  // own it from then on. Each stored field is read by name: `sealedRound`
+  // follows the tip, and reading it would rewrite storage on every tip update.
+  createEffect(() => {
+    storeDraft(
+      txHash() === null && !queued()
+        ? {
+            meta: {
+              title: meta.title,
+              description: meta.description,
+              eligibleRoles: meta.eligibleRoles,
+              contentMode: meta.contentMode,
+              endEpoch: meta.endEpoch,
+              mode: meta.mode,
+              sealedPadding: meta.sealedPadding,
+            },
+            questions,
+            drandMode: drandMode(),
+            drandRoundText: drandRoundText(),
+            govLinked: govLinked(),
+          }
+        : undefined,
+    );
+  });
+
+  const startOver = () => {
+    const blank = blankDraft();
+    setMeta(blank.meta);
+    setQuestions([...blank.questions]);
+    setGovLinked(blank.govLinked);
+    setDrandMode(blank.drandMode);
+    setDrandRoundText(blank.drandRoundText);
+    setShowProblems(false);
+    setSubmitError(null);
+    setRestored(false);
+  };
+
   // With something already waiting, publishing this survey would publish that
   // too — so the button queues instead, and the cart is where it all goes out.
   const queueing = (): boolean => app.cart().length > 0;
@@ -354,6 +395,14 @@ export const Create: Component = () => {
           <BackLink />
           <h1 class={css.title}>{t("create.pageTitle")}</h1>
           <p class={css.subtitle}>{t("create.pageSubtitle")}</p>
+          <Show when={restored()}>
+            <div class={css.restoredNote}>
+              <span>{t("create.restoredDraft")}</span>
+              <button type="button" onClick={startOver} class={css.startOver}>
+                {t("create.startOver")}
+              </button>
+            </div>
+          </Show>
 
           <div class={`create-grid ${css.gridTop}`}>
             {/* left: builder */}
@@ -364,6 +413,8 @@ export const Create: Component = () => {
               <TimingSection
                 value={meta.endEpoch}
                 onInput={(v) => setMeta("endEpoch", v)}
+                govLinked={govLinked()}
+                onGovLinked={setGovLinked}
                 tip={app.list()?.tip}
                 secondsPerEpoch={app.config.secondsPerEpoch}
                 network={app.config.network}

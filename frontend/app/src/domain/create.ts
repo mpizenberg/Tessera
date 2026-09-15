@@ -15,6 +15,7 @@
  */
 
 import {
+  Role,
   SPEC_VERSION,
   validateDefinition,
   type ContentAnchor,
@@ -23,7 +24,6 @@ import {
   type OptionsOrCount,
   type Question,
   type RatingScale,
-  type Role,
   type SurveyDefinition,
   type ValidationProblem,
 } from "cip-179";
@@ -127,6 +127,20 @@ export const QUESTION_TYPES: readonly QuestionType[] = [
   "rating",
   "custom",
 ];
+
+/** Builder metadata before anything is typed. */
+export function initDefinitionMeta(): DefinitionMeta {
+  return {
+    title: "",
+    description: "",
+    eligibleRoles: [Role.Stakeholder],
+    contentMode: "embedded",
+    endEpoch: "",
+    mode: "public",
+    sealedRound: 0,
+    sealedPadding: 0, // 0 = auto (worst-case size, computed in buildDefinition)
+  };
+}
 
 /** A fresh draft for a new question of the given type. */
 export function initQuestionDraft(type: QuestionType): QuestionDraft {
