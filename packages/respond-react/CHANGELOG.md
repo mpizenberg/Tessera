@@ -17,6 +17,9 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
   `bigint` (was `number`), following `cip-179` through the widget. The
   `onResponse` payload is unchanged: it was already a `Metadatum`, whose
   integers are `bigint`.
+- **Breaking:** the `messages` prop follows the element's catalog:
+  `respond.noneLead` and `respond.noneNote` are removed, and
+  `respond.noneOfThese` and `respond.numericUnset` are added.
 
 ## [0.1.0] - 2026-08-01
 
