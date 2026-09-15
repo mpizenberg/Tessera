@@ -20,3 +20,9 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* On the icon, not the button, so a caller's replacement class keeps it. */
+.icon {
+  vertical-align: -1px;
+  margin-right: 6px;
+}
