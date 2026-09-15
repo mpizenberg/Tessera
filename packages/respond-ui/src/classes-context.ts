@@ -24,9 +24,6 @@ export const BODY_CLASS_NAMES = [
   "checkbox",
   "checkboxOn",
   "multiCount",
-  "noneNote",
-  "noneNoteText",
-  "noneNoteLead",
   // ranking
   "rankedList",
   "rankedRow",

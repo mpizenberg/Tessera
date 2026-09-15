@@ -71,59 +71,69 @@ const MultiSelectBody: Component<{
 }> = (props) => {
   const i18n = useI18n();
   const cls = useClasses();
+  const selected = () => props.v.selected ?? [];
+  const noneChosen = () => props.v.selected?.length === 0;
+  const set = (next: readonly number[] | null) =>
+    props.onChange({ type: "multiSelect", selected: next });
   const toggle = (i: number) => {
-    const set = new Set(props.v.selected);
-    if (set.has(i)) set.delete(i);
-    else if (props.v.selected.length < props.q.maxSelections) set.add(i);
-    props.onChange({
-      type: "multiSelect",
-      selected: [...set].sort((a, b) => a - b),
-    });
+    const picked = new Set(selected());
+    if (picked.has(i)) picked.delete(i);
+    else if (picked.size < props.q.maxSelections) picked.add(i);
+    // `[]` belongs to "None of these": unchecking the last option unsets.
+    set(picked.size > 0 ? [...picked].sort((a, b) => a - b) : null);
   };
   return (
     <>
       <div class={cls.multiGrid}>
         <For each={range(optionCount(props.q.options))}>
-          {(i) => {
-            const on = () => props.v.selected.includes(i);
-            return (
-              <div
-                role="checkbox"
-                tabindex={0}
-                aria-checked={on()}
-                onClick={() => toggle(i)}
-                onKeyDown={activateOnKey(() => toggle(i))}
-                class={cls.optionRow}
-                classList={{ [cls.optionRowOn]: on() }}
-              >
-                <span
-                  class={cls.checkbox}
-                  classList={{ [cls.checkboxOn]: on() }}
-                >
-                  <Show when={on()}>✓</Show>
-                </span>
-                <span>{labelFor(i18n, props.q.options, i)}</span>
-              </div>
-            );
-          }}
+          {(i) => (
+            <CheckRow
+              on={selected().includes(i)}
+              onToggle={() => toggle(i)}
+              label={labelFor(i18n, props.q.options, i)}
+            />
+          )}
         </For>
+        <Show when={props.q.minSelections === 0}>
+          <CheckRow
+            on={noneChosen()}
+            onToggle={() => set(noneChosen() ? null : [])}
+            label={i18n.t("respond.noneOfThese")}
+          />
+        </Show>
       </div>
       <div class={cls.multiCount}>
         {i18n.t("respond.multiSelectCount", {
           min: i18n.n(props.q.minSelections),
           max: i18n.n(props.q.maxSelections),
-          chosen: i18n.n(props.v.selected.length),
+          chosen: i18n.n(selected().length),
         })}
       </div>
-      <Show when={props.q.minSelections === 0}>
-        <div class={cls.noneNote}>
-          <span class={cls.noneNoteText}>
-            <b class={cls.noneNoteLead}>{i18n.t("respond.noneLead")}</b>{" "}
-            {i18n.t("respond.noneNote")}
-          </span>
-        </div>
-      </Show>
     </>
+  );
+};
+
+const CheckRow: Component<{
+  on: boolean;
+  onToggle: () => void;
+  label: string;
+}> = (props) => {
+  const cls = useClasses();
+  return (
+    <div
+      role="checkbox"
+      tabindex={0}
+      aria-checked={props.on}
+      onClick={() => props.onToggle()}
+      onKeyDown={activateOnKey(() => props.onToggle())}
+      class={cls.optionRow}
+      classList={{ [cls.optionRowOn]: props.on }}
+    >
+      <span class={cls.checkbox} classList={{ [cls.checkboxOn]: props.on }}>
+        <Show when={props.on}>✓</Show>
+      </span>
+      <span>{props.label}</span>
+    </div>
   );
 };
 

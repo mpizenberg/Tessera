@@ -36,7 +36,11 @@ export function optionCount(opts: OptionsOrCount): number {
 /** Per-question working value, discriminated by the question's type. */
 export type DraftValue =
   | { readonly type: "singleChoice"; readonly optionIndex: number | null }
-  | { readonly type: "multiSelect"; readonly selected: readonly number[] }
+  | {
+      readonly type: "multiSelect";
+      /** `[]` is a chosen "none of these"; `null` is nothing chosen yet. */
+      readonly selected: readonly number[] | null;
+    }
   | { readonly type: "ranking"; readonly ranked: readonly number[] }
   | { readonly type: "numeric"; readonly value: bigint | null }
   | { readonly type: "pointsAllocation"; readonly points: readonly number[] }
@@ -60,7 +64,7 @@ function initValue(q: Question): DraftValue {
     case "singleChoice":
       return { type: "singleChoice", optionIndex: null };
     case "multiSelect":
-      return { type: "multiSelect", selected: [] };
+      return { type: "multiSelect", selected: null };
     case "ranking":
       return { type: "ranking", ranked: [] };
     case "numericRange":
@@ -94,6 +98,7 @@ export function decided(q: Question, draft: Draft): boolean {
     case "multiSelect":
       return (
         v.type === "multiSelect" &&
+        v.selected !== null &&
         v.selected.length >= q.minSelections &&
         v.selected.length <= q.maxSelections
       );
@@ -172,7 +177,7 @@ function buildAnswerItem(
         optionIndex: v.optionIndex,
       };
     case "multiSelect":
-      if (v.type !== "multiSelect") return null;
+      if (v.type !== "multiSelect" || v.selected === null) return null;
       return {
         type: "multiSelect",
         questionIndex: index,

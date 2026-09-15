@@ -100,10 +100,14 @@ describe("unsent answers survive a reload", () => {
     expect(surveyAt("s1", 120).stash.get(FORM, questions)).toEqual(form);
   });
 
-  test("a number not yet chosen comes back unset", () => {
+  test("answers not yet chosen come back unset", () => {
     const unset = form.map(
       (d, i): Draft =>
-        i === 3 ? { ...d, value: { type: "numeric", value: null } } : d,
+        i === 1
+          ? { ...d, value: { type: "multiSelect", selected: null } }
+          : i === 3
+            ? { ...d, value: { type: "numeric", value: null } }
+            : d,
     );
     surveyAt("s1", 120).stash.set(FORM, unset);
     expect(surveyAt("s1", 120).stash.get(FORM, questions)).toEqual(unset);

@@ -96,9 +96,7 @@ const en = {
     // --- Multi-select body -------------------------------------------------
     /** {min}/{max}/{chosen} are locale-formatted counts. */
     multiSelectCount: "select {min}–{max} · {chosen} chosen",
-    noneLead: '"None of these" is a real answer.',
-    noneNote:
-      "This question allows 0 selections — submitting with nothing checked records a deliberate empty answer, different from Skip (abstain).",
+    noneOfThese: "None of these",
 
     // --- Ranking body ------------------------------------------------------
     rankMoveUp: "Move up",

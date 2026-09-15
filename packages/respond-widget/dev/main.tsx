@@ -113,7 +113,6 @@ const THEMES: Record<string, Record<string, string>> = {
     "card-bg": "#24211a",
     "card-line": "#322d22",
     label: "#b3a175",
-    "label-strong": "#cdbf9a",
     accent: "#d97a4d",
     "accent-bg": "#3a2a1f",
     "accent-line": "#5a3d2a",

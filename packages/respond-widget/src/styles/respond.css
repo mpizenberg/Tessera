@@ -430,27 +430,6 @@
   margin-top: 10px;
 }
 
-.noneNote {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  background: var(--tessera-card-bg);
-  border: 1px solid var(--tessera-card-line);
-  border-radius: var(--tessera-r-md);
-  padding: 10px 12px;
-  margin-top: 10px;
-}
-
-.noneNoteText {
-  font-size: 12px;
-  color: var(--tessera-label);
-  line-height: 1.45;
-}
-
-.noneNoteLead {
-  color: var(--tessera-label-strong);
-}
-
 /* --- Ranking -------------------------------------------------------------- */
 
 .rankedList {

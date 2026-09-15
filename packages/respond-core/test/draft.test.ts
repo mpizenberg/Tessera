@@ -72,6 +72,32 @@ describe("decided", () => {
       { type: "numeric", questionIndex: 0, value: 0n },
     ]);
   });
+
+  const pickAny: Question = {
+    type: "multiSelect",
+    prompt: "pick any",
+    required: false,
+    options: { type: "options", labels: ["a", "b"] },
+    minSelections: 0,
+    maxSelections: 2,
+  };
+
+  it("an untouched selection is not decided and records nothing, even when none is allowed", () => {
+    const untouched = initDraft(pickAny);
+    expect(decided(pickAny, untouched)).toBe(false);
+    expect(hasAnyAnswer([pickAny], [untouched])).toBe(false);
+  });
+
+  it("a chosen none decides the selection and is recorded", () => {
+    const none: Draft = {
+      skipped: false,
+      value: { type: "multiSelect", selected: [] },
+    };
+    expect(decided(pickAny, none)).toBe(true);
+    expect(collectAnswers([pickAny], [none])).toEqual([
+      { type: "multiSelect", questionIndex: 0, optionIndices: [] },
+    ]);
+  });
 });
 
 describe("collectAnswers + buildResponse", () => {

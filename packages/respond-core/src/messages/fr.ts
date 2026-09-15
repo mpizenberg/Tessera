@@ -84,9 +84,7 @@ const fr: RespondMessages = {
 
     // --- Multi-select body -------------------------------------------------
     multiSelectCount: "sélectionnez {min}–{max} · {chosen} choisie(s)",
-    noneLead: "« Aucune de celles-ci » est une vraie réponse.",
-    noneNote:
-      "Cette question autorise 0 sélection — envoyer sans rien cocher enregistre une réponse vide délibérée, différente d'Ignorer (abstention).",
+    noneOfThese: "Aucune de celles-ci",
 
     // --- Ranking body ------------------------------------------------------
     rankMoveUp: "Monter",

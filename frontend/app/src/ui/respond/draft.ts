@@ -203,7 +203,8 @@ function decodeValue(q: Question, raw: unknown): DraftValue | undefined {
     }
     case "multiSelect":
       return raw.type === "multiSelect" &&
-        isIndexSet(raw.selected, optionCount(q.options))
+        (raw.selected === null ||
+          isIndexSet(raw.selected, optionCount(q.options)))
         ? { type: "multiSelect", selected: raw.selected }
         : undefined;
     case "ranking":

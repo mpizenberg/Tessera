@@ -233,8 +233,12 @@ describe("built <tessera-respond> artifact", () => {
     has(".radio", "singleChoice");
     next();
     has(".checkbox", "multiSelect");
-    // Multi-select means two clicks leave two options selected.
+    // The sample allows no selection: "None of these" is the last row, and
+    // picking an option after it replaces it.
     const rows = root.querySelectorAll<HTMLElement>(".optionRow");
+    rows[rows.length - 1]!.click();
+    expect(root.querySelectorAll(".optionRowOn").length).toBe(1);
+    // Multi-select means two clicks leave two options selected.
     rows[0]!.click();
     rows[1]!.click();
     expect(root.querySelectorAll(".optionRowOn").length).toBe(2);
