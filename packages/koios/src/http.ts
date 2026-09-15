@@ -7,6 +7,8 @@
  * @module
  */
 
+import { parseKoiosJson } from "./json";
+
 /** Per-request timeout: a stalled connection should fail, not hang forever. */
 export const REQUEST_TIMEOUT_MS = 15_000;
 
@@ -55,10 +57,11 @@ const isTimeout = (err: unknown): boolean =>
   err instanceof Error && err.name === TIMEOUT_ERROR_NAME;
 
 /**
- * Fetch JSON from Koios with one bounded retry + backoff on a transient failure
- * ({@link RETRIABLE_STATUS} or a request timeout). A non-transient status (4xx,
- * 500) or a non-timeout throw fails immediately — no point retrying a
- * deterministic error. The caller owns the request timeout; this owns the retry.
+ * Fetch JSON from Koios, integers exact ({@link parseKoiosJson}), with one
+ * bounded retry + backoff on a transient failure ({@link RETRIABLE_STATUS} or a
+ * request timeout). A non-transient status (4xx, 500) or a non-timeout throw
+ * fails immediately — no point retrying a deterministic error. The caller owns
+ * the request timeout; this owns the retry.
  */
 export async function koiosFetchJson<T>(
   url: string,
@@ -84,7 +87,7 @@ export async function koiosFetchJson<T>(
       }
       throw err;
     }
-    if (res.ok) return (await res.json()) as T;
+    if (res.ok) return parseKoiosJson(await res.text()) as T;
     if (attempt < MAX_RETRIES && RETRIABLE_STATUS.has(res.status)) {
       await sleep(RETRY_BACKOFF_MS);
       continue;

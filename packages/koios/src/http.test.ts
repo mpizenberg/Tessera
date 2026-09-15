@@ -104,6 +104,13 @@ describe("koiosFetchJson — retry policy (finding 39)", () => {
     expect(mock).toHaveBeenCalledTimes(2); // original + one retry, then stop
   });
 
+  it("reads the body with every integer exact", async () => {
+    stubSequence([new Response('[{"amount":21391325252789667}]')]);
+    expect(await koiosFetchJson("http://k/x", {}, opts())).toEqual([
+      { amount: 21391325252789667n },
+    ]);
+  });
+
   it("labels the error with the method and path, not the full URL", async () => {
     stubSequence([json(400, {})]);
     await expect(

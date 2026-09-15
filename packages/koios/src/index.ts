@@ -11,5 +11,6 @@
 
 export * from "./koios";
 export * from "./govLinks";
+export * from "./json";
 export * from "./metadatum";
 export * from "./tallyInputs";

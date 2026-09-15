@@ -53,6 +53,7 @@ import type { AppConfig } from "cardano-tessera-core";
 import { evolutionCodec } from "cip-179/evolution";
 
 import { koiosFetchJson } from "./http";
+import { lovelace } from "./json";
 
 /**
  * Max credentials per bulk read — stake addresses per POST, DRep ids per
@@ -137,15 +138,13 @@ interface TxCertOrder {
 interface AccountStakeRow {
   stake_address: string;
   epoch_no: number;
-  /** Lovelace as a decimal string. */
-  active_stake: string;
+  active_stake: string | number | bigint;
 }
 
 interface DrepPowerRow {
   drep_id: string;
   epoch_no: number;
-  /** Lovelace as a decimal string. */
-  amount: string;
+  amount: string | number | bigint;
 }
 
 interface DrepUpdateRow {
@@ -494,7 +493,10 @@ export class KoiosTallyInputs implements TallyInputSource {
       }
 
       for (const row of stakes) {
-        stakeByAddress.set(row.stake_address, BigInt(row.active_stake));
+        stakeByAddress.set(
+          row.stake_address,
+          lovelace(row.active_stake, "account_stake_history.active_stake"),
+        );
       }
     }
 
@@ -628,7 +630,12 @@ export class KoiosTallyInputs implements TallyInputSource {
         `/drep_voting_power_history?_epoch_no=${epoch}&epoch_no=eq.${epoch}` +
           `&drep_id=in.(${batch.join(",")})`,
       );
-      for (const row of rows) powerById.set(row.drep_id, BigInt(row.amount));
+      for (const row of rows) {
+        powerById.set(
+          row.drep_id,
+          lovelace(row.amount, "drep_voting_power_history.amount"),
+        );
+      }
     }
 
     // A power row proves registration and carries the weight. The ids it left
@@ -656,11 +663,13 @@ export class KoiosTallyInputs implements TallyInputSource {
 
   async stakeholderTotal(epoch: number): Promise<bigint | null> {
     try {
-      const rows = await this.get<{ active_stake: string | null }[]>(
+      const rows = await this.get<
+        { active_stake: string | number | bigint | null }[]
+      >(
         `/epoch_info?_epoch_no=${epoch}&_include_next_epoch=false&select=active_stake`,
       );
-      const total = rows[0]?.active_stake;
-      return total ? BigInt(total) : null;
+      const total = rows[0]?.active_stake ?? null;
+      return total === null ? null : lovelace(total, "epoch_info.active_stake");
     } catch (err) {
       // Known flaky on some (preview) epochs: db-sync word128 errors. Null =
       // the caller retries on a later run.
@@ -671,11 +680,13 @@ export class KoiosTallyInputs implements TallyInputSource {
 
   async drepTotal(epoch: number): Promise<bigint | null> {
     try {
-      const rows = await this.get<{ amount: string | null }[]>(
-        `/drep_epoch_summary?_epoch_no=${epoch}&select=amount`,
-      );
-      const total = rows[0]?.amount;
-      return total ? BigInt(total) : null;
+      const rows = await this.get<
+        { amount: string | number | bigint | null }[]
+      >(`/drep_epoch_summary?_epoch_no=${epoch}&select=amount`);
+      const total = rows[0]?.amount ?? null;
+      return total === null
+        ? null
+        : lovelace(total, "drep_epoch_summary.amount");
     } catch (err) {
       console.warn(
         `drep_epoch_summary total unavailable for ${epoch}: ${String(err)}`,

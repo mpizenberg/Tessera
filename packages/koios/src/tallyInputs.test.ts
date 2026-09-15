@@ -5,6 +5,7 @@ import { credentialKey, hexToBytes } from "cip-179/domain";
 import type { AppConfig } from "cardano-tessera-core";
 
 import { evolutionCodec } from "cip-179/evolution";
+import { stringifyKoiosJson } from "./json";
 import { KoiosTallyInputs } from "./tallyInputs";
 
 const stakeAddress = evolutionCodec.stakeAddress;
@@ -84,7 +85,7 @@ type Handler = (
 function stubFetch(handler: Handler) {
   const mock = vi.fn(async (input: string | URL, init?: RequestInit) => {
     const body = init?.body ? (JSON.parse(String(init.body)) as never) : null;
-    return new Response(JSON.stringify(handler(String(input), body)), {
+    return new Response(stringifyKoiosJson(handler(String(input), body)), {
       status: 200,
     });
   });
@@ -185,6 +186,48 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
       registered: true,
       weight: 0n,
     });
+  });
+
+  it("reads active stake served as a string or as a number, exactly", async () => {
+    const [addrA, addrB] = await Promise.all([
+      stakeAddress(cred(HASH_A), "preview"),
+      stakeAddress(cred(HASH_B), "preview"),
+    ]);
+    stubFetch((url) => {
+      if (url.includes("/account_update_history")) {
+        return [reg(addrA, 10), reg(addrB, 10)];
+      }
+      return [
+        {
+          stake_address: addrA,
+          epoch_no: 1,
+          active_stake: "21391325252789667",
+        },
+        { stake_address: addrB, epoch_no: 1, active_stake: 21391325252789667n },
+      ];
+    });
+    const weights = await new KoiosTallyInputs(CONFIG).stakeholderWeights(1, [
+      cred(HASH_A),
+      cred(HASH_B),
+    ]);
+    for (const hash of [HASH_A, HASH_B]) {
+      expect(weights.get(`key:${hash}`)).toEqual({
+        registered: true,
+        weight: 21_391_325_252_789_667n,
+      });
+    }
+  });
+
+  it("throws rather than weigh from an amount that is not lovelace", async () => {
+    const addrA = await stakeAddress(cred(HASH_A), "preview");
+    stubFetch((url) =>
+      url.includes("/account_update_history")
+        ? [reg(addrA, 10)]
+        : [{ stake_address: addrA, epoch_no: 1, active_stake: 1.5 }],
+    );
+    await expect(
+      new KoiosTallyInputs(CONFIG).stakeholderWeights(1, [cred(HASH_A)]),
+    ).rejects.toThrow("account_stake_history.active_stake");
   });
 
   it("decides a churny account from its newest slot, never reading its history (finding 13)", async () => {
@@ -511,6 +554,29 @@ describe("KoiosTallyInputs.drepWeights", () => {
     });
   });
 
+  it("reads voting power served as a string or as a number, exactly", async () => {
+    const idA = evolutionCodec.drepId(cred(HASH_A));
+    const idB = evolutionCodec.drepId(cred(HASH_B));
+    stubFetch(() => [
+      { drep_id: idA, epoch_no: 1, amount: "15213065217906634" },
+      { drep_id: idB, epoch_no: 1, amount: 15213065217906634n },
+    ]);
+    const weights = await new KoiosTallyInputs(CONFIG).drepWeights(1, [
+      cred(HASH_A),
+      cred(HASH_B),
+    ]);
+    for (const hash of [HASH_A, HASH_B]) {
+      expect(weights.get(`key:${hash}`)).toEqual({
+        registered: true,
+        weight: 15_213_065_217_906_634n,
+      });
+    }
+    stubFetch(() => [{ drep_id: idA, epoch_no: 1, amount: "12abc" }]);
+    await expect(
+      new KoiosTallyInputs(CONFIG).drepWeights(1, [cred(HASH_A)]),
+    ).rejects.toThrow("drep_voting_power_history.amount");
+  });
+
   it("reads registration for the ids the power endpoint omits, and only those", async () => {
     const idA = evolutionCodec.drepId(cred(HASH_A));
     const idB = evolutionCodec.drepId(cred(HASH_B));
@@ -638,5 +704,25 @@ describe("totals", () => {
     const inputs = new KoiosTallyInputs(CONFIG);
     expect(await inputs.stakeholderTotal(500)).toBe(269_276_116_609_905n);
     expect(await inputs.drepTotal(500)).toBeNull();
+  });
+
+  it("reads totals served as numbers, zero included, exactly", async () => {
+    stubFetch((url) =>
+      url.includes("/epoch_info")
+        ? [{ active_stake: 21391325252789667n }]
+        : [{ amount: 0 }],
+    );
+    const inputs = new KoiosTallyInputs(CONFIG);
+    expect(await inputs.stakeholderTotal(654)).toBe(21_391_325_252_789_667n);
+    expect(await inputs.drepTotal(654)).toBe(0n);
+  });
+
+  it("maps a total that is not lovelace to null (retry)", async () => {
+    stubFetch((url) =>
+      url.includes("/epoch_info") ? [{ active_stake: 1.5 }] : [{ amount: "x" }],
+    );
+    const inputs = new KoiosTallyInputs(CONFIG);
+    expect(await inputs.stakeholderTotal(654)).toBeNull();
+    expect(await inputs.drepTotal(654)).toBeNull();
   });
 });
