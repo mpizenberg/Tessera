@@ -57,9 +57,6 @@ const survey: Messages = {
     "La fenêtre de liaison est fermée — une action de gouvernance correspondante devait être proposée pendant l'époque {submitEpoch}, et une action proposée maintenant survivrait au sondage.",
 
   // Header
-  refTitle:
-    "Référence complète du sondage — hash de la transaction de définition et index de sortie",
-  refLead: "ref {ref}",
   untitledSurvey: "Sondage sans titre",
   govLinkBadge: "Action liée",
   govLinkAdvertisedFallback: "Annoncé par une action de gouvernance",

@@ -16,8 +16,6 @@ const onchainPreview: Messages = {
   formatLabel: "Format d'aperçu",
   formatDiagnostic: "Diagnostic",
   formatHex: "Hex",
-  copy: "Copier",
-  copied: "Copié ✓",
   notePublic:
     "Frais minimum estimés pour une transaction simple — le coût réel dépend de la sélection des UTxO et des témoins. La charge utile fait {size} sur {max} octets de transaction maximum.",
   noteSealed:

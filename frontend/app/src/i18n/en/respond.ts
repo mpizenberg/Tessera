@@ -55,11 +55,6 @@ const respond = {
   connectBody:
     "Use the Connect wallet button in the header. Eligibility is checked against your wallet's credentials. You can read the survey and its results without connecting.",
 
-  // --- Header --------------------------------------------------------------
-  refTitle: "Full survey ref — defining transaction hash and output index",
-  /** {ref} is a raw on-chain reference, shown verbatim. */
-  refPrefix: "ref {ref}",
-
   // --- Vote deadline --------------------------------------------------------
   deadlinePassed:
     "Voting closed while this page was open — a response submitted now would be excluded from the tally.",

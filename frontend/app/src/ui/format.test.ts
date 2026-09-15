@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, test } from "vitest";
 
 import { setLocale } from "~/i18n";
-import { explorerTxUrl, formatAda, networkMismatch } from "./format";
+import {
+  explorerTxUrl,
+  fileRef,
+  formatAda,
+  networkMismatch,
+  shortRef,
+} from "./format";
 
 const TX = "ab".repeat(32);
 
@@ -26,6 +32,16 @@ describe("network presentation", () => {
     expect(networkMismatch(0, "mainnet")).toBe(true);
     expect(networkMismatch(0, "preprod")).toBe(false);
     expect(networkMismatch(0, "preview")).toBe(false);
+  });
+});
+
+describe("survey refs", () => {
+  test("keep the key's colon when shortened", () => {
+    expect(shortRef(`${TX}:3`)).toBe("abab…abab:3");
+  });
+
+  test("take a dash in a file name", () => {
+    expect(fileRef(`${TX}:3`)).toBe("abab…abab-3");
   });
 });
 

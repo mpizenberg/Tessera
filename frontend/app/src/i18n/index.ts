@@ -7,7 +7,7 @@
  * plural rules natively. See ./en.ts for the message-catalog convention.
  *
  *   import { t, n } from "~/i18n";
- *   <span>{t("onchainPreview.copy")}</span>
+ *   <span>{t("onchainPreview.encoding")}</span>
  *   <span>{t("onchainPreview.bytes", { size: n(1024) })}</span>  // EN "1,024 B" · FR "1 024 o"
  *
  * `en` is bundled (default + fallback); every other catalog is code-split and
@@ -27,7 +27,7 @@ export const LOCALES = [
 
 export type Locale = (typeof LOCALES)[number]["code"];
 
-/** Dotted leaf paths of the catalog, e.g. "onchainPreview.copy" — the keys `t` accepts. */
+/** Dotted leaf paths of the catalog, e.g. "onchainPreview.encoding" — the keys `t` accepts. */
 type Leaves<T> = {
   [K in keyof T & string]: T[K] extends string ? K : `${K}.${Leaves<T[K]>}`;
 }[keyof T & string];

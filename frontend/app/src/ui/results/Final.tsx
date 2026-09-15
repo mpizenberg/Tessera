@@ -14,7 +14,7 @@ import {
 } from "cip-179/tally";
 
 import { artifactResults, type Weighting } from "~/domain/results";
-import { formatAda, roleLabel, shortRef } from "~/ui/format";
+import { fileRef, formatAda, roleLabel } from "~/ui/format";
 import { TxNotice } from "~/ui/components/TxNotice";
 import { downloadCsv, downloadJson } from "~/util/csv";
 import { t, n } from "~/i18n";
@@ -61,7 +61,7 @@ export const FinalResults: Component<{
 
   const exportArtifact = (): void =>
     downloadJson(
-      `tessera-${shortRef(props.keyStr)}-artifact.json`,
+      `tessera-${fileRef(props.keyStr)}-artifact.json`,
       JSON.stringify(props.artifact, null, 2),
     );
 
@@ -96,7 +96,7 @@ export const FinalResults: Component<{
       }),
     );
     downloadCsv(
-      `tessera-${shortRef(props.keyStr)}-${w}.csv`,
+      `tessera-${fileRef(props.keyStr)}-${w}.csv`,
       responsesCsv(entries),
     );
   };

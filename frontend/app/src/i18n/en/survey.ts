@@ -56,9 +56,6 @@ const survey = {
     "The linking window has closed — a matching governance action had to be proposed during epoch {submitEpoch}, and one proposed now would outlive the survey.",
 
   // Header
-  refTitle: "Full survey ref — defining transaction hash and output index",
-  /** {ref} is the raw transaction-hash#index, shown untranslated. */
-  refLead: "ref {ref}",
   untitledSurvey: "Untitled survey",
   govLinkBadge: "Linked action",
   govLinkAdvertisedFallback: "Advertised by a governance action",

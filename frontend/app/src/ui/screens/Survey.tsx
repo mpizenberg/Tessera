@@ -29,7 +29,6 @@ import { walletCanProveOwner, walletOwns } from "~/domain/roles";
 import { usePresentation } from "~/enrichment/usePresentation";
 import {
   endsText,
-  fullRef,
   networkMismatch,
   roleColors,
   roleLabel,
@@ -39,6 +38,7 @@ import {
 import { Results } from "~/ui/results";
 import { Empty, type EmptyText } from "~/ui/components/Empty";
 import { RoleChips } from "~/ui/components/glyphs";
+import { SurveyRef } from "~/ui/components/SurveyRef";
 import { TxNotice } from "~/ui/components/TxNotice";
 import { PublishLocked, QueuedNote } from "~/ui/components/CartDrawer";
 import type { Action } from "~/wallet/action";
@@ -157,7 +157,6 @@ export const Survey: Component = () => {
               s={sv()}
               def={def() ?? sv().record.definition}
               keyStr={key()}
-              pro={app.ui.pro}
               roleCounts={roleCounts()}
               total={records().length}
               tip={tip()}
@@ -511,7 +510,6 @@ const Header: Component<{
   s: SurveyAggregate;
   def: SurveyDefinition;
   keyStr: string;
-  pro: boolean;
   roleCounts: ReadonlyArray<{ role: number; count: number }>;
   total: number;
   tip: ChainTip | undefined;
@@ -524,13 +522,9 @@ const Header: Component<{
       : "—";
   return (
     <div class={css.header}>
-      <Show when={props.pro}>
-        <div class={css.headerTop}>
-          <span title={t("survey.refTitle")} class={css.headerRefLead}>
-            {t("survey.refLead", { ref: fullRef(props.keyStr) })}
-          </span>
-        </div>
-      </Show>
+      <div class={css.headerTop}>
+        <SurveyRef keyStr={props.keyStr} />
+      </div>
       <h1 class={css.headerTitle}>
         {props.def.title || t("survey.untitledSurvey")}
       </h1>

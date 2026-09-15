@@ -10,7 +10,8 @@ import type { Role, SurveyDefinition } from "cip-179";
 import type { SurveyAggregate } from "cip-179/domain";
 
 import { formatRevealDate } from "~/tlock/drand";
-import { fullRef, roleLabel, shortRef } from "~/ui/format";
+import { SurveyRef } from "~/ui/components/SurveyRef";
+import { roleLabel, shortRef } from "~/ui/format";
 import { t } from "~/i18n";
 import css from "./respond.module.css";
 
@@ -26,12 +27,8 @@ export const SurveyHeader: Component<{
   <div class={css.header}>
     <div class={css.headerTop}>
       <span class={css.respondLabel}>{t("respond.respondLabel")}</span>
-      {/* refText carries margin-left:auto, so no spacer node is needed. When
-          pro is off, "Responding as" / title don't depend on the spacer. */}
       <Show when={props.pro}>
-        <span title={t("respond.refTitle")} class={css.refText}>
-          {t("respond.refPrefix", { ref: fullRef(props.s.key) })}
-        </span>
+        <SurveyRef keyStr={props.s.key} />
       </Show>
     </div>
     <h1 class={css.headerTitle}>

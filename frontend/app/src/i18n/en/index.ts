@@ -23,6 +23,7 @@
 import appError from "./appError";
 import bottomNav from "./bottomNav";
 import cart from "./cart";
+import copyButton from "./copyButton";
 import create from "./create";
 import directBanner from "./directBanner";
 import explore from "./explore";
@@ -36,6 +37,7 @@ import roles from "./roles";
 import settings from "./settings";
 import submitProgress from "./submitProgress";
 import survey from "./survey";
+import surveyRef from "./surveyRef";
 import txLink from "./txLink";
 import validation from "./validation";
 
@@ -43,6 +45,7 @@ const en = {
   appError,
   bottomNav,
   cart,
+  copyButton,
   create,
   directBanner,
   explore,
@@ -56,6 +59,7 @@ const en = {
   settings,
   submitProgress,
   survey,
+  surveyRef,
   txLink,
   validation,
 };

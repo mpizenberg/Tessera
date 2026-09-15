@@ -13,8 +13,6 @@ const onchainPreview = {
   formatLabel: "Preview format",
   formatDiagnostic: "Diagnostic",
   formatHex: "Hex",
-  copy: "Copy",
-  copied: "Copied ✓",
   notePublic:
     "Estimated min fee for a simple transaction — the real fee depends on coin selection and witnesses. Payload is {size} of {max} max tx bytes.",
   noteSealed:

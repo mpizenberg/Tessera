@@ -201,17 +201,9 @@
   padding: 14px 2px 20px;
   margin-top: 6px;
 }
-/* Pro-only ref row above the title; empty (unrendered) for non-pro users. */
 .headerTop {
   display: flex;
   align-items: center;
-}
-.headerRefLead {
-  margin-left: auto;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--pale);
-  word-break: break-all;
 }
 .headerTitle {
   font-size: 26px;

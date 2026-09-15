@@ -135,22 +135,17 @@ export function isClosed(v: ViewStatus): boolean {
   return v === "ended" || v === "cancelled" || v === "invalid";
 }
 
-/** A short, human-friendly survey ref: "abcd…1234#0". */
+/** A short, human-friendly survey ref: "abcd…1234:0". */
 export function shortRef(key: string): string {
   const [hash, index] = key.split(":");
   const h = hash ?? "";
   const short = h.length > 12 ? `${h.slice(0, 4)}…${h.slice(-4)}` : h;
-  return `${short}#${index ?? "0"}`;
+  return `${short}:${index ?? "0"}`;
 }
 
-/**
- * The complete survey ref id, "<txHash>#<index>" — the full transaction hash so
- * savvy (pro-mode) users can look the survey's defining transaction up on a
- * chain explorer. The ref key is internally "<txHash>:<index>".
- */
-export function fullRef(key: string): string {
-  const [hash, index] = key.split(":");
-  return `${hash ?? ""}#${index ?? "0"}`;
+/** {@link shortRef} for a file name, where ":" is not portable: "abcd…1234-0". */
+export function fileRef(key: string): string {
+  return shortRef(key).replace(":", "-");
 }
 
 /** A bare hex hash, elided in the middle: "abcdef…1234". */

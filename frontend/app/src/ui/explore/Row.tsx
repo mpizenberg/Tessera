@@ -10,13 +10,7 @@ import { A } from "@solidjs/router";
 import type { ChainTip, SurveyAggregate } from "cip-179/domain";
 
 import { useApp } from "~/state";
-import {
-  endsText,
-  fullRef,
-  isClosed,
-  shortGovId,
-  viewStatus,
-} from "~/ui/format";
+import { endsText, isClosed, shortGovId, viewStatus } from "~/ui/format";
 import { FormMosaic, RoleChips, VisGlyph } from "~/ui/components/glyphs";
 import { t } from "~/i18n";
 import css from "./explore.module.css";
@@ -174,7 +168,7 @@ const GridRow: Component<EntryProps> = (props) => {
           >
             {t("explore.refEpoch", { epoch: def().endEpoch })}
             <br />
-            {fullRef(props.a.key)}
+            {props.a.key}
           </div>
         </Show>
       </div>
@@ -275,7 +269,7 @@ const CardRow: Component<EntryProps> = (props) => {
       </div>
       <Show when={props.pro}>
         <div title={t("explore.refTitle")} class={css.cardRef}>
-          {t("explore.refLabel", { ref: fullRef(props.a.key) })}
+          {t("explore.refLabel", { ref: props.a.key })}
         </div>
       </Show>
     </A>

@@ -63,7 +63,7 @@ const explore: Messages = {
   noPresentation:
     "Texte de présentation indisponible — structure on-chain intacte.",
   refTitle:
-    "Réf complète du sondage — hash de la transaction de définition et indice de sortie",
+    "Référence du sondage : la transaction qui le définit, et sa position dans celle-ci",
   refEpoch: "époque {epoch}",
   refLabel: "réf {ref}",
 

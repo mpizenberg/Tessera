@@ -52,11 +52,6 @@ const respond: Messages = {
   connectBody:
     "Utilisez le bouton « Connecter un portefeuille » dans l'en-tête. L'éligibilité est vérifiée par rapport aux identifiants de votre portefeuille. Vous pouvez lire le sondage et ses résultats sans vous connecter.",
 
-  // --- Header --------------------------------------------------------------
-  refTitle:
-    "Référence complète du sondage — hash de la transaction de définition et index de sortie",
-  refPrefix: "réf {ref}",
-
   // --- Vote deadline --------------------------------------------------------
   deadlinePassed:
     "Le vote s'est clos pendant que cette page était ouverte — une réponse envoyée maintenant serait exclue du dépouillement.",

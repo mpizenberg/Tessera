@@ -16,7 +16,6 @@ import {
   createMemo,
   createResource,
   createSignal,
-  onCleanup,
   type Component,
 } from "solid-js";
 import type { Metadatum } from "cip-179";
@@ -24,6 +23,7 @@ import type { Metadatum } from "cip-179";
 import { bytesToHex } from "cip-179/domain";
 import { metadatumToDiagnostic } from "~/util/cbor-diagnostic";
 import { MAX_TX_BYTES, estimateMinFee, lovelaceToAda } from "~/domain/fee";
+import { CopyButton } from "~/ui/components/CopyButton";
 import { SegmentedToggle } from "~/ui/components/SegmentedToggle";
 import { t, n } from "~/i18n";
 import css from "./OnchainPreview.module.css";
@@ -78,17 +78,6 @@ export const OnchainPreview: Component<{
   const [view, setView] = createSignal<View>("diag");
   const text = () => (view() === "hex" ? hex() : diag());
 
-  const [copied, setCopied] = createSignal(false);
-  let copyTimer: ReturnType<typeof setTimeout> | undefined;
-  onCleanup(() => clearTimeout(copyTimer));
-  const copy = () => {
-    void navigator.clipboard?.writeText(text()).then(() => {
-      setCopied(true);
-      clearTimeout(copyTimer);
-      copyTimer = setTimeout(() => setCopied(false), 1200);
-    });
-  };
-
   const ready = () => bytes() !== undefined;
 
   return (
@@ -139,9 +128,7 @@ export const OnchainPreview: Component<{
               { value: "hex", label: t("onchainPreview.formatHex") },
             ]}
           />
-          <button class={css.copy} onClick={copy}>
-            {copied() ? t("onchainPreview.copied") : t("onchainPreview.copy")}
-          </button>
+          <CopyButton text={text()} />
         </div>
 
         <pre class={css.code}>{text()}</pre>

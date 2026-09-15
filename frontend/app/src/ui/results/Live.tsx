@@ -28,7 +28,7 @@ import {
   type CountedResponse,
   type RoleResults,
 } from "~/domain/results";
-import { roleLabel, shortRef } from "~/ui/format";
+import { fileRef, roleLabel } from "~/ui/format";
 import { downloadCsv } from "~/util/csv";
 import { t, n } from "~/i18n";
 import { responsesCsv, type CsvEntry } from "./export";
@@ -155,7 +155,7 @@ export const LiveResults: Component<{
       };
     };
     downloadCsv(
-      `tessera-${shortRef(props.keyStr)}.csv`,
+      `tessera-${fileRef(props.keyStr)}.csv`,
       responsesCsv([
         ...props.records.map((rec) => entry("counted", rec, true)),
         ...props.excludedRecords.map(({ key, record }) =>

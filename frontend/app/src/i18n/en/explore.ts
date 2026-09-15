@@ -70,7 +70,8 @@ const explore = {
   govLinkedActionTitle: " · {title}",
   untitled: "Untitled · external content",
   noPresentation: "Presentation text unavailable — on-chain structure intact.",
-  refTitle: "Full survey ref — defining transaction hash and output index",
+  refTitle:
+    "Survey ref: the transaction that defines the survey, and the survey's position in it",
   /** {epoch} is the raw end-epoch number. */
   refEpoch: "epoch {epoch}",
   /** {ref} is the full survey ref. */

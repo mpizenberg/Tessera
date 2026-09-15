@@ -1,0 +1,17 @@
+/* Co-located styles for SurveyRef.tsx. */
+
+/* `margin-left: auto` pushes it to the end of a header's top row. */
+.ref {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.text {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--pale);
+  word-break: break-all;
+}

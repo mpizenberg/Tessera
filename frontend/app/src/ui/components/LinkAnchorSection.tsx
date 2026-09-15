@@ -26,6 +26,7 @@ import type { SurveyRefLite } from "cip-179/domain";
 import { useApp } from "~/state";
 import type { LoadedAnchor } from "~/domain/anchorLink";
 import { IPFS_PROVIDERS, type ProviderId } from "~/enrichment/providers";
+import { CopyButton } from "~/ui/components/CopyButton";
 import { Note } from "~/ui/components/Note";
 import { isSafeAnchorUri } from "~/ui/format";
 import { t } from "~/i18n";
@@ -59,7 +60,6 @@ export interface LinkAnchorSectionProps {
 export const LinkAnchorSection: Component<LinkAnchorSectionProps> = (props) => {
   const app = useApp();
   const [url, setUrl] = createSignal("");
-  const [copied, setCopied] = createSignal(false);
   const [pinning, setPinning] = createSignal(false);
   const [pinnedBy, setPinnedBy] = createSignal<ProviderId[] | null>(null);
   const [pinError, setPinError] = createSignal<string | null>(null);
@@ -128,16 +128,6 @@ export const LinkAnchorSection: Component<LinkAnchorSectionProps> = (props) => {
       setPinError(e instanceof Error ? e.message : String(e));
     } finally {
       setPinning(false);
-    }
-  };
-
-  const copyHash = async () => {
-    try {
-      await navigator.clipboard.writeText(props.anchor.hashHex);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* clipboard unavailable — the hash is on screen */
     }
   };
 
@@ -218,11 +208,12 @@ export const LinkAnchorSection: Component<LinkAnchorSectionProps> = (props) => {
           >
             {t("linkSurvey.downloadJsonld")}
           </button>
-          <button onClick={() => void copyHash()} class={css.btn}>
-            {copied()
-              ? t("linkSurvey.copiedHash")
-              : t("linkSurvey.copyAnchorHash")}
-          </button>
+          <CopyButton
+            text={props.anchor.hashHex}
+            label={t("linkSurvey.copyAnchorHash")}
+            copiedLabel={t("linkSurvey.copiedHash")}
+            class={css.btn}
+          />
         </div>
 
         <Show when={pinnedBy()}>
