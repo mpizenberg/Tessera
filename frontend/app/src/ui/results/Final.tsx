@@ -9,7 +9,6 @@ import type { ResponseRecord } from "cip-179/domain";
 import {
   RULESET_DESCRIPTOR,
   artifactHash,
-  responderAnswers,
   type TallyArtifact,
 } from "cip-179/tally";
 
@@ -76,8 +75,6 @@ export const FinalResults: Component<{
       byKey.set(`${rec.txHash}|${rec.responseIndex}`, rec.response);
     const entries = props.artifact.tally.perRole.flatMap((role) =>
       role.responders.map((r): CsvEntry => {
-        // Sealed artifacts commit each responder's revealed answers; public and
-        // legacy artifacts rejoin them from the on-chain response instead.
         const resp = byKey.get(`${r.txHash}|${r.responseIndex}`);
         return {
           disposition: "counted",
@@ -89,9 +86,8 @@ export const FinalResults: Component<{
           txHash: r.txHash,
           responseIndex: r.responseIndex,
           answers:
-            responderAnswers(r) ??
-            (resp?.answers.type === "public" ? resp.answers.answers : null),
-          sealed: resp !== undefined,
+            resp?.answers.type === "public" ? resp.answers.answers : null,
+          sealed: resp?.answers.type === "sealed",
         };
       }),
     );

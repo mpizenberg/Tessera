@@ -902,3 +902,11 @@ the reason costs more than reading it.
   nobody is billed for, and its whole value rests on the platform keeping cron
   placement loose and DO placement sticky. Round trips were cut instead (§3),
   which holds from any colo. Revisit only if wall threatens the cron's own limit.
+- **Committing a sealed survey's revealed answers in its artifact** — shipped
+  with the first sealed artifacts (ruleset 3), on the reasoning that a verifier
+  cannot rejoin answers from a ciphertext. It can: the definition pins the drand
+  round, the beacon is public and BLS-verifiable, and the verifier decrypted
+  every in-window response regardless, so the committed copy bought one
+  diagnostic line while making a sealed artifact — one D1 row — grow with every
+  answer instead of with every responder. Removed in ruleset 13 (TALLY-SPEC.md
+  §5).

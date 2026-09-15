@@ -458,10 +458,6 @@ function diffTallies(received: TallyBody, rebuilt: TallyBody): string[] {
         diffs.push(
           `role ${role}: ${cred} differs (weight ${r.weight}→${local.weight}, tx ${r.txHash}→${local.txHash})`,
         );
-      } else if (JSON.stringify(local.answers) !== JSON.stringify(r.answers)) {
-        // Sealed responders commit their revealed answers; a tampered ciphertext
-        // or a substituted reveal shows up here even when weight/tx match.
-        diffs.push(`role ${role}: ${cred} committed answers differ`);
       }
     }
     for (const cred of bResp.keys()) {

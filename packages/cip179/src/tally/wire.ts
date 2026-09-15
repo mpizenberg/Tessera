@@ -14,12 +14,10 @@
  * (its map keys are integers or plain strings, its values are the primitives
  * above), so the tags are unambiguous.
  *
- * RULESET-PINNED-BEHAVIOR: `$map` entries are sorted by the canonical JSON of
- * the tagged key. A sealed artifact commits a custom answer's map this way, and
- * the entry order a CBOR decoder reports is its own business — sorting is what
- * lets an independent verifier reproduce the hash whatever codec it injects.
- * The `sealed-artifact` rule in `RULESET_DESCRIPTOR` states it; changing the
- * order is a ruleset change.
+ * `$map` entries are sorted by the canonical JSON of the tagged key. The entry
+ * order a CBOR decoder reports is its own business; sorting keeps the wire text
+ * of a record — what a store keeps, compares and serves — the same whatever
+ * codec decoded it.
  */
 
 import { bytesToHex, hexToBytes } from "../domain/index.js";
@@ -53,9 +51,7 @@ export function toJsonSafe(value: unknown): unknown {
   if (value instanceof Uint8Array) return { $bytes: bytesToHex(value) };
   if (typeof value === "bigint") return { $bigint: value.toString() };
   if (value instanceof Map) {
-    // Tagging first makes every key canonicalJson-safe (no raw bigint/bytes),
-    // and sorting on that text is what keeps a sealed artifact independent of
-    // the decoder that produced the map.
+    // Tagging first makes every key canonicalJson-safe (no raw bigint/bytes).
     const keyed = [...value.entries()].map(([k, v]) => {
       const pair: [unknown, unknown] = [toJsonSafe(k), toJsonSafe(v)];
       return { order: canonicalJson(pair[0]), pair };

@@ -10,7 +10,6 @@ import {
   RULESET_DESCRIPTOR,
   artifactHash,
   assembleTallyBody,
-  responderAnswers,
   rulesetHash,
   toArtifactQuestions,
   toArtifactResponders,
@@ -18,7 +17,6 @@ import {
   type TallyBody,
   type TallyBodyIdentity,
 } from "./artifact.js";
-import type { AnswerItem, Metadatum } from "../index.js";
 import { canonicalJson } from "./canonical.js";
 import type {
   WeightedQuestionTally,
@@ -80,7 +78,7 @@ describe("rulesetHash", () => {
   // rules", which is the exact failure mode the hash exists to prevent.
   it("matches its pinned golden hash (bump rulesetVersion on any change)", () => {
     expect(rulesetHash()).toBe(
-      "b595826fac56c52e0625199003ddd20b875067e8b65f07cf8d3c02de1e7facc1",
+      "38a4367b6ffe50ad032bc319cf43f017ff231fe7ea1d63cc611d6386ac9c6259",
     );
   });
 
@@ -206,7 +204,7 @@ describe("assembleTallyBody", () => {
   // `rulesetVersion` if it was the ruleset), never paste to make CI green.
   it("matches its pinned golden artifact hash", () => {
     expect(artifactHash(assembleTallyBody(DEF, ID, roles))).toBe(
-      "437207a7c5b1e34c92732740134f223198b47256d9b84006b3fc7067c216a3e4",
+      "6b6da3396aa5857dd42745b522450ce505a8bad3c13eec2460e7c001ec130e87",
     );
   });
 });
@@ -305,97 +303,5 @@ describe("toArtifactResponders", () => {
       { credential: "key:aa", weight: "1", txHash: "t1", responseIndex: 0 },
       { credential: "script:ff", weight: "2", txHash: "t2", responseIndex: 1 },
     ]);
-  });
-
-  it("omits answers for public tallies (no revealedAnswers)", () => {
-    const rs: WeightedResponder[] = [
-      {
-        credentialKey: "key:aa",
-        weight: 1n,
-        txHash: "t1",
-        responseIndex: 0,
-        response: RESPONSE,
-      },
-    ];
-    expect("answers" in toArtifactResponders(rs)[0]!).toBe(false);
-    expect(responderAnswers(toArtifactResponders(rs)[0]!)).toBeNull();
-  });
-
-  it("commits revealed answers as canonicalizable wire form and round-trips them", () => {
-    // Answers with a bigint (numeric) and a custom Metadatum carrying Map + bytes
-    // — exactly the values JSON can't hold, so the wire tags must survive.
-    const answers: AnswerItem[] = [
-      { type: "numeric", questionIndex: 0, value: 42n },
-      {
-        type: "custom",
-        questionIndex: 1,
-        value: new Map<Metadatum, Metadatum>([[1n, Uint8Array.of(0xab, 0xcd)]]),
-      },
-    ];
-    const rs: WeightedResponder[] = [
-      {
-        credentialKey: "key:aa",
-        weight: 3n,
-        txHash: "t1",
-        responseIndex: 0,
-        response: { ...RESPONSE, answers: { type: "public", answers } },
-      },
-    ];
-    const [committed] = toArtifactResponders(rs, { revealedAnswers: true });
-    // No bigints/bytes slipped through — the artifact hash must be computable.
-    expect(() => canonicalJson([committed])).not.toThrow();
-    // Survives the JSON round-trip an artifact makes over HTTP + SQLite, and
-    // `responderAnswers` is the exact inverse.
-    const wire = JSON.parse(JSON.stringify(committed));
-    expect(responderAnswers(wire)).toEqual(answers);
-  });
-
-  // Finding 56 — the blob is foreign input on an exported API; hash
-  // verification is the caller's business and may not have happened.
-  describe("responderAnswers rejects a hostile answers blob", () => {
-    const answers = (blob: unknown): AnswerItem[] | null =>
-      responderAnswers({
-        credential: "key:aa",
-        weight: "1",
-        txHash: "t1",
-        responseIndex: 0,
-        answers: blob,
-      });
-
-    it("rejects a non-array blob", () => {
-      expect(answers({ evil: true })).toBeNull();
-      expect(answers("nope")).toBeNull();
-    });
-
-    it("rejects items that are not well-formed answer items", () => {
-      expect(answers([{ type: "singleChoice" }])).toBeNull(); // missing fields
-      expect(
-        answers([{ type: "notAnAnswerType", questionIndex: 0 }]),
-      ).toBeNull();
-      expect(
-        answers([{ type: "multiSelect", questionIndex: 0, optionIndices: 7 }]),
-      ).toBeNull(); // not a list
-    });
-
-    it("rejects a custom answer whose opaque value is not a metadatum", () => {
-      // `encodeAnswerItem` passes the value through untouched, so this is the
-      // one hostile shape a re-encode alone would not catch.
-      expect(
-        answers([{ type: "custom", questionIndex: 0, value: { plain: 1 } }]),
-      ).toBeNull();
-    });
-
-    it("drops fields the on-chain form has no room for", () => {
-      expect(
-        answers([
-          {
-            type: "singleChoice",
-            questionIndex: 0,
-            optionIndex: 2,
-            injected: "<script>",
-          },
-        ]),
-      ).toEqual([{ type: "singleChoice", questionIndex: 0, optionIndex: 2 }]);
-    });
   });
 });

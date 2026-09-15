@@ -13,10 +13,11 @@
  *   normative tally at unit weight, which is also how the count-only Keyholder
  *   role is counted.
  * - **Supplementary** — detail no artifact carries, today the verbatim custom
- *   answers. Recomputed here from the *counted responders'* answers, which both
- *   paths can resolve: a sealed artifact commits each responder's revealed
- *   answers, a public one rejoins the on-chain response. Never hashed, so
- *   anything rendered from it must say so.
+ *   answers. Recomputed here from the *counted responders'* answers, rejoined
+ *   by chain coordinate from the responses the caller passes: the on-chain
+ *   ones for a public survey, the revealed ones for a sealed survey (its
+ *   on-chain answers are ciphertext, which neither aggregates nor detail can
+ *   read). Never hashed, so anything rendered from it must say so.
  *
  * Adding a visualization means adding to {@link QuestionDetail} and its
  * builder; it never means touching `TALLY-SPEC.md` or moving `rulesetHash`.
@@ -26,22 +27,15 @@ import type {
   AnswerItem,
   Question,
   RatingScale,
-  Role,
   SurveyDefinition,
   SurveyResponse,
 } from "cip-179";
 
+import { credentialKey, optionLabelOf } from "cip-179/domain";
 import {
-  credentialKey,
-  optionLabelOf,
-  parseCredentialKey,
-} from "cip-179/domain";
-import {
-  responderAnswers,
   toArtifactQuestions,
   weightedTallySurvey,
   type ArtifactQuestion,
-  type ArtifactResponder,
   type ArtifactRoleTally,
   type TallyArtifact,
   type WeightedResponder,
@@ -469,47 +463,17 @@ function unitWeightRole(
 }
 
 /**
- * Resolve a counted responder's answers. Sealed artifacts commit each
- * responder's revealed answers, which we synthesize back into a public
- * `SurveyResponse` — the on-chain response is only a ciphertext. Public (and
- * legacy) artifacts commit no answers, so fall back to the on-chain response by
- * `(txHash, responseIndex)`.
- */
-function responderResponse(
-  r: ArtifactResponder,
-  role: number,
-  def: SurveyDefinition,
-  byKey: ReadonlyMap<string, SurveyResponse>,
-): SurveyResponse | undefined {
-  const committed = responderAnswers(r);
-  if (committed) {
-    return {
-      specVersion: def.specVersion,
-      // The tally reads only role + answers; a placeholder ref is fine and never
-      // rendered. Credential is parsed back from its committed identity.
-      surveyRef: { txId: new Uint8Array(), index: 0 },
-      role: role as Role,
-      credential: parseCredentialKey(r.credential),
-      answers: { type: "public", answers: committed },
-    };
-  }
-  return byKey.get(`${r.txHash}|${r.responseIndex}`);
-}
-
-/**
- * A role's counted responders, each carrying its committed weight and its
- * resolved answers. Responders whose answers can't be resolved are dropped —
- * they contribute to no aggregate, committed or derived (and can't happen for a
- * finalized on-chain survey).
+ * A role's counted responders, each carrying its committed weight and the
+ * response rejoined at its `(txHash, responseIndex)`. Responders with no
+ * rejoined response are dropped — they contribute to no derived aggregate.
  */
 function countedResponders(
   role: ArtifactRoleTally,
-  def: SurveyDefinition,
   byKey: ReadonlyMap<string, SurveyResponse>,
 ): WeightedResponder[] {
   const out: WeightedResponder[] = [];
   for (const r of role.responders) {
-    const response = responderResponse(r, role.role, def, byKey);
+    const response = byKey.get(`${r.txHash}|${r.responseIndex}`);
     if (response)
       out.push({
         credentialKey: r.credential,
@@ -526,8 +490,9 @@ function countedResponders(
  * Per-role results from a finalized artifact, in its (role-ascending) order.
  * Under `"chain"` weighting the committed aggregates are rendered as-is —
  * byte-authoritative, the exact numbers the content hash covers. `responses`
- * are the survey's on-chain responses, needed to rejoin answers for the
- * one-vote re-tally and for supplementary detail.
+ * are the survey's responses — on-chain, or revealed for a sealed survey —
+ * needed to rejoin answers for the one-vote re-tally and for supplementary
+ * detail.
  */
 export function artifactResults(
   artifact: TallyArtifact,
@@ -540,7 +505,7 @@ export function artifactResults(
     byKey.set(`${r.txHash}|${r.responseIndex}`, r.response);
 
   return artifact.tally.perRole.map((role) => {
-    const responders = countedResponders(role, def, byKey);
+    const responders = countedResponders(role, byKey);
     if (weighting === "one")
       return unitWeightRole(role.role, role.responders.length, responders, def);
     const votedWeight = role.responders.reduce(

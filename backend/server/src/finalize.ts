@@ -1103,8 +1103,8 @@ interface SealedArtifactOpts {
 /**
  * Assemble the weighted-tally artifact for one complete survey. `entries` pair
  * each counted row with its response — the on-chain public answers, or (sealed)
- * the reveal-decrypted answers. Sealed tallies set `sealed=true`, commit each
- * responder's revealed answers, and record the reveal beacon in provenance.
+ * the reveal-decrypted answers. Sealed tallies set `sealed=true` and record the
+ * reveal beacon in provenance.
  */
 function buildArtifact(
   config: ServerConfig,

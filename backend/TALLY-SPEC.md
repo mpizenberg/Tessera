@@ -171,9 +171,8 @@ how, and when goes in `provenance`.
   too), and per role: `role`, `total`, `responders` (`credential`, `weight`, and
   the counted answer's full on-chain coordinate `txHash` + `responseIndex` —
   unregistered responders are excluded rather than flagged, so no `registered`
-  field; **sealed** responders additionally carry `answers`, their revealed
-  answers in JSON-safe wire form, since the on-chain response is only a
-  ciphertext and can't be rejoined), integer `questions` aggregates.
+  field; sealed and public responders have the same shape — no answers are
+  committed), integer `questions` aggregates.
 - **`provenance` (not hashed):** `source`, snapshot `fetchedAt`, per-role
   `endpoint`, and — for a sealed survey — `sealedReveal` (`chainHash`, `round`,
   and the drand `beacon` used), unhashed because the definition already pins
@@ -231,8 +230,10 @@ Shape (the typed definition is `TallyArtifact` in `cip-179/tally`'s
   hash → same id.
 - **Future:** the `tally` hash is the natural handle for an **on-chain anchor**,
   closing the loop with CIP-179 itself.
-- **Verifiability.** The `tally` embeds the counted responders, their answers (or
-  refs), weights, and totals, so any third party re-runs the pure `cip-179/tally`
-  computation and reproduces both the results and the hash; every weight is re-fetchable
-  from Koios at `end_epoch`. Trust reduces to Koios's stake numbers for epoch E,
+- **Verifiability.** The `tally` embeds the counted responders with their
+  on-chain coordinates, weights, and totals, so any third party rejoins each
+  counted answer from the chain — for a sealed survey, by decrypting its
+  ciphertext with the beacon of the round the definition pins — re-runs the
+  pure `cip-179/tally` computation and reproduces both the results and the
+  hash; every weight is re-fetchable from Koios at `end_epoch`. Trust reduces to Koios's stake numbers for epoch E,
   which the node tier later removes — without changing this format.

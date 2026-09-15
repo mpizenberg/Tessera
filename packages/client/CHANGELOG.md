@@ -18,6 +18,8 @@ Speaks contract `2.0`.
 - **Breaking:** a points question's `budget` and a points answer's `points`
   decode as `bigint`, following `cip-179`, and `API_VERSION` is `2.0`, so the
   client refuses a `1.x` backend.
+- **Breaking:** a sealed artifact's responders carry no `answers`, and
+  `ArtifactResponder` follows `cip-179` in dropping the field.
 
 ## [0.2.0] - 2026-09-07
 

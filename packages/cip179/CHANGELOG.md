@@ -23,6 +23,14 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
   stating which integers are read at any size. More surveys become talliable
   and more responses countable, so `rulesetHash()` changes and new artifacts
   are incomparable with 12's. No survey on chain today carries such a value.
+- **Breaking: sealed artifacts commit no answers.** `ArtifactResponder.answers`,
+  `toArtifactResponders`'s `{ revealedAnswers }` option and
+  `responderAnswers` are removed; a sealed responder commits the same
+  credential, weight and tx coordinate as a public one. The committed copy was
+  never needed to verify — a verifier decrypts the on-chain ciphertexts with
+  the definition-pinned round's beacon either way — and it made a sealed
+  artifact grow with every answer. The `sealed-artifact` rule now says so,
+  within the same ruleset 13.
 
 ## [0.4.0] - 2026-09-04
 

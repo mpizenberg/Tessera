@@ -22,7 +22,6 @@ import {
 import { verifyArtifact } from "cardano-tessera-verifier";
 import {
   artifactHash,
-  responderAnswers,
   type TallyArtifact,
   type TallyBody,
   type TallyInputSource,
@@ -1325,7 +1324,7 @@ describe("finalizeClosedSurveys", () => {
     });
   });
 
-  it("emits a sealed artifact with revealed answers and a provenance beacon", async () => {
+  it("emits a sealed artifact tallied from revealed answers, with a provenance beacon", async () => {
     const store = testStore();
     const rSealed = sealedResponse("11".repeat(32), CRED_A);
     await seed(store, [validatedRow(rSealed)]);
@@ -1351,9 +1350,9 @@ describe("finalizeClosedSurveys", () => {
     );
     const role3 = artifact.tally.perRole.find((r) => r.role === 3)!;
     expect(role3.responders).toHaveLength(1);
-    // The revealed answers are committed in the artifact (the sealed-artifact rule).
-    expect(responderAnswers(role3.responders[0]!)).toEqual(SEALED_ANSWER);
-    // And they drove the tally: option 1 ("no") carries A's weight.
+    // The artifact commits no answers (the sealed-artifact rule)…
+    expect(JSON.stringify(artifact)).not.toContain('"answers"');
+    // …yet the revealed answers drove the tally: option 1 ("no") carries A's weight.
     expect(role3.questions[0]).toMatchObject({
       options: [{ index: 1, weight: "100" }],
     });

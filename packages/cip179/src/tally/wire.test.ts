@@ -49,9 +49,8 @@ describe("wire codec", () => {
     expect(back.e.length).toBe(0);
   });
 
-  // Finding 32 — a sealed artifact hashes a custom answer's map, so the wire
-  // form must not inherit whichever entry order the injected CBOR decoder
-  // reported. Ruleset v9 sorts by the canonical JSON of the tagged key.
+  // Finding 32 — the wire form must not inherit whichever entry order the
+  // injected CBOR decoder reported.
   describe("$map entry order is canonical, not the decoder's", () => {
     const entries: [unknown, unknown][] = [
       [2n, "two"],

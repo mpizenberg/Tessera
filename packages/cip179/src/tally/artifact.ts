@@ -15,13 +15,9 @@
  * compare equal.
  */
 
-import type { AnswerItem, SurveyDefinition } from "../index.js";
+import type { SurveyDefinition } from "../index.js";
 
-import { decodeAnswerItem } from "../decode.js";
-import { encodeAnswerItem } from "../encode.js";
-import { isMetadatum } from "../metadatum.js";
 import { blake2b256Hex, canonicalJson } from "./canonical.js";
-import { fromJsonSafe, toJsonSafe } from "./wire.js";
 import {
   weightedTallySurvey,
   type WeightedQuestionTally,
@@ -113,8 +109,11 @@ export const RULESET_DESCRIPTOR = {
   // any size (the `integers` rule below). They used to be refused above 2^53,
   // which the CIP never asked for, so a survey setting such a value was
   // undecodable and untalliable, and a response allocating such points was not
-  // counted. The set of talliable surveys and counted responses grows, so v13
-  // hashes are incomparable with v12.
+  // counted. Sealed tallies also stop committing each counted responder's
+  // revealed answers: a verifier decrypts the on-chain ciphertexts regardless,
+  // and the committed copy made a sealed artifact grow with every answer. The
+  // set of talliable surveys and counted responses grows and the sealed body
+  // schema shrinks, so v13 hashes are incomparable with v12.
   rulesetVersion: 13,
   cip179SpecVersion: 5,
   /** Roles artifacts cover: 0 DRep, 3 Stakeholder, 4 Keyholder (SPO/CC deferred). */
@@ -137,7 +136,7 @@ export const RULESET_DESCRIPTOR = {
     "cancellation: a survey is cancelled iff a cancelling transaction at epoch_no <= end_epoch proves the definition's owner credential via mechanism A; the earliest such transaction in chain order (slot, then tx hash) is the one recorded; a cancelled survey's artifact carries no per-role tallies",
     "sealed-reveal: for a sealed survey, decrypt every in-window (rule 1), structurally-valid (rule 2), credential-proven (rule 3) response with the definition-pinned round's BLS-verified drand beacon, then decode the plaintext as the CBOR answers array (trailing zero padding to padding_size is ignored; an empty array is a decode failure) and re-validate those answers against the definition; a response that fails to decrypt, decode, or re-validate is excluded",
     "sealed-dedup: latest-in-chain dedup (rule 4) runs only over sealed responses whose decrypted answers re-validated; undecryptable/invalid responses are excluded and never supersede an earlier valid one; excluded responses are not committed to the artifact",
-    "sealed-artifact: a sealed survey's tally carries sealed=true (cancellations included); each counted responder commits its revealed answers in JSON-safe wire form (bytes→hex, bigint→decimal string, Map→tagged pairs whose entries are sorted by the canonical JSON of the tagged key); only drand quicknet (chain hash 52db9ba7...c84e971) is supported — a non-quicknet sealed survey gets no artifact",
+    "sealed-artifact: a sealed survey's tally carries sealed=true (cancellations included) and commits no answers: the counted responders' answers are reproduced by decrypting their on-chain ciphertexts with the beacon of the definition-pinned drand round; only drand quicknet (chain hash 52db9ba7...c84e971) is supported — a non-quicknet sealed survey gets no artifact",
   ],
 } as const;
 
@@ -160,14 +159,6 @@ export interface ArtifactResponder {
    * can carry several responses, so the hash alone is ambiguous.
    */
   readonly responseIndex: number;
-  /**
-   * The responder's revealed answers, present **iff** the survey is sealed — a
-   * `toJsonSafe`-encoded `AnswerItem[]` (the `sealed-artifact` rule's wire form).
-   * Sealed answers live only in the ciphertext, so a verifier cannot rejoin them
-   * from the on-chain response the way public tallies do; committing them here
-   * makes a sealed tally reproducible. Decode with {@link responderAnswers}.
-   */
-  readonly answers?: unknown;
 }
 
 /** JSON-plain mirror of {@link WeightedQuestionTally} (bigints → strings). */
@@ -380,31 +371,19 @@ export function toArtifactQuestions(
 /**
  * Convert counted responders to their committed artifact form — sorted by
  * credential identity, the determinism rule the hash depends on.
- *
- * For sealed surveys pass `{ revealedAnswers: true }`: each responder then also
- * commits its decrypted answers (`toJsonSafe(AnswerItem[])`, the `sealed-artifact`
- * wire form), taken from the already-revealed public response. Public tallies
- * omit `answers` — a verifier rejoins those from the on-chain response instead.
  */
 export function toArtifactResponders(
   responders: readonly WeightedResponder[],
-  opts?: { revealedAnswers?: boolean },
 ): ArtifactResponder[] {
   return responders
-    .map((r): ArtifactResponder => {
-      const base = {
+    .map(
+      (r): ArtifactResponder => ({
         credential: r.credentialKey,
         weight: String(r.weight),
         txHash: r.txHash,
         responseIndex: r.responseIndex,
-      };
-      if (!opts?.revealedAnswers) return base;
-      // By contract the response is already revealed to its public form here;
-      // commit the answers array in JSON-safe wire form.
-      const answers =
-        r.response.answers.type === "public" ? r.response.answers.answers : [];
-      return { ...base, answers: toJsonSafe(answers) };
-    })
+      }),
+    )
     .sort((a, b) =>
       a.credential < b.credential ? -1 : a.credential > b.credential ? 1 : 0,
     );
@@ -482,44 +461,10 @@ export function assembleTallyBody(
     .map(({ role, responders, total }) => ({
       role,
       total,
-      responders: toArtifactResponders(
-        responders,
-        id.sealed ? { revealedAnswers: true } : undefined,
-      ),
+      responders: toArtifactResponders(responders),
       questions: toArtifactQuestions(
         weightedTallySurvey(definition, responders),
       ),
     }));
   return { ...baseTallyBody(id), perRole };
-}
-
-/**
- * Decode a sealed responder's committed answers back to `AnswerItem[]` — the
- * inverse of the `toJsonSafe` encoding {@link toArtifactResponders} writes under
- * `{ revealedAnswers: true }`. Returns `null` for a public/legacy responder that
- * committed no answers, and for a blob that does not decode to well-formed
- * answer items.
- *
- * The blob is foreign input: this function is exported, and hash verification
- * is the caller's business, so a hostile artifact's `answers` can reach here
- * unverified. Each item is therefore re-encoded to its on-chain metadatum form
- * and read back through {@link decodeAnswerItem} — the same strict decoder
- * every label-17 response passes — leaving the result exactly as trustworthy as
- * decoded chain data, and unable to drift from the decoder.
- */
-export function responderAnswers(r: ArtifactResponder): AnswerItem[] | null {
-  if (r.answers === undefined) return null;
-  const decoded = fromJsonSafe(r.answers);
-  if (!Array.isArray(decoded)) return null;
-  try {
-    return decoded.map((item) => {
-      // `encodeAnswerItem` passes a custom answer's opaque value straight
-      // through, so the encoded tree still needs checking before it is decoded.
-      const encoded = encodeAnswerItem(item as AnswerItem);
-      if (!isMetadatum(encoded)) throw new TypeError("not a metadatum");
-      return decodeAnswerItem(encoded);
-    });
-  } catch {
-    return null;
-  }
 }

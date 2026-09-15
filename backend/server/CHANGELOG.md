@@ -21,10 +21,13 @@ Endpoints section changes in the same commit.
 
 - A points question's `budget` and a points answer's allocation `points` are
   big integers in every body that carries a survey definition or a response —
-  the survey list and its selections, the bundle, and a sealed artifact's
-  committed answers — so they cross the wire as `{"$bigint": "…"}`, not as
-  JSON numbers. A 1.x consumer decoding them as numbers breaks, hence the
-  major.
+  the survey list and its selections and the bundle — so they cross the wire
+  as `{"$bigint": "…"}`, not as JSON numbers. A 1.x consumer decoding them as
+  numbers breaks, hence the major.
+- A sealed survey's artifact no longer carries `answers` on its counted
+  responders: every responder has the same four fields, sealed or public. The
+  answers are reproduced by decrypting the on-chain ciphertexts with the
+  beacon the definition pins, as a verifier already did.
 - Surveys and responses carrying numeric bounds, budgets or points above 2^53
   are served, and finalized under ruleset 13 (see `cip-179`'s changelog); they
   used to be dropped as undecodable. No survey on chain today carries one.
