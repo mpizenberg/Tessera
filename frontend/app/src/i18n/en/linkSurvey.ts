@@ -19,6 +19,10 @@ const linkSurvey = {
   untitledSurvey: "Untitled survey",
   /** {endEpoch} is a raw epoch number (not translated). */
   endEpochLine: "end_epoch {endEpoch}",
+  copyTxId: "Copy transaction id",
+  copiedTxId: "Copied transaction id ✓",
+  copyIndex: "Copy index",
+  copiedIndex: "Copied index ✓",
   loadingSurvey: "Loading the survey…",
   surveyNotFound: "No such survey.",
   surveyLoadFailed: "Couldn't load the survey. It may not be indexed yet.",

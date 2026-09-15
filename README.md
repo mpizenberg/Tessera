@@ -24,7 +24,8 @@ _Action → Survey_ linkage): the action's anchor metadata carries the survey's
 ref, and Tessera surfaces the link on the explore and survey pages once the
 action's voting deadline matches the survey's end epoch.
 
-The survey page offers its owner a link tool at **`/survey/:key/link`** that
+The survey page offers its owner, and anyone in Pro mode, a link tool at
+**`/survey/:key/link`** that
 produces the linked CIP-108 anchor document — from a minimal built-in form, or
 by inserting the link (and its `@context` terms) into a document your
 governance tooling produced. It states the one epoch the action must be

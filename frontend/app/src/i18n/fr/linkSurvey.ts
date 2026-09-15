@@ -19,6 +19,10 @@ const linkSurvey: Messages = {
   linkingLabel: "Sondage à lier",
   untitledSurvey: "Sondage sans titre",
   endEpochLine: "end_epoch {endEpoch}",
+  copyTxId: "Copier l'identifiant de transaction",
+  copiedTxId: "Identifiant de transaction copié ✓",
+  copyIndex: "Copier l'index",
+  copiedIndex: "Index copié ✓",
   loadingSurvey: "Chargement du sondage…",
   surveyNotFound: "Sondage introuvable.",
   surveyLoadFailed:

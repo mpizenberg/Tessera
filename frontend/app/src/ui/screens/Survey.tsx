@@ -208,35 +208,41 @@ export const Survey: Component = () => {
               </div>
             </Show>
 
+            {/* Cancelling proves the owner credential with a signature, so a
+                script owner this wallet controls can be matched but never
+                cancelled from here. */}
             <Show
               when={
-                app.wallet() &&
                 sv().status === "active" &&
-                walletOwns(app.wallet()!.identity, sv().record.definition.owner)
-              }
-            >
-              {/* Cancelling proves the owner credential with a signature, so a
-                  script owner this wallet controls can be matched but never
-                  cancelled from here. The linking helper signs nothing. */}
-              <Show
-                when={walletCanProveOwner(
+                app.wallet() &&
+                walletCanProveOwner(
                   app.wallet()!.identity,
                   sv().record.definition.owner,
-                )}
-              >
-                <OwnerControls s={sv()} />
-              </Show>
-              {/* Linking signs nothing, so the outer walletOwns gate is
-                  enough — a script-owned survey can still be advertised even
-                  though it can't be cancelled from here. Once an advertising
-                  action is discovered the badge card above announces it and
-                  this card would read as an undone to-do, so it goes away. */}
-              <Show when={sv().govLinks.length === 0}>
-                <LinkSurveyCta
-                  keyStr={key()}
-                  endEpoch={sv().record.definition.endEpoch}
-                />
-              </Show>
+                )
+              }
+            >
+              <OwnerControls s={sv()} />
+            </Show>
+            {/* Linking signs nothing, so controlling the owner credential is
+                enough, script or not. Once an advertising action is discovered
+                the badge card above announces it and this card would read as an
+                undone to-do, so it goes away. */}
+            <Show
+              when={
+                sv().status === "active" &&
+                sv().govLinks.length === 0 &&
+                (app.ui.pro ||
+                  (app.wallet() &&
+                    walletOwns(
+                      app.wallet()!.identity,
+                      sv().record.definition.owner,
+                    )))
+              }
+            >
+              <LinkSurveyCta
+                keyStr={key()}
+                endEpoch={sv().record.definition.endEpoch}
+              />
             </Show>
 
             {/* Results render from the survey's own bundle; until it lands (or
@@ -445,14 +451,15 @@ const OwnerControls: Component<{ s: SurveyAggregate }> = (props) => {
 };
 
 // ----------------------------------------------------------------------------
-// Owner: link this survey to a governance action
+// Link this survey to a governance action
 // ----------------------------------------------------------------------------
 
 /**
- * Owner-only entry to the link tool (`/survey/:key/link`), shown while the
- * survey has no discovered advertising action. Owner-gating is a Tessera
- * product choice about whom the tool helps — CIP-179 lets anyone propose a
- * linking action, and a link never implies common authorship. CIP-179 v5 allows several
+ * Entry to the link tool (`/survey/:key/link`), shown while the survey has no
+ * discovered advertising action: to its owner, and to anyone else in Pro.
+ * CIP-179 lets anyone propose a linking action, and a link never implies common
+ * authorship; keeping it out of the default view for everyone else is a
+ * Tessera product choice about whom the tool helps. CIP-179 v5 allows several
  * links and the tool itself still accepts an already-linked survey, but the
  * card disappears once one exists — the linked-action badge already tells the
  * story. It also closes once the submission window has passed: an action

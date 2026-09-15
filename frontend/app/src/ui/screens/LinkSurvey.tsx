@@ -39,6 +39,7 @@ import {
 } from "~/ui/components/LinkAnchorSection";
 import linkCss from "~/ui/components/LinkAnchorSection.module.css";
 import { TxLink } from "~/ui/components/TxLink";
+import { CopyButton } from "~/ui/components/CopyButton";
 import { Note } from "~/ui/components/Note";
 import { Empty, type EmptyText } from "~/ui/components/Empty";
 import { PublishLocked, QueuedNote } from "~/ui/components/CartDrawer";
@@ -272,6 +273,22 @@ export const LinkSurvey: Component = () => {
               {" · "}
               {t("linkSurvey.endEpochLine", { endEpoch: def()!.endEpoch })}
             </span>
+          </div>
+          {/* A CIP-108 link carries these as two fields, surveyTxId and
+              surveyIndex, so each is copied on its own. */}
+          <div class={linkCss.actionRow}>
+            <CopyButton
+              text={refLite()!.txId}
+              label={t("linkSurvey.copyTxId")}
+              copiedLabel={t("linkSurvey.copiedTxId")}
+              class={linkCss.btn}
+            />
+            <CopyButton
+              text={String(refLite()!.index)}
+              label={t("linkSurvey.copyIndex")}
+              copiedLabel={t("linkSurvey.copiedIndex")}
+              class={linkCss.btn}
+            />
           </div>
           <Show when={alignment()}>
             {(a) => (
