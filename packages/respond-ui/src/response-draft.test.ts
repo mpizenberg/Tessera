@@ -10,10 +10,11 @@ import {
   type SurveyRef,
   type SurveyResponse,
 } from "cip-179";
-import type { Responder } from "cardano-tessera-respond-core";
+import type { Draft, Responder } from "cardano-tessera-respond-core";
 
 import {
   createResponseDraft,
+  type DraftStash,
   type ResponseDraft,
   type ResponseDraftSource,
 } from "./response-draft";
@@ -86,6 +87,17 @@ const priorPick = (
 
 const pick = (optionIndex: number | null) =>
   ({ type: "singleChoice", optionIndex }) as const;
+
+/** A stash whose kept forms a test can read and plant directly. */
+function mapStash(): DraftStash & { forms: Map<string, readonly Draft[]> } {
+  const forms = new Map<string, readonly Draft[]>();
+  return {
+    forms,
+    get: (formKey) => forms.get(formKey),
+    set: (formKey, drafts) => void forms.set(formKey, drafts),
+    delete: (formKey) => void forms.delete(formKey),
+  };
+}
 
 /** Two roles, two distinct credentials — enough to switch between. */
 const both: Responder = { [Role.DRep]: cred(3), [Role.Keyholder]: cred(1) };
@@ -219,7 +231,7 @@ describe("createResponseDraft", () => {
     expect(draft.drafts[0]?.value).toEqual(pick(2));
   });
 
-  it("drops the stash when the survey changes", () => {
+  it("brings edits back when the survey returns", () => {
     const [surveyRef, setSurveyRef] = createSignal(ref(1));
     const draft = draftIn({
       definition: () => defWith(Role.DRep, Role.Keyholder),
@@ -232,13 +244,134 @@ describe("createResponseDraft", () => {
     draft.setValue(0, pick(1));
     setSurveyRef(ref(2));
     expect(draft.drafts[0]?.value).toEqual(pick(null));
+    expect(draft.restored()).toBe(false);
 
-    // Back on the first survey the edits are gone too — the stash was cleared,
-    // not merely bypassed.
     setSurveyRef(ref(1));
+    expect(draft.drafts[0]?.value).toEqual(pick(1));
+    expect(draft.restored()).toBe(true);
+  });
+
+  it("writes every edit to an injected stash under the form key", () => {
+    const stash = mapStash();
+    const draft = draftIn({
+      definition: () => defWith(Role.DRep),
+      surveyRef: () => ref(1),
+      responder: () => both,
+      priorResponses: () => [],
+      preferredRole: () => null,
+      stash,
+    });
+
+    expect(stash.forms.size).toBe(0);
+    draft.setValue(0, pick(2));
+    draft.setSkipped(1, true);
+    expect(stash.forms.get(draft.formKey())).toEqual([
+      { skipped: false, value: pick(2) },
+      { skipped: true, value: draft.drafts[1]?.value },
+    ]);
+  });
+
+  it("restores a kept form at mount, and a late prior does not replace it", () => {
+    const stash = mapStash();
+    const source = {
+      definition: () => defWith(Role.DRep),
+      surveyRef: () => ref(1),
+      responder: () => both,
+      preferredRole: () => null,
+      stash,
+    };
+    draftIn({ ...source, priorResponses: () => [] }).setValue(0, pick(1));
+    for (const dispose of disposers.splice(0)) dispose();
+
+    // A new spine over the same stash, as after a reload, with the identity
+    // already known on its first run.
+    const [priors, setPriors] = createSignal<
+      readonly SurveyResponse[] | undefined
+    >(undefined);
+    const draft = draftIn({ ...source, priorResponses: priors });
+    expect(draft.drafts[0]?.value).toEqual(pick(1));
+    expect(draft.restored()).toBe(true);
+
+    setPriors([priorPick(ref(1), Role.DRep, cred(3), 2)]);
+    expect(draft.prior()).toBeDefined();
+    expect(draft.drafts[0]?.value).toEqual(pick(1));
+  });
+
+  it("falls back to the prior when the stash has no form that fits", () => {
+    const stash = mapStash();
+    const draft = draftIn({
+      definition: () => defWith(Role.DRep),
+      surveyRef: () => ref(1),
+      responder: () => both,
+      priorResponses: () => [priorPick(ref(1), Role.DRep, cred(3), 2)],
+      preferredRole: () => null,
+      stash: { ...stash, get: () => undefined },
+    });
+
+    expect(draft.drafts[0]?.value).toEqual(pick(2));
+    expect(draft.restored()).toBe(false);
+  });
+
+  it("discards a kept form back to the prior", () => {
+    const stash = mapStash();
+    const draft = draftIn({
+      definition: () => defWith(Role.DRep, Role.Keyholder),
+      surveyRef: () => ref(1),
+      responder: () => both,
+      priorResponses: () => [priorPick(ref(1), Role.DRep, cred(3), 2)],
+      preferredRole: () => null,
+      stash,
+    });
+    stash.forms.set(draft.formKey(), [
+      { skipped: false, value: pick(0) },
+      { skipped: true, value: { type: "numeric", value: 0n } },
+    ]);
     draft.pickRole(Role.Keyholder);
     draft.pickRole(Role.DRep);
-    expect(draft.drafts[0]?.value).toEqual(pick(null));
+    expect(draft.drafts[0]?.value).toEqual(pick(0));
+    expect(draft.restored()).toBe(true);
+
+    draft.discard();
+    expect(stash.forms.has(draft.formKey())).toBe(false);
+    expect(draft.drafts[0]?.value).toEqual(pick(2));
+    expect(draft.restored()).toBe(false);
+  });
+
+  it("is no longer restored once reseeded for an identity with nothing kept", () => {
+    const draft = draftIn({
+      definition: () => defWith(Role.DRep, Role.Keyholder),
+      surveyRef: () => ref(1),
+      responder: () => both,
+      priorResponses: () => [],
+      preferredRole: () => null,
+    });
+
+    draft.setValue(0, pick(1));
+    draft.pickRole(Role.Keyholder);
+    draft.pickRole(Role.DRep);
+    expect(draft.restored()).toBe(true);
+
+    draft.pickRole(Role.Keyholder);
+    expect(draft.restored()).toBe(false);
+  });
+
+  it("replaces an edited value, so an earlier snapshot keeps what it read", () => {
+    const draft = draftIn({
+      definition: () => defWith(Role.DRep),
+      surveyRef: () => ref(1),
+      responder: () => both,
+      priorResponses: () => [],
+      preferredRole: () => null,
+    });
+
+    draft.setValue(0, pick(1));
+    const snapshot = draft.drafts.map((d) => ({
+      skipped: d.skipped,
+      value: d.value,
+    }));
+    draft.setValue(0, pick(2));
+    expect(snapshot[0]?.value).toEqual(pick(1));
+    expect(draft.drafts[0]?.value).toEqual(pick(2));
   });
 
   it("reseeds under a swapped credential for the same role", () => {

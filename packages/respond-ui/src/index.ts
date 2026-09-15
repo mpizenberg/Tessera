@@ -21,7 +21,11 @@
 
 export { QuestionBody } from "./bodies";
 export { createResponseDraft } from "./response-draft";
-export type { ResponseDraft, ResponseDraftSource } from "./response-draft";
+export type {
+  DraftStash,
+  ResponseDraft,
+  ResponseDraftSource,
+} from "./response-draft";
 export { I18nContext, useI18n } from "./i18n-context";
 export {
   BODY_CLASS_NAMES,

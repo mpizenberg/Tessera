@@ -11,13 +11,15 @@
  * router param, a list snapshot and a lazily-fetched response bundle while the
  * widget feeds it props. What comes back is the whole spine, `drafts` included.
  *
- * The delicate part is reseeding. A form's identity is (survey, role,
- * credential) — the credential matters because a host may swap the responder to
- * a different wallet holding the same role, and wallet A's edits must never be
- * submitted under wallet B's credential. When that identity changes the previous
- * answers are stashed and the new identity's stash restored, so a misclick on a
- * role chip does not destroy work. When only the backing data changes, the form
- * is reseeded only while the user has not started editing.
+ * The delicate part is seeding. A form's identity is (survey, role, credential)
+ * — the credential matters because a host may swap the responder to a different
+ * wallet holding the same role, and wallet A's edits must never be submitted
+ * under wallet B's credential. Every edit is written to a stash under that
+ * identity, and a form the user has not touched is seeded from the stash first,
+ * then from a public prior response, then from defaults. So a misclick on a role
+ * chip does not destroy work, and neither does a reload when the host's stash
+ * outlives the page. When only the backing data changes, the form is reseeded
+ * only while the user has not started editing.
  */
 
 import {
@@ -27,10 +29,11 @@ import {
   on,
   type Accessor,
 } from "solid-js";
-import { createStore } from "solid-js/store";
+import { createStore, unwrap } from "solid-js/store";
 
 import type {
   Credential,
+  Question,
   Role,
   SurveyDefinition,
   SurveyRef,
@@ -62,6 +65,31 @@ export interface ResponseDraftSource {
   readonly priorResponses: Accessor<readonly SurveyResponse[] | undefined>;
   /** Role to answer as when it is respondable here; else the first claimable. */
   readonly preferredRole: Accessor<Role | null | undefined>;
+  /**
+   * Where edited forms are kept. Defaults to memory, for as long as the spine
+   * lives; a host passes a durable one to keep answers across reloads.
+   */
+  readonly stash?: DraftStash;
+}
+
+/** Edited forms by {@link ResponseDraft.formKey}, each written whole on every edit. */
+export interface DraftStash {
+  /** The form kept under `formKey`, unless there is none that fits `questions`. */
+  get(
+    formKey: string,
+    questions: readonly Question[],
+  ): readonly Draft[] | undefined;
+  set(formKey: string, drafts: readonly Draft[]): void;
+  delete(formKey: string): void;
+}
+
+function memoryStash(): DraftStash {
+  const forms = new Map<string, readonly Draft[]>();
+  return {
+    get: (formKey) => forms.get(formKey),
+    set: (formKey, drafts) => void forms.set(formKey, drafts),
+    delete: (formKey) => void forms.delete(formKey),
+  };
 }
 
 export interface ResponseDraft {
@@ -79,6 +107,10 @@ export interface ResponseDraft {
   readonly drafts: readonly Draft[];
   readonly setValue: (index: number, value: DraftValue) => void;
   readonly setSkipped: (index: number, skipped: boolean) => void;
+  /** The form was seeded from the stash, not from a prior response or defaults. */
+  readonly restored: Accessor<boolean>;
+  /** Forget this form's stashed answers and reseed from the prior or defaults. */
+  readonly discard: () => void;
   readonly total: Accessor<number>;
   readonly decidedCount: Accessor<number>;
   /**
@@ -137,66 +169,59 @@ export function createResponseDraft(
   // True once the user edits; gates auto-(re)seeding so late-arriving data never
   // clobbers in-progress input.
   const [touched, setTouched] = createSignal(false);
+  const [restored, setRestored] = createSignal(false);
+  const stash = source.stash ?? memoryStash();
 
   const surveyKey = createMemo(() => {
     const ref = source.surveyRef();
     return ref ? refKey(ref) : undefined;
   });
-  const keyOf = (r: Role | null, cred: Credential | null): string =>
-    `${r}:${cred ? credentialKey(cred) : ""}`;
-  const formKey = createMemo(
-    () => `${surveyKey() ?? ""}|${keyOf(role(), credential())}`,
-  );
+  const formKey = createMemo(() => {
+    const r = role();
+    const cred = credential();
+    return `${surveyKey() ?? ""}|${r}:${cred ? credentialKey(cred) : ""}`;
+  });
 
-  // Kept for the hook's lifetime; cleared when the survey itself changes. Only
-  // touched forms are stashed — a pristine one is reproduced exactly by reseeding.
-  const stash = new Map<string, { skipped: boolean; value: DraftValue }[]>();
+  const seed = () => {
+    const def = source.definition();
+    const kept = def && stash.get(formKey(), def.questions);
+    // A kept form counts as edited, so a prior response arriving later cannot
+    // replace it.
+    setTouched(kept !== undefined);
+    setRestored(kept !== undefined);
+    if (!def) setDrafts([]);
+    else if (kept) {
+      setDrafts(kept.map((d) => ({ skipped: d.skipped, value: d.value })));
+    } else {
+      const ex = prefillFrom();
+      setDrafts(
+        ex ? prefillDrafts(def.questions, ex) : def.questions.map(initDraft),
+      );
+    }
+  };
 
   createEffect(
     on(
-      () =>
-        [
-          surveyKey(),
-          role(),
-          credential(),
-          source.definition(),
-          prefillFrom(),
-        ] as const,
-      ([key, r, cred], prev) => {
-        if (
-          prev &&
-          (prev[0] !== key || keyOf(prev[1], prev[2]) !== keyOf(r, cred))
-        ) {
-          if (prev[0] !== key) stash.clear();
-          else if (touched()) {
-            // Draft values are replaced immutably on edit, so copying the
-            // records detaches the stash from future store writes.
-            stash.set(
-              keyOf(prev[1], prev[2]),
-              drafts.map((d) => ({ skipped: d.skipped, value: d.value })),
-            );
-          }
-          const stashed = stash.get(keyOf(r, cred));
-          if (stashed) {
-            setTouched(true);
-            setDrafts(stashed.map((d) => ({ ...d })));
-            return;
-          }
-          setTouched(false);
-        }
-        if (touched()) return;
-        const def = source.definition();
-        if (!def) {
-          setDrafts([]);
-          return;
-        }
-        const ex = prefillFrom();
-        setDrafts(
-          ex ? prefillDrafts(def.questions, ex) : def.questions.map(initDraft),
-        );
+      () => [formKey(), source.definition(), prefillFrom()] as const,
+      ([key], prev) => {
+        if (prev && prev[0] !== key) setTouched(false);
+        if (!touched()) seed();
       },
     ),
   );
+
+  // The record is set rather than the path to its `value`: a path set merges
+  // into the old value object in place, which would change the answers under
+  // anyone holding an earlier snapshot — the stash, or a submission awaiting
+  // its signature.
+  const edit = (index: number, change: Partial<Draft>) => {
+    setTouched(true);
+    setDrafts(index, change);
+    stash.set(
+      formKey(),
+      unwrap(drafts).map((d) => ({ skipped: d.skipped, value: d.value })),
+    );
+  };
 
   const total = () => source.definition()?.questions.length ?? 0;
   const decidedCount = createMemo(() => {
@@ -218,13 +243,12 @@ export function createResponseDraft(
     prior,
     formKey,
     drafts,
-    setValue: (index, value) => {
-      setTouched(true);
-      setDrafts(index, "value", value);
-    },
-    setSkipped: (index, skipped) => {
-      setTouched(true);
-      setDrafts(index, "skipped", skipped);
+    setValue: (index, value) => edit(index, { value }),
+    setSkipped: (index, skipped) => edit(index, { skipped }),
+    restored,
+    discard: () => {
+      stash.delete(formKey());
+      seed();
     },
     total,
     decidedCount,
