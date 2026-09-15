@@ -55,6 +55,23 @@ describe("decided", () => {
   it("skip counts as decided (deliberate abstention)", () => {
     expect(decided(single, { ...initDraft(single), skipped: true })).toBe(true);
   });
+
+  it("an untouched number is not decided and records nothing", () => {
+    const untouched = initDraft(numeric);
+    expect(decided(numeric, untouched)).toBe(false);
+    expect(collectAnswers([numeric], [untouched])).toEqual([]);
+  });
+
+  it("a chosen zero decides the number and is recorded", () => {
+    const zero: Draft = {
+      skipped: false,
+      value: { type: "numeric", value: 0n },
+    };
+    expect(decided(numeric, zero)).toBe(true);
+    expect(collectAnswers([numeric], [zero])).toEqual([
+      { type: "numeric", questionIndex: 0, value: 0n },
+    ]);
+  });
 });
 
 describe("collectAnswers + buildResponse", () => {

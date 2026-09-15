@@ -220,6 +220,7 @@ const NumericBody: Component<{
   v: Extract<DraftValue, { type: "numeric" }>;
   onChange: (v: DraftValue) => void;
 }> = (props) => {
+  const i18n = useI18n();
   const cls = useClasses();
   const { min, max } = props.q.constraints;
   const step = props.q.constraints.step ?? 1n;
@@ -231,24 +232,29 @@ const NumericBody: Component<{
     n <= BigInt(Number.MAX_SAFE_INTEGER) &&
     n >= BigInt(Number.MIN_SAFE_INTEGER);
   const sliderOk = span > 0n && span <= 100000n && safe(min) && safe(max);
-  const set = (value: bigint) => props.onChange({ type: "numeric", value });
+  // A range input fires no input event for a value it already holds, so an
+  // unset slider rests mid-track: either bound is then one click or key away.
+  const rest = clampStep(min + span / 2n, min, max, step);
+  const unset = () => props.v.value === null;
+  const set = (value: bigint | null) =>
+    props.onChange({ type: "numeric", value });
   return (
     <>
       <div class={cls.numHero}>
-        <span class={cls.numValue}>{props.v.value.toString()}</span>
+        <span class={cls.numValue}>{props.v.value?.toString() ?? "—"}</span>
       </div>
       <Show
         when={sliderOk}
         fallback={
           <input
             type="number"
-            value={props.v.value.toString()}
+            value={props.v.value?.toString() ?? ""}
             min={min.toString()}
             max={max.toString()}
             step={step.toString()}
             onInput={(e) => {
               const raw = e.currentTarget.value.trim();
-              if (raw === "") return;
+              if (raw === "") return set(null);
               try {
                 set(clampStep(BigInt(raw), min, max, step));
               } catch {
@@ -264,11 +270,13 @@ const NumericBody: Component<{
           min={Number(min)}
           max={Number(max)}
           step={Number(step)}
-          value={Number(props.v.value)}
+          value={Number(props.v.value ?? rest)}
+          aria-valuetext={unset() ? i18n.t("respond.numericUnset") : undefined}
           onInput={(e) =>
             set(clampStep(BigInt(e.currentTarget.value), min, max, step))
           }
           class={cls.rangeFull}
+          classList={{ [cls.rangeUnset]: unset() }}
         />
         <div class={cls.rangeBounds}>
           <span>{min.toString()}</span>

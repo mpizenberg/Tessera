@@ -122,10 +122,9 @@ describe("createResponseDraft", () => {
 
     expect(draft.drafts).toHaveLength(2);
     expect(draft.total()).toBe(2);
-    // The numeric question seeds to an in-range value, so it counts as both
-    // decided and answered from the start; the required choice does not.
-    expect(draft.decidedCount()).toBe(1);
-    expect(draft.answered()).toBe(true);
+    // Nothing counts until the responder acts, the number included.
+    expect(draft.decidedCount()).toBe(0);
+    expect(draft.answered()).toBe(false);
     expect(draft.drafts[0]?.value).toEqual(pick(null));
   });
 

@@ -107,6 +107,9 @@ const en = {
     /** {min}/{max} are locale-formatted counts. */
     rankPoolHint: "tap to add · rank {min}–{max}",
 
+    // --- Numeric range body -----------------------------------------------
+    numericUnset: "Not set",
+
     // --- Points allocation body -------------------------------------------
     pointsRemainLabel: "Remaining to allocate",
     /** {n} is the locale-formatted remaining points. */

@@ -94,6 +94,9 @@ const fr: RespondMessages = {
     rankRemove: "Retirer du classement",
     rankPoolHint: "touchez pour ajouter · classez {min}–{max}",
 
+    // --- Numeric range body -----------------------------------------------
+    numericUnset: "Non défini",
+
     // --- Points allocation body -------------------------------------------
     pointsRemainLabel: "Restant à allouer",
     pointsRemain: "{n} pts",

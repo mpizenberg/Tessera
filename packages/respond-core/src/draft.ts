@@ -38,7 +38,7 @@ export type DraftValue =
   | { readonly type: "singleChoice"; readonly optionIndex: number | null }
   | { readonly type: "multiSelect"; readonly selected: readonly number[] }
   | { readonly type: "ranking"; readonly ranked: readonly number[] }
-  | { readonly type: "numeric"; readonly value: bigint }
+  | { readonly type: "numeric"; readonly value: bigint | null }
   | { readonly type: "pointsAllocation"; readonly points: readonly number[] }
   | { readonly type: "rating"; readonly ratings: readonly (bigint | null)[] }
   | { readonly type: "custom"; readonly text: string };
@@ -64,7 +64,7 @@ function initValue(q: Question): DraftValue {
     case "ranking":
       return { type: "ranking", ranked: [] };
     case "numericRange":
-      return { type: "numeric", value: q.constraints.min };
+      return { type: "numeric", value: null };
     case "pointsAllocation":
       return {
         type: "pointsAllocation",
@@ -104,7 +104,11 @@ export function decided(q: Question, draft: Draft): boolean {
         v.ranked.length <= q.maxRanked
       );
     case "numericRange":
-      return v.type === "numeric" && numericValid(v.value, q.constraints);
+      return (
+        v.type === "numeric" &&
+        v.value !== null &&
+        numericValid(v.value, q.constraints)
+      );
     case "pointsAllocation":
       return (
         v.type === "pointsAllocation" &&
@@ -178,7 +182,7 @@ function buildAnswerItem(
       if (v.type !== "ranking") return null;
       return { type: "ranking", questionIndex: index, ranking: [...v.ranked] };
     case "numericRange":
-      if (v.type !== "numeric") return null;
+      if (v.type !== "numeric" || v.value === null) return null;
       return { type: "numeric", questionIndex: index, value: v.value };
     case "pointsAllocation":
       if (v.type !== "pointsAllocation") return null;

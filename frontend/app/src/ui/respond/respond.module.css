@@ -658,6 +658,10 @@
   accent-color: var(--accent);
 }
 
+.rangeUnset {
+  accent-color: var(--dim);
+}
+
 .rangeFullBlock {
   composes: rangeFull;
   display: block;

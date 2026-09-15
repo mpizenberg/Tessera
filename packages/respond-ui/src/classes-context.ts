@@ -43,6 +43,7 @@ export const BODY_CLASS_NAMES = [
   "numValue",
   "numberInput",
   "rangeFull",
+  "rangeUnset",
   "rangeBounds",
   // points allocation
   "pointsHeader",

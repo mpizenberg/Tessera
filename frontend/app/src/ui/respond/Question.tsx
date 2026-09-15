@@ -51,6 +51,7 @@ const bodyClasses: BodyClasses = {
   numValue: css.numValue,
   numberInput: css.numberInput,
   rangeFull: css.rangeFull,
+  rangeUnset: css.rangeUnset,
   rangeBounds: css.rangeBounds,
   pointsHeader: css.pointsHeader,
   pointsRemainLabel: css.pointsRemainLabel,

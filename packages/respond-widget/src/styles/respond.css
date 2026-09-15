@@ -560,6 +560,10 @@
   accent-color: var(--tessera-accent);
 }
 
+.rangeUnset {
+  accent-color: var(--tessera-dim);
+}
+
 .rangeFullBlock {
   width: 100%;
   accent-color: var(--tessera-accent);

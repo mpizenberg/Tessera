@@ -212,7 +212,8 @@ function decodeValue(q: Question, raw: unknown): DraftValue | undefined {
         ? { type: "ranking", ranked: raw.ranked }
         : undefined;
     case "numericRange":
-      return raw.type === "numeric" && typeof raw.value === "bigint"
+      return raw.type === "numeric" &&
+        (raw.value === null || typeof raw.value === "bigint")
         ? { type: "numeric", value: raw.value }
         : undefined;
     case "pointsAllocation": {
