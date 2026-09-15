@@ -11,6 +11,7 @@
  */
 
 import type { SurveyListCounts } from "cardano-tessera-client";
+import { parseKoiosJson, stringifyKoiosJson } from "cardano-tessera-koios";
 import type { ResponseCursor } from "cardano-tessera-core";
 import { BINDABLE_ROLES, type GovLink, type GovLinkDoc } from "cip-179/domain";
 
@@ -694,7 +695,9 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       const batches = await db.batchAll<{ txHash: string; metadata: string }>(
         cachedByTxHashSql("tx_metadata_cache", "metadata", txHashes),
       );
-      for (const r of batches.flat()) out.set(r.txHash, JSON.parse(r.metadata));
+      for (const r of batches.flat()) {
+        out.set(r.txHash, parseKoiosJson(r.metadata));
+      }
       return out;
     },
     async putTxMetadata(entries: ReadonlyMap<string, unknown>): Promise<void> {
@@ -704,7 +707,7 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
             `INSERT OR IGNORE INTO tx_metadata_cache (tx_hash, metadata)
              VALUES (?, ?)`,
             hash,
-            JSON.stringify(metadata),
+            stringifyKoiosJson(metadata),
           ),
         ),
       );

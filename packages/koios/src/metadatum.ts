@@ -4,19 +4,14 @@
  * Koios returns CBOR transaction metadata already decoded to JSON, using these
  * conventions (mirrored from the elm-cardano reference implementation):
  *
- *   CBOR int   → JSON number
+ *   CBOR int   → JSON number (a `bigint` above 2^53, parsed with
+ *                `parseKoiosJson`)
  *   CBOR text  → JSON string
  *   CBOR bytes → JSON string prefixed with "0x"
  *   CBOR array → JSON array
  *   CBOR map   → JSON object (keys stringified)
  *
  * Known lossiness of this JSON form (not of CIP-179 itself):
- *   - JSON numbers lose precision above 2^53. Rather than silently truncate to
- *     a wrong bigint (which would flow into the *hashed* artifact and diverge
- *     from a CBOR-native implementation of the same ruleset), any numeric value
- *     that isn't a safe integer is rejected as malformed — see
- *     `koiosJsonToMetadatum`. CIP-179 integer *keys* are parsed exactly from
- *     their string form, so they are unaffected regardless of magnitude.
  *   - A text value that genuinely starts with "0x" is indistinguishable from
  *     bytes. CIP-179 titles/prompts realistically never do.
  *   - Map keys are stringified before we see them, so a CBOR *text* key "5" and
@@ -25,7 +20,7 @@
  *     to a tree a CBOR-native reader would reject. CIP-179 defines every map
  *     key as an integer, so a conformant payload is unaffected.
  *
- * Switching the data source to a CBOR-native indexer later removes all three
+ * Switching the data source to a CBOR-native indexer later removes both
  * caveats — which is exactly why the `DataSource` seam exists.
  */
 
@@ -34,6 +29,7 @@ import type { Metadatum } from "cip-179";
 /** A Koios JSON metadata value (one label's payload). */
 export type KoiosJson =
   | number
+  | bigint
   | string
   | KoiosJson[]
   | { [key: string]: KoiosJson };
@@ -72,11 +68,11 @@ const MAX_DEPTH = 64;
 /** Convert one Koios JSON metadata value into a `Metadatum` tree. */
 export function koiosJsonToMetadatum(json: KoiosJson, depth = 0): Metadatum {
   if (depth > MAX_DEPTH) throw new Error("metadata nesting too deep");
+  if (typeof json === "bigint") return json;
   if (typeof json === "number") {
-    // Koios already lost precision if the on-chain int exceeded 2^53, and
-    // `Math.trunc` would hand back a plausible-but-wrong bigint. Reject instead:
-    // a wrong value silently entering the hashed artifact is worse than dropping
-    // the tx as unreadable (matching every other unsafe-integer path here).
+    // A number past 2^53 was parsed without `parseKoiosJson` and already
+    // rounded; a wrong value entering the hashed artifact is worse than
+    // dropping the tx as unreadable.
     if (!Number.isSafeInteger(json)) {
       throw new Error(`metadata number is not a safe integer: ${json}`);
     }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { koiosJsonToMetadatum } from "./metadatum";
+import { parseKoiosJson } from "./json";
+import { koiosJsonToMetadatum, type KoiosJson } from "./metadatum";
 
 describe("koiosJsonToMetadatum", () => {
   it("converts safe integers to exact bigints", () => {
@@ -12,9 +13,24 @@ describe("koiosJsonToMetadatum", () => {
     );
   });
 
-  it("rejects numbers beyond 2^53 rather than truncating to a wrong bigint", () => {
-    // Koios has already lost precision at this point; the only honest thing to
-    // do is refuse, so the caller skips the tx as malformed (finding 9).
+  it("keeps integers beyond 2^53 exact, at top level and inside a map", () => {
+    const json = parseKoiosJson(
+      '{"0":18446744073709551615,"1":[-21391325252789667]}',
+    ) as KoiosJson;
+    expect(koiosJsonToMetadatum(json)).toEqual(
+      new Map<bigint, unknown>([
+        [0n, 18_446_744_073_709_551_615n],
+        [1n, [-21_391_325_252_789_667n]],
+      ]),
+    );
+    expect(koiosJsonToMetadatum(18_446_744_073_709_551_615n)).toBe(
+      18_446_744_073_709_551_615n,
+    );
+  });
+
+  it("rejects a number beyond 2^53, which a lossy parse already rounded", () => {
+    // The only honest thing to do is refuse, so the caller skips the tx as
+    // malformed (finding 9).
     expect(() => koiosJsonToMetadatum(2 ** 53)).toThrow(/safe integer/);
     expect(() => koiosJsonToMetadatum(1e21)).toThrow(/safe integer/);
   });

@@ -50,7 +50,7 @@ import { validateNewResponses } from "./validate";
  * walker re-derives everything forward over as many crons as the page budget
  * needs.
  */
-export const SCAN_GENERATION = 1;
+export const SCAN_GENERATION = 2;
 
 /**
  * How far below the banked cursor a steady-state run re-derives, in 1 s

@@ -10,6 +10,7 @@ import { evolutionCodec } from "cip-179/evolution";
 import { Koios } from "@evolution-sdk/evolution/sdk/provider/Koios";
 
 import epochParams from "./epoch-params-mainnet.json" with { type: "json" };
+import { stringifyKoiosJson } from "./json";
 import { KoiosDataSource } from "./koios";
 import { type ProposalRow } from "./govLinks";
 
@@ -98,6 +99,52 @@ describe("fetchAll — chain position", () => {
       undefined,
       undefined, // browser scan doesn't enrich block indices (server-side only)
     ]);
+  });
+
+  it("reads a custom answer carrying an integer beyond 2^53 exactly", async () => {
+    const big = 18_446_744_073_709_551_615n;
+    const metadata = {
+      "17": [
+        1,
+        [
+          {
+            "0": 5,
+            "1": [`0x${SURVEY_TX}`, 0],
+            "2": 3,
+            "3": [0, `0x${"11".repeat(28)}`],
+            "4": [[0, 0, { "7": big }]],
+          },
+        ],
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        const body = url.includes("/tx_by_metalabel")
+          ? [{ tx_hash: RESP_TX, absolute_slot: 5_000, epoch_no: 1_340 }]
+          : url.includes("/tx_metadata")
+            ? [{ tx_hash: RESP_TX, metadata }]
+            : [
+                {
+                  epoch_no: 1_346,
+                  abs_slot: 10_000,
+                  epoch_slot: 100,
+                  block_time: 1_750_000_000,
+                },
+              ];
+        return new Response(stringifyKoiosJson(body), { status: 200 });
+      }),
+    );
+    const records = await new KoiosDataSource(CONFIG).fetchAll();
+
+    expect(records.responses).toHaveLength(1);
+    expect(records.responses[0]!.response.answers).toEqual({
+      type: "public",
+      answers: [
+        { type: "custom", questionIndex: 0, value: new Map([[7n, big]]) },
+      ],
+    });
   });
 
   // Finding 27 — a broken sibling used to throw out of `decodePayload`, and the

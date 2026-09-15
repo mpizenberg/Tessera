@@ -257,6 +257,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0026_counted_by_role.sql",
       "0027_change_selection.sql",
       "0028_backfill_change_stamps.sql",
+      "0029_exact_tx_metadata.sql",
     ]);
   });
 });
@@ -967,6 +968,58 @@ describe("store-node segment reconciliation", () => {
       ["r4", `{"tx":"r4"}`],
       ["r3", `{"tx":"r3"}`],
     ]);
+  });
+});
+
+describe("store-node tx metadata cache", () => {
+  const hash = "ab".repeat(32);
+
+  it("banks metadata with every integer exact", async () => {
+    const store = openBackendStore(":memory:");
+    try {
+      const metadata = {
+        "17": [1, [{ "4": [[0, 0, { "7": 18_446_744_073_709_551_615n }]] }]],
+      };
+      await store.putTxMetadata(new Map([[hash, metadata]]));
+      expect(await store.cachedTxMetadata([hash])).toEqual(
+        new Map([[hash, metadata]]),
+      );
+    } finally {
+      store.close();
+    }
+  });
+
+  it("empties a cache banked before metadata was parsed exactly", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tessera-store-"));
+    const path = join(dir, "cache.sqlite");
+    const migrationsDir = fileURLToPath(
+      new URL("../migrations", import.meta.url),
+    );
+    const old = new DatabaseSync(path);
+    old.exec(`CREATE TABLE schema_migration (
+      name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL
+    );`);
+    for (const file of readdirSync(migrationsDir)
+      .filter((f) => f.endsWith(".sql") && f < "0029")
+      .sort()) {
+      old.exec(readFileSync(join(migrationsDir, file), "utf8"));
+      old.prepare("INSERT INTO schema_migration VALUES (?, 1)").run(file);
+    }
+    // What `JSON.stringify` wrote for 18446744073709551615 after a rounding parse.
+    old
+      .prepare(
+        "INSERT INTO tx_metadata_cache (tx_hash, metadata) VALUES (?, ?)",
+      )
+      .run(hash, '{"17":[1,[{"4":[[0,0,18446744073709552000]]}]]}');
+    old.close();
+
+    const store = openBackendStore(path);
+    try {
+      expect(await store.cachedTxMetadata([hash])).toEqual(new Map());
+    } finally {
+      store.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -10,7 +10,11 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { decodePayloadItems } from "cip-179";
 import { toJsonSafe } from "cip-179/tally";
-import { koiosJsonToMetadatum, type KoiosJson } from "cardano-tessera-koios";
+import {
+  koiosJsonToMetadatum,
+  parseKoiosJson,
+  type KoiosJson,
+} from "cardano-tessera-koios";
 
 interface FixtureTx {
   readonly txHash: string;
@@ -19,7 +23,7 @@ interface FixtureTx {
   readonly expected: readonly unknown[];
 }
 
-const record = JSON.parse(
+const record = parseKoiosJson(
   readFileSync(
     new URL("../../../interop/preprod-fixtures.json", import.meta.url),
     "utf8",
