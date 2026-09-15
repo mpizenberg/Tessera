@@ -53,7 +53,7 @@ import type { AppConfig } from "cardano-tessera-core";
 import { evolutionCodec } from "cip-179/evolution";
 
 import { koiosFetchJson } from "./http";
-import { lovelace } from "./json";
+import { natural } from "./json";
 
 /**
  * Max credentials per bulk read — stake addresses per POST, DRep ids per
@@ -495,7 +495,7 @@ export class KoiosTallyInputs implements TallyInputSource {
       for (const row of stakes) {
         stakeByAddress.set(
           row.stake_address,
-          lovelace(row.active_stake, "account_stake_history.active_stake"),
+          natural(row.active_stake, "account_stake_history.active_stake"),
         );
       }
     }
@@ -633,7 +633,7 @@ export class KoiosTallyInputs implements TallyInputSource {
       for (const row of rows) {
         powerById.set(
           row.drep_id,
-          lovelace(row.amount, "drep_voting_power_history.amount"),
+          natural(row.amount, "drep_voting_power_history.amount"),
         );
       }
     }
@@ -669,7 +669,7 @@ export class KoiosTallyInputs implements TallyInputSource {
         `/epoch_info?_epoch_no=${epoch}&_include_next_epoch=false&select=active_stake`,
       );
       const total = rows[0]?.active_stake ?? null;
-      return total === null ? null : lovelace(total, "epoch_info.active_stake");
+      return total === null ? null : natural(total, "epoch_info.active_stake");
     } catch (err) {
       // Known flaky on some (preview) epochs: db-sync word128 errors. Null =
       // the caller retries on a later run.
@@ -686,7 +686,7 @@ export class KoiosTallyInputs implements TallyInputSource {
       const total = rows[0]?.amount ?? null;
       return total === null
         ? null
-        : lovelace(total, "drep_epoch_summary.amount");
+        : natural(total, "drep_epoch_summary.amount");
     } catch (err) {
       console.warn(
         `drep_epoch_summary total unavailable for ${epoch}: ${String(err)}`,

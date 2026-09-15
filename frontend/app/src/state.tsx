@@ -300,9 +300,7 @@ export const AppProvider: ParentComponent = (props) => {
   const config = loadConfig();
 
   // Koios token: reactive so a Settings override applies on the next reload
-  // without rebuilding the source (which reads it through this getter). Still
-  // used even in indexer mode — building a transaction reads protocol parameters
-  // from Koios (the tx itself is signed and submitted via the CIP-30 wallet).
+  // without rebuilding the source (which reads it through this getter).
   const [koiosToken, setKoiosTokenSig] = createSignal(config.koiosToken);
   // Reads flow through the Tier-1 serving backend when one is configured
   // (the deployment's `indexerUrl`) — the secure/scalable default — otherwise

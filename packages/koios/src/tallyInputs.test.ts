@@ -218,7 +218,7 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
     }
   });
 
-  it("throws rather than weigh from an amount that is not lovelace", async () => {
+  it("throws rather than weigh from an amount that is not an integer", async () => {
     const addrA = await stakeAddress(cred(HASH_A), "preview");
     stubFetch((url) =>
       url.includes("/account_update_history")
@@ -717,7 +717,7 @@ describe("totals", () => {
     expect(await inputs.drepTotal(654)).toBe(0n);
   });
 
-  it("maps a total that is not lovelace to null (retry)", async () => {
+  it("maps a total that is not an integer to null (retry)", async () => {
     stubFetch((url) =>
       url.includes("/epoch_info") ? [{ active_stake: 1.5 }] : [{ amount: "x" }],
     );

@@ -13,7 +13,7 @@
  *
  * Protocol parameters are the only ledger read a build needs: from the serving
  * tier (`GET /api/pparams`) when one is configured — so the browser needs no
- * Koios token at all — otherwise fetched from Koios directly during build.
+ * Koios token at all — otherwise from Koios, read before the build.
  * Everything wallet-scoped goes through CIP-30, never Koios:
  * - **UTxOs + change address** come from the wallet (`getUtxos` / `getChangeAddress`)
  *   and are passed into the build, so no Koios `/address_info` round-trip.
@@ -48,6 +48,7 @@ import { METADATA_LABEL, encodePayload, type Cip179Payload } from "cip-179";
 
 import { hexToBytes } from "cip-179/domain";
 import { createTesseraClient } from "cardano-tessera-client";
+import { KoiosDataSource } from "cardano-tessera-koios";
 
 import { expectedNetworkId, type AppConfig } from "~/config";
 import { metadatumToCbor, toTxMetadatum } from "./cbor";
@@ -261,11 +262,11 @@ function chainInputs(
 
 /**
  * Shared build context: an evolution-sdk client wired to Koios and the connected
- * wallet (CIP-30), plus the wallet's UTxOs and change address so the build never
- * round-trips Koios for `/address_info`. When a serving tier is configured,
- * protocol parameters come from it and are passed to `build()` — the build then
- * makes no Koios call at all (the redeemer-free flows here never trigger script
- * evaluation). Sign + submit still go through the wallet at the call site.
+ * wallet (CIP-30), plus the wallet's UTxOs, change address and protocol
+ * parameters, all passed to `build()`. The SDK only builds from a client with a
+ * provider, but given those it never calls it (the redeemer-free flows here
+ * never trigger script evaluation). Sign + submit go through the wallet at the
+ * call site.
  *
  * Read once per chain, not per transaction: the projection is what changes as a
  * chain is built, and it is derived from these.
@@ -283,11 +284,9 @@ async function txContext(config: SubmitConfig, api: Cip30Api) {
     );
   }
 
-  const reader = Client.make(evolutionChain(config.network)).withKoios(
-    config.koiosToken
-      ? { baseUrl: config.koiosUrl, token: config.koiosToken }
-      : { baseUrl: config.koiosUrl },
-  );
+  const reader = Client.make(evolutionChain(config.network)).withKoios({
+    baseUrl: config.koiosUrl,
+  });
   // Our retained CIP-30 handle is the full wallet API at runtime; the seam
   // narrows it to what we read, so widen it back to the SDK's WalletApi here.
   const client = reader.withCip30(
@@ -297,29 +296,13 @@ async function txContext(config: SubmitConfig, api: Cip30Api) {
   const walletUtxos = utxoHexes.map(cip30UtxoToCore);
   const changeAddress = Address.fromHex(await api.getChangeAddress());
   const own = await ownAddresses(api, changeAddress);
-  // Serving-tier pparams (no Koios token needed); without a backend, leave it
-  // undefined and the provider fetches them from Koios during build as before.
   const fullProtocolParameters = config.indexerUrl
     ? await fetchBackendPParams(config.indexerUrl)
-    : undefined;
+    : await new KoiosDataSource(config).protocolParameters();
   return { client, walletUtxos, changeAddress, own, fullProtocolParameters };
 }
 
 type TxContext = Awaited<ReturnType<typeof txContext>>;
-
-/**
- * `build()` options with protocol parameters injected only when we have them, so
- * the SDK skips its own Koios pparams fetch. Spread (rather than passing
- * `undefined`) to satisfy `exactOptionalPropertyTypes`.
- */
-function buildOpts(ctx: TxContext, availableUtxos: UTxO.UTxO[]) {
-  const { changeAddress, fullProtocolParameters } = ctx;
-  return {
-    availableUtxos,
-    changeAddress,
-    ...(fullProtocolParameters ? { fullProtocolParameters } : {}),
-  };
-}
 
 /**
  * A transaction whose bytes we hold — in flight from an earlier run, or built in
@@ -416,7 +399,11 @@ async function buildTx(
   const inputs = chainInputs(planned.dependsOn, flows, utxos);
   if (inputs.length > 0) tx = tx.collectFrom({ inputs });
 
-  const built = await tx.build(buildOpts(ctx, utxos));
+  const built = await tx.build({
+    availableUtxos: utxos,
+    changeAddress: ctx.changeAddress,
+    fullProtocolParameters: ctx.fullProtocolParameters,
+  });
   return Transaction.toCBORHex(await built.toTransaction());
 }
 

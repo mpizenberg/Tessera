@@ -43,10 +43,10 @@ import type {
 import type { TallyArtifact } from "cip-179/tally";
 import type { SurveyListPayload } from "cardano-tessera-client";
 import type { AppConfig, DataSource } from "cardano-tessera-core";
-import { Koios } from "@evolution-sdk/evolution/sdk/provider/Koios";
 import type { ProtocolParameters } from "@evolution-sdk/evolution/sdk/provider/Provider";
 import { koiosJsonToMetadatum, type KoiosJson } from "./metadatum";
 import { koiosFetchJson, mapSettled, MAX_INFLIGHT_BATCHES } from "./http";
+import { natural } from "./json";
 import {
   govLinkScan,
   govProposal,
@@ -120,6 +120,33 @@ interface EpochParamsRow {
   /** Epochs a governance action stays open for voting (Conway parameter). */
   gov_action_lifetime: number | null;
 }
+
+/** The `/epoch_params` columns {@link KoiosDataSource.protocolParameters} maps. */
+const PROTOCOL_PARAMETER_COLUMNS = [
+  "epoch_no",
+  "min_fee_a",
+  "min_fee_b",
+  "max_tx_size",
+  "max_val_size",
+  "key_deposit",
+  "pool_deposit",
+  "drep_deposit",
+  "gov_action_deposit",
+  "price_mem",
+  "price_step",
+  "max_tx_ex_mem",
+  "max_tx_ex_steps",
+  "coins_per_utxo_size",
+  "collateral_percent",
+  "max_collateral_inputs",
+  "min_fee_ref_script_cost_per_byte",
+  "cost_models",
+] as const;
+
+type ProtocolParamsRow = Record<
+  (typeof PROTOCOL_PARAMETER_COLUMNS)[number],
+  unknown
+>;
 
 interface TxStatusRow {
   tx_hash: string;
@@ -326,23 +353,67 @@ export class KoiosDataSource implements DataSource {
 
   /**
    * Full protocol parameters for the latest epoch, in evolution-sdk's
-   * `ProtocolParameters` shape. The serving tier exposes these so the browser's
-   * transaction builder can pass them as `build({ fullProtocolParameters })` and
-   * skip the provider's own pparams fetch — the one Koios read that tx building
-   * otherwise needs, letting the client build without a Koios token
-   * (`backend/ARCHITECTURE.md` §5). Deposits, execution budgets, and
-   * coins-per-UTxO-byte are BigInt; cost models are index-keyed per language.
+   * `ProtocolParameters` shape, which the transaction builder takes as
+   * `build({ fullProtocolParameters })`. The serving tier exposes them so the
+   * browser can build without a Koios token (`backend/ARCHITECTURE.md` §5).
+   * Deposits, execution budgets, and coins-per-UTxO-byte are BigInt; cost
+   * models are index-keyed per language.
+   *
+   * Every field the SDK types as `number` must arrive as one: an integer too
+   * large for it arrives as a `bigint` and fails the read.
    */
   async protocolParameters(): Promise<ProtocolParameters> {
-    // The SDK's own Koios provider already fetches and maps /epoch_params into
-    // this shape — delegate rather than duplicate the field-by-field mapping.
-    // It issues exactly one request per call, so counting it here is exact
-    // unless the SDK retries internally, which this side cannot observe.
-    this.onRequest?.();
-    return new Koios(
-      this.config.koiosUrl,
-      this.getToken(),
-    ).getProtocolParameters();
+    const rows = await this.get<ProtocolParamsRow[]>(
+      `/epoch_params?limit=1&order=epoch_no.desc` +
+        `&select=${PROTOCOL_PARAMETER_COLUMNS.join(",")}`,
+    );
+    const row = rows[0];
+    if (!row) throw new Error("Koios /epoch_params returned no rows");
+    const number = (value: unknown, field: string): number => {
+      if (typeof value === "number") return value;
+      throw new Error(
+        `Koios epoch_params.${field}: ${String(value)} is not a number`,
+      );
+    };
+    const numberAt = (field: keyof ProtocolParamsRow): number =>
+      number(row[field], field);
+    const bigintAt = (field: keyof ProtocolParamsRow): bigint =>
+      natural(row[field], `epoch_params.${field}`);
+    const costModel = (
+      language: keyof ProtocolParameters["costModels"],
+    ): Record<string, number> => {
+      const models = row.cost_models as Record<string, unknown> | null;
+      const values = models?.[language];
+      if (!Array.isArray(values)) {
+        throw new Error(`Koios epoch_params.cost_models has no ${language}`);
+      }
+      return Object.fromEntries(
+        values.map((v, i) => [String(i), number(v, `cost_models.${language}`)]),
+      );
+    };
+    return {
+      minFeeA: numberAt("min_fee_a"),
+      minFeeB: numberAt("min_fee_b"),
+      maxTxSize: numberAt("max_tx_size"),
+      maxValSize: numberAt("max_val_size"),
+      keyDeposit: bigintAt("key_deposit"),
+      poolDeposit: bigintAt("pool_deposit"),
+      drepDeposit: bigintAt("drep_deposit"),
+      govActionDeposit: bigintAt("gov_action_deposit"),
+      priceMem: numberAt("price_mem"),
+      priceStep: numberAt("price_step"),
+      maxTxExMem: bigintAt("max_tx_ex_mem"),
+      maxTxExSteps: bigintAt("max_tx_ex_steps"),
+      coinsPerUtxoByte: bigintAt("coins_per_utxo_size"),
+      collateralPercentage: numberAt("collateral_percent"),
+      maxCollateralInputs: numberAt("max_collateral_inputs"),
+      minFeeRefScriptCostPerByte: numberAt("min_fee_ref_script_cost_per_byte"),
+      costModels: {
+        PlutusV1: costModel("PlutusV1"),
+        PlutusV2: costModel("PlutusV2"),
+        PlutusV3: costModel("PlutusV3"),
+      },
+    };
   }
 
   /**

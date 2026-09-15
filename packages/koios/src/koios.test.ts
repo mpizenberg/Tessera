@@ -7,6 +7,9 @@ import { mechanismAProven, hexToBytes } from "cip-179/domain";
 import { decodeResolvedNativeScript } from "cip-179/txproof";
 import { evolutionCodec } from "cip-179/evolution";
 
+import { Koios } from "@evolution-sdk/evolution/sdk/provider/Koios";
+
+import epochParams from "./epoch-params-mainnet.json" with { type: "json" };
 import { KoiosDataSource } from "./koios";
 import { type ProposalRow } from "./govLinks";
 
@@ -1346,5 +1349,71 @@ describe("scan — the records are cut off at the tip published with them", () =
 
     expect(requested(fetchMock, "/tip")).toHaveLength(1);
     expect(requested(fetchMock, "/epoch_params")).toHaveLength(0);
+  });
+});
+
+describe("protocolParameters — read and mapped by Tessera", () => {
+  const LOVELACE_COLUMNS = [
+    "key_deposit",
+    "pool_deposit",
+    "drep_deposit",
+    "gov_action_deposit",
+    "coins_per_utxo_size",
+  ] as const;
+
+  const serve = (body: string) => {
+    const mock = vi.fn(
+      async (_input: string | URL) => new Response(body, { status: 200 }),
+    );
+    vi.stubGlobal("fetch", mock);
+    return mock;
+  };
+
+  const sdkMapping = async () => {
+    serve(JSON.stringify(epochParams));
+    return new Koios(CONFIG.koiosUrl).getProtocolParameters();
+  };
+
+  it("maps today's mainnet row exactly as evolution-sdk's Koios provider does", async () => {
+    const expected = await sdkMapping();
+    const fetchMock = serve(JSON.stringify(epochParams));
+    const onRequest = vi.fn();
+    const source = new KoiosDataSource(CONFIG, undefined, undefined, onRequest);
+
+    expect(await source.protocolParameters()).toStrictEqual(expected);
+    expect(onRequest).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]![0])).toContain(
+      "/epoch_params?limit=1&order=epoch_no.desc&select=epoch_no,",
+    );
+  });
+
+  it("maps the same row with lovelace served as JSON numbers identically", async () => {
+    const expected = await sdkMapping();
+    const numeric = epochParams.map((row) => ({
+      ...row,
+      ...Object.fromEntries(LOVELACE_COLUMNS.map((c) => [c, Number(row[c])])),
+    }));
+    serve(JSON.stringify(numeric));
+
+    expect(
+      await new KoiosDataSource(CONFIG).protocolParameters(),
+    ).toStrictEqual(expected);
+  });
+
+  it("keeps a deposit above 2^53 exact, and refuses one it cannot type", async () => {
+    const text = JSON.stringify(epochParams);
+    serve(
+      text.replace(
+        /"gov_action_deposit":"\d+"/,
+        '"gov_action_deposit":18446744073709551615',
+      ),
+    );
+    const params = await new KoiosDataSource(CONFIG).protocolParameters();
+    expect(params.govActionDeposit).toBe(18_446_744_073_709_551_615n);
+
+    serve(text.replace(/"min_fee_b":\d+/, '"min_fee_b":18446744073709551615'));
+    await expect(
+      new KoiosDataSource(CONFIG).protocolParameters(),
+    ).rejects.toThrow("epoch_params.min_fee_b");
   });
 });

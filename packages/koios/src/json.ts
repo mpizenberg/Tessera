@@ -51,13 +51,16 @@ export function stringifyKoiosJson(value: unknown): string {
 }
 
 /**
- * A lovelace amount as Koios serves it: a decimal string, or a JSON number
- * from Koios v1.5 on. `field` names the endpoint and column for the error.
+ * A non-negative integer Koios serves at any size: a lovelace amount is a
+ * decimal string before Koios v1.5 and a JSON number from then on. `field`
+ * names the endpoint and column for the error.
  */
-export function lovelace(value: unknown, field: string): bigint {
+export function natural(value: unknown, field: string): bigint {
   if (typeof value === "string" && /^\d+$/.test(value)) return BigInt(value);
   if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0)
     return BigInt(value);
   if (typeof value === "bigint" && value >= 0n) return value;
-  throw new Error(`Koios ${field}: ${String(value)} is not a lovelace amount`);
+  throw new Error(
+    `Koios ${field}: ${String(value)} is not a non-negative integer`,
+  );
 }

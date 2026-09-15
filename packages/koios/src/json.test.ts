@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { lovelace, parseKoiosJson, stringifyKoiosJson } from "./json";
+import { natural, parseKoiosJson, stringifyKoiosJson } from "./json";
 
 describe("parseKoiosJson", () => {
   const text =
@@ -28,17 +28,17 @@ describe("parseKoiosJson", () => {
   });
 });
 
-describe("lovelace", () => {
+describe("natural", () => {
   it("reads a decimal string, a safe number or a bigint", () => {
-    expect(lovelace("21391325252789667", "f")).toBe(21391325252789667n);
-    expect(lovelace(157298068, "f")).toBe(157298068n);
-    expect(lovelace(0, "f")).toBe(0n);
-    expect(lovelace(21391325252789667n, "f")).toBe(21391325252789667n);
+    expect(natural("21391325252789667", "f")).toBe(21391325252789667n);
+    expect(natural(157298068, "f")).toBe(157298068n);
+    expect(natural(0, "f")).toBe(0n);
+    expect(natural(21391325252789667n, "f")).toBe(21391325252789667n);
   });
 
   it("refuses anything else, naming the field", () => {
     for (const bad of [1.5, -1, 2 ** 60, "1.5", "-1", "", null, -1n]) {
-      expect(() => lovelace(bad, "epoch_info.active_stake")).toThrow(
+      expect(() => natural(bad, "epoch_info.active_stake")).toThrow(
         "epoch_info.active_stake",
       );
     }
