@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { I18n } from "cardano-tessera-respond-core";
 
-import { clampStep, labelFor, ratingLevels } from "./shared";
+import { clampStep, labelFor, pointsStride, ratingLevels } from "./shared";
 
 /** Key-echoing i18n stub: `t` renders "key{params}" so assertions stay exact. */
 const stub: I18n = {
@@ -20,6 +20,16 @@ describe("clampStep", () => {
 
   it("passes values through when step is 1", () => {
     expect(clampStep(4n, 0n, 10n, 1n)).toBe(4n);
+  });
+});
+
+describe("pointsStride", () => {
+  it("is the smallest power of ten leaving at most 1 000 positions", () => {
+    expect(pointsStride(0n)).toBe(1n);
+    expect(pointsStride(1000n)).toBe(1n);
+    expect(pointsStride(1001n)).toBe(10n);
+    expect(pointsStride(100_000_000n)).toBe(100_000n);
+    expect(pointsStride(45_000_000_000_000_000n)).toBe(100_000_000_000_000n);
   });
 });
 

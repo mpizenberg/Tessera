@@ -22,6 +22,7 @@ import {
   activateOnKey,
   clampStep,
   labelFor,
+  pointsStride,
   range,
   ratingLevels,
 } from "./shared";
@@ -225,20 +226,6 @@ const RankingBody: Component<{
   );
 };
 
-/**
- * Whether a range input can offer every integer of `[min, max]`. It works in JS
- * numbers, so both bounds must be exactly representable — a huge min with a
- * small span would otherwise render (and submit) rounded positions — and a
- * track past 100 000 positions is too fine to aim. Otherwise the body falls
- * back to a number field.
- */
-const sliderFits = (min: bigint, max: bigint): boolean => {
-  const safe = (n: bigint): boolean =>
-    n <= BigInt(Number.MAX_SAFE_INTEGER) &&
-    n >= BigInt(Number.MIN_SAFE_INTEGER);
-  return max > min && max - min <= 100000n && safe(min) && safe(max);
-};
-
 const NumericBody: Component<{
   q: Extract<Question, { type: "numericRange" }>;
   v: Extract<DraftValue, { type: "numeric" }>;
@@ -248,9 +235,13 @@ const NumericBody: Component<{
   const cls = useClasses();
   const { min, max } = props.q.constraints;
   const step = props.q.constraints.step ?? 1n;
+  // The slider is the only control, so it must offer every step: position p is
+  // min + p × step, which keeps the input's JS numbers small at any bounds. Past
+  // 100 000 positions the track is too fine to aim and a number field takes over.
+  const positions = step > 0n ? (max - min) / step : 0n;
   // A range input fires no input event for a value it already holds, so an
   // unset slider rests mid-track: either bound is then one click or key away.
-  const rest = clampStep(min + (max - min) / 2n, min, max, step);
+  const rest = positions / 2n;
   const unset = () => props.v.value === null;
   const set = (value: bigint | null) =>
     props.onChange({ type: "numeric", value });
@@ -260,7 +251,7 @@ const NumericBody: Component<{
         <span class={cls.numValue}>{props.v.value?.toString() ?? "—"}</span>
       </div>
       <Show
-        when={sliderFits(min, max)}
+        when={positions > 0n && positions <= 100000n}
         fallback={
           <input
             type="number"
@@ -283,14 +274,16 @@ const NumericBody: Component<{
       >
         <input
           type="range"
-          min={Number(min)}
-          max={Number(max)}
-          step={Number(step)}
-          value={Number(props.v.value ?? rest)}
-          aria-valuetext={unset() ? i18n.t("respond.numericUnset") : undefined}
-          onInput={(e) =>
-            set(clampStep(BigInt(e.currentTarget.value), min, max, step))
+          min={0}
+          max={Number(positions)}
+          step={1}
+          value={Number(
+            props.v.value === null ? rest : (props.v.value - min) / step,
+          )}
+          aria-valuetext={
+            unset() ? i18n.t("respond.numericUnset") : props.v.value?.toString()
           }
+          onInput={(e) => set(min + BigInt(e.currentTarget.value) * step)}
           class={cls.rangeFull}
           classList={{ [cls.rangeUnset]: unset() }}
         />
@@ -324,15 +317,19 @@ const PointsBody: Component<{
     next[i] = capped(i, raw);
     props.onChange({ type: "pointsAllocation", points: next });
   };
+  const stride = pointsStride(props.q.budget);
+  const positions = (props.q.budget + stride - 1n) / stride;
+  const positionOf = (points: bigint): bigint =>
+    (points + stride / 2n) / stride;
+  const budgetDigits = props.q.budget.toString().length;
   const bump = (i: number, delta: bigint) => setPoints(i, pointsAt(i) + delta);
   // Capped slider: the track keeps its full 0..budget range, but the thumb is
-  // blocked past the remaining budget. We clamp the dragged value and, when it
-  // was over the cap, write it back onto the element so the thumb snaps to the
-  // cap — Solid won't re-render the input if the clamped value matches state.
+  // blocked past the remaining budget. We clamp the dragged value and write its
+  // position back onto the element so the thumb snaps to the cap — Solid won't
+  // re-render the input if the clamped value matches state.
   const slideTo = (i: number, el: HTMLInputElement) => {
-    const raw = BigInt(el.value);
-    const value = capped(i, raw);
-    if (value !== raw) el.value = value.toString();
+    const value = capped(i, BigInt(el.value) * stride);
+    el.value = positionOf(value).toString();
     setPoints(i, value);
   };
   return (
@@ -356,7 +353,7 @@ const PointsBody: Component<{
                 {labelFor(i18n, props.q.options, i)}
               </span>
               <div class={cls.pointsControls}>
-                <button class={cls.stepBtn} onClick={() => bump(i, -1n)}>
+                <button class={cls.stepBtn} onClick={() => bump(i, -stride)}>
                   −
                 </button>
                 <input
@@ -364,6 +361,7 @@ const PointsBody: Component<{
                   min="0"
                   max={props.q.budget.toString()}
                   value={pointsAt(i).toString()}
+                  style={{ width: `calc(${budgetDigits}ch + 25px)` }}
                   onInput={(e) => {
                     const raw = e.currentTarget.value.trim();
                     if (raw === "") return setPoints(i, 0n);
@@ -375,22 +373,21 @@ const PointsBody: Component<{
                   }}
                   class={cls.pointsInput}
                 />
-                <button class={cls.stepBtn} onClick={() => bump(i, 1n)}>
+                <button class={cls.stepBtn} onClick={() => bump(i, stride)}>
                   +
                 </button>
               </div>
             </div>
-            <Show when={sliderFits(0n, props.q.budget)}>
-              <input
-                type="range"
-                min={0}
-                max={Number(props.q.budget)}
-                step={1}
-                value={Number(pointsAt(i))}
-                onInput={(e) => slideTo(i, e.currentTarget)}
-                class={cls.rangeFullBlock}
-              />
-            </Show>
+            <input
+              type="range"
+              min={0}
+              max={Number(positions)}
+              step={1}
+              value={Number(positionOf(pointsAt(i)))}
+              aria-valuetext={pointsAt(i).toString()}
+              onInput={(e) => slideTo(i, e.currentTarget)}
+              class={cls.rangeFullBlock}
+            />
           </div>
         )}
       </For>

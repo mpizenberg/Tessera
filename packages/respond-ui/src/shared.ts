@@ -37,6 +37,17 @@ export function clampStep(
   return v;
 }
 
+/**
+ * The points slider's stride and ± step: the smallest power of ten that splits
+ * the budget into at most 1 000 positions, so a budget of 100 000 000 moves by
+ * 100 000. The number field still takes any amount.
+ */
+export function pointsStride(budget: bigint): bigint {
+  let stride = 1n;
+  while (budget > 1000n * stride) stride *= 10n;
+  return stride;
+}
+
 /** An option's label, or a locale-formatted "Option N" fallback. */
 export function labelFor(i18n: I18n, opts: OptionsOrCount, i: number): string {
   const fallback = () => i18n.t("respond.optionFallback", { n: i18n.n(i + 1) });

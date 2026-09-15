@@ -634,7 +634,7 @@
 }
 
 .pointsInput {
-  width: 52px;
+  min-width: 52px;
   border: 1px solid var(--tessera-line);
   border-radius: var(--tessera-r-xs);
   padding: 5px 4px;

@@ -719,7 +719,7 @@
 }
 
 .pointsInput {
-  width: 52px;
+  min-width: 52px;
   border: 1px solid var(--line);
   border-radius: var(--r-xs);
   padding: 5px 4px;

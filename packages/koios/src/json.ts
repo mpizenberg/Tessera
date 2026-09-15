@@ -44,9 +44,11 @@ const { rawJSON } = JSON as unknown as {
 };
 
 /** The inverse of {@link parseKoiosJson}: a `bigint` is written as a number. */
-export function stringifyKoiosJson(value: unknown): string {
-  return JSON.stringify(value, (_key, v: unknown) =>
-    typeof v === "bigint" ? rawJSON(v.toString()) : v,
+export function stringifyKoiosJson(value: unknown, space?: number): string {
+  return JSON.stringify(
+    value,
+    (_key, v: unknown) => (typeof v === "bigint" ? rawJSON(v.toString()) : v),
+    space,
   );
 }
 

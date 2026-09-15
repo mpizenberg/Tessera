@@ -26,6 +26,12 @@ describe("parseKoiosJson", () => {
   it("is inverted by stringifyKoiosJson", () => {
     expect(stringifyKoiosJson(parseKoiosJson(text))).toBe(text);
   });
+
+  it("indents like JSON.stringify", () => {
+    expect(stringifyKoiosJson({ big: 2n ** 64n, list: [1] }, 2)).toBe(
+      '{\n  "big": 18446744073709551616,\n  "list": [\n    1\n  ]\n}',
+    );
+  });
 });
 
 describe("natural", () => {

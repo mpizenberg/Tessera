@@ -7,10 +7,16 @@
  *
  * After adding a fixture transaction below, or intentionally changing the
  * wire format, run `node interop/generate-fixtures.mjs && pnpm format` and
- * review the diff.
+ * review the diff. Koios integers above 2^53 stay exact through the koios
+ * package's JSON reader, imported as TypeScript source: Node 22.18 or later.
  */
 
 import { writeFile } from "node:fs/promises";
+
+import {
+  parseKoiosJson,
+  stringifyKoiosJson,
+} from "../packages/koios/src/json.ts";
 
 const BACKEND =
   "https://tessera-backend-preprod.matthieu-pizenberg.workers.dev";
@@ -41,7 +47,7 @@ async function getJson(url, init = {}) {
   });
   if (!res.ok)
     throw new Error(`${init.method ?? "GET"} ${url} → ${res.status}`);
-  return res.json();
+  return parseKoiosJson(await res.text());
 }
 
 const rows = await getJson(`${KOIOS}/tx_metadata`, {
@@ -94,7 +100,7 @@ const record = {
 };
 
 const target = new URL("preprod-fixtures.json", import.meta.url);
-await writeFile(target, JSON.stringify(record, null, 2) + "\n");
+await writeFile(target, stringifyKoiosJson(record, 2) + "\n");
 console.log(
   `wrote ${record.transactions.length} transactions to ${target.pathname}`,
 );
