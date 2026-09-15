@@ -55,7 +55,7 @@ const points = (n: number, budget: number): Question => ({
   type: "pointsAllocation",
   prompt: "",
   options: opts(n),
-  budget,
+  budget: BigInt(budget),
 });
 const ratingNumeric = (n: number, min: number, max: number): Question => ({
   type: "rating",
@@ -153,16 +153,16 @@ function maximalAnswer(q: Question, i: number): AnswerItem {
       return { type: "numeric", questionIndex: i, value };
     }
     case "pointsAllocation": {
-      const oc = optionCount(q.options);
-      const base = Math.floor(q.budget / oc);
+      const oc = BigInt(optionCount(q.options));
+      const base = q.budget / oc;
       const rem = q.budget - base * oc;
       return {
         type: "pointsAllocation",
         questionIndex: i,
-        allocations: Array.from({ length: oc }, (_, k) => ({
+        allocations: Array.from({ length: Number(oc) }, (_, k) => ({
           optionIndex: k,
-          points: base + (k < rem ? 1 : 0),
-        })).filter((a) => a.points > 0),
+          points: base + (BigInt(k) < rem ? 1n : 0n),
+        })).filter((a) => a.points > 0n),
       };
     }
     case "rating": {

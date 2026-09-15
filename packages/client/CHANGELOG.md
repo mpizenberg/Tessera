@@ -9,6 +9,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 while `< 1.0.0`, breaking changes bump the **minor** version.
 
+## [Unreleased]
+
+Speaks contract `2.0`.
+
+### Changed
+
+- **Breaking:** a points question's `budget` and a points answer's `points`
+  decode as `bigint`, following `cip-179`, and `API_VERSION` is `2.0`, so the
+  client refuses a `1.x` backend.
+
 ## [0.2.0] - 2026-09-07
 
 Speaks contract `1.2`.

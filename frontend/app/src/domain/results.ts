@@ -1,6 +1,7 @@
 /**
- * The presentation model for a survey's results — the one place floats appear,
- * always derived from exact integers, never stored. No framework, no I/O.
+ * The presentation model for a survey's results — the one place fractions
+ * appear, always derived from exact integers, never stored. No framework, no
+ * I/O.
  *
  * Two layers, and the difference between them is the point:
  *
@@ -47,19 +48,47 @@ import {
 } from "cip-179/tally";
 
 // ---------------------------------------------------------------------------
-// Exact integers to display floats
+// Exact integers to display values
 // ---------------------------------------------------------------------------
+
+/**
+ * An exact decimal with four places, as its value × 10 000. A mean or median
+ * of values above 2^53 does not fit a float, so it stays exact until
+ * {@link decimalOf} formats it. Bar fractions need no such care: they are
+ * floats.
+ */
+export type Fixed4 = bigint;
+
+const FIXED4 = 10_000n;
 
 /** Fill fraction 0–1 of `part` relative to `max` (4 decimal places). */
 export function fracOf(part: bigint, max: bigint): number {
   if (max <= 0n) return 0;
-  return Number((part * 10_000n) / max) / 10_000;
+  return Number((part * FIXED4) / max) / 10_000;
 }
 
 /** `num / den` to 4 decimal places, or null when the denominator is empty. */
-export function ratioOf(num: bigint, den: bigint): number | null {
+export function ratioOf(num: bigint, den: bigint): Fixed4 | null {
   if (den <= 0n) return null;
-  return Number((num * 10_000n) / den) / 10_000;
+  return (num * FIXED4) / den;
+}
+
+/** An integer as a {@link Fixed4}. */
+export const fixed4 = (n: bigint): Fixed4 => n * FIXED4;
+
+/**
+ * A {@link Fixed4} as a decimal string with `places` (0–4) digits after the
+ * point, rounded half away from zero. `Intl.NumberFormat` formats such a string
+ * without passing through a float.
+ */
+export function decimalOf(v: Fixed4, places = 4): `${number}` {
+  const unit = 10n ** BigInt(4 - places);
+  const magnitude = ((v < 0n ? -v : v) + unit / 2n) / unit;
+  const digits = magnitude.toString().padStart(places + 1, "0");
+  const point = digits.length - places;
+  const sign = v < 0n && magnitude !== 0n ? "-" : "";
+  const fraction = places > 0 ? `.${digits.slice(point)}` : "";
+  return `${sign}${digits.slice(0, point)}${fraction}` as `${number}`;
 }
 
 /**
@@ -88,7 +117,7 @@ export interface BarView {
 export interface RowView {
   readonly label: string;
   /** Weighted mean, or null when nothing backs it. */
-  readonly avg: number | null;
+  readonly avg: Fixed4 | null;
   readonly count: number;
 }
 
@@ -104,9 +133,9 @@ export type QuestionView =
       readonly kind: "histogram";
       readonly bins: readonly BarView[];
       /** Weighted mean of the numeric values, or null with no answers. */
-      readonly mean: number | null;
+      readonly mean: Fixed4 | null;
       /** Weighted median — the value where half the weight has accumulated. */
-      readonly median: number | null;
+      readonly median: Fixed4 | null;
       readonly answeredCount: number;
       readonly answeredWeight: bigint;
     }
@@ -176,17 +205,17 @@ function renderIndices(
 function weightedMedian(
   bins: readonly { value: string; weight: string }[],
   answeredWeight: bigint,
-): number | null {
+): Fixed4 | null {
   if (answeredWeight <= 0n) return null;
   let cumulative = 0n;
   for (let i = 0; i < bins.length; i++) {
     cumulative += BigInt(bins[i]!.weight);
     const doubled = cumulative * 2n;
-    if (doubled > answeredWeight) return Number(bins[i]!.value);
+    const here = fixed4(BigInt(bins[i]!.value));
+    if (doubled > answeredWeight) return here;
     if (doubled === answeredWeight) {
       const next = bins[i + 1];
-      const here = Number(bins[i]!.value);
-      return next ? (here + Number(next.value)) / 2 : here;
+      return next ? (here + fixed4(BigInt(next.value))) / 2n : here;
     }
   }
   return null;
@@ -292,48 +321,38 @@ export interface QuestionDetail {
   readonly samples?: readonly string[];
 }
 
-/** Level layout of a rating scale: how many, labelled how, spaced how. */
+/**
+ * A rating scale's lowest and highest ratable values, and its level labels
+ * when it has them (a label's index is its value).
+ */
 export function ratingScaleInfo(scale: RatingScale): {
-  levels: number;
+  min: bigint;
+  top: bigint;
   levelLabels: string[] | null;
-  numeric: boolean;
-  baseMin: number;
-  /** Value increment between adjacent levels (1 for label/count scales). */
-  step: number;
 } {
   switch (scale.type) {
     case "numeric": {
-      const min = Number(scale.constraints.min);
-      const max = Number(scale.constraints.max);
-      // A stepped scale (e.g. 0..10 by 2) has fewer distinct levels than its
-      // span; bucket on step units so the histogram has no empty gaps.
+      const { min, max } = scale.constraints;
+      // A stepped scale (e.g. 0..10 by 3) tops out at its last reachable
+      // level, not at `max`.
       const step =
         scale.constraints.step !== undefined && scale.constraints.step > 0n
-          ? Number(scale.constraints.step)
-          : 1;
-      return {
-        levels: Math.max(1, Math.floor((max - min) / step) + 1),
-        levelLabels: null,
-        numeric: true,
-        baseMin: min,
-        step,
-      };
+          ? scale.constraints.step
+          : 1n;
+      const top = max < min ? min : min + ((max - min) / step) * step;
+      return { min, top, levelLabels: null };
     }
     case "labels":
       return {
-        levels: scale.labels.length,
+        min: 0n,
+        top: BigInt(Math.max(0, scale.labels.length - 1)),
         levelLabels: [...scale.labels],
-        numeric: false,
-        baseMin: 0,
-        step: 1,
       };
     case "count":
       return {
-        levels: scale.count,
+        min: 0n,
+        top: BigInt(Math.max(0, scale.count - 1)),
         levelLabels: null,
-        numeric: false,
-        baseMin: 0,
-        step: 1,
       };
   }
 }
@@ -534,7 +553,7 @@ export function artifactResults(
       responderCount: role.responders.length,
       votedWeight,
       total,
-      turnout: total === null ? null : ratioOf(votedWeight, total),
+      turnout: total !== null && total > 0n ? fracOf(votedWeight, total) : null,
       questions: questionResults(role.questions, def, responders),
     };
   });

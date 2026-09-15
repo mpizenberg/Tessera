@@ -42,7 +42,7 @@ export interface I18n {
   /** Translate `key` for the locale, filling `{token}` placeholders. */
   t(key: MsgKey, params?: Params): string;
   /** Locale-aware number formatting (memoized per options). */
-  n(value: number, options?: Intl.NumberFormatOptions): string;
+  n(value: number | bigint, options?: Intl.NumberFormatOptions): string;
   /** Locale-aware date/time from unix **seconds** (e.g. the reveal moment). */
   d(unixSeconds: number, options?: Intl.DateTimeFormatOptions): string;
 }

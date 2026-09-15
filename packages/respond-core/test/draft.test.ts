@@ -98,6 +98,37 @@ describe("decided", () => {
       { type: "multiSelect", questionIndex: 0, optionIndices: [] },
     ]);
   });
+
+  const lovelace: Question = {
+    type: "pointsAllocation",
+    prompt: "split",
+    options: { type: "options", labels: ["a", "b", "c"] },
+    budget: 2n ** 60n + 1n,
+  };
+
+  it("points summing exactly to a budget beyond 2^53 decide it, zeros dropped", () => {
+    const split: Draft = {
+      skipped: false,
+      value: { type: "pointsAllocation", points: [2n ** 60n, 0n, 1n] },
+    };
+    expect(decided(lovelace, initDraft(lovelace))).toBe(false);
+    expect(decided(lovelace, split)).toBe(true);
+    expect(collectAnswers([lovelace], [split])).toEqual([
+      {
+        type: "pointsAllocation",
+        questionIndex: 0,
+        allocations: [
+          { optionIndex: 0, points: 2n ** 60n },
+          { optionIndex: 2, points: 1n },
+        ],
+      },
+    ]);
+    const short: Draft = {
+      skipped: false,
+      value: { type: "pointsAllocation", points: [2n ** 60n, 0n, 0n] },
+    };
+    expect(decided(lovelace, short)).toBe(false);
+  });
 });
 
 describe("collectAnswers + buildResponse", () => {

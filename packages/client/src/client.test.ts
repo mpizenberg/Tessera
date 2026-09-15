@@ -6,6 +6,7 @@ import { toJsonSafe } from "cip-179/tally";
 
 import {
   API_VERSION,
+  apiMajor,
   MAX_CREDENTIALS,
   MAX_PAGE_LIMIT,
   MAX_TX_STATUS_HASHES,
@@ -284,17 +285,26 @@ describe("compatibility check", () => {
   });
 
   it("refuses another contract major and accepts an unknown minor", async () => {
+    const otherMajor = `${Number(apiMajor(API_VERSION)) + 1}.0`;
     const other = clientOver(
       (url) =>
         url.includes("/api/surveys") ? { body: listBody() } : undefined,
-      { health: { ok: true, network: "preview", apiVersion: "2.0" } },
+      { health: { ok: true, network: "preview", apiVersion: otherMajor } },
     );
-    await expect(other.client.surveys()).rejects.toThrow(/API version 2\.0/);
+    await expect(other.client.surveys()).rejects.toThrow(
+      `API version ${otherMajor}`,
+    );
 
     const minor = clientOver(
       (url) =>
         url.includes("/api/surveys") ? { body: listBody() } : undefined,
-      { health: { ok: true, network: "preview", apiVersion: "1.9" } },
+      {
+        health: {
+          ok: true,
+          network: "preview",
+          apiVersion: `${apiMajor(API_VERSION)}.99`,
+        },
+      },
     );
     expect((await minor.client.surveys()).ready).toBe(true);
   });

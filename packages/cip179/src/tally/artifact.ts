@@ -109,7 +109,13 @@ export const RULESET_DESCRIPTOR = {
   // credential — a known DRep, a foundation — and be tallied under a borrowed
   // name. The set of talliable surveys shrinks, so v12 hashes are incomparable
   // with v11.
-  rulesetVersion: 12,
+  // v13: numeric bounds and step, points budgets and points allocations decode at
+  // any size (the `integers` rule below). They used to be refused above 2^53,
+  // which the CIP never asked for, so a survey setting such a value was
+  // undecodable and untalliable, and a response allocating such points was not
+  // counted. The set of talliable surveys and counted responses grows, so v13
+  // hashes are incomparable with v12.
+  rulesetVersion: 13,
   cip179SpecVersion: 5,
   /** Roles artifacts cover: 0 DRep, 3 Stakeholder, 4 Keyholder (SPO/CC deferred). */
   coveredRoles: [0, 3, 4],
@@ -120,6 +126,7 @@ export const RULESET_DESCRIPTOR = {
     "4": "count",
   },
   rules: [
+    "integers: numeric bounds and step, numeric and rating values, points budgets and allocations, and integers inside custom answers are read at any size; a definition whose other integers exceed 2^53 is undecodable and its survey untalliable, and a response whose other integers exceed 2^53 is undecodable and not counted",
     "payload-items: a batched label-17 payload is decoded item by item — a malformed item is skipped and its well-formed siblings still count, each keeping its own position in the on-chain array as its survey_index / response_index; a payload whose envelope is unreadable (not a 2-element array, unknown tag, empty item array) contributes no records at all",
     "definition-validity: a survey is talliable only if its on-chain definition passes semantic validation with no error-severity problem — spec_version == 5, non-empty eligible_roles, at least one question, in-bounds question constraints (option/selection/ranked/rating/points/numeric bounds), for a sealed survey round > 0 and padding_size > 0, end_epoch > the epoch_no of the transaction that published the definition, and that same transaction proving the owner credential via mechanism A (its key hash in required_signers, or its native script witnessed and satisfied — a Plutus-script owner has no proof path and is never talliable); duplicate eligible_roles is a SHOULD (warning) and does not disqualify. An untalliable survey produces no artifact and is never counted; a backend that tallies one diverges from a conformant verifier (which independently reaches the same untalliable verdict)",
     "window: a response is countable iff its transaction's epoch_no <= the survey's end_epoch (inclusive)",

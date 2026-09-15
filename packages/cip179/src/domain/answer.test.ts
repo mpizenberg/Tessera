@@ -40,8 +40,8 @@ describe("serializeAnswer", () => {
         type: "pointsAllocation",
         questionIndex: 0,
         allocations: [
-          { optionIndex: 0, points: 3 },
-          { optionIndex: 1, points: 7 },
+          { optionIndex: 0, points: 3n },
+          { optionIndex: 1, points: 7n },
         ],
       }),
     ).toBe("0:3|1:7");
@@ -126,7 +126,7 @@ describe("humanizeAnswer", () => {
         {
           type: "pointsAllocation",
           questionIndex: 0,
-          allocations: [{ optionIndex: 0, points: 4 }],
+          allocations: [{ optionIndex: 0, points: 4n }],
         },
         Q,
       ),

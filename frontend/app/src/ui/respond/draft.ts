@@ -222,7 +222,7 @@ function decodeValue(q: Question, raw: unknown): DraftValue | undefined {
       return raw.type === "pointsAllocation" &&
         Array.isArray(points) &&
         points.length === optionCount(q.options) &&
-        points.every(Number.isInteger)
+        points.every((p) => typeof p === "bigint")
         ? { type: "pointsAllocation", points }
         : undefined;
     }

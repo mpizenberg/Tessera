@@ -215,7 +215,7 @@ export const encodeQuestion = (q: Question): Metadatum => {
           big(QuestionTag.PointsAllocation),
           encodeChunkedText(q.prompt),
           encodeOptionsOrCount(q.options),
-          big(q.budget),
+          q.budget,
         ],
         q.required,
       );
@@ -268,7 +268,7 @@ export const encodeAnswerItem = (a: AnswerItem): Metadatum => {
       return [
         big(QuestionTag.PointsAllocation),
         big(a.questionIndex),
-        a.allocations.map((p) => [big(p.optionIndex), big(p.points)]),
+        a.allocations.map((p) => [big(p.optionIndex), p.points]),
       ];
     case "rating":
       return [

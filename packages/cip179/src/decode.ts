@@ -94,28 +94,18 @@ const asBytesOfSize = (
 const asInt = (m: Metadatum, path: string): bigint =>
   isInt(m) ? m : fail("expected integer", path);
 
-/** True iff `n` fits the JS-safe integer range (exactly representable). */
-const inSafeRange = (n: bigint): boolean =>
-  n <= BigInt(Number.MAX_SAFE_INTEGER) && n >= BigInt(Number.MIN_SAFE_INTEGER);
-
 /**
- * An integer kept as bigint but constrained to the JS-safe range. Numeric
- * constraints (`min`/`max`/`step`) drive rating-scale bucketing, which crosses
- * `Number()` — an out-of-safe-range bound would both lose precision there and
- * (with the sparse tally aside) describe a nonsensical scale. Rejecting it at
- * decode keeps every downstream `Number(bound)` exact.
+ * An integer the domain types keep as a `number`, or fail with the path. Only
+ * integers bounded in practice take this form (see the numeric convention in
+ * `types.ts`); one beyond the JS-safe range makes its record undecodable.
  */
-const asSafeInt = (m: Metadatum, path: string): bigint => {
+const asNumber = (m: Metadatum, path: string): number => {
   const n = asInt(m, path);
-  return inSafeRange(n) ? n : fail(`integer out of safe range: ${n}`, path);
+  return n <= BigInt(Number.MAX_SAFE_INTEGER) &&
+    n >= BigInt(Number.MIN_SAFE_INTEGER)
+    ? Number(n)
+    : fail(`integer out of safe range: ${n}`, path);
 };
-
-/** Narrow a bigint to a JS-safe integer, or fail with the path. */
-const safeNumber = (n: bigint, path: string): number =>
-  inSafeRange(n) ? Number(n) : fail(`integer out of safe range: ${n}`, path);
-
-const asNumber = (m: Metadatum, path: string): number =>
-  safeNumber(asInt(m, path), path);
 
 /** A CDDL `uint .size 2` (survey_ref index): 0..65535. */
 const asUint2 = (m: Metadatum, path: string): number => {
@@ -248,10 +238,10 @@ const decodeNumericConstraints = (
 ): NumericConstraints => {
   const arr = asList(m, path);
   expectLen(arr, 2, 3, path);
-  const min = asSafeInt(arr[0], `${path}[0]`);
-  const max = asSafeInt(arr[1], `${path}[1]`);
+  const min = asInt(arr[0], `${path}[0]`);
+  const max = asInt(arr[1], `${path}[1]`);
   return arr.length === 3
-    ? { min, max, step: asSafeInt(arr[2], `${path}[2]`) }
+    ? { min, max, step: asInt(arr[2], `${path}[2]`) }
     : { min, max };
 };
 
@@ -377,7 +367,7 @@ export const decodeQuestion = (m: Metadatum, path = "question"): Question => {
           type: "pointsAllocation",
           prompt,
           options: decodeOptionsOrCount(arr[2], `${path}[2]`),
-          budget: asNumber(arr[3], `${path}[3]`),
+          budget: asInt(arr[3], `${path}[3]`),
         },
         required,
       );
@@ -411,15 +401,17 @@ export const decodeQuestion = (m: Metadatum, path = "question"): Question => {
 const decodeUintPairs = <T>(
   m: Metadatum,
   path: string,
-  make: (a: number, b: bigint, bPath: string) => T,
+  make: (a: number, b: bigint) => T,
 ): T[] => {
   const arr = asList(m, path);
   if (arr.length === 0) fail("expected non-empty pair list", path); // CDDL [+ …]
   return arr.map((pair, i) => {
     const p = asList(pair, `${path}[${i}]`);
     expectLen(p, 2, 2, `${path}[${i}]`);
-    const bPath = `${path}[${i}][1]`;
-    return make(asNumber(p[0], `${path}[${i}][0]`), asInt(p[1], bPath), bPath);
+    return make(
+      asNumber(p[0], `${path}[${i}][0]`),
+      asInt(p[1], `${path}[${i}][1]`),
+    );
   });
 };
 
@@ -471,10 +463,7 @@ export const decodeAnswerItem = (m: Metadatum, path = "answer"): AnswerItem => {
         allocations: decodeUintPairs<PointsAllocation>(
           arr[2],
           `${path}[2]`,
-          (optionIndex, points, p) => ({
-            optionIndex,
-            points: safeNumber(points, p), // checked, like every other integer
-          }),
+          (optionIndex, points) => ({ optionIndex, points }),
         ),
       };
     case QuestionTag.Rating:

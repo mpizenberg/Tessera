@@ -112,10 +112,21 @@ requires.
 
 ### Numeric convention
 
-- `bigint` for ledger-style integers of unbounded magnitude: numeric-range
-  bounds/values and rating-grid bounds/values.
-- `number` for small structural integers: tags, indices, counts, epochs, roles,
-  drand round, padding size.
+- `bigint` for integers a survey can set to any size: numeric-range
+  bounds/values, rating-grid bounds/values, points budgets and allocations,
+  and integers inside custom answers (a `Metadatum` int is always a `bigint`).
+- `number` for structural integers: tags, flags, indices, option and level
+  counts, selection and ranking bounds, epochs, roles, drand round, padding
+  size.
+
+This is stricter than the CIP, whose CDDL bounds none of the second group.
+The decoder refuses a record carrying one of them above 2^53, so a survey
+definition like that is untalliable and a response like that is not counted.
+None can usefully exceed 2^53: the CIP bounds some (tags, flags, the
+`survey_ref` index), a transaction's size bounds others (a response has to list
+that many entries), and the rest describe an epoch, a drand round or an option
+count that cannot occur. The tally ruleset states the rule, so every
+implementation reaches the same verdict.
 
 ### Chunked text / bytes
 
@@ -242,6 +253,7 @@ recorded hash:
 | 0.1.0             | 4                    | 3               | `c5b2b4284db26af358ed084373cc0786b15e4f58bc27c4f82e769d16ba878eee` |
 | 0.2.0             | 5                    | 4               | `64efbd0fb3614348e5c2620275baa9f9eb3e274e4ae9fa46d7fb9f8643fd24bc` |
 | 0.3.0             | 5                    | 12              | `c11a980bc23a6fdfb8fb5878d4764225dc46b1a2010b43da8c68b918cf7bbc97` |
+| Unreleased        | 5                    | 13              | `b595826fac56c52e0625199003ddd20b875067e8b65f07cf8d3c02de1e7facc1` |
 
 When the rules change, the ruleset version and hash change; add a new row rather
 than editing an existing one, so old artifacts stay re-verifiable against the

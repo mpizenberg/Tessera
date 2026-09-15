@@ -6,10 +6,15 @@
  * encode time. Chunked tlock ciphertext is exposed as a single `Uint8Array`.
  *
  * Numeric convention:
- * - `bigint` for ledger-style integers whose magnitude is unbounded in
- *   principle (numeric-range bounds/values, rating-grid bounds/values).
- * - `number` for small structural integers (tags, indices, counts, epochs,
- *   roles, drand round, padding size).
+ * - `bigint` for integers a survey can set to any size: numeric-range
+ *   bounds/values, rating-grid bounds/values, points budgets and allocations,
+ *   and integers inside custom answers.
+ * - `number` for structural integers that cannot usefully exceed 2^53: tags,
+ *   flags, indices, option and level counts, selection and ranking bounds,
+ *   epochs, roles, drand round, padding size. The CIP bounds some of these,
+ *   a transaction's size bounds others, and the rest (an epoch, a round, an
+ *   option count above 2^53) cannot occur. A record carrying one above 2^53
+ *   does not decode.
  *
  * @module
  */
@@ -153,7 +158,7 @@ export interface NumericRangeQuestion extends QuestionBase {
 export interface PointsAllocationQuestion extends QuestionBase {
   readonly type: "pointsAllocation";
   readonly options: OptionsOrCount;
-  readonly budget: number;
+  readonly budget: bigint;
 }
 
 /** Tag 6: rate options on the given scale. */
@@ -226,7 +231,7 @@ export interface PointsAllocationAnswer extends AnswerBase {
 
 export interface PointsAllocation {
   readonly optionIndex: number;
-  readonly points: number;
+  readonly points: bigint;
 }
 
 /** Tag 6: `(option_index, rating)` pairs valid for the scale. */

@@ -288,7 +288,7 @@ const validateQuestion = (
       break;
     case "pointsAllocation":
       validateOptionsOrCount(q.options, externalMode, where, out);
-      if (q.budget <= 0)
+      if (q.budget <= 0n)
         out.push(problem("question.budgetNotPositive", { where }));
       break;
     case "rating":
@@ -551,13 +551,11 @@ const validateAnswer = (
       if (!idx.every((x) => inRange(x, n))) {
         out.push(problem("answer.optionIndicesOutOfRange", { where }));
       }
-      if (answer.allocations.some((a) => a.points < 0)) {
+      if (answer.allocations.some((a) => a.points < 0n)) {
         out.push(problem("answer.pointsNegative", { where }));
       }
-      // Exact integer arithmetic — a float sum can lose precision above 2^53
-      // and disagree with a bigint verifier on the hash-relevant verdict.
-      const sum = answer.allocations.reduce((s, a) => s + BigInt(a.points), 0n);
-      if (sum !== BigInt(question.budget)) {
+      const sum = answer.allocations.reduce((s, a) => s + a.points, 0n);
+      if (sum !== question.budget) {
         out.push(
           problem("answer.pointsSumMismatch", {
             where,

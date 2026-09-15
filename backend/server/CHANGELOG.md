@@ -15,6 +15,23 @@ no dual-serving. A consumer compares majors and refuses a mismatch; it may warn
 on a minor it does not know. Every bump has a line here, and the README's
 Endpoints section changes in the same commit.
 
+## [2.0] - Unreleased
+
+### Changed
+
+- A points question's `budget` and a points answer's allocation `points` are
+  big integers in every body that carries a survey definition or a response —
+  the survey list and its selections, the bundle, and a sealed artifact's
+  committed answers — so they cross the wire as `{"$bigint": "…"}`, not as
+  JSON numbers. A 1.x consumer decoding them as numbers breaks, hence the
+  major.
+- Surveys and responses carrying numeric bounds, budgets or points above 2^53
+  are served, and finalized under ruleset 13 (see `cip-179`'s changelog); they
+  used to be dropped as undecodable. No survey on chain today carries one.
+- The stored rows of surveys with a points question are re-stamped when this
+  version deploys, so a mirror following `changes` receives them again in the
+  new form with its next delta.
+
 ## [1.2] - 2026-09-07
 
 ### Added

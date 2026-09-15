@@ -80,16 +80,13 @@ describe("non-empty answer lists (finding 13)", () => {
   });
 });
 
-// Finding 7 — points decode through the safe-integer-checked path.
-describe("points allocation safe-integer decode (finding 7)", () => {
-  it("rejects points above the safe integer range instead of rounding", () => {
-    expect(() => decodeAnswerItem([5n, 0n, [[0n, 2n ** 60n]]])).toThrow(
-      Cip179DecodeError,
-    );
-    expect(decodeAnswerItem([5n, 0n, [[0n, 100n]]])).toEqual({
+// Finding 7 — points never round: they decode at full size.
+describe("points allocation decode (finding 7)", () => {
+  it("keeps points above 2^53 exact", () => {
+    expect(decodeAnswerItem([5n, 0n, [[0n, 2n ** 60n + 1n]]])).toEqual({
       type: "pointsAllocation",
       questionIndex: 0,
-      allocations: [{ optionIndex: 0, points: 100 }],
+      allocations: [{ optionIndex: 0, points: 2n ** 60n + 1n }],
     });
   });
 });

@@ -1,7 +1,7 @@
 /** Numeric answers: the weighted distribution, with its mean and median. */
 
 import { For, Show, type Component } from "solid-js";
-import type { QuestionView } from "~/domain/results";
+import { decimalOf, type Fixed4, type QuestionView } from "~/domain/results";
 
 import { t, n } from "~/i18n";
 import { NoData } from "./Card";
@@ -14,8 +14,8 @@ export const Histogram: Component<{
 }> = (props) => {
   const peak = (): bigint =>
     props.view.bins.reduce((m, b) => (b.weight > m ? b.weight : m), 1n);
-  const stat = (value: number | null): string =>
-    value === null ? "—" : n(value);
+  const stat = (value: Fixed4 | null): string =>
+    value === null ? "—" : n(decimalOf(value));
   return (
     <>
       <div class={css.histStats}>

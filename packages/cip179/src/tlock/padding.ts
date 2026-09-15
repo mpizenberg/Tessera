@@ -136,7 +136,7 @@ function maxAnswerItemSize(question: Question, qIndex: number): number {
     case "pointsAllocation":
       valueWidth = pairListWidth(
         optionCount(question.options),
-        uintWidth(question.budget),
+        cborUintWidth(question.budget),
       );
       break;
     case "rating":

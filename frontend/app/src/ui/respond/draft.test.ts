@@ -46,7 +46,13 @@ const questions: Question[] = [
     required: false,
     constraints: { min: 0n, max: 10n ** 30n },
   },
-  { type: "pointsAllocation", prompt: "", required: false, options, budget: 9 },
+  {
+    type: "pointsAllocation",
+    prompt: "",
+    required: false,
+    options,
+    budget: 9n,
+  },
   {
     type: "rating",
     prompt: "",
@@ -68,7 +74,7 @@ const form: Draft[] = [
   { skipped: false, value: { type: "multiSelect", selected: [0, 2] } },
   { skipped: true, value: { type: "ranking", ranked: [] } },
   { skipped: false, value: { type: "numeric", value: 10n ** 30n } },
-  { skipped: false, value: { type: "pointsAllocation", points: [4, 0, 5] } },
+  { skipped: false, value: { type: "pointsAllocation", points: [4n, 0n, 5n] } },
   { skipped: false, value: { type: "rating", ratings: [5n, null, 1n] } },
   { skipped: false, value: { type: "custom", text: "why not" } },
 ];

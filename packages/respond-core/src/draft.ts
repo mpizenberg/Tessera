@@ -43,7 +43,7 @@ export type DraftValue =
     }
   | { readonly type: "ranking"; readonly ranked: readonly number[] }
   | { readonly type: "numeric"; readonly value: bigint | null }
-  | { readonly type: "pointsAllocation"; readonly points: readonly number[] }
+  | { readonly type: "pointsAllocation"; readonly points: readonly bigint[] }
   | { readonly type: "rating"; readonly ratings: readonly (bigint | null)[] }
   | { readonly type: "custom"; readonly text: string };
 
@@ -72,7 +72,7 @@ function initValue(q: Question): DraftValue {
     case "pointsAllocation":
       return {
         type: "pointsAllocation",
-        points: Array.from({ length: optionCount(q.options) }, () => 0),
+        points: Array.from({ length: optionCount(q.options) }, () => 0n),
       };
     case "rating":
       return {
@@ -117,8 +117,8 @@ export function decided(q: Question, draft: Draft): boolean {
     case "pointsAllocation":
       return (
         v.type === "pointsAllocation" &&
-        v.points.every((p) => p >= 0) &&
-        v.points.reduce((s, p) => s + p, 0) === q.budget
+        v.points.every((p) => p >= 0n) &&
+        v.points.reduce((s, p) => s + p, 0n) === q.budget
       );
     case "rating": {
       if (v.type !== "rating") return false;
@@ -197,7 +197,7 @@ function buildAnswerItem(
         // Drop zero allocations; the remainder must still sum to budget.
         allocations: v.points
           .map((points, optionIndex) => ({ optionIndex, points }))
-          .filter((a) => a.points > 0),
+          .filter((a) => a.points > 0n),
       };
     case "rating":
       if (v.type !== "rating") return null;
@@ -356,7 +356,7 @@ function valueFromAnswer(q: Question, a: AnswerItem): DraftValue | null {
       return a.type === "numeric" ? { type: "numeric", value: a.value } : null;
     case "pointsAllocation": {
       if (a.type !== "pointsAllocation") return null;
-      const points = Array.from({ length: optionCount(q.options) }, () => 0);
+      const points = Array.from({ length: optionCount(q.options) }, () => 0n);
       for (const alloc of a.allocations)
         points[alloc.optionIndex] = alloc.points;
       return { type: "pointsAllocation", points };

@@ -52,12 +52,12 @@ export interface QuestionDraft {
   // ranking
   minRanked: number;
   maxRanked: number;
-  // numericRange (kept as strings so partial input doesn't fight the parser)
+  // numericRange and pointsAllocation (kept as strings so partial input
+  // doesn't fight the parser, and parsed to bigint at any size)
   numMin: string;
   numMax: string;
   numStep: string;
-  // pointsAllocation
-  budget: number;
+  budget: string;
   // rating
   ratingScale: "numeric" | "labels";
   ratingLabels: string[];
@@ -156,7 +156,7 @@ export function initQuestionDraft(type: QuestionType): QuestionDraft {
     numMin: "0",
     numMax: "10",
     numStep: "",
-    budget: 100,
+    budget: "100",
     ratingScale: "numeric",
     ratingLabels: ["", ""],
     ratingMin: "1",
@@ -309,7 +309,7 @@ function toQuestion(
         ...base,
         type: "pointsAllocation",
         options: opts(draft.labels),
-        budget: draft.budget,
+        budget: parseBig(draft.budget, `${where} budget`, out),
       };
     case "rating": {
       const scale: RatingScale =

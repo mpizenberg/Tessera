@@ -6,7 +6,14 @@
 
 import { For, Show, type Component } from "solid-js";
 import type { Question } from "cip-179";
-import { ratingScaleInfo, type QuestionView } from "~/domain/results";
+import {
+  decimalOf,
+  fixed4,
+  fracOf,
+  ratingScaleInfo,
+  type Fixed4,
+  type QuestionView,
+} from "~/domain/results";
 
 import { t, n } from "~/i18n";
 import { Bars, NoData } from "./Card";
@@ -25,25 +32,28 @@ export const Rows: Component<{
     // track; the figure is the mean itself, not a share of anything.
     <Bars
       bars={props.view.rows.map((row) => {
-        const peak = Math.max(0, ...props.view.rows.map((r) => r.avg ?? 0));
+        const peak = props.view.rows.reduce(
+          (m, r) => (r.avg !== null && r.avg > m ? r.avg : m),
+          0n,
+        );
         return {
           label: row.label,
           meta:
             row.avg === null
               ? "—"
               : t("survey.pointsMeta", {
-                  avg: n(row.avg, { maximumFractionDigits: 1 }),
+                  avg: n(decimalOf(row.avg), { maximumFractionDigits: 1 }),
                 }),
-          pct: peak > 0 && row.avg !== null ? row.avg / peak : 0,
+          pct: row.avg === null ? 0 : fracOf(row.avg, peak),
         };
       })}
     />
   );
 
-/** Fraction 0–1 of `avg` within the scale's span. */
-function withinScale(avg: number, min: number, max: number): number {
-  if (max <= min) return 0;
-  return Math.max(0, Math.min(1, (avg - min) / (max - min)));
+/** Fraction 0–1 of `avg` within `[min, top]`. */
+function withinScale(avg: Fixed4, min: bigint, top: bigint): number {
+  const span = fixed4(top - min);
+  return Math.max(0, Math.min(1, fracOf(avg - fixed4(min), span)));
 }
 
 const Rating: Component<{
@@ -51,14 +61,10 @@ const Rating: Component<{
   view: Extract<QuestionView, { kind: "rows" }>;
 }> = (props) => {
   const info = () => ratingScaleInfo(props.scale);
-  const top = (): number => {
-    const s = info();
-    return s.baseMin + (s.levels - 1) * s.step;
-  };
-  const label = (avg: number): string => {
+  const label = (avg: Fixed4): string => {
     const labels = info().levelLabels;
-    if (!labels) return avg.toFixed(2);
-    return `${labels[Math.round(avg)] ?? "—"} (${avg.toFixed(2)})`;
+    if (!labels) return decimalOf(avg, 2);
+    return `${labels[Number(decimalOf(avg, 0))] ?? "—"} (${decimalOf(avg, 2)})`;
   };
   return (
     <>
@@ -89,7 +95,7 @@ const Rating: Component<{
                       "--rating-pct": `${
                         row.avg === null
                           ? 0
-                          : withinScale(row.avg, info().baseMin, top()) * 100
+                          : withinScale(row.avg, info().min, info().top) * 100
                       }%`,
                     }}
                   />

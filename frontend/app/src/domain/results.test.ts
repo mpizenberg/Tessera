@@ -6,6 +6,7 @@ import type { TallyArtifact } from "cip-179/tally";
 
 import {
   MAX_DISPLAY_BUCKETS,
+  decimalOf,
   fracOf,
   liveResults,
   ratioOf,
@@ -29,8 +30,19 @@ describe("exact-to-float helpers", () => {
   });
 
   it("ratioOf yields null on an empty denominator", () => {
-    expect(ratioOf(10n, 4n)).toBe(2.5);
+    expect(ratioOf(10n, 4n)).toBe(25_000n);
     expect(ratioOf(0n, 0n)).toBeNull();
+  });
+
+  it("decimalOf writes a Fixed4 exactly, rounding half away from zero", () => {
+    expect(decimalOf(11_529_215_046_068_469_775_000n)).toBe(
+      "1152921504606846977.5000",
+    );
+    expect(decimalOf(47_383n, 2)).toBe("4.74");
+    expect(decimalOf(-47_350n, 2)).toBe("-4.74");
+    expect(decimalOf(-40n, 2)).toBe("0.00");
+    expect(decimalOf(25_000n, 0)).toBe("3");
+    expect(decimalOf(5n)).toBe("0.0005");
   });
 });
 
@@ -86,7 +98,7 @@ describe("questionView", () => {
       ],
     });
     if (v.kind !== "histogram") throw new Error("expected histogram");
-    expect(v.mean).toBe(11.909); // 1310/110 to 4 places
+    expect(v.mean).toBe(119_090n); // 1310/110 to 4 places
     expect(v.bins.map((b) => b.label)).toEqual(["10", "40"]);
     expect(v.bins[0]!.frac).toBe(1);
   });
@@ -103,7 +115,7 @@ describe("questionView", () => {
       answeredWeight: "107",
     });
     if (v.kind !== "rows") throw new Error("expected rows");
-    expect(v.rows[0]).toEqual({ label: "yes", avg: 4.7383, count: 2 });
+    expect(v.rows[0]).toEqual({ label: "yes", avg: 47_383n, count: 2 });
     expect(v.rows[1]).toEqual({ label: "no", avg: null, count: 0 });
   });
 
@@ -121,8 +133,8 @@ describe("questionView", () => {
       answeredWeight: "200",
     });
     if (v.kind !== "rows") throw new Error("expected rows");
-    expect(v.rows[0]).toEqual({ label: "yes", avg: 1.5, count: 2 }); // 300/200
-    expect(v.rows[1]).toEqual({ label: "no", avg: 0.5, count: 1 }); // 100/200
+    expect(v.rows[0]).toEqual({ label: "yes", avg: 15_000n, count: 2 }); // 300/200
+    expect(v.rows[1]).toEqual({ label: "no", avg: 5_000n, count: 1 }); // 100/200
   });
 });
 
@@ -407,15 +419,32 @@ describe("liveResults", () => {
           { type: "numeric", questionIndex: 0, value: BigInt(x) },
         ]),
       );
-    const median = (xs: number[]): number | null => {
+    const median = (xs: number[]): string | null => {
       const view = liveResults(def([NUM]), values(xs))[0]!.questions[0]!.view;
       if (view.kind !== "histogram") throw new Error("expected histogram");
-      return view.median;
+      return view.median === null ? null : decimalOf(view.median);
     };
-    expect(median([1, 2, 3])).toBe(2);
-    expect(median([1, 2, 3, 4])).toBe(2.5); // even count: the two middles
-    expect(median([5])).toBe(5);
-    expect(median([1, 1, 1, 9])).toBe(1);
+    expect(median([1, 2, 3])).toBe("2.0000");
+    expect(median([1, 2, 3, 4])).toBe("2.5000"); // even count: the two middles
+    expect(median([5])).toBe("5.0000");
+    expect(median([1, 1, 1, 9])).toBe("1.0000");
+  });
+
+  it("numeric: the median and mean of values beyond 2^53 are exact", () => {
+    const big = 2n ** 60n;
+    const view = questionView(undefined, {
+      kind: "numeric",
+      weightedSum: String(big + 1n + big + 2n),
+      answeredWeight: "2",
+      answeredCount: 2,
+      values: [
+        { value: String(big + 1n), weight: "1", count: 1 },
+        { value: String(big + 2n), weight: "1", count: 1 },
+      ],
+    });
+    if (view.kind !== "histogram") throw new Error("expected histogram");
+    expect(decimalOf(view.median!)).toBe("1152921504606846977.5000");
+    expect(decimalOf(view.mean!)).toBe("1152921504606846977.5000");
   });
 
   it("custom: verbatim answers come back as supplementary detail, capped", () => {

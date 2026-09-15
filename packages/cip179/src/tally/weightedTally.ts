@@ -254,7 +254,7 @@ export function weightedTallyQuestion(
           for (const p of a.allocations) {
             if (p.optionIndex >= 0 && p.optionIndex < n) {
               const e = byOption.get(p.optionIndex);
-              const add = BigInt(p.points) * w;
+              const add = p.points * w;
               if (e) {
                 e.sum += add;
                 e.count++;

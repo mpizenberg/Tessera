@@ -260,7 +260,7 @@ const question = (v: unknown, path: string): Question => {
         type: "pointsAllocation",
         prompt,
         options: options(),
-        budget: int(o.budget, at(path, "budget")),
+        budget: big(o.budget, at(path, "budget")),
       });
     case "rating":
       return withRequired({
@@ -340,7 +340,7 @@ const answerItem = (v: unknown, path: string): AnswerItem => {
           const a = obj(x, p);
           return {
             optionIndex: int(a.optionIndex, at(p, "optionIndex")),
-            points: int(a.points, at(p, "points")),
+            points: big(a.points, at(p, "points")),
           };
         }),
       };

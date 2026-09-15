@@ -22,7 +22,7 @@ const QUESTIONS: Question[] = [
   },
   { type: "ranking", prompt: "", options: OPTS, minRanked: 1, maxRanked: 3 },
   { type: "numericRange", prompt: "", constraints: { min: 0n, max: 100n } },
-  { type: "pointsAllocation", prompt: "", options: OPTS, budget: 10 },
+  { type: "pointsAllocation", prompt: "", options: OPTS, budget: 10n },
   {
     type: "rating",
     prompt: "",
@@ -67,7 +67,7 @@ function fullAnswers(
   multi: number[],
   ranking: number[],
   numeric: bigint,
-  points: [number, number][],
+  points: [number, bigint][],
   ratings: [number, bigint][],
 ): AnswerItem[] {
   return [
@@ -98,7 +98,7 @@ function fullAnswers(
 const R1 = responder(
   1,
   100n,
-  fullAnswers(0, [0, 2], [2, 0], 10n, [[0, 10]], [[0, 5n]]),
+  fullAnswers(0, [0, 2], [2, 0], 10n, [[0, 10n]], [[0, 5n]]),
 );
 const R2 = responder(
   2,
@@ -109,8 +109,8 @@ const R2 = responder(
     [0, 1],
     40n,
     [
-      [0, 4],
-      [1, 6],
+      [0, 4n],
+      [1, 6n],
     ],
     [
       [0, 1n],
@@ -197,6 +197,37 @@ describe("weightedTallyQuestion", () => {
     });
     if (t.kind !== "perOption") throw new Error("expected perOption");
     expect("answeredWeight" in t.perOption[0]!).toBe(false);
+  });
+
+  it("points: a budget beyond 2^53 tallies exact sums", () => {
+    const budget = 2n ** 60n + 1n;
+    const q: Question = {
+      type: "pointsAllocation",
+      prompt: "",
+      options: OPTS,
+      budget,
+    };
+    const allocate = (points: bigint): AnswerItem[] => [
+      {
+        type: "pointsAllocation",
+        questionIndex: 0,
+        allocations: [
+          { optionIndex: 0, points },
+          { optionIndex: 1, points: budget - points },
+        ],
+      },
+    ];
+    const t = weightedTallyQuestion(q, 0, [
+      responder(1, 3n, allocate(2n ** 59n)),
+      responder(2, 5n, allocate(budget)),
+    ]);
+    expect(t).toMatchObject({
+      perOption: [
+        { index: 0, weightedSum: 3n * 2n ** 59n + 5n * budget, count: 2 },
+        { index: 1, weightedSum: 3n * (budget - 2n ** 59n), count: 2 },
+      ],
+      answeredWeight: 8n,
+    });
   });
 
   it("rating: per-option denominators cover only that option's raters", () => {

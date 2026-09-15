@@ -106,9 +106,9 @@ export function ratingLevels(
       const { min, max } = scale.constraints;
       const step = scale.constraints.step ?? 1n;
       if (step <= 0n || max < min) return null;
-      const n = Number((max - min) / step) + 1;
-      if (n < 1 || n > 12) return null;
-      return range(n).map((i) => {
+      const n = (max - min) / step + 1n;
+      if (n > 12n) return null;
+      return range(Number(n)).map((i) => {
         const v = min + BigInt(i) * step;
         return { value: v, label: v.toString() };
       });

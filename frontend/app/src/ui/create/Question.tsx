@@ -11,7 +11,7 @@ import {
   type QuestionType,
 } from "~/domain/create";
 import { t } from "~/i18n";
-import { MinMaxRow, NumericRow, OptionsEditor, intOf } from "./Fields";
+import { MinMaxRow, NumericRow, OptionsEditor } from "./Fields";
 import css from "./create.module.css";
 
 export const QuestionEditor: Component<{
@@ -146,11 +146,9 @@ const TypeFields: Component<{
         <label class={css.inlineField}>
           <span class={css.fieldLabel}>{t("create.budget")}</span>
           <input
-            type="number"
+            type="text"
             value={props.draft.budget}
-            onInput={(e) =>
-              props.set(i(), "budget", intOf(e.currentTarget.value))
-            }
+            onInput={(e) => props.set(i(), "budget", e.currentTarget.value)}
             class={css.budgetInput}
           />
         </label>

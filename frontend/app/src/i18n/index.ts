@@ -156,11 +156,12 @@ function cachedFormat<F>(
 
 /**
  * Locale-aware number formatting via Intl. Reactive (reads the locale signal):
- * 1024 → "1,024" in English, "1 024" in French. Takes a bigint too, which Intl
- * formats exactly — on-chain quantities need no lossy `Number()` hop.
+ * 1024 → "1,024" in English, "1 024" in French. Takes a bigint or a decimal
+ * string too, which Intl formats exactly — on-chain quantities need no lossy
+ * `Number()` hop.
  */
 export function n(
-  value: number | bigint,
+  value: number | bigint | `${number}`,
   options?: Intl.NumberFormatOptions,
 ): string {
   return cachedFormat(

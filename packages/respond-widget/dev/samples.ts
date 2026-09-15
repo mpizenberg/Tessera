@@ -93,7 +93,7 @@ const QUESTIONS: Question[] = [
   {
     type: "pointsAllocation",
     prompt: "Distribute 100 points across the pillars.",
-    budget: 100,
+    budget: 100n,
     options: {
       type: "options",
       labels: ["Research", "Community", "Infrastructure"],

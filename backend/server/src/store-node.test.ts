@@ -36,6 +36,13 @@ import {
   TALLY_BUCKET_SECONDS,
   tallyBucket,
 } from "./store";
+import type { ResponseRecord, SurveyRecord } from "cip-179/domain";
+import {
+  decodeResponseRecord,
+  decodeSurveyRecord,
+  toJsonSafe,
+} from "cip-179/tally";
+
 import { changesCursorAt } from "./changes";
 import { changedSurveysSql, removedSurveysSql } from "./sqlBuilders";
 import { openBackendStore } from "./store-node";
@@ -258,6 +265,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0027_change_selection.sql",
       "0028_backfill_change_stamps.sql",
       "0029_exact_tx_metadata.sql",
+      "0030_bigint_points.sql",
     ]);
   });
 });
@@ -968,6 +976,143 @@ describe("store-node segment reconciliation", () => {
       ["r4", `{"tx":"r4"}`],
       ["r3", `{"tx":"r3"}`],
     ]);
+  });
+});
+
+describe("store-node migration to bigint points", () => {
+  it("rewrites stored budgets and allocations into their tagged wire form", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tessera-store-"));
+    const path = join(dir, "cache.sqlite");
+    const migrationsDir = fileURLToPath(
+      new URL("../migrations", import.meta.url),
+    );
+    const old = new DatabaseSync(path);
+    old.exec(`CREATE TABLE schema_migration (
+      name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL
+    );`);
+    for (const file of readdirSync(migrationsDir)
+      .filter((f) => f.endsWith(".sql") && f < "0030")
+      .sort()) {
+      old.exec(readFileSync(join(migrationsDir, file), "utf8"));
+      old.prepare("INSERT INTO schema_migration VALUES (?, 1)").run(file);
+    }
+
+    const keyHash = new Uint8Array(28).fill(0x11);
+    const options = { type: "options", labels: ["a", "b"] } as const;
+    const survey: SurveyRecord = {
+      txHash: "aa".repeat(32),
+      slot: 100,
+      epochNo: 499,
+      ref: { txId: new Uint8Array(32).fill(0xaa), index: 0 },
+      definition: {
+        specVersion: 5,
+        owner: { type: "key", keyHash },
+        title: "t",
+        description: "",
+        eligibleRoles: [3],
+        endEpoch: 500,
+        submissionMode: { type: "public" },
+        questions: [
+          { type: "singleChoice", prompt: "pick", options },
+          { type: "pointsAllocation", prompt: "one", options, budget: 10n },
+          {
+            type: "pointsAllocation",
+            prompt: "two",
+            options,
+            budget: 2n ** 60n,
+            required: true,
+          },
+        ],
+      },
+      proof: null,
+    };
+    const response: ResponseRecord = {
+      txHash: "bb".repeat(32),
+      slot: 150,
+      epochNo: 499,
+      responseIndex: 0,
+      response: {
+        specVersion: 5,
+        surveyRef: survey.ref,
+        role: 3,
+        credential: { type: "key", keyHash },
+        answers: {
+          type: "public",
+          answers: [
+            { type: "singleChoice", questionIndex: 0, optionIndex: 1 },
+            {
+              type: "pointsAllocation",
+              questionIndex: 1,
+              allocations: [
+                { optionIndex: 1, points: 7n },
+                { optionIndex: 0, points: 3n },
+              ],
+            },
+          ],
+        },
+      },
+    };
+    const wire = (record: unknown) => JSON.stringify(toJsonSafe(record));
+    // The form the previous code wrote: the same text with plain numbers.
+    // Safe integers only, as that code could not hold anything larger.
+    const previous = (record: unknown) =>
+      wire(record)
+        .replace(/"(budget|points)":\{"\$bigint":"(\d+)"\}/g, '"$1":$2')
+        .replace(/"budget":1152921504606846976/, '"budget":12');
+    const untouched = wire({ ...survey, txHash: "cc".repeat(32) }).replace(
+      /"pointsAllocation"/g,
+      '"singleChoice"',
+    );
+    const insertSurvey = old.prepare(
+      `INSERT INTO survey_index (survey_key, slot, end_epoch, sealed, cancelled,
+         gov_linked, owner, haystack, record, cancellations, gov_links, response_count)
+       VALUES (?, 100, 500, 0, 0, 0, 'key:11', '', ?, '[]', '[]', 0)`,
+    );
+    insertSurvey.run("aa:0", previous(survey));
+    insertSurvey.run("cc:0", untouched);
+    old
+      .prepare(
+        `INSERT INTO response (tx_hash, response_index, survey_key, credential, slot, record)
+         VALUES (?, 0, 'aa:0', 'key:11', 150, ?)`,
+      )
+      .run(response.txHash, previous(response));
+    old
+      .prepare("INSERT INTO sealed_reveal VALUES (?, 0, ?)")
+      .run("dd", previous(response.response));
+    old.prepare("INSERT INTO sealed_reveal VALUES ('ee', 0, NULL)").run();
+    old.close();
+
+    openBackendStore(path).close();
+    const db = new DatabaseSync(path);
+    try {
+      const recordOf = (key: string) =>
+        db
+          .prepare(
+            "SELECT record, changed_at FROM survey_index WHERE survey_key = ?",
+          )
+          .get(key) as { record: string; changed_at: number };
+      const expected = previous(survey).replace(
+        /"budget":(\d+)/g,
+        '"budget":{"$bigint":"$1"}',
+      );
+      expect(recordOf("aa:0").record).toBe(expected);
+      expect(decodeSurveyRecord(JSON.parse(expected))).toBeDefined();
+      expect(recordOf("aa:0").changed_at).toBeGreaterThan(0);
+      expect(recordOf("cc:0")).toEqual({ record: untouched, changed_at: 0 });
+
+      const stored = (
+        db.prepare("SELECT record FROM response").get() as { record: string }
+      ).record;
+      expect(stored).toBe(wire(response));
+      expect(decodeResponseRecord(JSON.parse(stored))).toEqual(response);
+
+      expect(db.prepare("SELECT tx_hash FROM sealed_reveal").all()).toEqual([
+        { tx_hash: "ee" },
+      ]);
+    } finally {
+      db.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

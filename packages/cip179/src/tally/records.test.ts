@@ -81,7 +81,7 @@ const survey: SurveyRecord = {
         type: "pointsAllocation",
         prompt: "p",
         options: { type: "options", labels: ["a", "b"] },
-        budget: 10,
+        budget: 10n,
       },
       {
         type: "rating",
@@ -146,7 +146,7 @@ const response: ResponseRecord = {
         {
           questionIndex: 5,
           type: "pointsAllocation",
-          allocations: [{ optionIndex: 0, points: 10 }],
+          allocations: [{ optionIndex: 0, points: 10n }],
         },
         {
           questionIndex: 6,

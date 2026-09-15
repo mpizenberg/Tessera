@@ -111,7 +111,7 @@ describe("external-content mode with points-allocation", () => {
         type: "pointsAllocation",
         prompt: "",
         options: { type: "count", count: 4 },
-        budget: 100,
+        budget: 100n,
       },
     ],
     contentAnchor: { uri: "ipfs://bafy...survey", hash: anchorHash },
@@ -412,42 +412,80 @@ describe("rating require_all (v5)", () => {
   });
 });
 
-describe("numeric constraints bounded to safe integers", () => {
-  // min/max/step drive rating-scale bucketing, which crosses Number(); an
-  // out-of-safe-range bound would lose precision and describe a nonsensical
-  // scale. Reject it at decode rather than carry it into the tally.
-  const overSafe = BigInt(Number.MAX_SAFE_INTEGER) + 1n;
+describe("integers a survey sets are read at any size", () => {
+  const huge = 2n ** 63n;
 
-  it("rejects a numericRange bound beyond the JS-safe integer range", () => {
+  it("decodes numericRange bounds of ±2^63", () => {
     const q: Question = {
       type: "numericRange",
       prompt: "How many?",
-      constraints: { min: 0n, max: overSafe },
+      constraints: { min: -huge, max: huge, step: huge },
     };
-    expect(() => decodeQuestion(encodeQuestion(q))).toThrow(Cip179DecodeError);
+    expect(decodeQuestion(encodeQuestion(q))).toEqual(q);
   });
 
-  it("rejects a numeric rating-scale bound beyond the safe range", () => {
+  it("decodes a numeric rating-scale bound beyond 2^53", () => {
     const q: RatingQuestion = {
       type: "rating",
       prompt: "Rate",
       options: { type: "options", labels: ["A", "B"] },
       scale: {
         type: "numeric",
-        constraints: { min: 0n, max: overSafe, step: 1n },
+        constraints: { min: 0n, max: huge, step: 1n },
       },
       requireAll: false,
     };
-    expect(() => decodeQuestion(encodeQuestion(q))).toThrow(Cip179DecodeError);
+    expect(decodeQuestion(encodeQuestion(q))).toEqual(q);
   });
 
-  it("still accepts a bound at exactly the maximum safe integer", () => {
-    const q: Question = {
-      type: "numericRange",
-      prompt: "How many?",
-      constraints: { min: 0n, max: BigInt(Number.MAX_SAFE_INTEGER) },
+  it("decodes a points budget of 2^60, and sums allocations exactly", () => {
+    const definition: SurveyDefinition = {
+      specVersion: 5,
+      owner: { type: "key", keyHash: ownerHash },
+      title: "Lovelace",
+      description: "",
+      eligibleRoles: [Role.DRep],
+      endEpoch: 612,
+      submissionMode: { type: "public" },
+      questions: [
+        {
+          type: "pointsAllocation",
+          prompt: "Split",
+          options: { type: "options", labels: ["A", "B"] },
+          budget: 2n ** 60n,
+        },
+      ],
     };
-    expect(decodeQuestion(encodeQuestion(q))).toEqual(q);
+    expect(
+      roundtripPayload({ type: "definitions", definitions: [definition] }),
+    ).toEqual({ type: "definitions", definitions: [definition] });
+    expect(validateDefinition(definition)).toEqual([]);
+
+    const allocating = (second: bigint): SurveyResponse => ({
+      specVersion: 5,
+      surveyRef: { txId, index: 0 },
+      role: Role.DRep,
+      credential: { type: "key", keyHash: responderHash },
+      answers: {
+        type: "public",
+        answers: [
+          {
+            type: "pointsAllocation",
+            questionIndex: 0,
+            allocations: [
+              { optionIndex: 0, points: 2n ** 59n },
+              { optionIndex: 1, points: second },
+            ],
+          },
+        ],
+      },
+    });
+    expect(validateResponse(definition, allocating(2n ** 59n))).toEqual([]);
+    expect(
+      validateResponse(definition, allocating(2n ** 59n - 1n)).map(
+        (p) => p.code,
+      ),
+    ).toEqual(["answer.pointsSumMismatch"]);
   });
 });
 

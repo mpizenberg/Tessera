@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 while `< 1.0.0`, breaking changes bump the **minor** version.
 
+## [Unreleased]
+
+### Changed
+
+- **Breaking: `PointsAllocationQuestion.budget` and `PointsAllocation.points`
+  are `bigint`** (were `number`), in the domain types, the encoder, the
+  validator and the typed record decoders. Their JSON-safe wire form becomes
+  the tagged `{ "$bigint": "…" }`.
+- **Numeric bounds, points budgets and points allocations decode at any
+  size.** Numeric-range and rating-grid `min`/`max`/`step` above 2^53 were
+  refused, and so were points above 2^53, though the CIP sets no such limit.
+  Every other integer the types keep as a `number` still makes its record
+  undecodable above 2^53; the README's numeric convention says why.
+- **Ruleset bump: `rulesetVersion` 12 → 13**, with a new `integers` rule
+  stating which integers are read at any size. More surveys become talliable
+  and more responses countable, so `rulesetHash()` changes and new artifacts
+  are incomparable with 12's. No survey on chain today carries such a value.
+
 ## [0.4.0] - 2026-09-04
 
 ### Added
