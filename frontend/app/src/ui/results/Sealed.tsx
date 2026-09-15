@@ -27,49 +27,51 @@ import { t, n } from "~/i18n";
 import { LiveResults } from "./Live";
 import css from "./results.module.css";
 
+/** A sealed survey's browser reveal, created once per results page. */
+export interface SealedReveal {
+  /** The drand round the definition pins; null for a public survey. */
+  readonly round: () => number | null;
+  /** Whether that round has published. */
+  readonly available: () => boolean;
+  /** Responders after structural dedup — role and credential are plaintext. */
+  readonly sealedCount: () => number;
+  /** The audit of the current in-window set, once the viewer revealed it. */
+  readonly audit: () => RevealedAudit | undefined;
+  readonly loading: () => boolean;
+  readonly error: () => unknown;
+  readonly request: () => void;
+}
+
 /**
- * Sealed-survey results. While the drand round is in the future, responses are
- * collected but unreadable. Once it publishes, a viewer can trigger the reveal —
- * fetch the beacon, decrypt every sealed response (each to a synthetic public
- * one), then hand off to {@link LiveResults}. Reveal is explicit (a button), not
- * automatic, so opening the page never silently kicks off network + crypto work.
+ * Reveal is opt-in: nothing decrypts until `request()`, so opening the page
+ * never silently kicks off network + crypto work. The request resets on a survey
+ * change (the instance is reused across `:key`) so navigating from a revealed
+ * survey to another sealed one never auto-starts decryption. Both sealed views
+ * read the one audit, so toggling between them never decrypts twice.
  */
-export const SealedResults: Component<{
-  s: SurveyAggregate;
-  def: SurveyDefinition;
-  keyStr: string;
+export function createSealedReveal(
+  props: {
+    readonly s: SurveyAggregate;
+    readonly keyStr: string;
+    readonly nowUnix: number;
+  },
   /** Pre-dedup in-window structurally-valid responses (dedup happens post-reveal). */
-  inWindow: ResponseRecord[];
-  /**
-   * Reveal-independent exclusions only (after-deadline, structurally invalid,
-   * proof-failed) — proof is answer-independent, so an unproven sealed
-   * response is excluded without waiting for the reveal.
-   */
-  hardExcluded: readonly ExcludedRecord[];
-  /** Forwarded to {@link LiveResults} for the post-reveal view. */
-  verdicts?: ProofVerdicts | undefined;
-  nowUnix: number;
-}> = (props) => {
+  inWindow: () => readonly ResponseRecord[],
+): SealedReveal {
   const mode = () => {
     const m = props.s.record.definition.submissionMode;
     return m.type === "sealed" ? m : null;
   };
-  // Pre-reveal responder count: role + credential are plaintext, so structural
-  // latest-wins dedup is knowable now; only the answers wait for the reveal.
-  const sealedCount = (): number => dedupeResponses(props.inWindow).length;
-  const revealable = () => {
+  const available = () => {
     const m = mode();
     return !!m && roundIsAvailable(m.round, props.nowUnix);
   };
 
-  // Reveal is opt-in: nothing decrypts until the viewer asks for it. Reset on a
-  // survey change (the instance is reused across `:key`) so navigating from a
-  // revealed survey to another sealed one never auto-starts decryption.
-  const [revealRequested, setRevealRequested] = createSignal(false);
+  const [requested, setRequested] = createSignal(false);
   createEffect(
     on(
       () => props.keyStr,
-      () => setRevealRequested(false),
+      () => setRequested(false),
       { defer: true },
     ),
   );
@@ -78,24 +80,28 @@ export const SealedResults: Component<{
   // fresh `{ records, round }` object: keying on the round alone would freeze the
   // decrypted set to whatever was loaded the instant the round became available
   // (later responses in a new snapshot would never re-tally), while a fresh
-  // object would re-decrypt every 30s as the clock behind `revealable()` ticks.
+  // object would re-decrypt every 30s as the clock behind `available()` ticks.
   // The fingerprint = round + the sorted response tx hashes, so it changes on a
   // genuine membership change but stays stable across ticks and object identity.
   const revealKey = (): string | null => {
     if (
       !(
-        revealRequested() &&
-        revealable() &&
+        requested() &&
+        available() &&
         !props.s.sealedUnsupported &&
         !props.s.cancelled
       )
     )
       return null;
-    const hashes = props.inWindow.map((r) => r.txHash).sort();
+    const hashes = inWindow()
+      .map((r) => r.txHash)
+      .sort();
     return `${mode()!.round}:${hashes.join(",")}`;
   };
 
-  const [revealed] = createResource(revealKey, async () => {
+  const [revealed] = createResource(revealKey, async (key) => {
+    const records = inWindow();
+    const round = mode()!.round;
     // Only ~/wallet/cbor is loaded lazily — it is the import that gates the
     // heavy evolution-sdk chunk. cip-179/tlock is already statically imported
     // above (tlock-js itself stays lazy inside its client).
@@ -107,16 +113,55 @@ export const SealedResults: Component<{
     // and indices are on-chain; enrichment only relabels), not the display one.
     const results = await revealResponses(
       evolutionCodec,
-      props.inWindow.map((r) => r.response),
-      mode()!.round,
+      records.map((r) => r.response),
+      round,
     );
-    return auditRevealedResponses(
-      props.inWindow,
-      results,
-      props.s.record.definition,
-    );
+    return {
+      key,
+      audit: auditRevealedResponses(
+        records,
+        results,
+        props.s.record.definition,
+      ),
+    };
   });
 
+  return {
+    round: () => mode()?.round ?? null,
+    available,
+    sealedCount: () => dedupeResponses(inWindow()).length,
+    // A resource keeps its last value when its source goes null, so an audit
+    // is only this survey's while its fingerprint is still the current one.
+    audit: () => {
+      const v = revealed();
+      return v !== undefined && v.key === revealKey() ? v.audit : undefined;
+    },
+    loading: () => revealed.loading,
+    error: () => revealed.error,
+    request: () => setRequested(true),
+  };
+}
+
+/**
+ * Sealed-survey results. While the drand round is in the future, responses are
+ * collected but unreadable. Once it publishes, a viewer can trigger the reveal —
+ * fetch the beacon, decrypt every sealed response (each to a synthetic public
+ * one), then hand off to {@link LiveResults}.
+ */
+export const SealedResults: Component<{
+  s: SurveyAggregate;
+  def: SurveyDefinition;
+  keyStr: string;
+  reveal: SealedReveal;
+  /**
+   * Reveal-independent exclusions only (after-deadline, structurally invalid,
+   * proof-failed) — proof is answer-independent, so an unproven sealed
+   * response is excluded without waiting for the reveal.
+   */
+  hardExcluded: readonly ExcludedRecord[];
+  /** Forwarded to {@link LiveResults} for the post-reveal view. */
+  verdicts?: ProofVerdicts | undefined;
+}> = (props) => {
   // Post-reveal exclusions, folded into the on-chain categories from which the
   // count breakdown derives. `undecryptable` = a response that didn't decrypt or
   // didn't decode (Tessera can't always tell which, so the label stays neutral);
@@ -145,70 +190,81 @@ export const SealedResults: Component<{
           body={t("survey.sealedUnsupportedBody")}
         />
       </Match>
-      <Match when={!revealable()}>
+      <Match when={!props.reveal.available()}>
         <SealedStateNotice
           tone="warn"
           title={t("survey.sealedTitle")}
           body={t("survey.sealedBody", {
-            n: n(sealedCount()),
+            n: n(props.reveal.sealedCount()),
             responses:
-              sealedCount() === 1
+              props.reveal.sealedCount() === 1
                 ? t("survey.responseSingular")
                 : t("survey.responsePlural"),
-            date: formatRevealDate(mode()!.round),
+            date: formatRevealDate(props.reveal.round()!),
           })}
         />
       </Match>
-      <Match when={revealed.loading}>
-        <SealedStateNotice
-          tone="muted"
-          title={t("survey.revealingTitle")}
-          body={t("survey.revealingBody")}
-        />
+      <Match when={props.reveal.audit()}>
+        {(audit) => (
+          <LiveResults
+            def={props.def}
+            keyStr={props.keyStr}
+            records={audit().counted}
+            excludedRecords={excludedRecordsWithFailures(audit())}
+            verdicts={props.verdicts}
+          />
+        )}
       </Match>
-      <Match when={revealed.error}>
-        <SealedStateNotice
-          tone="warn"
-          title={t("survey.revealErrorTitle")}
-          body={
-            revealed.error instanceof Error
-              ? revealed.error.message
-              : String(revealed.error)
-          }
-        />
-      </Match>
-      <Match when={revealed()}>
-        <LiveResults
-          def={props.def}
-          keyStr={props.keyStr}
-          records={revealed()!.counted}
-          excludedRecords={excludedRecordsWithFailures(revealed()!)}
-          verdicts={props.verdicts}
-        />
-      </Match>
-      {/* Reached only when revealable, supported, not cancelled, and the viewer
-          hasn't triggered the reveal yet — offer the button. */}
       <Match when={true}>
-        <SealedStateNotice
-          tone="muted"
-          title={t("survey.sealedRevealableTitle")}
-          body={t("survey.sealedRevealableBody", {
-            date: formatRevealDate(mode()!.round),
-            n: n(sealedCount()),
-            responses:
-              sealedCount() === 1
-                ? t("survey.responseSingular")
-                : t("survey.responsePlural"),
-          })}
-          action={{
-            label: t("survey.revealAll"),
-            onClick: () => setRevealRequested(true),
-          }}
-        />
+        <RevealNotice reveal={props.reveal} />
       </Match>
     </Switch>
   );
 };
+
+/**
+ * What a revealable sealed survey shows in place of anything that reads its
+ * answers: the reveal button, then progress, then the error if it failed.
+ */
+export const RevealNotice: Component<{ reveal: SealedReveal }> = (props) => (
+  <Switch>
+    <Match when={props.reveal.loading()}>
+      <SealedStateNotice
+        tone="muted"
+        title={t("survey.revealingTitle")}
+        body={t("survey.revealingBody")}
+      />
+    </Match>
+    <Match when={props.reveal.error()}>
+      <SealedStateNotice
+        tone="warn"
+        title={t("survey.revealErrorTitle")}
+        body={messageOf(props.reveal.error())}
+      />
+    </Match>
+    <Match when={true}>
+      <SealedStateNotice
+        tone="muted"
+        title={t("survey.sealedRevealableTitle")}
+        body={t("survey.sealedRevealableBody", {
+          date: formatRevealDate(props.reveal.round()!),
+          n: n(props.reveal.sealedCount()),
+          responses:
+            props.reveal.sealedCount() === 1
+              ? t("survey.responseSingular")
+              : t("survey.responsePlural"),
+        })}
+        action={{
+          label: t("survey.revealAll"),
+          onClick: () => props.reveal.request(),
+        }}
+      />
+    </Match>
+  </Switch>
+);
+
+const messageOf = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
 
 const SealedStateNotice: Component<{
   tone: "warn" | "muted";

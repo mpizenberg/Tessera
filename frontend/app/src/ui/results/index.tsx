@@ -1,7 +1,7 @@
 /**
  * A survey's results. Which of the three views renders is `resultsView()`'s
- * decision; this owns the viewer's toggle between them and the sealed-specific
- * split of the audit.
+ * decision; this owns the viewer's toggle between them, the sealed-specific
+ * split of the audit, and the browser reveal both sealed-survey views read.
  */
 
 import {
@@ -28,7 +28,7 @@ import { resultsView } from "~/domain/resultsRouting";
 import { t } from "~/i18n";
 import { FinalResults } from "./Final";
 import { LiveResults } from "./Live";
-import { SealedResults } from "./Sealed";
+import { SealedResults, createSealedReveal } from "./Sealed";
 import css from "./results.module.css";
 
 export const Results: Component<{
@@ -77,6 +77,15 @@ export const Results: Component<{
   const sealedHardExcluded = createMemo<readonly ExcludedRecord[]>(() =>
     props.audit.excludedRecords.filter((e) => e.key !== "superseded"),
   );
+  const reveal = createSealedReveal(props, sealedInWindow);
+  // A sealed artifact commits no answers and its on-chain ones are ciphertext,
+  // so the final view rejoins against the revealed responses once there are
+  // some. Superseded ones stay in: the rejoin is by chain coordinate, and the
+  // artifact's counted set is the backend's, not this browser's dedup.
+  const finalResponses = createMemo<readonly ResponseRecord[]>(() => {
+    const audit = reveal.audit();
+    return audit ? [...audit.counted, ...audit.superseded] : props.responses;
+  });
 
   return (
     <Switch>
@@ -87,7 +96,8 @@ export const Results: Component<{
           artifact={props.artifact!}
           def={props.def}
           keyStr={props.keyStr}
-          responses={props.responses}
+          responses={finalResponses()}
+          reveal={props.s.sealed ? reveal : undefined}
           onShowRaw={() => setShowRaw(true)}
         />
       </Match>
@@ -102,10 +112,9 @@ export const Results: Component<{
           s={props.s}
           def={props.def}
           keyStr={props.keyStr}
-          inWindow={sealedInWindow()}
+          reveal={reveal}
           hardExcluded={sealedHardExcluded()}
           verdicts={props.verdicts}
-          nowUnix={props.nowUnix}
         />
       </Match>
       <Match when={view() === "raw"}>

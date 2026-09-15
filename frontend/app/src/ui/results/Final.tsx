@@ -3,7 +3,15 @@
  * tally artifact.
  */
 
-import { For, Show, createMemo, createSignal, type Component } from "solid-js";
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  untrack,
+  type Component,
+} from "solid-js";
 import type { SurveyDefinition, SurveyResponse } from "cip-179";
 import type { ResponseRecord } from "cip-179/domain";
 import {
@@ -20,6 +28,7 @@ import { t, n } from "~/i18n";
 import { responsesCsv, type CsvEntry } from "./export";
 import { InfoNote } from "./Card";
 import { QuestionResult, metaFor } from "./Question";
+import { RevealNotice, type SealedReveal } from "./Sealed";
 
 import css from "./results.module.css";
 
@@ -38,11 +47,18 @@ export const FinalResults: Component<{
   artifact: TallyArtifact;
   def: SurveyDefinition;
   keyStr: string;
-  /** The survey's on-chain responses, to rejoin answers for the one-vote view. */
+  /**
+   * The responses to rejoin answers from, for the one-vote view, the detail and
+   * the CSV: on-chain for a public survey, revealed for a sealed one.
+   */
   responses: readonly ResponseRecord[];
+  /** A sealed survey's reveal, which everything reading answers waits for. */
+  reveal?: SealedReveal | undefined;
   onShowRaw: () => void;
 }> = (props) => {
   const [weighting, setWeighting] = createSignal<Weighting>("chain");
+  const answersPending = (): boolean =>
+    props.reveal !== undefined && props.reveal.audit() === undefined;
   const cancelled = () => props.artifact.tally.cancelled;
   const roles = createMemo(() =>
     artifactResults(props.artifact, props.def, props.responses, weighting()),
@@ -67,7 +83,7 @@ export const FinalResults: Component<{
   // One entry per counted responder, weight reflecting the active switch (chain
   // weight, or 1). `weight_unit` names what the weight measures per role, since
   // it's heterogeneous (voting power vs active stake vs count).
-  const exportVotesCsv = (): void => {
+  const writeVotesCsv = (): void => {
     const w = weighting();
     const measures = RULESET_DESCRIPTOR.roleMeasures as Record<string, string>;
     const byKey = new Map<string, SurveyResponse>();
@@ -95,6 +111,22 @@ export const FinalResults: Component<{
       `tessera-${fileRef(props.keyStr)}-${w}.csv`,
       responsesCsv(entries),
     );
+  };
+  // On a sealed survey the export is the viewer's request for the answers too:
+  // it starts the reveal and writes once the reveal lands, or drops on failure.
+  const [csvQueued, setCsvQueued] = createSignal(false);
+  createEffect(() => {
+    if (!csvQueued()) return;
+    if (props.reveal?.error()) setCsvQueued(false);
+    else if (!answersPending()) {
+      setCsvQueued(false);
+      untrack(writeVotesCsv);
+    }
+  });
+  const exportVotesCsv = (): void => {
+    if (!answersPending()) return writeVotesCsv();
+    setCsvQueued(true);
+    props.reveal!.request();
   };
 
   return (
@@ -150,43 +182,52 @@ export const FinalResults: Component<{
           </div>
         </div>
 
-        <For each={roles()}>
-          {(rv) => (
-            <section>
-              <div class={css.weightedRoleHead}>
-                <span class={css.weightedRoleTitle}>{roleLabel(rv.role)}</span>
-                <span class={css.weightedRoleMeta}>
-                  {t("survey.weightedCounted", { n: n(rv.responderCount) })}
-                  <Show when={rv.total !== null && rv.votedWeight !== null}>
-                    {" · "}
-                    {t("survey.weightedVotingWeight", {
-                      ada: formatAda(rv.votedWeight!),
-                    })}
-                    <Show when={rv.turnout !== null}>
+        <Show when={answersPending()}>
+          <RevealNotice reveal={props.reveal!} />
+        </Show>
+
+        {/* The one-vote re-tally reads answers; the chain aggregates do not. */}
+        <Show when={weighting() === "chain" || !answersPending()}>
+          <For each={roles()}>
+            {(rv) => (
+              <section>
+                <div class={css.weightedRoleHead}>
+                  <span class={css.weightedRoleTitle}>
+                    {roleLabel(rv.role)}
+                  </span>
+                  <span class={css.weightedRoleMeta}>
+                    {t("survey.weightedCounted", { n: n(rv.responderCount) })}
+                    <Show when={rv.total !== null && rv.votedWeight !== null}>
                       {" · "}
-                      {t("survey.weightedTurnout", {
-                        pct: (rv.turnout! * 100).toFixed(2),
+                      {t("survey.weightedVotingWeight", {
+                        ada: formatAda(rv.votedWeight!),
                       })}
+                      <Show when={rv.turnout !== null}>
+                        {" · "}
+                        {t("survey.weightedTurnout", {
+                          pct: (rv.turnout! * 100).toFixed(2),
+                        })}
+                      </Show>
                     </Show>
-                  </Show>
-                </span>
-              </div>
-              <div class={css.questionResults}>
-                <For each={rv.questions}>
-                  {(results, i) => (
-                    <QuestionResult
-                      q={props.def.questions[i()]}
-                      index={i()}
-                      results={results}
-                      responderCount={rv.responderCount}
-                      meta={metaFor(rv.votedWeight !== null)}
-                    />
-                  )}
-                </For>
-              </div>
-            </section>
-          )}
-        </For>
+                  </span>
+                </div>
+                <div class={css.questionResults}>
+                  <For each={rv.questions}>
+                    {(results, i) => (
+                      <QuestionResult
+                        q={props.def.questions[i()]}
+                        index={i()}
+                        results={results}
+                        responderCount={rv.responderCount}
+                        meta={metaFor(rv.votedWeight !== null)}
+                      />
+                    )}
+                  </For>
+                </div>
+              </section>
+            )}
+          </For>
+        </Show>
       </Show>
 
       <p class={css.tallyFootnote} title={hash()}>

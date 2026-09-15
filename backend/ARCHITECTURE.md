@@ -909,4 +909,5 @@ the reason costs more than reading it.
   every in-window response regardless, so the committed copy bought one
   diagnostic line while making a sealed artifact — one D1 row — grow with every
   answer instead of with every responder. Removed in ruleset 13 (TALLY-SPEC.md
-  §5).
+  §5); the app decrypts in the browser for a finalized sealed survey's one-vote
+  view, detail and CSV, through the reveal its pre-artifact view already had.
