@@ -1,7 +1,8 @@
 /**
  * What sits above the form: the survey's identity and role picker, then the
- * banners that qualify what answering here means — already responded, sealed
- * until a drand round, or rendering with labels that couldn't be fetched.
+ * banners that qualify what answering here means — already responded, answers
+ * restored from an earlier visit, sealed until a drand round, or rendering with
+ * labels that couldn't be fetched.
  */
 
 import { For, Show, type Component } from "solid-js";
@@ -73,6 +74,17 @@ export const RespondedBanner: Component<{ role: Role | null }> = (props) => (
       </div>
       <div class={css.respondedText}>{t("respond.alreadyRespondedText")}</div>
     </div>
+  </div>
+);
+
+export const RestoredBanner: Component<{ onDiscard: () => void }> = (props) => (
+  <div class={css.restoredBanner}>
+    <div class={css.bannerBody}>
+      <div class={css.bannerTitle}>{t("respond.restoredAnswers")}</div>
+    </div>
+    <button type="button" onClick={props.onDiscard} class={css.discardBtn}>
+      {t("respond.discardRestored")}
+    </button>
   </div>
 );
 

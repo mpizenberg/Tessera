@@ -1,4 +1,11 @@
-import { Show, createMemo, createResource, type Component } from "solid-js";
+import {
+  Show,
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  type Component,
+} from "solid-js";
 import { A, useParams } from "@solidjs/router";
 import type { Role, SealedSubmissionMode, SurveyDefinition } from "cip-179";
 
@@ -17,9 +24,11 @@ import { networkMismatch, viewStatus } from "~/ui/format";
 import type { WalletIdentity } from "~/wallet/types";
 import { t } from "~/i18n";
 import { FormGate, Notice } from "./Gate";
+import { responseDrafts } from "./draft";
 import {
   LabelsAbsentBanner,
   RespondedBanner,
+  RestoredBanner,
   SealedBanner,
   SurveyHeader,
 } from "./Header";
@@ -66,10 +75,17 @@ export const Respond: Component = () => {
   const mismatch = (): boolean =>
     networkMismatch(app.wallet()?.identity.networkId, app.config.network);
 
+  const kept = responseDrafts({
+    key,
+    endEpoch: () => survey()?.record.definition.endEpoch,
+    tipEpoch: () => (app.list.error ? undefined : app.list()?.tip.epoch),
+  });
+
   // Role choice, drafts and progress: the spine shared with the widget. The app
-  // feeds it a wallet-derived responder, the survey's on-chain ref, and the
-  // responses riding in the lazily-fetched bundle. `definition()` is the
-  // enriched one, so external-content labels swapping in reseeds the form.
+  // feeds it a wallet-derived responder, the survey's on-chain ref, the
+  // responses riding in the lazily-fetched bundle, and a stash that outlives a
+  // reload. `definition()` is the enriched one, so external-content labels
+  // swapping in reseeds a form the user has not edited.
   const responder = createMemo<Responder>(() => {
     const id = identity();
     return id ? walletResponder(id) : {};
@@ -85,6 +101,7 @@ export const Respond: Component = () => {
         : undefined;
     },
     preferredRole: () => app.activeRole() as Role | null,
+    stash: kept.stash,
   });
 
   const sealedMode = createMemo<SealedSubmissionMode | null>(() => {
@@ -101,9 +118,35 @@ export const Respond: Component = () => {
     sealedMode,
   };
   const deadline = createDeadline(definition);
-  const rationale = createRationale();
+  const keptRationale = kept.loadRationale();
+  const rationale = createRationale(keptRationale);
+  const [rationaleRestored, setRationaleRestored] = createSignal(
+    keptRationale !== undefined,
+  );
   const preview = createOnchainPreview(source, rationale);
   const submission = createSubmission({ source, deadline, rationale });
+  const sent = (): boolean =>
+    submission.txHash() !== null || submission.queued();
+
+  // The rationale belongs to the survey, not to one role's form, so any
+  // submission from this screen ends it.
+  createEffect(() =>
+    kept.storeRationale(sent() ? undefined : rationale.inputs()),
+  );
+
+  // The form's identity is taken at the click: the role chips stay live while
+  // the wallet signs, and only the form that was sent may be forgotten.
+  const submit = async (queueOnly: boolean): Promise<void> => {
+    const formKey = draft.formKey();
+    await submission.submit(queueOnly);
+    if (sent()) kept.stash.delete(formKey);
+  };
+
+  const discard = () => {
+    draft.discard();
+    rationale.reset();
+    setRationaleRestored(false);
+  };
 
   const sealedUnsupported = (): boolean => survey()?.sealedUnsupported ?? false;
 
@@ -150,7 +193,7 @@ export const Respond: Component = () => {
       >
         {(s) => (
           <Show
-            when={submission.txHash() === null && !submission.queued()}
+            when={!sent()}
             fallback={
               <Show when={submission.txHash()} fallback={<QueuedNote />}>
                 {(hash) => <SubmittedPanel hash={hash()} surveyKey={key()} />}
@@ -183,6 +226,11 @@ export const Respond: Component = () => {
               {/* The actual form (open + eligible) */}
               <Show when={draft.prior()}>
                 <RespondedBanner role={draft.role()} />
+              </Show>
+              <Show
+                when={draft.restored() || (app.ui.pro && rationaleRestored())}
+              >
+                <RestoredBanner onDiscard={discard} />
               </Show>
               <Show when={sealedMode()}>
                 {(m) => <SealedBanner round={m().round} />}
@@ -236,8 +284,7 @@ export const Respond: Component = () => {
       <Show
         when={
           survey() &&
-          submission.txHash() === null &&
-          !submission.queued() &&
+          !sent() &&
           (viewStatus(survey()!) === "public" ||
             viewStatus(survey()!) === "sealed") &&
           draft.role() !== null
@@ -261,8 +308,8 @@ export const Respond: Component = () => {
             }
             busyText={submission.busyText()}
             queueing={submission.queueing()}
-            onSubmit={() => void submission.submit(false)}
-            onQueue={() => void submission.submit(true)}
+            onSubmit={() => void submit(false)}
+            onQueue={() => void submit(true)}
           />
         </Show>
       </Show>

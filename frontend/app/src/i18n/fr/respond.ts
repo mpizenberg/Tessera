@@ -33,6 +33,10 @@ const respond: Messages = {
     "Justification : le hash doit faire 32 octets (64 caractères hex).",
   ratProblemHashHex: "Justification : le hash n'est pas un hexadécimal valide.",
 
+  // --- Answers restored from an earlier visit ----------------------------
+  restoredAnswers: "Vos réponses non envoyées ont été restaurées.",
+  discardRestored: "Abandonner",
+
   // --- Unverified cancellation claim --------------------------------------
   cancelClaimLead: "Demande d'annulation non vérifiée.",
   cancelClaimBody:

@@ -36,6 +36,10 @@ const respond = {
   ratProblemHashBytes: "Rationale: hash must be 32 bytes (64 hex chars).",
   ratProblemHashHex: "Rationale: hash is not valid hex.",
 
+  // --- Answers restored from an earlier visit ----------------------------
+  restoredAnswers: "Restored your unsent answers.",
+  discardRestored: "Discard",
+
   // --- Unverified cancellation claim --------------------------------------
   cancelClaimLead: "Unverified cancellation claim.",
   cancelClaimBody:

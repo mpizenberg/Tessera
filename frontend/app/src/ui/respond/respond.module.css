@@ -250,6 +250,11 @@
   border: 1px solid var(--card-line);
 }
 
+.restoredBanner {
+  composes: cardBanner;
+  align-items: center;
+}
+
 .bannerIcon {
   font-size: 15px;
   color: var(--warn);
@@ -416,6 +421,11 @@
   border: 1px solid var(--line);
   background: #fff;
   color: var(--muted);
+}
+
+.discardBtn {
+  composes: skipBtn;
+  flex: none;
 }
 
 .skipBtnOn {

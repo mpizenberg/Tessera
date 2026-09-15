@@ -18,6 +18,15 @@ import css from "./respond.module.css";
 /** How the voter supplies the document: write it here, or paste one already hosted. */
 export type RationaleMode = "write" | "manual";
 
+/** Everything the voter set in the section, as a reload restores it. */
+export type RationaleInputs = {
+  readonly on: boolean;
+  readonly mode: RationaleMode;
+  readonly text: string;
+  readonly uri: string;
+  readonly hash: string;
+};
+
 /** A parsed pasted anchor, or every reason it could not be parsed. */
 export type ManualAnchor =
   | { readonly ok: true; readonly anchor: ContentAnchor | undefined }
@@ -34,6 +43,9 @@ export type Rationale = {
   readonly setUri: Setter<string>;
   readonly hash: Accessor<string>;
   readonly setHash: Setter<string>;
+  readonly inputs: Accessor<RationaleInputs>;
+  /** Back to how a first visit shows the section. */
+  readonly reset: () => void;
   /** Whether any IPFS provider is configured, so writing can actually pin. */
   readonly hasPinning: Accessor<boolean>;
   /** Whether submitting will pin — an extra, network-bound step before signing. */
@@ -64,18 +76,19 @@ export type Rationale = {
  * Off entirely outside Pro mode, so every read below folds `app.ui.pro` in and
  * callers never have to.
  */
-export function createRationale(): Rationale {
+export function createRationale(kept?: RationaleInputs): Rationale {
   const app = useApp();
 
-  const [on, setOn] = createSignal(false);
   const hasPinning = (): boolean =>
     IPFS_PROVIDERS.some((p) => app.ipfsTokens[p.id]?.trim());
+  const initialMode = (): RationaleMode => (hasPinning() ? "write" : "manual");
+  const [on, setOn] = createSignal(kept?.on ?? false);
   const [mode, setMode] = createSignal<RationaleMode>(
-    hasPinning() ? "write" : "manual",
+    kept?.mode ?? initialMode(),
   );
-  const [text, setText] = createSignal("");
-  const [uri, setUri] = createSignal("");
-  const [hash, setHash] = createSignal("");
+  const [text, setText] = createSignal(kept?.text ?? "");
+  const [uri, setUri] = createSignal(kept?.uri ?? "");
+  const [hash, setHash] = createSignal(kept?.hash ?? "");
 
   /** Whether a pasted anchor is what this submission would carry. */
   const pasting = (): boolean => app.ui.pro && on() && mode() === "manual";
@@ -91,6 +104,20 @@ export function createRationale(): Rationale {
     setUri,
     hash,
     setHash,
+    inputs: () => ({
+      on: on(),
+      mode: mode(),
+      text: text(),
+      uri: uri(),
+      hash: hash(),
+    }),
+    reset: () => {
+      setOn(false);
+      setMode(initialMode());
+      setText("");
+      setUri("");
+      setHash("");
+    },
     hasPinning,
     willPin: () =>
       app.ui.pro && on() && mode() === "write" && text().trim() !== "",
@@ -144,7 +171,7 @@ export function createRationale(): Rationale {
 
 /**
  * The section that drives it. One call site, so it takes the state whole rather
- * than restating all eleven of its fields as props.
+ * than restating its fields as props.
  */
 export const RationaleSection: Component<{ r: Rationale }> = (props) => (
   <div class={css.card}>
