@@ -56,13 +56,17 @@ independently verifiable and is out of scope here.
 - **Registration at the end of `E`**, of stake credentials and DReps alike, is
   the state after `E`'s last block.
 
-Measured on preview against Koios (2026-09-10 and 2026-09-16, epochs 1405,
-1406, 1408, 1409 and 1411 to 1414): the Haskell node's state after `E`'s last
-block answers all of B from one file, with no disagreement on either total or
-on any sampled credential. The sample included every stake credential that
-registered or deregistered during five of those epochs (109 registrations, 23
-deregistrations) and the two DReps that registered during `E`. A registered
-DRep retiring during `E` did not occur in the window and is untested.
+Measured on preview against Koios (2026-09-10 to 2026-09-16, epochs 1405,
+1406, 1408, 1409 and 1411 to 1414), with Mithril ancillary states taken 2 to
+30 blocks before each epoch's end: both totals and every sampled weight equal
+Koios for `E` through `set` and the pulsing distribution, which hold for the
+whole of `E`; and every sampled registration agrees, including every stake
+credential that registered or deregistered between two consecutive states
+(109 registrations, 23 deregistrations) and the two DReps that registered
+during `E`. That supports registration being read at the end of `E` but does
+not measure the last blocks before it, which no ancillary state covered (§4,
+Option 3). A registered DRep retiring during `E` did not occur in the window
+and is untested.
 
 So the ledger facts are computed at three consecutive boundaries, `E-2 → E-1`
 through `E → E+1`, and the Haskell ledger carries all of them into its state
@@ -302,12 +306,38 @@ path.
 
 ### Option 3 — a signed ledger snapshot (Rung 1, minutes)
 
-- **Mithril ancillary** for the epoch in question (`mithril-client cardano-db
-snapshot list` supports `latest-N`; ancillary archives are retained for 28
-  days, about five epochs), decoded with Amaru's importer (`amaru dev ledger
-states import` accepts "a Haskell or CBOR snapshot") and the same dump
-  binary as Option 2. 1–3 GB, minutes. Only for surveys that closed within the
-  last month, unless the archives are kept.
+- **Mithril ancillary** — tried on preview, 2026-09-09 to 2026-09-16
+  (`packages/mithril`). An hourly archive of the node's newest ledger
+  snapshot plus the unfinished immutable file after the one it is named for,
+  signed with the aggregator operator's Ed25519 key and kept 28 days on the
+  CDN (28 epochs on preview, about five on preprod and mainnet). On preview:
+  255 MB down, about 40 MB of state, decoded in about 1.3 s by a generic CBOR
+  decoder. **Its snapshot is not at an epoch boundary.** The aggregator
+  copies whichever snapshot is newest in the node's `db/ledger` when it
+  builds the archive and never compares its slot with the immutable number
+  (`mithril-aggregator/src/services/snapshotter/compressed_archive_snapshotter.rs`,
+  `unstable` at 621a9bd), and node 11.0.1, which the preview aggregator runs,
+  takes snapshots on a timer. Of thirteen preview archives, twelve states sit 2 to
+  30 blocks before the end of the immutable file in the name and one 2 blocks
+  past an epoch boundary. A state inside `E` gives `E`'s weights and totals
+  exactly — for the one finalized preview survey still in reach
+  (`end_epoch` 1395), both totals and both responders' weights equal the
+  artifact's from a state 4,543 slots before the boundary — but it gives
+  registration as of its own slot, not the end of `E`.
+
+  That makes it an **estimate**, not an audit: a result recomputed from the
+  latest state inside `end_epoch` equals the artifact unless a counted
+  responder's registration changed between that state and the epoch's end
+  (from under a minute to over an hour on preview), which the state cannot
+  show. Closing the
+  gap takes the certificates of the blocks in between, from a block decoder
+  over the certified immutable files or from Koios, and past that point a
+  Rung 2 replay that stops exactly at the boundary is the cleaner tool.
+  Node 11.1 is reported to take snapshots at fixed slot multiples that
+  include every epoch boundary, which would put some archives exactly at an
+  epoch's end; not verified here, and not what the preview aggregator runs as
+  of 2026-09-16.
+
 - **A Dolos stele** (`ghcr.io/txpipe/dolos-snapshots/<network>:epoch-E`), cut
   exactly at `stop_epoch = E`; its `digests` layer lets the blocks be checked
   against Mithril, the state is TxPipe's. Minutes.
@@ -340,13 +370,37 @@ is a multi-day PostgreSQL job.
   power is served by nobody's API — Dolos deferred it in a comment, Dingo
   keeps four epochs of reward rows, Amaru has no API. Mithril's ledger-state
   certification, when it ships, collapses Rung 1 into Rung 2 for recent
-  epochs and makes Option 3 the cheap trustless path.
+  epochs and makes Option 3 the cheap trustless path — for an audit, only if
+  the certified state sits at an epoch boundary (§4, Option 3).
 
 ---
 
 ## 6. Recommended next step
 
-A one-day spike on preprod, decisive because the reference artifact exists:
+**Rung 1 was tried first and is set aside** (2026-09-16). The Mithril
+ancillary gave every weight and total exactly and settled which DRep
+distribution db-sync labels `E` (§1), but no archive holds the state at an
+epoch boundary (§4, Option 3), so registration at `end_epoch` needs block
+data a Rung 1 snapshot does not carry. What remains of it is a cheap estimate
+of a recent result. What carries over to a Rung 2 test:
+
+- **The readings to expect.** A state at the end of `E` answers all of B
+  through `set`, the pulsing distribution and the two registration maps (§1).
+  A replay that stops exactly there needs no calibration against the Haskell
+  ledger's readings, only of how the tool labels its own.
+- **The sample.** Registration can only go wrong on credentials whose
+  registration changed during `E`, and ten per kind never reaches one among
+  tens of thousands of long-registered accounts; diffing the registration
+  maps of two states finds every change.
+- **The decoder.** `packages/mithril` reads the Haskell `NewEpochState` a node
+  writes to `db/ledger`. A state db-analyser stores at `E`'s last slot
+  (Option 2) should be the same format; not tried.
+
+The spike below is still the cheapest Rung 2 test. Option 2 is the one whose
+output the existing decoder should read, and preview now has both a finalized survey
+with Stakeholder and DRep responders (`1356f08e…:0`, `end_epoch` 1395) and a
+Koios calibration, so either network serves. A one-day spike on preprod,
+decisive because the reference artifact exists:
 
 1. Bootstrap Dolos from the preprod Mithril aggregator with
    `chain.stop_epoch = 308`; record `/governance/dreps/{id}` for the DRep
