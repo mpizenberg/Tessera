@@ -111,6 +111,16 @@ rung they reach, not by which language they are written in.
 - **Rung 3 — your own chain sync from genesis.** Removes Mithril; buys nothing
   for this goal.
 
+A node that **validates the live chain from a downloaded state** sits between
+Rungs 1 and 2. Amaru bootstraps from PRAGMA's end-of-epoch states, then
+follows the network and applies every block to them; the maintainer accepts
+that as enough for Tessera's audit (2026-09-16). Later blocks fail to validate
+wherever they depend on a wrong part of the start state: an output they spend,
+a reward balance they withdraw, a pool's stake in a leader check. Blocks carry
+no ledger-state hash, though, so a part no later block touches stays
+unchecked, such as the DRep delegation of an account that never transacts
+again.
+
 One axis the ladder does not capture: **the reference numbers are db-sync's.**
 The artifact's weights were fetched from Koios, and a Rung-2 reimplementation
 that disagrees with db-sync by one lovelace on one responder does not reproduce
@@ -125,7 +135,7 @@ candidate list: Amaru's tooling is built on it.
 
 ## 3. The six candidates, September 2026
 
-### Amaru — v10.11.20260903 (beta; mainnet, preprod, preview)
+### Amaru — v10.11.20260912 (beta; mainnet, preprod, preview)
 
 Rust node by PRAGMA. **No query surface**: no node-to-client socket, no
 LocalStateQuery, no HTTP beyond a transaction submit API. What it has that
@@ -154,14 +164,20 @@ matters here is its bootstrap pipeline and its ledger model.
 - **Reading it** means a short Rust binary over `amaru-ledger` +
   `amaru-stores` (open the RocksDB snapshot for an epoch, as `amaru dev ledger
 states list` does, then `StakeSummary::new`). No such dump exists today.
-- **Verdict:** the best _source_ of a Haskell-exact ledger state at an
-  arbitrary past epoch, and the only Rust decoder for it; not an audit tool on
-  its own. Cost is dominated by the db-analyser replay, whose duration was not
-  measured in this pass (it replays from genesis unless a ledger snapshot is
-  present, and starting it from the Mithril ancillary would drop the route to
-  Rung 1).
+- **As a node** (read from source, 2026-09-16, not run). PRAGMA's preview
+  bucket holds bootstrap sets ending at epochs 999, 1118 and 1392. The node
+  checkpoints its store as snapshot `E` when the stable store crosses into
+  `E+1`, so snapshot `E` is the state at the end of `E`
+  (`amaru-ledger/src/state/volatile/overlay.rs`), and
+  `--max-extra-ledger-snapshots N` keeps `N` epochs beyond those the node
+  needs. Its chain store keeps every block it syncs; only `amaru dev chain`
+  commands delete them.
+- **Verdict:** with a reader over its epoch snapshots and a walk over its
+  blocks, an audit tool at the level between Rungs 1 and 2 (§2), with no
+  Haskell tooling. Its `snapshot create` stays the route to a Haskell-exact
+  state (Option 2).
 
-### Dolos — 1.6.0 (2026-07-27), 1.7.0-alpha.1 (2026-08-24)
+### Dolos — 1.6.0 (2026-07-27), 2.0.0-alpha.0 (2026-09-11)
 
 Rust "data node" by TxPipe. Bootstraps from Mithril by downloading the
 immutable files and **replaying them from genesis through its own ledger**
@@ -170,22 +186,36 @@ stays under 2 GB of RAM at mainnet epoch boundaries, and has a documented
 `chain.stop_epoch = E` that halts the sync **one block past the boundary into
 `E`** — the exact cut TxPipe uses to publish its per-epoch steles.
 
+Read from source on 2026-09-16 (`main` at 15f92c6e), not run:
+
+- **Versions.** In 1.6.0 a DRep's `amount` is its deposit. The DRep
+  distribution arrived in 1.7.0-alpha.1, and the 1.7 line was renamed
+  2.0.0-alpha.0. That release also stops applying the certificates of
+  phase-2-invalid transactions.
+- **Stopping.** `stop_epoch = E` runs the whole `E-1 → E` boundary and then
+  applies `E`'s first block before halting (`crates/cardano/src/work.rs`).
+  Boundary work only runs when a block of the next epoch arrives, so a
+  replay whose input ends at `E`'s last block stands exactly at the end of
+  `E`. `dolos bootstrap mithril --download-end N` downloads and certifies
+  immutables up to `N` only, and `dolos serve` answers queries without
+  syncing.
+
 Its Mini-Blockfrost router (read from `crates/minibf/src/lib.rs`) covers the
 whole of column A and most of B:
 
-| Need                      | Dolos route                                                            | History?                                                |
-| ------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------- |
-| label-17 window           | `/metadata/txs/labels/17`, `…/cbor`                                    | archive index, yes                                      |
-| tx bytes and proof fields | `/txs/{h}/cbor`, `/txs/{h}/required_signers`, `/txs/{h}/metadata/cbor` | yes                                                     |
-| chain order, block epoch  | `/txs/{h}` (`index`), `/blocks/{h}`, `/blocks/slot/{s}`                | yes                                                     |
-| native scripts            | `/scripts/{hash}/cbor`, `…/json`                                       | yes                                                     |
-| governance links          | `/governance/proposals`, `…/{tx}/{idx}`                                | yes; **anchor url/hash exposure to verify**             |
-| active stake for `E`      | `/epochs/E/stakes` (paged), `/accounts/{id}/history`                   | **yes** — `AccountEpochLog`, written at `E+1`'s RUPD    |
-| stake total for `E`       | `/epochs/E` (`active_stake`)                                           | yes                                                     |
-| stake registration        | `/accounts/{id}/registrations` (slot-bounded)                          | yes                                                     |
-| DRep voting power         | `/governance/dreps/{id}` (`amount`)                                    | **no** — current value only; per-epoch history deferred |
-| DRep registration         | `/governance/dreps/{id}` (`active`, `retired`)                         | current only                                            |
-| DRep total                | none — `GovDistr.drep_distr` is internal; no `/governance/dreps` list  | —                                                       |
+| Need                      | Dolos route                                                                | History?                                                |
+| ------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------- |
+| label-17 window           | `/metadata/txs/labels/17`, `…/cbor`                                        | archive index, yes                                      |
+| tx bytes and proof fields | `/txs/{h}/cbor`, `/txs/{h}/required_signers`, `/txs/{h}/metadata/cbor`     | yes                                                     |
+| chain order, block epoch  | `/txs/{h}` (`index`), `/blocks/{h}`, `/blocks/slot/{s}`                    | yes                                                     |
+| native scripts            | `/scripts/{hash}/cbor`, `…/json`                                           | yes                                                     |
+| governance links          | `/governance/proposals`, `…/{tx}/{idx}`                                    | yes; **anchor url/hash exposure to verify**             |
+| active stake for `E`      | `/epochs/E/stakes` (paged), `/accounts/{id}/history`                       | **yes** — `AccountEpochLog`, written when `E+1` closes  |
+| stake total for `E`       | `/epochs/E` (`active_stake`)                                               | yes                                                     |
+| stake registration        | `/accounts/{id}/registrations` (slot-bounded)                              | yes                                                     |
+| DRep voting power         | `/governance/dreps/{id}` (`amount`; a deposit if registered during `E`)    | **no** — current value only; per-epoch history deferred |
+| DRep registration         | `/governance/dreps/{id}` (`active`, `retired`)                             | current only                                            |
+| DRep total                | none — no `/governance/dreps` list; `abstain`, `no_confidence` answer `""` | —                                                       |
 
 The DRep gap is explicit in the source: "a per-epoch history, if APIs ever
 want one, is a new field at a higher index." So the Stakeholder role is fully
@@ -196,39 +226,31 @@ historical and needs no stopping, while the DRep role needs the node to
 truth (delegation, stake, rewards, pots, pparams, eras) for fixed epochs —
 mainnet 242–500 in steps, preview 550–700 — and ships per-network boundary
 hacks (`mainnet_epoch526`, `preprod_epoch191`, `preview_epoch736`) that show
-the target is db-sync parity. Open at the time of writing: `/epochs/2/stakes`
+the target is db-sync parity. PR #1228 reports the whole DRep distribution,
+`abstain` and `no_confidence` included, equal to db-sync on preprod epoch 306
+and preview epoch 1184. Open at the time of writing: `/epochs/2/stakes`
 empty on preview (#1248, a gating bug at the chain's start), a stake-address
 indexing mismatch (#448). Nothing open names a wrong active-stake amount on a
-recent epoch, but the suite is explicitly "best-effort", so §6's spike has to
+recent epoch, but the suite is explicitly "best-effort", so §6's experiment has to
 measure it on the responders that matter.
 
-**Verdict:** the cheapest Rung-2 path that answers A and B over HTTP with no
-new code; one calibration and one node-walk for the DRep role; the residual
-risk is Dolos's ledger versus db-sync on the specific accounts in the artifact.
+**Verdict:** the cheapest Rung-2 path; it answers A and all of B but the DRep
+total over HTTP, from two stopping points and no new code. The residual risk
+is Dolos's ledger versus db-sync on the specific accounts in the artifact.
 
-### Dingo — README as of 2026-09 (testnets only; "not ready for mainnet")
+### Dingo — v0.70.12 (2026-09-15; testnets only)
 
-Go node by Blink Labs. Its fast path, `dingo mithril sync`, imports the
-**ancillary** ledger state (Rung 1) and validates forward from it; a genesis
-sync is Rung 2 but "days on mainnet". Footprint is the heaviest of the nodes:
-about 150 GB for preprod (60 GB snapshot + 80 GB database), 400 GB for
-mainnet; preprod bootstraps in 38 minutes, mainnet in 9 hours.
-
-It exposes LocalStateQuery with the governance queries the audit would want —
-`GetStakeSnapshots`, `GetDRepStakeDistr`, `GetDRepState`,
-`GetFilteredDelegationsAndRewardAccounts` — but LSQ answers at the **tip**, and
-no configuration halts the sync at an epoch. The Blockfrost-compatible REST
-subset (routes read from `api/blockfrost/blockfrost.go`) has
-`/accounts/{id}/registrations`, `/governance/dreps` (with a list),
-`/metadata/txs/labels/{l}`, `/txs/{h}/cbor` and `/required_signers`, but
-**no `/epochs/{n}/stakes` and no `/accounts/{id}/history`**; reward history is
-pruned to a trailing four-epoch window in `core` mode. It does carry a
-`koiosParity` observer that checks each closed epoch's reward state against
-Koios — the same parity question this document asks, asked by the tool itself.
-
-**Verdict:** a tip-only ledger with no pin point — `RESEARCH.md` §8.4's
-"snapshot at close" shape, usable while `E+1` is the current epoch and not
-after. Not the audit tool for a survey that closed months ago.
+Go node by Blink Labs. **Not viable for an audit yet, mostly because its
+stake accounting is still being corrected.** Reward balances still drift from
+the chain on preview (#3885, 2026-09-14), fixes to stake and reward
+attribution land almost daily, and its Koios parity check covers pool totals
+and rewards, not per-credential stake, DReps or registration. It never stores
+DRep voting power: it computes it at the epoch transition, only while
+proposals are active and without their deposits, so the distribution db-sync
+labels `E` cannot be read from it (`GetDRepStakeDistr` is not implemented).
+A pin point exists (`dingo load` replays a local immutable directory from
+genesis and stops at its end); worth re-reading once its cross-network parity
+issue (#1903) closes.
 
 ### Yaci Store — 2.0.1 (2026-05); 2.1.0 pre-releases through June
 
@@ -268,25 +290,24 @@ for the next step, since mainnet has no deployment (`ARCHITECTURE.md` §9).
 
 One binary, certified blocks in, HTTP out.
 
-1. `dolos bootstrap mithril` with `chain.stop_epoch = E`. Read the DRep
-   `amount` and registration flags for the artifact's DRep responders.
-2. Raise `stop_epoch` to `E+1`, `dolos sync`, read them again. Which of the
-   two readings equals Koios's `drep_voting_power_history` for `E` is the
-   calibration; after it, only one stop is needed.
-3. Raise to `E+2`, sync, then read `/epochs/E/stakes` for the Stakeholder
-   responders (their rows are written during `E+1`'s reward update), `/epochs/E`
-   for the total, `/accounts/{id}/registrations` bounded by `E`'s last slot,
-   and the whole of column A.
-4. The DRep electorate total is not served; the verifier's existing
-   "total taken from the artifact" path (exit 5) covers it until Dolos exposes
-   `GovDistr` or a DRep list with amounts — a small upstream request.
+1. `dolos bootstrap mithril --download-end <E's last immutable>`, then
+   `dolos serve`. The node stands at the end of `E`: `/governance/dreps/{id}`
+   gives the distribution labelled `E` and DRep registration at `E`'s end.
+2. Continue to `stop_epoch = E+2`, one block into `E+2`, and read
+   `/epochs/E/stakes` (written when the replay closes `E+1`), `/epochs/E` for
+   the total, `/accounts/{id}/registrations` bounded by `E`'s last slot (it
+   omits the certificate that registers and delegates a vote together), and
+   the whole of column A.
+3. The DRep electorate total is not served; the verifier's existing
+   "total taken from the artifact" path (exit 5) covers it until Dolos lists
+   DReps with amounts (a draft PR, #1121, adds the list).
 
-Cost: disk of the order of the immutable DB plus indexes (about 20–30 GB /
-250–300 GB — an estimate; Dolos publishes no disk figures, and `max_history`
-can bound the archive to the survey's window), RAM under 2 GB, wall time
-"minutes to a few hours" / under 20 hours, all of it the initial replay. A
-kept Dolos serves any later audit of the same network for the cost of the
-tail sync.
+Cost: disk of the order of the immutable DB plus indexes (preprod's archive
+was 17 GB before 2.0 compressed it to about half; mainnet an estimated
+250–300 GB), RAM under 2 GB, wall time 94 minutes for a preprod bootstrap,
+download included, and 65 minutes to rebuild a preview state from its
+archive (developers' figures in PRs #1222 and #1228). A kept Dolos serves any
+later audit of the same network for the cost of the tail sync.
 
 ### Option 2 — the Haskell ledger state through Amaru's tooling (Rung 2, exact)
 
@@ -298,10 +319,12 @@ block reader (a Dolos archive, or pallas over the same immutables). Numbers
 are what db-sync saw, so a disagreement with Koios is a Koios bug, not a
 ledger-implementation question.
 
-Cost: db-analyser's replay from genesis (unmeasured here; the Haskell ledger
-replay on mainnet is a many-hours job that wants well over 16 GB of RAM — a
-known node figure, not verified in this pass), 50 / 500 GB of disk, and the
-dump binary to write. Worth building as the **adjudicator**, not the daily
+Cost: db-analyser's replay from genesis (Amaru's CI replayed preprod to the
+end of epoch 296 in 28 minutes, node 11.0.1, hardware unknown; mainnet wants
+well over 16 GB of RAM, a node figure not verified here), 50 / 500 GB of
+disk, and the dump binary to write. db-analyser ships in the cardano-node
+release archives, macOS arm64 included; in 11.0.1 it ignores
+`--analyse-from`, so every run starts from genesis, which 11.1.1 fixes. Worth building as the **adjudicator**, not the daily
 path.
 
 ### Option 3 — a signed ledger snapshot (Rung 1, minutes)
@@ -368,14 +391,14 @@ is a multi-day PostgreSQL job.
 - **The infrastructure gap `RESEARCH.md` §8.5 named is narrower now, not
   closed.** Historical per-account stake is served by Dolos; historical DRep
   power is served by nobody's API — Dolos deferred it in a comment, Dingo
-  keeps four epochs of reward rows, Amaru has no API. Mithril's ledger-state
+  never stores it, Amaru has no API. Mithril's ledger-state
   certification, when it ships, collapses Rung 1 into Rung 2 for recent
   epochs and makes Option 3 the cheap trustless path — for an audit, only if
   the certified state sits at an epoch boundary (§4, Option 3).
 
 ---
 
-## 6. Recommended next step
+## 6. Next step
 
 **Rung 1 was tried first and is set aside** (2026-09-16). The Mithril
 ancillary gave every weight and total exactly and settled which DRep
@@ -396,35 +419,36 @@ of a recent result. What carries over to a Rung 2 test:
   writes to `db/ledger`. A state db-analyser stores at `E`'s last slot
   (Option 2) should be the same format; not tried.
 
-The spike below is still the cheapest Rung 2 test. Option 2 is the one whose
-output the existing decoder should read, and preview now has both a finalized survey
-with Stakeholder and DRep responders (`1356f08e…:0`, `end_epoch` 1395) and a
-Koios calibration, so either network serves. A one-day spike on preprod,
-decisive because the reference artifact exists:
+**The stopping point comes from the immutable files.** Every Cardano network
+completes twenty immutable files per post-Byron epoch, cut on slot
+boundaries, so on preview file `20E+19` ends with `E`'s last block. The
+latest Mithril snapshot certifies every file from genesis, and a download
+can end at any of them, so a replay of that range stands exactly at the end
+of `E` for a survey of any age.
 
-1. Bootstrap Dolos from the preprod Mithril aggregator with
-   `chain.stop_epoch = 308`; record `/governance/dreps/{id}` for the DRep
-   responders of the epoch-308 artifact. Continue to 309, record again;
-   continue to 310.
-2. Compare `/epochs/308/stakes` rows for the artifact's Stakeholder responders
-   and `/epochs/308`'s total against Koios `account_stake_history` and
-   `epoch_info`; compare the two DRep readings against
-   `drep_voting_power_history` for 308.
-3. If every number matches to the lovelace, add a `--source dolos` mode to
-   `packages/verifier` behind the same seam and re-run it against every
-   preprod artifact. If one does not, that account is the input to Option 2,
-   which says whether Koios or Dolos is wrong.
+**Two experiments follow** (maintainer, 2026-09-16), both on the
+preview survey `1356f08e…:0`: created in epoch 1365, `end_epoch` 1395,
+Stakeholder and DRep responders and one governance link, with a Koios-built
+artifact to reproduce.
 
-Disk about 25 GB, RAM under 2 GB, wall time a few hours, no code before the
-numbers are in.
+- **Dolos, read through its queries only** (Option 1). The difficulty is
+  holding the node at the two stopping points reliably, and the DRep total,
+  which no route serves.
+- **Amaru as a node and a library, without the Haskell tools**, at the
+  level between Rungs 1 and 2 (§2). Bootstrap from PRAGMA's states, sync with
+  the epoch snapshots retained, read them with a small Rust program over
+  `amaru-stores` and `amaru-ledger`, and walk the survey window's blocks for
+  its CIP-179 transactions.
+
+Dingo is dropped (§3).
 
 ---
 
 ## 7. Sources
 
-- Amaru: repository README and `docs/BOOTSTRAP.md`, `docs/PUBLISHING_SNAPSHOTS.md`, `CHANGELOG.md`, `crates/amaru-ledger/src/summary/stake_distribution.rs`, `crates/amaru/src/bin/amaru/cmd/` (https://github.com/pragma-org/amaru); releases page (v10.11.20260820 to v10.11.20260903).
-- Dolos: `crates/minibf/src/lib.rs` (router), `routes/accounts.rs`, `routes/epochs/mod.rs`, `routes/governance/mod.rs`, `crates/cardano/src/model/{logs,dreps,gov}.rs`, `crates/snapshot/PROFILE.md`, `skills/debug-epoch-mismatch/SKILL.md`, `.github/workflows/epoch-tests.yml`, `docs/content/operations/performance.mdx`, issues #1248, #448, #1078, #1082 (https://github.com/txpipe/dolos); configuration schema and bootstrap pages at https://docs.txpipe.io/dolos.
-- Dingo: README (bootstrap, disk, timings), `dingo.yaml.example`, `api/blockfrost/blockfrost.go` (https://github.com/blinklabs-io/dingo).
+- Amaru: repository README and `docs/BOOTSTRAP.md`, `docs/PUBLISHING_SNAPSHOTS.md`, `CHANGELOG.md`, `crates/amaru-ledger/src/summary/stake_distribution.rs`, `crates/amaru/src/bin/amaru/cmd/`, and on 2026-09-16 at f664b29 `crates/amaru-ledger/src/state/volatile/overlay.rs`, `crates/amaru-stores/src/rocksdb/mod.rs`, `crates/amaru/src/bin/amaru/cmd/node/run.rs` (https://github.com/pragma-org/amaru); releases page (v10.11.20260820 to v10.11.20260912); the preview bootstrap index `https://pub-b844360df4774bb092a2bb2043b888e5.r2.dev/preview/index.json`; CI run 28745354271 (`publish-bootstrap-snapshots`, preprod).
+- Dolos: `crates/minibf/src/lib.rs` (router), `routes/accounts.rs`, `routes/epochs/mod.rs`, `routes/governance/mod.rs`, `crates/cardano/src/model/{logs,dreps,gov}.rs`, `crates/snapshot/PROFILE.md`, `skills/debug-epoch-mismatch/SKILL.md`, `.github/workflows/epoch-tests.yml`, `docs/content/operations/performance.mdx`, issues #1248, #448, #1078, #1082; on 2026-09-16 at 15f92c6e `crates/cardano/src/work.rs`, `crates/cardano/src/ewrap/loading.rs`, `src/bin/dolos/bootstrap/mithril.rs`, `crates/mithril/src/lib.rs`, PRs #1121, #1212, #1222, #1228, #1266 and issue #1018 (https://github.com/txpipe/dolos); configuration schema and bootstrap pages at https://docs.txpipe.io/dolos.
+- Dingo: README (bootstrap, disk, timings), `dingo.yaml.example`, `api/blockfrost/blockfrost.go`; on 2026-09-16 at d9080904 `ledger/queries.go`, `internal/node/load.go`, `database/plugin/metadata/internal/drepquery/voting_power.go`, `ledger/governance/epoch.go`, issues #3885, #1903 (https://github.com/blinklabs-io/dingo); releases v0.70.6 to v0.70.12.
 - Yaci Store: `docs/app/docs/v2/ledger-state-mismatches/2-0-0/overview/page.mdx`, `getting-started/requirements` (https://github.com/bloxbean/yaci-store); release announcement https://cardanofoundation.org/blog/yaci-store-2; getting-started page at https://store.yaci.xyz.
 - Adder releases https://github.com/blinklabs-io/adder/releases; Oura releases https://github.com/txpipe/oura/releases.
 - Mithril: live artifact lists and details from `aggregator.release-preprod`, `aggregator.pre-release-preview`, `aggregator.release-mainnet` (`/aggregator/artifact/cardano-database`); ancillary and client documentation https://mithril.network/doc; issues #2704, #3269 and PR #2747 (https://github.com/IntersectMBO/mithril); dev blog through 2026-08-04.
