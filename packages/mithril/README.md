@@ -72,7 +72,7 @@ the positional layout it reads.
 ## Comparing with Koios
 
 ```sh
-pnpm compare preview snapshots/$NAME/ledger/*/state 1412
+pnpm compare preview snapshots/preview-e1413-i28259/ledger/*/state 1412
 ```
 
 draws ten credentials of every kind a tally can meet from the state itself
@@ -81,7 +81,15 @@ since retired, registered but in no stake snapshot, deregistered since a
 snapshot, script credentials; DReps active, expired, retired or registered
 since the distribution was taken, script, zero power), asks Koios the four
 `TallyInputSource` questions for the named epoch about them, and prints per
-kind how many agree with each candidate reading of the state, then every
-disagreement with both sides. A kind the state has none of is listed with
-zero. `KOIOS_TOKEN` in the environment is used when set; the anonymous tier
-is enough for one run.
+kind how many agree with each candidate reading of the state (`go`, `set` or
+`mark` for a stake weight; registered now or when the distribution was taken
+for a DRep), then every credential on which any reading disagrees, with both
+sides. A kind the state has none of is listed with zero. `KOIOS_TOKEN` in the
+environment is used when set; the anonymous tier is enough for one run.
+
+The output is a measurement, not a pass or fail. A reading that does not
+answer a question disagrees by construction, so a well-chosen state still
+prints disagreements; what matters is which column agrees on every row. Name
+the epoch whose last block the state follows: `preview-e<E+1>-i<20E+19>`
+(step 1) with `E`, as above. Step 2's archive was taken inside epoch 1414;
+compared with 1412, neither total matches.
