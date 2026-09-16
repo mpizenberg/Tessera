@@ -47,20 +47,30 @@ independently verifiable and is out of scope here.
 
 - **Active stake for `E`** is the snapshot the ledger took at the `E-2 → E-1`
   boundary (db-sync's `epoch_stake` for `E` is "extracted from the `set`
-  snapshot" and inserted during `E-1`). A node standing anywhere in `E+1` still
-  holds it as its `go` snapshot.
-- **DRep voting power for `E`** is the distribution the ledger computed at an
-  epoch boundary near `E`. Whether db-sync's `drep_distr.epoch_no = E` is the
-  one computed entering `E` or entering `E+1` is **not settled in this pass**;
-  it is the first thing the spike in §6 calibrates, and preprod has an
-  artifact to calibrate against (the DRep-eligible survey that closed at epoch
-  308, `ARCHITECTURE.md` §9).
-- **Registration at the end of `E`** is the state at the `E → E+1` boundary.
+  snapshot" and inserted during `E-1`). A node standing at the end of `E`
+  holds it as its `set` snapshot, and anywhere in `E+1` as its `go`.
+- **DRep voting power for `E`** is the distribution the ledger computed
+  entering `E`: the completed pulsing snapshot in a state taken during `E` is
+  what db-sync labels `drep_distr.epoch_no = E`, and its sum, the `abstain`
+  and `no_confidence` buckets included, is `/drep_epoch_summary`'s amount.
+- **Registration at the end of `E`**, of stake credentials and DReps alike, is
+  the state after `E`'s last block.
 
-So the ledger facts span three consecutive boundaries, `E-2 → E-1` through
-`E → E+1`. A tool that keeps **per-epoch history** answers them at any later
-tip; a tool that keeps only **current state** must be walked through those
-boundaries and read at each. That single distinction decides most of §3.
+Measured on preview against Koios (2026-09-10 and 2026-09-16, epochs 1405,
+1406, 1408, 1409 and 1411 to 1414): the Haskell node's state after `E`'s last
+block answers all of B from one file, with no disagreement on either total or
+on any sampled credential. The sample included every stake credential that
+registered or deregistered during five of those epochs (109 registrations, 23
+deregistrations) and the two DReps that registered during `E`. A registered
+DRep retiring during `E` did not occur in the window and is untested.
+
+So the ledger facts are computed at three consecutive boundaries, `E-2 → E-1`
+through `E → E+1`, and the Haskell ledger carries all of them into its state
+at the end of `E`. A tool that keeps **per-epoch history** answers them at any
+later tip; a tool that keeps only **current state** must stand exactly at the
+end of `E`, or, if it does not carry the snapshots the way the Haskell ledger
+does, be walked through the boundaries and read at each. That distinction
+decides most of §3.
 
 **The floor.** Every option below starts from Mithril-certified immutable
 files unless it trusts someone's ledger snapshot. Live sizes on 2026-09-09

@@ -73,6 +73,28 @@ function sample(keys: Iterable<string>, kinds: Kinds): Map<string, string[]> {
   return out;
 }
 
+/**
+ * Every credential that entered or left a registration map between two
+ * states, not a sample: these are the only rows on which the two states
+ * disagree about registration, so the only ones that show which boundary
+ * Koios reads, and there are few.
+ */
+function changed(
+  now: ReadonlyMap<string, unknown>,
+  before: ReadonlyMap<string, unknown>,
+): [string, string[]][] {
+  return [
+    [
+      "registered since the previous state",
+      [...now.keys()].filter((key) => !before.has(key)),
+    ],
+    [
+      "deregistered since the previous state",
+      [...before.keys()].filter((key) => !now.has(key)),
+    ],
+  ];
+}
+
 /** Per credential, whether Koios agrees with each candidate reading. */
 type Agreement = Record<string, boolean>;
 
@@ -169,12 +191,18 @@ function disagreements(
 const equals = (a: bigint | null, b: bigint) => (a === b ? "=" : "≠");
 
 async function main(args: string[]): Promise<void> {
-  const [networkArg, file, epochArg] = args;
+  const [networkArg, file, epochArg, previousFile] = args;
   if (networkArg === undefined || file === undefined || epochArg === undefined)
-    throw new Error("usage: compare <network> <state-file> <epoch>");
+    throw new Error(
+      "usage: compare <network> <state-file> <epoch> [<previous-state-file>]",
+    );
   const network = parseNetwork(networkArg);
   const epoch = Number(epochArg);
   const state = readLedgerState(await readFile(file));
+  const previous =
+    previousFile === undefined
+      ? undefined
+      : readLedgerState(await readFile(previousFile));
   const koios = new KoiosTallyInputs({
     network,
     koiosUrl: KOIOS_URL[network],
@@ -183,19 +211,25 @@ async function main(args: string[]): Promise<void> {
     secondsPerEpoch: SECONDS_PER_EPOCH[network],
   });
 
-  const stakeholders = sample(
-    new Set([
-      ...state.accounts.keys(),
-      ...state.mark.stake.keys(),
-      ...state.set.stake.keys(),
-      ...state.go.stake.keys(),
-    ]),
-    stakeholderKinds(state),
-  );
-  const dreps = sample(
-    new Set([...state.dreps.keys(), ...state.drepDistribution.dreps.keys()]),
-    drepKinds(state, epoch),
-  );
+  const stakeholders = new Map([
+    ...sample(
+      new Set([
+        ...state.accounts.keys(),
+        ...state.mark.stake.keys(),
+        ...state.set.stake.keys(),
+        ...state.go.stake.keys(),
+      ]),
+      stakeholderKinds(state),
+    ),
+    ...(previous ? changed(state.accounts, previous.accounts) : []),
+  ]);
+  const dreps = new Map([
+    ...sample(
+      new Set([...state.dreps.keys(), ...state.drepDistribution.dreps.keys()]),
+      drepKinds(state, epoch),
+    ),
+    ...(previous ? changed(state.dreps, previous.dreps) : []),
+  ]);
   const keysOf = (picked: Map<string, string[]>) => [
     ...new Set([...picked.values()].flat()),
   ];
@@ -222,7 +256,10 @@ async function main(args: string[]): Promise<void> {
   const d = state.drepDistribution;
   console.log(
     [
-      `Koios epoch ${epoch} against the state at epoch ${state.epoch}, slot ${state.slot}`,
+      `Koios epoch ${epoch} against the state at epoch ${state.epoch}, slot ${state.slot}` +
+        (previous
+          ? `, changes since the state at epoch ${previous.epoch}, slot ${previous.slot}`
+          : ""),
       "",
       `Stakeholder total: Koios ${stakeholderTotal}; ` +
         `go ${state.go.total} ${equals(stakeholderTotal, state.go.total)}, ` +

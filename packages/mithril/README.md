@@ -87,6 +87,16 @@ for a DRep), then every credential on which any reading disagrees, with both
 sides. A kind the state has none of is listed with zero. `KOIOS_TOKEN` in the
 environment is used when set; the anonymous tier is enough for one run.
 
+A registration reading can only go wrong on credentials whose registration
+changed during the epoch, and ten per kind rarely reaches them. Given the
+state after the previous epoch's last block as a fourth argument, the script
+adds every stake credential and DRep that registered or deregistered between
+the two states, all of them rather than ten:
+
+```sh
+pnpm compare preview snapshots/preview-e1413-i28259/ledger/*/state 1412 snapshots/preview-e1412-i28239/ledger/*/state
+```
+
 The output is a measurement, not a pass or fail. A reading that does not
 answer a question disagrees by construction, so a well-chosen state still
 prints disagreements; what matters is which column agrees on every row. Name
