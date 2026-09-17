@@ -205,7 +205,7 @@ whole of column A and most of B:
 
 | Need                      | Dolos route                                                                | History?                                                |
 | ------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------- |
-| label-17 window           | `/metadata/txs/labels/17`, `…/cbor`                                        | archive index, yes                                      |
+| label-17 window           | `/metadata/txs/labels/17`, `…/cbor`                                        | archive index, bounded by `from`/`to` block heights     |
 | tx bytes and proof fields | `/txs/{h}/cbor`, `/txs/{h}/required_signers`, `/txs/{h}/metadata/cbor`     | yes                                                     |
 | chain order, block epoch  | `/txs/{h}` (`index`), `/blocks/{h}`, `/blocks/slot/{s}`                    | yes                                                     |
 | native scripts            | `/scripts/{hash}/cbor`, `…/json`                                           | yes                                                     |
@@ -442,13 +442,26 @@ artifact to reproduce.
 
 Dingo is dropped (§3).
 
+**Blockfrost is not a practical second oracle** (maintainer, 2026-09-17).
+Checking an artifact against it instead of Koios stays at Rung 0, and its
+API (OpenAPI 0.1.93) blocks the check twice:
+
+- No route gives a DRep's voting power or the DRep total for a past epoch,
+  only the current `amount`, so the DRep role cannot be checked. Requested
+  upstream as blockfrost/openapi#471.
+- `/metadata/txs/labels/{label}` takes no slot or block bounds, so finding one
+  survey's records means listing every label-17 transaction on the chain, at a
+  cost that grows with the chain rather than the survey. Dolos's copy of the
+  route accepts `from`/`to` block heights.
+
 ---
 
 ## 7. Sources
 
 - Amaru: repository README and `docs/BOOTSTRAP.md`, `docs/PUBLISHING_SNAPSHOTS.md`, `CHANGELOG.md`, `crates/amaru-ledger/src/summary/stake_distribution.rs`, `crates/amaru/src/bin/amaru/cmd/`, and on 2026-09-16 at f664b29 `crates/amaru-ledger/src/state/volatile/overlay.rs`, `crates/amaru-stores/src/rocksdb/mod.rs`, `crates/amaru/src/bin/amaru/cmd/node/run.rs` (https://github.com/pragma-org/amaru); releases page (v10.11.20260820 to v10.11.20260912); the preview bootstrap index `https://pub-b844360df4774bb092a2bb2043b888e5.r2.dev/preview/index.json`; CI run 28745354271 (`publish-bootstrap-snapshots`, preprod).
-- Dolos: `crates/minibf/src/lib.rs` (router), `routes/accounts.rs`, `routes/epochs/mod.rs`, `routes/governance/mod.rs`, `crates/cardano/src/model/{logs,dreps,gov}.rs`, `crates/snapshot/PROFILE.md`, `skills/debug-epoch-mismatch/SKILL.md`, `.github/workflows/epoch-tests.yml`, `docs/content/operations/performance.mdx`, issues #1248, #448, #1078, #1082; on 2026-09-16 at 15f92c6e `crates/cardano/src/work.rs`, `crates/cardano/src/ewrap/loading.rs`, `src/bin/dolos/bootstrap/mithril.rs`, `crates/mithril/src/lib.rs`, PRs #1121, #1212, #1222, #1228, #1266 and issue #1018 (https://github.com/txpipe/dolos); configuration schema and bootstrap pages at https://docs.txpipe.io/dolos.
+- Dolos: `crates/minibf/src/lib.rs` (router), `routes/accounts.rs`, `routes/epochs/mod.rs`, `routes/governance/mod.rs`, `crates/cardano/src/model/{logs,dreps,gov}.rs`, `crates/snapshot/PROFILE.md`, `skills/debug-epoch-mismatch/SKILL.md`, `.github/workflows/epoch-tests.yml`, `docs/content/operations/performance.mdx`, issues #1248, #448, #1078, #1082; on 2026-09-16 at 15f92c6e `crates/cardano/src/work.rs`, `crates/cardano/src/ewrap/loading.rs`, `crates/minibf/src/routes/metadata.rs`, `crates/minibf/src/pagination.rs`, `src/bin/dolos/bootstrap/mithril.rs`, `crates/mithril/src/lib.rs`, PRs #1121, #1212, #1222, #1228, #1266 and issue #1018 (https://github.com/txpipe/dolos); configuration schema and bootstrap pages at https://docs.txpipe.io/dolos.
 - Dingo: README (bootstrap, disk, timings), `dingo.yaml.example`, `api/blockfrost/blockfrost.go`; on 2026-09-16 at d9080904 `ledger/queries.go`, `internal/node/load.go`, `database/plugin/metadata/internal/drepquery/voting_power.go`, `ledger/governance/epoch.go`, issues #3885, #1903 (https://github.com/blinklabs-io/dingo); releases v0.70.6 to v0.70.12.
+- Blockfrost: `openapi.yaml` version 0.1.93 (`blockfrost/openapi` master of 2026-09-15), issue #471 (https://github.com/blockfrost/openapi).
 - Yaci Store: `docs/app/docs/v2/ledger-state-mismatches/2-0-0/overview/page.mdx`, `getting-started/requirements` (https://github.com/bloxbean/yaci-store); release announcement https://cardanofoundation.org/blog/yaci-store-2; getting-started page at https://store.yaci.xyz.
 - Adder releases https://github.com/blinklabs-io/adder/releases; Oura releases https://github.com/txpipe/oura/releases.
 - Mithril: live artifact lists and details from `aggregator.release-preprod`, `aggregator.pre-release-preview`, `aggregator.release-mainnet` (`/aggregator/artifact/cardano-database`); ancillary and client documentation https://mithril.network/doc; issues #2704, #3269 and PR #2747 (https://github.com/IntersectMBO/mithril); dev blog through 2026-08-04.
