@@ -113,9 +113,9 @@ function voterCredential(
  * script CBOR by hash (e.g. Koios `/script_info`) and folds the result into the
  * relevant tx's `TxProof.nativeScripts`; the pure {@link mechanismAProven} /
  * {@link responseCredentialProven} evaluation is then unchanged — it still just
- * looks the script hash up in `nativeScripts`. The hash is recomputed from the
- * (re-canonicalised) CBOR exactly as for a witness script, so a source returning
- * bytes that don't hash to the requested credential simply won't match it.
+ * looks the script hash up in `nativeScripts`. The hash is computed from the
+ * script's bytes exactly as for a witness script, so a source returning bytes
+ * that don't hash to the requested credential simply won't match it.
  */
 export function decodeResolvedNativeScript(
   codec: TxProofCodec,

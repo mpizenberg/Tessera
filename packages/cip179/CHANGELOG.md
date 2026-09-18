@@ -24,6 +24,19 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
 - **Breaking: `TallyInputSource` loses `stakeholderTotal` and `drepTotal`**,
   which move unchanged to a new `ElectorateTotals` interface. A tally input
   source no longer has to serve totals.
+- **`DecodedNativeScript.scriptCbor` is the script's bytes as the chain
+  holds them**, no longer a canonical re-encoding. A `TxProofCodec` adapter
+  must return them unchanged: the ledger hashes those bytes, and a re-encoded
+  script hashes differently.
+
+### Fixed
+
+- A native script sent in a valid but non-canonical CBOR encoding (an
+  indefinite-length array, an integer in a longer head than needed) now
+  hashes to its on-chain script hash, so it proves its credential. The
+  evolution adapter re-encoded such a script before hashing it, both in a
+  witness set and when it was resolved by hash. No such script is known on
+  chain.
 
 ## [0.5.0] - 2026-09-15
 

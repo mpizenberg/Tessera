@@ -161,28 +161,82 @@ function decodeVotes(
   return votes;
 }
 
+/** The head of the CBOR item at `at`: major type, argument (null when indefinite), size. */
+function cborHead(
+  bytes: Uint8Array,
+  at: number,
+): { major: number; arg: number | null; size: number } {
+  const major = bytes[at]! >> 5;
+  const info = bytes[at]! & 0x1f;
+  if (info < 24) return { major, arg: info, size: 1 };
+  if (info === 31) return { major, arg: null, size: 1 };
+  if (info > 27) throw new Error(`reserved CBOR additional info ${info}`);
+  const width = 1 << (info - 24);
+  let arg = 0;
+  for (let i = 1; i <= width; i++) arg = arg * 256 + bytes[at + i]!;
+  return { major, arg, size: 1 + width };
+}
+
+/** The `[start, end)` spans of the array's or map's items at `at`; a map's alternate key, value. */
+function cborItems(bytes: Uint8Array, at: number): [number, number][] {
+  const head = cborHead(bytes, at);
+  const count =
+    head.arg === null ? Infinity : head.major === 5 ? 2 * head.arg : head.arg;
+  const spans: [number, number][] = [];
+  let offset = at + head.size;
+  while (
+    spans.length < count &&
+    !(head.arg === null && bytes[offset] === 0xff)
+  ) {
+    const end = CBOR.decodeItemWithOffset(bytes, offset).newOffset;
+    spans.push([offset, end]);
+    offset = end;
+  }
+  return spans;
+}
+
+/**
+ * The witness set's native scripts (key 1) as the transaction carries them: the
+ * ledger hashes these bytes, and a re-encoding of a script sent in another
+ * valid encoding (an indefinite array, a long integer head) would not.
+ */
+function witnessNativeScripts(tx: Uint8Array): Uint8Array[] {
+  const witnessSet = cborItems(tx, 0)[1]![0];
+  const entries = cborItems(tx, witnessSet);
+  for (let i = 0; i < entries.length; i += 2) {
+    const key = cborHead(tx, entries[i]![0]);
+    if (key.major !== 0 || key.arg !== 1) continue;
+    let at = entries[i + 1]![0];
+    const tag = cborHead(tx, at);
+    if (tag.major === 6) at += tag.size; // the set tag, #6.258
+    return cborItems(tx, at).map(([start, end]) => tx.subarray(start, end));
+  }
+  return [];
+}
+
 /**
  * Decode a transaction's proof-relevant fields to the neutral {@link DecodedTx},
  * or `null` if it can't be decoded (→ the credential is treated as unproven).
- * `Transaction.fromCBORHex` decodes every post-Alonzo transaction (all CIP-179
+ * `Transaction.fromCBORBytes` decodes every post-Alonzo transaction (all CIP-179
  * txs are recent).
  */
 export function decodeTx(txCborHex: string): DecodedTx | null {
   try {
-    const tx = Transaction.fromCBORHex(txCborHex);
+    const bytes = hexToBytes(txCborHex);
+    const tx = Transaction.fromCBORBytes(bytes);
 
     const requiredSigners = (tx.body.requiredSigners ?? []).map((k) =>
       KeyHash.toHex(k),
     );
 
-    const raw = tx.witnessSet?.nativeScripts;
-    const nativeScripts: DecodedNativeScript[] =
-      Array.isArray(raw) && raw.length > 0
-        ? raw.map((ns) => ({
-            scriptCbor: NativeScripts.toCBORBytes(ns),
-            script: ns as unknown as NativeScriptNode,
-          }))
-        : [];
+    const nativeScripts: DecodedNativeScript[] = witnessNativeScripts(
+      bytes,
+    ).map((scriptCbor) => ({
+      scriptCbor,
+      script: NativeScripts.fromCBORBytes(
+        scriptCbor,
+      ) as unknown as NativeScriptNode,
+    }));
 
     const votes = decodeVotes(
       tx.body.votingProcedures as unknown as RawVotingProcedures | undefined,
@@ -199,17 +253,19 @@ export function decodeTx(txCborHex: string): DecodedTx | null {
  * Decode a bare native script from its CBOR (hex) — a Koios `/script_info`
  * `bytes` value — to the neutral {@link DecodedNativeScript}, or `null` if it
  * isn't a decodable native script (a Plutus script's bytes throw here, so the
- * caller resolves nothing and the credential stays unproven). Re-serialises to
- * canonical CBOR so the interpretation hashes it exactly as a witness script.
+ * caller resolves nothing and the credential stays unproven). The bytes are
+ * kept as given, since the decoder refuses trailing bytes.
  */
 export function decodeNativeScript(
   scriptCborHex: string,
 ): DecodedNativeScript | null {
   try {
-    const ns = NativeScripts.fromCBORHex(scriptCborHex);
+    const scriptCbor = hexToBytes(scriptCborHex);
     return {
-      scriptCbor: NativeScripts.toCBORBytes(ns),
-      script: ns as unknown as NativeScriptNode,
+      scriptCbor,
+      script: NativeScripts.fromCBORBytes(
+        scriptCbor,
+      ) as unknown as NativeScriptNode,
     };
   } catch (err) {
     console.warn(`could not decode native script: ${String(err)}`);

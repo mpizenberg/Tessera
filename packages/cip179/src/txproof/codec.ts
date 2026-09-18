@@ -42,7 +42,11 @@ export type NativeScriptNode =
 
 /** A witness-set native script: its own CBOR (to hash) plus its parsed tree. */
 export interface DecodedNativeScript {
-  /** The script's canonical CBOR — cip-179 hashes `0x00 ‖ this` (blake2b-224). */
+  /**
+   * The script's bytes as the chain holds them — cip-179 hashes `0x00 ‖ this`
+   * (blake2b-224), as the ledger does. Never a re-encoding: a script may be
+   * sent in any valid CBOR encoding, and a re-encoded one hashes differently.
+   */
   readonly scriptCbor: Uint8Array;
   readonly script: NativeScriptNode;
 }
