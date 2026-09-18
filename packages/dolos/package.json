@@ -1,0 +1,27 @@
+{
+  "name": "cardano-tessera-dolos",
+  "version": "0.0.0",
+  "description": "Tessera's verifier inputs read from the queries of a Dolos node instead of Koios.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "type-check": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "cardano-tessera-koios": "workspace:*",
+    "cip-179": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "typescript": "^5.6.0"
+  }
+}

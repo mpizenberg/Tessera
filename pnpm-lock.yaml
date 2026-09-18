@@ -222,6 +222,22 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@25.9.4)(happy-dom@20.10.6)(supports-color@10.2.2)
 
+  packages/dolos:
+    dependencies:
+      cardano-tessera-koios:
+        specifier: workspace:*
+        version: link:../koios
+      cip-179:
+        specifier: workspace:*
+        version: link:../cip179
+    devDependencies:
+      '@types/node':
+        specifier: ^25.9.3
+        version: 25.9.4
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+
   packages/koios:
     dependencies:
       '@evolution-sdk/evolution':
@@ -411,6 +427,9 @@ importers:
       cardano-tessera-core:
         specifier: workspace:*
         version: link:../core
+      cardano-tessera-dolos:
+        specifier: workspace:*
+        version: link:../dolos
       cardano-tessera-koios:
         specifier: workspace:*
         version: link:../koios

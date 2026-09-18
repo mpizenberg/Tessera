@@ -5,44 +5,83 @@
  *     --backend https://<backend> --survey <txHash>:<index> \
  *     [--koios <url>] [--token <koios token>] [--since <ISO date>]
  *
+ *   pnpm --filter cardano-tessera-verifier verify -- \
+ *     --backend https://<backend> --survey <txHash>:<index> \
+ *     --dolos-end <url> --dolos-after <url> [--minikupo <url>]
+ *
  * Fetches ONLY the artifact-under-test from the backend. The survey definition,
  * the response *set*, and every response's *answers* are re-derived by an
- * independent Koios label-17 scan — never taken from the backend — so a backend
+ * independent label-17 scan — never taken from the backend — so a backend
  * that omits or alters responses can no longer reproduce a matching hash (it
  * would rebuild against the real chain data and diverge). Every other input
- * (proofs, block indices, weights, governance links) also comes straight from
- * Koios. The tally is rebuilt under the pinned ruleset and its content hash
- * compared; the electorate totals, outside the hash, are re-fetched too and a
- * difference is printed as a note. Exit codes: 0 MATCH, 1 MISMATCH
- * (differences printed), 2 usage / not finalized / survey not found on-chain /
- * fetch failure, 3 INDETERMINATE (a required input — e.g. a governance-link
- * anchor, or a missing tx_block_index — could not be resolved, so no verdict
- * is possible yet; retry when resolvable), 4 UNTALLIABLE (the survey's
- * on-chain definition is spec-invalid — non-v5 or structurally invalid — so it
- * has no reproducible tally and no artifact should exist; findings 10/11).
+ * (proofs, block indices, weights, governance links) comes from the same
+ * source: Koios by default, or two Dolos nodes' mini-Blockfrost APIs, one
+ * stopped at the last block of the survey's `end_epoch` (`--dolos-end`) and
+ * one at least a block into `end_epoch + 2` (`--dolos-after`), with the
+ * second's minikupo API resolving native scripts by hash. The tally is
+ * rebuilt under the pinned ruleset and its content hash compared; the
+ * electorate totals, outside the hash, are re-fetched too from Koios and a
+ * difference is printed as a note (Dolos serves none). Exit codes: 0 MATCH,
+ * 1 MISMATCH (differences printed), 2 usage / not finalized / survey not found
+ * on-chain / fetch failure, 3 INDETERMINATE (a required input — e.g. a
+ * governance-link anchor, or a missing tx_block_index — could not be resolved,
+ * so no verdict is possible yet; retry when resolvable), 4 UNTALLIABLE (the
+ * survey's on-chain definition is spec-invalid — non-v5 or structurally
+ * invalid — so it has no reproducible tally and no artifact should exist;
+ * findings 10/11).
  */
 
 import { exit } from "node:process";
 
 import { isSurveyTalliable, surveyErrors } from "cip-179";
 
-import {
-  refKey,
-  scriptCredentialHash,
-  type SurveyBundle,
-} from "cip-179/domain";
+import type { SurveyBundle } from "cip-179/domain";
+import type { ElectorateTotals, TallyInputSource } from "cip-179/tally";
 import {
   createTesseraClient,
   parseNetwork,
   SECONDS_PER_EPOCH,
+  type Network,
   type TesseraClient,
 } from "cardano-tessera-client";
 import { KOIOS_URL, type AppConfig } from "cardano-tessera-core";
-import { KoiosDataSource, KoiosTallyInputs } from "cardano-tessera-koios";
+import { DolosChain, DolosTallyInputs, Minibf } from "cardano-tessera-dolos";
+import { KoiosTallyInputs } from "cardano-tessera-koios";
 import { revealResponses } from "cip-179/tlock";
 import { evolutionCodec } from "cip-179/evolution";
 
-import { diffResponseSets, linkedActionIdsFor, verifyArtifact } from "./verify";
+import { chainEvidence, koiosChain, type SurveyChain } from "./sources";
+import { diffResponseSets, verifyArtifact } from "./verify";
+
+interface Sources {
+  readonly chain: SurveyChain;
+  readonly weights: TallyInputSource;
+  readonly totals?: ElectorateTotals;
+}
+
+function koiosSources(network: Network): Sources {
+  const config: AppConfig = {
+    network,
+    koiosUrl: argOf("koios") ?? KOIOS_URL[network],
+    koiosToken: argOf("token") ?? process.env["KOIOS_TOKEN"] ?? undefined,
+    sinceUnix: Math.floor(
+      Date.parse(argOf("since") ?? SINCE_ISO_DEFAULT) / 1000,
+    ),
+    secondsPerEpoch: SECONDS_PER_EPOCH[network],
+  };
+  const koios = new KoiosTallyInputs(config);
+  return { chain: koiosChain(config), weights: koios, totals: koios };
+}
+
+function dolosSources(network: Network, endUrl: string): Sources {
+  const afterUrl = argOf("dolos-after");
+  if (!afterUrl) usage();
+  const after = new Minibf(afterUrl);
+  return {
+    chain: new DolosChain(after, argOf("minikupo")),
+    weights: new DolosTallyInputs(new Minibf(endUrl), after, network),
+  };
+}
 
 /**
  * Compare the backend's served bundle against the independent chain scan, purely
@@ -74,7 +113,9 @@ const SINCE_ISO_DEFAULT = "2026-06-01T00:00:00Z";
 function usage(): never {
   console.error(
     "usage: verify --backend <url> --survey <txHash>:<index> " +
-      "[--koios <url>] [--token <koios token>] [--since <ISO date>]",
+      "[--koios <url>] [--token <koios token>] [--since <ISO date>]\n" +
+      "       verify --backend <url> --survey <txHash>:<index> " +
+      "--dolos-end <url> --dolos-after <url> [--minikupo <url>]",
   );
   exit(2);
 }
@@ -95,17 +136,12 @@ async function main(): Promise<void> {
   const key = `${txHash}:${index}`;
   const client = createTesseraClient({ baseUrl: backend });
 
-  // The backend's network decides which Koios instance re-verifies it.
+  // The backend's network decides which chain the rebuild reads.
   const network = parseNetwork((await client.liveness()).network);
-  const config: AppConfig = {
-    network,
-    koiosUrl: argOf("koios") ?? KOIOS_URL[network],
-    koiosToken: argOf("token") ?? process.env["KOIOS_TOKEN"] ?? undefined,
-    sinceUnix: Math.floor(
-      Date.parse(argOf("since") ?? SINCE_ISO_DEFAULT) / 1000,
-    ),
-    secondsPerEpoch: SECONDS_PER_EPOCH[network],
-  };
+  const dolosEnd = argOf("dolos-end");
+  const { chain, weights, totals } = dolosEnd
+    ? dolosSources(network, dolosEnd)
+    : koiosSources(network);
 
   // 1. The ONE backend read: the artifact under test. Its hash is recomputed
   // from independent chain data below, so trusting the backend to hand us the
@@ -115,22 +151,13 @@ async function main(): Promise<void> {
   // below distinguishes them, so defer the verdict.
   const artifact = await client.artifact(key);
 
-  // 2. Independently reconstruct the survey's on-chain slice from a Koios
-  // label-17 scan — the definition, the response *set*, and every response's
+  // 2. Independently reconstruct the survey's on-chain slice from a label-17
+  // scan — the definition, the response *set*, and every response's
   // *answers*. This is the crux of the trust story: the backend never supplies
   // the records the tally is built from, so it cannot omit or alter a response
   // and still reproduce the hash.
-  const source = new KoiosDataSource(config);
-  const records = await source.fetchAll();
-  const survey = records.surveys.find((s) => refKey(s.ref) === key);
-  if (!survey) {
-    console.error(
-      `survey ${key} not found in an independent Koios scan since ` +
-        `${new Date(config.sinceUnix * 1000).toISOString()}. If it is older ` +
-        `than that floor, re-run with an earlier --since.`,
-    );
-    exit(2);
-  }
+  const { bundle, incomplete } = await chain.bundle(key);
+  const survey = bundle.survey;
 
   // Talliability is decided from the *independent* on-chain definition, not from
   // the artifact — so a backend cannot make an invalid survey look talliable. An
@@ -160,19 +187,8 @@ async function main(): Promise<void> {
     exit(2);
   }
 
-  const bundle: SurveyBundle = {
-    survey,
-    responses: records.responses.filter(
-      (r) => refKey(r.response.surveyRef) === key,
-    ),
-    cancellations: records.cancellations.filter(
-      (c) => refKey(c.target) === key,
-    ),
-    tip: await source.chainTip(),
-  };
-
   const preNotes: string[] = [];
-  if (records.incomplete) {
+  if (incomplete) {
     preNotes.push(
       "independent Koios scan hit its paging cap and is INCOMPLETE — a " +
         "MISMATCH may be a false alarm (missing responders); a MATCH is still sound",
@@ -180,68 +196,17 @@ async function main(): Promise<void> {
   }
   preNotes.push(...(await crossCheckBackendBundle(client, key, bundle)));
 
-  // 3. The remaining independent inputs, all straight from Koios.
-  const txHashes = [
-    ...new Set([
-      // The defining tx: CIP-179 requires it to prove the survey's owner, so its
-      // evidence gates talliability exactly like a cancellation's does.
-      bundle.survey.txHash,
-      ...bundle.responses.map((r) => r.txHash),
-      ...bundle.cancellations.map((c) => c.txHash),
-    ]),
-  ];
-  // Native-script credentials whose script may not be attached to the carrying
-  // tx: resolve them by hash so mechanism A is evaluated the same way the emitter
-  // does (finding 7). Cancellations all target this survey → its owner.
-  const neededScripts = new Map<string, string[]>();
-  const addNeeded = (txHash: string, scriptHash: string | null) => {
-    if (!scriptHash) return;
-    const list = neededScripts.get(txHash);
-    if (list) list.push(scriptHash);
-    else neededScripts.set(txHash, [scriptHash]);
-  };
-  const ownerScriptHash = scriptCredentialHash(bundle.survey.definition.owner);
-  addNeeded(bundle.survey.txHash, ownerScriptHash);
-  for (const c of bundle.cancellations) addNeeded(c.txHash, ownerScriptHash);
-  for (const r of bundle.responses)
-    addNeeded(r.txHash, scriptCredentialHash(r.response.credential));
-
-  // Only actions expiring with this survey can link it, or — unresolved — cloud
-  // its mechanism-B verdicts, so the scan reads that one epoch and no more. Each
-  // action's anchor is dereferenced here and checked against its on-chain hash:
-  // the whole point of this tool is that no input is taken on trust, and an
-  // indexer's own resolution of an anchor can never be re-verified after the
-  // fact. No time budget — a verification may take as long as the anchors do.
-  const endEpoch = bundle.survey.definition.endEpoch;
-  let govLinksReliable = true;
-  const [blockIndices, proofs, govScan] = await Promise.all([
-    source.txBlockIndices(txHashes),
-    source.txProofs(txHashes, neededScripts),
-    source.fetchGovernanceLinks([endEpoch]).catch((err) => {
-      // A fetch failure is UNKNOWN, not "no links" — flag it so a mechanism-B
-      // proof it might decide comes back INDETERMINATE, never a silent exclude.
-      console.warn(
-        `gov links unavailable (${String(err)}) — treating as unresolved`,
-      );
-      govLinksReliable = false;
-      return { links: [], unresolved: [] };
-    }),
-  ]);
-  const unresolvedActionIds = govScan.unresolved.map((u) => u.actionId);
+  // 3. The remaining independent inputs, from the same source.
+  const evidence = await chainEvidence(chain, bundle);
 
   // 4. Rebuild + compare.
-  const koios = new KoiosTallyInputs(config);
   const result = await verifyArtifact({
     bundle,
     artifact,
     network,
-    linkedActionIds: linkedActionIdsFor(bundle, govScan.links),
-    unresolvedActionIds,
-    govLinksReliable,
-    blockIndices,
-    proofs,
-    weights: koios,
-    totals: koios,
+    ...evidence,
+    weights,
+    ...(totals && { totals }),
     // Sealed reveal, wired independently of the backend: fetch (and BLS-verify)
     // the drand beacon ourselves, then decrypt offline. Unused for public
     // artifacts.

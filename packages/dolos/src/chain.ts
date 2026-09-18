@@ -1,0 +1,272 @@
+/**
+ * Column A of a survey's rebuild from a Dolos node: the label-17 records of
+ * its window, their transactions' block positions and proof evidence, and the
+ * governance actions that could link it. The node must have reached
+ * `end_epoch + 1`, so the window's last block is known.
+ */
+
+import {
+  METADATA_LABEL,
+  decodePayloadItems,
+  type DecodedPayloadItems,
+  type Metadatum,
+} from "cip-179";
+import {
+  refKey,
+  hexToBytes,
+  type CancellationRecord,
+  type GovLinkScan,
+  type NativeScriptInfo,
+  type ResponseRecord,
+  type SurveyBundle,
+  type SurveyRecord,
+  type TxProof,
+} from "cip-179/domain";
+import { cborToMetadatum, evolutionCodec } from "cip-179/evolution";
+import { decodeResolvedNativeScript, decodeTxProof } from "cip-179/txproof";
+import {
+  classifyPayload,
+  govLinkScan,
+  govProposal,
+  resolveGovAnchors,
+  resolveMechanismAScripts,
+  type GovProposal,
+} from "cardano-tessera-koios";
+
+import { lastBlockOf, type BlockRow, type Minibf } from "./minibf";
+
+/**
+ * minibf refuses a list request whose `page × count` exceeds its
+ * `max_scan_items` (3000 by default), so a longer window restarts from the
+ * last listed transaction's block rather than paging on.
+ */
+const MAX_SCAN_ITEMS = 3000;
+const PAGE = 100;
+
+interface TxRow {
+  hash: string;
+  block: string;
+  block_height: number;
+  slot: number;
+  /** Position in the block. */
+  index: number;
+}
+
+export class DolosChain {
+  /**
+   * `minikupo` is the node's Kupo-compatible API (`[serve.minikupo]`), the
+   * one route serving a native script's bytes by hash. Without it, a script
+   * credential its transaction does not carry leaves that proof unknown.
+   */
+  constructor(
+    private readonly node: Minibf,
+    private readonly minikupo?: string,
+  ) {}
+
+  /**
+   * The survey's records from its definition's block to the last block of its
+   * `end_epoch`. Never `incomplete`: the scan reads every page or throws.
+   */
+  async bundle(
+    key: string,
+  ): Promise<{ bundle: SurveyBundle; incomplete: boolean }> {
+    const [txHash] = key.split(":");
+    const def = await this.node.find<TxRow>(`/txs/${txHash}`);
+    if (!def)
+      throw new Error(
+        `survey ${key}: no transaction ${txHash} on the Dolos node at ${this.node.url}`,
+      );
+    const survey = (
+      await this.records(def.block_height, def.block_height)
+    ).surveys.find((s) => refKey(s.ref) === key);
+    if (!survey)
+      throw new Error(
+        `survey ${key}: transaction ${txHash} defines no such survey`,
+      );
+    const last = await lastBlockOf(this.node, survey.definition.endEpoch);
+    const records = await this.records(def.block_height, last.height);
+    return {
+      bundle: {
+        survey: records.surveys.find((s) => refKey(s.ref) === key)!,
+        responses: records.responses.filter(
+          (r) => refKey(r.response.surveyRef) === key,
+        ),
+        cancellations: records.cancellations.filter(
+          (c) => refKey(c.target) === key,
+        ),
+        tip: await this.tip(),
+      },
+      incomplete: false,
+    };
+  }
+
+  private async tip(): Promise<SurveyBundle["tip"]> {
+    const block = await this.node.get<BlockRow>("/blocks/latest");
+    const params = await this.node.get<{
+      gov_action_lifetime: string | number | null;
+    }>("/epochs/latest/parameters");
+    return {
+      epoch: block.epoch,
+      slot: block.slot,
+      time: block.time,
+      epochSlot: block.epoch_slot,
+      govActionLifetime: Number(params.gov_action_lifetime ?? 0),
+    };
+  }
+
+  /** The label-17 records of the blocks from height `from` to `to`, inclusive. */
+  private async records(from: number, to: number) {
+    const metadata = new Map<string, string>();
+    for (let start = from; ; ) {
+      let page = 1;
+      for (; page * PAGE <= MAX_SCAN_ITEMS; page++) {
+        const rows =
+          (await this.node.find<{ tx_hash: string; metadata: string }[]>(
+            `/metadata/txs/labels/${METADATA_LABEL}/cbor?from=${start}&to=${to}&count=${PAGE}&page=${page}`,
+          )) ?? [];
+        for (const r of rows) metadata.set(r.tx_hash, r.metadata);
+        if (rows.length < PAGE) break;
+      }
+      if (page * PAGE <= MAX_SCAN_ITEMS) break;
+      const next = (
+        await this.node.get<TxRow>(`/txs/${[...metadata.keys()].at(-1)}`)
+      ).block_height;
+      if (next === start)
+        throw new Error(
+          `block ${start} alone holds ${MAX_SCAN_ITEMS} label-17 transactions`,
+        );
+      start = next;
+    }
+
+    const out = {
+      surveys: [] as SurveyRecord[],
+      responses: [] as ResponseRecord[],
+      cancellations: [] as CancellationRecord[],
+    };
+    const epochOf = new Map<string, number>();
+    for (const [txHash, cbor] of metadata) {
+      const tx = await this.node.get<TxRow>(`/txs/${txHash}`);
+      if (!epochOf.has(tx.block))
+        epochOf.set(
+          tx.block,
+          (await this.node.get<BlockRow>(`/blocks/${tx.block}`)).epoch,
+        );
+      // The route's `metadata` is the transaction's `{17: datum}`.
+      const labels = cborToMetadatum(hexToBytes(cbor)) as ReadonlyMap<
+        Metadatum,
+        Metadatum
+      >;
+      let decoded: DecodedPayloadItems;
+      try {
+        decoded = decodePayloadItems(labels.get(BigInt(METADATA_LABEL))!);
+      } catch (err) {
+        console.warn(`skipping label-17 tx ${txHash}: ${String(err)}`);
+        continue;
+      }
+      for (const s of decoded.skipped)
+        console.warn(
+          `skipping label-17 item ${txHash}[${s.index}]: ${String(s.error)}`,
+        );
+      classifyPayload(
+        decoded.payload,
+        txHash,
+        { slot: tx.slot, epochNo: epochOf.get(tx.block)! },
+        out,
+      );
+    }
+    return out;
+  }
+
+  async txBlockIndices(
+    txHashes: readonly string[],
+  ): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    for (const h of txHashes) {
+      const tx = await this.node.find<TxRow>(`/txs/${h}`);
+      if (tx) out.set(h, tx.index);
+    }
+    return out;
+  }
+
+  /** Proof evidence per transaction, as `KoiosDataSource.txProofs` gives it. */
+  async txProofs(
+    txHashes: readonly string[],
+    neededScripts: ReadonlyMap<string, readonly string[]> = new Map(),
+  ): Promise<Map<string, TxProof | null>> {
+    const proofs = new Map<string, TxProof | null>();
+    for (const h of txHashes) {
+      const row = await this.node.find<{ cbor: string }>(`/txs/${h}/cbor`);
+      proofs.set(h, row ? decodeTxProof(evolutionCodec, row.cbor) : null);
+    }
+    await resolveMechanismAScripts(proofs, neededScripts, (hashes) =>
+      this.nativeScripts(hashes),
+    );
+    return proofs;
+  }
+
+  private async nativeScripts(
+    scriptHashes: readonly string[],
+  ): Promise<{ scripts: Map<string, NativeScriptInfo>; reliable: boolean }> {
+    const scripts = new Map<string, NativeScriptInfo>();
+    if (!this.minikupo) {
+      console.warn(
+        `no minikupo URL: native scripts ${scriptHashes.join(", ")} stay unresolved`,
+      );
+      return { scripts, reliable: false };
+    }
+    for (const h of scriptHashes) {
+      try {
+        const res = await fetch(`${this.minikupo}/scripts/${h}`);
+        if (!res.ok && res.status !== 404) throw new Error(`${res.status}`);
+        const row = res.ok
+          ? ((await res.json()) as { language: string; script: string } | null)
+          : null;
+        if (row?.language !== "native") continue;
+        const decoded = decodeResolvedNativeScript(evolutionCodec, row.script);
+        if (decoded) scripts.set(decoded.scriptHash, decoded.script);
+      } catch (err) {
+        console.warn(`minikupo /scripts/${h} failed: ${String(err)}`);
+        return { scripts, reliable: false };
+      }
+    }
+    return { scripts, reliable: true };
+  }
+
+  /**
+   * The links among the actions expiring with one of `endEpochs`, every
+   * anchor fetched and checked against its on-chain hash here. minibf's
+   * `expiration`, like Koios's, is one past the last votable epoch.
+   */
+  async fetchGovernanceLinks(
+    endEpochs: readonly number[],
+  ): Promise<GovLinkScan> {
+    const expirations = new Set(endEpochs.map((e) => e + 1));
+    const listed = await this.node.all<{ tx_hash: string; cert_index: number }>(
+      "/governance/proposals",
+    );
+    const proposals: GovProposal[] = [];
+    for (const p of listed) {
+      const d = await this.node.get<{ id: string; expiration: number }>(
+        `/governance/proposals/${p.tx_hash}/${p.cert_index}`,
+      );
+      if (!expirations.has(d.expiration)) continue;
+      // Answers the on-chain anchor even when the node's own fetch of it failed.
+      const meta = await this.node.find<{ url: string; hash: string }>(
+        `/governance/proposals/${d.id}/metadata`,
+      );
+      const proposal = govProposal({
+        proposal_id: d.id,
+        expiration: d.expiration,
+        meta_url: meta?.url ?? null,
+        meta_hash: meta?.hash ?? null,
+      });
+      if (proposal) proposals.push(proposal);
+      else
+        console.warn(
+          `proposal ${d.id} commits to no usable anchor — it can carry no verifiable link`,
+        );
+    }
+    if (proposals.length === 0) return { links: [], unresolved: [] };
+    return govLinkScan(proposals, await resolveGovAnchors(proposals));
+  }
+}

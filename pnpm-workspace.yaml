@@ -3,6 +3,7 @@ packages:
   - packages/cip179
   - packages/client
   - packages/core
+  - packages/dolos
   - packages/koios
   - packages/mithril
   - packages/respond-core

@@ -7,8 +7,8 @@
  * test, whose hash this module recomputes. Every input the rebuild consumes —
  * the survey definition, the response *set*, each response's *answers*
  * (`bundle`), plus proofs, block indices, weights — is (re)derived
- * independently from Koios by the caller (see `cli.ts`, which builds `bundle`
- * from its own label-17 scan, NOT from the backend). The backend's
+ * independently by the caller, from Koios or a Dolos node (see `cli.ts`, which
+ * builds `bundle` from its own label-17 scan, NOT from the backend). The backend's
  * `validated_response`/`weight_snapshot` tables are never consulted either.
  * `MATCH` therefore means: an independent implementation of the pinned ruleset,
  * fed independently-fetched chain data, produces byte-identical results — so a
@@ -75,11 +75,11 @@ export interface VerifyInputs {
    * indeterminate, not unproven. Default `true`.
    */
   readonly govLinksReliable?: boolean;
-  /** `tx_block_index` per tx of the bundle (from Koios `/tx_info`). */
+  /** `tx_block_index` per tx of the bundle: its position in its block. */
   readonly blockIndices: ReadonlyMap<string, number>;
-  /** Decoded proof evidence per tx of the bundle (from Koios `/tx_cbor`). */
+  /** Decoded proof evidence per tx of the bundle, from its CBOR. */
   readonly proofs: ReadonlyMap<string, TxProof | null>;
-  /** Membership + weights at `end_epoch` (Koios-backed in the CLI). */
+  /** Membership + weights at `end_epoch`. */
   readonly weights: TallyInputSource;
   /**
    * This verifier's own electorate totals, to compare with the artifact's
@@ -135,8 +135,13 @@ const COVERED_ROLES: readonly number[] = [...RULESET_DESCRIPTOR.coveredRoles];
 const ROLE_DREP = 0;
 const ROLE_KEYHOLDER = 4;
 
-/** Rebuild the hashed tally body from chain data + the pinned ruleset. */
-export async function rebuildTally(inputs: VerifyInputs): Promise<{
+/**
+ * Rebuild the hashed tally body from chain data + the pinned ruleset. Needs no
+ * artifact, so two sources' rebuilds can be compared with each other.
+ */
+export async function rebuildTally(
+  inputs: Omit<VerifyInputs, "artifact" | "totals">,
+): Promise<{
   tally: TallyBody;
   notes: string[];
   indeterminate: string | null;
@@ -258,8 +263,8 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
     if (verdict !== "proven") continue;
     const blockIndex = inputs.blockIndices.get(r.txHash);
     if (blockIndex === undefined) {
-      // A proven, in-window response whose tx has no `tx_block_index` (Koios
-      // `/tx_info` didn't resolve it): the dedup order (slot, tx_block_index,
+      // A proven, in-window response whose tx has no `tx_block_index` (the
+      // source didn't resolve it): the dedup order (slot, tx_block_index,
       // response_index) can't be reproduced — the `-1` sentinel `laterInChain`
       // falls back to could resolve a same-slot tie differently. The emitter
       // POSTPONES finalization in exactly this case (`countedRows`), so match
@@ -267,7 +272,7 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
       // rather than silently risk a false MISMATCH (finding 16).
       indeterminate ??=
         `response ${r.txHash}:${r.responseIndex} has no tx_block_index ` +
-        `(Koios /tx_info did not resolve it) — the counted order cannot be ` +
+        `(the source did not resolve it) — the counted order cannot be ` +
         `reproduced; retry when it is resolvable`;
       continue;
     }

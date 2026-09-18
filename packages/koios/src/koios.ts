@@ -703,7 +703,7 @@ export class KoiosDataSource implements DataSource {
           `skipping label-17 item ${row.tx_hash}[${s.index}]: ${String(s.error)}`,
         );
       }
-      this.classify(decoded.payload, row.tx_hash, pos, {
+      classifyPayload(decoded.payload, row.tx_hash, pos, {
         surveys,
         responses,
         cancellations,
@@ -968,65 +968,10 @@ export class KoiosDataSource implements DataSource {
     for (const [hash, cbor] of cborByHash) {
       proofByHash.set(hash, decodeTxProof(evolutionCodec, cbor));
     }
-    await this.resolveMechanismAScripts(proofByHash, neededScripts);
+    await resolveMechanismAScripts(proofByHash, neededScripts, (hashes) =>
+      this.resolveNativeScripts(hashes),
+    );
     return proofByHash;
-  }
-
-  /**
-   * Fold chain-resolved native scripts into `proofByHash` for the mechanism-A
-   * script credentials in `neededScripts` that aren't already in their tx's
-   * witness set (CIP-179 lets the script be resolved by hash, not only from the
-   * carrying tx). Mutates `proofByHash` in place:
-   *  - a resolved script is appended to its tx's `nativeScripts`;
-   *  - a script whose `/script_info` fetch *succeeded* but returned no native
-   *    script (never on-chain, or Plutus) is left out → mechanism A finds no
-   *    match → a *final* unproven (so a bogus script-hash response is simply
-   *    excluded, never a perpetual postponement);
-   *  - a script whose fetch *failed* nulls its tx's proof → unknown/retry, so an
-   *    unresolvable-this-refresh script is surfaced, not silently decided.
-   */
-  private async resolveMechanismAScripts(
-    proofByHash: Map<string, TxProof | null>,
-    neededScripts: ReadonlyMap<string, readonly string[]>,
-  ): Promise<void> {
-    // The script hashes actually missing from their own tx's witness set — the
-    // only ones needing a chain lookup. Union them so `/script_info` is hit once.
-    const missingByTx = new Map<string, string[]>();
-    const wanted = new Set<string>();
-    for (const [txHash, hashes] of neededScripts) {
-      const proof = proofByHash.get(txHash);
-      if (!proof) continue; // tx unknown already → nothing to add
-      const witnessed = new Set(proof.nativeScripts.map((ns) => ns.scriptHash));
-      const missing = [...new Set(hashes)].filter((h) => !witnessed.has(h));
-      if (missing.length === 0) continue;
-      missingByTx.set(txHash, missing);
-      for (const h of missing) wanted.add(h);
-    }
-    if (wanted.size === 0) return;
-
-    const { scripts, reliable } = await this.resolveNativeScripts([...wanted]);
-    for (const [txHash, missing] of missingByTx) {
-      const proof = proofByHash.get(txHash);
-      if (!proof) continue;
-      const add: TxProof["nativeScripts"][number][] = [];
-      let unresolvable = false;
-      for (const h of missing) {
-        const script = scripts.get(h);
-        if (script) add.push({ scriptHash: h, script });
-        else if (!reliable) unresolvable = true; // couldn't ask → unknown, retry
-        // reliable && no script: definitively not a native script → leave out.
-      }
-      if (unresolvable) {
-        proofByHash.set(txHash, null);
-        continue;
-      }
-      if (add.length > 0) {
-        proofByHash.set(txHash, {
-          ...proof,
-          nativeScripts: [...proof.nativeScripts, ...add],
-        });
-      }
-    }
   }
 
   /**
@@ -1175,60 +1120,125 @@ export class KoiosDataSource implements DataSource {
     if (proposals.length === 0) return { links: [], unresolved: [] };
     return govLinkScan(proposals, await resolveGovAnchors(proposals, opts));
   }
+}
 
-  private classify(
-    payload: DecodedPayloadItems["payload"],
-    txHash: string,
-    pos: { slot: number; epochNo: number },
-    out: {
-      surveys: SurveyRecord[];
-      responses: ResponseRecord[];
-      cancellations: CancellationRecord[];
-    },
-  ): void {
-    const { slot, epochNo } = pos;
-    switch (payload.type) {
-      case "definitions": {
-        const txId = hexToBytes(txHash);
-        for (const { index, value: definition } of payload.definitions) {
-          out.surveys.push({
-            txHash,
-            slot,
-            epochNo,
-            ref: { txId, index },
-            definition,
-          });
-        }
-        break;
+/**
+ * Append one label-17 payload's records to `out`, placed at `pos` in the
+ * chain. A cancellation's `proof` stays null: reading it takes the
+ * cancelling transaction's CBOR, which is the caller's second pass.
+ */
+export function classifyPayload(
+  payload: DecodedPayloadItems["payload"],
+  txHash: string,
+  pos: { slot: number; epochNo: number },
+  out: {
+    surveys: SurveyRecord[];
+    responses: ResponseRecord[];
+    cancellations: CancellationRecord[];
+  },
+): void {
+  const { slot, epochNo } = pos;
+  switch (payload.type) {
+    case "definitions": {
+      const txId = hexToBytes(txHash);
+      for (const { index, value: definition } of payload.definitions) {
+        out.surveys.push({
+          txHash,
+          slot,
+          epochNo,
+          ref: { txId, index },
+          definition,
+        });
       }
-      case "responses":
-        for (const {
-          index: responseIndex,
-          value: response,
-        } of payload.responses) {
-          // The payload index is part of the chain order (same-tx ties).
-          out.responses.push({
-            txHash,
-            slot,
-            epochNo,
-            responseIndex,
-            response,
-          });
-        }
-        break;
-      case "cancellations":
-        for (const { value: target } of payload.cancellations) {
-          // `proof` is filled in a second pass, which fetches the cancelling
-          // tx's CBOR to read its owner-proof evidence.
-          out.cancellations.push({
-            txHash,
-            slot,
-            epochNo,
-            target,
-            proof: null,
-          });
-        }
-        break;
+      break;
+    }
+    case "responses":
+      for (const {
+        index: responseIndex,
+        value: response,
+      } of payload.responses) {
+        // The payload index is part of the chain order (same-tx ties).
+        out.responses.push({
+          txHash,
+          slot,
+          epochNo,
+          responseIndex,
+          response,
+        });
+      }
+      break;
+    case "cancellations":
+      for (const { value: target } of payload.cancellations) {
+        out.cancellations.push({
+          txHash,
+          slot,
+          epochNo,
+          target,
+          proof: null,
+        });
+      }
+      break;
+  }
+}
+
+/**
+ * Fold chain-resolved native scripts into `proofByHash` for the mechanism-A
+ * script credentials in `neededScripts` that aren't already in their tx's
+ * witness set (CIP-179 lets the script be resolved by hash, not only from the
+ * carrying tx). `resolve` looks scripts up by hash in whatever indexes the
+ * chain, reporting `reliable = false` when it could not ask. Mutates
+ * `proofByHash` in place:
+ *  - a resolved script is appended to its tx's `nativeScripts`;
+ *  - a script the lookup *answered* without (never on-chain, or Plutus) is
+ *    left out → mechanism A finds no match → a *final* unproven (so a bogus
+ *    script-hash response is simply excluded, never a perpetual postponement);
+ *  - a script the lookup could not ask about nulls its tx's proof →
+ *    unknown/retry, so an unresolvable-this-refresh script is surfaced, not
+ *    silently decided.
+ */
+export async function resolveMechanismAScripts(
+  proofByHash: Map<string, TxProof | null>,
+  neededScripts: ReadonlyMap<string, readonly string[]>,
+  resolve: (
+    scriptHashes: readonly string[],
+  ) => Promise<{ scripts: Map<string, NativeScriptInfo>; reliable: boolean }>,
+): Promise<void> {
+  // The script hashes actually missing from their own tx's witness set — the
+  // only ones needing a chain lookup. Union them so the lookup runs once.
+  const missingByTx = new Map<string, string[]>();
+  const wanted = new Set<string>();
+  for (const [txHash, hashes] of neededScripts) {
+    const proof = proofByHash.get(txHash);
+    if (!proof) continue; // tx unknown already → nothing to add
+    const witnessed = new Set(proof.nativeScripts.map((ns) => ns.scriptHash));
+    const missing = [...new Set(hashes)].filter((h) => !witnessed.has(h));
+    if (missing.length === 0) continue;
+    missingByTx.set(txHash, missing);
+    for (const h of missing) wanted.add(h);
+  }
+  if (wanted.size === 0) return;
+
+  const { scripts, reliable } = await resolve([...wanted]);
+  for (const [txHash, missing] of missingByTx) {
+    const proof = proofByHash.get(txHash);
+    if (!proof) continue;
+    const add: TxProof["nativeScripts"][number][] = [];
+    let unresolvable = false;
+    for (const h of missing) {
+      const script = scripts.get(h);
+      if (script) add.push({ scriptHash: h, script });
+      else if (!reliable) unresolvable = true; // couldn't ask → unknown, retry
+      // reliable && no script: definitively not a native script → leave out.
+    }
+    if (unresolvable) {
+      proofByHash.set(txHash, null);
+      continue;
+    }
+    if (add.length > 0) {
+      proofByHash.set(txHash, {
+        ...proof,
+        nativeScripts: [...proof.nativeScripts, ...add],
+      });
     }
   }
 }
