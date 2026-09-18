@@ -860,14 +860,12 @@ describe("fetchAll — tx metadata cache (finding 5)", () => {
   });
 });
 
-// --- mechanism-A native-script resolution by hash (finding 7) ----------------
+// --- mechanism-A native-script lookup by hash (finding 7) --------------------
 //
 // A native script backing a script credential need not be attached to the
-// carrying tx (a metadata-only tx spends nothing from it). CIP-179 mechanism A
-// lets it be resolved by hash via chain indexing; `txProofs` does so through
-// Koios `/script_info` and folds the result into the tx's proof, so the pure
-// evaluation is identical to the emitter's — otherwise Tessera and a conformant
-// verifier tally the same chain differently.
+// carrying tx. `txProofs` looks a missing one up through Koios `/script_info`;
+// these pin how the lookup's outcomes reach the proof. Koios answers a native
+// script's row with `bytes: null`, so no stub here returns native bytes.
 
 // DREP_VOTE_TX_CBOR lists this key hash in required_signers; a sig script over it
 // is therefore satisfied by that tx. CBOR of `[0, keyhash]`.
@@ -915,29 +913,6 @@ function stubProofFetch(scriptInfo: () => Response) {
 }
 
 describe("resolveNativeScripts", () => {
-  it("decodes native rows, drops Plutus, and keys by the recomputed hash", async () => {
-    stubProofFetch(
-      () =>
-        new Response(
-          JSON.stringify([
-            {
-              script_hash: SCRIPT_HASH,
-              type: "multisig",
-              bytes: SIG_SCRIPT_CBOR,
-            },
-            { script_hash: "plu700", type: "plutusV3", bytes: "deadbeef" },
-          ]),
-          { status: 200 },
-        ),
-    );
-    const { scripts, reliable } = await new KoiosDataSource(
-      CONFIG,
-    ).resolveNativeScripts([SCRIPT_HASH, "plu700"]);
-    expect(reliable).toBe(true);
-    expect([...scripts.keys()]).toEqual([SCRIPT_HASH]); // Plutus row excluded
-    expect(scripts.get(SCRIPT_HASH)).toEqual({ kind: "sig", keyHash: KEYHASH });
-  });
-
   it("reports reliable=false when a /script_info batch throws (couldn't ask)", async () => {
     stubProofFetch(() => new Response("boom", { status: 500 }));
     const { scripts, reliable } = await new KoiosDataSource(
@@ -948,35 +923,7 @@ describe("resolveNativeScripts", () => {
   });
 });
 
-describe("txProofs — mechanism-A script resolution", () => {
-  it("folds a chain-resolved script into the proof so mechanism A verifies", async () => {
-    stubProofFetch(
-      () =>
-        new Response(
-          JSON.stringify([
-            {
-              script_hash: SCRIPT_HASH,
-              type: "multisig",
-              bytes: SIG_SCRIPT_CBOR,
-            },
-          ]),
-          { status: 200 },
-        ),
-    );
-    const proofs = await new KoiosDataSource(CONFIG).txProofs(
-      [TX],
-      new Map([[TX, [SCRIPT_HASH]]]),
-    );
-    const proof = proofs.get(TX);
-    expect(proof).not.toBeNull();
-    // The witness set carried no script; the resolved one is merged in.
-    expect(proof!.nativeScripts).toEqual([
-      { scriptHash: SCRIPT_HASH, script: { kind: "sig", keyHash: KEYHASH } },
-    ]);
-    // …and the tx's required_signers satisfy it → the script owner is proven.
-    expect(mechanismAProven(scriptOwner(), proof!)).toBe(true);
-  });
-
+describe("txProofs — mechanism-A script lookup", () => {
   it("nulls the proof (unknown, retry) when /script_info can't be reached", async () => {
     stubProofFetch(() => new Response("boom", { status: 500 }));
     const proofs = await new KoiosDataSource(CONFIG).txProofs(
@@ -1013,61 +960,25 @@ describe("txProofs — mechanism-A script resolution", () => {
 });
 
 describe("txProofs — tx CBOR cache", () => {
-  const scriptInfoOk = () =>
-    new Response(
-      JSON.stringify([
-        { script_hash: SCRIPT_HASH, type: "multisig", bytes: SIG_SCRIPT_CBOR },
-      ]),
-      { status: 200 },
-    );
+  const noScripts = () => new Response("[]", { status: 200 });
   const cborCalls = (mock: { mock: { calls: unknown[][] } }) =>
     mock.mock.calls.filter((c) => String(c[0]).includes("/tx_cbor"));
 
   it("serves a warm cache without any /tx_cbor request", async () => {
     const cache = memCache();
-    stubProofFetch(scriptInfoOk);
+    stubProofFetch(noScripts);
     const first = await new KoiosDataSource(CONFIG, undefined, cache).txProofs([
       TX,
     ]);
     expect(first.get(TX)).not.toBeNull();
     expect(cache.cbor.get(TX)).toBe(SIGNED_TX_CBOR);
 
-    const fetchMock = stubProofFetch(scriptInfoOk);
+    const fetchMock = stubProofFetch(noScripts);
     const second = await new KoiosDataSource(CONFIG, undefined, cache).txProofs(
       [TX],
     );
     expect(second.get(TX)).toEqual(first.get(TX));
     expect(cborCalls(fetchMock)).toHaveLength(0);
-  });
-
-  it("re-runs the mechanism-A merge on a cached hit, never banking it", async () => {
-    // The cached bytes carry no script; only the /script_info fetch supplies it.
-    // A run where that fetch fails must still read unknown — which it can only do
-    // if the merge is redone per call rather than frozen into the cache.
-    const cache = memCache();
-    stubProofFetch(scriptInfoOk);
-    const warm = await new KoiosDataSource(CONFIG, undefined, cache).txProofs(
-      [TX],
-      new Map([[TX, [SCRIPT_HASH]]]),
-    );
-    expect(mechanismAProven(scriptOwner(), warm.get(TX)!)).toBe(true);
-
-    stubProofFetch(() => new Response("boom", { status: 500 }));
-    const degraded = await new KoiosDataSource(
-      CONFIG,
-      undefined,
-      cache,
-    ).txProofs([TX], new Map([[TX, [SCRIPT_HASH]]]));
-    expect(degraded.get(TX)).toBeNull();
-
-    // …and the reverse: once /script_info answers again, so does the proof.
-    stubProofFetch(scriptInfoOk);
-    const recovered = await new KoiosDataSource(
-      CONFIG,
-      undefined,
-      cache,
-    ).txProofs([TX], new Map([[TX, [SCRIPT_HASH]]]));
-    expect(mechanismAProven(scriptOwner(), recovered.get(TX)!)).toBe(true);
   });
 
   it("banks nothing for a hash Koios returned no row for", async () => {
