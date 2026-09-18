@@ -26,7 +26,7 @@ for a **past** epoch, and at what cost.
 | `/tx_by_metalabel` (label 17, slot window)  | the definition, every response and cancellation in the survey's window     |
 | `/tx_metadata`, `/tx_cbor`                  | payload bytes; `required_signers`, witnesses, `voting_procedures` (proofs) |
 | `/tx_info` (`tx_block_index`, block epoch)  | the CIP-179 chain order for dedup; the block's authoritative epoch         |
-| `/script_info`                              | native-script credentials                                                  |
+| `/script_info` (JSON), creation tx position | native-script credentials whose script the carrying tx lacks               |
 | `/proposal_list` (+ off-chain anchor fetch) | mechanism-B governance links                                               |
 
 **B. Ledger facts at `end_epoch = E`** — the oracle part; this is where the

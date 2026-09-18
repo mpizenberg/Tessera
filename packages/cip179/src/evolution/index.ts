@@ -250,8 +250,8 @@ export function decodeTx(txCborHex: string): DecodedTx | null {
 }
 
 /**
- * Decode a bare native script from its CBOR (hex) — a Koios `/script_info`
- * `bytes` value — to the neutral {@link DecodedNativeScript}, or `null` if it
+ * Decode a bare native script from its CBOR (hex) — as a chain index serves it
+ * by hash — to the neutral {@link DecodedNativeScript}, or `null` if it
  * isn't a decodable native script (a Plutus script's bytes throw here, so the
  * caller resolves nothing and the credential stays unproven). The bytes are
  * kept as given, since the decoder refuses trailing bytes.

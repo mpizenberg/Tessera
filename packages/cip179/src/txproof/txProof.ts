@@ -109,8 +109,8 @@ function voterCredential(
  *
  * CIP-179 mechanism A allows the native script backing a script credential to be
  * resolved through chain indexing when the metadata-only transaction that
- * carries the response/cancellation doesn't attach it. A data source fetches the
- * script CBOR by hash (e.g. Koios `/script_info`) and folds the result into the
+ * carries the response/cancellation doesn't attach it. A data source obtains the
+ * script CBOR by hash (e.g. Kupo's `/scripts/{hash}`) and folds the result into the
  * relevant tx's `TxProof.nativeScripts`; the pure {@link mechanismAProven} /
  * {@link responseCredentialProven} evaluation is then unchanged — it still just
  * looks the script hash up in `nativeScripts`. The hash is computed from the

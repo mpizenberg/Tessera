@@ -135,7 +135,7 @@ export interface TxProofCodec {
   /**
    * Decode a bare native script from its own CBOR (hex), or `null` if it isn't a
    * decodable native script. Used to resolve a mechanism-A native script *by
-   * hash* through a chain index (e.g. Koios `/script_info`) when it isn't
+   * hash* through a chain index (e.g. Kupo's `/scripts/{hash}`) when it isn't
    * attached to the carrying tx's witness set — CIP-179 mechanism A permits the
    * script to be resolved from the chain, not only the tx (a metadata-only tx
    * need not carry it). Returns the same {@link DecodedNativeScript} the tx

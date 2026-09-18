@@ -198,23 +198,30 @@ export class DolosChain {
       const row = await this.node.find<{ cbor: string }>(`/txs/${h}/cbor`);
       proofs.set(h, row ? decodeTxProof(evolutionCodec, row.cbor) : null);
     }
-    await resolveMechanismAScripts(proofs, neededScripts, (hashes) =>
-      this.nativeScripts(hashes),
+    await resolveMechanismAScripts(proofs, neededScripts, (needed) =>
+      this.nativeScripts(needed),
     );
     return proofs;
   }
 
+  /**
+   * The scripts minikupo serves by hash, the same for every needing tx:
+   * minikupo gives no script's first appearance, so whether a script was on
+   * chain by the needing tx is not checked. An empty map, leaving every tx
+   * out, means unknown.
+   */
   private async nativeScripts(
-    scriptHashes: readonly string[],
-  ): Promise<{ scripts: Map<string, NativeScriptInfo>; reliable: boolean }> {
-    const scripts = new Map<string, NativeScriptInfo>();
+    needed: ReadonlyMap<string, readonly string[]>,
+  ): Promise<Map<string, Map<string, NativeScriptInfo>>> {
+    const hashes = [...new Set([...needed.values()].flat())];
     if (!this.minikupo) {
       console.warn(
-        `no minikupo URL: native scripts ${scriptHashes.join(", ")} stay unresolved`,
+        `no minikupo URL: native scripts ${hashes.join(", ")} stay unresolved`,
       );
-      return { scripts, reliable: false };
+      return new Map();
     }
-    for (const h of scriptHashes) {
+    const scripts = new Map<string, NativeScriptInfo>();
+    for (const h of hashes) {
       try {
         const res = await fetch(`${this.minikupo}/scripts/${h}`);
         if (!res.ok && res.status !== 404) throw new Error(`${res.status}`);
@@ -226,10 +233,10 @@ export class DolosChain {
         if (decoded) scripts.set(decoded.scriptHash, decoded.script);
       } catch (err) {
         console.warn(`minikupo /scripts/${h} failed: ${String(err)}`);
-        return { scripts, reliable: false };
+        return new Map();
       }
     }
-    return { scripts, reliable: true };
+    return new Map([...needed.keys()].map((tx) => [tx, scripts]));
   }
 
   /**

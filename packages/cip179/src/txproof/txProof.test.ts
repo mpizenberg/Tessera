@@ -116,7 +116,7 @@ describe("decodeTxProof — witness-set native scripts", () => {
   });
 });
 
-// A native script resolved by hash from a chain index (Koios `/script_info`),
+// A native script resolved by hash from a chain index (Kupo's `/scripts/{hash}`),
 // for mechanism-A credentials whose script the carrying tx doesn't attach
 // (finding 7).
 describe("decodeResolvedNativeScript", () => {
