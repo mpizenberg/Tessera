@@ -38,10 +38,13 @@ trust sits (`ARCHITECTURE.md` §8).
 | `/account_update_history`                | per stake credential: registered at the end of `E` |
 | `/drep_voting_power_history` (epoch `E`) | per DRep: voting power for `E`                     |
 | `/drep_updates`                          | per DRep: registered at the end of `E`             |
-| `/epoch_info`, `/drep_epoch_summary`     | the two electorate totals                          |
+| `/epoch_info`, `/drep_epoch_summary`     | the two electorate totals, outside the hash        |
 
 Keyholder surveys need nothing from B; a sealed survey's drand beacon is already
-independently verifiable and is out of scope here.
+independently verifiable and is out of scope here. The totals only scale
+turnout, and since ruleset 14 (2026-09-18) they sit in the artifact's unhashed
+`info`: an audit that cannot read them still reproduces the hash, and the
+verifier compares them only as a note.
 
 **Which ledger state holds B.** These are not "the state at the end of `E`":
 
@@ -211,11 +214,11 @@ whole of column A and most of B:
 | native scripts            | `/scripts/{hash}/cbor`, `…/json`                                           | yes                                                     |
 | governance links          | `/governance/proposals`, `…/{tx}/{idx}`                                    | yes; **anchor url/hash exposure to verify**             |
 | active stake for `E`      | `/epochs/E/stakes` (paged), `/accounts/{id}/history`                       | **yes** — `AccountEpochLog`, written when `E+1` closes  |
-| stake total for `E`       | `/epochs/E` (`active_stake`)                                               | yes                                                     |
+| stake total (unhashed)    | `/epochs/E` (`active_stake`)                                               | yes                                                     |
 | stake registration        | `/accounts/{id}/registrations` (slot-bounded)                              | yes                                                     |
 | DRep voting power         | `/governance/dreps/{id}` (`amount`; a deposit if registered during `E`)    | **no** — current value only; per-epoch history deferred |
 | DRep registration         | `/governance/dreps/{id}` (`active`, `retired`)                             | current only                                            |
-| DRep total                | none — no `/governance/dreps` list; `abstain`, `no_confidence` answer `""` | —                                                       |
+| DRep total (unhashed)     | none — no `/governance/dreps` list; `abstain`, `no_confidence` answer `""` | —                                                       |
 
 The DRep gap is explicit in the source: "a per-epoch history, if APIs ever
 want one, is a new field at a higher index." So the Stakeholder role is fully
@@ -234,9 +237,12 @@ indexing mismatch (#448). Nothing open names a wrong active-stake amount on a
 recent epoch, but the suite is explicitly "best-effort", so §6's experiment has to
 measure it on the responders that matter.
 
-**Verdict:** the cheapest Rung-2 path; it answers A and all of B but the DRep
-total over HTTP, from two stopping points and no new code. The residual risk
-is Dolos's ledger versus db-sync on the specific accounts in the artifact.
+**Verdict:** the cheapest Rung-2 path; it answers A and every part of B the
+hash needs over HTTP, from two stopping points and no new code. The residual
+risk is Dolos's ledger versus db-sync on the specific accounts in the
+artifact: on preview it keeps one protocol-9 vote delegation the Haskell
+ledger cleared (txpipe/dolos#1364), which moves a DRep's power and the DRep
+total.
 
 ### Dingo — v0.70.12 (2026-09-15; testnets only)
 
@@ -298,8 +304,8 @@ One binary, certified blocks in, HTTP out.
    the total, `/accounts/{id}/registrations` bounded by `E`'s last slot (it
    omits the certificate that registers and delegates a vote together), and
    the whole of column A.
-3. The DRep electorate total is not served; the verifier's existing
-   "total taken from the artifact" path (exit 5) covers it until Dolos lists
+3. The DRep electorate total is not served. It is outside the hash, so the
+   rebuild needs none, and the verifier compares it only once Dolos lists
    DReps with amounts (a draft PR, #1121, adds the list).
 
 Cost: disk of the order of the immutable DB plus indexes (preprod's archive
@@ -381,11 +387,15 @@ is a multi-day PostgreSQL job.
 
 ## 5. What this changes and what it does not
 
-- **`TALLY-SPEC.md` and the artifact do not move.** Provenance is unhashed by
-  design (§5 there); a Dolos-fed rebuild reproducing the same `tally` hash is
-  the whole point of that split.
+- **The artifact moved once for this** (maintainer, 2026-09-18): the two
+  electorate totals left the hashed `tally` for an unhashed `info` section
+  (ruleset 14), since alternative ledgers disagree with the Haskell node on
+  them and they only scale turnout. Provenance was already unhashed (§5
+  there); a Dolos-fed rebuild reproducing the same `tally` hash is the whole
+  point of that split.
 - **The seam is `TallyInputSource` plus `DataSource`**, already implemented
-  once for Koios. A Dolos implementation is the endpoint mapping in §3 and the
+  once for Koios; the totals sit apart in `ElectorateTotals`, which an audit
+  may leave out. A Dolos implementation is the endpoint mapping in §3 and the
   node walk in §4; provenance would carry `provider: dolos`, the Mithril
   certificate hash, and the stop epochs read.
 - **The infrastructure gap `RESEARCH.md` §8.5 named is narrower now, not
@@ -432,8 +442,8 @@ Stakeholder and DRep responders and one governance link, with a Koios-built
 artifact to reproduce.
 
 - **Dolos, read through its queries only** (Option 1). The difficulty is
-  holding the node at the two stopping points reliably, and the DRep total,
-  which no route serves.
+  holding the node at the two stopping points reliably. The DRep total, which
+  no route serves, left the hash for that reason (§5).
 - **Amaru as a node and a library, without the Haskell tools**, at the
   level between Rungs 1 and 2 (§2). Bootstrap from PRAGMA's states, sync with
   the epoch snapshots retained, read them with a small Rust program over

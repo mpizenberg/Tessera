@@ -396,9 +396,11 @@ refresh materialized, and a request costs what the survey it asked for costs:
 - **`GET /api/surveys/{txHash}/{index}/artifact`** and
   **`GET /api/artifacts/{hash}`** — the final tally artifact (`TALLY-SPEC.md` §5), by ref or by
   content address. The stored JSON text is served **verbatim** (byte identity with
-  the hash), with a strong `ETag: "<artifactHash>"` and
-  `Cache-Control: public, max-age=31536000, immutable`; 404 while the survey is
-  open or not yet finalized.
+  the hash), with a strong `ETag: "<artifactHash>"`; 404 while the survey is
+  open or not yet finalized. By hash it is
+  `Cache-Control: public, max-age=31536000, immutable`; by ref it is
+  `no-cache`, because a later ruleset may re-emit a survey's artifact under a
+  new hash.
 
 The **dedupe rule** behind `responseCount` is the shared one
 (`cip-179/domain`'s `dedupe.ts`, latest-valid-per-credential): the count is the
@@ -648,7 +650,8 @@ _this_ deployment obtains those inputs from Koios and when it does the work.
 | DRep total                    | `GET /drep_epoch_summary`                                                    | per epoch                       | total DRep voting power denominator.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 - **Totals** (`/epoch_info`, `/drep_epoch_summary`) are O(1) per epoch, fetched
-  once, and **distributed with the artifact**. What to do with them (participation
+  once, and **distributed with the artifact**, outside its hash (`TALLY-SPEC.md`
+  §5). What to do with them (participation
   rate, % of stake, etc.) is a **presentation** responsibility — the tally itself
   does not bake in a denominator.
 - **Provenance** is recorded coarsely, not per weight: `source` once at the top
@@ -749,8 +752,12 @@ enforcing one rule:
 - **`epoch_totals`**, keyed `(epoch, role)` — the electorate denominator, decimal
   strings again, recorded with the endpoint it came from.
 - **`tally_artifact`**, one immutable row per survey, written once at
-  finalization: the content hash (`TALLY-SPEC.md` §5) and the full `{tally, provenance}` JSON,
-  stored as the text that is served verbatim.
+  finalization: the content hash (`TALLY-SPEC.md` §5) and the full
+  `{tally, info, provenance}` JSON, stored as the text that is served verbatim.
+  A ruleset that changes the artifact's shape re-emits every row: its
+  migration deletes them, clears the final states they backed and resets the
+  finalization floor, and the next pass rebuilds them from the frozen rows
+  above.
 
 ---
 
@@ -758,9 +765,9 @@ enforcing one rule:
 
 `IndexerDataSource` (HTTP) sits behind the existing `DataSource` seam;
 `KoiosDataSource` is retained as the direct/power-user/offline path, and the
-user-token override keeps working against it. The survey page fetches an
-artifact lazily for closed and cancelled surveys and renders the weighted
-result, deriving every float presentation-side from the integer aggregates
+user-token override keeps working against it. The survey page fetches the
+artifact its final state names, lazily and by content hash, and renders the
+weighted result, deriving every float presentation-side from the integer aggregates
 (`frontend/app/src/domain/results.ts`). Two decisions are worth recording:
 
 - **The browser reads the serving tier's proof verdicts (§5.1) rather than
@@ -779,9 +786,9 @@ The **standalone verifier** is the workspace package `packages/verifier`. It
 fetches the bundle and artifact from a backend, refetches every verification
 input straight from Koios, re-runs the pinned ruleset through the same shared
 code, and compares content hashes — `MATCH`/`MISMATCH` with a diff, exit 0/1. It
-never reads the backend's validation tables, and a total the upstream cannot
-re-serve is taken from the artifact with an explicit "not independently
-confirmed" note.
+never reads the backend's validation tables. It re-fetches the electorate
+totals as well and notes any that differ from the artifact's or cannot be
+re-fetched; they are outside the hash, so the verdict ignores them.
 
 ---
 
@@ -877,7 +884,8 @@ the reason costs more than reading it.
   contract change bought with a transfer win. The 304 path already costs one row.
 - **Edge-caching `/api/surveys` with `s-maxage`** — the rows may change at any
   refresh, so `no-cache` plus ETag revalidation is already the right shape;
-  artifacts, the one response worth caching hard, are already `immutable`.
+  artifacts by hash, the one response worth caching hard, are already
+  `immutable`.
 - **A whole-snapshot blob for serving** — a regression of migrations 0009→0010,
   which moved to rows precisely so the list could be paged and filtered in SQL.
 - **Dropping the `response_credential` index** to cut write amplification — it

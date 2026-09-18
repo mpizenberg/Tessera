@@ -474,7 +474,8 @@ describe("the other routes", () => {
 
   it("artifacts: plain JSON by survey or by hash, 404 as null", async () => {
     const artifact = {
-      tally: { rulesetHash: "ab", perRole: [{ role: 3, total: "1000" }] },
+      tally: { rulesetHash: "ab", perRole: [{ role: 3 }] },
+      info: { perRole: [{ role: 3, total: "1000" }] },
       provenance: { source: { provider: "koios" } },
     };
     const { client, urls } = clientOver((url) =>
@@ -490,6 +491,15 @@ describe("the other routes", () => {
       /malformed artifact hash/,
     );
     expect(urls()).toHaveLength(3);
+  });
+
+  it("artifacts: refuses a body without its info section", async () => {
+    const { client } = clientOver(() => ({
+      body: { tally: {}, provenance: {} },
+    }));
+    await expect(client.artifactByHash("ab".repeat(32))).rejects.toThrow(
+      /info/,
+    );
   });
 
   it("txStatus: bounds and validates the list, answers {} for none", async () => {

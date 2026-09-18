@@ -31,7 +31,7 @@ const RESPONSE: SurveyResponse = {
   answers: { type: "public", answers: [] },
 };
 
-function body(perRoleTotal: string | null): TallyBody {
+function body(weight: string): TallyBody {
   return {
     rulesetHash: rulesetHash(),
     network: "preview",
@@ -40,21 +40,11 @@ function body(perRoleTotal: string | null): TallyBody {
     perRole: [
       {
         role: 3,
-        total: perRoleTotal,
         responders: [
-          {
-            credential: "key:01",
-            weight: "45000000000000000",
-            txHash: "cc",
-            responseIndex: 0,
-          },
+          { credential: "key:01", weight, txHash: "cc", responseIndex: 0 },
         ],
         questions: [
-          {
-            kind: "custom",
-            answeredCount: 1,
-            answeredWeight: "45000000000000000",
-          },
+          { kind: "custom", answeredCount: 1, answeredWeight: weight },
         ],
       },
     ],
@@ -78,7 +68,7 @@ describe("rulesetHash", () => {
   // rules", which is the exact failure mode the hash exists to prevent.
   it("matches its pinned golden hash (bump rulesetVersion on any change)", () => {
     expect(rulesetHash()).toBe(
-      "38a4367b6ffe50ad032bc319cf43f017ff231fe7ea1d63cc611d6386ac9c6259",
+      "7c78775e6c70d40d9e1daade043e42509ef1756fa5f7a359c9cf00bbf9efe004",
     );
   });
 
@@ -116,11 +106,10 @@ describe("artifactHash", () => {
 
   it("changes when any committed value changes", () => {
     expect(artifactHash(body("100"))).not.toBe(artifactHash(body("101")));
-    expect(artifactHash(body("100"))).not.toBe(artifactHash(body(null)));
   });
 
   it("survives a JSON round-trip (artifact bodies are wire-plain)", () => {
-    const a = body(null);
+    const a = body("45000000000000000");
     const roundTripped = JSON.parse(JSON.stringify(a)) as TallyBody;
     expect(artifactHash(roundTripped)).toBe(artifactHash(a));
   });
@@ -175,8 +164,8 @@ describe("assembleTallyBody", () => {
   });
   // Roles and responders passed OUT of sorted order on purpose.
   const roles: RoleTally[] = [
-    { role: 3, responders: [wr(2, 100n, 0), wr(1, 50n, 1)], total: "1000" },
-    { role: 0, responders: [wr(3, 7n, 0)], total: "2000" },
+    { role: 3, responders: [wr(2, 100n, 0), wr(1, 50n, 1)] },
+    { role: 0, responders: [wr(3, 7n, 0)] },
   ];
 
   it("sorts roles ascending and responders by credential identity", () => {
@@ -190,8 +179,8 @@ describe("assembleTallyBody", () => {
 
   it("is invariant to the input order of roles and responders (finding 30)", () => {
     const shuffled: RoleTally[] = [
-      { role: 0, responders: [wr(3, 7n, 0)], total: "2000" },
-      { role: 3, responders: [wr(1, 50n, 1), wr(2, 100n, 0)], total: "1000" },
+      { role: 0, responders: [wr(3, 7n, 0)] },
+      { role: 3, responders: [wr(1, 50n, 1), wr(2, 100n, 0)] },
     ];
     expect(artifactHash(assembleTallyBody(DEF, ID, shuffled))).toBe(
       artifactHash(assembleTallyBody(DEF, ID, roles)),
@@ -204,7 +193,7 @@ describe("assembleTallyBody", () => {
   // `rulesetVersion` if it was the ruleset), never paste to make CI green.
   it("matches its pinned golden artifact hash", () => {
     expect(artifactHash(assembleTallyBody(DEF, ID, roles))).toBe(
-      "6b6da3396aa5857dd42745b522450ce505a8bad3c13eec2460e7c001ec130e87",
+      "8d3aaa3b257da5f04be609d28d6db54e22976cc5220a1c166ebba0543db739a8",
     );
   });
 });

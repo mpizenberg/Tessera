@@ -68,12 +68,13 @@ export interface DataSource {
    */
   txStatus(txHashes: readonly string[]): Promise<Map<string, number | null>>;
   /**
-   * The survey's final tally artifact ({@link TallyArtifact}), or `null` when
-   * none exists (survey still open, not yet finalized, or the source can't
-   * produce artifacts — the direct Koios path never does; the UI then falls
-   * back to the raw client-side tally).
+   * The tally artifact ({@link TallyArtifact}) with this content hash, as a
+   * survey's final state names it, or `null` when the source holds none.
+   * Optional: only the serving-tier implementation has final states and
+   * artifacts — the direct Koios path has neither, and the UI shows the raw
+   * client-side tally instead.
    */
-  artifact(ref: SurveyRef): Promise<TallyArtifact | null>;
+  artifactByHash?(hash: string): Promise<TallyArtifact | null>;
   /**
    * Operational health of the backing service ({@link BackendHealth}), for the
    * app's health footer. Optional: only the serving-tier implementation has a

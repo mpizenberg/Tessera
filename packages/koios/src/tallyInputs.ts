@@ -1,6 +1,7 @@
 /**
- * Koios-backed {@link TallyInputSource}: role membership + weights at a
- * survey's `end_epoch` (TALLY-SPEC.md §1, ARCHITECTURE.md §6.2).
+ * Koios-backed {@link TallyInputSource} and {@link ElectorateTotals}: role
+ * membership + weights at a survey's `end_epoch` (TALLY-SPEC.md §1,
+ * ARCHITECTURE.md §6.2), and the electorate totals.
  *
  * Stakeholders (role 3) resolve in two bulk reads per 50-credential chunk:
  *  - `/account_update_history?epoch_no=lte.E&action_type=in.(registration,
@@ -47,7 +48,11 @@
 import type { Credential } from "cip-179";
 
 import { credentialKey } from "cip-179/domain";
-import type { TallyInputSource, WeightInfo } from "cip-179/tally";
+import type {
+  ElectorateTotals,
+  TallyInputSource,
+  WeightInfo,
+} from "cip-179/tally";
 import type { AppConfig } from "cardano-tessera-core";
 
 import { evolutionCodec } from "cip-179/evolution";
@@ -155,7 +160,7 @@ interface DrepUpdateRow {
   action: string;
 }
 
-export class KoiosTallyInputs implements TallyInputSource {
+export class KoiosTallyInputs implements TallyInputSource, ElectorateTotals {
   /**
    * `onRequest` fires once per Koios HTTP request (each `postAll` page counts
    * individually) — the serving tier counts calls per refresh.

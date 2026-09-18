@@ -266,6 +266,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0028_backfill_change_stamps.sql",
       "0029_exact_tx_metadata.sql",
       "0030_bigint_points.sql",
+      "0031_totals_out_of_hash.sql",
     ]);
   });
 });

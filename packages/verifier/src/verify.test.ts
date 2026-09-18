@@ -14,6 +14,7 @@ import {
   toArtifactQuestions,
   toArtifactResponders,
   weightedTallySurvey,
+  type ElectorateTotals,
   type TallyArtifact,
   type TallyBody,
   type TallyInputSource,
@@ -115,13 +116,17 @@ const weights: TallyInputSource = {
   async drepWeights() {
     return new Map();
   },
+};
+
+/** A verifier's own totals, reading `stakeholder` where the artifact says 1000. */
+const totalsReading = (stakeholder: bigint | null): ElectorateTotals => ({
   async stakeholderTotal() {
-    return 1_000n;
+    return stakeholder;
   },
   async drepTotal() {
-    return null;
+    throw new Error("a Stakeholder survey has no DRep total to compare");
   },
-};
+});
 
 /**
  * Signed by each response credential — mechanism A proof per tx. The defining tx
@@ -180,7 +185,6 @@ function emittedArtifact(): TallyArtifact {
     perRole: [
       {
         role: Role.Stakeholder,
-        total: "1000",
         responders: toArtifactResponders(responders),
         questions: toArtifactQuestions(weightedTallySurvey(DEF, responders)),
       },
@@ -188,6 +192,7 @@ function emittedArtifact(): TallyArtifact {
   };
   return {
     tally,
+    info: { perRole: [{ role: Role.Stakeholder, total: "1000" }] },
     provenance: {
       source: { provider: "koios", baseUrl: "x" },
       fetchedAt: 1,
@@ -361,6 +366,7 @@ describe("verifyArtifact", () => {
     };
     const artifact: TallyArtifact = {
       tally,
+      info: { perRole: [] },
       provenance: {
         source: { provider: "koios", baseUrl: "x" },
         fetchedAt: 1,
@@ -408,7 +414,6 @@ describe("verifyArtifact", () => {
       perRole: [
         {
           role: Role.Stakeholder,
-          total: "1000",
           responders: toArtifactResponders(responders),
           questions: toArtifactQuestions(weightedTallySurvey(DEF, responders)),
         },
@@ -416,6 +421,7 @@ describe("verifyArtifact", () => {
     };
     const artifact: TallyArtifact = {
       tally,
+      info: { perRole: [{ role: Role.Stakeholder, total: "1000" }] },
       provenance: {
         source: { provider: "koios", baseUrl: "x" },
         fetchedAt: 1,
@@ -453,26 +459,30 @@ describe("verifyArtifact", () => {
     expect(bad.match).toBe(false);
   });
 
-  it("flags a total taken from the artifact itself as unverified (finding 31)", async () => {
-    const flakyWeights: TallyInputSource = {
-      ...weights,
-      async stakeholderTotal() {
-        return null;
-      },
-    };
-    const result = await verifyArtifact(inputs({ weights: flakyWeights }));
-    expect(result.match).toBe(true); // everything else re-verified
-    // ...but the electorate total was NOT independently confirmed: the flag lets
-    // the CLI downgrade this to exit 5 rather than a clean MATCH, so a backend
-    // can't inflate the denominator and pass while the total endpoint is down.
-    expect(result.unverifiedTotals).toBe(true);
-    expect(result.notes.join("\n")).toContain("not independently re-fetchable");
+  // The totals sit outside the hash: another ledger may read them slightly
+  // differently, and they only scale turnout, so they never decide a verdict.
+  it("names an electorate total it reads differently, and still MATCHes", async () => {
+    const same = await verifyArtifact(
+      inputs({ totals: totalsReading(1_000n) }),
+    );
+    expect(same.notes).toEqual([]);
+    const other = await verifyArtifact(
+      inputs({ totals: totalsReading(1_001n) }),
+    );
+    expect(other.match).toBe(true);
+    expect(other.notes).toEqual([
+      "role 3 total: the artifact states 1000, this verifier reads 1001 (outside the hash)",
+    ]);
   });
 
-  it("a clean re-fetch of every total leaves unverifiedTotals false", async () => {
-    const result = await verifyArtifact(inputs());
+  it("names an electorate total it could not re-fetch, and still MATCHes", async () => {
+    const result = await verifyArtifact(
+      inputs({ totals: totalsReading(null) }),
+    );
     expect(result.match).toBe(true);
-    expect(result.unverifiedTotals).toBe(false);
+    expect(result.notes).toEqual([
+      "role 3 total: the artifact states 1000, which this verifier could not re-fetch",
+    ]);
   });
 
   it("is INDETERMINATE when a counted response has no tx_block_index (finding 16)", async () => {
@@ -608,7 +618,6 @@ describe("verifyArtifact — sealed survey", () => {
         perRole: [
           {
             role: Role.Stakeholder,
-            total: "1000",
             responders: toArtifactResponders(sealedResponders),
             questions: toArtifactQuestions(
               weightedTallySurvey(DEF_SEALED, sealedResponders),
@@ -616,6 +625,7 @@ describe("verifyArtifact — sealed survey", () => {
           },
         ],
       },
+      info: { perRole: [{ role: Role.Stakeholder, total: "1000" }] },
       provenance: {
         source: { provider: "koios", baseUrl: "x" },
         fetchedAt: 1,
@@ -675,7 +685,7 @@ describe("verifyArtifact — sealed survey", () => {
 // --- Keyholder: the count-only weight path (finding 12) ----------------------
 //
 // Keyholders have no on-chain electorate: no fetched weight (constant 1), no
-// registration/membership filter, no electorate total (null). Both the emitter
+// registration/membership filter, no electorate total. Both the emitter
 // (finalize.ts) and this rebuild implement that fork independently and must
 // agree byte-for-byte — these tests pin the rebuild's side of the contract.
 
@@ -702,10 +712,10 @@ describe("verifyArtifact — Keyholder role", () => {
       { requiredSigners: ["b2".repeat(28)], nativeScripts: [], votes: [] },
     ],
   ]);
-  // If the rebuild consults ANY weight endpoint for a keyholder-only survey,
-  // that's a bug (e.g. a bare key routed through stakeholderWeights would come
-  // back unregistered and silently drop every responder) — so every method
-  // throws, proving the branch never fetches.
+  // If the rebuild consults ANY weight or total endpoint for a keyholder-only
+  // survey, that's a bug (e.g. a bare key routed through stakeholderWeights
+  // would come back unregistered and silently drop every responder) — so every
+  // method throws, proving the branch never fetches.
   const noWeights: TallyInputSource = {
     async stakeholderWeights() {
       throw new Error("keyholders must not fetch weights");
@@ -713,6 +723,8 @@ describe("verifyArtifact — Keyholder role", () => {
     async drepWeights() {
       throw new Error("keyholders must not fetch weights");
     },
+  };
+  const noTotals: ElectorateTotals = {
     async stakeholderTotal() {
       throw new Error("keyholders have no electorate total");
     },
@@ -746,7 +758,6 @@ describe("verifyArtifact — Keyholder role", () => {
       perRole: [
         {
           role: Role.Keyholder,
-          total: null, // no on-chain electorate for keyholders
           responders: toArtifactResponders(khResponders),
           questions: toArtifactQuestions(
             weightedTallySurvey(DEF_KH, khResponders),
@@ -754,6 +765,7 @@ describe("verifyArtifact — Keyholder role", () => {
         },
       ],
     },
+    info: { perRole: [] }, // no on-chain electorate for keyholders
     provenance: {
       source: { provider: "koios", baseUrl: "x" },
       fetchedAt: 1,
@@ -761,12 +773,13 @@ describe("verifyArtifact — Keyholder role", () => {
     },
   };
 
-  it("MATCHes with weight 1, no membership filter, and a null total — no fetches", async () => {
+  it("MATCHes with weight 1, no membership filter, and no total — no fetches", async () => {
     const result = await verifyArtifact(
       inputs({
         bundle: khBundle,
         proofs: khProofs,
         weights: noWeights,
+        totals: noTotals,
         artifact: khArtifact,
         blockIndices: new Map([
           [K_A.txHash, 0],
@@ -774,7 +787,7 @@ describe("verifyArtifact — Keyholder role", () => {
         ]),
       }),
     );
-    // No total-fallback note either: a null total is the rule, not a caveat.
+    // No total note either: having no total is the rule, not a caveat.
     expect(result.notes).toEqual([]);
     expect(result.diffs).toEqual([]);
     expect(result.match).toBe(true);
@@ -847,6 +860,8 @@ describe("verifyArtifact — mechanism B (governance vote binding)", () => {
         ]),
       );
     },
+  };
+  const drepTotals: ElectorateTotals = {
     async stakeholderTotal() {
       throw new Error("DRep surveys must not fetch the stakeholder total");
     },
@@ -872,7 +887,6 @@ describe("verifyArtifact — mechanism B (governance vote binding)", () => {
       perRole: [
         {
           role: Role.DRep,
-          total: "10000",
           responders: toArtifactResponders(drepResponders),
           questions: toArtifactQuestions(
             weightedTallySurvey(DEF_DREP, drepResponders),
@@ -880,6 +894,7 @@ describe("verifyArtifact — mechanism B (governance vote binding)", () => {
         },
       ],
     },
+    info: { perRole: [{ role: Role.DRep, total: "10000" }] },
     provenance: {
       source: { provider: "koios", baseUrl: "x" },
       fetchedAt: 1,
@@ -893,6 +908,7 @@ describe("verifyArtifact — mechanism B (governance vote binding)", () => {
     return inputs({
       bundle: drepBundle,
       weights: drepSource,
+      totals: drepTotals,
       artifact: drepArtifact,
       linkedActionIds: [ACTION],
       blockIndices: new Map([[D_A.txHash, 0]]),

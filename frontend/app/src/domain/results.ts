@@ -503,6 +503,9 @@ export function artifactResults(
   const byKey = new Map<string, SurveyResponse>();
   for (const r of responses)
     byKey.set(`${r.txHash}|${r.responseIndex}`, r.response);
+  const totals = new Map(
+    artifact.info.perRole.map((r) => [r.role, BigInt(r.total)]),
+  );
 
   return artifact.tally.perRole.map((role) => {
     const responders = countedResponders(role, byKey);
@@ -512,7 +515,7 @@ export function artifactResults(
       (sum, r) => sum + BigInt(r.weight),
       0n,
     );
-    const total = role.total === null ? null : BigInt(role.total);
+    const total = totals.get(role.role) ?? null;
     return {
       role: role.role,
       responderCount: role.responders.length,

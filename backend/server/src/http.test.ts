@@ -969,19 +969,19 @@ describe("artifact routes", () => {
     return store;
   }
 
-  it("serves the stored JSON verbatim with a strong immutable ETag", async () => {
+  it("serves the stored JSON verbatim, cached for good only by hash", async () => {
     const app = appWith(await storeWithArtifact());
-    for (const path of [
-      `/api/surveys/${TX_A}/0/artifact`,
-      `/api/artifacts/${HASH}`,
-    ]) {
+    // A survey's artifact is re-emitted under a new hash when the ruleset
+    // changes its shape, so only the content address may skip revalidation.
+    for (const [path, cacheControl] of [
+      [`/api/surveys/${TX_A}/0/artifact`, "no-cache"],
+      [`/api/artifacts/${HASH}`, "public, max-age=31536000, immutable"],
+    ] as const) {
       const res = await app.request(path);
       expect(res.status).toBe(200);
       expect(await res.text()).toBe(ARTIFACT_TEXT); // byte identity
       expect(res.headers.get("ETag")).toBe(`"${HASH}"`);
-      expect(res.headers.get("Cache-Control")).toBe(
-        "public, max-age=31536000, immutable",
-      );
+      expect(res.headers.get("Cache-Control")).toBe(cacheControl);
       expect(res.headers.get("Content-Type")).toContain("application/json");
     }
   });

@@ -9,6 +9,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 while `< 1.0.0`, breaking changes bump the **minor** version.
 
+## [Unreleased]
+
+Still speaks contract `2.0`.
+
+### Changed
+
+- **Breaking:** an artifact's electorate totals move, following `cip-179`,
+  from `tally.perRole[].total` to the new required `info.perRole`, outside
+  the hash; `decodeArtifact` refuses a body without `info`. The contract
+  version stays `2.0` because the backend re-emits every stored artifact in
+  the new shape at once, and no consumer but Tessera's own app read an ended
+  survey's artifact.
+
 ## [0.3.0] - 2026-09-15
 
 Speaks contract `2.0`.

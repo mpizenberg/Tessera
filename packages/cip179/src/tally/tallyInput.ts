@@ -1,8 +1,9 @@
 /**
  * The weight-input seam for stake-weighted tallies: everything finalization
  * needs to ask a chain indexer about role membership and weights at a survey's
- * `end_epoch`, expressed role-semantically (not per endpoint) so a Tier-2
- * indexer can implement it behind the same interface.
+ * `end_epoch`, and the electorate totals beside it, expressed role-semantically
+ * (not per endpoint) so a Tier-2 indexer can implement it behind the same
+ * interface.
  *
  * Weights are exact lovelace BigInts. All methods snapshot **at the given
  * epoch** — never "current" values.
@@ -22,8 +23,7 @@ export interface WeightInfo {
  * Role-semantic weight source. Batch methods return a map keyed by the
  * credential's stable identity (`credentialKey` form) covering **every**
  * requested credential — unregistered ones map to
- * `{weight: 0n, registered: false}`. Totals return `null` when the upstream
- * can't serve them right now (retry later), never throw for that.
+ * `{weight: 0n, registered: false}`.
  */
 export interface TallyInputSource {
   /** Stakeholder (role 3) weights: active stake at `epoch`. */
@@ -36,6 +36,16 @@ export interface TallyInputSource {
     epoch: number,
     credentials: readonly Credential[],
   ): Promise<Map<string, WeightInfo>>;
+}
+
+/**
+ * The electorate totals behind turnout. Apart from {@link TallyInputSource}
+ * because no tally depends on them: an artifact carries them outside its
+ * hash, so a source that cannot serve them can still reproduce a result.
+ * Each returns `null` when the upstream can't serve it right now (retry
+ * later), never throws for that.
+ */
+export interface ElectorateTotals {
   /** Total active stake at `epoch` (turnout denominator), or null = retry. */
   stakeholderTotal(epoch: number): Promise<bigint | null>;
   /** Total DRep voting power at `epoch`, or null = retry. */

@@ -4,10 +4,12 @@
  *
  * Everything under `tally` is what the hash commits to — JSON-plain (numbers
  * are safe integers, weights are decimal strings) and hashed as
- * `blake2b256Hex(canonicalJson(tally))`. `provenance` records *where* the
- * inputs came from (useful, but re-fetchable) and is deliberately outside the
- * hash: a verifier reproduces `tally` from chain data + this ruleset and
- * compares hashes, regardless of which provider it queried.
+ * `blake2b256Hex(canonicalJson(tally))`. Two sections sit outside the hash:
+ * `info`, values about the result a reader may want but the result does not
+ * depend on (the electorate totals behind turnout), and `provenance`, *where*
+ * the inputs came from (useful, but re-fetchable). A verifier reproduces
+ * `tally` from chain data + this ruleset and compares hashes, regardless of
+ * which provider or ledger it queried.
  *
  * The ruleset itself is pinned the same way: {@link RULESET_DESCRIPTOR} is a
  * canonical description of every counting rule, and its hash is embedded in
@@ -114,7 +116,14 @@ export const RULESET_DESCRIPTOR = {
   // and the committed copy made a sealed artifact grow with every answer. The
   // set of talliable surveys and counted responses grows and the sealed body
   // schema shrinks, so v13 hashes are incomparable with v12.
-  rulesetVersion: 13,
+  // v14: each role's electorate total leaves the hashed body for the unhashed
+  // `info` section. Ledger implementations read the totals slightly
+  // differently (a delegation one keeps and another cleared moves a total
+  // without moving any responder's weight), and the totals only scale turnout,
+  // so a verifier reading another ledger should still reproduce the hash. No
+  // counted value changes, but the body schema does, so v14 hashes are
+  // incomparable with v13.
+  rulesetVersion: 14,
   cip179SpecVersion: 5,
   /** Roles artifacts cover: 0 DRep, 3 Stakeholder, 4 Keyholder (SPO/CC deferred). */
   coveredRoles: [0, 3, 4],
@@ -214,12 +223,6 @@ export type ArtifactQuestion =
 export interface ArtifactRoleTally {
   /** CIP-179 role tag (0 DRep, 3 Stakeholder, 4 Keyholder). */
   readonly role: number;
-  /**
-   * The role's electorate total at end_epoch (decimal lovelace) — turnout's
-   * denominator. `null` for count-only roles (Keyholder), where responder count
-   * is the only meaningful total.
-   */
-  readonly total: string | null;
   /** Counted responders, sorted by credential identity. */
   readonly responders: readonly ArtifactResponder[];
   /** Weighted aggregates, one per question in definition order. */
@@ -254,9 +257,26 @@ export interface TallyBody {
   readonly perRole: readonly ArtifactRoleTally[];
 }
 
-/** The full served artifact: the hashed tally + unhashed provenance. */
+/** The full served artifact: the hashed tally, then two unhashed sections. */
 export interface TallyArtifact {
   readonly tally: TallyBody;
+  /**
+   * The emitter's reading of values the result does not depend on. A verifier
+   * may compare them with its own reading, but a difference leaves the
+   * tally's verdict unchanged.
+   */
+  readonly info: {
+    /**
+     * Each weighted role's electorate total at end_epoch (decimal lovelace),
+     * turnout's denominator, sorted by role: one entry per DRep or Stakeholder
+     * role in `tally.perRole`. The count-only Keyholder role has none, and a
+     * cancellation has no roles.
+     */
+    readonly perRole: readonly {
+      readonly role: number;
+      readonly total: string;
+    }[];
+  };
   readonly provenance: {
     readonly source: {
       /** e.g. "koios". */
@@ -431,16 +451,14 @@ export function cancelledTallyBody(
 
 /**
  * One covered role's contribution to a weighted tally: its already
- * membership-filtered weighted responders and its electorate `total`. The
- * membership filter and weight/total sourcing are inherently data-source-specific
- * (the emitter reads its frozen snapshot rows; the verifier re-fetches from
- * Koios), so they stay on each side; only the *result* flows through
- * {@link assembleTallyBody}.
+ * membership-filtered weighted responders. The membership filter and weight
+ * sourcing are inherently data-source-specific (the emitter reads its frozen
+ * snapshot rows; the verifier re-fetches from Koios), so they stay on each
+ * side; only the *result* flows through {@link assembleTallyBody}.
  */
 export interface RoleTally {
   readonly role: number;
   readonly responders: readonly WeightedResponder[];
-  readonly total: string | null;
 }
 
 /**
@@ -458,9 +476,8 @@ export function assembleTallyBody(
 ): TallyBody {
   const perRole: ArtifactRoleTally[] = [...roles]
     .sort((a, b) => a.role - b.role)
-    .map(({ role, responders, total }) => ({
+    .map(({ role, responders }) => ({
       role,
-      total,
       responders: toArtifactResponders(responders),
       questions: toArtifactQuestions(
         weightedTallySurvey(definition, responders),

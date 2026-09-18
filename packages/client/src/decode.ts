@@ -333,12 +333,13 @@ export const decodeTxStatus = (json: unknown): Record<string, number | null> =>
 /**
  * A tally artifact body. Artifacts are wire-plain (weights are decimal
  * strings, no bytes or bigints) and content-addressed, so the body is taken
- * as served once its two top-level sections are there: a reader that needs
+ * as served once its three top-level sections are there: a reader that needs
  * more than shape recomputes `artifactHash` over `tally`.
  */
 export function decodeArtifact(json: unknown): TallyArtifact {
   const o = obj(json, "");
   obj(o.tally, "tally");
+  obj(o.info, "info");
   obj(o.provenance, "provenance");
   return o as unknown as TallyArtifact;
 }

@@ -22,6 +22,8 @@ import {
 import { verifyArtifact } from "cardano-tessera-verifier";
 import {
   artifactHash,
+  rulesetHash,
+  type ElectorateTotals,
   type TallyArtifact,
   type TallyBody,
   type TallyInputSource,
@@ -33,7 +35,8 @@ import { finalizeClosedSurveys } from "./finalize";
 import { materializeSnapshot } from "./materialize";
 import { coveredThroughUnix } from "./refresh";
 import type { SealedRevealFn } from "./sealedReveal";
-import type { ValidatedResponseRow } from "./store";
+import { finalStateEntries, type ValidatedResponseRow } from "./store";
+import { applyMigrations } from "./store-node";
 import { ALL_SLOTS, testStore, type TestStore } from "./testing/store";
 
 // --- fixtures ------------------------------------------------------------------
@@ -230,7 +233,7 @@ function sealedFleet(n: number, surveyKey = SURVEY_KEY, offset = 0) {
 function fakeInputs(
   weights: Record<string, WeightInfo>,
   totals: { stakeholder?: bigint | null; drep?: bigint | null } = {},
-): TallyInputSource & { stakeholderCalls: number } {
+): TallyInputSource & ElectorateTotals & { stakeholderCalls: number } {
   const self = {
     stakeholderCalls: 0,
     async stakeholderWeights(_e: number, creds: readonly Credential[]) {
@@ -340,7 +343,7 @@ function records(
 async function finalizeRecords(
   config: ServerConfig,
   store: TestStore,
-  inputs: TallyInputSource,
+  inputs: TallyInputSource & ElectorateTotals,
   source: Pick<import("cardano-tessera-koios").KoiosDataSource, "txProofs">,
   recs: Cip179Records,
   tip: ChainTip,
@@ -421,8 +424,9 @@ describe("finalizeClosedSurveys", () => {
       endEpoch: END_EPOCH,
     });
 
+    // The electorate total rides beside the tally, outside the hash.
+    expect(artifact.info).toEqual({ perRole: [{ role: 3, total: "1000" }] });
     const role3 = artifact.tally.perRole.find((r) => r.role === 3)!;
-    expect(role3.total).toBe("1000");
     expect(role3.responders.map((r) => r.credential)).toEqual(
       [KEY_A, KEY_B].sort(),
     );
@@ -480,7 +484,7 @@ describe("finalizeClosedSurveys", () => {
     ]);
 
     const seen: string[][] = [];
-    const inputs: TallyInputSource = {
+    const inputs: TallyInputSource & ElectorateTotals = {
       async stakeholderWeights(_e, creds) {
         seen.push(creds.map(credentialKey));
         return new Map(
@@ -801,7 +805,7 @@ describe("finalizeClosedSurveys", () => {
     );
 
     let failLast = true;
-    const inputs: TallyInputSource = {
+    const inputs: TallyInputSource & ElectorateTotals = {
       async stakeholderWeights() {
         return new Map();
       },
@@ -855,7 +859,7 @@ describe("finalizeClosedSurveys", () => {
       dreps.map((r) => validatedRow(r)),
     );
     let fetched = 0;
-    const inputs: TallyInputSource = {
+    const inputs: TallyInputSource & ElectorateTotals = {
       async stakeholderWeights() {
         return new Map();
       },
@@ -911,7 +915,7 @@ describe("finalizeClosedSurveys", () => {
       SURVEY_TX2,
     );
     await seed(store, [validatedRow(rA1), validatedRow(rB2)]);
-    const inputs: TallyInputSource = {
+    const inputs: TallyInputSource & ElectorateTotals = {
       ...fakeInputs({ [KEY_B]: { weight: 7n, registered: true } }),
       async stakeholderWeights(epoch, creds) {
         if (epoch === END_EPOCH) throw new Error("unreadable account history");
@@ -1043,44 +1047,55 @@ describe("finalizeClosedSurveys", () => {
     ) as TallyArtifact;
 
     // Feed the emitter's own artifact into the INDEPENDENT verifier, which
-    // re-derives the counted set and re-fetches weights/totals through a
-    // distinct code path. A MATCH proves the emitter↔verifier seam holds — not
-    // just the shared `assembleTallyBody` (a bug there would cancel out) but the
+    // re-derives the counted set and re-fetches weights through a distinct
+    // code path. A MATCH proves the emitter↔verifier seam holds — not just the
+    // shared `assembleTallyBody` (a bug there would cancel out) but the
     // surrounding glue each side implements separately (finding 30).
     const proofOf = (hex: string): TxProof => ({
       requiredSigners: [hex],
       nativeScripts: [],
       votes: [],
     });
-    const result = await verifyArtifact({
-      bundle: {
-        survey: survey(),
-        responses: [rA, rB],
-        cancellations: [],
-        tip: TIP,
-      } satisfies SurveyBundle,
-      artifact,
-      network: "preview",
-      linkedActionIds: [],
-      blockIndices: new Map([
-        [rA.txHash, 0],
-        [rB.txHash, 0],
-      ]),
-      proofs: new Map<string, TxProof | null>([
-        // The verifier gates on the defining tx's owner-proof too, exactly as
-        // the emitter just did.
-        [SURVEY_TX, OWNER_PROOF],
-        [rA.txHash, proofOf("a1".repeat(28))],
-        [rB.txHash, proofOf("b2".repeat(28))],
-      ]),
-      weights: fakeInputs({
-        [KEY_A]: { weight: 100n, registered: true },
-        [KEY_B]: { weight: 7n, registered: true },
-      }),
-    });
-    expect(result.match).toBe(true);
-    expect(result.unverifiedTotals).toBe(false);
-    expect(result.diffs).toEqual([]);
+    const verify = (stakeholderTotal: bigint) =>
+      verifyArtifact({
+        bundle: {
+          survey: survey(),
+          responses: [rA, rB],
+          cancellations: [],
+          tip: TIP,
+        } satisfies SurveyBundle,
+        artifact,
+        network: "preview",
+        linkedActionIds: [],
+        blockIndices: new Map([
+          [rA.txHash, 0],
+          [rB.txHash, 0],
+        ]),
+        proofs: new Map<string, TxProof | null>([
+          // The verifier gates on the defining tx's owner-proof too, exactly as
+          // the emitter just did.
+          [SURVEY_TX, OWNER_PROOF],
+          [rA.txHash, proofOf("a1".repeat(28))],
+          [rB.txHash, proofOf("b2".repeat(28))],
+        ]),
+        weights: fakeInputs({
+          [KEY_A]: { weight: 100n, registered: true },
+          [KEY_B]: { weight: 7n, registered: true },
+        }),
+        totals: fakeInputs({}, { stakeholder: stakeholderTotal }),
+      });
+    const same = await verify(1_000n);
+    expect(same.match).toBe(true);
+    expect(same.diffs).toEqual([]);
+    expect(same.notes).toEqual([]);
+
+    // Another reading of the electorate total leaves the verdict alone: the
+    // total sits outside the hash, so it is only named.
+    const other = await verify(1_001n);
+    expect(other.match).toBe(true);
+    expect(other.notes).toEqual([
+      "role 3 total: the artifact states 1000, this verifier reads 1001 (outside the hash)",
+    ]);
   });
 
   it("commits the resolved gov-link set to (unhashed) provenance (finding 6)", async () => {
@@ -1882,5 +1897,127 @@ describe("finalizeClosedSurveys", () => {
     );
     expect(store.artifacts.size).toBe(0);
     expect(store.weights.size).toBe(0);
+  });
+});
+
+describe("re-emission after the totals left the hash (migration 0031)", () => {
+  it("re-emits every finalized and cancelled survey from its frozen rows", async () => {
+    const store = testStore();
+    const SURVEY_TX3 = "ee".repeat(32);
+    const at = (txHash: string, def = definition()): SurveyRecord => ({
+      txHash,
+      slot: 100,
+      epochNo: 495,
+      ref: { txId: hexToBytes(txHash), index: 0 },
+      definition: def,
+    });
+    const FINALIZED = `${SURVEY_TX2}:0`;
+    const CANCELLED = SURVEY_KEY;
+    const UNTALLIABLE = `${SURVEY_TX3}:0`;
+    const rB = response(
+      "22".repeat(32),
+      CRED_B,
+      0,
+      200,
+      Role.Stakeholder,
+      SURVEY_TX2,
+    );
+    const cx = cancellation("cc".repeat(32), 300);
+    const proofs = proofsStub({ [cx.txHash]: OWNER_PROOF });
+    await seed(store, [validatedRow(rB)]);
+    await store.putScanState({
+      cursor: { slot: 1, txHash: "ff".repeat(32) },
+      caughtUp: true,
+      generation: 1,
+      trickle: null,
+      network: "preview",
+    });
+
+    const first = await finalizeRecords(
+      CONFIG,
+      store,
+      fakeInputs({ [KEY_B]: { weight: 7n, registered: true } }),
+      proofs,
+      {
+        surveys: [
+          survey(),
+          at(SURVEY_TX2),
+          at(SURVEY_TX3, definition({ specVersion: 6 })),
+        ],
+        responses: [rB],
+        cancellations: [cx],
+      },
+      TIP,
+    );
+    await store.markFinalStates(finalStateEntries(first.emitted), 2);
+    await store.putFinalizationFloor(first.floor!);
+
+    // The database as an earlier ruleset left it: other bytes and hashes than
+    // this code emits. Then 0031 runs on it, as a deploy would.
+    store.db.exec(
+      `UPDATE tally_artifact SET artifact_hash = 'old', artifact = '{}';
+       UPDATE survey_index SET artifact_hash = 'old'
+         WHERE artifact_hash IS NOT NULL;
+       DELETE FROM schema_migration WHERE name = '0031_totals_out_of_hash.sql';`,
+    );
+    applyMigrations(store.db);
+
+    const row = (key: string) =>
+      store.surveyRows.find((r) => r.surveyKey === key)!;
+    expect(store.artifacts.size).toBe(0);
+    expect(row(FINALIZED)).toMatchObject({
+      finalState: null,
+      artifactHash: null,
+    });
+    expect(row(CANCELLED)).toMatchObject({
+      finalState: null,
+      artifactHash: null,
+    });
+    expect(row(UNTALLIABLE).finalState).toBe("untalliable");
+    const { finalizationFloor } = await store.scanState();
+    expect(finalizationFloor).toBe(0);
+
+    // One pass. Its upstream would now answer other weights and totals, so
+    // the artifacts below can only have come from the frozen rows.
+    const upstream = fakeInputs(
+      { [KEY_B]: { weight: 999n, registered: true } },
+      { stakeholder: 5n },
+    );
+    const second = await finalizeClosedSurveys(
+      CONFIG,
+      store,
+      upstream,
+      proofs,
+      {
+        tip: TIP,
+        incomplete: false,
+        coveredThroughUnix: Number.MAX_SAFE_INTEGER,
+        settlementFloor: Number.MAX_SAFE_INTEGER,
+        finalizationFloor,
+      },
+    );
+    await store.markFinalStates(finalStateEntries(second.emitted), 3);
+    expect(upstream.stakeholderCalls).toBe(0);
+
+    const emitted = (key: string) => {
+      const stored = store.artifacts.get(key)!;
+      expect(row(key).artifactHash).toBe(stored.artifactHash);
+      const artifact = JSON.parse(stored.artifact) as TallyArtifact;
+      expect(artifact.tally.rulesetHash).toBe(rulesetHash());
+      expect(artifactHash(artifact.tally)).toBe(stored.artifactHash);
+      return artifact;
+    };
+    const finalized = emitted(FINALIZED);
+    expect(row(FINALIZED).finalState).toBe("finalized");
+    expect(finalized.tally.perRole[0]!.responders[0]!.weight).toBe("7");
+    expect(finalized.info).toEqual({ perRole: [{ role: 3, total: "1000" }] });
+    const cancelled = emitted(CANCELLED);
+    expect(row(CANCELLED).finalState).toBe("cancelled");
+    expect(cancelled.info).toEqual({ perRole: [] });
+    expect(row(UNTALLIABLE)).toMatchObject({
+      finalState: "untalliable",
+      artifactHash: null,
+    });
+    expect(store.artifacts.has(UNTALLIABLE)).toBe(false);
   });
 });

@@ -714,17 +714,20 @@ export function createApp(
     return c.json(body);
   });
 
-  // Final tally artifacts (TALLY-SPEC §5): immutable, content-addressed. The
-  // stored JSON text is served verbatim (byte identity with the hash), with a
-  // strong ETag and immutable caching — once emitted, the body never changes.
+  // Final tally artifacts (TALLY-SPEC §5), content-addressed. The stored JSON
+  // text is served verbatim (byte identity with the hash), with the hash as a
+  // strong ETag. Only the by-hash address is cached for good: a survey's
+  // artifact is re-emitted under a new hash when the ruleset changes its
+  // shape, so the by-survey address revalidates.
   const serveArtifact = (
     c: Context,
     row: { artifact: string; artifactHash: string } | null,
+    cacheControl: string,
   ): Response => {
     if (!row) return c.json({ error: "no artifact" }, 404);
     const etag = `"${row.artifactHash}"`;
     c.header("ETag", etag);
-    c.header("Cache-Control", "public, max-age=31536000, immutable");
+    c.header("Cache-Control", cacheControl);
     if (c.req.header("If-None-Match") === etag) return c.body(null, 304);
     return c.body(row.artifact, 200, { "Content-Type": "application/json" });
   };
@@ -734,14 +737,22 @@ export function createApp(
     const index = Number(c.req.param("index"));
     if (!/^[0-9a-f]{64}$/.test(txHash) || !Number.isInteger(index) || index < 0)
       return c.json({ error: "malformed survey ref" }, 404);
-    return serveArtifact(c, await store.artifactBySurvey(`${txHash}:${index}`));
+    return serveArtifact(
+      c,
+      await store.artifactBySurvey(`${txHash}:${index}`),
+      "no-cache",
+    );
   });
 
   app.get("/api/artifacts/:hash", async (c) => {
     const hash = c.req.param("hash").toLowerCase();
     if (!/^[0-9a-f]{64}$/.test(hash))
       return c.json({ error: "malformed artifact hash" }, 404);
-    return serveArtifact(c, await store.artifactByHash(hash));
+    return serveArtifact(
+      c,
+      await store.artifactByHash(hash),
+      "public, max-age=31536000, immutable",
+    );
   });
 
   app.get("/api/tip", async (c) => {

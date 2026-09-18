@@ -39,7 +39,7 @@ import {
   type ResponseRecord,
   type SurveyRecord,
 } from "cip-179/domain";
-import type { TallyInputSource } from "cip-179/tally";
+import type { ElectorateTotals, TallyInputSource } from "cip-179/tally";
 
 import { loadConfig } from "./config";
 import { finalizeClosedSurveys } from "./finalize";
@@ -355,7 +355,7 @@ const noKoios = {
   txProofs: async () => new Map<string, null>(),
   txBlockIndices: async () => new Map<string, number>(),
 };
-const noInputs: TallyInputSource = {
+const noInputs: TallyInputSource & ElectorateTotals = {
   stakeholderWeights: async () => new Map(),
   drepWeights: async () => new Map(),
   stakeholderTotal: async () => null,

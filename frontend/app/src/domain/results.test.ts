@@ -158,7 +158,6 @@ describe("artifactResults", () => {
       perRole: [
         {
           role: 3,
-          total: "1000",
           responders: [
             {
               credential: "key:a1",
@@ -188,7 +187,6 @@ describe("artifactResults", () => {
         },
         {
           role: 4,
-          total: null,
           responders: [
             {
               credential: "key:c3",
@@ -210,6 +208,7 @@ describe("artifactResults", () => {
         },
       ],
     },
+    info: { perRole: [{ role: 3, total: "1000" }] },
     provenance: {
       source: { provider: "koios", baseUrl: "x" },
       fetchedAt: 1,

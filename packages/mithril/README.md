@@ -91,8 +91,9 @@ draws ten credentials of every kind a tally can meet from the state itself
 (delegated with rewards, registered without a pool, stake in a pool that has
 since retired, registered but in no stake snapshot, deregistered since a
 snapshot, script credentials; DReps active, expired, retired or registered
-since the distribution was taken, script, zero power), asks Koios the four
-`TallyInputSource` questions for the named epoch about them, and prints per
+since the distribution was taken, script, zero power), asks Koios the
+`TallyInputSource` questions about them and the `ElectorateTotals` for the
+named epoch, and prints per
 kind how many agree with each candidate reading of the state (`go`, `set` or
 `mark` for a stake weight; registered now or when the distribution was taken
 for a DRep), then every credential on which any reading disagrees, with both

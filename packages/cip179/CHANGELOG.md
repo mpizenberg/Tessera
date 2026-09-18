@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 while `< 1.0.0`, breaking changes bump the **minor** version.
 
+## [Unreleased]
+
+### Changed
+
+- **Breaking: the electorate totals leave the hashed tally.**
+  `ArtifactRoleTally.total` and `RoleTally.total` are removed, and
+  `TallyArtifact` gains a required unhashed section, `info`, whose `perRole`
+  lists each DRep or Stakeholder role's total at `end_epoch`, sorted by role.
+  Ledger implementations read the totals slightly differently without
+  reading any responder's weight differently, and the totals only scale
+  turnout, so a verifier reading another ledger can now reproduce the hash.
+- **Ruleset bump: `rulesetVersion` 13 → 14**, for the body schema; no counted
+  value changes. `rulesetHash()` is
+  `7c78775e6c70d40d9e1daade043e42509ef1756fa5f7a359c9cf00bbf9efe004`; the
+  README's table gains its row with the release.
+- **Breaking: `TallyInputSource` loses `stakeholderTotal` and `drepTotal`**,
+  which move unchanged to a new `ElectorateTotals` interface. A tally input
+  source no longer has to serve totals.
+
 ## [0.5.0] - 2026-09-15
 
 ### Changed

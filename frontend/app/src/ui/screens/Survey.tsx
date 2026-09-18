@@ -73,16 +73,19 @@ export const Survey: Component = () => {
     void Promise.resolve(refetchBundle()).catch(() => {});
   };
 
-  // The final tally artifact — only a closed/cancelled survey can have one,
-  // and only the serving tier produces them (the direct Koios source answers
-  // null by contract). Any fetch error degrades to the raw view, never blocks
-  // the page.
+  // The final tally artifact, read by the hash the survey's final state names:
+  // the by-hash address is the one a browser may cache for good, while a
+  // survey's artifact is re-emitted under a new hash when a ruleset changes
+  // its shape. Only the serving tier decides final states. Any fetch error
+  // degrades to the raw view, never blocks the page.
   const [artifactRes] = createResource(
     () => {
-      const s = indexed();
-      return s && s.status !== "active" ? s.record.ref : undefined;
+      const final = (app.list.error ? undefined : app.list())?.finalState[
+        key()
+      ];
+      return final && "artifactHash" in final ? final.artifactHash : undefined;
     },
-    (ref) => app.source.artifact(ref),
+    async (hash) => (await app.source.artifactByHash?.(hash)) ?? null,
   );
   // A fetch error is captured in `artifactRes.error` (like `bundle`/`list`) and
   // guarded here, degrading to the raw view rather than blocking the page.

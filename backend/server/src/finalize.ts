@@ -63,6 +63,7 @@ import {
   decodeSurveyRecord,
   fromJsonSafe,
   toJsonSafe,
+  type ElectorateTotals,
   type RoleTally,
   type TallyArtifact,
   type TallyBody,
@@ -179,7 +180,7 @@ export interface FinalizeOutcome {
 export async function finalizeClosedSurveys(
   config: ServerConfig,
   store: FinalizeStore,
-  inputs: TallyInputSource,
+  inputs: TallyInputSource & ElectorateTotals,
   source: Pick<import("cardano-tessera-koios").KoiosDataSource, "txProofs">,
   gates: FinalizeGates,
   reveal: SealedRevealFn = tlockSealedReveal,
@@ -786,6 +787,7 @@ async function withCancellations(
     );
     const artifact: TallyArtifact = {
       tally: body,
+      info: { perRole: [] },
       provenance: {
         source: { provider: "koios", baseUrl: config.app.koiosUrl },
         fetchedAt: nowSec,
@@ -903,7 +905,7 @@ interface WeightBudget {
  */
 async function prepareEpoch(
   store: TallyStore,
-  inputs: TallyInputSource,
+  inputs: TallyInputSource & ElectorateTotals,
   epoch: number,
   surveys: readonly SurveyRecord[],
   nowSec: number,
@@ -1032,7 +1034,7 @@ async function fillWeights(
 /** Ensure the (epoch, role) total exists when fetchable; null = retry later. */
 async function fillTotal(
   store: TallyStore,
-  inputs: TallyInputSource,
+  inputs: ElectorateTotals,
   epoch: number,
   role: number,
   nowSec: number,
@@ -1104,7 +1106,7 @@ interface SealedArtifactOpts {
  * Assemble the weighted-tally artifact for one complete survey. `entries` pair
  * each counted row with its response — the on-chain public answers, or (sealed)
  * the reveal-decrypted answers. Sealed tallies set `sealed=true` and record the
- * reveal beacon in provenance.
+ * reveal beacon in provenance. The electorate totals go to the unhashed `info`.
  */
 function buildArtifact(
   config: ServerConfig,
@@ -1155,7 +1157,7 @@ function buildArtifact(
         response,
       });
     }
-    return { role, responders, total: totalByRole.get(role) ?? null };
+    return { role, responders };
   });
 
   const tally: TallyBody = assembleTallyBody(
@@ -1169,6 +1171,14 @@ function buildArtifact(
   );
   const artifact: TallyArtifact = {
     tally,
+    info: {
+      // Null only for the count-only Keyholder: `incompleteReason` holds a
+      // survey back until every weighted role has its total.
+      perRole: rolesPresent.flatMap((role) => {
+        const total = totalByRole.get(role) ?? null;
+        return total === null ? [] : [{ role, total }];
+      }),
+    },
     provenance: {
       source: { provider: "koios", baseUrl: config.app.koiosUrl },
       fetchedAt: nowSec,

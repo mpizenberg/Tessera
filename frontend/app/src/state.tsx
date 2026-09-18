@@ -46,6 +46,7 @@ import { KoiosDataSource } from "cardano-tessera-koios";
 import { IndexerDataSource } from "~/data/indexer";
 import type {
   BackendHealth,
+  SurveyFinalState,
   SurveyListCounts,
   SurveyListFilter,
   SurveyListParams,
@@ -92,6 +93,11 @@ import type { SurveyDefinition } from "cip-179";
 export interface SurveyList {
   readonly tip: ChainTip;
   readonly surveys: readonly SurveyAggregate[];
+  /**
+   * The serving tier's final decision per survey key on this page, naming each
+   * artifact's hash; empty from a source with no finalization.
+   */
+  readonly finalState: Readonly<Record<string, SurveyFinalState>>;
   /** True when the source's scan may have missed records (paging cap hit). */
   readonly incomplete?: boolean;
   /** Global per-chip totals over the search-matching set. */
@@ -362,6 +368,7 @@ export const AppProvider: ParentComponent = (props) => {
       return {
         tip: payload.tip,
         surveys: aggregateSurveyList(payload),
+        finalState: payload.finalState ?? {},
         counts: payload.counts ?? {
           all: 0,
           linked: 0,

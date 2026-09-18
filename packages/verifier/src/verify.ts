@@ -6,13 +6,15 @@
  * Trust model: the ONLY thing taken from the backend is the artifact under
  * test, whose hash this module recomputes. Every input the rebuild consumes —
  * the survey definition, the response *set*, each response's *answers*
- * (`bundle`), plus proofs, block indices, weights, totals — is (re)derived
+ * (`bundle`), plus proofs, block indices, weights — is (re)derived
  * independently from Koios by the caller (see `cli.ts`, which builds `bundle`
  * from its own label-17 scan, NOT from the backend). The backend's
  * `validated_response`/`weight_snapshot` tables are never consulted either.
  * `MATCH` therefore means: an independent implementation of the pinned ruleset,
  * fed independently-fetched chain data, produces byte-identical results — so a
- * backend that omits or alters responses cannot reproduce the hash.
+ * backend that omits or alters responses cannot reproduce the hash. The
+ * electorate totals in the artifact's `info` are outside the hash: they are
+ * compared when the caller supplies its own, and a difference is only a note.
  */
 
 import {
@@ -43,6 +45,7 @@ import {
   assembleTallyBody,
   cancelledTallyBody,
   emptyTallyBody,
+  type ElectorateTotals,
   type RoleTally,
   type TallyArtifact,
   type TallyBody,
@@ -79,6 +82,12 @@ export interface VerifyInputs {
   /** Membership + weights at `end_epoch` (Koios-backed in the CLI). */
   readonly weights: TallyInputSource;
   /**
+   * This verifier's own electorate totals, to compare with the artifact's
+   * unhashed `info`. A differing or unavailable total becomes a note and
+   * never changes the verdict. Omitted: the totals are not compared.
+   */
+  readonly totals?: ElectorateTotals;
+  /**
    * Sealed reveal: decrypt the in-window sealed responses with an independently
    * fetched, BLS-verified beacon (`revealed[i]` aligns with the input record;
    * null = decrypt/decode failed). Required to verify a sealed artifact — the
@@ -107,22 +116,16 @@ export interface VerifyResult {
    * itself a backend non-conformance. The reason is in `notes`.
    */
   readonly untalliable: boolean;
-  /**
-   * True when at least one role's electorate `total` could not be independently
-   * re-fetched and the rebuild fell back to the artifact's own hash-committed
-   * value (finding 31). A `match` that is true alongside this is a *weaker*
-   * verdict — every other field reproduced, but this one denominator was assumed,
-   * not confirmed — so the CLI reports it distinctly (exit 5), never a clean
-   * MATCH. A backend could otherwise inflate the turnout denominator and pass
-   * scripted verification whenever the upstream total endpoint is down.
-   */
-  readonly unverifiedTotals: boolean;
   /** Content hash of the artifact as received. */
   readonly receivedHash: string;
   /** Content hash of the independently rebuilt tally. */
   readonly rebuiltHash: string;
   readonly rebuilt: TallyBody;
-  /** Trust caveats hit during the rebuild (e.g. an unverifiable total). */
+  /**
+   * Caveats hit during the rebuild (e.g. a response with no proof evidence),
+   * and electorate totals that differ from the artifact's or could not be
+   * re-fetched.
+   */
   readonly notes: readonly string[];
   /** Human-readable differences, populated on mismatch. */
   readonly diffs: readonly string[];
@@ -138,7 +141,6 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
   notes: string[];
   indeterminate: string | null;
   untalliable: string | null;
-  unverifiedTotals: boolean;
 }> {
   const notes: string[] = [];
   const { bundle } = inputs;
@@ -176,7 +178,6 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
       notes,
       indeterminate: null,
       untalliable: `definition is spec-invalid (${codes}) — untalliable, no artifact should exist`,
-      unverifiedTotals: false,
     };
   }
   // Everything else was decidable from the record alone; the owner rule was not,
@@ -187,7 +188,6 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
       notes,
       indeterminate: `the defining transaction ${survey.txHash} could not be fetched or decoded, so its owner-proof is unknown`,
       untalliable: null,
-      unverifiedTotals: false,
     };
   }
 
@@ -210,7 +210,6 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
       notes,
       indeterminate: null,
       untalliable: null,
-      unverifiedTotals: false,
     };
   }
 
@@ -282,7 +281,6 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
       notes,
       indeterminate,
       untalliable: null,
-      unverifiedTotals: false,
     };
   }
   let counted: ResponseRecord[];
@@ -301,7 +299,6 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
         notes,
         indeterminate: null,
         untalliable: null,
-        unverifiedTotals: false,
       };
     }
     if (!inputs.reveal) {
@@ -343,17 +340,13 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
   }
 
   // Per role ascending: weights + membership at end_epoch, then hand the
-  // membership-filtered responders + total to the SHARED assembler (the emitter
-  // uses the same `assembleTallyBody`, so role ordering, per-role artifact
-  // shaping, and the base body can't drift). Weight/total sourcing and the
-  // membership filter are inherently data-source-specific, so they stay here.
+  // membership-filtered responders to the SHARED assembler (the emitter uses
+  // the same `assembleTallyBody`, so role ordering, per-role artifact shaping,
+  // and the base body can't drift). Weight sourcing and the membership filter
+  // are inherently data-source-specific, so they stay here.
   const rolesPresent = [...new Set(counted.map((r) => r.response.role))].sort(
     (a, b) => a - b,
   );
-  const receivedTotals = new Map(
-    inputs.artifact.tally.perRole.map((r) => [r.role, r.total]),
-  );
-  let unverifiedTotals = false;
   const roles: RoleTally[] = [];
   for (const role of rolesPresent) {
     const roleRecords = counted.filter((r) => r.response.role === role);
@@ -389,28 +382,7 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
       }
     }
 
-    let total: string | null = null;
-    if (role !== ROLE_KEYHOLDER) {
-      const fetched =
-        role === ROLE_DREP
-          ? await inputs.weights.drepTotal(endEpoch)
-          : await inputs.weights.stakeholderTotal(endEpoch);
-      if (fetched !== null) {
-        total = String(fetched);
-      } else {
-        // The upstream can't serve the total right now: fall back to the
-        // artifact's own value so the rest still verifies — but flag it, since
-        // this one hash-committed number was then NOT independently confirmed
-        // (finding 31). The CLI downgrades a MATCH that leans on this.
-        total = receivedTotals.get(role) ?? null;
-        unverifiedTotals = true;
-        notes.push(
-          `role-${role} electorate total not independently re-fetchable — using the artifact's value`,
-        );
-      }
-    }
-
-    roles.push({ role, responders, total });
+    roles.push({ role, responders });
   }
 
   return {
@@ -418,8 +390,40 @@ export async function rebuildTally(inputs: VerifyInputs): Promise<{
     notes,
     indeterminate: null,
     untalliable: null,
-    unverifiedTotals,
   };
+}
+
+/**
+ * Compare the artifact's electorate totals with this verifier's own, for each
+ * weighted role the rebuild counted. The totals only scale turnout, and ledger
+ * implementations read them slightly differently, so a difference is a note.
+ */
+async function totalNotes(
+  totals: ElectorateTotals,
+  artifact: TallyArtifact,
+  rebuilt: TallyBody,
+): Promise<string[]> {
+  const stated = new Map(artifact.info.perRole.map((r) => [r.role, r.total]));
+  const epoch = rebuilt.survey.endEpoch;
+  const notes: string[] = [];
+  for (const { role } of rebuilt.perRole) {
+    if (role === ROLE_KEYHOLDER) continue;
+    const read =
+      role === ROLE_DREP
+        ? await totals.drepTotal(epoch)
+        : await totals.stakeholderTotal(epoch);
+    const claim = stated.get(role) ?? "none";
+    if (read === null) {
+      notes.push(
+        `role ${role} total: the artifact states ${claim}, which this verifier could not re-fetch`,
+      );
+    } else if (claim !== String(read)) {
+      notes.push(
+        `role ${role} total: the artifact states ${claim}, this verifier reads ${read} (outside the hash)`,
+      );
+    }
+  }
+  return notes;
 }
 
 /** Human-readable differences between the received and rebuilt tallies. */
@@ -445,9 +449,6 @@ function diffTallies(received: TallyBody, rebuilt: TallyBody): string[] {
     if (!a || !b) {
       diffs.push(`role ${role}: present only in ${a ? "received" : "rebuilt"}`);
       continue;
-    }
-    if (a.total !== b.total) {
-      diffs.push(`role ${role} total: received ${a.total}, rebuilt ${b.total}`);
     }
     const aResp = new Map(a.responders.map((r) => [r.credential, r]));
     const bResp = new Map(b.responders.map((r) => [r.credential, r]));
@@ -480,7 +481,6 @@ export async function verifyArtifact(
     notes,
     indeterminate,
     untalliable,
-    unverifiedTotals,
   } = await rebuildTally(inputs);
   const rebuiltHash = artifactHash(rebuilt);
 
@@ -492,7 +492,6 @@ export async function verifyArtifact(
       match: false,
       indeterminate: false,
       untalliable: true,
-      unverifiedTotals: false,
       receivedHash,
       rebuiltHash,
       rebuilt,
@@ -524,7 +523,6 @@ export async function verifyArtifact(
       match: false,
       indeterminate: true,
       untalliable: false,
-      unverifiedTotals: false,
       receivedHash,
       rebuiltHash,
       rebuilt,
@@ -533,12 +531,14 @@ export async function verifyArtifact(
     };
   }
 
+  if (inputs.totals) {
+    notes.push(...(await totalNotes(inputs.totals, inputs.artifact, rebuilt)));
+  }
   const match = rebuiltHash === receivedHash;
   return {
     match,
     indeterminate: false,
     untalliable: false,
-    unverifiedTotals,
     receivedHash,
     rebuiltHash,
     rebuilt,

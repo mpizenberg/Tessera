@@ -160,27 +160,36 @@ The unit of result publication and the Koios→node seam.
 - **Deterministic ordering** (e.g. responders sorted by credential hex; options
   in definition order) so independent re-serialization reproduces the hash.
 
-**Hash domain.** The document splits into a hashed inner `tally` and an unhashed
-`provenance` envelope; `artifactHash = H(canonical(tally))`. The split is
-structural (not a field denylist). Ledger-determined facts that any correct
-re-derivation must reproduce go in `tally`; whatever records who read the ledger,
+**Hash domain.** The document splits into a hashed inner `tally` and two
+unhashed sections, `info` and `provenance`; `artifactHash = H(canonical(tally))`.
+The split is structural (not a field denylist). Ledger-determined facts that any
+correct re-derivation must reproduce go in `tally`; ledger-derived values the
+result does not depend on go in `info`; whatever records who read the ledger,
 how, and when goes in `provenance`.
 
 - **`tally` (hashed):** `rulesetHash`, `network`, `survey`, `sealed` (true iff
   the definition's submission mode is sealed — set on cancellation artifacts
-  too), and per role: `role`, `total`, `responders` (`credential`, `weight`, and
-  the counted answer's full on-chain coordinate `txHash` + `responseIndex` —
+  too), and per role: `role`, `responders` (`credential`, `weight`, and the
+  counted answer's full on-chain coordinate `txHash` + `responseIndex` —
   unregistered responders are excluded rather than flagged, so no `registered`
   field; sealed and public responders have the same shape — no answers are
   committed), integer `questions` aggregates.
+- **`info` (not hashed, required):** per role, sorted, `role` and `total`, the
+  electorate total at `end_epoch` (total active stake, total DRep voting
+  power) that turnout divides by — one entry per DRep or Stakeholder role in
+  `tally`; the count-only Keyholder has none, and a cancellation has no roles.
+  Unhashed because ledger implementations read a total differently without
+  reading any responder's weight differently (a vote delegation one keeps and
+  another has cleared), and it only scales a display. The emitter still waits
+  for every total before emitting: a total left out would stay out.
 - **`provenance` (not hashed):** `source`, snapshot `fetchedAt`, per-role
   `endpoint`, and — for a sealed survey — `sealedReveal` (`chainHash`, `round`,
   and the drand `beacon` used), unhashed because the definition already pins
   `(chainHash, round)` and the beacon is independently fetchable + BLS-verifiable.
 
-Excluding provenance is what lets Koios- and node-produced artifacts share one
-hash when results are identical — keeping the Tier 1 → Tier 2 swap invisible to
-the verifier (`ARCHITECTURE.md` §2, §8).
+Excluding `info` and `provenance` is what lets Koios- and node-produced
+artifacts share one hash when results are identical — keeping the Tier 1 → Tier
+2 swap invisible to the verifier (`ARCHITECTURE.md` §2, §8).
 
 Shape (the typed definition is `TallyArtifact` in `cip-179/tally`'s
 `artifact.ts`):
@@ -195,7 +204,6 @@ Shape (the typed definition is `TallyArtifact` in `cip-179/tally`'s
     "perRole": [
       {
         "role": 1,
-        "total": "12345678901234",
         "responders": [
           {
             "credential": "…",
@@ -208,6 +216,9 @@ Shape (the typed definition is `TallyArtifact` in `cip-179/tally`'s
       },
     ],
   },
+  "info": {
+    "perRole": [{ "role": 1, "total": "12345678901234" }],
+  },
   "provenance": {
     "source": {
       "provider": "koios",
@@ -219,7 +230,8 @@ Shape (the typed definition is `TallyArtifact` in `cip-179/tally`'s
 }
 ```
 
-- **Immutable** once `end_epoch` is finalized. **Stored in the D1/SQLite
+- **Immutable** once `end_epoch` is finalized; a later ruleset may re-emit a
+  survey's artifact, under a new hash. **Stored in the D1/SQLite
   `tally_artifact` table** (deliberate deviation from the original R2 sketch:
   artifacts are small JSON documents, the store already exists on both
   runtimes, and one storage system beats two at PoC scale — R2 remains an easy
@@ -231,9 +243,11 @@ Shape (the typed definition is `TallyArtifact` in `cip-179/tally`'s
 - **Future:** the `tally` hash is the natural handle for an **on-chain anchor**,
   closing the loop with CIP-179 itself.
 - **Verifiability.** The `tally` embeds the counted responders with their
-  on-chain coordinates, weights, and totals, so any third party rejoins each
-  counted answer from the chain — for a sealed survey, by decrypting its
-  ciphertext with the beacon of the round the definition pins — re-runs the
-  pure `cip-179/tally` computation and reproduces both the results and the
-  hash; every weight is re-fetchable from Koios at `end_epoch`. Trust reduces to Koios's stake numbers for epoch E,
+  on-chain coordinates and weights, so any third party rejoins each counted
+  answer from the chain — for a sealed survey, by decrypting its ciphertext
+  with the beacon of the round the definition pins — re-runs the pure
+  `cip-179/tally` computation and reproduces both the results and the hash;
+  every weight is re-fetchable from Koios at `end_epoch`. The totals in `info`
+  are re-fetchable too, and a verifier reports a different one without
+  changing its verdict. Trust reduces to Koios's stake numbers for epoch E,
   which the node tier later removes — without changing this format.

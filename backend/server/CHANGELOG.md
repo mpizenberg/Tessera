@@ -15,6 +15,26 @@ no dual-serving. A consumer compares majors and refuses a mismatch; it may warn
 on a minor it does not know. Every bump has a line here, and the README's
 Endpoints section changes in the same commit.
 
+## [Unreleased]
+
+Still `2.0`: the artifact change below removes a field, which this
+changelog's rule makes a major, but no consumer besides Tessera's own app has
+read an ended survey's artifact, and the app deploys with the backend.
+
+### Changed
+
+- The artifact routes serve ruleset 14 artifacts: each role's electorate
+  total moves from `tally.perRole[].total` to a new required top-level
+  section, `info`, whose `perRole` lists `{ role, total }` for the DRep and
+  Stakeholder roles, outside the hash. Every stored artifact is re-emitted
+  when this deploys, under a new hash; a survey reads as ended without an
+  artifact until the next finalization pass, which stamps its row so a
+  mirror following `changes` receives the new hash.
+- `GET /api/surveys/{txHash}/{index}/artifact` is served `no-cache` rather
+  than `immutable`, since a survey's artifact changes when it is re-emitted;
+  its `ETag` is still the artifact hash, so a revalidation is a bodiless
+  `304`. `GET /api/artifacts/{hash}` stays `immutable`.
+
 ## [2.0] - 2026-09-15
 
 ### Changed

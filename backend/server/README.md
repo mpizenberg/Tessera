@@ -161,9 +161,11 @@ and the answers of `/api/responded` and `/api/responses`.
 - `GET /api/surveys/{txHash}/{index}/artifact` — the survey's final tally
   artifact, or `404` while the survey is open / not yet finalized. Served
   byte-for-byte as stored (its content hash stays verifiable), with a strong
-  `ETag` (the artifact hash) and `Cache-Control: immutable`.
+  `ETag` (the artifact hash) and `Cache-Control: no-cache`: a survey's
+  artifact is re-emitted under a new hash when a ruleset changes its shape.
 - `GET /api/artifacts/{hash}` — the same artifact addressed by its content
-  hash directly.
+  hash directly, the hash a survey's final state names. The same `ETag`, and
+  `Cache-Control: immutable`.
 
 Snapshot-derived routes answer `503` with `{"error":"snapshot not ready"}`
 until the first refresh completes, and carry an `ETag` versioned by

@@ -40,7 +40,6 @@ import type {
   SurveyRecord,
   TxProof,
 } from "cip-179/domain";
-import type { TallyArtifact } from "cip-179/tally";
 import type { SurveyListPayload } from "cardano-tessera-client";
 import type { AppConfig, DataSource } from "cardano-tessera-core";
 import type { ProtocolParameters } from "@evolution-sdk/evolution/sdk/provider/Provider";
@@ -1101,15 +1100,6 @@ export class KoiosDataSource implements DataSource {
       _tx_hashes: [...txHashes],
     });
     return new Map(rows.map((r) => [r.tx_hash, r.num_confirmations ?? null]));
-  }
-
-  /**
-   * Always `null`: artifacts are emitted by the serving tier's finalization,
-   * which the direct Koios path has no access to. The UI shows the raw
-   * client-side tally instead (the pre-artifact behaviour).
-   */
-  async artifact(_ref: SurveyRef): Promise<TallyArtifact | null> {
-    return null;
   }
 
   /**

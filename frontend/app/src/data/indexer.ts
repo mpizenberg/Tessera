@@ -66,8 +66,8 @@ export class IndexerDataSource implements DataSource {
     ];
   }
 
-  artifact(ref: SurveyRef): Promise<TallyArtifact | null> {
-    return this.client.artifact(ref);
+  artifactByHash(hash: string): Promise<TallyArtifact | null> {
+    return this.client.artifactByHash(hash);
   }
 
   /** Display-only chrome: not gated on the compatibility handshake. */

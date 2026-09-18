@@ -238,7 +238,10 @@ The artifact is **content-addressed**: `RULESET_DESCRIPTOR` names the exact
 rules applied (covered roles, per-role weight measures, dedup/window/proof
 rules, sealed-reveal handling), and `rulesetHash()` is the blake2b-256 of its
 canonical JSON. Two implementations that apply the same rules to the same chain
-data produce byte-identical artifacts and the same hash.
+data produce byte-identical tallies and the same hash. The artifact's two other
+sections sit outside the hash: `info`, the electorate totals behind turnout,
+which ledger implementations read slightly differently, and `provenance`,
+where the inputs came from.
 
 ### Interim spec status & compatibility
 
