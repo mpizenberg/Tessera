@@ -20,8 +20,8 @@
  * one at least a block into `end_epoch + 2` (`--dolos-after`), with the
  * second's minikupo API resolving native scripts by hash. The tally is
  * rebuilt under the pinned ruleset and its content hash compared; the
- * electorate totals, outside the hash, are re-fetched too from Koios and a
- * difference is printed as a note (Dolos serves none). Exit codes: 0 MATCH,
+ * electorate totals, outside the hash, are re-fetched too when the source is
+ * Koios, and a difference is printed as a note. Exit codes: 0 MATCH,
  * 1 MISMATCH (differences printed), 2 usage / not finalized / survey not found
  * on-chain / fetch failure, 3 INDETERMINATE (a required input — e.g. a
  * governance-link anchor, or a missing tx_block_index — could not be resolved,

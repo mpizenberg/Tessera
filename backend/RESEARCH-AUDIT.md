@@ -200,8 +200,8 @@ Read from source on 2026-09-16 (`main` at 15f92c6e), not run:
   Boundary work only runs when a block of the next epoch arrives, so a
   replay whose input ends at `E`'s last block stands exactly at the end of
   `E`. `dolos bootstrap mithril --download-end N` downloads and certifies
-  immutables up to `N` only, and `dolos serve` answers queries without
-  syncing.
+  immutables up to `N` only and replays them through `N-1` (seen on 2026-09-17), and
+  `dolos serve` answers queries without syncing.
 
 Its Mini-Blockfrost router (read from `crates/minibf/src/lib.rs`) covers the
 whole of column A and most of B:
@@ -211,11 +211,11 @@ whole of column A and most of B:
 | label-17 window           | `/metadata/txs/labels/17`, `…/cbor`                                        | archive index, bounded by `from`/`to` block heights     |
 | tx bytes and proof fields | `/txs/{h}/cbor`, `/txs/{h}/required_signers`, `/txs/{h}/metadata/cbor`     | yes                                                     |
 | chain order, block epoch  | `/txs/{h}` (`index`), `/blocks/{h}`, `/blocks/slot/{s}`                    | yes                                                     |
-| native scripts            | `/scripts/{hash}/cbor`, `…/json`                                           | yes                                                     |
-| governance links          | `/governance/proposals`, `…/{tx}/{idx}`                                    | yes; **anchor url/hash exposure to verify**             |
+| native scripts            | minikupo `/scripts/{hash}` (bytes); minibf's `…/cbor` is null for them     | yes                                                     |
+| governance links          | `/governance/proposals`, `…/{tx}/{idx}`, `…/{id}/metadata` (anchor)        | yes                                                     |
 | active stake for `E`      | `/epochs/E/stakes` (paged), `/accounts/{id}/history`                       | **yes** — `AccountEpochLog`, written when `E+1` closes  |
 | stake total (unhashed)    | `/epochs/E` (`active_stake`)                                               | yes                                                     |
-| stake registration        | `/accounts/{id}/registrations` (slot-bounded)                              | yes                                                     |
+| stake registration        | `/accounts/{id}` (`registered`); `…/registrations` omits certificate 12    | current only; the list has history                      |
 | DRep voting power         | `/governance/dreps/{id}` (`amount`; a deposit if registered during `E`)    | **no** — current value only; per-epoch history deferred |
 | DRep registration         | `/governance/dreps/{id}` (`active`, `retired`)                             | current only                                            |
 | DRep total (unhashed)     | none — no `/governance/dreps` list; `abstain`, `no_confidence` answer `""` | —                                                       |
@@ -234,11 +234,11 @@ the target is db-sync parity. PR #1228 reports the whole DRep distribution,
 and preview epoch 1184. Open at the time of writing: `/epochs/2/stakes`
 empty on preview (#1248, a gating bug at the chain's start), a stake-address
 indexing mismatch (#448). Nothing open names a wrong active-stake amount on a
-recent epoch, but the suite is explicitly "best-effort", so §6's experiment has to
-measure it on the responders that matter.
+recent epoch, but the suite is explicitly "best-effort"; §4, Option 1 measures
+it on preview's epoch 1395.
 
 **Verdict:** the cheapest Rung-2 path; it answers A and every part of B the
-hash needs over HTTP, from two stopping points and no new code. The residual
+hash needs over HTTP, from two stopping points (§4, Option 1). The residual
 risk is Dolos's ledger versus db-sync on the specific accounts in the
 artifact: on preview it keeps one protocol-9 vote delegation the Haskell
 ledger cleared (txpipe/dolos#1364), which moves a DRep's power and the DRep
@@ -292,28 +292,84 @@ so neither transport shortens any path in §4.
 Costs are for **preprod / mainnet**; testnet figures are the ones that matter
 for the next step, since mainnet has no deployment (`ARCHITECTURE.md` §9).
 
-### Option 1 — Dolos from Mithril, walked through the boundaries (Rung 2)
+### Option 1 — Dolos from Mithril, stopped at two boundaries (Rung 2)
 
-One binary, certified blocks in, HTTP out.
+One binary, certified blocks in, HTTP out. Tried on preview on 2026-09-17
+and 2026-09-18 with release 2.0.0-alpha.0, on the survey `1356f08e…:0`
+(`end_epoch` 1395): the verifier's rebuild from two Dolos nodes, read through
+queries alone, gives the `artifactHash` its Koios rebuild gives. The recipe
+is `packages/dolos`'s README; the verifier takes the two nodes with
+`--dolos-end` and `--dolos-after`, and checks that each stands where the
+steps below put it.
 
-1. `dolos bootstrap mithril --download-end <E's last immutable>`, then
-   `dolos serve`. The node stands at the end of `E`: `/governance/dreps/{id}`
-   gives the distribution labelled `E` and DRep registration at `E`'s end.
-2. Continue to `stop_epoch = E+2`, one block into `E+2`, and read
-   `/epochs/E/stakes` (written when the replay closes `E+1`), `/epochs/E` for
-   the total, `/accounts/{id}/registrations` bounded by `E`'s last slot (it
-   omits the certificate that registers and delegates a vote together), and
-   the whole of column A.
-3. The DRep electorate total is not served. It is outside the hash, so the
-   rebuild needs none, and the verifier compares it only once Dolos lists
-   DReps with amounts (a draft PR, #1121, adds the list).
+1. **The end of `E`.** `dolos bootstrap mithril --download-end 20E+20`
+   downloads and certifies files 0 to `20E+20`, and replays them through
+   `20E+19`, `E`'s last block. The immutable reader skips the highest file on
+   disk, and no boundary runs until a block of `E+1` arrives. Standing there,
+   `/governance/dreps/{id}` gives the distribution labelled `E` and DRep
+   registration at `E`'s end. `/accounts/{id}` `registered` gives stake
+   registration at `E`'s end. `/accounts/{id}/registrations` would serve it
+   at any later tip, but it omits the certificate that registers and
+   delegates a vote together.
+2. **One block into `E+2`.** A copy of that store is set to
+   `stop_epoch = E+2` and continued with `bootstrap --continue`, downloading
+   from file `20E+19`. It runs the two boundaries and stops.
+   `/accounts/{id}/history` then gives each account's active stake for `E`,
+   logged when the replay closes `E+1`, and the node answers the whole of
+   column A. The release exits there without seeding its write-ahead log,
+   and `dolos doctor reset-wal` seeds it (fixed on `main` by #1327).
+3. **The totals.** `/epochs/E` `active_stake` is the stake total, and no
+   route serves the DRep total. Both sit outside the hash, and the Dolos
+   source reads neither. A draft PR, #1121, adds a DRep list with amounts.
 
-Cost: disk of the order of the immutable DB plus indexes (preprod's archive
-was 17 GB before 2.0 compressed it to about half; mainnet an estimated
-250–300 GB), RAM under 2 GB, wall time 94 minutes for a preprod bootstrap,
-download included, and 65 minutes to rebuild a preview state from its
-archive (developers' figures in PRs #1222 and #1228). A kept Dolos serves any
-later audit of the same network for the cost of the tail sync.
+**Measured at 1395** against the Haskell state of the Rung 1 snapshots and
+against Koios:
+
+- DRep registration agrees on all 8978 DReps either state knows. Power agrees
+  on all but one, which keeps a delegation the ledger cleared under protocol
+  9 (#1364) and was not a responder.
+- Every row of `/epochs/1395/stakes` (79734) equals the state's `set`, and
+  their total equals Koios's `active_stake`.
+- Stake registration agrees on all 302383 credentials.
+- Column A equals Koios's on every label-17 transaction of the window, with
+  the transaction CBOR identical byte for byte.
+- A replay from genesis to one block into 1397 gives the same
+  `dolos snapshot digest` as the resumed copy, so step 2 loses nothing by
+  resuming.
+
+**Costs on preview**, on the maintainer's Mac (12 cores, 36 GB RAM):
+
+| Step                                   | Wall time                  | Memory (macOS `time -l`)          | Disk                           |
+| -------------------------------------- | -------------------------- | --------------------------------- | ------------------------------ |
+| Replay from genesis to the end of 1395 | 53 min, 6 of them download | 7.0 GB resident, 1.8 GB footprint | 14 GB download, 14 GB store    |
+| Continue a copy into 1397              | 19 s                       | 0.9 GB resident                   | a second store, 14 MB download |
+| Rebuild from both nodes                | 2.1 s (4.8 s from Koios)   | —                                 | —                              |
+
+The resident set counts pages the footprint leaves out. Which of the two
+numbers bounds the RAM an audit needs has not been measured. The download is
+deleted after the replay unless `--retain-snapshot` is given. An APFS clone
+shares the second store's blocks with the first. The same replay from
+genesis, taken on to 1397, ran 108 minutes, on a machine that was likely
+busy.
+
+Preprod and mainnet have not been tried. The developers report 94 minutes
+for a preprod bootstrap, download included (PR #1222), and under 20 hours
+for mainnet. They put mainnet's archive at an estimated 250–300 GB. A kept
+store at the end of one epoch continues to a later one as step 2 does, paying
+only for the files in between. This has been tried across two epochs only.
+
+**What an auditor needs:**
+
+- A reachable Mithril aggregator. No snapshot from the survey's time is
+  needed, since the latest certifies every file.
+- Dolos 2.0.0-alpha.0 or later; 1.6 serves a DRep's deposit as its power.
+- Two stores per `end_epoch`, served at the same time on their own minibf
+  and gRPC ports, with minikupo on the second for native scripts by hash. An
+  audit is therefore possible from the first block of `E+2`.
+- No DRep responder registered during `E`. Dolos serves such a DRep's
+  deposit as its power, and the Dolos source refuses to read it.
+- No DRep responder touched by #1364: its weight, and so the hash, would
+  differ.
 
 ### Option 2 — the Haskell ledger state through Amaru's tooling (Rung 2, exact)
 
@@ -393,11 +449,11 @@ is a multi-day PostgreSQL job.
   them and they only scale turnout. Provenance was already unhashed (§5
   there); a Dolos-fed rebuild reproducing the same `tally` hash is the whole
   point of that split.
-- **The seam is `TallyInputSource` plus `DataSource`**, already implemented
-  once for Koios; the totals sit apart in `ElectorateTotals`, which an audit
-  may leave out. A Dolos implementation is the endpoint mapping in §3 and the
-  node walk in §4; provenance would carry `provider: dolos`, the Mithril
-  certificate hash, and the stop epochs read.
+- **The verifier's seam is `TallyInputSource` plus `SurveyChain`**,
+  implemented for Koios and, in `packages/dolos`, for two Dolos nodes; the
+  totals sit apart in `ElectorateTotals`, which the Dolos source leaves out.
+  The backend still reads Koios. Fed by Dolos, its provenance would carry
+  `provider: dolos`, the Mithril certificate hash, and the stop epochs read.
 - **The infrastructure gap `RESEARCH.md` §8.5 named is narrower now, not
   closed.** Historical per-account stake is served by Dolos; historical DRep
   power is served by nobody's API — Dolos deferred it in a comment, Dingo
@@ -443,7 +499,8 @@ artifact to reproduce.
 
 - **Dolos, read through its queries only** (Option 1). The difficulty is
   holding the node at the two stopping points reliably. The DRep total, which
-  no route serves, left the hash for that reason (§5).
+  no route serves, left the hash for that reason (§5). Done on 2026-09-18:
+  the rebuild equals the Koios one (§4, Option 1).
 - **Amaru as a node and a library, without the Haskell tools**, at the
   level between Rungs 1 and 2 (§2). Bootstrap from PRAGMA's states, sync with
   the epoch snapshots retained, read them with a small Rust program over
@@ -469,7 +526,7 @@ API (OpenAPI 0.1.93) blocks the check twice:
 ## 7. Sources
 
 - Amaru: repository README and `docs/BOOTSTRAP.md`, `docs/PUBLISHING_SNAPSHOTS.md`, `CHANGELOG.md`, `crates/amaru-ledger/src/summary/stake_distribution.rs`, `crates/amaru/src/bin/amaru/cmd/`, and on 2026-09-16 at f664b29 `crates/amaru-ledger/src/state/volatile/overlay.rs`, `crates/amaru-stores/src/rocksdb/mod.rs`, `crates/amaru/src/bin/amaru/cmd/node/run.rs` (https://github.com/pragma-org/amaru); releases page (v10.11.20260820 to v10.11.20260912); the preview bootstrap index `https://pub-b844360df4774bb092a2bb2043b888e5.r2.dev/preview/index.json`; CI run 28745354271 (`publish-bootstrap-snapshots`, preprod).
-- Dolos: `crates/minibf/src/lib.rs` (router), `routes/accounts.rs`, `routes/epochs/mod.rs`, `routes/governance/mod.rs`, `crates/cardano/src/model/{logs,dreps,gov}.rs`, `crates/snapshot/PROFILE.md`, `skills/debug-epoch-mismatch/SKILL.md`, `.github/workflows/epoch-tests.yml`, `docs/content/operations/performance.mdx`, issues #1248, #448, #1078, #1082; on 2026-09-16 at 15f92c6e `crates/cardano/src/work.rs`, `crates/cardano/src/ewrap/loading.rs`, `crates/minibf/src/routes/metadata.rs`, `crates/minibf/src/pagination.rs`, `src/bin/dolos/bootstrap/mithril.rs`, `crates/mithril/src/lib.rs`, PRs #1121, #1212, #1222, #1228, #1266 and issue #1018 (https://github.com/txpipe/dolos); configuration schema and bootstrap pages at https://docs.txpipe.io/dolos.
+- Dolos: `crates/minibf/src/lib.rs` (router), `routes/accounts.rs`, `routes/epochs/mod.rs`, `routes/governance/mod.rs`, `crates/cardano/src/model/{logs,dreps,gov}.rs`, `crates/snapshot/PROFILE.md`, `skills/debug-epoch-mismatch/SKILL.md`, `.github/workflows/epoch-tests.yml`, `docs/content/operations/performance.mdx`, issues #1248, #448, #1078, #1082; on 2026-09-16 at 15f92c6e `crates/cardano/src/work.rs`, `crates/cardano/src/ewrap/loading.rs`, `crates/minibf/src/routes/metadata.rs`, `crates/minibf/src/pagination.rs`, `src/bin/dolos/bootstrap/mithril.rs`, `crates/mithril/src/lib.rs`, PRs #1121, #1212, #1222, #1228, #1266, #1327 and issues #1018, #1364 (https://github.com/txpipe/dolos); configuration schema and bootstrap pages at https://docs.txpipe.io/dolos; release `v2.0.0-alpha.0` (`a08c9d13`), run on preview from 2026-09-17 to 2026-09-18.
 - Dingo: README (bootstrap, disk, timings), `dingo.yaml.example`, `api/blockfrost/blockfrost.go`; on 2026-09-16 at d9080904 `ledger/queries.go`, `internal/node/load.go`, `database/plugin/metadata/internal/drepquery/voting_power.go`, `ledger/governance/epoch.go`, issues #3885, #1903 (https://github.com/blinklabs-io/dingo); releases v0.70.6 to v0.70.12.
 - Blockfrost: `openapi.yaml` version 0.1.93 (`blockfrost/openapi` master of 2026-09-15), issue #471 (https://github.com/blockfrost/openapi).
 - Yaci Store: `docs/app/docs/v2/ledger-state-mismatches/2-0-0/overview/page.mdx`, `getting-started/requirements` (https://github.com/bloxbean/yaci-store); release announcement https://cardanofoundation.org/blog/yaci-store-2; getting-started page at https://store.yaci.xyz.
