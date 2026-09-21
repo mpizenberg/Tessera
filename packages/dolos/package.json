@@ -14,14 +14,17 @@
     }
   },
   "scripts": {
-    "type-check": "tsc -p tsconfig.json"
+    "type-check": "tsc -p tsconfig.json",
+    "test": "vitest run"
   },
   "dependencies": {
+    "cardano-tessera-client": "workspace:*",
     "cardano-tessera-koios": "workspace:*",
     "cip-179": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
   }
 }
