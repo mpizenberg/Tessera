@@ -34,6 +34,7 @@ import {
   bytesToHex,
   mechanismAProven,
   credentialKey,
+  inSurveyWindow,
   isSealedUnsupported,
   laterInChain,
   refKey,
@@ -174,8 +175,10 @@ export async function rebuildTally(
   // no artifact. Decided from the independently fetched record and defining-tx
   // evidence, so a backend can't dress an invalid survey up as talliable
   // (findings 10, 11, 45, 12).
+  const surveyIndex = inputs.blockIndices.get(bundle.survey.txHash);
   const survey = {
     ...bundle.survey,
+    ...(surveyIndex === undefined ? {} : { blockIndex: surveyIndex }),
     proof: inputs.proofs.get(bundle.survey.txHash) ?? null,
   };
   if (!isSurveyTalliable(survey)) {
@@ -200,15 +203,39 @@ export async function rebuildTally(
     };
   }
 
+  const positionOf = (r: {
+    txHash: string;
+    slot: number;
+    epochNo: number;
+  }) => ({
+    slot: r.slot,
+    epochNo: r.epochNo,
+    blockIndex: inputs.blockIndices.get(r.txHash) ?? null,
+  });
+
   // Cancellation first: the earliest owner-proven, in-window cancellation (in
-  // chain order — the choice the ruleset pins) short-circuits the tally.
-  const winning = [...bundle.cancellations]
-    .sort(byCancellationChainOrder)
-    .find(
-      (c) =>
-        c.epochNo <= endEpoch &&
-        mechanismAProven(def.owner, inputs.proofs.get(c.txHash) ?? null),
-    );
+  // chain order — the choice the ruleset pins) short-circuits the tally. One
+  // sharing the defining transaction's slot with a position in the block
+  // unread may or may not be in the window, so it leaves the verdict open.
+  let winning: (typeof bundle.cancellations)[number] | undefined;
+  for (const c of [...bundle.cancellations].sort(byCancellationChainOrder)) {
+    const inWindow = inSurveyWindow(survey, positionOf(c));
+    if (inWindow === false) continue;
+    if (!mechanismAProven(def.owner, inputs.proofs.get(c.txHash) ?? null))
+      continue;
+    if (inWindow === null) {
+      return {
+        tally: emptyTallyBody(id),
+        notes,
+        indeterminate:
+          `cancellation ${c.txHash} shares the defining transaction's slot, ` +
+          `and a tx_block_index is unresolved — retry when it is resolvable`,
+        untalliable: null,
+      };
+    }
+    winning = c;
+    break;
+  }
   if (winning) {
     return {
       tally: cancelledTallyBody(id, {
@@ -222,15 +249,17 @@ export async function rebuildTally(
     };
   }
 
-  // TALLY-SPEC §3 rules 1–3 from scratch: window (authoritative epochNo),
-  // validity (full codec validation), credential proof (mechanism A/B), then
+  // TALLY-SPEC §3 rules 1–3 from scratch: window (after the defining
+  // transaction, through end_epoch by the authoritative epochNo), validity
+  // (full codec validation), credential proof (mechanism A/B), then
   // latest-in-chain-order per (role, credential).
   const unresolvedActionIds = inputs.unresolvedActionIds ?? [];
   const govLinksReliable = inputs.govLinksReliable ?? true;
   const eligible: ResponseRecord[] = [];
   let indeterminate: string | null = null;
   for (const r of bundle.responses) {
-    if (r.epochNo > endEpoch) continue;
+    const inWindow = inSurveyWindow(survey, positionOf(r));
+    if (inWindow === false) continue;
     if (validateResponse(def, r.response).length !== 0) continue;
     // Uncovered roles never count, so their proof verdict can't affect the
     // hash — filter them before the proof step (and before flagging indeterminacy
@@ -278,6 +307,15 @@ export async function rebuildTally(
         `response ${r.txHash}:${r.responseIndex} has no tx_block_index ` +
         `(the source did not resolve it) — the counted order cannot be ` +
         `reproduced; retry when it is resolvable`;
+      continue;
+    }
+    if (inWindow === null) {
+      // It shares the defining transaction's slot, whose own position is
+      // unresolved: it may precede the survey.
+      indeterminate ??=
+        `the defining transaction ${survey.txHash} has no tx_block_index, and ` +
+        `response ${r.txHash}:${r.responseIndex} shares its slot — retry when ` +
+        `it is resolvable`;
       continue;
     }
     eligible.push({ ...r, blockIndex });

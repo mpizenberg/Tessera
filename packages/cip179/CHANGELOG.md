@@ -29,7 +29,6 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
 - `blockIndex` moves from `ResponseRecord` to `ChainPos`, so a survey or a
   cancellation record can carry its position in the block too; the record
   decoders read it on all three.
-
 - **Breaking: the electorate totals leave the hashed tally.**
   `ArtifactRoleTally.total` and `RoleTally.total` are removed, and
   `TallyArtifact` gains a required unhashed section, `info`, whose `perRole`
@@ -42,9 +41,12 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
   Rules that agree on a survey's result now agree on its hash, so a rule
   change leaves the hash of every result it does not change, and a verifier
   whose rules differ still learns which ones the emitter ran.
-- **Ruleset bump: `rulesetVersion` 13 → 14**, for the body schema; no counted
-  value changes. `rulesetHash()` is
-  `7c78775e6c70d40d9e1daade043e42509ef1756fa5f7a359c9cf00bbf9efe004`; the
+- **Ruleset bump: `rulesetVersion` 13 → 14**, for the body schema and the
+  window. The `window` rule now opens a survey's window after its defining
+  transaction in chain order, and the `cancellation` rule counts only a
+  cancellation in that window, so the counted set changes for a survey with
+  a response or cancellation published before it. `rulesetHash()` is
+  `cf5008f305b1a92dc3dedd96d2e9c0abc85e314efe49d67ab2b973bc16624858`; the
   README's table gains its row with the release.
 - **Breaking: `TallyInputSource` loses `stakeholderTotal` and `drepTotal`**,
   which move unchanged to a new `ElectorateTotals` interface. A tally input

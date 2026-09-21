@@ -91,8 +91,14 @@ estimate, which can disagree at a boundary slot, and the full CIP-179 chain orde
 last two are read-model fields the UI lacks, which is why its key is a display
 approximation only.
 
-Why three of the rules are shaped as they are:
+Why four of the rules are shaped as they are:
 
+- **The window opens at the defining transaction**, for responses and
+  cancellations alike. A record names its survey by that transaction's hash,
+  which is known before it lands, so a record could otherwise precede its
+  survey and count wherever a reader happened to start scanning. Opening the
+  window there makes the counted set a function of the chain alone, and lets a
+  reader start at the defining transaction.
 - **Dedup runs over the tally-valid set**, not over all responses, so an invalid
   later response never suppresses a valid earlier one.
 - **Membership is checked only at `end_epoch`** (§1). Response-time membership
