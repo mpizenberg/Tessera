@@ -297,8 +297,8 @@ for the next step, since mainnet has no deployment (`ARCHITECTURE.md` §9).
 One binary, certified blocks in, HTTP out. Tried on preview on 2026-09-17
 and 2026-09-18 with release 2.0.0-alpha.0, on the survey `1356f08e…:0`
 (`end_epoch` 1395): the verifier's rebuild from two Dolos nodes, read through
-queries alone, gives the `artifactHash` its Koios rebuild gives. The recipe
-is `packages/dolos`'s README; the verifier takes the two nodes with
+queries alone, gives the `artifactHash` its Koios rebuild gives. The recipe,
+and what an auditor needs, is `docs/AUDIT.md`; the verifier takes the two nodes with
 `--dolos-end` and `--dolos-after`, and checks that each stands where the
 steps below put it.
 
@@ -357,22 +357,6 @@ for a preprod bootstrap, download included (PR #1222), and under 20 hours
 for mainnet. They put mainnet's archive at an estimated 250–300 GB. A kept
 store at the end of one epoch continues to a later one as step 2 does, paying
 only for the files in between. This has been tried across two epochs only.
-
-**What an auditor needs:**
-
-- A reachable Mithril aggregator. No snapshot from the survey's time is
-  needed, since the latest certifies every file.
-- Dolos 2.0.0-alpha.0 or later; 1.6 serves a DRep's deposit as its power.
-- Two stores per `end_epoch`, served at the same time on their own minibf
-  and gRPC ports, with minikupo on the second for native scripts by hash. An
-  audit is therefore possible from the first block of `E+2`.
-- No DRep responder registered during `E`. Dolos serves such a DRep's
-  deposit as its power, and the Dolos source refuses to read it.
-- No DRep responder touched by #1364: its weight, and so the hash, would
-  differ.
-- No native-script credential whose script first went on chain after the
-  transaction needing it, or only in auxiliary data. The Dolos source counts
-  the first and misses the second, unlike the Koios source.
 
 **One node instead of two (future work).** The second store exists for one
 value, each account's active stake for `E`, and the first store already

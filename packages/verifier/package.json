@@ -1,7 +1,7 @@
 {
   "name": "cardano-tessera-verifier",
   "version": "0.1.0",
-  "description": "Standalone re-verifier for Tessera tally artifacts: refetches every input from Koios or a Dolos node, re-runs the pure cardano-tessera-core tally, and compares content hashes. Trusts only that source and the survey bundle — never the backend's own validation tables.",
+  "description": "Standalone re-verifier for Tessera tally artifacts: refetches every input from Koios or from two Dolos nodes, re-runs the tally, and compares content hashes. Takes only the artifact under test from the backend.",
   "type": "module",
   "private": true,
   "engines": {

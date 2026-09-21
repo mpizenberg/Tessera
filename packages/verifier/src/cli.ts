@@ -107,7 +107,7 @@ async function crossCheckBackendBundle(
   }
 }
 
-/** Matches the backend's snapshot floor; only affects gov-link discovery. */
+/** The label-17 scan's floor, the backend's default; an older survey is not found. */
 const SINCE_ISO_DEFAULT = "2026-06-01T00:00:00Z";
 
 function usage(): never {

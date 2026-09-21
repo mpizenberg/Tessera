@@ -14,8 +14,9 @@ computed client-side directly from chain data.
 > lifecycle, and the Tier-1 serving backend validates responses, snapshots
 > stake/voting-power weights at each survey's end epoch, and finalizes closed
 > surveys into **content-addressed result artifacts** that anyone can re-derive
-> from chain data with `packages/verifier`. See `backend/ARCHITECTURE.md` for
-> the design and `backend/TALLY-SPEC.md` for the counting rules.
+> from chain data with `packages/verifier` (`docs/AUDIT.md`). See
+> `backend/ARCHITECTURE.md` for the design and `backend/TALLY-SPEC.md` for the
+> counting rules.
 
 ## Governance linkage
 
@@ -48,8 +49,8 @@ document, hash, and URL to your own tooling.
 | `packages/respond-ui`     | `cardano-tessera-respond-ui`: the shared SolidJS per-question body components, so the app and the widget cannot drift in answering behavior.                                                                                                            |
 | `packages/respond-widget` | `cardano-tessera-respond`: the embeddable `<tessera-respond>` custom element — answer a survey anywhere, emitting a ready-to-attach label-17 payload. Framework-agnostic; wallets/chain stay host-side.                                                 |
 | `packages/respond-react`  | `cardano-tessera-respond-react`: React 18/19 bindings for the widget — typed props synced as DOM properties, `tessera:*` events as callbacks.                                                                                                           |
-| `packages/verifier`       | Standalone CLI that re-derives a survey's result artifact from chain data and checks its content hash.                                                                                                                                                  |
-| `packages/dolos`          | The verifier's inputs from two Dolos nodes replayed from Mithril-certified immutable files, instead of Koios; the recipe is its README.                                                                                                                 |
+| `packages/verifier`       | Standalone CLI that re-derives a survey's result artifact from chain data and checks its content hash; how to run it is `docs/AUDIT.md`.                                                                                                                |
+| `packages/dolos`          | The verifier's inputs from two Dolos nodes replayed from Mithril-certified immutable files, instead of Koios; the recipe is in `docs/AUDIT.md`.                                                                                                         |
 | `packages/mithril`        | Tally inputs read from a Mithril ledger snapshot, for comparison with Koios; an estimate, not an audit (its README).                                                                                                                                    |
 | `examples/`               | Minimal React and Svelte host apps for the widget, built in CI so framework compatibility regressions fail a build.                                                                                                                                     |
 | `backend/server`          | Tier-1 serving backend: cached chain reads, response validation, weight snapshots, artifact finalization. Node or CF+D1.                                                                                                                                |

@@ -783,10 +783,10 @@ weighted result, deriving every float presentation-side from the integer aggrega
   content hash beside it.
 
 The **standalone verifier** is the workspace package `packages/verifier`. It
-fetches the bundle and artifact from a backend, refetches every verification
-input straight from Koios, or from two Dolos nodes replayed from
-Mithril-certified immutable files (`packages/dolos`, `RESEARCH-AUDIT.md`),
-re-runs the pinned ruleset through the same shared code, and compares content
+fetches the artifact from a backend, and its bundle only to name differences,
+refetches every verification input straight from Koios, or from two Dolos
+nodes replayed from Mithril-certified immutable files (`packages/dolos`; how
+to run an audit and what each source trusts: `docs/AUDIT.md`), re-runs the pinned ruleset through the same shared code, and compares content
 hashes — `MATCH`/`MISMATCH` with a diff, exit 0/1. It never reads the backend's
 validation tables. From Koios it re-fetches the electorate totals as well and
 notes any that differ from the artifact's or cannot be re-fetched; they are
