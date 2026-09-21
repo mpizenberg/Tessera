@@ -3,11 +3,11 @@
  *
  *   pnpm --filter cardano-tessera-verifier verify -- \
  *     --backend https://<backend> --survey <txHash>:<index> \
- *     [--koios <url>] [--token <koios token>] [--since <ISO date>]
+ *     [--koios <url>] [--token <koios token>] [--since <ISO date>] [--out <dir>]
  *
  *   pnpm --filter cardano-tessera-verifier verify -- \
  *     --backend https://<backend> --survey <txHash>:<index> \
- *     --dolos-end <url> --dolos-after <url> [--minikupo <url>]
+ *     --dolos-end <url> --dolos-after <url> [--minikupo <url>] [--out <dir>]
  *
  * Fetches ONLY the artifact-under-test from the backend. The survey definition,
  * the response *set*, and every response's *answers* are re-derived by an
@@ -22,14 +22,17 @@
  * rebuilt under the pinned ruleset and its content hash compared; the
  * electorate totals, outside the hash, are re-fetched too when the source is
  * Koios, and a difference is printed as a note, as is a ruleset other than
- * the pinned one named in the artifact's provenance. Exit codes: 0 MATCH,
- * 1 MISMATCH (differences printed), 2 usage / not finalized / survey not found
- * on-chain / fetch failure, 3 INDETERMINATE (a required input — e.g. a
- * governance-link anchor, or a missing tx_block_index — could not be resolved,
- * so no verdict is possible yet; retry when resolvable), 4 UNTALLIABLE (the
- * survey's on-chain definition is spec-invalid — non-v5 or structurally
- * invalid — so it has no reproducible tally and no artifact should exist;
- * findings 10/11).
+ * the pinned one named in the artifact's provenance. On a MATCH or MISMATCH,
+ * `--out <dir>` keeps both sides there: `rebuilt.json`, the exact bytes the
+ * rebuilt hash is computed over, and `served.json`, the artifact under test.
+ * Exit codes: 0 MATCH, 1 MISMATCH (differences printed), 2 usage / not
+ * finalized / survey not found on-chain / fetch failure, 3 INDETERMINATE (a
+ * required input — e.g. a governance-link anchor, or a missing
+ * tx_block_index — could not be resolved, so no verdict is possible yet; retry
+ * when resolvable), 4 UNTALLIABLE (the survey's on-chain definition is
+ * spec-invalid, or its defining transaction never proved the owner, so it has
+ * no reproducible tally and no artifact should exist; findings 10, 11, 45,
+ * 12).
  */
 
 import { exit } from "node:process";
@@ -51,6 +54,7 @@ import { KoiosTallyInputs } from "cardano-tessera-koios";
 import { revealResponses } from "cip-179/tlock";
 import { evolutionCodec } from "cip-179/evolution";
 
+import { saveTallies } from "./save";
 import { chainEvidence, koiosChain, type SurveyChain } from "./sources";
 import { diffResponseSets, verifyArtifact } from "./verify";
 
@@ -114,11 +118,25 @@ const SINCE_ISO_DEFAULT = "2026-06-01T00:00:00Z";
 function usage(): never {
   console.error(
     "usage: verify --backend <url> --survey <txHash>:<index> " +
-      "[--koios <url>] [--token <koios token>] [--since <ISO date>]\n" +
+      "[--koios <url>] [--token <koios token>] [--since <ISO date>] [--out <dir>]\n" +
       "       verify --backend <url> --survey <txHash>:<index> " +
-      "--dolos-end <url> --dolos-after <url> [--minikupo <url>]",
+      "--dolos-end <url> --dolos-after <url> [--minikupo <url>] [--out <dir>]",
   );
   exit(2);
+}
+
+function untalliable(served: boolean): never {
+  if (served) {
+    console.warn(
+      "note: the backend served an artifact for this survey, but its " +
+        "definition is spec-invalid — no artifact should exist",
+    );
+  }
+  console.log(
+    "UNTALLIABLE — the survey's on-chain definition is spec-invalid, so it " +
+      "has no reproducible tally (this is neither MATCH nor MISMATCH)",
+  );
+  exit(4);
 }
 
 function argOf(name: string): string | undefined {
@@ -129,6 +147,7 @@ function argOf(name: string): string | undefined {
 async function main(): Promise<void> {
   const backend = argOf("backend");
   const surveyArg = argOf("survey");
+  const out = argOf("out");
   if (!backend || !surveyArg) usage();
   const m = /^([0-9a-fA-F]{64}):(\d+)$/.exec(surveyArg);
   if (!m) usage();
@@ -171,17 +190,7 @@ async function main(): Promise<void> {
   if (!isSurveyTalliable(survey)) {
     for (const p of surveyErrors(survey))
       console.warn(`note: definition problem: ${p.code}`);
-    if (artifact) {
-      console.warn(
-        "note: the backend served an artifact for this survey, but its " +
-          "definition is spec-invalid — no artifact should exist",
-      );
-    }
-    console.log(
-      "UNTALLIABLE — the survey's on-chain definition is spec-invalid, so it " +
-        "has no reproducible tally (this is neither MATCH nor MISMATCH)",
-    );
-    exit(4);
+    untalliable(artifact !== null);
   }
   if (!artifact) {
     console.error("no artifact for this survey yet (open, or not finalized)");
@@ -221,6 +230,7 @@ async function main(): Promise<void> {
 
   for (const note of preNotes) console.warn(`note: ${note}`);
   for (const note of result.notes) console.warn(`note: ${note}`);
+  if (result.untalliable) untalliable(true);
   console.log(`received hash: ${result.receivedHash}`);
   console.log(`rebuilt hash:  ${result.rebuiltHash}`);
   if (result.indeterminate) {
@@ -230,6 +240,7 @@ async function main(): Promise<void> {
     );
     exit(3);
   }
+  if (out) await saveTallies(out, result.rebuilt, artifact);
   if (result.match) {
     console.log("MATCH — the artifact reproduces from chain data");
     exit(0);

@@ -1,3 +1,7 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { Role, type Credential, type SurveyDefinition } from "cip-179";
@@ -10,6 +14,7 @@ import {
 } from "cip-179/domain";
 import {
   artifactHash,
+  blake2b256Hex,
   rulesetHash,
   toArtifactQuestions,
   toArtifactResponders,
@@ -21,6 +26,7 @@ import {
   type WeightInfo,
 } from "cip-179/tally";
 
+import { saveTallies } from "./save";
 import { diffResponseSets, verifyArtifact, type VerifyInputs } from "./verify";
 
 // --- fixtures ------------------------------------------------------------------
@@ -241,6 +247,23 @@ describe("diffResponseSets", () => {
     expect(notes).toHaveLength(1);
     expect(notes[0]).toContain("not seen in the chain scan");
     expect(notes[0]).toContain("ghost:0");
+  });
+});
+
+describe("saveTallies", () => {
+  it("writes the rebuilt tally as the bytes its hash is computed over", async () => {
+    const artifact = emittedArtifact();
+    const dir = await mkdtemp(join(tmpdir(), "tessera-verifier-"));
+    try {
+      const out = join(dir, "out");
+      await saveTallies(out, artifact.tally, artifact);
+      const rebuilt = await readFile(join(out, "rebuilt.json"), "utf8");
+      expect(blake2b256Hex(rebuilt)).toBe(artifactHash(artifact.tally));
+      const served = await readFile(join(out, "served.json"), "utf8");
+      expect(JSON.parse(served)).toEqual(artifact);
+    } finally {
+      await rm(dir, { recursive: true });
+    }
   });
 });
 
