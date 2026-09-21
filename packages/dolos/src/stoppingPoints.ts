@@ -28,7 +28,8 @@ export function fileOf(network: Network, slot: number): number {
   return Math.floor(slot / (10 * CALENDARS[network].securityParam));
 }
 
-function firstSlot(network: Network, epoch: number): number {
+/** The first slot of a Shelley-era `epoch`. */
+export function firstSlot(network: Network, epoch: number): number {
   const { securityParam, epochLength, shelleyEpoch } = CALENDARS[network];
   if (epoch < shelleyEpoch) {
     throw new Error(`epoch ${epoch} is before Shelley on ${network}`);
