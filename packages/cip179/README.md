@@ -241,15 +241,17 @@ canonical JSON. Two implementations that apply the same rules to the same chain
 data produce byte-identical tallies and the same hash. The artifact's two other
 sections sit outside the hash: `info`, the electorate totals behind turnout,
 which ledger implementations read slightly differently, and `provenance`,
-where the inputs came from.
+where the inputs came from and the `rulesetHash()` they were counted under.
+Rules that agree on a survey's result therefore agree on its hash, and a rule
+change leaves the hash of every result it does not change.
 
 ### Interim spec status & compatibility
 
 The artifact format is **not yet part of the CIP** — it is currently driven by
 Tessera, pending specification and integration into CIP-179. Until then this
 package is the normative description, and an emitted artifact is re-verified by
-installing the `cip-179` version whose `rulesetHash` matches the artifact's
-recorded hash:
+installing the `cip-179` version whose `rulesetHash` matches the one the
+artifact records (in `provenance`, or in `tally` before ruleset 14):
 
 | `cip-179` version | CIP-179 spec version | ruleset version | `rulesetHash()`                                                    |
 | :---------------- | :------------------- | :-------------- | :----------------------------------------------------------------- |

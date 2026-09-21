@@ -474,9 +474,9 @@ describe("the other routes", () => {
 
   it("artifacts: plain JSON by survey or by hash, 404 as null", async () => {
     const artifact = {
-      tally: { rulesetHash: "ab", perRole: [{ role: 3 }] },
+      tally: { perRole: [{ role: 3 }] },
       info: { perRole: [{ role: 3, total: "1000" }] },
-      provenance: { source: { provider: "koios" } },
+      provenance: { rulesetHash: "ab", source: { provider: "koios" } },
     };
     const { client, urls } = clientOver((url) =>
       url.endsWith(`/api/surveys/${TX}/3/artifact`) ||

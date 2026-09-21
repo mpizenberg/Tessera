@@ -757,7 +757,11 @@ enforcing one rule:
   A ruleset that changes the artifact's shape re-emits every row: its
   migration deletes them, clears the final states they backed and resets the
   finalization floor, and the next pass rebuilds them from the frozen rows
-  above.
+  above. A ruleset that changes only a rule can leave the rows, each naming
+  the rules it was counted under. Re-emitting after one must keep the row of
+  every survey whose hash is unchanged, since the by-hash route serves it as
+  immutable, and the delete-and-rebuild migration does not: that case needs
+  its own re-emission.
 
 ---
 

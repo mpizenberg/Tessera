@@ -11,10 +11,11 @@
  * `tally` from chain data + this ruleset and compares hashes, regardless of
  * which provider or ledger it queried.
  *
- * The ruleset itself is pinned the same way: {@link RULESET_DESCRIPTOR} is a
- * canonical description of every counting rule, and its hash is embedded in
- * each tally body — two artifacts hashed under different rules can never
- * compare equal.
+ * The ruleset is pinned too: {@link RULESET_DESCRIPTOR} is a canonical
+ * description of every counting rule, and its hash is recorded in
+ * `provenance`, outside the hash. Rules that agree on a survey's result agree
+ * on its hash, and a verifier whose rules differ learns which ones the emitter
+ * ran.
  */
 
 import type { SurveyDefinition } from "../index.js";
@@ -120,7 +121,10 @@ export const RULESET_DESCRIPTOR = {
   // `info` section. Ledger implementations read the totals slightly
   // differently (a delegation one keeps and another cleared moves a total
   // without moving any responder's weight), and the totals only scale turnout,
-  // so a verifier reading another ledger should still reproduce the hash. No
+  // so a verifier reading another ledger should still reproduce the hash. This
+  // ruleset's own hash leaves the body too, for the unhashed `provenance`:
+  // rules that agree on a survey's result now agree on its hash, and a
+  // verifier whose rules differ still learns which ones the emitter ran. No
   // counted value changes, but the body schema does, so v14 hashes are
   // incomparable with v13.
   rulesetVersion: 14,
@@ -229,10 +233,11 @@ export interface ArtifactRoleTally {
   readonly questions: readonly ArtifactQuestion[];
 }
 
-/** The hashed part: everything the result *is*, nothing about where from. */
+/**
+ * The hashed part: everything the result *is*, nothing about where from or
+ * under which rules.
+ */
 export interface TallyBody {
-  /** {@link rulesetHash} of the rules this tally was computed under. */
-  readonly rulesetHash: string;
   readonly network: string;
   readonly survey: {
     /** Defining tx hash (hex) + index within its definitions array. */
@@ -278,6 +283,13 @@ export interface TallyArtifact {
     }[];
   };
   readonly provenance: {
+    /**
+     * {@link rulesetHash} of the rules the emitter counted under. Outside the
+     * hash: a verifier counts under its own rules either way, and one whose
+     * rules differ learns which release to rerun to tell a rule change from
+     * a fault.
+     */
+    readonly rulesetHash: string;
     readonly source: {
       /** e.g. "koios". */
       readonly provider: string;
@@ -410,10 +422,8 @@ export function toArtifactResponders(
 }
 
 /**
- * The ruleset-pinned identity every tally body carries, independent of any
- * counts: the network, the survey coordinate, and whether answers were sealed.
- * `rulesetHash` is added by {@link baseTallyBody} so every variant commits to the
- * same rules.
+ * The identity every tally body carries, independent of any counts: the
+ * network, the survey coordinate, and whether answers were sealed.
  */
 export interface TallyBodyIdentity {
   readonly network: string;
@@ -422,11 +432,8 @@ export interface TallyBodyIdentity {
 }
 
 /** The base shape shared by every body variant (weighted, cancelled, empty). */
-function baseTallyBody(
-  id: TallyBodyIdentity,
-): Pick<TallyBody, "rulesetHash" | "network" | "survey" | "sealed"> {
+function baseTallyBody(id: TallyBodyIdentity): TallyBodyIdentity {
   return {
-    rulesetHash: rulesetHash(),
     network: id.network,
     survey: id.survey,
     sealed: id.sealed,

@@ -178,7 +178,6 @@ function emittedArtifact(): TallyArtifact {
     },
   ];
   const tally: TallyBody = {
-    rulesetHash: rulesetHash(),
     network: "preview",
     survey: { txId: SURVEY_TX, index: 0, endEpoch: END_EPOCH },
     sealed: false,
@@ -194,6 +193,7 @@ function emittedArtifact(): TallyArtifact {
     tally,
     info: { perRole: [{ role: Role.Stakeholder, total: "1000" }] },
     provenance: {
+      rulesetHash: rulesetHash(),
       source: { provider: "koios", baseUrl: "x" },
       fetchedAt: 1,
       byRole: [{ role: 3, endpoint: "account_stake_history" }],
@@ -357,7 +357,6 @@ describe("verifyArtifact", () => {
       votes: [],
     });
     const tally: TallyBody = {
-      rulesetHash: rulesetHash(),
       network: "preview",
       survey: { txId: SURVEY_TX, index: 0, endEpoch: END_EPOCH },
       sealed: false,
@@ -368,6 +367,7 @@ describe("verifyArtifact", () => {
       tally,
       info: { perRole: [] },
       provenance: {
+        rulesetHash: rulesetHash(),
         source: { provider: "koios", baseUrl: "x" },
         fetchedAt: 1,
         byRole: [],
@@ -407,7 +407,6 @@ describe("verifyArtifact", () => {
       },
     ];
     const tally: TallyBody = {
-      rulesetHash: rulesetHash(),
       network: "preview",
       survey: { txId: SURVEY_TX, index: 0, endEpoch: END_EPOCH },
       sealed: false,
@@ -423,6 +422,7 @@ describe("verifyArtifact", () => {
       tally,
       info: { perRole: [{ role: Role.Stakeholder, total: "1000" }] },
       provenance: {
+        rulesetHash: rulesetHash(),
         source: { provider: "koios", baseUrl: "x" },
         fetchedAt: 1,
         byRole: [{ role: 3, endpoint: "account_stake_history" }],
@@ -518,6 +518,22 @@ describe("verifyArtifact", () => {
     expect(result.indeterminate).toBe(false);
     expect(result.notes.join("\n")).toContain("link set diverged");
   });
+
+  it("MATCHes an artifact counted under other rules that give the same result, and names them", async () => {
+    const artifact = emittedArtifact();
+    const older: TallyArtifact = {
+      ...artifact,
+      provenance: { ...artifact.provenance, rulesetHash: "0b".repeat(32) },
+    };
+    const result = await verifyArtifact(inputs({ artifact: older }));
+    expect(result.match).toBe(true);
+    expect(result.diffs).toEqual([]);
+    expect(result.notes).toEqual([
+      expect.stringContaining(
+        `counted under ${"0b".repeat(32)}, this verifier counts under ${rulesetHash()}`,
+      ),
+    ]);
+  });
 });
 
 // --- Sealed surveys: reveal with an independently fetched beacon -------------
@@ -611,7 +627,6 @@ describe("verifyArtifact — sealed survey", () => {
   function sealedArtifact(): TallyArtifact {
     return {
       tally: {
-        rulesetHash: rulesetHash(),
         network: "preview",
         survey: { txId: SURVEY_TX, index: 0, endEpoch: END_EPOCH },
         sealed: true,
@@ -627,6 +642,7 @@ describe("verifyArtifact — sealed survey", () => {
       },
       info: { perRole: [{ role: Role.Stakeholder, total: "1000" }] },
       provenance: {
+        rulesetHash: rulesetHash(),
         source: { provider: "koios", baseUrl: "x" },
         fetchedAt: 1,
         byRole: [{ role: 3, endpoint: "account_stake_history" }],
@@ -751,7 +767,6 @@ describe("verifyArtifact — Keyholder role", () => {
   ];
   const khArtifact: TallyArtifact = {
     tally: {
-      rulesetHash: rulesetHash(),
       network: "preview",
       survey: { txId: SURVEY_TX, index: 0, endEpoch: END_EPOCH },
       sealed: false,
@@ -767,6 +782,7 @@ describe("verifyArtifact — Keyholder role", () => {
     },
     info: { perRole: [] }, // no on-chain electorate for keyholders
     provenance: {
+      rulesetHash: rulesetHash(),
       source: { provider: "koios", baseUrl: "x" },
       fetchedAt: 1,
       byRole: [{ role: 4, endpoint: "local-count" }],
@@ -880,7 +896,6 @@ describe("verifyArtifact — mechanism B (governance vote binding)", () => {
   ];
   const drepArtifact: TallyArtifact = {
     tally: {
-      rulesetHash: rulesetHash(),
       network: "preview",
       survey: { txId: SURVEY_TX, index: 0, endEpoch: END_EPOCH },
       sealed: false,
@@ -896,6 +911,7 @@ describe("verifyArtifact — mechanism B (governance vote binding)", () => {
     },
     info: { perRole: [{ role: Role.DRep, total: "10000" }] },
     provenance: {
+      rulesetHash: rulesetHash(),
       source: { provider: "koios", baseUrl: "x" },
       fetchedAt: 1,
       byRole: [{ role: 0, endpoint: "drep_voting_power_history" }],

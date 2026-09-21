@@ -62,6 +62,7 @@ import {
   decodeResponseRecord,
   decodeSurveyRecord,
   fromJsonSafe,
+  rulesetHash,
   toJsonSafe,
   type ElectorateTotals,
   type RoleTally,
@@ -789,6 +790,7 @@ async function withCancellations(
       tally: body,
       info: { perRole: [] },
       provenance: {
+        rulesetHash: rulesetHash(),
         source: { provider: "koios", baseUrl: config.app.koiosUrl },
         fetchedAt: nowSec,
         byRole: [],
@@ -1180,6 +1182,7 @@ function buildArtifact(
       }),
     },
     provenance: {
+      rulesetHash: rulesetHash(),
       source: { provider: "koios", baseUrl: config.app.koiosUrl },
       fetchedAt: nowSec,
       byRole: rolesPresent.map((role) => ({

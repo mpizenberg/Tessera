@@ -33,7 +33,6 @@ const RESPONSE: SurveyResponse = {
 
 function body(weight: string): TallyBody {
   return {
-    rulesetHash: rulesetHash(),
     network: "preview",
     survey: { txId: "aa".repeat(32), index: 0, endEpoch: 900 },
     sealed: false,
@@ -57,15 +56,15 @@ describe("rulesetHash", () => {
     expect(rulesetHash()).toBe(rulesetHash());
   });
 
-  // Golden value: the hash a verifier reproduces to confirm it counts under the
-  // SAME ruleset as the emitter. It is embedded in every historical artifact, so
+  // Golden value: every artifact's provenance records it, and an auditor maps
+  // it to the release that counts as the emitter did (the README's table), so
   // it MUST NOT drift silently. If this fails, a counting rule changed — decide
   // deliberately: a real semantic change (to RULESET_DESCRIPTOR, or to the
   // behavior of `validateResponse` / `dedupeResponses` it describes) requires
   // bumping `rulesetVersion` and updating this literal in the same commit; an
   // accidental change must be reverted. Never just paste the new value to make
-  // CI green — that re-labels old artifacts as MISMATCH instead of "different
-  // rules", which is the exact failure mode the hash exists to prevent.
+  // CI green: the bump is what gives the new rules their own row, so an
+  // auditor is never sent to rules the emitter did not run.
   it("matches its pinned golden hash (bump rulesetVersion on any change)", () => {
     expect(rulesetHash()).toBe(
       "7c78775e6c70d40d9e1daade043e42509ef1756fa5f7a359c9cf00bbf9efe004",
@@ -99,7 +98,6 @@ describe("artifactHash", () => {
       sealed: a.sealed,
       survey: { endEpoch: 900, index: 0, txId: "aa".repeat(32) },
       network: a.network,
-      rulesetHash: a.rulesetHash,
     } as TallyBody;
     expect(artifactHash(a)).toBe(artifactHash(b));
   });
@@ -189,11 +187,12 @@ describe("assembleTallyBody", () => {
 
   // Golden content address of a nontrivial two-role weighted body. Like the
   // ruleset golden above, this MUST NOT drift silently: a change here means the
-  // shared assembly OR the ruleset changed — update deliberately (and bump
-  // `rulesetVersion` if it was the ruleset), never paste to make CI green.
+  // shared assembly changed the body's bytes, which moves every artifact's
+  // hash — update deliberately (and bump `rulesetVersion`), never paste to make
+  // CI green.
   it("matches its pinned golden artifact hash", () => {
     expect(artifactHash(assembleTallyBody(DEF, ID, roles))).toBe(
-      "8d3aaa3b257da5f04be609d28d6db54e22976cc5220a1c166ebba0543db739a8",
+      "c97ffddb01799c1480fdbdfa97128854444dbc12257319829df4c489f10442a0",
     );
   });
 });

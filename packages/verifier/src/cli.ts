@@ -21,7 +21,8 @@
  * second's minikupo API resolving native scripts by hash. The tally is
  * rebuilt under the pinned ruleset and its content hash compared; the
  * electorate totals, outside the hash, are re-fetched too when the source is
- * Koios, and a difference is printed as a note. Exit codes: 0 MATCH,
+ * Koios, and a difference is printed as a note, as is a ruleset other than
+ * the pinned one named in the artifact's provenance. Exit codes: 0 MATCH,
  * 1 MISMATCH (differences printed), 2 usage / not finalized / survey not found
  * on-chain / fetch failure, 3 INDETERMINATE (a required input — e.g. a
  * governance-link anchor, or a missing tx_block_index — could not be resolved,

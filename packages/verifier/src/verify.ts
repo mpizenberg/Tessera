@@ -15,6 +15,9 @@
  * backend that omits or alters responses cannot reproduce the hash. The
  * electorate totals in the artifact's `info` are outside the hash: they are
  * compared when the caller supplies its own, and a difference is only a note.
+ * So is the ruleset its `provenance` names: an artifact counted under other
+ * rules matches wherever those rules give this survey the same result, and a
+ * different ruleset is a note either way.
  */
 
 import {
@@ -45,6 +48,7 @@ import {
   assembleTallyBody,
   cancelledTallyBody,
   emptyTallyBody,
+  rulesetHash,
   type ElectorateTotals,
   type RoleTally,
   type TallyArtifact,
@@ -434,11 +438,6 @@ async function totalNotes(
 /** Human-readable differences between the received and rebuilt tallies. */
 function diffTallies(received: TallyBody, rebuilt: TallyBody): string[] {
   const diffs: string[] = [];
-  if (received.rulesetHash !== rebuilt.rulesetHash) {
-    diffs.push(
-      `ruleset: received ${received.rulesetHash}, local ${rebuilt.rulesetHash} — different counting rules`,
-    );
-  }
   if (Boolean(received.cancelled) !== Boolean(rebuilt.cancelled)) {
     diffs.push(
       `cancellation: received says ${received.cancelled ? "cancelled" : "not cancelled"}, rebuilt says the opposite`,
@@ -488,6 +487,14 @@ export async function verifyArtifact(
     untalliable,
   } = await rebuildTally(inputs);
   const rebuiltHash = artifactHash(rebuilt);
+
+  const stated = inputs.artifact.provenance.rulesetHash;
+  if (stated !== rulesetHash()) {
+    notes.push(
+      `ruleset: the artifact was counted under ${stated}, this verifier counts under ${rulesetHash()} ` +
+        `(outside the hash; the cip-179 README's table names the release for each)`,
+    );
+  }
 
   // An untalliable survey has no reproducible tally: a served artifact is itself
   // a backend non-conformance (a conformant emitter writes none), so this is

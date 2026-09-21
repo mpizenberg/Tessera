@@ -151,7 +151,6 @@ describe("artifactResults", () => {
   };
   const artifact: TallyArtifact = {
     tally: {
-      rulesetHash: "rr",
       network: "preview",
       survey: { txId: "aa", index: 0, endEpoch: 500 },
       sealed: false,
@@ -210,6 +209,7 @@ describe("artifactResults", () => {
     },
     info: { perRole: [{ role: 3, total: "1000" }] },
     provenance: {
+      rulesetHash: "rr",
       source: { provider: "koios", baseUrl: "x" },
       fetchedAt: 1,
       byRole: [],

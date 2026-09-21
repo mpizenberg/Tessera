@@ -20,7 +20,7 @@
  *   read). Never hashed, so anything rendered from it must say so.
  *
  * Adding a visualization means adding to {@link QuestionDetail} and its
- * builder; it never means touching `TALLY-SPEC.md` or moving `rulesetHash`.
+ * builder; it never means touching `TALLY-SPEC.md` or changing `rulesetHash`.
  */
 
 import type {

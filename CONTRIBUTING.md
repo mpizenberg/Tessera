@@ -32,8 +32,9 @@ with its changelog line in the same PR.
   `cardano-tessera-respond` and `cardano-tessera-respond-react` — follow
   semver, with the pre-1.0 convention that a breaking change bumps the minor.
   `packages/cip179/CHANGELOG.md` records the codec, domain, tally and tlock
-  changes; a change to a counting rule also changes `rulesetHash()` and gets a
-  new row in that package's README table, never an edited one.
+  changes; a change to a counting rule also changes `rulesetHash()`, which
+  every artifact records, and gets a new row in that package's README table,
+  never an edited one.
   `packages/client/CHANGELOG.md` records the client's own changes; a contract
   change reaches it as a new `API_VERSION` and lands in both changelogs.
 

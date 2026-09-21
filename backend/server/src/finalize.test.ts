@@ -2003,7 +2003,7 @@ describe("re-emission after the totals left the hash (migration 0031)", () => {
       const stored = store.artifacts.get(key)!;
       expect(row(key).artifactHash).toBe(stored.artifactHash);
       const artifact = JSON.parse(stored.artifact) as TallyArtifact;
-      expect(artifact.tally.rulesetHash).toBe(rulesetHash());
+      expect(artifact.provenance.rulesetHash).toBe(rulesetHash());
       expect(artifactHash(artifact.tally)).toBe(stored.artifactHash);
       return artifact;
     };

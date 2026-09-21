@@ -13,9 +13,12 @@ The verifier takes one thing from the backend: the artifact under test. It
 reads everything the tally is built from out of a chain source you choose (the
 survey's definition, every response and its answers, the credential proofs,
 the weights) and runs the counting rules pinned in this repository
-(`backend/TALLY-SPEC.md`); an artifact built under other rules is a mismatch
-that says so. A backend that dropped, added or altered a
-response, or used a wrong weight, cannot reproduce the hash. Besides the
+(`backend/TALLY-SPEC.md`). An artifact counted under other rules still matches
+if those rules give the same result. When the rules differ, the verifier
+prints the artifact's `rulesetHash`, and the table in `packages/cip179`'s
+README gives the release that counts under it: rerunning a mismatch with that
+release tells a rule change from a fault. A backend that dropped, added or
+altered a response, or used a wrong weight, cannot reproduce the hash. Besides the
 artifact, the verifier asks the backend only which network it serves, and
 reads its response list only to report where it differs from the chain's.
 

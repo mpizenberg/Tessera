@@ -7,8 +7,8 @@
 > schedules the work, are in `ARCHITECTURE.md` §6.
 >
 > Everything here is load-bearing for the artifact hash. A change to any rule
-> changes `rulesetHash` and makes new artifacts incomparable with old ones, so
-> this document changes far more slowly than the system around it.
+> changes `rulesetHash`, and every result it changes gets a new hash, so this
+> document changes far more slowly than the system around it.
 
 ---
 
@@ -48,7 +48,7 @@ voting power, and their pool's stake).
 - This is the **deadline snapshot**, not response-time stake. A responder who
   held stake mid-survey but moved it before `end_epoch` is weighted at their
   `end_epoch` value (possibly 0). Deliberate, matching governance snapshot
-  semantics. This rule string is part of `ruleset_hash` (§5).
+  semantics. This rule string is part of `rulesetHash` (§3).
 - **Row-freeze timing.** Koios per-epoch history freezes epoch `E`'s row once
   epoch `E` _begins_ (the latest row, for the next epoch, is the live-evolving
   value until the boundary). Finalization runs **after `end_epoch` closes**, so
@@ -63,18 +63,22 @@ voting power, and their pool's stake).
 ## 3. Validation → the hashed counted set
 
 The hashed `tally` (§5) is a pure function of _which responses count_ and _their
-answer values_, so the validation ruleset **is** part of the hash preimage: a
-verifier reproduces the hash only by applying it byte-for-byte.
+answer values_, so the validation ruleset decides the hash: a verifier
+reproduces it only by applying rules that count this survey's responses the
+same way.
 
 **The ruleset is data, and the data is the authority.** `RULESET_DESCRIPTOR`
 (`packages/cip179/src/tally/artifact.ts`) is a canonical description of every
 counting rule — the covered roles, what one unit of weight measures for each, and
-one string per rule. `rulesetHash()` is its blake2b-256 and is embedded in every
-tally body, so two artifacts hashed under different rules can never compare
-equal. `rulesetVersion` is bumped on any semantic change and a golden test pins
-the resulting hash; the bump is required even when the change lives inside
-`validateResponse` or `dedupeResponses` rather than in the descriptor's text, and
-those files carry a matching RULESET-PINNED-BEHAVIOR note. **Read the rules
+one string per rule. `rulesetHash()` is its blake2b-256, recorded in every
+artifact's unhashed `provenance` (§5): rules that agree on a survey's result
+agree on its hash, so a rule change leaves the hash of every result it does
+not change, and a verifier whose rules differ learns which ones the emitter
+ran, to tell a rule change from a fault. `rulesetVersion` is bumped on any
+semantic change and a golden test pins the resulting hash; the bump is
+required even when the change lives inside `validateResponse` or
+`dedupeResponses` rather than in the descriptor's text, and those files carry
+a matching RULESET-PINNED-BEHAVIOR note. **Read the rules
 there.** Restating them here would be a second definition with nothing pinning
 it — what follows is only what the rule strings cannot say.
 
@@ -165,9 +169,9 @@ unhashed sections, `info` and `provenance`; `artifactHash = H(canonical(tally))`
 The split is structural (not a field denylist). Ledger-determined facts that any
 correct re-derivation must reproduce go in `tally`; ledger-derived values the
 result does not depend on go in `info`; whatever records who read the ledger,
-how, and when goes in `provenance`.
+how, when, and under which rules it counted goes in `provenance`.
 
-- **`tally` (hashed):** `rulesetHash`, `network`, `survey`, `sealed` (true iff
+- **`tally` (hashed):** `network`, `survey`, `sealed` (true iff
   the definition's submission mode is sealed — set on cancellation artifacts
   too), and per role: `role`, `responders` (`credential`, `weight`, and the
   counted answer's full on-chain coordinate `txHash` + `responseIndex` —
@@ -182,10 +186,15 @@ how, and when goes in `provenance`.
   reading any responder's weight differently (a vote delegation one keeps and
   another has cleared), and it only scales a display. The emitter still waits
   for every total before emitting: a total left out would stay out.
-- **`provenance` (not hashed):** `source`, snapshot `fetchedAt`, per-role
-  `endpoint`, and — for a sealed survey — `sealedReveal` (`chainHash`, `round`,
-  and the drand `beacon` used), unhashed because the definition already pins
-  `(chainHash, round)` and the beacon is independently fetchable + BLS-verifiable.
+- **`provenance` (not hashed):** `rulesetHash` (§3), `source`, snapshot
+  `fetchedAt`, per-role `endpoint`, and — for a sealed survey — `sealedReveal`
+  (`chainHash`, `round`, and the drand `beacon` used), unhashed because the
+  definition already pins `(chainHash, round)` and the beacon is independently
+  fetchable + BLS-verifiable. `rulesetHash` is unhashed because a verifier
+  counts under its own rules either way: an artifact counted under other rules
+  matches when they give the same result, and otherwise names the rules to
+  rerun. Unhashed, it no longer guards a body field's meaning, so a ruleset
+  that changes what a field means renames the field.
 
 Excluding `info` and `provenance` is what lets Koios- and node-produced
 artifacts share one hash when results are identical — keeping the Tier 1 → Tier
@@ -197,7 +206,6 @@ Shape (the typed definition is `TallyArtifact` in `cip-179/tally`'s
 ```jsonc
 {
   "tally": {
-    "rulesetHash": "…",
     "network": "mainnet",
     "survey": { "txId": "…", "index": 0, "endEpoch": 642 },
     "sealed": false,
@@ -220,6 +228,7 @@ Shape (the typed definition is `TallyArtifact` in `cip-179/tally`'s
     "perRole": [{ "role": 1, "total": "12345678901234" }],
   },
   "provenance": {
+    "rulesetHash": "…",
     "source": {
       "provider": "koios",
       "baseUrl": "https://api.koios.rest/api/v1",
@@ -231,7 +240,9 @@ Shape (the typed definition is `TallyArtifact` in `cip-179/tally`'s
 ```
 
 - **Immutable** once `end_epoch` is finalized; a later ruleset may re-emit a
-  survey's artifact, under a new hash. **Stored in the D1/SQLite
+  survey's artifact, under a new hash when the result or the tally's shape
+  changes. A hash names one document: re-emitting a survey whose hash is
+  unchanged keeps the stored artifact. **Stored in the D1/SQLite
   `tally_artifact` table** (deliberate deviation from the original R2 sketch:
   artifacts are small JSON documents, the store already exists on both
   runtimes, and one storage system beats two at PoC scale — R2 remains an easy

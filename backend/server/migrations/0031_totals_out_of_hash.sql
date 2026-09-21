@@ -1,6 +1,7 @@
 -- Ruleset 14 moves each role's electorate total out of the hashed tally into
--- the artifact's unhashed `info` section, and every stored artifact is
--- re-emitted in that shape. The artifacts go, the surveys they decided are
+-- the artifact's unhashed `info` section, and the ruleset hash into its
+-- unhashed `provenance`, and every stored artifact is re-emitted in that
+-- shape. The artifacts go, the surveys they decided are
 -- undecided again, and the finalization floor drops to 0 so the next pass
 -- walks closed history once. That pass re-emits from the frozen
 -- `weight_snapshot` and `epoch_totals` rows and the `sealed_reveal`

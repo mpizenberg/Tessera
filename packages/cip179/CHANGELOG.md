@@ -17,6 +17,11 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
   Ledger implementations read the totals slightly differently without
   reading any responder's weight differently, and the totals only scale
   turnout, so a verifier reading another ledger can now reproduce the hash.
+- **Breaking: the ruleset hash leaves the hashed tally.** `TallyBody.rulesetHash`
+  is removed, and `TallyArtifact.provenance` gains a required `rulesetHash`.
+  Rules that agree on a survey's result now agree on its hash, so a rule
+  change leaves the hash of every result it does not change, and a verifier
+  whose rules differ still learns which ones the emitter ran.
 - **Ruleset bump: `rulesetVersion` 13 → 14**, for the body schema; no counted
   value changes. `rulesetHash()` is
   `7c78775e6c70d40d9e1daade043e42509ef1756fa5f7a359c9cf00bbf9efe004`; the
