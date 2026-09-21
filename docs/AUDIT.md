@@ -105,9 +105,10 @@ pnpm --filter cardano-tessera-verifier verify -- \
   the backend's network.
 - `--token <token>`, or `KOIOS_TOKEN` in the environment: a Koios token, for
   higher rate limits.
-- `--since <ISO date>`: where the scan of label-17 transactions starts; a
-  survey defined earlier is not found. The default, 2026-06-01, is the
-  backend's default floor.
+
+The scan of label-17 transactions covers the survey's window only, from its
+defining transaction through the last slot of `end_epoch`: a record outside
+it does not count.
 
 ## Dolos from Mithril
 

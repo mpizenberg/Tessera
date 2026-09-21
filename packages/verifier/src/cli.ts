@@ -3,7 +3,7 @@
  *
  *   pnpm --filter cardano-tessera-verifier verify -- \
  *     --backend https://<backend> --survey <txHash>:<index> \
- *     [--koios <url>] [--token <koios token>] [--since <ISO date>] [--out <dir>]
+ *     [--koios <url>] [--token <koios token>] [--out <dir>]
  *
  *   pnpm --filter cardano-tessera-verifier verify -- \
  *     --backend https://<backend> --survey <txHash>:<index> \
@@ -69,9 +69,8 @@ function koiosSources(network: Network): Sources {
     network,
     koiosUrl: argOf("koios") ?? KOIOS_URL[network],
     koiosToken: argOf("token") ?? process.env["KOIOS_TOKEN"] ?? undefined,
-    sinceUnix: Math.floor(
-      Date.parse(argOf("since") ?? SINCE_ISO_DEFAULT) / 1000,
-    ),
+    // Unread: the scan starts at the survey's defining transaction.
+    sinceUnix: 0,
     secondsPerEpoch: SECONDS_PER_EPOCH[network],
   };
   const koios = new KoiosTallyInputs(config);
@@ -112,13 +111,10 @@ async function crossCheckBackendBundle(
   }
 }
 
-/** The label-17 scan's floor, the backend's default; an older survey is not found. */
-const SINCE_ISO_DEFAULT = "2026-06-01T00:00:00Z";
-
 function usage(): never {
   console.error(
     "usage: verify --backend <url> --survey <txHash>:<index> " +
-      "[--koios <url>] [--token <koios token>] [--since <ISO date>] [--out <dir>]\n" +
+      "[--koios <url>] [--token <koios token>] [--out <dir>]\n" +
       "       verify --backend <url> --survey <txHash>:<index> " +
       "--dolos-end <url> --dolos-after <url> [--minikupo <url>] [--out <dir>]",
   );
@@ -200,7 +196,8 @@ async function main(): Promise<void> {
   const preNotes: string[] = [];
   if (incomplete) {
     preNotes.push(
-      "independent Koios scan hit its paging cap and is INCOMPLETE — a " +
+      "independent Koios scan is INCOMPLETE (a page or metadata batch it " +
+        "could not read, or its paging cap) — a " +
         "MISMATCH may be a false alarm (missing responders); a MATCH is still sound",
     );
   }

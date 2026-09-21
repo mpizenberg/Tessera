@@ -6,6 +6,7 @@
 import {
   refKey,
   scriptCredentialHash,
+  voteDeadlineUnix,
   type GovLinkScan,
   type SurveyBundle,
   type TxProof,
@@ -27,32 +28,58 @@ export interface SurveyChain {
   fetchGovernanceLinks(endEpochs: readonly number[]): Promise<GovLinkScan>;
 }
 
-/** Koios as a {@link SurveyChain}: the label-17 scan since `config.sinceUnix`. */
+/**
+ * Koios as a {@link SurveyChain}. A survey's records all lie in its window,
+ * so the label-17 scan reads from its defining transaction's slot through the
+ * last slot of its `end_epoch`, and no further.
+ */
 export function koiosChain(config: AppConfig): SurveyChain {
   const source = new KoiosDataSource(config);
   return {
     async bundle(key) {
-      const records = await source.fetchAll();
-      const survey = records.surveys.find((s) => refKey(s.ref) === key);
-      if (!survey) {
+      const txHash = key.split(":")[0]!;
+      const at = (await source.txPositions([txHash])).get(txHash);
+      if (!at) {
         throw new Error(
-          `survey ${key} not found in an independent Koios scan since ` +
-            `${new Date(config.sinceUnix * 1000).toISOString()}. If it is older ` +
-            `than that floor, re-run with an earlier --since.`,
+          `survey ${key}: Koios gave no position for transaction ${txHash}`,
         );
       }
+      const tip = await source.chainTip();
+      const scanThrough = (toSlot: number) =>
+        source.fetchSegment({ from: { slot: at.slot }, toSlot }, tip);
+      const own = await scanThrough(at.slot);
+      const survey = own.records.surveys.find((s) => refKey(s.ref) === key);
+      if (!survey) {
+        throw new Error(
+          own.records.incomplete || own.unfetched.length > 0
+            ? `survey ${key}: Koios did not serve transaction ${txHash}'s metadata; retry`
+            : `survey ${key}: transaction ${txHash} defines no such survey`,
+        );
+      }
+      // The window closes at the vote deadline; post-Shelley slots are one
+      // second, so it lies as many slots from the tip as seconds.
+      const deadline = voteDeadlineUnix(
+        survey.definition.endEpoch,
+        tip,
+        config.secondsPerEpoch,
+      );
+      const lastSlot = tip.slot - (tip.time - deadline) - 1;
+      const scan = await scanThrough(lastSlot);
       return {
         bundle: {
           survey,
-          responses: records.responses.filter(
+          responses: scan.records.responses.filter(
             (r) => refKey(r.response.surveyRef) === key,
           ),
-          cancellations: records.cancellations.filter(
+          cancellations: scan.records.cancellations.filter(
             (c) => refKey(c.target) === key,
           ),
-          tip: await source.chainTip(),
+          tip,
         },
-        incomplete: records.incomplete ?? false,
+        incomplete:
+          scan.records.incomplete === true ||
+          scan.unfetched.length > 0 ||
+          !scan.exhausted,
       };
     },
     txBlockIndices: (txHashes) => source.txBlockIndices(txHashes),

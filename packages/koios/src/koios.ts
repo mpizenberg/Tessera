@@ -106,7 +106,7 @@ interface TxInfoRow {
 }
 
 /** Where a transaction sits in the chain: a slot holds at most one block. */
-interface TxPosition {
+export interface TxPosition {
   readonly slot: number;
   readonly index: number;
 }
@@ -1109,7 +1109,11 @@ export class KoiosDataSource implements DataSource {
     return new Map([...positions].map(([h, p]) => [h, p.index]));
   }
 
-  private async txPositions(
+  /**
+   * Where each transaction sits in the chain, via `/tx_info`. A failed batch
+   * leaves its hashes out of the map, as an unknown one does.
+   */
+  async txPositions(
     txHashes: readonly string[],
   ): Promise<Map<string, TxPosition>> {
     const byHash = new Map<string, TxPosition>();
