@@ -18,9 +18,10 @@ if those rules give the same result. When the rules differ, the verifier
 prints the artifact's `rulesetHash`, and the table in `packages/cip179`'s
 README gives the release that counts under it: rerunning a mismatch with that
 release tells a rule change from a fault. A backend that dropped, added or
-altered a response, or used a wrong weight, cannot reproduce the hash. Besides the
-artifact, the verifier asks the backend only which network it serves, and
-reads its response list only to report where it differs from the chain's.
+altered a response, or used a wrong weight, cannot reproduce the hash.
+Besides the artifact, the verifier asks the backend only which network it
+serves, and reads its response list only to report where it differs from the
+chain's.
 
 | Exit | Verdict       | Meaning                                                                          |
 | ---- | ------------- | -------------------------------------------------------------------------------- |
@@ -70,6 +71,19 @@ Every approach takes the backend's URL, such as
 and the survey's key, `<txHash>:<index>`: its defining transaction and its
 index there. The app's survey page address ends with the key, its colon
 written `%3A`.
+
+Every approach also takes `--out <dir>`, which keeps the two tallies a MATCH
+or MISMATCH compared: `rebuilt.json`, the rebuilt tally in exactly the bytes
+its hash is computed over, and `served.json`, the artifact exactly as the
+backend served it. The saved tally can be checked later with no clone and no
+network: its blake2b-256 is the rebuilt hash, which on a MATCH is the
+survey's `artifactHash`.
+
+```sh
+python3 -c 'import hashlib, sys; print(hashlib.blake2b(open(sys.argv[1], "rb").read(), digest_size=32).hexdigest())' rebuilt.json
+```
+
+GNU coreutils' `b2sum -l 256 rebuilt.json` prints the same hash.
 
 ## Koios
 
@@ -230,9 +244,9 @@ covers each.
 
 - **A Mithril ledger snapshot** (`packages/mithril`). The aggregator's hourly
   archive of the node's ledger state, signed by the aggregator operator's key
-  rather than by the stake multi-signature, and kept 28 days. The hourly schedule
-  will usually not match the exact end of `end_epoch`, so a result built from it
-  is an estimate.
+  rather than by the stake multi-signature, and kept 28 days. The hourly
+  schedule will usually not match the exact end of `end_epoch`, so a result
+  built from it is an estimate.
 - **One Dolos node instead of two.** The after node serves only each
   account's active stake for `E`, which the end node already holds in its
   state. A small Rust program reading it there would drop the after node.
