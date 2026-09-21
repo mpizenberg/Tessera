@@ -1,3 +1,3 @@
 export { DolosChain } from "./chain";
-export { Minibf } from "./minibf";
+export { Minibf } from "./minibfClient";
 export { DolosTallyInputs } from "./tallyInputs";

@@ -33,7 +33,7 @@ import {
   type GovProposal,
 } from "cardano-tessera-koios";
 
-import { lastBlockOf, type BlockRow, type Minibf } from "./minibf";
+import { lastBlockOf, type BlockRow, type Minibf } from "./minibfClient";
 
 /**
  * minibf refuses a list request whose `page × count` exceeds its

@@ -17,7 +17,7 @@ import { credentialKey } from "cip-179/domain";
 import { evolutionCodec } from "cip-179/evolution";
 import type { TallyInputSource, WeightInfo } from "cip-179/tally";
 
-import { lastBlockOf, type BlockRow, type Minibf } from "./minibf";
+import { lastBlockOf, type BlockRow, type Minibf } from "./minibfClient";
 
 interface DrepRow {
   amount: string;
