@@ -95,7 +95,12 @@ and the answers of `/api/responded` and `/api/responses`.
   re-refreshing a decided survey. A survey admitted as talliable can still
   finalize `untalliable`: the owner proof is fetched only at finalization, and
   a sealed survey on an unsupported drand chain is decided there too, so a
-  host holding a survey must handle the late verdict. Filter chip counts are
+  host holding a survey must handle the late verdict. No survey is decided
+  before the end of its `end_epoch` can no longer roll back, hours after the
+  epoch boundary: while the epoch before the tip's is short of that depth the
+  payload carries `settling`, `{ epoch, blocksLeft }`, the blocks still
+  missing, and a survey that ended in that epoch has no `finalState` yet.
+  Filter chip counts are
   global over the
   matching set, not per page. A cursor records the snapshot it was minted
   against; one from an older snapshot is still answered, with `resync` set so

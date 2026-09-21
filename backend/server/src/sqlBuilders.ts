@@ -212,18 +212,26 @@ const SURVEY_INDEX_RECONCILE = `
      OR survey_index.artifact_hash IS NOT excluded.artifact_hash`;
 
 const SNAPSHOT_META_UPSERT = `
-  INSERT INTO snapshot_meta (id, tip, incomplete, fetched_at, list_counts)
-  VALUES (1, ?, ?, ?, ?)
+  INSERT INTO snapshot_meta
+    (id, tip, incomplete, fetched_at, list_counts, settling)
+  VALUES (1, ?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
     tip = excluded.tip,
     incomplete = excluded.incomplete,
     fetched_at = excluded.fetched_at,
-    list_counts = excluded.list_counts`;
+    list_counts = excluded.list_counts,
+    settling = excluded.settling`;
 
 /** The envelope write — the end-of-run publish, never part of a reconcile. */
 export const snapshotMetaUpsertSql = (meta: SnapshotMeta): SqlQuery => ({
   sql: SNAPSHOT_META_UPSERT,
-  params: [meta.tip, meta.incomplete ? 1 : 0, meta.fetchedAt, meta.listCounts],
+  params: [
+    meta.tip,
+    meta.incomplete ? 1 : 0,
+    meta.fetchedAt,
+    meta.listCounts,
+    meta.settling,
+  ],
 });
 
 /**

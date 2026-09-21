@@ -69,6 +69,7 @@ import {
   type BackendHealth,
   type BackendLiveness,
   type RespondedPayload,
+  type Settling,
   type SurveyBundlePayload,
   type SurveyChangesPayload,
   type SurveyListPayload,
@@ -249,6 +250,9 @@ function surveyListBody(
         return state ? [[r.surveyKey, state]] : [];
       }),
     ),
+    ...(meta.settling !== null && {
+      settling: JSON.parse(meta.settling) as Settling,
+    }),
     ...(meta.incomplete && { incomplete: true }),
     fetchedAt: meta.fetchedAt,
   };

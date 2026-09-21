@@ -16,6 +16,7 @@ import {
   type TallyArtifact,
 } from "cip-179/tally";
 
+import type { Settling } from "./network.js";
 import type {
   BackendHealth,
   BackendLiveness,
@@ -89,6 +90,14 @@ const tip = (v: unknown, path: string): ChainTip => {
   };
 };
 
+const settling = (v: unknown, path: string): Settling => {
+  const o = obj(v, path);
+  return {
+    epoch: num(o.epoch, at(path, "epoch")),
+    blocksLeft: num(o.blocksLeft, at(path, "blocksLeft")),
+  };
+};
+
 const govLink = (v: unknown, path: string): GovLink => {
   const o = obj(v, path);
   return {
@@ -154,6 +163,7 @@ function surveyListBody(
   const finalStates = opt(o.finalState, "finalState", (x, p) =>
     dict(x, p, finalState),
   );
+  const settlingEpoch = opt(o.settling, "settling", settling);
   const incomplete = opt(o.incomplete, "incomplete", bool);
   const fetchedAt = opt(o.fetchedAt, "fetchedAt", num);
   return {
@@ -168,6 +178,7 @@ function surveyListBody(
     responseCounts: dict(o.responseCounts, "responseCounts", num),
     ...(countedByRole === undefined ? {} : { countedByRole }),
     ...(finalStates === undefined ? {} : { finalState: finalStates }),
+    ...(settlingEpoch === undefined ? {} : { settling: settlingEpoch }),
     ...(incomplete === undefined ? {} : { incomplete }),
     ...(fetchedAt === undefined ? {} : { fetchedAt }),
   };

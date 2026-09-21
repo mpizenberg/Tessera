@@ -84,6 +84,7 @@ async function seed(
     incomplete: false,
     fetchedAt,
     listCounts: JSON.stringify(snapshot.listCounts),
+    settling: null,
   });
 }
 
@@ -505,6 +506,19 @@ describe("GET /api/surveys selection: paging, filters, search, refs", () => {
       public: 1,
       mine: 0,
     });
+  });
+
+  it("says which epoch is settling, and nothing once it is final", async () => {
+    const store = await seededStore();
+    expect("settling" in (await getBody(appWith(store), ""))).toBe(false);
+
+    const meta = await store.snapshotMeta();
+    const settling = { epoch: 1345, blocksLeft: 120 };
+    await store.publishSnapshotMeta({
+      ...meta!,
+      settling: JSON.stringify(settling),
+    });
+    expect((await getBody(appWith(store), ""))["settling"]).toEqual(settling);
   });
 
   it("search ANDs terms and scopes counts to matches", async () => {

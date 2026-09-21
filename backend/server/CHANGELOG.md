@@ -17,11 +17,24 @@ Endpoints section changes in the same commit.
 
 ## [Unreleased]
 
-Still `2.0`: the artifact changes below move fields, which this changelog's
-rule makes a major, but no consumer besides Tessera's own app has read an
-ended survey's artifact, and the app deploys with the backend.
+`2.1`, for the added field. The artifact changes below move fields, which
+this changelog's rule makes a major, but no consumer besides Tessera's own app
+has read an ended survey's artifact, and the app deploys with the backend.
+
+### Added
+
+- Every selection of `GET /api/surveys` carries `settling`,
+  `{ epoch, blocksLeft }`, while the end of the epoch before the tip's is
+  short of `k` blocks deep (2160 on mainnet and preprod, 432 on preview), and
+  omits it otherwise.
 
 ### Changed
+
+- A survey is finalized once the end of its `end_epoch` is `k` blocks deep
+  and can no longer roll back, not 10 minutes after it: about 12 hours after
+  the epoch boundary on mainnet and preprod, 3.5 on preview, at most 36 and
+  7.2. Until then its `finalState` is absent, as it was for those 10 minutes,
+  and `settling.epoch` names its `end_epoch`.
 
 - The artifact routes serve ruleset 14 artifacts: each role's electorate
   total moves from `tally.perRole[].total` to a new required top-level

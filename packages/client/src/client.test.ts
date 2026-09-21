@@ -248,6 +248,22 @@ describe("surveys", () => {
     expect((err as Cip179DecodeError).path).toBe("tip.epoch");
   });
 
+  it("decodes the settling epoch, and leaves it absent when not served", async () => {
+    const settling = { epoch: 1345, blocksLeft: 120 };
+    const served = clientOver(() => ({ body: { ...listBody(), settling } }));
+    expect(ready(await served.client.surveys()).settling).toEqual(settling);
+
+    const bare = clientOver(() => ({ body: listBody() }));
+    expect("settling" in ready(await bare.client.surveys())).toBe(false);
+
+    const broken = clientOver(() => ({
+      body: { ...listBody(), settling: { epoch: 1345 } },
+    }));
+    await expect(broken.client.surveys()).rejects.toThrow(
+      /settling\.blocksLeft/,
+    );
+  });
+
   it("refuses an unknown final state rather than modelling it", async () => {
     const body = {
       ...listBody(),

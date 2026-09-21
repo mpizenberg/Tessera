@@ -172,7 +172,8 @@ const INCOMPLETE_VALIDATION_SURVEYS = `
   WHERE ${INCOMPLETE}`;
 
 const SNAPSHOT_META_SELECT = `
-  SELECT tip, incomplete, fetched_at AS fetchedAt, list_counts AS listCounts
+  SELECT tip, incomplete, fetched_at AS fetchedAt, list_counts AS listCounts,
+         settling
   FROM snapshot_meta WHERE id = 1`;
 
 /** Stored link slices inside the caller's end-epoch horizon. Binds: (minEndEpoch). */
@@ -838,6 +839,7 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
         incomplete: number;
         fetchedAt: number;
         listCounts: string | null;
+        settling: string | null;
       }>(query(SNAPSHOT_META_SELECT));
       if (!row) return null;
       return { ...row, incomplete: row.incomplete !== 0 };

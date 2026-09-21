@@ -632,6 +632,7 @@ export async function refreshSnapshot(
       incomplete,
       fetchedAt: startedAt,
       listCounts,
+      settling: final.settling ? JSON.stringify(final.settling) : null,
     });
 
     // Read before recording: recording drains the meter.

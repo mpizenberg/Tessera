@@ -804,6 +804,12 @@ export interface SnapshotMeta {
    * the live aggregate until the next refresh publishes.
    */
   readonly listCounts: string | null;
+  /**
+   * Wire JSON of the `Settling` the refresh read: the epoch before the tip's
+   * while its end is short of `k` blocks deep. Null once it is final, and when
+   * the depth could not be read.
+   */
+  readonly settling: string | null;
 }
 
 /**

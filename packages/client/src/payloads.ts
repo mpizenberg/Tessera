@@ -14,6 +14,8 @@ import type {
   SurveyRecord,
 } from "cip-179/domain";
 
+import type { Settling } from "./network.js";
+
 /**
  * The version of the HTTP contract these types describe, as `major.minor`,
  * reported by the backend on `GET /health` and `GET /api/health`. A minor
@@ -23,7 +25,7 @@ import type {
  * and refuses a mismatch; it may warn on a minor it does not know. Every
  * change is a line in the backend's `CHANGELOG.md`.
  */
-export const API_VERSION = "2.0";
+export const API_VERSION = "2.1";
 
 /** The major of a `major.minor` contract version — the part a consumer must match. */
 export const apiMajor = (version: string): string =>
@@ -183,6 +185,15 @@ export interface SurveyListPayload extends SnapshotStamp {
    * finalization.
    */
   readonly finalState?: Readonly<Record<string, SurveyFinalState>>;
+  /**
+   * Present while the end of the epoch before the tip's is short of `k` blocks
+   * deep. The backend finalizes a survey only once its end epoch is final, so
+   * a survey that ended in `settling.epoch` has no {@link finalState} yet and
+   * gets one about `blocksLeft` blocks from now. Absent once that epoch is
+   * final, when the depth could not be read, and from a source with no
+   * finalization.
+   */
+  readonly settling?: Settling;
   /** Mirrors `Cip179Records.incomplete` (`cip-179/domain`) for the scan behind this list. */
   readonly incomplete?: boolean;
   /**

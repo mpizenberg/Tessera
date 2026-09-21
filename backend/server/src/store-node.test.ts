@@ -217,6 +217,7 @@ describe("store-node migration of a pre-runner database", () => {
         incomplete: false,
         fetchedAt: 7,
         listCounts: null,
+        settling: null,
       });
       expect((await store.snapshotMeta())?.fetchedAt).toBe(7);
     } finally {
@@ -463,6 +464,7 @@ describe("store-node migration to per-response rows", () => {
         incomplete: false,
         fetchedAt: 100,
         listCounts: null,
+        settling: null,
       });
       expect((await store.snapshotMeta())?.fetchedAt).toBe(100);
     } finally {

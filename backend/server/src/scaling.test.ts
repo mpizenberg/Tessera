@@ -286,6 +286,7 @@ async function seed(store: BackendStore, profile: Profile): Promise<Corpus> {
     incomplete: false,
     fetchedAt: TIP.time,
     listCounts: JSON.stringify(snapshot.listCounts),
+    settling: null,
   };
   await store.reconcileSegment(
     ALL_SLOTS,
@@ -382,6 +383,7 @@ async function steadyRun(
     incomplete: false,
     fetchedAt: TIP.time + 1,
     listCounts: previous?.listCounts ?? null,
+    settling: null,
   };
   const integration = await integrateSegment(store, noKoios, {
     records: segment,

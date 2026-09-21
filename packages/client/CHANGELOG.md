@@ -11,10 +11,12 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
 
 ## [Unreleased]
 
-Still speaks contract `2.0`.
+Speaks contract `2.1`.
 
 ### Added
 
+- `SurveyListPayload.settling`, decoded by every list selection: the epoch
+  whose end is not final yet, so whose surveys have no `finalState` yet.
 - `SECURITY_PARAM` (`k` per network), `ACTIVE_SLOTS_COEFF` (`f`),
   `stabilityWindowSlots` (`3k / f`) and the `Settling` type: how far the end
   of the epoch before the tip's is from `k` blocks deep.

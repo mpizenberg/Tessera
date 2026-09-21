@@ -257,6 +257,7 @@ describe("snapshotTip", () => {
       incomplete: false,
       fetchedAt: 1_750_000_000,
       listCounts: null,
+      settling: null,
     };
 
     expect(snapshotTip(meta)).toEqual(tip);
