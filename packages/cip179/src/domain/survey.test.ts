@@ -169,7 +169,7 @@ describe("aggregateSurveys — cancellation tri-state", () => {
     expect(a.status).toBe("active");
   });
 
-  it("counts a cancellation in the definition's block whose order is unknown", () => {
+  it("counts a cancellation in the definition's block", () => {
     const a = agg1(
       recs(
         [survey(0, def(keyOwner(1), 10))],
@@ -247,33 +247,17 @@ describe("aggregateSurveys — sealedUnsupported", () => {
 });
 
 describe("inSurveyWindow", () => {
-  const unplaced = survey(0, def(keyOwner(1), 9));
-  const s = { ...unplaced, blockIndex: 3 };
-  const at = (slot: number, blockIndex?: number | null) => ({
-    slot,
-    epochNo: Math.floor(slot / 100),
-    ...(blockIndex === undefined ? {} : { blockIndex }),
-  });
+  const s = survey(0, def(keyOwner(1), 9));
+  const at = (slot: number) => ({ slot, epochNo: Math.floor(slot / 100) });
 
-  it("holds a record after the definition through end_epoch", () => {
-    expect(inSurveyWindow(s, at(701))).toBe(true);
+  it("holds a record from the definition's block through end_epoch", () => {
+    expect(inSurveyWindow(s, at(700))).toBe(true);
     expect(inSurveyWindow(s, at(999))).toBe(true);
   });
 
-  it("excludes a record before the definition or past end_epoch", () => {
+  it("excludes a record before the definition's block or past end_epoch", () => {
     expect(inSurveyWindow(s, at(699))).toBe(false);
     expect(inSurveyWindow(s, at(1000))).toBe(false);
-  });
-
-  it("orders a record in the definition's block by its position there", () => {
-    expect(inSurveyWindow(s, at(700, 4))).toBe(true);
-    expect(inSurveyWindow(s, at(700, 2))).toBe(false);
-  });
-
-  it("is unknown in the definition's block when a position is missing", () => {
-    expect(inSurveyWindow(s, at(700))).toBeNull();
-    expect(inSurveyWindow(s, at(700, null))).toBeNull();
-    expect(inSurveyWindow(unplaced, at(700, 4))).toBeNull();
   });
 });
 

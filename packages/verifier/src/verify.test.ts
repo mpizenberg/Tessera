@@ -522,8 +522,8 @@ describe("verifyArtifact", () => {
   });
 
   it("MISMATCHes an artifact that counted a response published before the survey", async () => {
-    // The emitted artifact counts R_A, but R_A landed before the defining
-    // transaction (slot 100), outside the window.
+    // The emitted artifact counts R_A, but R_A landed in a block before the
+    // defining one (slot 100), outside the window.
     const early = { ...R_A, slot: 50, epochNo: 494 };
     const result = await verifyArtifact(
       inputs({ bundle: { ...bundle, responses: [early, R_B] } }),
@@ -532,60 +532,14 @@ describe("verifyArtifact", () => {
     expect(result.indeterminate).toBe(false);
   });
 
-  it("is INDETERMINATE when a response shares the defining slot and the definition's tx_block_index is unresolved", async () => {
-    const sameSlot = { ...R_B, slot: 100 };
+  it("counts a response in the survey's own block", async () => {
+    // The definition is at slot 100 and its block index is not even read:
+    // order inside the defining block does not decide.
+    const sameBlock = { ...R_B, slot: 100 };
     const result = await verifyArtifact(
-      inputs({ bundle: { ...bundle, responses: [R_A, sameSlot] } }),
+      inputs({ bundle: { ...bundle, responses: [R_A, sameBlock] } }),
     );
-    expect(result.indeterminate).toBe(true);
-    expect(result.notes.join("\n")).toContain(
-      `the defining transaction ${SURVEY_TX} has no tx_block_index`,
-    );
-
-    // Once resolved, the response follows the definition and counts.
-    const placed = await verifyArtifact(
-      inputs({
-        bundle: { ...bundle, responses: [R_A, sameSlot] },
-        blockIndices: new Map([
-          [SURVEY_TX, 0],
-          [R_A.txHash, 0],
-          [R_B.txHash, 1],
-        ]),
-      }),
-    );
-    expect(placed.match).toBe(true);
-  });
-
-  it("is INDETERMINATE when an owner-proven cancellation shares the defining slot unordered", async () => {
-    const cancellation = {
-      txHash: "cc".repeat(32),
-      slot: 100,
-      epochNo: 495,
-      target: { txId: hexToBytes(SURVEY_TX), index: 0 },
-      proof: null,
-    };
-    const result = await verifyArtifact(
-      inputs({
-        bundle: { ...bundle, cancellations: [cancellation] },
-        proofs: new Map(proofs).set(cancellation.txHash, OWNER_PROOF),
-      }),
-    );
-    expect(result.indeterminate).toBe(true);
-
-    // Placed ahead of the definition, it is outside the window: no cancellation.
-    const ahead = await verifyArtifact(
-      inputs({
-        bundle: { ...bundle, cancellations: [cancellation] },
-        proofs: new Map(proofs).set(cancellation.txHash, OWNER_PROOF),
-        blockIndices: new Map([
-          [SURVEY_TX, 1],
-          [cancellation.txHash, 0],
-          [R_A.txHash, 0],
-          [R_B.txHash, 1],
-        ]),
-      }),
-    );
-    expect(ahead.match).toBe(true);
+    expect(result.match).toBe(true);
   });
 
   it("names a governance link-set divergence without forcing a mismatch (finding 6)", async () => {

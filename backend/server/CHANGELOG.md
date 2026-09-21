@@ -33,10 +33,10 @@ ended survey's artifact, and the app deploys with the backend.
   artifact until the next finalization pass, which stamps its row so a
   mirror following `changes` receives the new hash.
 - A survey's `countedByRole` and its ruleset 14 artifact no longer count a
-  response published before the survey's own transaction, nor do its
-  `cancelled` flag and artifact count a cancellation published before it.
-  Such a record can name the survey's hash before the survey lands; it is
-  outside the survey's window (see `cip-179`'s changelog).
+  response published in a block before the survey's, nor do its `cancelled`
+  flag and artifact count such a cancellation. Such a record can name the
+  survey's hash before the survey lands; it is outside the survey's window
+  (see `cip-179`'s changelog).
 - `GET /api/surveys/{txHash}/{index}/artifact` is served `no-cache` rather
   than `immutable`, since a survey's artifact changes when it is re-emitted;
   its `ETag` is still the artifact hash, so a revalidation is a bodiless

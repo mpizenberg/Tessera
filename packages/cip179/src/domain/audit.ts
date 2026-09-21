@@ -4,8 +4,8 @@
  * exclusions provable from on-chain data alone.
  *
  * Detectable client-side (no indexer):
- *  - before-survey  — the response's transaction precedes the survey's
- *                     defining one in chain order (outside the window).
+ *  - before-survey  — the response lands in a block before the one that
+ *                     published the survey (outside the window).
  *  - after-deadline — the record's `epochNo` (authoritative, from the chain
  *                     index) is past the survey's `end_epoch` (outside the
  *                     window).
@@ -116,12 +116,11 @@ export interface ResponseAudit {
  * unproven responses *before* dedup is essential: otherwise a malformed or
  * unproven later response could suppress a valid earlier one. The `counted`
  * set is exactly what should be tallied, so a UI showing both stays
- * consistent. A response whose order against the definition is unknown
- * counts, provisionally.
+ * consistent.
  */
 export function auditResponses(
   raw: readonly ResponseRecord[],
-  survey: Pick<SurveyRecord, "slot" | "blockIndex" | "definition">,
+  survey: Pick<SurveyRecord, "slot" | "definition">,
   verdicts?: ProofVerdicts,
 ): ResponseAudit {
   const { definition } = survey;
@@ -130,7 +129,7 @@ export function auditResponses(
   for (const r of raw) {
     if (r.epochNo > definition.endEpoch) {
       excludedRecords.push({ key: "after-deadline", record: r });
-    } else if (inSurveyWindow(survey, r) === false) {
+    } else if (!inSurveyWindow(survey, r)) {
       excludedRecords.push({ key: "before-survey", record: r });
     } else if (!responseIsCountable(definition, r.response)) {
       excludedRecords.push({ key: "invalid", record: r });

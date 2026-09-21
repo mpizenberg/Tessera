@@ -107,14 +107,13 @@ const roleCountsJson = (counts: Record<string, number>): string =>
  * its definition. Both are settled when a response row is projected and are
  * stored on it — only a refuted credential proof can still take a countable
  * response out of the count, and a definition that moves (rolled back and
- * re-landed) restates its rows. A response in the definition's block counts,
- * as the scan does not read positions in the block; finalization reads them.
+ * re-landed) restates its rows.
  */
 export const responseCountable = (
   survey: SurveyRecord,
   r: ResponseRecord,
 ): boolean =>
-  inSurveyWindow(survey, r) !== false &&
+  inSurveyWindow(survey, r) &&
   responseIsCountable(survey.definition, r.response);
 
 /**

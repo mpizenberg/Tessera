@@ -16,8 +16,7 @@
  *  - the artifact insert is INSERT-OR-IGNORE keyed by survey.
  *
  * A survey is emitted only when *complete*: every counted-candidate response
- * has a final proof verdict and block index (and so has the defining
- * transaction, when a record shares its slot), every counted responder has a
+ * has a final proof verdict and block index, every counted responder has a
  * weight row, and every covered role has its electorate total. Any of these
  * still pending postpones emission to a later cron (artifacts are immutable, so
  * emitting early would freeze a legitimately valid response out forever) — and
@@ -49,7 +48,6 @@ import {
   scriptCredentialHash,
   voteDeadlineUnix,
   type CancellationRecord,
-  type ChainPos,
   type ChainTip,
   type GovLink,
   type ResponseRecord,
@@ -92,14 +90,10 @@ import { responseIdentityKey, validationKey } from "./store";
 export type FinalizeStore = TallyStore &
   Pick<SnapshotStore, "unfinalizedClosedSurveyRows" | "responseRowsForSurveys">;
 
-/**
- * What finalization reads of a defining or cancelling transaction: its proof
- * evidence, and its position in its block, which orders it against a record
- * sharing its slot.
- */
+/** What finalization reads of a defining or cancelling transaction. */
 export type FinalizeSource = Pick<
   import("cardano-tessera-koios").KoiosDataSource,
-  "txProofs" | "txBlockIndices"
+  "txProofs"
 >;
 
 /**
@@ -671,8 +665,7 @@ export async function finalizeClosedSurveys(
  * One transaction can define several surveys, so proofs are fetched per tx and
  * fanned back out; a native-script owner may not attach its script to that tx
  * (mechanism A permits chain resolution), hence the same by-hash resolution the
- * cancellation path uses. The transaction's position in its block rides along:
- * it is where the survey's window opens.
+ * cancellation path uses.
  */
 async function withOwnerProofs(
   source: FinalizeSource,
@@ -686,24 +679,14 @@ async function withOwnerProofs(
     if (list) list.push(scriptHash);
     else neededScripts.set(s.txHash, [scriptHash]);
   }
-  const txHashes = [...new Set(candidates.map((s) => s.txHash))];
-  const [proofs, blockIndices] = await Promise.all([
-    source.txProofs(txHashes, neededScripts),
-    source.txBlockIndices(txHashes),
-  ]);
+  const proofs = await source.txProofs(
+    [...new Set(candidates.map((s) => s.txHash))],
+    neededScripts,
+  );
   return candidates.map((s) => ({
-    ...placed(s, blockIndices),
+    ...s,
     proof: proofs.get(s.txHash) ?? null,
   }));
-}
-
-/** `record` with its position in the block, when `blockIndices` holds it. */
-function placed<T extends ChainPos>(
-  record: T,
-  blockIndices: ReadonlyMap<string, number>,
-): T {
-  const blockIndex = blockIndices.get(record.txHash);
-  return blockIndex === undefined ? record : { ...record, blockIndex };
 }
 
 /**
@@ -717,9 +700,7 @@ function placed<T extends ChainPos>(
  * (unknown, distinct from a fetched tx that simply doesn't prove the owner), and
  * emitting on incomplete evidence risks freezing the wrong immutable artifact —
  * a genuinely-cancelled survey tallied in full, or a winner the verifier will
- * refetch to a different (earlier) one → false MISMATCH. The same holds for an
- * owner-proven cancellation in the defining transaction's slot whose order
- * against it is unknown: it may or may not be in the window.
+ * refetch to a different (earlier) one → false MISMATCH.
  *
  * Each emitted cancellation artifact is folded into `emitted` as a cancelled
  * final state.
@@ -754,14 +735,10 @@ async function withCancellations(
     else neededScripts.set(c.txHash, [scriptHash]);
   }
 
-  const txHashes = [...new Set(relevant.map((c) => c.txHash))];
-  const [proofs, blockIndices]: [
-    Map<string, TxProof | null>,
-    Map<string, number>,
-  ] = await Promise.all([
-    source.txProofs(txHashes, neededScripts),
-    source.txBlockIndices(txHashes),
-  ]);
+  const proofs: Map<string, TxProof | null> = await source.txProofs(
+    [...new Set(relevant.map((c) => c.txHash))],
+    neededScripts,
+  );
 
   const open: SurveyRecord[] = [];
   for (const s of candidates) {
@@ -769,36 +746,34 @@ async function withCancellations(
     // The winner is the earliest verified cancellation in the window, in the
     // ruleset's pinned chain order (slot, then tx hash), so walk in that order:
     // the first one whose proof verifies wins. But if we reach one whose proof
-    // is *unknown* (`null` — fetch/decode failed this refresh), or a verified
-    // one whose place in the window is unknown, before any settled winner, the
-    // winner isn't yet determined. Postpone rather than guess.
+    // is *unknown* (`null` — fetch/decode failed this refresh) before any
+    // verified one, the winner isn't yet determined: that unknown cancellation
+    // could itself be a valid earlier winner once its proof resolves. Postpone
+    // rather than guess.
     const inWindow = relevant
-      .filter((c) => refKey(c.target) === key)
-      .map((c) => placed(c, blockIndices))
-      .filter((c) => inSurveyWindow(s, c) !== false)
+      .filter((c) => refKey(c.target) === key && inSurveyWindow(s, c))
       .sort(byCancellationChainOrder);
 
     let winning: (typeof inWindow)[number] | undefined;
-    let unknown: string | undefined;
+    let unknown: (typeof inWindow)[number] | undefined;
     for (const c of inWindow) {
       const proof = proofs.get(c.txHash) ?? null;
       if (proof === null) {
-        unknown = `cancellation ${c.txHash} proof unknown (fetch/decode failed)`;
+        unknown = c;
         break;
       }
-      if (!mechanismAProven(s.definition.owner, proof)) continue;
-      if (inSurveyWindow(s, c) === null) {
-        unknown = `cancellation ${c.txHash} shares the defining transaction's slot, and a position in the block is unknown`;
+      if (mechanismAProven(s.definition.owner, proof)) {
+        winning = c;
         break;
       }
-      winning = c;
-      break;
     }
 
     if (unknown) {
       // Neither tallied nor cancelled this pass — retried next refresh, the same
       // "unknown ≠ negative" discipline `validate.ts` applies to response proofs.
-      console.warn(`finalize: ${key} postponed — ${unknown}`);
+      console.warn(
+        `finalize: ${key} postponed — cancellation ${unknown.txHash} proof unknown (fetch/decode failed)`,
+      );
       continue;
     }
     if (!winning) {
@@ -862,10 +837,8 @@ interface CountedRows {
  * block index is still pending forces the whole survey to postpone: a null
  * `proofOk` may yet resolve to counted, and a null `blockIndex` (the `-1`
  * dedup sentinel) can resolve a same-slot tie differently from the verifier's
- * real index. So does a proven row in the defining transaction's slot when
- * that transaction's block index is unknown: the row may precede it. Emitting
- * now would freeze any such divergence into the immutable, hash-committed
- * artifact, so we wait for a later cron instead (finding 1).
+ * real index. Emitting now would freeze either divergence into the immutable,
+ * hash-committed artifact, so we wait for a later cron instead (finding 1).
  */
 async function countedRows(
   store: TallyStore,
@@ -876,8 +849,7 @@ async function countedRows(
   const eligible: ValidatedResponseRow[] = [];
   let pending: string | null = null;
   for (const r of rows) {
-    const inWindow = inSurveyWindow(survey, r);
-    if (!r.wellFormed || inWindow === false) continue;
+    if (!r.wellFormed || !inSurveyWindow(survey, r)) continue;
     if (!COVERED_ROLES.includes(r.role)) {
       console.warn(
         `finalize: ${surveyKey} drops role-${r.role} response ${r.txHash} (SPO/CC weighting deferred)`,
@@ -893,10 +865,6 @@ async function countedRows(
     if (r.blockIndex === null) {
       // Proven but its dedup ordering isn't final yet — can't finalize yet.
       pending ??= `response ${r.txHash}:${r.responseIndex} has no block index yet`;
-      continue;
-    }
-    if (inWindow === null) {
-      pending ??= `the defining transaction ${survey.txHash} has no block index yet`;
       continue;
     }
     eligible.push(r);

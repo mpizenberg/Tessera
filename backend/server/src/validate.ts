@@ -2,10 +2,9 @@
  * Incremental response validation (TALLY-SPEC.md §3 rules 1–3), run at the
  * end of every snapshot refresh:
  *
- *  - rule 1 (window) needs no fetch of its own — the scan already carries each
- *    record's slot and authoritative `epoch_no`, and the block index fetched
- *    for rule 3 orders a record sharing its survey's slot, all stored raw so
- *    the window stays a pure comparison at tally time;
+ *  - rule 1 (window) needs no fetch — the scan already carries each record's
+ *    slot and authoritative `epoch_no`, stored raw so the window stays a pure
+ *    comparison at tally time;
  *  - rule 2 (credential proof) costs one `/tx_cbor` read per response tx;
  *  - rule 3's same-slot ordering input costs one `/tx_info` read per tx.
  *

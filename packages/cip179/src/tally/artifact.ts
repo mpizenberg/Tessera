@@ -125,13 +125,13 @@ export const RULESET_DESCRIPTOR = {
   // ruleset's own hash leaves the body too, for the unhashed `provenance`:
   // rules that agree on a survey's result now agree on its hash, and a
   // verifier whose rules differ still learns which ones the emitter ran. A
-  // survey's window also opens after its defining transaction, for responses
-  // and cancellations alike (the `window` and `cancellation` rules): a record
-  // names its survey by the defining transaction's hash, which is known before
-  // that transaction lands, so a response or cancellation could land first
-  // and was counted wherever a reader's scan happened to start. The body
-  // schema changes, and so can the counted set of a survey with such a
-  // record, so v14 hashes are incomparable with v13.
+  // survey's window also opens at the block that published its definition,
+  // for responses and cancellations alike (the `window` and `cancellation`
+  // rules): a record names its survey by the defining transaction's hash,
+  // which is known before that transaction lands, so a response or
+  // cancellation could land first and was counted wherever a reader's scan
+  // happened to start. The body schema changes, and so can the counted set of
+  // a survey with such a record, so v14 hashes are incomparable with v13.
   rulesetVersion: 14,
   cip179SpecVersion: 5,
   /** Roles artifacts cover: 0 DRep, 3 Stakeholder, 4 Keyholder (SPO/CC deferred). */
@@ -146,7 +146,7 @@ export const RULESET_DESCRIPTOR = {
     "integers: numeric bounds and step, numeric and rating values, points budgets and allocations, and integers inside custom answers are read at any size; a definition whose other integers exceed 2^53 is undecodable and its survey untalliable, and a response whose other integers exceed 2^53 is undecodable and not counted",
     "payload-items: a batched label-17 payload is decoded item by item — a malformed item is skipped and its well-formed siblings still count, each keeping its own position in the on-chain array as its survey_index / response_index; a payload whose envelope is unreadable (not a 2-element array, unknown tag, empty item array) contributes no records at all",
     "definition-validity: a survey is talliable only if its on-chain definition passes semantic validation with no error-severity problem — spec_version == 5, non-empty eligible_roles, at least one question, in-bounds question constraints (option/selection/ranked/rating/points/numeric bounds), for a sealed survey round > 0 and padding_size > 0, end_epoch > the epoch_no of the transaction that published the definition, and that same transaction proving the owner credential via mechanism A (its key hash in required_signers, or its native script witnessed and satisfied — a Plutus-script owner has no proof path and is never talliable); duplicate eligible_roles is a SHOULD (warning) and does not disqualify. An untalliable survey produces no artifact and is never counted; a backend that tallies one diverges from a conformant verifier (which independently reaches the same untalliable verdict)",
-    "window: a response or cancellation lies in its survey's window iff its transaction comes after the transaction that published the definition in chain order (slot, then tx_block_index) and its epoch_no <= the survey's end_epoch (inclusive); a response outside the window is not countable",
+    "window: a response or cancellation lies in its survey's window iff its transaction is in the block that published the definition or a later one (slot >= the definition's slot; order inside that block does not matter) and its epoch_no <= the survey's end_epoch (inclusive); a response outside the window is not countable",
     "validity: a response must pass full CIP-179 codec validation against the on-chain definition (eligible role, at least one answer, in-constraint answers including require_all rating coverage, required questions answered)",
     "credential-proof: mechanism A (credential key in required_signers, or its native script witnessed and satisfied) or mechanism B (a voting_procedures vote in the response transaction by the same credential on any governance action linked to the survey, with the voter tag's role equal to the claimed role — sufficient on its own); a response with no qualifying vote falls back to mechanism A (a non-qualifying vote never invalidates); mechanism B applies only to governance-linked surveys, and votability needs no separate check — the ledger only accepts votes on actions still in the proposal set",
     "dedup: at most one counted response per (survey, role, credential) — the latest in chain order wins, ordered by (slot, tx_block_index, response_index)",

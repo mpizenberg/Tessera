@@ -93,12 +93,14 @@ approximation only.
 
 Why four of the rules are shaped as they are:
 
-- **The window opens at the defining transaction**, for responses and
-  cancellations alike. A record names its survey by that transaction's hash,
-  which is known before it lands, so a record could otherwise precede its
-  survey and count wherever a reader happened to start scanning. Opening the
-  window there makes the counted set a function of the chain alone, and lets a
-  reader start at the defining transaction.
+- **The window opens at the block that published the definition**, for
+  responses and cancellations alike. A record names its survey by the defining
+  transaction's hash, which is known before it lands, so a record could
+  otherwise precede its survey and count wherever a reader happened to start
+  scanning. Opening the window there makes the counted set a function of the
+  chain alone, and lets a reader start at the defining block. Order inside
+  that block is the block producer's choice, not the sender's, so it does not
+  decide.
 - **Dedup runs over the tally-valid set**, not over all responses, so an invalid
   later response never suppresses a valid earlier one.
 - **Membership is checked only at `end_epoch`** (§1). Response-time membership

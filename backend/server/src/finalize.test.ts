@@ -268,13 +268,10 @@ function fakeInputs(
  * requires that, and finalization postpones a survey whose owner-proof it can't
  * read, so a case about anything else still needs it — while `entries` answers
  * for the rest (cancelling txs); an unlisted hash reads as a failed fetch.
- * `blockIndices` answers the positions in the block; an unlisted hash reads as
- * unknown, which only matters to a record sharing its survey's slot.
  */
 function proofsStub(
   entries: Record<string, TxProof | null> = {},
   definitionTxs: readonly string[] = [SURVEY_TX, SURVEY_TX2],
-  blockIndices: Record<string, number> = {},
 ) {
   return {
     txProofs: vi.fn(
@@ -284,14 +281,6 @@ function proofsStub(
             h,
             definitionTxs.includes(h) ? OWNER_PROOF : (entries[h] ?? null),
           ]),
-        ),
-    ),
-    txBlockIndices: vi.fn(
-      async (hashes: readonly string[]) =>
-        new Map(
-          hashes.flatMap((h) =>
-            blockIndices[h] === undefined ? [] : [[h, blockIndices[h]]],
-          ),
         ),
     ),
   };
@@ -1344,49 +1333,43 @@ describe("finalizeClosedSurveys", () => {
     });
   });
 
-  describe("the window opens after the defining transaction", () => {
-    // The survey is published at slot 100, third in its block.
-    const DEF_INDEX = 2;
+  describe("the window opens at the block that published the definition", () => {
+    // The survey is published at slot 100.
     const CRED_C = keyCred("c3".repeat(28));
     const before = {
       ...response("e1".repeat(32), CRED_A, 0, 50),
       epochNo: 494,
     };
-    const aheadInBlock = response("e2".repeat(32), CRED_C, 0, 100);
-    const behindInBlock = response("e3".repeat(32), CRED_B, 1, 100);
-    const rows = [
-      validatedRow(before),
-      validatedRow(aheadInBlock, { blockIndex: DEF_INDEX - 1 }),
-      validatedRow(behindInBlock, { blockIndex: DEF_INDEX + 1 }),
-    ];
+    const sameBlock = response("e2".repeat(32), CRED_C, 0, 100);
+    const after = response("e3".repeat(32), CRED_B, 1, 200);
     const weights = {
       [KEY_A]: { weight: 100n, registered: true },
       [KEY_B]: { weight: 7n, registered: true },
       [credentialKey(CRED_C)]: { weight: 3n, registered: true },
     };
-    const placedAt = { [SURVEY_TX]: DEF_INDEX };
     const signedBy = (keyHash: string): TxProof => ({
       requiredSigners: [keyHash],
       nativeScripts: [],
       votes: [],
     });
+    const emitted = (store: TestStore) =>
+      JSON.parse(store.artifacts.get(SURVEY_KEY)!.artifact) as TallyArtifact;
 
     /** The independent verifier's verdict on the emitted artifact. */
     const verified = (
       store: TestStore,
       responses: ResponseRecord[],
       cancellations: CancellationRecord[],
-      blockIndices: Record<string, number>,
       proofs: Record<string, TxProof>,
     ) =>
       verifyArtifact({
         bundle: { survey: survey(), responses, cancellations, tip: TIP },
-        artifact: JSON.parse(
-          store.artifacts.get(SURVEY_KEY)!.artifact,
-        ) as TallyArtifact,
+        artifact: emitted(store),
         network: "preview",
         linkedActionIds: [],
-        blockIndices: new Map(Object.entries(blockIndices)),
+        blockIndices: new Map(
+          [...responses, ...cancellations].map((r) => [r.txHash, 0]),
+        ),
         proofs: new Map<string, TxProof | null>([
           [SURVEY_TX, OWNER_PROOF],
           ...Object.entries(proofs),
@@ -1394,126 +1377,63 @@ describe("finalizeClosedSurveys", () => {
         weights: fakeInputs(weights),
       });
 
-    it("counts only responses after it, as the verifier does", async () => {
+    it("counts the responses from its block on, as the verifier does", async () => {
       const store = testStore();
-      await seed(store, rows);
-      const responses = [before, aheadInBlock, behindInBlock];
-      await finalizeRecords(
-        CONFIG,
+      const responses = [before, sameBlock, after];
+      await seed(
         store,
-        fakeInputs(weights),
-        proofsStub({}, undefined, placedAt),
-        records(survey(), responses),
-        TIP,
+        responses.map((r) => validatedRow(r)),
       );
-      const artifact = JSON.parse(
-        store.artifacts.get(SURVEY_KEY)!.artifact,
-      ) as TallyArtifact;
-      expect(
-        artifact.tally.perRole.flatMap((r) =>
-          r.responders.map((x) => x.txHash),
-        ),
-      ).toEqual([behindInBlock.txHash]);
-
-      const result = await verified(
-        store,
-        responses,
-        [],
-        {
-          ...placedAt,
-          [before.txHash]: 0,
-          [aheadInBlock.txHash]: DEF_INDEX - 1,
-          [behindInBlock.txHash]: DEF_INDEX + 1,
-        },
-        {
-          [before.txHash]: signedBy("a1".repeat(28)),
-          [aheadInBlock.txHash]: signedBy("c3".repeat(28)),
-          [behindInBlock.txHash]: signedBy("b2".repeat(28)),
-        },
-      );
-      expect(result.match).toBe(true);
-    });
-
-    it("ignores a cancellation before it, as the verifier does", async () => {
-      const store = testStore();
-      await seed(store, [validatedRow(rA)]);
-      const early = { ...cancellation("c1".repeat(32), 50), epochNo: 494 };
-      const aheadCx = cancellation("c2".repeat(32), 100);
-      await finalizeRecords(
-        CONFIG,
-        store,
-        fakeInputs(weights),
-        proofsStub(
-          { [early.txHash]: OWNER_PROOF, [aheadCx.txHash]: OWNER_PROOF },
-          undefined,
-          { ...placedAt, [aheadCx.txHash]: DEF_INDEX - 1 },
-        ),
-        records(survey(), [rA], [early, aheadCx]),
-        TIP,
-      );
-      const artifact = JSON.parse(
-        store.artifacts.get(SURVEY_KEY)!.artifact,
-      ) as TallyArtifact;
-      expect(artifact.tally.cancelled).toBeUndefined();
-
-      const result = await verified(
-        store,
-        [rA],
-        [early, aheadCx],
-        { ...placedAt, [rA.txHash]: 0, [aheadCx.txHash]: DEF_INDEX - 1 },
-        {
-          [rA.txHash]: signedBy("a1".repeat(28)),
-          [early.txHash]: OWNER_PROOF,
-          [aheadCx.txHash]: OWNER_PROOF,
-        },
-      );
-      expect(result.match).toBe(true);
-    });
-
-    it("postpones while a record in its slot cannot be ordered against it", async () => {
-      // The defining transaction's position is unread: a proven response and
-      // an owner-proven cancellation in its slot may each precede it.
-      const store = testStore();
-      await seed(store, [validatedRow(behindInBlock, { blockIndex: 3 })]);
       await finalizeRecords(
         CONFIG,
         store,
         fakeInputs(weights),
         noProofs,
-        records(survey(), [behindInBlock]),
+        records(survey(), responses),
         TIP,
       );
-      expect(store.artifacts.size).toBe(0);
+      expect(
+        emitted(store)
+          .tally.perRole.flatMap((r) => r.responders.map((x) => x.txHash))
+          .sort(),
+      ).toEqual([sameBlock.txHash, after.txHash].sort());
 
-      const sameSlot = cancellation("c2".repeat(32), 100);
-      await finalizeRecords(
-        CONFIG,
-        store,
-        fakeInputs(weights),
-        proofsStub({ [sameSlot.txHash]: OWNER_PROOF }),
-        records(survey(), [behindInBlock], [sameSlot]),
-        TIP,
-      );
-      expect(store.artifacts.size).toBe(0);
-
-      // Once read, both settle: the cancellation follows the definition.
-      await finalizeRecords(
-        CONFIG,
-        store,
-        fakeInputs(weights),
-        proofsStub({ [sameSlot.txHash]: OWNER_PROOF }, undefined, {
-          ...placedAt,
-          [sameSlot.txHash]: DEF_INDEX + 1,
-        }),
-        records(survey(), [behindInBlock], [sameSlot]),
-        TIP,
-      );
-      const artifact = JSON.parse(
-        store.artifacts.get(SURVEY_KEY)!.artifact,
-      ) as TallyArtifact;
-      expect(artifact.tally.cancelled).toMatchObject({
-        txHash: sameSlot.txHash,
+      const result = await verified(store, responses, [], {
+        [before.txHash]: signedBy("a1".repeat(28)),
+        [sameBlock.txHash]: signedBy("c3".repeat(28)),
+        [after.txHash]: signedBy("b2".repeat(28)),
       });
+      expect(result.match).toBe(true);
+    });
+
+    it("ignores a cancellation before its block and counts one in it, as the verifier does", async () => {
+      // In chain order the earlier cancellation would win; outside the
+      // window, it never competes.
+      const store = testStore();
+      await seed(store, [validatedRow(rA)]);
+      const early = { ...cancellation("c1".repeat(32), 50), epochNo: 494 };
+      const inBlock = cancellation("c2".repeat(32), 100);
+      await finalizeRecords(
+        CONFIG,
+        store,
+        fakeInputs(weights),
+        proofsStub({
+          [early.txHash]: OWNER_PROOF,
+          [inBlock.txHash]: OWNER_PROOF,
+        }),
+        records(survey(), [rA], [early, inBlock]),
+        TIP,
+      );
+      expect(emitted(store).tally.cancelled).toMatchObject({
+        txHash: inBlock.txHash,
+      });
+
+      const result = await verified(store, [rA], [early, inBlock], {
+        [rA.txHash]: signedBy("a1".repeat(28)),
+        [early.txHash]: OWNER_PROOF,
+        [inBlock.txHash]: OWNER_PROOF,
+      });
+      expect(result.match).toBe(true);
     });
   });
 

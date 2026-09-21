@@ -67,7 +67,7 @@ describe("rulesetHash", () => {
   // auditor is never sent to rules the emitter did not run.
   it("matches its pinned golden hash (bump rulesetVersion on any change)", () => {
     expect(rulesetHash()).toBe(
-      "cf5008f305b1a92dc3dedd96d2e9c0abc85e314efe49d67ab2b973bc16624858",
+      "e0f0736a2f1ae150c248c11095abe7de590d3e190983a595bdf0300a64be0d8f",
     );
   });
 

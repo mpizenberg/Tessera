@@ -50,8 +50,8 @@ const DEF: SurveyDefinition = {
   ],
 };
 
-/** DEF as published at slot 850 (epoch 8), third in its block. */
-const SURVEY = { slot: 850, blockIndex: 2, definition: DEF };
+/** DEF as published at slot 850 (epoch 8). */
+const SURVEY = { slot: 850, definition: DEF };
 
 const sc = (optionIndex: number): AnswerItem => ({
   type: "singleChoice",
@@ -226,19 +226,17 @@ describe("auditResponses", () => {
     ).toEqual(["before-survey:early"]);
   });
 
-  it("orders a response in the definition's block by its position there", () => {
+  it("counts a response in the definition's block, wherever it sits there", () => {
     const raw = [
-      { ...rec("ahead", 850, 0, 1), blockIndex: 1 },
+      { ...rec("ahead", 850, 0, 1), blockIndex: 0 },
       { ...rec("behind", 850, 0, 2), blockIndex: 3 },
     ];
     const audit = auditResponses(raw, SURVEY);
-    expect(audit.counted.map((r) => r.txHash)).toEqual(["behind"]);
-    expect(audit.excludedRecords.map((e) => e.key)).toEqual(["before-survey"]);
-  });
-
-  it("counts a response in the definition's block whose position is unknown", () => {
-    const audit = auditResponses([rec("same", 850, 0, 1)], SURVEY);
-    expect(audit.counted.map((r) => r.txHash)).toEqual(["same"]);
+    expect(audit.counted.map((r) => r.txHash).sort()).toEqual([
+      "ahead",
+      "behind",
+    ]);
+    expect(audit.excludedRecords).toEqual([]);
   });
 
   it("a late response never suppresses an on-time one for the same identity", () => {

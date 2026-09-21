@@ -139,15 +139,11 @@ export function voteDeadlineUnix(
 
 /**
  * The `window` rule: a response or cancellation counts against its survey only
- * if its transaction comes after the defining one in chain order — by slot,
- * then by position in the block — and lands in an epoch no later than
- * `end_epoch`. The defining transaction's hash is known before it is
- * submitted, so a record can name a survey that has not landed yet; it is
- * outside the window.
- *
- * `null` when the two transactions share a slot and either position in the
- * block is unknown: a live view counts such a record provisionally, and
- * anything frozen from it (an artifact) waits until the position is read.
+ * if it lands in the block that published the definition or a later one, in
+ * an epoch no later than `end_epoch`. The defining transaction's hash is known
+ * before it is submitted, so a record can name a survey that has not landed
+ * yet; it is outside the window. Order inside the defining block is the block
+ * producer's choice, not the sender's, so it does not decide.
  *
  * RULESET-PINNED BEHAVIOR: this is the `window` rule of `RULESET_DESCRIPTOR`
  * (see `artifact.ts`), and the window its `cancellation` rule refers to. The
@@ -156,17 +152,12 @@ export function voteDeadlineUnix(
  * the golden hash in `artifact.test.ts` in the same commit.
  */
 export function inSurveyWindow(
-  survey: Pick<SurveyRecord, "slot" | "blockIndex" | "definition">,
-  record: {
-    readonly slot: number;
-    readonly epochNo: number;
-    readonly blockIndex?: number | null;
-  },
-): boolean | null {
-  if (record.epochNo > survey.definition.endEpoch) return false;
-  if (record.slot !== survey.slot) return record.slot > survey.slot;
-  if (record.blockIndex == null || survey.blockIndex == null) return null;
-  return record.blockIndex > survey.blockIndex;
+  survey: Pick<SurveyRecord, "slot" | "definition">,
+  record: { readonly slot: number; readonly epochNo: number },
+): boolean {
+  return (
+    record.slot >= survey.slot && record.epochNo <= survey.definition.endEpoch
+  );
 }
 
 /** Verified (owner-proven) vs. merely claimed (unverified) cancellation. */
@@ -174,9 +165,8 @@ export type CancellationState = "verified" | "claimed";
 
 /**
  * Per-survey cancellation state, keyed by survey ref. A cancellation counts
- * only inside the survey's window ({@link inSurveyWindow}); one provably
- * outside it is invalid and ignored, and one whose order against the
- * definition is unknown counts until it is read.
+ * only inside the survey's window ({@link inSurveyWindow}); one outside it is
+ * invalid and ignored.
  *
  * `verified` (owner-proven, CIP-179 mechanism A) is only ever assigned while
  * the survey is **still open** (tip at/before `end_epoch`): the scan fetches
@@ -202,7 +192,7 @@ export function cancellationStates(
     const key = refKey(c.target);
     const survey = surveyByKey.get(key);
     if (!survey) continue; // references an unknown survey — ignore
-    if (inSurveyWindow(survey, c) === false) continue;
+    if (!inSurveyWindow(survey, c)) continue;
     const def = survey.definition;
     // Verification is attempted only while the survey is open; a closed
     // survey's cancellation ships with `proof: null` (see above), so it can

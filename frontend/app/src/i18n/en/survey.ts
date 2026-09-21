@@ -109,7 +109,7 @@ const survey = {
 
   // Exclusion meta (exclusionMeta)
   exclBeforeSurveyLabel: "Submitted before the survey",
-  exclBeforeSurveyHint: "recorded before the survey's own transaction",
+  exclBeforeSurveyHint: "recorded in a block before the survey's own",
   exclAfterDeadlineLabel: "Submitted after the deadline",
   /** {epoch} is the raw end epoch, shown untranslated. */
   exclAfterDeadlineHint: "recorded past end_epoch {epoch}",

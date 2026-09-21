@@ -436,15 +436,11 @@ const mechanismAProof = (v: unknown, path: string): MechanismAProof => {
   };
 };
 
-const chainPos = (o: Obj, path: string): ChainPos => {
-  const blockIndex = opt(o.blockIndex, at(path, "blockIndex"), int);
-  return {
-    txHash: str(o.txHash, at(path, "txHash")),
-    slot: int(o.slot, at(path, "slot")),
-    epochNo: int(o.epochNo, at(path, "epochNo")),
-    ...(blockIndex === undefined ? {} : { blockIndex }),
-  };
-};
+const chainPos = (o: Obj, path: string): ChainPos => ({
+  txHash: str(o.txHash, at(path, "txHash")),
+  slot: int(o.slot, at(path, "slot")),
+  epochNo: int(o.epochNo, at(path, "epochNo")),
+});
 
 /**
  * A wire-form {@link SurveyRecord} (the `toJsonSafe` image, parsed from JSON)
@@ -467,9 +463,11 @@ export function decodeSurveyRecord(json: unknown): SurveyRecord {
 /** A wire-form {@link ResponseRecord} back to the record; see {@link decodeSurveyRecord}. */
 export function decodeResponseRecord(json: unknown): ResponseRecord {
   const o = obj(fromJsonSafe(json), "");
+  const blockIndex = opt(o.blockIndex, "blockIndex", int);
   return {
     ...chainPos(o, ""),
     responseIndex: int(o.responseIndex, "responseIndex"),
+    ...(blockIndex === undefined ? {} : { blockIndex }),
     response: response(o.response, "response"),
   };
 }

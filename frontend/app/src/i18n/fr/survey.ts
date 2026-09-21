@@ -101,7 +101,7 @@ const survey: Messages = {
 
   // Exclusion meta
   exclBeforeSurveyLabel: "Soumise avant le sondage",
-  exclBeforeSurveyHint: "enregistrée avant la transaction du sondage",
+  exclBeforeSurveyHint: "enregistrée dans un bloc antérieur à celui du sondage",
   exclAfterDeadlineLabel: "Soumise après la date limite",
   exclAfterDeadlineHint: "enregistrée après end_epoch {epoch}",
   exclInvalidLabel: "Invalide pour ce sondage",

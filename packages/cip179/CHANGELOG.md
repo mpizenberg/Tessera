@@ -11,24 +11,19 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
 ### Added
 
 - `inSurveyWindow(survey, record)`, in `cip-179/domain`: whether a response
-  or cancellation lies in its survey's window — after the defining
-  transaction in chain order (slot, then position in the block) and in an
-  epoch no later than `end_epoch`. It returns `null` when the two share a
-  slot and a position in the block is unknown.
+  or cancellation lies in its survey's window — in the block that published
+  the definition or a later one, and in an epoch no later than `end_epoch`.
 
 ### Changed
 
 - **Breaking: `auditResponses` takes the survey's record**
-  (`Pick<SurveyRecord, "slot" | "blockIndex" | "definition">`) instead of
-  its definition, and excludes a response published before the survey's
-  own transaction under a new `ExclusionKey`, `"before-survey"`. A
-  response's transaction can name the survey's hash before the survey
-  lands. One whose order against the definition is unknown stays counted.
+  (`Pick<SurveyRecord, "slot" | "definition">`) instead of its definition,
+  and excludes a response published in a block before the survey's under a
+  new `ExclusionKey`, `"before-survey"`. A response's transaction can name
+  the survey's hash before the survey lands.
 - `cancellationStates`, and so the aggregates' `cancelled` and
-  `cancellationClaimed`, ignore a cancellation published before its survey.
-- `blockIndex` moves from `ResponseRecord` to `ChainPos`, so a survey or a
-  cancellation record can carry its position in the block too; the record
-  decoders read it on all three.
+  `cancellationClaimed`, ignore a cancellation published in a block before
+  its survey's.
 - **Breaking: the electorate totals leave the hashed tally.**
   `ArtifactRoleTally.total` and `RoleTally.total` are removed, and
   `TallyArtifact` gains a required unhashed section, `info`, whose `perRole`
@@ -42,11 +37,11 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
   change leaves the hash of every result it does not change, and a verifier
   whose rules differ still learns which ones the emitter ran.
 - **Ruleset bump: `rulesetVersion` 13 → 14**, for the body schema and the
-  window. The `window` rule now opens a survey's window after its defining
-  transaction in chain order, and the `cancellation` rule counts only a
+  window. The `window` rule now opens a survey's window at the block that
+  published its definition, and the `cancellation` rule counts only a
   cancellation in that window, so the counted set changes for a survey with
-  a response or cancellation published before it. `rulesetHash()` is
-  `cf5008f305b1a92dc3dedd96d2e9c0abc85e314efe49d67ab2b973bc16624858`; the
+  a response or cancellation published in an earlier block. `rulesetHash()` is
+  `e0f0736a2f1ae150c248c11095abe7de590d3e190983a595bdf0300a64be0d8f`; the
   README's table gains its row with the release.
 - **Breaking: `TallyInputSource` loses `stakeholderTotal` and `drepTotal`**,
   which move unchanged to a new `ElectorateTotals` interface. A tally input

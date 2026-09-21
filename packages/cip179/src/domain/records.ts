@@ -26,15 +26,6 @@ export interface ChainPos {
    * the tip-relative `epochOfSlot` estimate.
    */
   readonly epochNo: number;
-  /**
-   * Position of the transaction within its block (`tx_block_index`), when the
-   * source has enriched the record with it (one `/tx_info` round-trip — the
-   * serving tier does for responses, the browser's direct Koios scan doesn't).
-   * Orders two records sharing a slot: same-slot responses in
-   * {@link import("./dedupe").laterInChain}, and a record against its
-   * survey's definition in {@link import("./survey").inSurveyWindow}.
-   */
-  readonly blockIndex?: number;
 }
 
 /** A survey definition as published on-chain. */
@@ -57,6 +48,13 @@ export interface SurveyRecord extends ChainPos {
 export interface ResponseRecord extends ChainPos {
   /** Position within the carrying payload's `responses` array. */
   readonly responseIndex: number;
+  /**
+   * Position of the transaction within its block (`tx_block_index`), when the
+   * source has enriched the record with it (one `/tx_info` round-trip — the
+   * serving tier does, the browser's direct Koios scan doesn't). Same-slot
+   * responses order by it in {@link import("./dedupe").laterInChain}.
+   */
+  readonly blockIndex?: number;
   readonly response: SurveyResponse;
 }
 
