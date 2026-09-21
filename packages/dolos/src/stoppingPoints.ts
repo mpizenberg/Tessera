@@ -6,36 +6,33 @@
  * highest, so each `--download-end` is one past the last file to replay.
  */
 
-import type { Network } from "cardano-tessera-client";
+import {
+  SECONDS_PER_EPOCH,
+  SECURITY_PARAM,
+  type Network,
+} from "cardano-tessera-client";
 
-interface Calendar {
-  /** The security parameter `k`, from the Shelley genesis. */
-  readonly securityParam: number;
-  /** Slots per Shelley epoch, from the Shelley genesis. */
-  readonly epochLength: number;
-  /** The first Shelley epoch, reached by protocol update, so in no genesis. */
-  readonly shelleyEpoch: number;
-}
-
-const CALENDARS: Record<Network, Calendar> = {
-  mainnet: { securityParam: 2160, epochLength: 432000, shelleyEpoch: 208 },
-  preprod: { securityParam: 2160, epochLength: 432000, shelleyEpoch: 4 },
-  preview: { securityParam: 432, epochLength: 86400, shelleyEpoch: 0 },
+/** The first Shelley epoch, reached by protocol update, so in no genesis. */
+const SHELLEY_EPOCH: Record<Network, number> = {
+  mainnet: 208,
+  preprod: 4,
+  preview: 0,
 };
 
 /** The immutable file holding `slot`. */
 export function fileOf(network: Network, slot: number): number {
-  return Math.floor(slot / (10 * CALENDARS[network].securityParam));
+  return Math.floor(slot / (10 * SECURITY_PARAM[network]));
 }
 
-/** The first slot of a Shelley-era `epoch`. */
+/** The first slot of a Shelley-era `epoch`; a Shelley slot is one second. */
 export function firstSlot(network: Network, epoch: number): number {
-  const { securityParam, epochLength, shelleyEpoch } = CALENDARS[network];
+  const shelleyEpoch = SHELLEY_EPOCH[network];
   if (epoch < shelleyEpoch) {
     throw new Error(`epoch ${epoch} is before Shelley on ${network}`);
   }
   return (
-    shelleyEpoch * 10 * securityParam + (epoch - shelleyEpoch) * epochLength
+    shelleyEpoch * 10 * SECURITY_PARAM[network] +
+    (epoch - shelleyEpoch) * SECONDS_PER_EPOCH[network]
   );
 }
 

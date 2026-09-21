@@ -25,6 +25,40 @@ export const SECONDS_PER_EPOCH: Record<Network, number> = {
 };
 
 /**
+ * The security parameter `k`, from the Shelley genesis: a block can no longer
+ * roll back once `k` later blocks exist.
+ */
+export const SECURITY_PARAM: Record<Network, number> = {
+  mainnet: 2160,
+  preprod: 2160,
+  preview: 432,
+};
+
+/**
+ * The active slot coefficient `f`, from the Shelley genesis: the share of
+ * slots expected to hold a block, so a block every `1 / f` seconds.
+ */
+export const ACTIVE_SLOTS_COEFF = 0.05;
+
+/**
+ * Slots within which the chain grows by `k` blocks, `3k / f`: the protocol's
+ * bound on how long a block takes to become final when blocks are sparse.
+ */
+export function stabilityWindowSlots(network: Network): number {
+  return Math.round((3 * SECURITY_PARAM[network]) / ACTIVE_SLOTS_COEFF);
+}
+
+/**
+ * How far the end of `epoch` is from final: `blocksLeft` more blocks make it
+ * `k` deep. Only the epoch before the tip's can be short of that, since an
+ * epoch is longer than the stability window.
+ */
+export interface Settling {
+  readonly epoch: number;
+  readonly blocksLeft: number;
+}
+
+/**
  * Unix time of each network's epoch 0 — the genesis `systemStart`. Byron
  * epochs on mainnet and preprod were 21600 slots of 20 s, the same 432000 s as
  * a Shelley epoch, and preview has no Byron era, so one anchor and one length

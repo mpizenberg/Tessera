@@ -40,7 +40,12 @@ import type {
   SurveyRecord,
   TxProof,
 } from "cip-179/domain";
-import type { SurveyListPayload } from "cardano-tessera-client";
+import {
+  SECURITY_PARAM,
+  stabilityWindowSlots,
+  type Settling,
+  type SurveyListPayload,
+} from "cardano-tessera-client";
 import type { AppConfig, DataSource } from "cardano-tessera-core";
 import type { ProtocolParameters } from "@evolution-sdk/evolution/sdk/provider/Provider";
 import { koiosJsonToMetadatum, type KoiosJson } from "./metadatum";
@@ -121,6 +126,11 @@ interface TipRow {
   abs_slot: number;
   epoch_slot: number;
   block_time: number;
+  block_no: number;
+}
+
+interface BlockHeightRow {
+  block_height: number;
 }
 
 interface EpochParamsRow {
@@ -340,6 +350,38 @@ export class KoiosDataSource implements DataSource {
           ? banked.govActionLifetime
           : await this.govActionLifetime(tip.epoch_no),
     };
+  }
+
+  /**
+   * How far the end of the epoch before `tip`'s is from final. Depth is the
+   * tip's block number less that of the epoch's last block, both read here so
+   * they describe one moment; past the stability window the protocol
+   * guarantees `k` blocks and nothing is read. Throws rather than guess when
+   * the epoch's last block is not served, or when the chain has entered
+   * another epoch since `tip` was read.
+   */
+  async settling(tip: ChainTip): Promise<Settling> {
+    const epoch = tip.epoch - 1;
+    const network = this.config.network;
+    if (tip.epochSlot >= stabilityWindowSlots(network)) {
+      return { epoch, blocksLeft: 0 };
+    }
+    const [now, lastOfEpoch] = await Promise.all([
+      this.tip(),
+      this.get<BlockHeightRow[]>(
+        `/blocks?epoch_no=eq.${epoch}&select=block_height` +
+          `&order=block_height.desc&limit=1`,
+      ),
+    ]);
+    if (now.epoch_no !== tip.epoch) {
+      throw new Error(
+        `Koios /tip is in epoch ${now.epoch_no}, not ${tip.epoch}`,
+      );
+    }
+    const last = lastOfEpoch[0];
+    if (!last) throw new Error(`Koios /blocks returned no row for ${epoch}`);
+    const depth = now.block_no - last.block_height;
+    return { epoch, blocksLeft: Math.max(0, SECURITY_PARAM[network] - depth) };
   }
 
   /**

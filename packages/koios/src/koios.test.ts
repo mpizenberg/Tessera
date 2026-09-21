@@ -1413,6 +1413,95 @@ describe("chainTip — /epoch_params is read once per epoch, not once per call",
   });
 });
 
+describe("settling — how far the last epoch's end is from k blocks deep", () => {
+  // Preview: k is 432, and the stability window 3k/f is 25_920 slots.
+  const TIP: ChainTip = {
+    epoch: 1_346,
+    slot: 10_000,
+    time: 1_750_000_000,
+    epochSlot: 100,
+    govActionLifetime: 6,
+  };
+
+  function stubChain(
+    tipBlockNo: number,
+    lastOfEpoch: number | null,
+    epoch = 1_346,
+  ) {
+    const mock = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      const body = url.includes("/tip")
+        ? [
+            {
+              epoch_no: epoch,
+              abs_slot: 10_000,
+              epoch_slot: 100,
+              block_time: 0,
+              block_no: tipBlockNo,
+            },
+          ]
+        : url.includes("/blocks") && lastOfEpoch !== null
+          ? [{ block_height: lastOfEpoch }]
+          : [];
+      return new Response(JSON.stringify(body), { status: 200 });
+    });
+    vi.stubGlobal("fetch", mock);
+    return mock;
+  }
+
+  it("counts the blocks still missing after the epoch's last block", async () => {
+    const fetchMock = stubChain(4_000_100, 4_000_000);
+    const settling = await new KoiosDataSource(CONFIG).settling(TIP);
+
+    expect(settling).toEqual({ epoch: 1_345, blocksLeft: 332 });
+    expect(requested(fetchMock, "/blocks")[0]).toContain("epoch_no=eq.1345");
+  });
+
+  it("is final at exactly k blocks, and stays so beyond", async () => {
+    stubChain(4_000_432, 4_000_000);
+    expect(await new KoiosDataSource(CONFIG).settling(TIP)).toEqual({
+      epoch: 1_345,
+      blocksLeft: 0,
+    });
+    stubChain(4_000_431, 4_000_000);
+    expect((await new KoiosDataSource(CONFIG).settling(TIP)).blocksLeft).toBe(
+      1,
+    );
+    stubChain(4_001_000, 4_000_000);
+    expect((await new KoiosDataSource(CONFIG).settling(TIP)).blocksLeft).toBe(
+      0,
+    );
+  });
+
+  it("is final past the stability window without reading the chain", async () => {
+    const fetchMock = stubChain(4_000_001, 4_000_000);
+    const source = new KoiosDataSource(CONFIG);
+
+    expect(await source.settling({ ...TIP, epochSlot: 25_920 })).toEqual({
+      epoch: 1_345,
+      blocksLeft: 0,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(
+      (await source.settling({ ...TIP, epochSlot: 25_919 })).blocksLeft,
+    ).toBe(431);
+  });
+
+  it("throws when the epoch's last block is not served", async () => {
+    stubChain(4_000_100, null);
+    await expect(new KoiosDataSource(CONFIG).settling(TIP)).rejects.toThrow(
+      /no row for 1345/,
+    );
+  });
+
+  it("throws when the chain has entered another epoch since the tip was read", async () => {
+    stubChain(4_000_100, 4_000_000, 1_347);
+    await expect(new KoiosDataSource(CONFIG).settling(TIP)).rejects.toThrow(
+      /epoch 1347, not 1346/,
+    );
+  });
+});
+
 describe("scan — the records are cut off at the tip published with them", () => {
   it("reads /tip once and scans against it", async () => {
     const fetchMock = stubKoios();

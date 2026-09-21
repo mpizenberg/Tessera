@@ -13,6 +13,12 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
 
 Still speaks contract `2.0`.
 
+### Added
+
+- `SECURITY_PARAM` (`k` per network), `ACTIVE_SLOTS_COEFF` (`f`),
+  `stabilityWindowSlots` (`3k / f`) and the `Settling` type: how far the end
+  of the epoch before the tip's is from `k` blocks deep.
+
 ### Changed
 
 - **Breaking:** an artifact's electorate totals move, following `cip-179`,
