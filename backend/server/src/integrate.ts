@@ -16,7 +16,8 @@
  *
  * Response rows are the exception to "the segment's records and nothing else":
  * a response carries whether it is countable against its survey's definition,
- * so a survey entering or leaving the rows restates every response it holds.
+ * so a survey entering, leaving or moving in the rows restates every response
+ * it holds.
  *
  * Governance links are the one input that is not always re-derived: this
  * refresh's pass covers only the epochs whose links can still move, and below
@@ -208,10 +209,8 @@ export async function integrateSegment(
     .filter((row) => !segmentKeys.has(row.surveyKey) && !inRange(row.slot))
     .map((row) => decodeSurveyRecord(JSON.parse(row.record)));
   const touchedRecords = [...records.surveys, ...storedRecords];
-  const defByKey = new Map(
-    touchedRecords.map((s) => [refKey(s.ref), s.definition]),
-  );
-  const touchedKeys = [...defByKey.keys()];
+  const surveyByKey = new Map(touchedRecords.map((s) => [refKey(s.ref), s]));
+  const touchedKeys = [...surveyByKey.keys()];
 
   // The scan attaches cancellation owner-proofs only when the target survey
   // is in the same listing; a segment cancellation of an open survey defined
@@ -221,7 +220,7 @@ export async function integrateSegment(
   // the next margin re-derivation retries.
   const needProof = records.cancellations.filter((c) => {
     if (c.proof !== null) return false;
-    const def = defByKey.get(refKey(c.target));
+    const def = surveyByKey.get(refKey(c.target))?.definition;
     return def !== undefined && tip.epoch <= def.endEpoch;
   });
   let cancellations = records.cancellations;
@@ -229,7 +228,7 @@ export async function integrateSegment(
     const neededScripts = new Map<string, string[]>();
     for (const c of needProof) {
       const scriptHash = scriptCredentialHash(
-        defByKey.get(refKey(c.target))!.owner,
+        surveyByKey.get(refKey(c.target))!.definition.owner,
       );
       if (!scriptHash) continue;
       const list = neededScripts.get(c.txHash);
@@ -263,22 +262,23 @@ export async function integrateSegment(
         !segmentCancelKeys.has(`${row.txHash}|${row.surveyKey}`),
     )
     .map((row) => decodeCancellationRecord(JSON.parse(row.record)));
-  // A response row's countability is judged against its survey's definition,
-  // so a survey entering or leaving the rows restates every response it holds:
-  // a rolled-back survey's responses stop being countable, a revived one's
-  // start again. Both are rare, and the read is empty in the steady state —
-  // the segment's own surveys already have rows.
+  // A response row's countability is judged against its survey's definition
+  // and where it landed, so a survey entering, leaving or moving in the rows
+  // restates every response it holds: a rolled-back survey's responses stop
+  // being countable, a revived one's start again, and a re-landed one's window
+  // starts elsewhere. All are rare, and the read is empty in the steady state
+  // — the segment's own surveys already have rows at their slot.
   const presenceChanged = [
     ...touchedRecords
-      .map((s) => refKey(s.ref))
-      .filter((key) => !rowByKey.has(key)),
+      .filter((s) => rowByKey.get(refKey(s.ref))?.slot !== s.slot)
+      .map((s) => refKey(s.ref)),
     ...sweep.surveys.filter((key) => !segmentKeys.has(key)),
   ];
   const segmentResponseKeys = new Set(
     records.responses.map((r) => validationKey(r.txHash, r.responseIndex)),
   );
   const toRow = (r: ResponseRecord): ResponseRow =>
-    responseRowOf(r, defByKey.get(refKey(r.response.surveyRef)));
+    responseRowOf(r, surveyByKey.get(refKey(r.response.surveyRef)));
   const restatedRows =
     presenceChanged.length > 0
       ? (await store.responseRowsForSurveys(presenceChanged))

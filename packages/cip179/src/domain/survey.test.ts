@@ -11,13 +11,17 @@ import type {
   SurveyRecord,
 } from "./records.js";
 import { QUICKNET_CHAIN_HASH } from "./quicknet.js";
-import { aggregateSurveys, voteDeadlineUnix } from "./survey.js";
+import {
+  aggregateSurveys,
+  inSurveyWindow,
+  voteDeadlineUnix,
+} from "./survey.js";
 
 // Cancellation tri-state keys off tip.epoch vs the survey's end_epoch: a survey
 // is "open" (its cancellations are considered) while tip.epoch ≤ end_epoch, and
 // "closed" otherwise. TIP sits at epoch 10, so end_epoch 10 is open and end_epoch
-// 8 is closed. The cancellation slots in the fixtures are inert — kept only as
-// plausible data, since open-vs-closed no longer depends on the cancellation slot.
+// 8 is closed. Surveys are defined at slot 700, so a cancellation's slot only
+// has to follow it; open-vs-closed does not depend on the cancellation slot.
 const TIP: ChainTip = {
   epoch: 10,
   slot: 1050,
@@ -46,8 +50,8 @@ const def = (owner: Credential, endEpoch: number): SurveyDefinition => ({
 
 const survey = (index: number, d: SurveyDefinition): SurveyRecord => ({
   txHash: `s${index}`,
-  slot: 900,
-  epochNo: 9,
+  slot: 700,
+  epochNo: 7,
   ref: { txId: TXID, index },
   definition: d,
 });
@@ -153,6 +157,28 @@ describe("aggregateSurveys — cancellation tri-state", () => {
     expect(a.status).toBe("ended");
   });
 
+  it("ignores a cancellation published before the survey's definition", () => {
+    const a = agg1(
+      recs(
+        [survey(0, def(keyOwner(1), 10))],
+        [cancel(0, 650, proof([ownerHex(1)]))],
+      ),
+    );
+    expect(a.cancelled).toBe(false);
+    expect(a.cancellationClaimed).toBe(false);
+    expect(a.status).toBe("active");
+  });
+
+  it("counts a cancellation in the definition's block whose order is unknown", () => {
+    const a = agg1(
+      recs(
+        [survey(0, def(keyOwner(1), 10))],
+        [cancel(0, 700, proof([ownerHex(1)]))],
+      ),
+    );
+    expect(a.cancelled).toBe(true);
+  });
+
   it("no cancellation → neither flag", () => {
     const a = agg1(recs([survey(0, def(keyOwner(1), 10))], []));
     expect(a.cancelled).toBe(false);
@@ -217,6 +243,37 @@ describe("aggregateSurveys — sealedUnsupported", () => {
     const a = agg1(recs([survey(0, def(keyOwner(1), 10))], []));
     expect(a.sealed).toBe(false);
     expect(a.sealedUnsupported).toBe(false);
+  });
+});
+
+describe("inSurveyWindow", () => {
+  const unplaced = survey(0, def(keyOwner(1), 9));
+  const s = { ...unplaced, blockIndex: 3 };
+  const at = (slot: number, blockIndex?: number | null) => ({
+    slot,
+    epochNo: Math.floor(slot / 100),
+    ...(blockIndex === undefined ? {} : { blockIndex }),
+  });
+
+  it("holds a record after the definition through end_epoch", () => {
+    expect(inSurveyWindow(s, at(701))).toBe(true);
+    expect(inSurveyWindow(s, at(999))).toBe(true);
+  });
+
+  it("excludes a record before the definition or past end_epoch", () => {
+    expect(inSurveyWindow(s, at(699))).toBe(false);
+    expect(inSurveyWindow(s, at(1000))).toBe(false);
+  });
+
+  it("orders a record in the definition's block by its position there", () => {
+    expect(inSurveyWindow(s, at(700, 4))).toBe(true);
+    expect(inSurveyWindow(s, at(700, 2))).toBe(false);
+  });
+
+  it("is unknown in the definition's block when a position is missing", () => {
+    expect(inSurveyWindow(s, at(700))).toBeNull();
+    expect(inSurveyWindow(s, at(700, null))).toBeNull();
+    expect(inSurveyWindow(unplaced, at(700, 4))).toBeNull();
   });
 });
 

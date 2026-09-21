@@ -110,7 +110,7 @@ export const Survey: Component = () => {
     const s = survey();
     const b = bundle.error ? undefined : bundle();
     if (!s || !b) return { counted: [], excludedRecords: [] };
-    return auditResponses(b.responses, s.record.definition, b.verdicts);
+    return auditResponses(b.responses, s.record, b.verdicts);
   });
   const records = createMemo<ResponseRecord[]>(() => audit().counted);
 

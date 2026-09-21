@@ -50,6 +50,9 @@ const DEF: SurveyDefinition = {
   ],
 };
 
+/** DEF as published at slot 850 (epoch 8), third in its block. */
+const SURVEY = { slot: 850, blockIndex: 2, definition: DEF };
+
 const sc = (optionIndex: number): AnswerItem => ({
   type: "singleChoice",
   questionIndex: 0,
@@ -180,14 +183,14 @@ describe("auditRevealedResponses", () => {
 describe("auditResponses", () => {
   it("counts all on-time, distinct responses with no exclusions", () => {
     const raw = [rec("a", 950, 0, 1), rec("b", 960, 1, 2)];
-    const audit = auditResponses(raw, DEF);
+    const audit = auditResponses(raw, SURVEY);
     expect(audit.counted).toHaveLength(2);
     expect(audit.excludedRecords).toEqual([]);
   });
 
   it("excludes earlier duplicates as superseded (latest-wins)", () => {
     const raw = [rec("a", 950, 0, 1), rec("b", 960, 0, 1)];
-    const audit = auditResponses(raw, DEF);
+    const audit = auditResponses(raw, SURVEY);
     expect(audit.counted).toHaveLength(1);
     expect(audit.counted[0]!.slot).toBe(960); // the later one wins
     // The superseded record itself is retained, tagged, for per-response audit.
@@ -198,7 +201,7 @@ describe("auditResponses", () => {
 
   it("excludes responses recorded after the end epoch", () => {
     const raw = [rec("a", 950, 0, 1), rec("late", 1050, 0, 2)]; // 1050 → epoch 10
-    const audit = auditResponses(raw, DEF);
+    const audit = auditResponses(raw, SURVEY);
     expect(audit.counted).toHaveLength(1);
     expect(audit.counted[0]!.txHash).toBe("a");
     expect(audit.excludedRecords).toHaveLength(1);
@@ -210,15 +213,39 @@ describe("auditResponses", () => {
     // In-window slot but an authoritative epochNo past the deadline (e.g. a
     // chain where the slot grid assumption breaks): the explicit epoch decides.
     const late = { ...rec("x", 950, 0, 1), epochNo: 10 };
-    const audit = auditResponses([late], DEF);
+    const audit = auditResponses([late], SURVEY);
     expect(audit.excludedRecords.map((e) => e.key)).toEqual(["after-deadline"]);
+  });
+
+  it("excludes responses published before the survey's definition", () => {
+    const raw = [rec("early", 840, 0, 1), rec("a", 950, 0, 2)];
+    const audit = auditResponses(raw, SURVEY);
+    expect(audit.counted.map((r) => r.txHash)).toEqual(["a"]);
+    expect(
+      audit.excludedRecords.map((e) => `${e.key}:${e.record.txHash}`),
+    ).toEqual(["before-survey:early"]);
+  });
+
+  it("orders a response in the definition's block by its position there", () => {
+    const raw = [
+      { ...rec("ahead", 850, 0, 1), blockIndex: 1 },
+      { ...rec("behind", 850, 0, 2), blockIndex: 3 },
+    ];
+    const audit = auditResponses(raw, SURVEY);
+    expect(audit.counted.map((r) => r.txHash)).toEqual(["behind"]);
+    expect(audit.excludedRecords.map((e) => e.key)).toEqual(["before-survey"]);
+  });
+
+  it("counts a response in the definition's block whose position is unknown", () => {
+    const audit = auditResponses([rec("same", 850, 0, 1)], SURVEY);
+    expect(audit.counted.map((r) => r.txHash)).toEqual(["same"]);
   });
 
   it("a late response never suppresses an on-time one for the same identity", () => {
     // Same role+credential: late slot 1050 is dropped first, so the on-time
     // slot 950 is counted (not treated as superseded by the invalid later one).
     const raw = [rec("ontime", 950, 1, 1), rec("late", 1050, 1, 1)];
-    const audit = auditResponses(raw, DEF);
+    const audit = auditResponses(raw, SURVEY);
     expect(audit.counted).toHaveLength(1);
     expect(audit.counted[0]!.txHash).toBe("ontime");
     expect(audit.excludedRecords.map((e) => e.key)).toEqual(["after-deadline"]);
@@ -229,7 +256,7 @@ describe("auditResponses", () => {
       recWith("ok", 950, 0, 1, [sc(0)]), // valid option
       recWith("bad", 960, 1, 2, [sc(5)]), // optionIndex out of range
     ];
-    const audit = auditResponses(raw, DEF);
+    const audit = auditResponses(raw, SURVEY);
     expect(audit.counted.map((r) => r.txHash)).toEqual(["ok"]);
     expect(audit.excludedRecords).toHaveLength(1);
     expect(audit.excludedRecords[0]!.key).toBe("invalid");
@@ -243,7 +270,7 @@ describe("auditResponses", () => {
       recWith("early", 950, 0, 1, [sc(0)]), // valid
       recWith("laterBad", 960, 0, 1, [sc(9)]), // invalid, same identity
     ];
-    const audit = auditResponses(raw, DEF);
+    const audit = auditResponses(raw, SURVEY);
     expect(audit.counted.map((r) => r.txHash)).toEqual(["early"]);
     expect(audit.excludedRecords.map((e) => e.key)).toEqual(["invalid"]);
   });
@@ -254,7 +281,7 @@ describe("auditResponses", () => {
       rec("failed", 955, 1, 2),
       rec("pending", 960, 2, 3), // no verdict yet — must remain counted
     ];
-    const audit = auditResponses(raw, DEF, {
+    const audit = auditResponses(raw, SURVEY, {
       "proven:0": true,
       "failed:0": false,
     });
@@ -270,17 +297,17 @@ describe("auditResponses", () => {
     // Same role+credential: proof exclusion runs *before* dedup, or the failed
     // later ballot would silently knock out the proven earlier one.
     const raw = [rec("early", 950, 0, 1), rec("laterUnproven", 960, 0, 1)];
-    const audit = auditResponses(raw, DEF, { "laterUnproven:0": false });
+    const audit = auditResponses(raw, SURVEY, { "laterUnproven:0": false });
     expect(audit.counted.map((r) => r.txHash)).toEqual(["early"]);
     expect(audit.excludedRecords.map((e) => e.key)).toEqual(["unproven"]);
   });
 
   it("without verdicts the audit is unchanged (purely on-chain)", () => {
     const raw = [rec("a", 950, 0, 1), rec("b", 960, 1, 2)];
-    expect(auditResponses(raw, DEF)).toEqual(
-      auditResponses(raw, DEF, undefined),
+    expect(auditResponses(raw, SURVEY)).toEqual(
+      auditResponses(raw, SURVEY, undefined),
     );
-    expect(auditResponses(raw, DEF).counted).toHaveLength(2);
+    expect(auditResponses(raw, SURVEY).counted).toHaveLength(2);
   });
 
   it("retains all three exclusion categories together", () => {
@@ -290,7 +317,7 @@ describe("auditResponses", () => {
       recWith("bad", 955, 3, 9, [sc(7)]), // invalid answer
       recWith("late", 1050, 2, 3, [sc(0)]), // after deadline
     ];
-    const audit = auditResponses(raw, DEF);
+    const audit = auditResponses(raw, SURVEY);
     expect(audit.counted.map((r) => r.txHash)).toEqual(["b"]);
     // Compared order-independently: after-deadline/invalid are emitted in raw
     // order during the scan, superseded after dedup — what matters is each

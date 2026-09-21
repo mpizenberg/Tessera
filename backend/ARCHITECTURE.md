@@ -605,9 +605,10 @@ applied to storage rather than to queries.
 
   The per-role half is the audited count served as `countedByRole`, and it
   needs two things the identity columns did not carry. Whether a response is
-  countable at all — in window, valid against the definition — reads two
-  immutable inputs, so it is decided once, when the response row is projected,
-  and stored on it (`response.countable`, `0026`); deriving it per refresh
+  countable at all — in window, valid against the definition — reads inputs
+  fixed once the response and its survey have landed, so it is decided when
+  the response row is projected, and again only if the definition re-lands
+  elsewhere, and stored on it (`response.countable`, `0026`); deriving it per refresh
   instead would read every record of every touched survey, which the scaling
   bench measures at 8.2 MB per run for one survey with 10,000 responders.
   Whether its credential proof was _refuted_ is the one verdict that moves, so

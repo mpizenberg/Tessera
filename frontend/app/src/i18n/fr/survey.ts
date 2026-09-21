@@ -100,6 +100,8 @@ const survey: Messages = {
   noResponsesYet: "Aucune réponse pour l'instant.",
 
   // Exclusion meta
+  exclBeforeSurveyLabel: "Soumise avant le sondage",
+  exclBeforeSurveyHint: "enregistrée avant la transaction du sondage",
   exclAfterDeadlineLabel: "Soumise après la date limite",
   exclAfterDeadlineHint: "enregistrée après end_epoch {epoch}",
   exclInvalidLabel: "Invalide pour ce sondage",

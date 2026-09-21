@@ -8,7 +8,27 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
 
 ## [Unreleased]
 
+### Added
+
+- `inSurveyWindow(survey, record)`, in `cip-179/domain`: whether a response
+  or cancellation lies in its survey's window — after the defining
+  transaction in chain order (slot, then position in the block) and in an
+  epoch no later than `end_epoch`. It returns `null` when the two share a
+  slot and a position in the block is unknown.
+
 ### Changed
+
+- **Breaking: `auditResponses` takes the survey's record**
+  (`Pick<SurveyRecord, "slot" | "blockIndex" | "definition">`) instead of
+  its definition, and excludes a response published before the survey's
+  own transaction under a new `ExclusionKey`, `"before-survey"`. A
+  response's transaction can name the survey's hash before the survey
+  lands. One whose order against the definition is unknown stays counted.
+- `cancellationStates`, and so the aggregates' `cancelled` and
+  `cancellationClaimed`, ignore a cancellation published before its survey.
+- `blockIndex` moves from `ResponseRecord` to `ChainPos`, so a survey or a
+  cancellation record can carry its position in the block too; the record
+  decoders read it on all three.
 
 - **Breaking: the electorate totals leave the hashed tally.**
   `ArtifactRoleTally.total` and `RoleTally.total` are removed, and

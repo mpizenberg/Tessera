@@ -586,6 +586,28 @@ describe("segment integration mechanics", () => {
     await expectOracleMatch(store, chain, tipAt(560));
   });
 
+  it("restates a survey's responses when its definition re-lands at another slot", async () => {
+    const store = testStore();
+    const survey = surveyAt(1, 150, 9, 3);
+    const chain: Chain = {
+      surveys: [survey],
+      responses: [responseAt(2, 160, survey, 10)],
+      cancellations: [],
+      govLinks: [],
+      finalizedCancelled: new Set(),
+    };
+    await runRefresh(store, chain, tipAt(200));
+    expect(store.responseRows[0]!.countable).toBe(true);
+
+    // The defining tx rolls back and lands again after the response, which
+    // this run's segment no longer reaches: its stored row must follow.
+    chain.surveys = [{ ...survey, slot: 190 }];
+    await runRefresh(store, chain, tipAt(290));
+    expect(store.responseRows[0]!.countable).toBe(false);
+    expect(store.surveyRows[0]!.countedByRole).toBe("{}");
+    await expectOracleMatch(store, chain, tipAt(290));
+  });
+
   it("recounts a touched survey from its banked settled count, not from all its rows", async () => {
     const store = testStore();
     const survey = surveyAt(1, 100, 9, 3);
@@ -847,6 +869,25 @@ describe("audited per-role counts", () => {
     expect(store.surveyRows[0]!.responseCount).toBe(3);
     expect(counted(store)).toEqual({ [Role.Stakeholder]: 1 });
     await expectOracleMatch(store, chain, tipAt(400));
+  });
+
+  it("drops a response published before its survey", async () => {
+    const store = testStore();
+    const survey = surveyAt(1, 100, 9, 3);
+    const chain: Chain = {
+      surveys: [survey],
+      responses: [
+        responseAt(2, 90, survey, 10),
+        responseAt(3, 110, survey, 11),
+      ],
+      cancellations: [],
+      govLinks: [],
+      finalizedCancelled: new Set(),
+    };
+    await runRefresh(store, chain, tipAt(200));
+    expect(store.surveyRows[0]!.responseCount).toBe(2);
+    expect(counted(store)).toEqual({ [Role.Stakeholder]: 1 });
+    await expectOracleMatch(store, chain, tipAt(200));
   });
 
   it("drops a refuted proof, and re-projects the survey when it lands", async () => {

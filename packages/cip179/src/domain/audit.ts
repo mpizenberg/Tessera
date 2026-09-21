@@ -4,8 +4,11 @@
  * exclusions provable from on-chain data alone.
  *
  * Detectable client-side (no indexer):
+ *  - before-survey  — the response's transaction precedes the survey's
+ *                     defining one in chain order (outside the window).
  *  - after-deadline — the record's `epochNo` (authoritative, from the chain
- *                     index) is past the survey's `end_epoch` (invalid window).
+ *                     index) is past the survey's `end_epoch` (outside the
+ *                     window).
  *  - invalid        — fails codec validation against the on-chain definition
  *                     (out-of-constraint answer, duplicate/OOB indices,
  *                     ineligible role, missing required answer). On-chain data
@@ -30,8 +33,8 @@ import {
   type SurveyResponse,
 } from "../index.js";
 
-import type { ResponseRecord } from "./records.js";
-import { dedupeResponses, epochOfSlot } from "./survey.js";
+import type { ResponseRecord, SurveyRecord } from "./records.js";
+import { dedupeResponses, epochOfSlot, inSurveyWindow } from "./survey.js";
 
 // `epochOfSlot` lives in ./survey (shared with cancellation-deadline logic and
 // UI countdowns); re-exported here so existing importers (and tests) keep
@@ -40,6 +43,7 @@ import { dedupeResponses, epochOfSlot } from "./survey.js";
 export { epochOfSlot };
 
 export type ExclusionKey =
+  | "before-survey"
   | "after-deadline"
   | "invalid"
   | "unproven"
@@ -103,27 +107,31 @@ export interface ResponseAudit {
 }
 
 /**
- * Audit the raw responses for one survey. Responses past the deadline are
- * dropped first (the invalid window), then those that fail codec validation
- * (out-of-constraint, ineligible role, …) as `invalid`, then — when `verdicts`
- * are supplied — those whose credential proof failed as `unproven`;
- * latest-valid-wins then picks one per (role, credential) and the leftovers are
- * `superseded`. Excluding invalid and unproven responses *before* dedup is
- * essential: otherwise a malformed or unproven later response could suppress a
- * valid earlier one. The `counted` set is exactly what should be tallied, so a
- * UI showing both stays consistent.
+ * Audit the raw responses for one survey. Responses outside its window are
+ * dropped first ({@link inSurveyWindow}: `before-survey` or `after-deadline`),
+ * then those that fail codec validation (out-of-constraint, ineligible role,
+ * …) as `invalid`, then — when `verdicts` are supplied — those whose
+ * credential proof failed as `unproven`; latest-valid-wins then picks one per
+ * (role, credential) and the leftovers are `superseded`. Excluding invalid and
+ * unproven responses *before* dedup is essential: otherwise a malformed or
+ * unproven later response could suppress a valid earlier one. The `counted`
+ * set is exactly what should be tallied, so a UI showing both stays
+ * consistent. A response whose order against the definition is unknown
+ * counts, provisionally.
  */
 export function auditResponses(
   raw: readonly ResponseRecord[],
-  definition: SurveyDefinition,
+  survey: Pick<SurveyRecord, "slot" | "blockIndex" | "definition">,
   verdicts?: ProofVerdicts,
 ): ResponseAudit {
-  const endEpoch = definition.endEpoch;
+  const { definition } = survey;
   const onTime: ResponseRecord[] = [];
   const excludedRecords: ExcludedRecord[] = [];
   for (const r of raw) {
-    if (r.epochNo > endEpoch) {
+    if (r.epochNo > definition.endEpoch) {
       excludedRecords.push({ key: "after-deadline", record: r });
+    } else if (inSurveyWindow(survey, r) === false) {
+      excludedRecords.push({ key: "before-survey", record: r });
     } else if (!responseIsCountable(definition, r.response)) {
       excludedRecords.push({ key: "invalid", record: r });
     } else if (verdicts?.[proofVerdictKey(r)] === false) {

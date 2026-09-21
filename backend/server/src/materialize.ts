@@ -17,12 +17,12 @@
  * two spellings together.
  */
 
-import type { SurveyDefinition } from "cip-179";
 import {
   aggregate,
   auditResponses,
   byCancellationChainOrder,
   credentialKey,
+  inSurveyWindow,
   proofVerdictKey,
   refKey,
   responseCounts,
@@ -103,18 +103,19 @@ const roleCountsJson = (counts: Record<string, number>): string =>
   );
 
 /**
- * The static half of the audit rule: in-window (the record's authoritative
- * epoch against the survey's deadline) and valid against the definition.
- * Both operands are immutable, so this is settled when a response row is
- * projected and is stored on it — only a refuted credential proof can still
- * take a countable response out of the count.
+ * The static half of the audit rule: in the survey's window and valid against
+ * its definition. Both are settled when a response row is projected and are
+ * stored on it — only a refuted credential proof can still take a countable
+ * response out of the count, and a definition that moves (rolled back and
+ * re-landed) restates its rows. A response in the definition's block counts,
+ * as the scan does not read positions in the block; finalization reads them.
  */
 export const responseCountable = (
-  definition: SurveyDefinition,
+  survey: SurveyRecord,
   r: ResponseRecord,
 ): boolean =>
-  r.epochNo <= definition.endEpoch &&
-  responseIsCountable(definition, r.response);
+  inSurveyWindow(survey, r) !== false &&
+  responseIsCountable(survey.definition, r.response);
 
 /**
  * Every count column of the given surveys, from whole records — the oracle's
@@ -142,7 +143,7 @@ export function surveyCountsOf(
     const key = refKey(s.ref);
     const own = bySurvey.get(key) ?? [];
     const countedByRole: Record<string, number> = {};
-    for (const r of auditResponses(own, s.definition, verdicts).counted)
+    for (const r of auditResponses(own, s, verdicts).counted)
       countedByRole[r.response.role] =
         (countedByRole[r.response.role] ?? 0) + 1;
     out[key] = {
@@ -234,14 +235,14 @@ export function surveyRowsOf(
 }
 
 /**
- * `definition` is the target survey's, or undefined when no record holds it —
- * a response to a survey that rolled back or predates the scan floor, which
- * cannot be counted against a rule that does not exist. Its survey has no row
- * either; if one revives, the rescan re-derives the response with it.
+ * `survey` is the target survey's record, or undefined when no record holds
+ * it — a response to a survey that rolled back or predates the scan floor,
+ * which cannot be counted against a rule that does not exist. Its survey has
+ * no row either; if one revives, the rescan re-derives the response with it.
  */
 export const responseRowOf = (
   r: ResponseRecord,
-  definition: SurveyDefinition | undefined,
+  survey: SurveyRecord | undefined,
 ): ResponseRow => ({
   txHash: r.txHash,
   responseIndex: r.responseIndex,
@@ -249,7 +250,7 @@ export const responseRowOf = (
   role: r.response.role,
   credential: credentialKey(r.response.credential),
   slot: r.slot,
-  countable: definition !== undefined && responseCountable(definition, r),
+  countable: survey !== undefined && responseCountable(survey, r),
   record: JSON.stringify(toJsonSafe(r)),
 });
 
@@ -290,14 +291,12 @@ export function materializeSnapshot(
     govLinks,
     finalStates,
   );
-  const defByKey = new Map(
-    records.surveys.map((s) => [refKey(s.ref), s.definition]),
-  );
+  const surveyByKey = new Map(records.surveys.map((s) => [refKey(s.ref), s]));
   return {
     listCounts: listCountsOf(surveys, tip.epoch),
     surveys,
     responses: records.responses.map((r) =>
-      responseRowOf(r, defByKey.get(refKey(r.response.surveyRef))),
+      responseRowOf(r, surveyByKey.get(refKey(r.response.surveyRef))),
     ),
     cancellations: records.cancellations.map(cancellationRowOf),
   };

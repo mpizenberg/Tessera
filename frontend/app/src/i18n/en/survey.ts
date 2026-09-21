@@ -108,6 +108,8 @@ const survey = {
   noResponsesYet: "No responses yet.",
 
   // Exclusion meta (exclusionMeta)
+  exclBeforeSurveyLabel: "Submitted before the survey",
+  exclBeforeSurveyHint: "recorded before the survey's own transaction",
   exclAfterDeadlineLabel: "Submitted after the deadline",
   /** {epoch} is the raw end epoch, shown untranslated. */
   exclAfterDeadlineHint: "recorded past end_epoch {epoch}",

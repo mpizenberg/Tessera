@@ -29,6 +29,11 @@ function exclusionMeta(
   endEpoch: number,
 ): { label: string; hint: string } {
   switch (key) {
+    case "before-survey":
+      return {
+        label: t("survey.exclBeforeSurveyLabel"),
+        hint: t("survey.exclBeforeSurveyHint"),
+      };
     case "after-deadline":
       return {
         label: t("survey.exclAfterDeadlineLabel"),
@@ -58,6 +63,7 @@ function exclusionMeta(
 }
 
 const EXCLUSION_ORDER: readonly ExclusionKey[] = [
+  "before-survey",
   "after-deadline",
   "invalid",
   "unproven",

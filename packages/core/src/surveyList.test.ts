@@ -32,8 +32,8 @@ const def = (owner: Credential, endEpoch: number): SurveyDefinition => ({
 
 const survey = (index: number, d: SurveyDefinition): SurveyRecord => ({
   txHash: `s${index}`,
-  slot: 900,
-  epochNo: 9,
+  slot: 700,
+  epochNo: 7,
   ref: { txId: TXID, index },
   definition: d,
 });

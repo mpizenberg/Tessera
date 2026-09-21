@@ -121,8 +121,8 @@ const response: ResponseRecord = {
   txHash: "bb".repeat(32),
   slot: 1001,
   epochNo: 9,
-  responseIndex: 0,
   blockIndex: 4,
+  responseIndex: 0,
   response: {
     specVersion: 5,
     surveyRef: { txId: hash(0xaa), index: 1 },
