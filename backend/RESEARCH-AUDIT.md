@@ -374,6 +374,27 @@ only for the files in between. This has been tried across two epochs only.
   transaction needing it, or only in auxiliary data. The Dolos source counts
   the first and misses the second, unlike the Koios source.
 
+**One node instead of two (future work).** The second store exists for one
+value, each account's active stake for `E`, and the first store already
+holds it: an account's version for `E-2` in Dolos's state. At the end of 1395
+it equalled the Haskell `set` on every account read with `dolos data
+dump-state`. No route serves it per account, since `/epochs/E/stakes` and
+`/accounts/{id}/history` read the log that the close of `E+1` writes. Two
+ways would drop the second store:
+
+- A small Rust program, built against the same Dolos release, that reads the
+  responders' stake from the first store through Dolos's own types. Only
+  Rust reads the store: Fjall has no bindings for other languages and no
+  format specification outside its code. It needs `serve` stopped, since
+  Fjall locks the store and has no read-only mode.
+- A Dolos route serving an account's active stake for its tip's epoch.
+
+The snapshot export (`dolos snapshot publish`) is no way around it: it
+always writes the whole state, the UTxO set included, and `--epochs` only
+narrows the block, index and log layers. Either way, the chain source must
+also learn to read at the first store's tip, since it finds `E`'s last block
+through the first block of `E+1`.
+
 ### Option 2 — the Haskell ledger state through Amaru's tooling (Rung 2, exact)
 
 `amaru snapshot create --network preprod --epoch E+1` yields the Haskell
