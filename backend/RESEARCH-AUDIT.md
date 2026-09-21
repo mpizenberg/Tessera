@@ -370,6 +370,9 @@ only for the files in between. This has been tried across two epochs only.
   deposit as its power, and the Dolos source refuses to read it.
 - No DRep responder touched by #1364: its weight, and so the hash, would
   differ.
+- No native-script credential whose script first went on chain after the
+  transaction needing it, or only in auxiliary data. The Dolos source counts
+  the first and misses the second, unlike the Koios source.
 
 ### Option 2 — the Haskell ledger state through Amaru's tooling (Rung 2, exact)
 

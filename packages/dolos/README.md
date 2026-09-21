@@ -119,8 +119,11 @@ networks have not been tried.
   (txpipe/dolos#1364), which overstates those DReps' power. If such a DRep
   responded, the hash differs.
 - Without `--minikupo`, the proof of a native-script credential that its
-  transaction does not carry stays unknown. With it, such a script counts
-  even if it first appeared after that transaction: minikupo does not say
-  when a script appeared, so the check the Koios source makes is skipped here.
+  transaction does not carry stays unknown. With it, two such scripts are
+  judged unlike the Koios source, and the hash differs if a survey holds one.
+  A script first on chain after the transaction that needs it counts here,
+  since minikupo does not say when a script appeared. A script only ever
+  published in auxiliary data is not found, since minikupo indexes witness
+  sets and outputs only.
 - The recipe is measured on one survey, on preview, with one alpha release.
   Storage formats and flags may change before Dolos 2.0.
