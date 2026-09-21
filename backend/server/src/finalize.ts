@@ -129,13 +129,6 @@ function decodeRevealed(stored: string | null): SurveyResponse | null {
  */
 const COVERED_ROLES: readonly number[] = [...RULESET_DESCRIPTOR.coveredRoles];
 
-/**
- * Reorg depth past the vote deadline (~30 blocks), measured on the covered
- * chain prefix. Indexing lag is not this margin's job: the epoch gate covers
- * it, since the tip cannot outrun the indexer it is read from.
- */
-const FINALIZE_MARGIN_SECONDS = 600;
-
 /** Refs named in the untalliable summary before it degrades to a count. */
 const UNTALLIABLE_LOG_REFS = 10;
 
@@ -156,6 +149,13 @@ export interface FinalizeGates {
   readonly incomplete: boolean;
   /** The instant the integrated prefix reaches; null before any cursor. */
   readonly coveredThroughUnix: number | null;
+  /**
+   * The latest epoch whose end is `k` blocks deep and can no longer roll
+   * back. A survey ending later waits: its last responses, and the
+   * registrations read at the end of its end epoch, could still change under
+   * an artifact that cannot.
+   */
+  readonly finalThroughEpoch: number;
   /**
    * The governance pass's frontier: a candidate whose expiration is at or above
    * it still has links in motion and waits, while below it the candidate row's
@@ -216,10 +216,9 @@ export async function finalizeClosedSurveys(
   // yet, from the frontier up — revived from their wire JSON. Each row also
   // carries every cancellation targeting its survey, which is exactly the
   // evidence the cancellation walk below needs. A survey finalizes only once
-  // the integrated prefix has covered its vote deadline plus the reorg margin:
-  // the covered instant can never exceed the wall clock, and during catch-up,
-  // or while a listed transaction is still unfetched, a survey's responses may
-  // not all be integrated yet.
+  // its end epoch is final and the integrated prefix has covered its vote
+  // deadline: during catch-up, or while a listed transaction is still
+  // unfetched, a survey's responses may not all be integrated yet.
   const candidateRows = await store.unfinalizedClosedSurveyRows(
     gates.finalizationFloor,
     tip.epoch,
@@ -266,6 +265,7 @@ export async function finalizeClosedSurveys(
     ]),
   );
   let unsettledLinks = 0;
+  let notFinal = 0;
   const candidates = candidateRows
     .map((r) => decodeSurveyRecord(JSON.parse(r.record)))
     .filter((s) => {
@@ -273,12 +273,19 @@ export async function finalizeClosedSurveys(
         unsettledLinks++;
         return false;
       }
+      if (s.definition.endEpoch > gates.finalThroughEpoch) {
+        notFinal++;
+        return false;
+      }
       return (
-        coveredThroughUnix >=
-        voteDeadlineUnix(s.definition.endEpoch, tip, spe) +
-          FINALIZE_MARGIN_SECONDS
+        coveredThroughUnix >= voteDeadlineUnix(s.definition.endEpoch, tip, spe)
       );
     });
+  if (notFinal > 0) {
+    console.log(
+      `finalize: ${notFinal} survey(s) postponed — end epoch not final yet`,
+    );
+  }
   if (unsettledLinks > 0) {
     console.log(
       `finalize: ${unsettledLinks} survey(s) postponed — governance links not settled`,

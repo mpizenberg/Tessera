@@ -213,7 +213,8 @@ const SCAN_STATE_SELECT = `
          caught_up AS caughtUp, generation,
          trickle_slot AS trickleSlot, trickle_tx_hash AS trickleTxHash,
          network, settlement_floor AS settlementFloor,
-         finalization_floor AS finalizationFloor
+         finalization_floor AS finalizationFloor,
+         final_through_epoch AS finalThroughEpoch
   FROM scan_state WHERE id = 1`;
 
 /** As stored: each cursor is a pair of columns, NULL together. */
@@ -227,6 +228,7 @@ interface DbScanStateRow {
   readonly network: string | null;
   readonly settlementFloor: number;
   readonly finalizationFloor: number;
+  readonly finalThroughEpoch: number;
 }
 
 const bankedScanFromDb = (r: DbScanStateRow | null): BankedScan => ({
@@ -248,6 +250,7 @@ const bankedScanFromDb = (r: DbScanStateRow | null): BankedScan => ({
         },
   settlementFloor: r?.settlementFloor ?? 0,
   finalizationFloor: r?.finalizationFloor ?? 0,
+  finalThroughEpoch: r?.finalThroughEpoch ?? 0,
 });
 
 /**
@@ -262,6 +265,10 @@ const SETTLEMENT_FLOOR_UPDATE = `
 /** The finalization floor, on the same row and by the same rule. */
 const FINALIZATION_FLOOR_UPDATE = `
   UPDATE scan_state SET finalization_floor = ? WHERE id = 1`;
+
+/** The latest final epoch, on the same row and by the same rule. */
+const FINAL_THROUGH_EPOCH_UPDATE = `
+  UPDATE scan_state SET final_through_epoch = ? WHERE id = 1`;
 
 /** The window's stored responses, records excluded. Binds: (fromSlot, toSlot). */
 const RESPONSES_IN_SLOT_RANGE = `
@@ -910,6 +917,9 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
     },
     async putFinalizationFloor(endEpoch: number): Promise<void> {
       await write(query(FINALIZATION_FLOOR_UPDATE, endEpoch));
+    },
+    async putFinalThroughEpoch(epoch: number): Promise<void> {
+      await write(query(FINAL_THROUGH_EPOCH_UPDATE, epoch));
     },
     async reconcileSegment(
       range: SlotRange | null,

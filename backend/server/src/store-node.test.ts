@@ -267,6 +267,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0029_exact_tx_metadata.sql",
       "0030_bigint_points.sql",
       "0031_totals_out_of_hash.sql",
+      "0032_finality_gate.sql",
     ]);
   });
 });
@@ -834,16 +835,18 @@ describe("store-node scan state", () => {
     expect((await store.scanState()).walker).toEqual(rewound);
   });
 
-  it("banks both floors without disturbing the cursor", async () => {
+  it("banks the floors and the final epoch without disturbing the cursor", async () => {
     store = openBackendStore(":memory:");
     // Before the first cursor there is no row to update, and 0 — ask about
     // everything — is exactly what a database with no history owes.
     await store.putSettlementFloor(511);
     await store.putFinalizationFloor(498);
+    await store.putFinalThroughEpoch(500);
     expect(await store.scanState()).toEqual({
       walker: null,
       settlementFloor: 0,
       finalizationFloor: 0,
+      finalThroughEpoch: 0,
     });
 
     const walked = {
@@ -856,19 +859,22 @@ describe("store-node scan state", () => {
     await store.putScanState(walked);
     await store.putSettlementFloor(511);
     await store.putFinalizationFloor(498);
+    await store.putFinalThroughEpoch(500);
     expect(await store.scanState()).toEqual({
       walker: walked,
       settlementFloor: 511,
       finalizationFloor: 498,
+      finalThroughEpoch: 500,
     });
 
-    // The cursor write leaves both alone: neither frontier is the scan's
+    // The cursor write leaves them alone: none of them is the scan's
     // coverage, and an incomplete scan that banks no cursor must not lose them.
     await store.putScanState({ ...walked, cursor: null, caughtUp: false });
     expect(await store.scanState()).toEqual({
       walker: { ...walked, cursor: null, caughtUp: false },
       settlementFloor: 511,
       finalizationFloor: 498,
+      finalThroughEpoch: 500,
     });
   });
 });

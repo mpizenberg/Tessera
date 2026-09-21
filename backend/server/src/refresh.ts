@@ -15,6 +15,7 @@
  */
 
 import type { ChainTip } from "cip-179/domain";
+import type { Settling } from "cardano-tessera-client";
 import { toJsonSafe } from "cip-179/tally";
 import {
   KoiosDataSource,
@@ -186,6 +187,38 @@ export function coveredThroughUnix(
   if (cursor === null) return null;
   const slot = Math.min(cursor.slot, wholeThroughSlot(scan));
   return tip.time + (slot - tip.slot);
+}
+
+/** What one refresh knows about how final the chain behind its tip is. */
+export interface Finality {
+  /** The latest epoch whose end is `k` blocks deep. */
+  readonly finalThroughEpoch: number;
+  /** The epoch before the tip's while it is short of that depth, else null. */
+  readonly settling: Settling | null;
+}
+
+/**
+ * How final the chain behind `tip` is. Only the epoch before the tip's is ever
+ * in question, and once `banked` names it the chain is not asked again. A read
+ * that fails answers as "not final yet": waiting a pass costs nothing, and an
+ * artifact emitted on a guess cannot be taken back.
+ */
+export async function finality(
+  source: Pick<KoiosDataSource, "settling">,
+  tip: ChainTip,
+  banked: number,
+): Promise<Finality> {
+  const last = tip.epoch - 1;
+  if (banked >= last) return { finalThroughEpoch: last, settling: null };
+  try {
+    const settling = await source.settling(tip);
+    return settling.blocksLeft === 0
+      ? { finalThroughEpoch: last, settling: null }
+      : { finalThroughEpoch: last - 1, settling };
+  } catch (err) {
+    console.warn(`finality read failed (will retry): ${String(err)}`);
+    return { finalThroughEpoch: last - 1, settling: null };
+  }
 }
 
 /** Where the drift-healing rescan resumes, with the ceiling it stops at. */
@@ -517,6 +550,11 @@ export async function refreshSnapshot(
       console.warn(`response validation failed (will retry): ${String(err)}`),
     );
 
+    const final = await finality(source, tip, bank.finalThroughEpoch);
+    if (final.finalThroughEpoch > bank.finalThroughEpoch) {
+      await store.putFinalThroughEpoch(final.finalThroughEpoch);
+    }
+
     // Finalization (ARCHITECTURE §6.2) runs on freshly validated state: weight
     // snapshotting + artifact emission for safely-closed surveys. Idempotent and
     // resumable, so a failure here just retries next refresh.
@@ -529,6 +567,7 @@ export async function refreshSnapshot(
         tip,
         incomplete,
         coveredThroughUnix: coveredThroughUnix(cursor, scan, tip),
+        finalThroughEpoch: final.finalThroughEpoch,
         settlementFloor: nextGovFloor,
         finalizationFloor: finalFloor,
       },

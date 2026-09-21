@@ -682,8 +682,19 @@ registered, provenance}`, plus per-`(epoch, role)` totals. This table is shared
   by every survey ending at `E`.
 - **Finalization** (implemented in `backend/server/src/finalize.ts`, run at the
   end of every refresh): a survey is a candidate once `tip.epoch > end_epoch`,
-  it has no artifact row yet, and **the integrated prefix has covered its vote
-  deadline plus 600 s** — the reorg margin, measured on the chain the scan has
+  it has no artifact row yet, **the end of `end_epoch` is final**, and the
+  integrated prefix has covered its vote deadline. Final means `k` blocks
+  deep (2160 on mainnet and preprod, 432 on preview), the depth past which the
+  protocol rules out a rollback: about 12 hours after the boundary on mainnet,
+  3.5 on preview, and at most `3k/f` slots (36 and 7.2 hours), after which the
+  refresh takes it as given without asking. The refresh reads the depth from
+  Koios (the tip's block number less that of the epoch's last block), only
+  for the epoch before the tip's, the only one that can be short of it, and
+  banks the epoch once final so it is not asked about again; a failed read
+  counts as not final. Everything the pass freezes waits behind this gate,
+  weight rows included, because a rollback in `end_epoch`'s last blocks can
+  move a response or a registration, and neither the rows nor the artifact
+  can be rewritten. The covered prefix is measured on the chain the scan has
   actually banked rather than on the wall clock, so a survey whose window a
   catch-up has not reached yet cannot finalize early. The covered instant also
   stops below any transaction the segment listed but could not fetch (§5.4), so

@@ -409,6 +409,7 @@ async function steadyRun(
       tip: TIP,
       incomplete: false,
       coveredThroughUnix: TIP.time,
+      finalThroughEpoch: TIP.epoch - 1,
       settlementFloor: govFloor,
       finalizationFloor: finalFloor,
     },

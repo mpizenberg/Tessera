@@ -20,8 +20,8 @@ Each refresh cycle does three things, in order:
    credential proof via required signers / native scripts / vote bindings —
    the rules are `backend/TALLY-SPEC.md`). Incremental: already-validated
    responses cost zero further Koios calls.
-3. **Finalize** — for surveys safely past their `end_epoch`, snapshot
-   stake/voting-power weights at that epoch, run the stake-weighted tally, and
+3. **Finalize** — for surveys whose `end_epoch` has ended and can no longer
+   roll back, snapshot stake/voting-power weights at that epoch, run the stake-weighted tally, and
    emit an immutable, content-addressed **result artifact**
    (blake2b-256 over canonical JSON). Idempotent and resumable: weight rows and
    sealed-reveal outcomes already written are never recomputed, and a temporarily

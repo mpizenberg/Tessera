@@ -49,8 +49,9 @@ const SURVEY_TX2 = "dd".repeat(32);
 const SURVEY_KEY = `${SURVEY_TX}:0`;
 const END_EPOCH = 500;
 
-// Tip well past END_EPOCH: epoch 502, anchored far enough in the past that
-// `now ≥ voteDeadlineUnix(500) + 600` holds with the real clock.
+// Tip well past END_EPOCH: epoch 502, so END_EPOCH's end is final, anchored
+// far enough in the past that `now ≥ voteDeadlineUnix(500)` holds with the
+// real clock.
 const TIP: ChainTip = {
   epoch: 502,
   slot: 43_372_800,
@@ -348,8 +349,10 @@ async function finalizeRecords(
   settlementFloor = Number.MAX_SAFE_INTEGER,
   finalizationFloor = 0,
   // A caught-up cursor with every listed tx fetched: the covered prefix
-  // reaches the wall clock, so the gate reduces to deadline plus margin.
+  // reaches the wall clock, so the gate reduces to the deadline.
   coveredThroughUnix = Number.MAX_SAFE_INTEGER,
+  // The epoch before the tip's is k blocks deep already.
+  finalThroughEpoch = tip.epoch - 1,
 ) {
   const snapshot = materializeSnapshot(recs, tip, govLinks, new Map());
   await store.reconcileSegment(
@@ -369,6 +372,7 @@ async function finalizeRecords(
       tip,
       incomplete: recs.incomplete === true,
       coveredThroughUnix,
+      finalThroughEpoch,
       settlementFloor,
       finalizationFloor,
     },
@@ -1907,7 +1911,7 @@ describe("finalizeClosedSurveys", () => {
   it("holds only the surveys closing after a listed tx Koios has not served", async () => {
     const store = testStore();
     // One epoch past TIP, so a survey ending at END_EPOCH + 1 is past its
-    // deadline plus margin too, and only the unfetched tx can hold it.
+    // deadline and final too, and only the unfetched tx can hold it.
     const tip: ChainTip = {
       ...TIP,
       epoch: TIP.epoch + 1,
@@ -1981,7 +1985,41 @@ describe("finalizeClosedSurveys", () => {
     expect(store.artifacts.has(`${SURVEY_TX2}:0`)).toBe(true);
   });
 
-  it("leaves still-open or too-recent surveys alone", async () => {
+  it("waits until the survey's end epoch is final, holding the floor meanwhile", async () => {
+    const store = testStore();
+    await seed(store, [validatedRow(rA)]);
+    const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
+    // The epoch after END_EPOCH has begun, and END_EPOCH's last blocks are
+    // not k deep yet: a rollback could still move a response or a
+    // registration, so nothing may be frozen, weight rows included.
+    const tip: ChainTip = { ...TIP, epoch: END_EPOCH + 1 };
+    const run = (finalThroughEpoch: number) =>
+      finalizeRecords(
+        CONFIG,
+        store,
+        inputs,
+        noProofs,
+        records(survey(), [rA]),
+        tip,
+        undefined,
+        [],
+        undefined,
+        0,
+        undefined,
+        finalThroughEpoch,
+      );
+
+    const settling = await run(END_EPOCH - 1);
+    expect(store.artifacts.size).toBe(0);
+    expect(store.weights.size).toBe(0);
+    expect(settling.emitted.size).toBe(0);
+    expect(settling.floor).toBe(END_EPOCH);
+
+    await run(END_EPOCH);
+    expect([...store.artifacts.keys()]).toEqual([SURVEY_KEY]);
+  });
+
+  it("leaves a still-open survey alone", async () => {
     const store = testStore();
     await seed(store, [validatedRow(rA)]);
     const openTip: ChainTip = { ...TIP, epoch: END_EPOCH }; // not yet past
@@ -2090,6 +2128,7 @@ describe("re-emission after the totals left the hash (migration 0031)", () => {
         tip: TIP,
         incomplete: false,
         coveredThroughUnix: Number.MAX_SAFE_INTEGER,
+        finalThroughEpoch: TIP.epoch - 1,
         settlementFloor: Number.MAX_SAFE_INTEGER,
         finalizationFloor,
       },

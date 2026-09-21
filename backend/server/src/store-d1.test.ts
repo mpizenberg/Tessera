@@ -264,6 +264,7 @@ describe("D1 snapshot reconciliation", () => {
       walker: { ...state, cursor: null, caughtUp: false },
       settlementFloor: 512,
       finalizationFloor: 499,
+      finalThroughEpoch: 0,
     });
     sqlite.close();
   });

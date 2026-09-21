@@ -4,7 +4,7 @@
  * sweeps may delete in.
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { ChainTip } from "cip-179/domain";
 import { toJsonSafe } from "cip-179/tally";
@@ -13,6 +13,7 @@ import type { SegmentScan } from "cardano-tessera-koios";
 import {
   coveredRange,
   coveredThroughUnix,
+  finality,
   nextTrickle,
   planSegment,
   planTrickle,
@@ -259,5 +260,49 @@ describe("snapshotTip", () => {
     };
 
     expect(snapshotTip(meta)).toEqual(tip);
+  });
+});
+
+describe("finality", () => {
+  const tip = { epoch: 501 } as ChainTip;
+  const sourceOf = (blocksLeft: number) => ({
+    settling: vi.fn(async () => ({ epoch: 500, blocksLeft })),
+  });
+
+  it("holds the gate one epoch back while the last epoch settles", async () => {
+    expect(await finality(sourceOf(120), tip, 499)).toEqual({
+      finalThroughEpoch: 499,
+      settling: { epoch: 500, blocksLeft: 120 },
+    });
+  });
+
+  it("opens once the last epoch is k blocks deep", async () => {
+    expect(await finality(sourceOf(0), tip, 499)).toEqual({
+      finalThroughEpoch: 500,
+      settling: null,
+    });
+  });
+
+  it("does not ask the chain about an epoch already banked as final", async () => {
+    const source = sourceOf(0);
+    expect(await finality(source, tip, 500)).toEqual({
+      finalThroughEpoch: 500,
+      settling: null,
+    });
+    expect(source.settling).not.toHaveBeenCalled();
+  });
+
+  it("treats a failed read as not final yet", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const source = {
+      settling: async () => {
+        throw new Error("Koios 503");
+      },
+    };
+    expect(await finality(source, tip, 499)).toEqual({
+      finalThroughEpoch: 499,
+      settling: null,
+    });
+    warn.mockRestore();
   });
 });

@@ -404,6 +404,12 @@ export interface GovLinkStore {
    * its row happened to hold.
    */
   putSettlementFloor(expiration: number): Promise<void>;
+  /**
+   * Bank the latest epoch whose end is final (read back by
+   * {@link SnapshotStore.scanState}), so no later refresh asks the chain
+   * about it again.
+   */
+  putFinalThroughEpoch(epoch: number): Promise<void>;
 }
 
 /** A `gov_epoch` row as stored: both collections arrive as JSON text. */
@@ -878,6 +884,8 @@ export interface BankedScan {
   readonly walker: ScanState | null;
   readonly settlementFloor: number;
   readonly finalizationFloor: number;
+  /** The latest epoch whose end was seen `k` blocks deep; 0 before any. */
+  readonly finalThroughEpoch: number;
 }
 
 /**
