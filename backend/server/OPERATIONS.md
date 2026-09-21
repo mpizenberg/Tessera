@@ -144,6 +144,25 @@ The static Tessera app is optional and is not an integration dependency. If it
 is useful for fixture authoring, set its preprod backend URL and run
 `pnpm --filter tessera-app deploy:preprod` separately.
 
+### Between an epoch's end and its artifacts
+
+A survey that closed at the last epoch boundary has no artifact for hours, and
+that is the healthy state: finalization waits until the end of the survey's
+`end_epoch` is `k` blocks deep (2160 on mainnet and preprod, 432 on preview) and
+can no longer roll back. That takes about 12 hours on mainnet and preprod and
+3.5 on preview, and at most 36 and 7.2. Meanwhile:
+
+- `GET /api/surveys` carries `settling`, `{ epoch, blocksLeft }`, and
+  `blocksLeft` falls from one refresh to the next;
+- each run logs `finalize: N survey(s) postponed — end epoch not final yet`;
+- the survey has no `finalState`, and the app shows its live results under a
+  notice.
+
+`finality read failed (will retry)` in the run lines means Koios did not
+answer the depth read; the run treats the epoch as not final and the payload
+omits `settling` for that snapshot. It matters only if it persists past the
+upper bound above, after which the refresh stops asking and finalizes anyway.
+
 ## Redeploy a running deployment
 
 A redeploy is the same two steps in one of two orders, and the release's

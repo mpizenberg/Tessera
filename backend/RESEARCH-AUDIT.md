@@ -174,7 +174,10 @@ states list` does, then `StakeSummary::new`). No such dump exists today.
   (`amaru-ledger/src/state/volatile/overlay.rs`), and
   `--max-extra-ledger-snapshots N` keeps `N` epochs beyond those the node
   needs. Its chain store keeps every block it syncs; only `amaru dev chain`
-  commands delete them.
+  commands delete them. A block reaches the stable store once `k` later
+  blocks exist, so snapshot `E` is written `k` blocks into `E+1`, or `3k/f`
+  slots in when the chain grows slowly. The backend finalizes a survey on the
+  same trigger, so an Amaru audit can run as soon as the artifact exists.
 - **Verdict:** with a reader over its epoch snapshots and a walk over its
   blocks, an audit tool at the level between Rungs 1 and 2 (§2), with no
   Haskell tooling. Its `snapshot create` stays the route to a Haskell-exact

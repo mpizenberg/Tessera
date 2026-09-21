@@ -1,7 +1,9 @@
 # Auditing a survey result
 
 A Tessera backend tallies each closed survey into a result artifact and serves
-it under its content hash, `artifactHash`. An audit rebuilds the artifact from
+it under its content hash, `artifactHash`. The artifact exists once the end of
+the survey's `end_epoch` can no longer roll back, about 12 hours after that
+epoch ends on mainnet and preprod and 3.5 on preview. An audit rebuilds the artifact from
 the chain and compares the two hashes. `packages/verifier` does the rebuild.
 This guide says what it needs, where it can get it, and whom each source asks
 you to trust. The evidence behind it (measurements, candidate tools, source
