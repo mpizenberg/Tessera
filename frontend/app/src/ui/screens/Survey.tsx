@@ -24,6 +24,7 @@ import type { TallyArtifact } from "cip-179/tally";
 
 import { useApp } from "~/state";
 import { computeAlignment } from "~/domain/anchorLink";
+import { finalityNotice, type FinalityNotice } from "~/domain/finalityNotice";
 import { roleBreakdown } from "~/domain/results";
 import { walletCanProveOwner, walletOwns } from "~/domain/roles";
 import { usePresentation } from "~/enrichment/usePresentation";
@@ -80,7 +81,7 @@ export const Survey: Component = () => {
   // degrades to the raw view, never blocks the page.
   const [artifactRes] = createResource(
     () => {
-      const final = (app.list.error ? undefined : app.list())?.finalState[
+      const final = (app.list.error ? undefined : app.list())?.finalState?.[
         key()
       ];
       return final && "artifactHash" in final ? final.artifactHash : undefined;
@@ -126,6 +127,22 @@ export const Survey: Component = () => {
   const tip = createMemo<ChainTip | undefined>(
     () => (app.list.error ? undefined : app.list())?.tip,
   );
+
+  const finality = createMemo<FinalityNotice | null>(() => {
+    const snap = app.list.error ? undefined : app.list();
+    const s = indexed();
+    if (!snap || !s) return null;
+    return finalityNotice({
+      network: app.config.network,
+      tip: snap.tip,
+      status: s.status,
+      talliable: s.talliable,
+      endEpoch: s.record.definition.endEpoch,
+      settling: snap.settling,
+      finalizes: snap.finalState !== undefined,
+      decided: snap.finalState?.[key()] !== undefined,
+    });
+  });
 
   // A coarse clock that ticks while the page is open, so a sealed survey's
   // reveal affordance lights up the moment its drand round publishes — without
@@ -248,6 +265,10 @@ export const Survey: Component = () => {
               />
             </Show>
 
+            <Show when={finality()}>
+              {(notice) => <FinalityNoticeCard notice={notice()} />}
+            </Show>
+
             {/* Results render from the survey's own bundle; until it lands (or
                 if it fails) show the same loading/error affordance as the page
                 shell, never a tally that silently reads as "0 responses". */}
@@ -307,6 +328,31 @@ const NotOnChainNotice: Component = () => (
     {t("survey.notOnChainNoticeRest")}
   </div>
 );
+
+/**
+ * Shown on a closed survey the serving tier has not decided yet: the results
+ * below are the live ones, and the final result waits until the end of the
+ * survey's end epoch can no longer roll back.
+ */
+const FinalityNoticeCard: Component<{ notice: FinalityNotice }> = (props) => {
+  const rest = (): string => {
+    const notice = props.notice;
+    if (notice.kind === "finalizing") return t("survey.finalizingNoticeRest");
+    return notice.hoursLeft === 0
+      ? t("survey.settlingNoticeRestSoon")
+      : t("survey.settlingNoticeRest", { hours: n(notice.hoursLeft) });
+  };
+  return (
+    <div class={css.claimedNotice}>
+      <strong>
+        {props.notice.kind === "settling"
+          ? t("survey.settlingNoticeStrong")
+          : t("survey.finalizingNoticeStrong")}
+      </strong>{" "}
+      {rest()}
+    </div>
+  );
+};
 
 /**
  * Shown when the on-chain definition is spec-invalid (non-v5 or structurally

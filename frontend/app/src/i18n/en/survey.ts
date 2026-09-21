@@ -19,6 +19,17 @@ const survey = {
   claimedNoticeRest:
     "A cancellation referencing this survey was published, but this client couldn't verify it came from the survey owner — so it isn't acted on. Only an owner-signed cancellation invalidates a survey.",
 
+  // Closed survey without a final result yet. Bold lead + plain rest. {hours}
+  // is a localized number to the half hour, at least 1.
+  settlingNoticeStrong: "Voting has ended; the result is not final yet.",
+  settlingNoticeRest:
+    "The results below are live and can still change: the last blocks of the survey's end epoch could be replaced. The final result is published once the chain rules that out, in about {hours} h.",
+  settlingNoticeRestSoon:
+    "The results below are live and can still change: the last blocks of the survey's end epoch could be replaced. The final result is published once the chain rules that out, in less than an hour.",
+  finalizingNoticeStrong: "Voting has ended.",
+  finalizingNoticeRest:
+    "The final result is being prepared. The results below are live until it is published.",
+
   // Invalid-definition notice (untalliable survey). Bold lead + plain rest.
   invalidNoticeStrong: "Invalid definition.",
   invalidNoticeRest:

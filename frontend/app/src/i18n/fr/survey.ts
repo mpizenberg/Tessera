@@ -22,6 +22,18 @@ const survey: Messages = {
   claimedNoticeRest:
     "Une annulation référençant ce sondage a été publiée, mais ce client n'a pas pu vérifier qu'elle provenait du propriétaire du sondage — elle n'est donc pas prise en compte. Seule une annulation signée par le propriétaire invalide un sondage.",
 
+  // Sondage clos sans résultat final. {hours} : nombre localisé, à la
+  // demi-heure, au moins 1.
+  settlingNoticeStrong:
+    "Le vote est terminé ; le résultat n'est pas encore final.",
+  settlingNoticeRest:
+    "Les résultats ci-dessous sont provisoires et peuvent encore changer : les derniers blocs de l'époque de fin du sondage pourraient être remplacés. Le résultat final est publié dès que la chaîne l'exclut, dans environ {hours} h.",
+  settlingNoticeRestSoon:
+    "Les résultats ci-dessous sont provisoires et peuvent encore changer : les derniers blocs de l'époque de fin du sondage pourraient être remplacés. Le résultat final est publié dès que la chaîne l'exclut, dans moins d'une heure.",
+  finalizingNoticeStrong: "Le vote est terminé.",
+  finalizingNoticeRest:
+    "Le résultat final est en préparation. Les résultats ci-dessous sont provisoires jusqu'à sa publication.",
+
   // Avis de définition invalide (sondage non décomptable)
   invalidNoticeStrong: "Définition invalide.",
   invalidNoticeRest:

@@ -46,6 +46,7 @@ import { KoiosDataSource } from "cardano-tessera-koios";
 import { IndexerDataSource } from "~/data/indexer";
 import type {
   BackendHealth,
+  Settling,
   SurveyFinalState,
   SurveyListCounts,
   SurveyListFilter,
@@ -95,9 +96,11 @@ export interface SurveyList {
   readonly surveys: readonly SurveyAggregate[];
   /**
    * The serving tier's final decision per survey key on this page, naming each
-   * artifact's hash; empty from a source with no finalization.
+   * artifact's hash; absent from a source with no finalization.
    */
-  readonly finalState: Readonly<Record<string, SurveyFinalState>>;
+  readonly finalState?: Readonly<Record<string, SurveyFinalState>>;
+  /** The epoch whose end is not final yet, so whose surveys are undecided. */
+  readonly settling?: Settling;
   /** True when the source's scan may have missed records (paging cap hit). */
   readonly incomplete?: boolean;
   /** Global per-chip totals over the search-matching set. */
@@ -368,7 +371,10 @@ export const AppProvider: ParentComponent = (props) => {
       return {
         tip: payload.tip,
         surveys: aggregateSurveyList(payload),
-        finalState: payload.finalState ?? {},
+        ...(payload.finalState !== undefined && {
+          finalState: payload.finalState,
+        }),
+        ...(payload.settling !== undefined && { settling: payload.settling }),
         counts: payload.counts ?? {
           all: 0,
           linked: 0,
