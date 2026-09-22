@@ -39,8 +39,13 @@ index in the block, whether the block marks it valid, its standalone CBOR
 reassembled from the block's own bytes (byte for byte what an indexer serves)
 and the raw CBOR of its label-17 datum.
 
-Known limit: a certificate from before the node's bootstrap point has no
-slot of its own, because PRAGMA's start states do not keep the pointer; a DRep
+Known limits. Amaru keeps no index from a script hash to a script, so a
+responder's native script is only available when the transaction carrying
+the record witnesses it; a script credential witnessed elsewhere (an earlier
+transaction, a reference script in the UTxO set) cannot be checked from these
+stores and its record stays unknown, where an indexer resolves the script by
+hash. A certificate from before the node's bootstrap point has no slot of its
+own, because PRAGMA's start states do not keep the pointer; a DRep
 registration or delegation then carries the bootstrap point's slot, a pool
 delegation slot 0.
 
