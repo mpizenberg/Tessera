@@ -220,6 +220,66 @@ mainnet.
 - The command is measured on one survey, on preview, with one alpha
   release. Storage formats and flags may change before Dolos 2.0.
 
+## Amaru from PRAGMA's states and Mithril
+
+**Trust:** PRAGMA's published end-of-epoch ledger states, a download signed
+by nobody's stake, and Amaru's implementation of the ledger rules, which
+validates every Mithril-certified block after them against those states on
+your machine. A wrong part of the start state fails the first later block
+that depends on it; a part no block depends on, such as the delegation of an
+account that never transacts again, stays unchecked. Amaru is not the
+Haskell ledger either, and its conformance tests cover preview epochs 1000
+to 1315; on epoch 1395 its readings equalled the Haskell node's on every
+account and DRep.
+
+**Cost:** on preview, a bootstrap took 3.5 minutes and 722 MB, a sync of 280
+epochs about 90 minutes with 1.1 GB of memory, 2.2 GB of immutable files
+and 3 GB of stores; reading the stores takes seconds and the rebuild under
+a second. The sync is proportional to the epochs between the bootstrap set
+and the survey's end. Preprod and mainnet have not been tried.
+
+Amaru has no query surface. It keeps its last three epoch snapshots and
+every block it validated in RocksDB stores, and `packages/amaru-store-reader`,
+a Rust crate built with Amaru's own toolchain, prints from them what the
+verifier needs: the snapshots of `E-2` to `E` and a walk of the survey's
+window. Its README has the commands. In outline, for a survey created in
+epoch `C` with `end_epoch = E`:
+
+1. `amaru node bootstrap` from the newest PRAGMA set ending before `C`, so
+   the stores hold the survey's whole window. The release binary cannot
+   then sync from Mithril: until upstream ships the fixes, build the
+   maintainer's fork branch named in `backend/RESEARCH-AUDIT.md`.
+2. `amaru mithril sync --ingest-until-slot <slot>` with a slot inside
+   `E + 1`, past its first `k` blocks (432 on preview, 2160 elsewhere).
+   Amaru writes snapshot `E` at that point and keeps three snapshots, so
+   a stop inside `E + 1` leaves `E-2` to `E` and the transition into
+   `E + 2` would drop `E-2`.
+3. Print the three snapshots and the walk into one directory, then:
+
+```sh
+pnpm --filter cardano-tessera-verifier verify -- \
+  --backend <backend URL> --survey <txHash>:<index> --amaru <dir>
+```
+
+The verifier checks that the walk reaches the end of `E` and keeps the
+survey's window from it. Each ledger fact is read from the snapshot that
+holds it: registration from `E`, a stakeholder's stake from `E-2`, a DRep's
+power from `E-1`.
+
+### Limits
+
+- Amaru keeps no index from a script hash to a script. A native-script
+  responder is checked only when the transaction carrying its record
+  witnesses the script; otherwise the response is excluded with a note and
+  the hash differs. Koios resolves such a script by hash, Dolos through
+  minikupo.
+- Whether PRAGMA keeps old bootstrap sets published is not known; the
+  preview bucket lists three. A survey older than the oldest set has no
+  starting point.
+- The electorate totals are not read.
+- Measured on one survey, on preview, with one beta release, whose crates
+  are internal APIs: the reader pins that release.
+
 ## Other routes
 
 None of these runs in the verifier today; `backend/RESEARCH-AUDIT.md`

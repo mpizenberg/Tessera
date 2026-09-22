@@ -68,7 +68,7 @@ credential that registered or deregistered between two consecutive states
 (109 registrations, 23 deregistrations) and the two DReps that registered
 during `E`. That supports registration being read at the end of `E` but does
 not measure the last blocks before it, which no ancillary state covered (§4,
-Option 3). A registered DRep retiring during `E` did not occur in the window
+Option 4). A registered DRep retiring during `E` did not occur in the window
 and is untested.
 
 So the ledger facts are computed at three consecutive boundaries, `E-2 → E-1`
@@ -164,24 +164,29 @@ matters here is its bootstrap pipeline and its ledger model.
   network. The runtime keeps only slim summaries in memory and rebuilds the
   account-level distribution from stored snapshots when needed, so the data is
   on disk after a bootstrap.
-- **Reading it** means a short Rust binary over `amaru-ledger` +
-  `amaru-stores` (open the RocksDB snapshot for an epoch, as `amaru dev ledger
-states list` does, then `StakeSummary::new`). No such dump exists today.
-- **As a node** (read from source, 2026-09-16, not run). PRAGMA's preview
-  bucket holds bootstrap sets ending at epochs 999, 1118 and 1392. The node
-  checkpoints its store as snapshot `E` when the stable store crosses into
-  `E+1`, so snapshot `E` is the state at the end of `E`
-  (`amaru-ledger/src/state/volatile/overlay.rs`), and
-  `--max-extra-ledger-snapshots N` keeps `N` epochs beyond those the node
-  needs. Its chain store keeps every block it syncs; only `amaru dev chain`
-  commands delete them. A block reaches the stable store once `k` later
-  blocks exist, so snapshot `E` is written `k` blocks into `E+1`, or `3k/f`
-  slots in when the chain grows slowly. The backend finalizes a survey on the
-  same trigger, so an Amaru audit can run as soon as the artifact exists.
-- **Verdict:** with a reader over its epoch snapshots and a walk over its
-  blocks, an audit tool at the level between Rungs 1 and 2 (§2), with no
-  Haskell tooling. Its `snapshot create` stays the route to a Haskell-exact
-  state (Option 2).
+- **Reading it** is `packages/amaru-store-reader`, a Rust binary over
+  `amaru-ledger`, `amaru-stores` and `amaru-ouroboros-traits`: it opens the
+  RocksDB snapshot of an epoch and prints `StakeSummary::new`'s view of it
+  with the governance actions, and walks the chain store's best chain for a
+  window's label-17 transactions. `StakeSummary` lists every registered
+  account, not only the delegated ones as its comment says.
+- **As a node** (run on preview, 2026-09-21 and 2026-09-22, release
+  v10.11.20260918). PRAGMA's preview bucket holds bootstrap sets ending at
+  epochs 999, 1118 and 1392. The node checkpoints its store as snapshot `E`
+  when the stable store crosses into `E+1`, so snapshot `E` is the state at
+  the end of `E` (`amaru-ledger/src/state/volatile/overlay.rs`), and
+  `--max-extra-ledger-snapshots N` keeps `N` epochs beyond the three the node
+  needs. `amaru mithril sync` feeds Mithril-certified immutable files through
+  the same header checks and block validator, keeps no extra snapshots, and
+  stops at `--ingest-until-slot`. The chain store keeps every block from the
+  bootstrap point on; only `amaru dev chain` commands delete them. A block
+  reaches the stable store once `k` later blocks exist, so snapshot `E` is
+  written `k` blocks into `E+1`, or `3k/f` slots in when the chain grows
+  slowly. The backend finalizes a survey on the same trigger, so an Amaru
+  audit can run as soon as the artifact exists.
+- **Verdict:** an audit tool at the level between Rungs 1 and 2 (§2), with
+  no Haskell tooling (§4, Option 2). Its `snapshot create` stays the route
+  to a Haskell-exact state (Option 3).
 
 ### Dolos — 1.6.0 (2026-07-27), 2.0.0-alpha.0 (2026-09-11)
 
@@ -382,7 +387,94 @@ narrows the block, index and log layers. Either way, the chain source must
 also learn to read at the first store's tip, since it finds `E`'s last block
 through the first block of `E+1`.
 
-### Option 2 — the Haskell ledger state through Amaru's tooling (Rung 2, exact)
+### Option 2 — Amaru from PRAGMA's states and Mithril, read from its stores (between Rungs 1 and 2)
+
+One binary and the stores it leaves behind, read by a small Rust program;
+no query surface, so nothing runs while the verifier reads. Tried on preview
+on 2026-09-21 and 2026-09-22 with release v10.11.20260918, the sync run on
+the maintainer's fork build of it (below), on the same survey
+`1356f08e…:0`: the verifier's rebuild from the reader's output gives the
+`artifactHash` its Koios rebuild gives, through the same code
+(`e35675f0…`). The recipe is `packages/amaru-store-reader/README.md`; the
+verifier takes the reader's output directory with `--amaru`.
+
+1. **Bootstrap** from the newest PRAGMA set ending before the survey's
+   creation epoch, so the chain store will hold the survey's whole window:
+   `amaru node bootstrap` on the 1118 set for a survey created in 1365.
+   Whether old sets stay published is not known; the preview bucket lists
+   three.
+2. **Sync** with `amaru mithril sync --ingest-until-slot <slot>`, the slot
+   at least `k` blocks into `end_epoch + 1` and still inside it, so that
+   snapshot `E` is written and the three snapshots `E-2` to `E` are the
+   ones left (there is no retention flag; each transition prunes below the
+   current epoch less 3, so entering `E+2` drops `E-2`). Every block from
+   the bootstrap point validates the start state as far as it depends on it
+   (§2). A node already running for another purpose serves the same survey
+   if read before `end_epoch + 2`, or later with
+   `--max-extra-ledger-snapshots`.
+3. **Read** the three snapshots and walk the window with the reader, then
+   run the verifier on the files. Registration at `E` is presence in
+   snapshot `E`; a stakeholder's stake is snapshot `E-2`'s behind a pool
+   still standing there; a DRep's power is snapshot `E-1`'s voting stake;
+   the linking action is in snapshot `E`'s proposal store with
+   `valid_until = E`, kept there one epoch past that. The electorate totals
+   are not read.
+
+The release binary cannot run step 2 after a bootstrap: three defects in
+the Mithril route, fixed in the maintainer's fork
+(`fix/fast-sync-unavailable-stake-dist`) and drafted upstream. Until
+upstream ships them, an auditor builds that branch.
+
+**Measured at 1395** against the Haskell state of the Rung 1 snapshots on
+the whole population, and against Koios through the verifier's own Koios
+source on a sample of 129 credentials and 66 DReps chosen for the ways a
+row can go wrong:
+
+- Registration agrees on all 110641 accounts and 8978 DReps. Stake agrees
+  on all 79734 rows of the Haskell `set` and in total; Amaru also lists 641
+  registered accounts of stake 0 the Haskell snapshot omits, which the
+  verifier reads the same way (registered, weight 0). DRep power agrees on
+  all 3016 rows, Amaru printing 0 for the 5962 DReps the distribution omits.
+  Every sampled row agrees with Koios, the two responders included.
+- Column A: the same 18 label-17 transactions as Koios in the window, with
+  slot, epoch and block index equal, the transaction CBOR identical byte for
+  byte, the metadata and the proof evidence equal once decoded, and the one
+  linking action equal in transaction, index, anchor URL and hash.
+- Two Amaru behaviours worth knowing, neither of which changes a reading.
+  The snapshots keep the delegation rows of 79 accounts to pools since
+  retired and 69 to DReps since deregistered, which the Haskell ledger
+  deletes; the node's own end-of-epoch view drops them, and that view is
+  what the reader prints. And a DRep that registers and deregisters in one
+  block (one did, in epochs 1353, 1354 and 1360) makes the node log
+  `ledger.dreps.remove … unknown drep` at the boundary, with the end state
+  right on both sides: a log-level ordering defect for PRAGMA.
+
+**Costs on preview**, on the maintainer's Mac (12 cores, 36 GB RAM):
+
+| Step                                        | Wall time                    | Memory      | Disk                                      |
+| ------------------------------------------- | ---------------------------- | ----------- | ----------------------------------------- |
+| Bootstrap from the 1118 set                 | 3.5 min                      | —           | 722 MB download                           |
+| Sync 1119 to 1396 from Mithril (280 epochs) | about 90 min at 155 blocks/s | 1.1 GB peak | 2.2 GB of immutable files, 3 GB of stores |
+| Read three snapshots and walk 30 epochs     | 2 s each, 2 s                | —           | 16 MB per snapshot, 36 KB for the walk    |
+| Rebuild from the files                      | 0.4 s (4 s from Koios)       | —           | —                                         |
+
+The sync cost is proportional to the epochs between the bootstrap set and
+the survey's end, 10 s an epoch early on and 40 s on the full ones past
+1300, so it is the choice of set that decides it. Preprod and mainnet have
+not been tried.
+
+**Limits.** Amaru keeps no index from a script hash to a script: a
+responder's native script is only checkable when the transaction carrying
+its record witnesses it, where Koios resolves the script by hash from
+anywhere on chain and Dolos through minikupo. A response whose script is
+elsewhere is excluded from the rebuild with a note, and the hash no longer
+matches; the target survey needs no such script. Amaru's conformance tests
+cover preview epochs 1000 to 1315 and 1395 sits outside them; this audit is
+the check for that epoch. Amaru is beta with frequent breaking releases, and
+its crates are internal APIs rather than a library contract, so the reader
+pins one release and follows it.
+
+### Option 3 — the Haskell ledger state through Amaru's tooling (Rung 2, exact)
 
 `amaru snapshot create --network preprod --epoch E+1` yields the Haskell
 `NewEpochState` at the ends of `E-2`, `E-1` and `E` — the three boundaries §1
@@ -400,7 +492,7 @@ release archives, macOS arm64 included; in 11.0.1 it ignores
 `--analyse-from`, so every run starts from genesis, which 11.1.1 fixes. Worth building as the **adjudicator**, not the daily
 path.
 
-### Option 3 — a signed ledger snapshot (Rung 1, minutes)
+### Option 4 — a signed ledger snapshot (Rung 1, minutes)
 
 - **Mithril ancillary** — tried on preview, 2026-09-09 to 2026-09-16
   (`packages/mithril`). An hourly archive of the node's newest ledger
@@ -444,7 +536,7 @@ These replace an oracle _service_ with a named party's _key_. They are a real
 upgrade for anyone auditing soon after close, and none of them can audit an
 old survey.
 
-### Option 4 — Yaci Store from genesis (Rung 2, db-sync-shaped)
+### Option 5 — Yaci Store from genesis (Rung 2, db-sync-shaped)
 
 The most faithful table-for-table reproduction and the slowest. Preprod is
 small enough to be a meaningful cross-check of Option 1's numbers; mainnet
@@ -461,17 +553,18 @@ is a multi-day PostgreSQL job.
   there); a Dolos-fed rebuild reproducing the same `tally` hash is the whole
   point of that split.
 - **The verifier's seam is `TallyInputSource` plus `SurveyChain`**,
-  implemented for Koios and, in `packages/dolos`, for two Dolos nodes; the
-  totals sit apart in `ElectorateTotals`, which the Dolos source leaves out.
-  The backend still reads Koios. Fed by Dolos, its provenance would carry
-  `provider: dolos`, the Mithril certificate hash, and the stop epochs read.
+  implemented for Koios, in `packages/dolos` for two Dolos nodes and in
+  `packages/amaru` for the files an Amaru node's stores yield; the totals
+  sit apart in `ElectorateTotals`, which the two node sources leave out. The
+  backend still reads Koios. Fed by a node, its provenance would carry the
+  provider, the Mithril certificate hash, and the stop epochs read.
 - **The infrastructure gap `RESEARCH.md` §8.5 named is narrower now, not
   closed.** Historical per-account stake is served by Dolos; historical DRep
   power is served by nobody's API — Dolos deferred it in a comment, Dingo
   never stores it, Amaru has no API. Mithril's ledger-state
   certification, when it ships, collapses Rung 1 into Rung 2 for recent
-  epochs and makes Option 3 the cheap trustless path — for an audit, only if
-  the certified state sits at an epoch boundary (§4, Option 3).
+  epochs and makes Option 4 the cheap trustless path — for an audit, only if
+  the certified state sits at an epoch boundary (§4, Option 4).
 
 ---
 
@@ -480,7 +573,7 @@ is a multi-day PostgreSQL job.
 **Rung 1 was tried first and is set aside** (2026-09-16). The Mithril
 ancillary gave every weight and total exactly and settled which DRep
 distribution db-sync labels `E` (§1), but no archive holds the state at an
-epoch boundary (§4, Option 3), so registration at `end_epoch` needs block
+epoch boundary (§4, Option 4), so registration at `end_epoch` needs block
 data a Rung 1 snapshot does not carry. What remains of it is a cheap estimate
 of a recent result. What carries over to a Rung 2 test:
 
@@ -494,7 +587,7 @@ of a recent result. What carries over to a Rung 2 test:
   maps of two states finds every change.
 - **The decoder.** `packages/mithril` reads the Haskell `NewEpochState` a node
   writes to `db/ledger`. A state db-analyser stores at `E`'s last slot
-  (Option 2) should be the same format; not tried.
+  (Option 3) should be the same format; not tried.
 
 **The stopping point comes from the immutable files.** Every Cardano network
 completes twenty immutable files per post-Byron epoch, cut on slot
@@ -516,7 +609,8 @@ artifact to reproduce.
   level between Rungs 1 and 2 (§2). Bootstrap from PRAGMA's states, sync with
   the epoch snapshots retained, read them with a small Rust program over
   `amaru-stores` and `amaru-ledger`, and walk the survey window's blocks for
-  its CIP-179 transactions.
+  its CIP-179 transactions. Done on 2026-09-22: the rebuild equals the Koios
+  one (§4, Option 2).
 
 Dingo is dropped (§3).
 
@@ -536,7 +630,7 @@ API (OpenAPI 0.1.93) blocks the check twice:
 
 ## 7. Sources
 
-- Amaru: repository README and `docs/BOOTSTRAP.md`, `docs/PUBLISHING_SNAPSHOTS.md`, `CHANGELOG.md`, `crates/amaru-ledger/src/summary/stake_distribution.rs`, `crates/amaru/src/bin/amaru/cmd/`, and on 2026-09-16 at f664b29 `crates/amaru-ledger/src/state/volatile/overlay.rs`, `crates/amaru-stores/src/rocksdb/mod.rs`, `crates/amaru/src/bin/amaru/cmd/node/run.rs` (https://github.com/pragma-org/amaru); releases page (v10.11.20260820 to v10.11.20260912); the preview bootstrap index `https://pub-b844360df4774bb092a2bb2043b888e5.r2.dev/preview/index.json`; CI run 28745354271 (`publish-bootstrap-snapshots`, preprod).
+- Amaru: repository README and `docs/BOOTSTRAP.md`, `docs/PUBLISHING_SNAPSHOTS.md`, `CHANGELOG.md`, `crates/amaru-ledger/src/summary/stake_distribution.rs`, `crates/amaru/src/bin/amaru/cmd/`, and on 2026-09-16 at f664b29 `crates/amaru-ledger/src/state/volatile/overlay.rs`, `crates/amaru-stores/src/rocksdb/mod.rs`, `crates/amaru/src/bin/amaru/cmd/node/run.rs` (https://github.com/pragma-org/amaru); releases page (v10.11.20260820 to v10.11.20260918); the preview bootstrap index `https://pub-b844360df4774bb092a2bb2043b888e5.r2.dev/preview/index.json`; CI run 28745354271 (`publish-bootstrap-snapshots`, preprod); at tag v10.11.20260918 `crates/amaru-node/src/mithril.rs`, `crates/amaru-kernel/src/cardano/{raw_block,block,auxiliary_data,era_history}.rs`, `crates/amaru-ouroboros-traits/src/chain_store.rs`, `crates/amaru-stores/src/rocksdb/{mod,consensus}.rs`; release v10.11.20260918 and the maintainer's fork branch `fix/fast-sync-unavailable-stake-dist`, run on preview on 2026-09-21 and 2026-09-22.
 - Dolos: `crates/minibf/src/lib.rs` (router), `routes/accounts.rs`, `routes/epochs/mod.rs`, `routes/governance/mod.rs`, `crates/cardano/src/model/{logs,dreps,gov}.rs`, `crates/snapshot/PROFILE.md`, `skills/debug-epoch-mismatch/SKILL.md`, `.github/workflows/epoch-tests.yml`, `docs/content/operations/performance.mdx`, issues #1248, #448, #1078, #1082; on 2026-09-16 at 15f92c6e `crates/cardano/src/work.rs`, `crates/cardano/src/ewrap/loading.rs`, `crates/minibf/src/routes/metadata.rs`, `crates/minibf/src/pagination.rs`, `src/bin/dolos/bootstrap/mithril.rs`, `crates/mithril/src/lib.rs`, PRs #1121, #1212, #1222, #1228, #1266, #1327 and issues #1018, #1364 (https://github.com/txpipe/dolos); configuration schema and bootstrap pages at https://docs.txpipe.io/dolos; release `v2.0.0-alpha.0` (`a08c9d13`), run on preview from 2026-09-17 to 2026-09-18.
 - Dingo: README (bootstrap, disk, timings), `dingo.yaml.example`, `api/blockfrost/blockfrost.go`; on 2026-09-16 at d9080904 `ledger/queries.go`, `internal/node/load.go`, `database/plugin/metadata/internal/drepquery/voting_power.go`, `ledger/governance/epoch.go`, issues #3885, #1903 (https://github.com/blinklabs-io/dingo); releases v0.70.6 to v0.70.12.
 - Blockfrost: `openapi.yaml` version 0.1.93 (`blockfrost/openapi` master of 2026-09-15), issue #471 (https://github.com/blockfrost/openapi).

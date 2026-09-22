@@ -40,7 +40,8 @@ and the raw CBOR of its label-17 datum; with the tip the walk started from.
 
 For a survey created at slot `S` with `end_epoch = E`, a node whose stores
 hold the blocks from `S` and the snapshots of `E-2` to `E`, that is one
-synced past the first `k` blocks of `E+1` and not past `E+3`:
+synced past the first `k` blocks of `E+1` and still inside `E+1` (the
+transition into `E+2` prunes `E-2`):
 
 ```
 mkdir <dir>
