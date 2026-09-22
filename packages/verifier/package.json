@@ -21,6 +21,7 @@
   "dependencies": {
     "cardano-tessera-client": "workspace:*",
     "cardano-tessera-core": "workspace:*",
+    "cardano-tessera-amaru": "workspace:*",
     "cardano-tessera-dolos": "workspace:*",
     "cardano-tessera-koios": "workspace:*",
     "cip-179": "workspace:*",

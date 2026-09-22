@@ -9,6 +9,10 @@
  *     --backend https://<backend> --survey <txHash>:<index> \
  *     --dolos-end <url> --dolos-after <url> [--minikupo <url>] [--out <dir>]
  *
+ *   pnpm --filter cardano-tessera-verifier verify -- \
+ *     --backend https://<backend> --survey <txHash>:<index> \
+ *     --amaru <dir> [--out <dir>]
+ *
  * Fetches ONLY the artifact-under-test from the backend. The survey definition,
  * the response *set*, and every response's *answers* are re-derived by an
  * independent label-17 scan — never taken from the backend — so a backend
@@ -18,7 +22,9 @@
  * source: Koios by default, or two Dolos nodes' mini-Blockfrost APIs, one
  * stopped at the last block of the survey's `end_epoch` (`--dolos-end`) and
  * one at least a block into `end_epoch + 2` (`--dolos-after`), with the
- * second's minikupo API resolving native scripts by hash. The tally is
+ * second's minikupo API resolving native scripts by hash, or a directory of
+ * `amaru-store-reader` output (`--amaru`): the snapshots of `end_epoch - 2`
+ * to `end_epoch` and a block walk spanning the survey's window. The tally is
  * rebuilt under the pinned ruleset and its content hash compared; the
  * electorate totals, outside the hash, are re-fetched too when the source is
  * Koios, and a difference is printed as a note, as is a ruleset other than
@@ -48,6 +54,11 @@ import {
   type Network,
   type TesseraClient,
 } from "cardano-tessera-client";
+import {
+  AmaruChain,
+  AmaruStores,
+  AmaruTallyInputs,
+} from "cardano-tessera-amaru";
 import { KOIOS_URL, type AppConfig } from "cardano-tessera-core";
 import { DolosChain, DolosTallyInputs, Minibf } from "cardano-tessera-dolos";
 import { KoiosTallyInputs } from "cardano-tessera-koios";
@@ -75,6 +86,14 @@ function koiosSources(network: Network): Sources {
   };
   const koios = new KoiosTallyInputs(config);
   return { chain: koiosChain(config), weights: koios, totals: koios };
+}
+
+function amaruSources(network: Network, dir: string): Sources {
+  const stores = new AmaruStores(dir);
+  return {
+    chain: new AmaruChain(stores, network),
+    weights: new AmaruTallyInputs(stores),
+  };
 }
 
 function dolosSources(network: Network, endUrl: string): Sources {
@@ -116,7 +135,9 @@ function usage(): never {
     "usage: verify --backend <url> --survey <txHash>:<index> " +
       "[--koios <url>] [--token <koios token>] [--out <dir>]\n" +
       "       verify --backend <url> --survey <txHash>:<index> " +
-      "--dolos-end <url> --dolos-after <url> [--minikupo <url>] [--out <dir>]",
+      "--dolos-end <url> --dolos-after <url> [--minikupo <url>] [--out <dir>]\n" +
+      "       verify --backend <url> --survey <txHash>:<index> " +
+      "--amaru <dir> [--out <dir>]",
   );
   exit(2);
 }
@@ -155,9 +176,12 @@ async function main(): Promise<void> {
   // The backend's network decides which chain the rebuild reads.
   const network = parseNetwork((await client.liveness()).network);
   const dolosEnd = argOf("dolos-end");
+  const amaruDir = argOf("amaru");
   const { chain, weights, totals } = dolosEnd
     ? dolosSources(network, dolosEnd)
-    : koiosSources(network);
+    : amaruDir
+      ? amaruSources(network, amaruDir)
+      : koiosSources(network);
 
   // 1. The ONE backend read: the artifact under test. Its hash is recomputed
   // from independent chain data below, so trusting the backend to hand us the

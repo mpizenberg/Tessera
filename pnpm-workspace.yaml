@@ -1,5 +1,6 @@
 packages:
   - frontend/app
+  - packages/amaru
   - packages/cip179
   - packages/client
   - packages/core

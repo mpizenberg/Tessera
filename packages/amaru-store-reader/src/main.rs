@@ -30,20 +30,10 @@ fn credential(c: &Credential) -> String {
     }
 }
 
-fn drep(d: &DRep) -> String {
-    match d {
-        DRep::Key(h) => format!("key:{}", hex::encode(h)),
-        DRep::Script(h) => format!("script:{}", hex::encode(h)),
-        DRep::Abstain => "abstain".to_string(),
-        DRep::NoConfidence => "no_confidence".to_string(),
-    }
-}
-
-/// One epoch snapshot as JSON: the registered accounts and DReps as the ledger stores them
-/// (the certificates), plus what the node derives from them at the epoch boundary: under
-/// `active`, an account's stake and the delegations still standing once retired pools and
-/// lapsed DReps are dropped; for a DRep, its expiry extended by dormant epochs and its voting
-/// stake. Lovelace are decimal strings.
+/// One epoch snapshot as JSON: every registered stake credential with the stake and pool the
+/// node's own end-of-epoch view gives it (the pool `null` once retired), every registered
+/// DRep with its voting stake, and every governance action still in the state with its last
+/// votable epoch and anchor. Lovelace are decimal strings.
 fn snapshot(network: NetworkName, ledger_dir: PathBuf, epoch: Epoch) -> anyhow::Result<Value> {
     let era_history = network
         .as_era_history()
@@ -58,49 +48,42 @@ fn snapshot(network: NetworkName, ledger_dir: PathBuf, epoch: Epoch) -> anyhow::
 
     let accounts: BTreeMap<String, Value> = snapshot
         .iter_accounts()?
-        .map(|(key, row)| {
-            let active = summary.accounts.get(&key).map(|state| {
+        .map(|(key, _)| {
+            let state = summary.accounts.get(&key).ok_or_else(|| {
+                anyhow!(
+                    "registered account {} has no end-of-epoch view",
+                    credential(&key)
+                )
+            })?;
+            Ok((
+                credential(&key),
                 json!({
                     "stake": state.balance.to_string(),
                     "pool": state.pool.map(hex::encode),
-                    "drep": state.drep.as_ref().map(drep),
-                })
-            });
-            (
-                credential(&key),
-                json!({
-                    "pool": row.pool.map(|(pool, _)| hex::encode(pool)),
-                    "pool_slot": row.pool.map(|(_, at)| u64::from(at.slot())),
-                    "drep": row.drep.as_ref().map(|(d, _)| drep(d)),
-                    "drep_slot": row.drep.as_ref().map(|(_, at)| u64::from(at.slot())),
-                    "deposit": row.deposit.to_string(),
-                    "rewards": row.rewards.to_string(),
-                    "active": active,
                 }),
-            )
+            ))
         })
-        .collect();
+        .collect::<anyhow::Result<_>>()?;
 
     let dreps: BTreeMap<String, Value> = snapshot
         .iter_dreps()?
-        .map(|(key, row)| {
+        .map(|(key, _)| {
             let as_drep = match key {
                 Credential::KeyHash(h) => DRep::Key(h),
                 Credential::ScriptHash(h) => DRep::Script(h),
             };
-            let state = summary.dreps.get(&as_drep);
-            (
+            let state = summary.dreps.get(&as_drep).ok_or_else(|| {
+                anyhow!(
+                    "registered DRep {} has no end-of-epoch view",
+                    credential(&key)
+                )
+            })?;
+            Ok((
                 credential(&key),
-                json!({
-                    "registered_slot": u64::from(row.registered_at.slot()),
-                    "valid_until": u64::from(row.valid_until),
-                    "deposit": row.deposit.to_string(),
-                    "expiry": state.and_then(|s| s.valid_until).map(u64::from),
-                    "voting_stake": state.map(|s| s.voting_stake.to_string()),
-                }),
-            )
+                json!({ "voting_stake": state.voting_stake.to_string() }),
+            ))
         })
-        .collect();
+        .collect::<anyhow::Result<_>>()?;
 
     let proposals: BTreeMap<String, Value> = snapshot
         .iter_proposals()?
@@ -108,7 +91,6 @@ fn snapshot(network: NetworkName, ledger_dir: PathBuf, epoch: Epoch) -> anyhow::
             (
                 format!("{}#{}", id.transaction_id, id.proposal_index),
                 json!({
-                    "proposed_slot": u64::from(row.proposed_in.slot()),
                     "valid_until": u64::from(row.valid_until),
                     "anchor": {
                         "url": row.proposal.anchor.url.as_ref(),
@@ -123,6 +105,7 @@ fn snapshot(network: NetworkName, ledger_dir: PathBuf, epoch: Epoch) -> anyhow::
     Ok(json!({
         "epoch": u64::from(snapshot.epoch()),
         "tip": { "slot": u64::from(tip.slot_or_default()), "hash": hex::encode(tip.hash()) },
+        "gov_action_lifetime": snapshot.protocol_parameters()?.gov_action_lifetime,
         "accounts": accounts,
         "dreps": dreps,
         "proposals": proposals,
@@ -253,10 +236,27 @@ fn blocks(network: NetworkName, chain_dir: PathBuf, from: Slot, to: Slot) -> any
         }
     }
 
+    let tip_slot = tip.slot_or_default();
+    let tip_epoch = era_history.slot_to_epoch_unchecked_horizon(tip_slot)?;
+    let epoch_start = era_history.epoch_bounds(tip_epoch)?.start;
+    let system_start = network
+        .as_global_parameters()
+        .ok_or_else(|| anyhow!("no global parameters for {network}"))?
+        .system_start;
+    let tip_time = system_start / 1000
+        + era_history
+            .slot_to_relative_time_unchecked_horizon(tip_slot)?
+            .as_secs();
     Ok(json!({
         "from": u64::from(from),
         "to": u64::from(to),
-        "tip": { "slot": u64::from(tip.slot_or_default()), "hash": hex::encode(tip.hash()) },
+        "tip": {
+            "slot": u64::from(tip_slot),
+            "hash": hex::encode(tip.hash()),
+            "epoch": u64::from(tip_epoch),
+            "epoch_slot": tip_slot.elapsed_from(epoch_start)?,
+            "time": tip_time,
+        },
         "blocks": window.len(),
         "transactions": transactions,
     }))
