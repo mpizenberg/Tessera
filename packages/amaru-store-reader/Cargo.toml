@@ -1,0 +1,17 @@
+[package]
+name = "amaru-store-reader"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Tessera's verifier inputs read from an Amaru node's own stores: a survey's responders from an epoch snapshot, its records from the validated blocks."
+
+[dependencies]
+amaru-kernel = { git = "https://github.com/pragma-org/amaru.git", tag = "v10.11.20260918" }
+amaru-ledger = { git = "https://github.com/pragma-org/amaru.git", tag = "v10.11.20260918" }
+amaru-stores = { git = "https://github.com/pragma-org/amaru.git", tag = "v10.11.20260918" }
+anyhow = "1"
+hex = "0.4"
+serde_json = "1"
+
+[profile.release]
+debug = false
