@@ -26,9 +26,10 @@ applies (extended by dormant epochs) and its voting stake. Lovelace are
 decimal strings. The electorate totals are not printed: they sit outside the
 artifact's hash.
 
-Known limit: a credential registered before the node's bootstrap point
-carries the bootstrap point as its registration slot, not the certificate's,
-because PRAGMA's start states do not keep the pointer.
+Known limit: a certificate from before the node's bootstrap point has no
+slot of its own, because PRAGMA's start states do not keep the pointer; a DRep
+registration or delegation then carries the bootstrap point's slot, a pool
+delegation slot 0.
 
 How this fits Tessera's audit, what it trusts and what it measured:
 `backend/RESEARCH-AUDIT.md`.
