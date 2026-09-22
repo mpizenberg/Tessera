@@ -8,6 +8,7 @@ description = "Tessera's verifier inputs read from an Amaru node's own stores: a
 [dependencies]
 amaru-kernel = { git = "https://github.com/pragma-org/amaru.git", tag = "v10.11.20260918" }
 amaru-ledger = { git = "https://github.com/pragma-org/amaru.git", tag = "v10.11.20260918" }
+amaru-ouroboros-traits = { git = "https://github.com/pragma-org/amaru.git", tag = "v10.11.20260918" }
 amaru-stores = { git = "https://github.com/pragma-org/amaru.git", tag = "v10.11.20260918" }
 anyhow = "1"
 hex = "0.4"
