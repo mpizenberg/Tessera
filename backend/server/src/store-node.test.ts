@@ -107,6 +107,7 @@ const validatedRow = (
   linkedActionId: null,
   wellFormed: true,
   checkedAt: 1,
+  scriptLookups: null,
 });
 
 describe("store-node sealed reveal cursor", () => {
@@ -187,8 +188,19 @@ describe("store-node migration of a pre-runner database", () => {
     const store = openBackendStore(path);
     try {
       // The pre-existing row survives, with a NULL linked action.
-      expect(await store.completedValidationsForTxs(["aa"])).toEqual(
-        new Map([["aa:0", { linkedActionId: null, slot: 10, epochNo: 500 }]]),
+      expect(await store.storedValidationsForTxs(["aa"])).toEqual(
+        new Map([
+          [
+            "aa:0",
+            {
+              complete: true,
+              linkedActionId: null,
+              slot: 10,
+              epochNo: 500,
+              scriptLookups: null,
+            },
+          ],
+        ]),
       );
       // And writes touching the new column work.
       await store.upsertValidatedResponses([
@@ -205,10 +217,11 @@ describe("store-node migration of a pre-runner database", () => {
           linkedActionId: "gov#0",
           wellFormed: true,
           checkedAt: 2,
+          scriptLookups: null,
         },
       ]);
       expect(
-        (await store.completedValidationsForTxs(["bb"])).get("bb:1"),
+        (await store.storedValidationsForTxs(["bb"])).get("bb:1"),
       ).toMatchObject({ linkedActionId: "gov#0" });
       // Missing tables were created by their migrations, not the baseline.
       await store.reconcileSegment(ALL_SLOTS, [], [], [], [], 7);
@@ -269,6 +282,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0030_bigint_points.sql",
       "0031_totals_out_of_hash.sql",
       "0032_finality_gate.sql",
+      "0033_script_lookups.sql",
     ]);
   });
 });

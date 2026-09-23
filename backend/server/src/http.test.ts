@@ -837,6 +837,7 @@ describe("GET /api/surveys/{txHash}/{index}", () => {
       linkedActionId: null,
       wellFormed: true,
       checkedAt: 1,
+      scriptLookups: null,
     });
     await store.upsertValidatedResponses([
       row("cc".repeat(32), true),
@@ -1171,6 +1172,7 @@ describe("GET /api/health", () => {
     linkedActionId: null,
     wellFormed: true,
     checkedAt: NOW,
+    scriptLookups: null,
   });
 
   it("reports snapshot freshness, last run, totals, and quotas", async () => {

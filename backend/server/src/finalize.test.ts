@@ -201,6 +201,7 @@ function validatedRow(
     linkedActionId: null,
     wellFormed: true,
     checkedAt: 1,
+    scriptLookups: null,
     ...overrides,
   };
 }
@@ -1802,6 +1803,13 @@ describe("finalizeClosedSurveys", () => {
     await finalizeRecords(CONFIG, store, inputs, noProofs, recs, TIP);
     // Artifact must NOT be emitted: rC could still resolve to counted, and an
     // immutable artifact would freeze it out forever.
+    expect(store.artifacts.size).toBe(0);
+
+    // So does a verdict parked on a native script, owed its last lookup.
+    await store.upsertValidatedResponses([
+      validatedRow(rC, { proofOk: false, scriptLookups: 3 }),
+    ]);
+    await finalizeRecords(CONFIG, store, inputs, noProofs, recs, TIP);
     expect(store.artifacts.size).toBe(0);
 
     // A null block index on an otherwise-proven row also postpones.

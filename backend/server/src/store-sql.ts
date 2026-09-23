@@ -23,7 +23,7 @@ import type {
   FinalStateEntry,
   FinalStates,
   CancellationRow,
-  CompletedValidation,
+  StoredValidation,
   DbGovEpochRow,
   RefreshRunInput,
   RefreshRunRow,
@@ -71,7 +71,7 @@ import {
   cachedByTxHashSql,
   cancellationsBySurveysSql,
   changedSurveysSql,
-  completedValidationsSql,
+  storedValidationsSql,
   markFinalStatesSql,
   ownedCountSql,
   putUntalliableSql,
@@ -131,7 +131,8 @@ export const VALIDATED_COLUMNS = `tx_hash AS txHash, response_index AS responseI
        survey_key AS surveyKey, role, credential, slot,
        epoch_no AS epochNo, block_index AS blockIndex,
        proof_ok AS proofOk, linked_action_id AS linkedActionId,
-       well_formed AS wellFormed, checked_at AS checkedAt`;
+       well_formed AS wellFormed, checked_at AS checkedAt,
+       script_lookups AS scriptLookups`;
 
 export const ARTIFACT_COLUMNS = `survey_key AS surveyKey, end_epoch AS endEpoch,
        artifact_hash AS artifactHash, artifact, created_at AS createdAt`;
@@ -170,6 +171,16 @@ const INCOMPLETE = "block_index IS NULL OR proof_ok IS NULL";
 const INCOMPLETE_VALIDATION_SURVEYS = `
   SELECT DISTINCT survey_key AS surveyKey FROM validated_response
   WHERE ${INCOMPLETE}`;
+
+/**
+ * Surveys with a verdict parked on a native script whose end epoch is final,
+ * owed their last lookup; the partial index on `script_lookups` serves it.
+ * Binds: (finalThroughEpoch).
+ */
+const PARKED_SCRIPT_SURVEYS = `
+  SELECT DISTINCT survey_key AS surveyKey FROM validated_response
+  WHERE script_lookups IS NOT NULL AND proof_ok = 0
+    AND survey_key IN (SELECT survey_key FROM survey_index WHERE end_epoch <= ?)`;
 
 const SNAPSHOT_META_SELECT = `
   SELECT tip, incomplete, fetched_at AS fetchedAt, list_counts AS listCounts,
@@ -430,36 +441,47 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
   };
 
   return {
-    async completedValidationsForTxs(
+    async storedValidationsForTxs(
       txHashes: readonly string[],
-    ): Promise<Map<string, CompletedValidation>> {
-      const out = new Map<string, CompletedValidation>();
+    ): Promise<Map<string, StoredValidation>> {
+      const out = new Map<string, StoredValidation>();
       if (txHashes.length === 0) return out;
       const batches = await db.batchAll<
-        { txHash: string; responseIndex: number } & CompletedValidation
-      >(completedValidationsSql(txHashes));
+        { txHash: string; responseIndex: number; complete: number } & Omit<
+          StoredValidation,
+          "complete"
+        >
+      >(storedValidationsSql(txHashes));
       for (const rows of batches) {
         for (const r of rows)
           out.set(validationKey(r.txHash, r.responseIndex), {
+            complete: r.complete !== 0,
             linkedActionId: r.linkedActionId,
             slot: r.slot,
             epochNo: r.epochNo,
+            scriptLookups: r.scriptLookups,
           });
       }
       return out;
     },
     async revalidationInputs(
       finalizationFloor: number,
+      finalThroughEpoch: number,
     ): Promise<RevalidationInputs> {
-      const [cursors, retry] = await db.batchAll([
+      const [cursors, retry, parked] = await db.batchAll([
         query(VALIDATED_LINK_CURSORS, finalizationFloor, ...BINDABLE),
         query(INCOMPLETE_VALIDATION_SURVEYS),
+        query(PARKED_SCRIPT_SURVEYS, finalThroughEpoch),
       ]);
       return {
         cursors: cursors as ValidatedLinkCursor[],
-        retrySurveys: (retry as { surveyKey: string }[]).map(
-          (r) => r.surveyKey,
-        ),
+        retrySurveys: [
+          ...new Set(
+            [...retry, ...parked].map(
+              (r) => (r as { surveyKey: string }).surveyKey,
+            ),
+          ),
+        ],
       };
     },
     async upsertValidatedResponses(
@@ -471,8 +493,8 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
             `INSERT INTO validated_response
                (tx_hash, response_index, survey_key, role, credential,
                 slot, epoch_no, block_index, proof_ok, linked_action_id,
-                well_formed, checked_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                well_formed, checked_at, script_lookups)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(tx_hash, response_index) DO UPDATE SET
                survey_key = excluded.survey_key,
                role = excluded.role,
@@ -483,7 +505,8 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
                proof_ok = excluded.proof_ok,
                linked_action_id = excluded.linked_action_id,
                well_formed = excluded.well_formed,
-               checked_at = excluded.checked_at`,
+               checked_at = excluded.checked_at,
+               script_lookups = excluded.script_lookups`,
             r.txHash,
             r.responseIndex,
             r.surveyKey,
@@ -496,6 +519,7 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
             r.linkedActionId,
             bit(r.wellFormed),
             r.checkedAt,
+            r.scriptLookups,
           ),
         ),
       );

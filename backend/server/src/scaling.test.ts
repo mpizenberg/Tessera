@@ -311,6 +311,7 @@ async function seed(store: BackendStore, profile: Profile): Promise<Corpus> {
       linkedActionId: null,
       wellFormed: true,
       checkedAt: 1,
+      scriptLookups: null,
     })),
   );
   for (const s of surveys.slice(0, -2)) {

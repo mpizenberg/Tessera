@@ -926,6 +926,7 @@ describe("audited per-role counts", () => {
         linkedActionId: null,
         wellFormed: true,
         checkedAt: 1,
+        scriptLookups: null,
       },
     ]);
     const quiet = tipAt(1000);
@@ -969,6 +970,7 @@ describe("audited per-role counts", () => {
         linkedActionId: null,
         wellFormed: true,
         checkedAt: 1,
+        scriptLookups: null,
       },
     ]);
     await runRefresh(store, chain, tipAt(200));
@@ -1007,6 +1009,7 @@ describe("audited per-role counts", () => {
         linkedActionId: null,
         wellFormed: true,
         checkedAt: 1,
+        scriptLookups: null,
       },
     ]);
     await runRefresh(store, chain, tipAt(500));

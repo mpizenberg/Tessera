@@ -620,49 +620,108 @@ describe("validateNewResponses", () => {
         answers: { type: "public", answers: [answer] },
       },
     };
-    const judge = async (
+    /** One refresh per entry of `finalThroughEpochs`, on one store. */
+    const refreshes = async (
       scripts: Record<string, ResolvedNativeScript | null>,
-      finalThroughEpoch: number,
+      finalThroughEpochs: readonly number[],
     ) => {
       const store = testStore();
       const source = fakeSource({ ts: signed }, { ts: 3 }, scripts);
       const stored = records(scriptResp);
-      await validatePass(
-        store,
-        stored,
-        [],
-        source,
-        true,
-        [],
-        stored.responses,
-        finalThroughEpoch,
-      );
-      expect(source.nativeScripts).toHaveBeenCalledWith([scriptHashHex]);
-      return store.validated.get("ts:0")!.proofOk;
+      const seen = [];
+      for (const finalThroughEpoch of finalThroughEpochs) {
+        await validatePass(
+          store,
+          stored,
+          [],
+          source,
+          true,
+          [],
+          stored.responses,
+          finalThroughEpoch,
+        );
+        const { proofOk, scriptLookups } = store.validated.get("ts:0")!;
+        seen.push({ proofOk, scriptLookups });
+      }
+      return { seen, lookups: source.nativeScripts.mock.calls.length };
     };
+    const OPEN = DEF.endEpoch - 1;
+    const FINAL = DEF.endEpoch;
 
     it("proves with a script on chain by end_epoch", async () => {
-      expect(
-        await judge({ [scriptHashHex]: { script, epoch: DEF.endEpoch } }, 0),
-      ).toBe(true);
+      const { seen } = await refreshes(
+        { [scriptHashHex]: { script, epoch: DEF.endEpoch } },
+        [OPEN],
+      );
+      expect(seen).toEqual([{ proofOk: true, scriptLookups: null }]);
     });
 
-    it("waits while end_epoch is not final and the script is not found", async () => {
-      expect(await judge({}, DEF.endEpoch - 1)).toBeNull();
+    it("looks three times while the survey is open, then stops looking", async () => {
+      const { seen, lookups } = await refreshes({}, [
+        OPEN,
+        OPEN,
+        OPEN,
+        OPEN,
+        OPEN,
+      ]);
+      expect(seen).toEqual([
+        { proofOk: null, scriptLookups: 1 },
+        { proofOk: null, scriptLookups: 2 },
+        { proofOk: false, scriptLookups: 3 },
+        { proofOk: false, scriptLookups: 3 },
+        { proofOk: false, scriptLookups: 3 },
+      ]);
+      expect(lookups).toBe(3);
     });
 
-    it("is unproven once end_epoch is final and the script was not on chain by it", async () => {
-      expect(await judge({}, DEF.endEpoch)).toBe(false);
-      expect(
-        await judge(
-          { [scriptHashHex]: { script, epoch: DEF.endEpoch + 1 } },
-          DEF.endEpoch,
-        ),
-      ).toBe(false);
+    it("looks once more when end_epoch is final, and counts a script landed by then", async () => {
+      const scripts: Record<string, ResolvedNativeScript | null> = {};
+      const store = testStore();
+      const source = fakeSource({ ts: signed }, { ts: 3 }, scripts);
+      const stored = records(scriptResp);
+      // The last passes' scan no longer lists the response: the parked
+      // verdict alone brings it back once end_epoch is final.
+      const pass = (finalThroughEpoch: number, input = stored.responses) =>
+        validatePass(
+          store,
+          stored,
+          [],
+          source,
+          true,
+          [],
+          input,
+          finalThroughEpoch,
+        );
+      for (let i = 0; i < 3; i++) await pass(OPEN);
+      scripts[scriptHashHex] = { script, epoch: DEF.endEpoch };
+      await pass(FINAL, []);
+      await pass(FINAL, []);
+      expect(store.validated.get("ts:0")).toMatchObject({
+        proofOk: true,
+        scriptLookups: null,
+      });
+      expect(source.nativeScripts).toHaveBeenCalledTimes(4);
     });
 
-    it("waits when the lookup failed", async () => {
-      expect(await judge({ [scriptHashHex]: null }, DEF.endEpoch)).toBeNull();
+    it("is unproven for good when the last lookup finds nothing on time", async () => {
+      const late = { [scriptHashHex]: { script, epoch: DEF.endEpoch + 1 } };
+      const { seen, lookups } = await refreshes(late, [
+        OPEN,
+        OPEN,
+        OPEN,
+        FINAL,
+        FINAL,
+      ]);
+      expect(seen.at(-1)).toEqual({ proofOk: false, scriptLookups: null });
+      expect(lookups).toBe(4);
+    });
+
+    it("does not count a failed lookup", async () => {
+      const { seen } = await refreshes({ [scriptHashHex]: null }, [OPEN, OPEN]);
+      expect(seen).toEqual([
+        { proofOk: null, scriptLookups: null },
+        { proofOk: null, scriptLookups: null },
+      ]);
     });
   });
 });

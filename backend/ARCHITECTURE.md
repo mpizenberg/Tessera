@@ -575,7 +575,11 @@ applied to storage rather than to queries.
   verdicts per `(tx_hash, response_index)`, filled incrementally as responses
   land. A completed verdict is re-judged only when what it was decided against
   has moved, so the steady state adds no subrequests; a failed enrichment leaves
-  NULLs the next refresh retries.
+  NULLs the next refresh retries. A native script its transaction does not
+  carry, not found by hash, is looked up on at most three refreshes while the
+  survey is open, then parked as unproven (`script_lookups`, `migrations/0033`)
+  and looked up once more when its `end_epoch` is final: a survey ending far
+  off cannot buy a lookup per refresh.
 - **`tx_metadata_cache`** (`migrations/0005`) — fetch-once label-17 metadata per
   tx hash. Metadata is immutable, so each fulfilled batch is banked as it
   completes and a refresh cut short by the subrequest cap keeps what it fetched.
@@ -589,8 +593,9 @@ applied to storage rather than to queries.
   owner and response proof, which an open survey would otherwise re-fetch on
   every scan. Raw bytes only, never a decoded proof: mechanism A adds to it,
   per record, a script resolved by hash, and a script absent today can be
-  registered tomorrow, so such a proof is true only as of its lookup. A hash Koios returned
-  no row for is a node that is behind, not an answer, and is banked as nothing.
+  registered tomorrow, so such a proof is true only as of its lookup. A hash
+  Koios returned no row for is a node that is behind, not an answer, and is
+  banked as nothing.
 
 - **`response_count_bank`** (`migrations/0023`, `0026`) — per survey, the
   distinct `(role, credential)` count over its response rows below a slot, and

@@ -84,6 +84,13 @@ export interface ValidatedResponseRow {
   readonly wellFormed: boolean;
   /** Unix seconds of the (latest) validation attempt. */
   readonly checkedAt: number;
+  /**
+   * Lookups by hash that found no native script for the responder's
+   * credential while its survey was open; null when no such question is
+   * open. With `proofOk` false the verdict is parked: it waits for one more
+   * lookup once the survey's `end_epoch` is final.
+   */
+  readonly scriptLookups: number | null;
 }
 
 /** Identity of a validated row: "<txHash>:<responseIndex>". */
@@ -191,28 +198,32 @@ export interface ValidatedLinkCursor {
 }
 
 /**
- * What a completed verdict was decided against, so a refresh can tell whether
- * it still holds: the canonical epoch-aligned link set (`linkedActionId`) and
- * the chain position the response occupied when it was judged.
+ * What a stored verdict was decided against, so a refresh can tell whether it
+ * still holds: whether it is complete (both `blockIndex` and `proofOk`
+ * present), the canonical epoch-aligned link set (`linkedActionId`), the
+ * chain position the response occupied when it was judged, and the native
+ * script lookups that found nothing so far.
  */
-export interface CompletedValidation {
+export interface StoredValidation {
+  readonly complete: boolean;
   readonly linkedActionId: string | null;
   readonly slot: number;
   readonly epochNo: number;
+  readonly scriptLookups: number | null;
 }
 
 /** Tally persistence (ARCHITECTURE.md §6.2), same database. */
 export interface TallyStore {
   /**
-   * The given transactions' rows needing no enrichment retry (both
-   * `blockIndex` and `proofOk` present), keyed by {@link validationKey}. A
-   * refresh skips these unless what they were decided against has moved
-   * since. Keyed by transaction so validation reads only the verdicts of the
-   * responses in front of it — never a whole survey's, however many it has.
+   * The given transactions' stored verdicts, keyed by {@link validationKey}.
+   * A refresh skips a complete one unless what it was decided against has
+   * moved since. Keyed by transaction so validation reads only the verdicts
+   * of the responses in front of it — never a whole survey's, however many
+   * it has.
    */
-  completedValidationsForTxs(
+  storedValidationsForTxs(
     txHashes: readonly string[],
-  ): Promise<Map<string, CompletedValidation>>;
+  ): Promise<Map<string, StoredValidation>>;
   /**
    * What decides which stored verdicts get another look, in one round trip:
    * the distinct link-set cursors pinned by completed bindable-role verdicts of
@@ -220,10 +231,15 @@ export interface TallyStore {
    * finalized against a link set that had already settled, so no verdict down
    * there can be re-evaluated, and the read stays bounded by the undecided
    * surveys rather than by history), and the surveys with at least one verdict
-   * still awaiting an enrichment retry, whose stored responses re-enter
-   * validation even when the scan's input no longer carries them.
+   * still awaiting an enrichment retry, or parked on a native script while
+   * their `end_epoch` is at or below `finalThroughEpoch`, whose stored
+   * responses re-enter validation even when the scan's input no longer
+   * carries them.
    */
-  revalidationInputs(finalizationFloor: number): Promise<RevalidationInputs>;
+  revalidationInputs(
+    finalizationFloor: number,
+    finalThroughEpoch: number,
+  ): Promise<RevalidationInputs>;
   upsertValidatedResponses(
     rows: readonly ValidatedResponseRow[],
   ): Promise<void>;

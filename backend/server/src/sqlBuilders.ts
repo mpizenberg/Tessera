@@ -807,19 +807,18 @@ export const putUntalliableSql = (
   );
 
 /**
- * Completed validation verdicts (both enrichments present) of the given
- * transactions — a primary-key seek per hash, so validation reads the
- * verdicts of the responses in front of it and nothing else.
+ * Stored validation verdicts of the given transactions — a primary-key seek
+ * per hash, so validation reads the verdicts of the responses in front of it
+ * and nothing else.
  */
-export const completedValidationsSql = (
-  txHashes: readonly string[],
-): SqlQuery[] =>
+export const storedValidationsSql = (txHashes: readonly string[]): SqlQuery[] =>
   byKeysSql(
     `SELECT tx_hash AS txHash, response_index AS responseIndex,
-            linked_action_id AS linkedActionId, slot, epoch_no AS epochNo
+            block_index IS NOT NULL AND proof_ok IS NOT NULL AS complete,
+            linked_action_id AS linkedActionId, slot, epoch_no AS epochNo,
+            script_lookups AS scriptLookups
      FROM validated_response
-     WHERE tx_hash IN ${JSON_KEY_SET}
-       AND block_index IS NOT NULL AND proof_ok IS NOT NULL`,
+     WHERE tx_hash IN ${JSON_KEY_SET}`,
     txHashes,
   );
 

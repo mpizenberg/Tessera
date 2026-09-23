@@ -829,7 +829,7 @@ interface CountedRows {
  *
  * A candidate row (well-formed, in-window, covered role) whose proof verdict or
  * block index is still pending forces the whole survey to postpone: a null
- * `proofOk` may yet resolve to counted, and a null `blockIndex` (the `-1`
+ * `proofOk`, or one parked on a native script, may yet resolve to counted, and a null `blockIndex` (the `-1`
  * dedup sentinel) can resolve a same-slot tie differently from the verifier's
  * real index. Emitting now would freeze either divergence into the immutable,
  * hash-committed artifact, so we wait for a later cron instead (finding 1).
@@ -853,6 +853,11 @@ async function countedRows(
     if (r.proofOk === null) {
       // Enrichment still pending (retried each refresh) — can't finalize yet.
       pending ??= `response ${r.txHash}:${r.responseIndex} has no proof verdict yet`;
+      continue;
+    }
+    if (r.scriptLookups !== null) {
+      // Parked on a native script, owed a lookup now that end_epoch is final.
+      pending ??= `response ${r.txHash}:${r.responseIndex} awaits its native script's last lookup`;
       continue;
     }
     if (!r.proofOk) continue;

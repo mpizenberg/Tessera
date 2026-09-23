@@ -51,6 +51,12 @@ export type ValidateStore = TallyStore &
   Pick<SnapshotStore, "responseRowsForSurveys" | "surveyRowsByKeys">;
 
 /**
+ * Lookups by hash of a response's native script while its survey is open,
+ * one per refresh; past them the verdict waits for the survey's end.
+ */
+const MAX_SCRIPT_LOOKUPS = 3;
+
+/**
  * Validate the scan's responses that were never (fully) validated before, plus
  * any whose survey's governance link changed since their last verdict, and
  * persist the results. Responses referencing an unknown survey are skipped
@@ -103,8 +109,10 @@ export async function validateNewResponses(
   // a survey with no row has rolled back. The cursor read stops at the
   // finalization floor: a survey below it froze its artifact against an
   // already-settled link set, so none of its verdicts can go stale.
-  const { cursors, retrySurveys } =
-    await store.revalidationInputs(finalizationFloor);
+  const { cursors, retrySurveys } = await store.revalidationInputs(
+    finalizationFloor,
+    finalThroughEpoch,
+  );
   const surveyRows = await store.surveyRowsByKeys([
     ...new Set([
       ...responses.map((r) => refKey(r.response.surveyRef)),
@@ -167,7 +175,7 @@ export async function validateNewResponses(
     .filter((r) => !inputKeys.has(validationKey(r.txHash, r.responseIndex)));
   const pool = [...responses, ...revived];
 
-  const completed = await store.completedValidationsForTxs([
+  const stored = await store.storedValidationsForTxs([
     ...new Set(pool.map((r) => r.txHash)),
   ]);
   const candidates = pool.filter((r) => {
@@ -179,16 +187,19 @@ export async function validateNewResponses(
     // cheap griefing vector, since one tx fee buys a permanent per-refresh
     // cost (finding 4). If its survey later enters the snapshot, the response
     // is still uncompleted and re-enters here, so nothing is lost by dropping.
-    if (!defByKey.has(refKey(r.response.surveyRef))) return false;
-    const key = validationKey(r.txHash, r.responseIndex);
-    const verdict = completed.get(key);
-    if (!verdict) return true; // never validated / enrichment pending
+    const def = defByKey.get(refKey(r.response.surveyRef));
+    if (!def) return false;
+    const verdict = stored.get(validationKey(r.txHash, r.responseIndex));
+    if (!verdict?.complete) return true; // never validated / enrichment pending
     // A rolled-back response that re-landed elsewhere carries the same
     // (txHash, responseIndex) but a new chain position, and the verdict holds
     // the old one: its `epochNo` decides the on-time rule and its slot and
     // block index decide the dedup winner. Re-judging also re-reads the block
     // index, which moved with the transaction.
     if (verdict.slot !== r.slot || verdict.epochNo !== r.epochNo) return true;
+    // Parked on a native script: owed one lookup once end_epoch is final.
+    if (verdict.scriptLookups !== null && def.endEpoch <= finalThroughEpoch)
+      return true;
     if (!BINDABLE_ROLES.has(r.response.role)) return false; // link-independent
     // Re-validate when the survey's current link set differs from the one this
     // verdict was pinned to (a link appeared, changed, or was removed).
@@ -226,12 +237,7 @@ export async function validateNewResponses(
   const proofs = new Map(judged.map((r, i) => [r, proofList[i]!]));
 
   const checkedAt = Math.floor(Date.now() / 1000);
-  const awaitsScript = (
-    credential: Credential,
-    proof: TxProof,
-    endEpoch: number,
-  ): boolean => {
-    if (endEpoch <= finalThroughEpoch) return false;
+  const scriptMissing = (credential: Credential, proof: TxProof): boolean => {
     const hash = scriptCredentialHash(credential);
     return (
       hash !== null && !proof.nativeScripts.some((s) => s.scriptHash === hash)
@@ -254,12 +260,18 @@ export async function validateNewResponses(
     //  - unproven → false, EXCEPT a bindable role's negative when the whole
     //    gov-links fetch failed (every link then unknown) → null, retry;
     //    and a native-script credential whose script is not found while its
-    //    survey's end_epoch is not final → null: the script can still land.
+    //    survey's end_epoch is not final: the script can still land, so it is
+    //    looked up again on the next refreshes, MAX_SCRIPT_LOOKUPS in all,
+    //    then parked as false until that epoch is final and looked up once
+    //    more. Bounded, so a far-off survey cannot buy a lookup per refresh.
     // Mechanism B only ever adds proof, and a script found stays found, so a
     // pass is always final (finding 6).
+    const previous = stored.get(validationKey(r.txHash, r.responseIndex));
     let proofOk: boolean | null;
+    let scriptLookups: number | null = null;
     if (proof === null) {
       proofOk = null;
+      scriptLookups = previous?.scriptLookups ?? null;
     } else {
       const verdict = responseCredentialProof(
         r.response,
@@ -274,9 +286,15 @@ export async function validateNewResponses(
             ? null
             : !govLinksReliable && BINDABLE_ROLES.has(r.response.role)
               ? null
-              : awaitsScript(r.response.credential, proof, def.endEpoch)
-                ? null
-                : false;
+              : false;
+      if (
+        proofOk === false &&
+        def.endEpoch > finalThroughEpoch &&
+        scriptMissing(r.response.credential, proof)
+      ) {
+        scriptLookups = (previous?.scriptLookups ?? 0) + 1;
+        if (scriptLookups < MAX_SCRIPT_LOOKUPS) proofOk = null;
+      }
     }
     rows.push({
       txHash: r.txHash,
@@ -291,6 +309,7 @@ export async function validateNewResponses(
       linkedActionId: linkSetKey(surveyKey),
       wellFormed: validateResponse(def, r.response).length === 0,
       checkedAt,
+      scriptLookups,
     });
   }
 
