@@ -237,7 +237,10 @@ export class DolosChain {
   /**
    * The links among the actions expiring with one of `endEpochs`, every
    * anchor fetched and checked against its on-chain hash here. minibf's
-   * `expiration`, like Koios's, is one past the last votable epoch.
+   * `expiration`, like Koios's, is one past the last votable epoch. Its
+   * listing, like Blockfrost's, carries neither the expiration nor the
+   * proposing epoch, so every proposal's details are asked: 1536 requests on
+   * preview.
    */
   async fetchGovernanceLinks(
     endEpochs: readonly number[],
