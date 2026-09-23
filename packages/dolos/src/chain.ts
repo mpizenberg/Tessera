@@ -76,26 +76,21 @@ export class DolosChain {
       throw new Error(
         `survey ${key}: no transaction ${txHash} on the Dolos node at ${this.node.url}`,
       );
-    const survey = (
-      await this.records(def.block_height, def.block_height)
-    ).surveys.find((s) => refKey(s.ref) === key);
+    const [survey] = (
+      await this.records(key, def.block_height, def.block_height)
+    ).surveys;
     if (!survey)
       throw new Error(
         `survey ${key}: transaction ${txHash} defines no such survey`,
       );
     const last = await lastBlockOf(this.node, survey.definition.endEpoch);
-    const records = await this.records(def.block_height, last.height);
+    const { responses, cancellations } = await this.records(
+      key,
+      def.block_height,
+      last.height,
+    );
     return {
-      bundle: {
-        survey: records.surveys.find((s) => refKey(s.ref) === key)!,
-        responses: records.responses.filter(
-          (r) => refKey(r.response.surveyRef) === key,
-        ),
-        cancellations: records.cancellations.filter(
-          (c) => refKey(c.target) === key,
-        ),
-        tip: await this.tip(),
-      },
+      bundle: { survey, responses, cancellations, tip: await this.tip() },
       incomplete: false,
     };
   }
@@ -114,8 +109,12 @@ export class DolosChain {
     };
   }
 
-  /** The label-17 records of the blocks from height `from` to `to`, inclusive. */
-  private async records(from: number, to: number) {
+  /**
+   * The records naming survey `key` in the blocks from height `from` to `to`,
+   * inclusive. minibf filters by label only, so every label-17 transaction's
+   * datum is read, and its position asked only when an item names the survey.
+   */
+  private async records(key: string, from: number, to: number) {
     const metadata = new Map<string, string>();
     for (let start = from; ; ) {
       let page = 1;
@@ -145,12 +144,6 @@ export class DolosChain {
     };
     const epochOf = new Map<string, number>();
     for (const [txHash, cbor] of metadata) {
-      const tx = await this.node.get<TxRow>(`/txs/${txHash}`);
-      if (!epochOf.has(tx.block))
-        epochOf.set(
-          tx.block,
-          (await this.node.get<BlockRow>(`/blocks/${tx.block}`)).epoch,
-        );
       // The route's `metadata` is the transaction's `{17: datum}`.
       const labels = cborToMetadatum(hexToBytes(cbor)) as ReadonlyMap<
         Metadatum,
@@ -167,8 +160,16 @@ export class DolosChain {
         console.warn(
           `skipping label-17 item ${txHash}[${s.index}]: ${String(s.error)}`,
         );
+      const payload = naming(key, txHash, decoded.payload);
+      if (!payload) continue;
+      const tx = await this.node.get<TxRow>(`/txs/${txHash}`);
+      if (!epochOf.has(tx.block))
+        epochOf.set(
+          tx.block,
+          (await this.node.get<BlockRow>(`/blocks/${tx.block}`)).epoch,
+        );
       classifyPayload(
-        decoded.payload,
+        payload,
         txHash,
         { slot: tx.slot, epochNo: epochOf.get(tx.block)! },
         out,
@@ -275,5 +276,32 @@ export class DolosChain {
     }
     if (proposals.length === 0) return { links: [], unresolved: [] };
     return govLinkScan(proposals, await resolveGovAnchors(proposals));
+  }
+}
+
+type Payload = DecodedPayloadItems["payload"];
+
+/** The items of `payload` naming survey `key`, or null when none does. */
+function naming(key: string, txHash: string, payload: Payload): Payload | null {
+  switch (payload.type) {
+    case "definitions": {
+      const txId = hexToBytes(txHash);
+      const definitions = payload.definitions.filter(
+        ({ index }) => refKey({ txId, index }) === key,
+      );
+      return definitions.length > 0 ? { ...payload, definitions } : null;
+    }
+    case "responses": {
+      const responses = payload.responses.filter(
+        ({ value }) => refKey(value.surveyRef) === key,
+      );
+      return responses.length > 0 ? { ...payload, responses } : null;
+    }
+    case "cancellations": {
+      const cancellations = payload.cancellations.filter(
+        ({ value }) => refKey(value) === key,
+      );
+      return cancellations.length > 0 ? { ...payload, cancellations } : null;
+    }
   }
 }
