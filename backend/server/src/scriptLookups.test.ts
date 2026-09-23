@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { MAX_SCRIPT_LOOKUPS, reusableScripts } from "./scriptLookups";
+import { MAX_MISSES } from "./backoff";
+import { reusableScripts } from "./scriptLookups";
 import { testStore } from "./testing/store";
 
 const HASH = "5c".repeat(28);
@@ -34,7 +35,7 @@ describe("reusableScripts — the backoff", () => {
   });
 
   it("stops asking once the lookups are used up, unless fresh", async () => {
-    const spent = await bankedMisses(MAX_SCRIPT_LOOKUPS);
+    const spent = await bankedMisses(MAX_MISSES);
     expect(await reused(spent, 10 ** 9)).toBe("none");
     expect(await reused(spent, 0, [HASH])).toBeUndefined();
   });

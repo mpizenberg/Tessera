@@ -24,6 +24,7 @@ import {
   type NativeScriptInfo,
 } from "cip-179/domain";
 
+import type { Misses } from "./backoff";
 import type { ChangesCursor } from "./changes";
 import type {
   ArtifactRow,
@@ -914,20 +915,57 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       entries: ReadonlyMap<string, GovLinkDoc | null>,
     ): Promise<void> {
       await db.batchWrite(
-        [...entries].map(([hash, link]) =>
+        [...entries].flatMap(([hash, link]) => [
           query(
             "INSERT OR IGNORE INTO gov_anchor (anchor_hash, link) VALUES (?, ?)",
             hash,
             JSON.stringify(link),
+          ),
+          query("DELETE FROM gov_anchor_miss WHERE anchor_hash = ?", hash),
+        ]),
+      );
+    },
+    async govAnchorMisses(
+      hashes: readonly string[],
+    ): Promise<Map<string, Misses>> {
+      // Full-table read filtered in JS, like the bank: pruned with it.
+      const wanted = new Set(hashes);
+      const rows = await db.all<{ hash: string } & Misses>(
+        query(
+          `SELECT anchor_hash AS hash, misses, checked_at AS checkedAt
+           FROM gov_anchor_miss`,
+        ),
+      );
+      return new Map(
+        rows
+          .filter((r) => wanted.has(r.hash))
+          .map((r) => [r.hash, { misses: r.misses, checkedAt: r.checkedAt }]),
+      );
+    },
+    async putGovAnchorMisses(
+      hashes: readonly string[],
+      at: number,
+    ): Promise<void> {
+      await db.batchWrite(
+        hashes.map((hash) =>
+          query(
+            `INSERT INTO gov_anchor_miss (anchor_hash, misses, checked_at)
+             VALUES (?, 1, ?)
+             ON CONFLICT(anchor_hash) DO UPDATE SET
+               misses = misses + 1,
+               checked_at = excluded.checked_at`,
+            hash,
+            at,
           ),
         ),
       );
     },
     async deleteGovAnchors(hashes: readonly string[]): Promise<void> {
       await db.batchWrite(
-        hashes.map((hash) =>
+        hashes.flatMap((hash) => [
           query("DELETE FROM gov_anchor WHERE anchor_hash = ?", hash),
-        ),
+          query("DELETE FROM gov_anchor_miss WHERE anchor_hash = ?", hash),
+        ]),
       );
     },
     async settledGovEpochs(

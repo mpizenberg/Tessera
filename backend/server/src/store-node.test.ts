@@ -284,6 +284,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0032_finality_gate.sql",
       "0033_script_lookups.sql",
       "0034_script_lookup_cache.sql",
+      "0035_gov_anchor_misses.sql",
     ]);
   });
 });

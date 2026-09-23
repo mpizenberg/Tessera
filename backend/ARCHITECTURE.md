@@ -426,8 +426,12 @@ Two on-chain facts bound the work (`backend/server/src/govLinks.ts`):
 - **An anchor is hash-fixed**, so one verified fetch classifies a document
   permanently. Classifications are banked by anchor hash (`gov_anchor`) and
   never re-fetched — including verified _non_-links, which are as final as
-  links. A fetch _failure_ is banked nowhere: it is absence of evidence, and the
-  action stays **unresolved** — unknown, not unlinked.
+  links. A fetch _failure_ decides nothing: it is absence of evidence, and the
+  action stays **unresolved** — unknown, not unlinked. It is only counted
+  (`gov_anchor_miss`, `migrations/0035`), so the anchor is retried on the
+  script lookups' backoff (3 minutes, then 6, 12, …, ten attempts in all)
+  rather than on every refresh; a refresh attempts at most twenty anchors,
+  least recently tried first.
 - **A proposal's expiration epoch is in the future when it is proposed**, so
   once the tip reaches epoch X the set of proposals expiring at X is frozen and
   its link set can be decided once and for all (`gov_epoch`). A settled epoch
@@ -442,9 +446,14 @@ Two on-chain facts bound the work (`backend/server/src/govLinks.ts`):
   integration, validation and finalization read links from the rows they were
   projected into instead of re-deriving them.
 
-Settlement waits for every anchor at the epoch, but not forever: after one epoch
-of patience it settles with the links it has and records the rest as given up.
-That bound is load-bearing, not tidiness — validation holds a bindable response's
+Settlement waits for every anchor at the epoch, but not forever: once an
+anchor's ten attempts have failed and the tip is one epoch past its expiration,
+it is asked one last time, like a script lookup once its epoch is final; if
+that fails too the epoch settles with the links it has and records the rest as
+given up. Patience is counted in this backend's attempts, not in epochs alone:
+a backend catching up on past epochs meets them all on its first pass, and
+would otherwise give up every anchor that pass failed or never reached. That
+bound is load-bearing, not tidiness — validation holds a bindable response's
 verdict at "unknown" while an epoch-aligned action is unresolved, and
 finalization postpones on any unknown verdict, so one permanently dead anchor
 would otherwise postpone that survey's artifact forever.

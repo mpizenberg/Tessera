@@ -19,9 +19,11 @@
  *
  * Settlement waits for every anchor at the epoch to resolve, but not forever:
  * most anchors in the wild are permanently dead, and a fetch failure is not
- * evidence of absence, so *something* has to end the wait. After
- * {@link SETTLEMENT_PATIENCE_EPOCHS} the epoch settles with the links it has and
- * the rest recorded as given up. Without that bound a single dead anchor at a
+ * evidence of absence, so *something* has to end the wait. A failed fetch is
+ * banked as a miss and retried on the backoff (`backoff.ts`); once an anchor's
+ * attempts are used up and a last one {@link SETTLEMENT_PATIENCE_EPOCHS} past
+ * its epoch fails too, the epoch settles with the links it has and that anchor
+ * recorded as given up. Without that bound a single dead anchor at a
  * survey's end epoch postpones that survey's artifact permanently: validation
  * holds a bindable verdict at "unknown" while an epoch-aligned action is
  * unresolved (finding 6), and finalization postpones on any unknown verdict.
@@ -36,23 +38,31 @@ import {
 } from "cardano-tessera-koios";
 import type { GovLink, GovLinkDoc, GovLinkScan } from "cip-179/domain";
 
+import { due, MAX_MISSES, type Misses } from "./backoff";
 import type { GovLinkStore, SettledGovEpoch } from "./store";
 
 /**
- * Epochs past an expiration epoch we keep trying its unresolved anchors before
- * settling without them. One epoch is hundreds of attempts at a 3-minute
- * cadence — long past the point where a reachable document would have answered.
+ * Epochs past an expiration epoch before an anchor still unresolved there is
+ * asked one last time, once its attempts on the backoff are used up, and given
+ * up if that fails too. The backoff's attempts end about a day after the
+ * first, so this last one covers a document published later than that; and
+ * counting attempts, not epochs alone, keeps a backend catching up on past
+ * epochs from giving up anchors its first pass failed or never reached.
  */
 export const SETTLEMENT_PATIENCE_EPOCHS = 1;
 
+/** Whether an anchor's last attempt, past its patience, has failed as well. */
+const givenUp = (m: Misses | undefined): boolean =>
+  m !== undefined && m.misses > MAX_MISSES;
+
 /**
- * Anchors one refresh may attempt. The cap is the Worker's per-invocation
- * subrequest budget, which the scan, validation and finalization also draw on —
- * and an `ipfs://` anchor can cost several requests on its own. Unattempted
- * anchors simply wait for the next cron, which is why the patience above is
- * counted in epochs rather than passes.
+ * Anchors one refresh may attempt, out of the Worker's per-invocation
+ * subrequest budget that the scan, validation and finalization also draw on:
+ * an `ipfs://` anchor races up to five gateways, so this is at most 100
+ * requests of the 1,000. Anchors left over wait for a later refresh, and the
+ * settlement of their epoch waits for them.
  */
-export const ANCHOR_ATTEMPTS_PER_REFRESH = 6;
+export const ANCHOR_ATTEMPTS_PER_REFRESH = 20;
 
 /** What one pass resolved, and where its settlement frontier now stands. */
 export interface GovLinkPass extends GovLinkScan {
@@ -85,7 +95,7 @@ export async function refreshGovLinks(
   tipEpoch: number,
   nowSec: number,
   floor: number,
-  opts: ResolveAnchorsOptions = {},
+  opts: Omit<ResolveAnchorsOptions, "limit" | "rotate"> = {},
 ): Promise<GovLinkPass> {
   const expirations = [...new Set(endEpochs)]
     .map((e) => e + 1)
@@ -118,14 +128,44 @@ export async function refreshGovLinks(
     };
 
   const proposals = await source.fetchGovProposals(unsettled.map((e) => e - 1));
-  const banked = await store.cachedGovAnchors([
-    ...new Set(proposals.map((p) => p.anchorHash)),
-  ]);
+  const hashes = [...new Set(proposals.map((p) => p.anchorHash))];
+  const banked = await store.cachedGovAnchors(hashes);
+  const unbanked = hashes.filter((h) => !banked.has(h));
+  const misses = await store.govAnchorMisses(unbanked);
+  const patient = (h: string) =>
+    proposals.some(
+      (p) =>
+        p.anchorHash === h &&
+        tipEpoch >= p.endEpoch + 1 + SETTLEMENT_PATIENCE_EPOCHS,
+    );
+  const worthAsking = (h: string) => {
+    const m = misses.get(h);
+    return (
+      m === undefined ||
+      due(m, nowSec) ||
+      (m.misses === MAX_MISSES && patient(h))
+    );
+  };
+  // Least recently attempted first, never attempted before all: an anchor that
+  // failed backs off, so the ones queued behind it get their turn.
+  const lastTry = (h: string) => misses.get(h)?.checkedAt ?? -Infinity;
+  const attempting = unbanked
+    .filter(worthAsking)
+    .sort((a, b) => lastTry(a) - lastTry(b) || (a < b ? -1 : 1))
+    .slice(0, ANCHOR_ATTEMPTS_PER_REFRESH);
+  const window = new Set(attempting);
   const fresh = await resolveGovAnchors(
-    proposals.filter((p) => !banked.has(p.anchorHash)),
-    { ...opts, limit: opts.limit ?? ANCHOR_ATTEMPTS_PER_REFRESH },
+    proposals.filter((p) => window.has(p.anchorHash)),
+    opts,
   );
   await store.putGovAnchors(fresh);
+  const failed = attempting.filter((h) => !fresh.has(h));
+  await store.putGovAnchorMisses(failed, nowSec);
+  for (const h of failed)
+    misses.set(h, {
+      misses: (misses.get(h)?.misses ?? 0) + 1,
+      checkedAt: nowSec,
+    });
 
   const docs = new Map<string, GovLinkDoc | null>([...banked, ...fresh]);
   const scan = govLinkScan(proposals, docs);
@@ -135,6 +175,7 @@ export async function refreshGovLinks(
     unsettled,
     proposals,
     docs,
+    misses,
     scan.links,
     tipEpoch,
     nowSec,
@@ -152,14 +193,15 @@ export async function refreshGovLinks(
 /**
  * Settle every eligible expiration epoch, prune the anchors only those epochs
  * needed, and return the epochs settled. An epoch is eligible once the tip has
- * reached it (its proposal set is frozen) and settles when nothing at it is
- * unresolved, or when patience runs out.
+ * reached it (its proposal set is frozen) and settles when every anchor at it
+ * is resolved or given up.
  */
 async function settleEpochs(
   store: GovLinkStore,
   unsettled: readonly number[],
   proposals: readonly GovProposal[],
   docs: ReadonlyMap<string, GovLinkDoc | null>,
+  misses: ReadonlyMap<string, Misses>,
   links: readonly GovLink[],
   tipEpoch: number,
   nowSec: number,
@@ -167,15 +209,17 @@ async function settleEpochs(
   const settling: SettledGovEpoch[] = [];
   for (const expiration of unsettled) {
     if (tipEpoch < expiration) continue; // proposals can still land at it
-    const gaveUp = proposals
-      .filter((p) => p.endEpoch + 1 === expiration && !docs.has(p.anchorHash))
-      .map((p) => p.actionId);
+    const open = proposals.filter(
+      (p) => p.endEpoch + 1 === expiration && !docs.has(p.anchorHash),
+    );
     if (
-      gaveUp.length > 0 &&
-      tipEpoch < expiration + SETTLEMENT_PATIENCE_EPOCHS
+      open.length > 0 &&
+      (tipEpoch < expiration + SETTLEMENT_PATIENCE_EPOCHS ||
+        !open.every((p) => givenUp(misses.get(p.anchorHash))))
     ) {
-      continue; // still worth asking
+      continue;
     }
+    const gaveUp = open.map((p) => p.actionId);
     settling.push({
       expiration,
       links: links.filter((l) => l.endEpoch + 1 === expiration),

@@ -4,8 +4,8 @@
  *
  * The properties under test are the ones the design rests on — an anchor is
  * fetched at most once ever, an epoch's answer is frozen once the epoch is
- * frozen, waiting on a dead anchor ends, and nothing that a settled epoch still
- * needs is thrown away.
+ * frozen, waiting on a dead anchor ends but only after its own attempts, and
+ * nothing that a settled epoch still needs is thrown away.
  */
 
 import { describe, expect, it, vi } from "vitest";
@@ -14,6 +14,7 @@ import type { ContentAnchor } from "cip-179";
 import { hexToBytes } from "cip-179/domain";
 import type { GovProposal } from "cardano-tessera-koios";
 
+import { MAX_MISSES } from "./backoff";
 import {
   ANCHOR_ATTEMPTS_PER_REFRESH,
   SETTLEMENT_PATIENCE_EPOCHS,
@@ -77,14 +78,28 @@ const run = (
   source: ReturnType<typeof sourceOf>,
   endEpochs: readonly number[],
   tipEpoch: number,
-  fetchDoc: ReturnType<typeof docs>,
+  fetchDoc: (anchor: ContentAnchor) => Promise<unknown>,
   nowSec = 1000,
   floor = 0,
 ) =>
   refreshGovLinks(store, source, endEpochs, tipEpoch, nowSec, floor, {
     fetchDoc,
-    rotate: 0,
   });
+
+/** Far enough apart that every backoff delay has passed between two runs. */
+const DAYS = (n: number) => 1000 + n * 10 ** 6;
+
+/** Refreshes until every unresolved anchor's attempts are used up. */
+async function exhaust(
+  store: TestStore,
+  source: ReturnType<typeof sourceOf>,
+  endEpochs: readonly number[],
+  tipEpoch: number,
+  fetchDoc: (anchor: ContentAnchor) => Promise<unknown>,
+) {
+  for (let i = 0; i < MAX_MISSES; i++)
+    await run(store, source, endEpochs, tipEpoch, fetchDoc, DAYS(i));
+}
 
 describe("refreshGovLinks — fetch once, bank forever", () => {
   it("never re-fetches an anchor it has verified", async () => {
@@ -123,8 +138,11 @@ describe("refreshGovLinks — fetch once, bank forever", () => {
     ]);
     expect(store.govAnchors.has(hashOf(2))).toBe(false);
 
-    // …and keeps asking about it, since a failure is not a verdict.
-    await run(store, source, [510], 500, fetchDoc);
+    // …and asks again once its backoff delay has passed, since a failure is
+    // not a verdict.
+    await run(store, source, [510], 500, fetchDoc, 1000 + 179);
+    expect(fetchDoc).toHaveBeenCalledTimes(2);
+    await run(store, source, [510], 500, fetchDoc, 1000 + 180);
     expect(fetchDoc).toHaveBeenCalledTimes(3); // 1 + 2 on the first pass, 2 again
   });
 
@@ -180,12 +198,14 @@ describe("refreshGovLinks — settlement", () => {
 
   // The liveness bound: most anchors in the wild never resolve, and a held
   // verdict on one of them would postpone the survey's artifact forever.
-  it("settles without a dead anchor once patience runs out", async () => {
+  it("settles without a dead anchor once patience and attempts run out", async () => {
     const store = testStore();
     const source = sourceOf([proposal(1, 510), proposal(2, 510)]);
     const fetchDoc = docs({ "1": linkDoc(0) }); // 2 never resolves
 
-    const waiting = await run(store, source, [510], 511, fetchDoc);
+    // Attempts used up, but the tip is only at the expiration epoch.
+    await exhaust(store, source, [510], 511, fetchDoc);
+    const waiting = await run(store, source, [510], 511, fetchDoc, DAYS(99));
     expect(store.govEpochs.size).toBe(0); // still asking
     expect(waiting.unresolved).toHaveLength(1);
 
@@ -195,11 +215,68 @@ describe("refreshGovLinks — settlement", () => {
       [510],
       511 + SETTLEMENT_PATIENCE_EPOCHS,
       fetchDoc,
+      DAYS(100),
     );
     expect(store.govEpochs.get(511)?.gaveUp).toEqual(["gov_action1_2"]);
     // The action stops clouding verdicts the moment its epoch decides — that is
     // what unblocks finalization for surveys ending at 510.
     expect(settled.unresolved).toEqual([]);
+    expect(settled.links).toHaveLength(1);
+  });
+
+  it("waits out a dead anchor's attempts even with the tip far past", async () => {
+    const store = testStore();
+    const source = sourceOf([proposal(1, 510)]);
+    const fetchDoc = docs({}); // 1 never resolves
+
+    for (let i = 0; i < MAX_MISSES; i++) {
+      await run(store, source, [510], 600, fetchDoc, DAYS(i));
+      expect(store.govEpochs.size).toBe(0);
+    }
+    // The tip is past the patience already, so the last attempt comes next.
+    await run(store, source, [510], 600, fetchDoc, DAYS(MAX_MISSES));
+    expect(fetchDoc).toHaveBeenCalledTimes(MAX_MISSES + 1);
+    expect(store.govEpochs.get(511)?.gaveUp).toEqual(["gov_action1_1"]);
+  });
+
+  // A backend catching up on past epochs meets them all on its first pass,
+  // with more anchors than one refresh attempts. The tip's distance is no
+  // evidence about an anchor it has barely asked for.
+  it("settles a caught-up epoch only once its anchors had their turns", async () => {
+    const store = testStore();
+    const many = Array.from(
+      { length: ANCHOR_ATTEMPTS_PER_REFRESH + 3 },
+      (_, i) => proposal(i + 1, 510),
+    );
+    const source = sourceOf(many);
+    const byHash: Record<string, unknown> = Object.fromEntries(
+      many.map((_, i) => [String(i + 1), PLAIN_DOC]),
+    );
+    byHash["1"] = linkDoc(0);
+    // The linking anchor's gateway is down on the first pass only.
+    let down = true;
+    const serve = docs(byHash);
+    const fetchDoc = vi.fn(async (anchor: ContentAnchor) => {
+      if (down && anchor.uri.endsWith("/1")) throw new Error("gateway down");
+      return serve(anchor);
+    });
+
+    const first = await run(store, source, [510], 600, fetchDoc, 1000);
+    expect(store.govEpochs.size).toBe(0);
+    expect(first.floor).toBe(511);
+    expect(first.unresolved).toContainEqual({
+      actionId: "gov_action1_1",
+      endEpoch: 510,
+    });
+
+    down = false;
+    await run(store, source, [510], 600, fetchDoc, 1000);
+    expect(store.govEpochs.size).toBe(0); // the failed one is not due yet
+    const settled = await run(store, source, [510], 600, fetchDoc, 1180);
+    expect(store.govEpochs.get(511)).toMatchObject({
+      links: [expect.objectContaining({ actionId: "gov_action1_1" })],
+      gaveUp: [],
+    });
     expect(settled.links).toHaveLength(1);
   });
 
@@ -243,12 +320,14 @@ describe("refreshGovLinks — settlement floor", () => {
 
     const waiting = await run(store, source, [510], 511, fetchDoc);
     expect(waiting.floor).toBe(511);
+    await exhaust(store, source, [510], 511, fetchDoc);
     const settled = await run(
       store,
       source,
       [510],
       511 + SETTLEMENT_PATIENCE_EPOCHS,
       fetchDoc,
+      DAYS(99),
     );
     expect(settled.floor).toBe(512);
   });

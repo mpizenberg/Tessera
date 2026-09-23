@@ -22,6 +22,7 @@ import type { ResponseCursor } from "cardano-tessera-core";
 import type { ResolvedNativeScript } from "cardano-tessera-koios";
 import type { ChainTip, GovLink, GovLinkDoc } from "cip-179/domain";
 
+import type { Misses } from "./backoff";
 import type { ChangesCursor } from "./changes";
 
 /** One SQL statement (SQLite dialect) and its positional bindings. */
@@ -393,7 +394,7 @@ export interface ScanCacheStore {
 /** A banked by-hash lookup of a native script (see `scriptLookups.ts`). */
 export type BankedScriptLookup =
   | { readonly found: ResolvedNativeScript }
-  | { readonly misses: number; readonly checkedAt: number };
+  | Misses;
 
 /** One expiration epoch whose governance-link set is final. */
 export interface SettledGovEpoch {
@@ -431,9 +432,16 @@ export interface GovLinkStore {
   cachedGovAnchors(
     hashes: readonly string[],
   ): Promise<Map<string, GovLinkDoc | null>>;
-  /** Bank verified classifications (insert-or-ignore: a row is terminal). */
+  /**
+   * Bank verified classifications (insert-or-ignore: a row is terminal), and
+   * drop the misses of the anchors they resolve.
+   */
   putGovAnchors(entries: ReadonlyMap<string, GovLinkDoc | null>): Promise<void>;
-  /** Drop banked anchors no unsettled epoch needs any more. */
+  /** The failed fetches banked for the unresolved subset of the requested hashes. */
+  govAnchorMisses(hashes: readonly string[]): Promise<Map<string, Misses>>;
+  /** Bank one more failed fetch of each of `hashes`, as of `at` (unix seconds). */
+  putGovAnchorMisses(hashes: readonly string[], at: number): Promise<void>;
+  /** Drop banked anchors, and their misses, no unsettled epoch needs any more. */
   deleteGovAnchors(hashes: readonly string[]): Promise<void>;
   /** The settled epochs among `expirations` (absent = still unsettled). */
   settledGovEpochs(
