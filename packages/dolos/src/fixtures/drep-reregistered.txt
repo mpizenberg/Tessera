@@ -1,0 +1,42 @@
+DRepState {
+    registered_at: Some(
+        (
+            78218995,
+            1,
+        ),
+    ),
+    voting_power: 75086827,
+    last_active_slot: Some(
+        78218995,
+    ),
+    unregistered_at: Some(
+        (
+            78218899,
+            0,
+        ),
+    ),
+    expired: true,
+    deposit: 500000000,
+    identifier: Key(
+        Hash<28>(
+            "07619b09629511c3949ddcfa0decc5d6cc75dd27437a29775e7c36d9",
+        ),
+    ),
+    anchor: Some(
+        Anchor {
+            url: "https://most-brass-sun.quicknode-ipfs.com/ipfs/QmWFmAURzzDR28AbvSMpzP3ZdpnUPpWCRktGr8GUmbYvXF",
+            content_hash: Hash<32>(
+                "738bb48a684cc9863b91e2de8fead05b73a3c8670d5992cd8dbefb4b7e0492b1",
+            ),
+        },
+    ),
+    expiry: Some(
+        DRepExpiry {
+            current: 925,
+            updated_in: 905,
+            prev: Some(
+                895,
+            ),
+        },
+    ),
+}

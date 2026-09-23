@@ -54,12 +54,11 @@ interface TxRow {
 export class DolosChain {
   /**
    * `minikupo` is the node's Kupo-compatible API (`[serve.minikupo]`), the
-   * one route serving a native script's bytes by hash. Without it, a script
-   * credential its transaction does not carry leaves that proof unknown.
+   * one route serving a native script's bytes by hash.
    */
   constructor(
     private readonly node: Minibf,
-    private readonly minikupo?: string,
+    private readonly minikupo: string,
   ) {}
 
   /**
@@ -197,11 +196,6 @@ export class DolosChain {
   ): Promise<Map<string, ResolvedNativeScript | null>> {
     const out = new Map<string, ResolvedNativeScript | null>();
     for (const h of new Set(hashes)) {
-      if (!this.minikupo) {
-        console.warn(`no minikupo URL: native script ${h} stays unresolved`);
-        out.set(h, null);
-        continue;
-      }
       try {
         const res = await fetch(`${this.minikupo}/scripts/${h}`);
         if (!res.ok && res.status !== 404) throw new Error(`${res.status}`);

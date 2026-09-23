@@ -314,9 +314,10 @@ One binary, certified blocks in, HTTP out. Tried on preview on 2026-09-17
 and 2026-09-18 with release 2.0.0-alpha.0, on the survey `1356f08e…:0`
 (`end_epoch` 1395): the verifier's rebuild from two Dolos nodes, read through
 queries alone, gives the `artifactHash` its Koios rebuild gives. The recipe,
-and what an auditor needs, is `docs/AUDIT.md`; the verifier takes the two nodes with
-`--dolos-end` and `--dolos-after`, and checks that each stands where the
-steps below put it.
+and what an auditor needs, was `docs/AUDIT.md`; the verifier took the two nodes with
+`--dolos-end` and `--dolos-after`, and checked that each stood where the
+steps below put them. Since ruleset 15 one node, stopped a block into
+`E+1`, serves the audit instead (`docs/AUDIT.md`).
 
 1. **The end of `E`.** `dolos bootstrap mithril --download-end 20E+20`
    downloads and certifies files 0 to `20E+20`, and replays them through

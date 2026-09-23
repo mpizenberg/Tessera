@@ -7,7 +7,7 @@
  *
  *   pnpm --filter cardano-tessera-verifier verify -- \
  *     --backend https://<backend> --survey <txHash>:<index> \
- *     --dolos-end <url> --dolos-after <url> [--minikupo <url>] [--out <dir>]
+ *     --dolos <dir> [--out <dir>]
  *
  *   pnpm --filter cardano-tessera-verifier verify -- \
  *     --backend https://<backend> --survey <txHash>:<index> \
@@ -20,10 +20,10 @@
  * that omits or alters responses can no longer reproduce a matching hash (it
  * would rebuild against the real chain data and diverge). Every other input
  * (proofs, block indices, weights, governance links) comes from the same
- * source: Koios by default, or two Dolos nodes' mini-Blockfrost APIs, one
- * stopped at the last block of the survey's `end_epoch` (`--dolos-end`) and
- * one at least a block into `end_epoch + 2` (`--dolos-after`), with the
- * second's minikupo API resolving native scripts by hash, or a directory of
+ * source: Koios by default, or the store of a Dolos node stopped at the first
+ * block of `end_epoch + 1` (`--dolos`), which the verifier serves itself to
+ * read the chain through its mini-Blockfrost and minikupo APIs, then stops to
+ * read the ledger at the end of `end_epoch` from it, or a directory of
  * `amaru-store-reader` output (`--amaru`): snapshot `end_epoch`, the ledger
  * at that epoch's end, and a block walk spanning the survey's window, with Koios
  * resolving native scripts by hash under `--koios-scripts` (Amaru keeps no
@@ -71,7 +71,7 @@ import {
   AmaruTallyInputs,
 } from "cardano-tessera-amaru";
 import { KOIOS_URL, type AppConfig } from "cardano-tessera-core";
-import { DolosChain, DolosTallyInputs, Minibf } from "cardano-tessera-dolos";
+import { DolosChain, DolosNode, DolosTallyInputs } from "cardano-tessera-dolos";
 import { KoiosDataSource, KoiosTallyInputs } from "cardano-tessera-koios";
 import { fetchBeacon, revealWithBeacon } from "cip-179/tlock";
 import { evolutionCodec } from "cip-179/evolution";
@@ -132,14 +132,17 @@ function amaruSources(network: Network, dir: string): Sources {
   };
 }
 
-function dolosSources(network: Network, endUrl: string): Sources {
-  const afterUrl = flags["dolos-after"];
-  if (!afterUrl) usage();
-  const after = new Minibf(afterUrl);
+/**
+ * The chain is read while the node is served, the ledger once the weights
+ * stop it; the rebuild asks for every chain input before any weight.
+ */
+async function dolosSources(network: Network, dir: string): Promise<Sources> {
+  const node = new DolosNode(dir);
+  const { minibf, minikupo } = await node.serve();
   return {
-    chain: new DolosChain(after, flags.minikupo),
-    weights: new DolosTallyInputs(new Minibf(endUrl), after, network),
-    source: { provider: "dolos", baseUrl: afterUrl },
+    chain: new DolosChain(minibf, minikupo),
+    weights: new DolosTallyInputs(node, network),
+    source: { provider: "dolos", baseUrl: pathToFileURL(dir).href },
   };
 }
 
@@ -172,7 +175,7 @@ function usage(): never {
     "usage: verify --backend <url> --survey <txHash>:<index> " +
       "[--koios <url>] [--token <koios token>] [--out <dir>]\n" +
       "       verify --backend <url> --survey <txHash>:<index> " +
-      "--dolos-end <url> --dolos-after <url> [--minikupo <url>] [--out <dir>]\n" +
+      "--dolos <dir> [--out <dir>]\n" +
       "       verify --backend <url> --survey <txHash>:<index> " +
       "--amaru <dir> [--koios-scripts [--koios <url>] [--token <koios token>]] [--out <dir>]",
   );
@@ -206,9 +209,7 @@ function readFlags() {
         koios: { type: "string" },
         token: { type: "string" },
         out: { type: "string" },
-        "dolos-end": { type: "string" },
-        "dolos-after": { type: "string" },
-        minikupo: { type: "string" },
+        dolos: { type: "string" },
         amaru: { type: "string" },
         "koios-scripts": { type: "boolean" },
       },
@@ -239,10 +240,10 @@ async function main(): Promise<void> {
 
   // The backend's network decides which chain the rebuild reads.
   const network = parseNetwork((await client.liveness()).network);
-  const dolosEnd = flags["dolos-end"];
+  const dolosDir = pathOf(flags.dolos);
   const amaruDir = pathOf(flags.amaru);
-  const { chain, weights, totals, source } = dolosEnd
-    ? dolosSources(network, dolosEnd)
+  const { chain, weights, totals, source } = dolosDir
+    ? await dolosSources(network, dolosDir)
     : amaruDir
       ? amaruSources(network, amaruDir)
       : koiosSources(network);

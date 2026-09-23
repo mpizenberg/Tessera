@@ -1,7 +1,7 @@
 {
   "name": "cardano-tessera-dolos",
   "version": "0.0.0",
-  "description": "Tessera's verifier inputs read from the queries of two Dolos nodes instead of Koios, and the command that builds those nodes from Mithril.",
+  "description": "Tessera's verifier inputs read from a Dolos node instead of Koios, and the command that builds that node from Mithril.",
   "type": "module",
   "private": true,
   "engines": {
@@ -14,7 +14,7 @@
     }
   },
   "scripts": {
-    "nodes": "tsx src/nodesCli.ts",
+    "build-node": "tsx src/buildCli.ts",
     "type-check": "tsc -p tsconfig.json",
     "test": "vitest run"
   },

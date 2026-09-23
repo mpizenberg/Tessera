@@ -134,70 +134,70 @@ Dolos is not the Haskell ledger, though: where the two differ on a responder,
 the hash differs (see the limits below).
 
 **Cost:** on preview, a replay from genesis took 53 minutes on a 12-core Mac,
-with 7 GB of memory, 14 GB downloaded and a 14 GB store; the rebuild takes
-about 2 seconds. Preprod and mainnet have not been tried. Dolos's developers
+with 7 GB of memory, 14 GB downloaded and a 14 GB store (to epoch 1429: about
+50 minutes and 16 GB); the rebuild takes seconds, plus 0.4 seconds per
+responder read from the store. Preprod and mainnet have not been tried. Dolos's developers
 report 94 minutes for preprod, download included, and under 20 hours for
 mainnet, whose archive they put at 250 to 300 GB.
 
-Dolos answers most ledger questions for its tip only, so a survey with
-`end_epoch = E` takes two nodes, served at the same time:
+One node serves a survey with `end_epoch = E`: a replay stopped at the first
+block of `E + 1`. Dolos runs the boundary out of `E` when that block
+arrives, applies the block and stops, so its store holds the ledger at the
+end of `E`: the DRep distribution taken then, and each account's stake and
+pool in the snapshot taken then (its `mark`). No route serves the second, so
+the ledger is read with `dolos data dump-entity`, which prints one stored
+account, DRep or pool. The one block of `E + 1` writes neither snapshot;
+registration is judged by slot against `E + 1`'s first, and a responder
+whose registration changed in that block stops the read (see the limits).
 
-- the **end** node, standing at the last block of `E`: DRep voting power and
-  registration, and stake registration;
-- the **after** node, at least one block into `E + 2`: each account's active
-  stake for `E`, which Dolos logs when it closes `E + 1`, and every chain
-  fact.
+The verifier serves the node itself (`dolos -c audit.toml serve`, which
+never syncs) while it reads the chain through mini-Blockfrost and minikupo,
+then stops it, since Dolos locks a store it serves, and dumps each
+responder, about 0.4 seconds apiece. Before reading a weight, it checks
+that the store stands in `E + 1`.
 
-The verifier can read from the first block of `E + 2`. Before reading a
-weight, it checks that the end node's tip is the block just before `E + 1`'s
-first on the after node, and that the after node is in `E + 2` or later.
-
-### Building the two nodes
+### Building the node
 
 This needs Dolos 2.0.0-alpha.0 on the `PATH` (1.6 serves a DRep's deposit as
 its power, and later releases are untried) and a reachable Mithril
 aggregator. The latest Mithril snapshot certifies every immutable file from
-genesis, so a survey of any age can be audited. One command builds both
-nodes, from the repository root:
+genesis, so a survey of any age can be audited. One command builds the node,
+from the repository root:
 
 ```sh
-pnpm --filter cardano-tessera-dolos nodes -- \
+pnpm --filter cardano-tessera-dolos build-node -- \
   --backend <backend URL> --survey <txHash>:<index> --dir <empty directory>
 ```
 
 It reads the network and `E` from the backend, which adds no trust: the
-verifier checks both nodes against the `end_epoch` it reads from the chain.
+verifier checks the node against the `end_epoch` it reads from the chain.
 It then works one step at a time, printing each command before running it,
 and a rerun skips the steps already done:
 
-1. It prints the `dolos init` command that writes the end node's config,
-   and stops. `init` asks every question itself. Take each default it
-   offers except the history to keep: the label-17 and transaction queries
-   need "keep everything". Its last question, the bootstrap method, comes
-   after the config is saved: press Ctrl-C there, then run the command
-   again. The command refuses a config that prunes history, lacks
-   mini-Blockfrost or serves another API on a port, since the after node, a
-   copy, would bind that port a second time.
-2. It bootstraps the end node from Mithril to the last block of `E`,
-   checking the certificate chain and a Merkle proof over the files. This
-   is the long step. Never run `dolos daemon` or `dolos sync` in either
-   node's directory: both sync past the node's stopping point.
-3. It copies the end node into `after` and continues the copy a block into
-   `E + 2`, where `stop_epoch` halts it with `forced stop epoch reached`, as
-   expected. It then reseeds the write-ahead log, which this release skips
-   on that stop. The after node's own settings sit in `after/after.toml`,
-   which Dolos merges over the copied `dolos.toml`: the stop epoch,
-   mini-Blockfrost on port 3001, and minikupo, the one API that serves a
-   native script's bytes by hash, on port 1442. On preview this step took
-   25 seconds, and a replay from genesis to the same block gave the same
-   `dolos snapshot digest`, so continuing a copy loses nothing.
-4. It prints the commands that serve both nodes, each in its own terminal,
-   and the verify command with every URL filled in. `serve` never syncs,
-   and restarting it leaves the tip where it was. Stop both before running
-   the command again: Dolos locks a store it serves.
+1. It prints the `dolos init` command that writes the node's config, and
+   stops. `init` asks every question itself. Take each default it offers
+   except the history to keep: the label-17 and transaction queries need
+   "keep everything". Its last question, the bootstrap method, comes after
+   the config is saved: press Ctrl-C there, then run the command again. The
+   command refuses a config that prunes history.
+2. It writes `audit.toml`, which Dolos merges over `dolos.toml`: the stop
+   epoch `E + 1`, mini-Blockfrost on port 3000 and minikupo, the one API
+   that serves a native script's bytes by hash, on port 1442.
+3. It bootstraps the node from Mithril to the first block of `E + 1`,
+   checking the certificate chain and a Merkle proof over the files, where
+   `stop_epoch` halts it with `forced stop epoch reached`, as expected. This
+   is the long step. Never run `dolos daemon` or `dolos sync` in the node's
+   directory: both sync past its stopping point.
+4. It prints the verify command:
 
-For the preview survey whose `end_epoch` is 1395, the rebuild's
-`artifactHash` equals the rebuild from Koios.
+```sh
+pnpm --filter cardano-tessera-verifier verify -- \
+  --backend <backend URL> --survey <txHash>:<index> --dolos <directory>
+```
+
+On preview, for `E` = 1428, the node's 3023 DRep powers equal Koios's
+distribution taken at the end of 1428, and the stake of 372 accounts (the
+delegators of the 25 largest pools, and every account with a certificate in 1428) equals Koios's mark.
 
 What the command computes, so it can be checked rather than trusted: an
 immutable file spans `10k` slots, `k` the security parameter (2160 on
@@ -205,31 +205,32 @@ mainnet and preprod, 432 on preview). That is a Byron epoch's length, so a
 Byron epoch is one file and a Shelley epoch twenty. Shelley starts at epoch
 208 on mainnet, 4 on preprod and 0 on preview, so with `s` that epoch,
 epoch `E`'s files start at `s + 20(E - s)`: `20E` on preview. A replay reads
-every downloaded file but the highest. So the end node downloads through
-the first file of `E + 1`. The after node downloads from the file holding
-the end node's last block through one past the first file of `E + 2`.
-Before each bootstrap, the command checks that the aggregator certifies
-the highest file it will download. Mithril's latest snapshot trails the
-chain by about four files, so the after node can be built from about six
-files into `E + 2`: some seven hours on preview, a day and a half on
+every downloaded file but the highest, so the node downloads through one
+past the first file of `E + 1`. Before the bootstrap, the command checks
+that the aggregator certifies that file. Mithril's latest snapshot trails
+the chain by about four files, so the node can be built from about six
+files into `E + 1`: some seven hours on preview, a day and a half on
 mainnet.
 
 ### Limits
 
-- A DRep that registered during `E` stops the read. For such a DRep, Dolos's
-  `amount` is its deposit, not its power for `E`, and how to read that power
-  has not been measured.
+- A responder whose registration changed in the first block of `E + 1`
+  stops the read: a DRep's unregistration there zeroes the power the end of
+  `E` counted, and an account's deregistration there hides whether it was
+  registered before. Nothing of the kind has been seen.
 - Dolos keeps some vote delegations the ledger cleared under protocol 9
   (txpipe/dolos#1364), which overstates those DReps' power. If such a DRep
   responded, the hash differs.
-- Without `--minikupo`, the proof of a native-script credential that its
-  transaction does not carry stays unknown. With it, two such scripts are
-  judged unlike the Koios source, and the hash differs if a survey holds one.
-  A script first on chain after the survey's `end_epoch` counts here, since
+- Two native scripts that a record's transaction does not carry are judged
+  unlike the Koios source, and the hash differs if a survey holds one. A
+  script first on chain after the survey's `end_epoch` counts here, since
   minikupo does not say when a script appeared. A script only ever
   published in auxiliary data is not found, since minikupo indexes witness
   sets and outputs only.
 - The electorate totals are not read: no Dolos route serves the DRep total.
+- The ledger is read from `dump-entity`'s debug print, which is no stable
+  interface: a Dolos release that changes a field's name or shape makes the
+  read fail, not guess.
 - The command is measured on one survey, on preview, with one alpha
   release. Storage formats and flags may change before Dolos 2.0.
 
@@ -307,9 +308,6 @@ covers each.
   rather than by the stake multi-signature, and kept 28 days. The hourly
   schedule will usually not match the exact end of `end_epoch`, so a result
   built from it is an estimate.
-- **One Dolos node instead of two.** The after node serves only each
-  account's active stake for `E`, which the end node already holds in its
-  state. A small Rust program reading it there would drop the after node.
 - **The Haskell ledger through Amaru's tooling.** db-sync's own ledger,
   replayed from Mithril-certified files: exact by construction, and the
   arbiter when Koios and Dolos disagree.

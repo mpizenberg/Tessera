@@ -1,14 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { stoppingPoints } from "./stoppingPoints";
+import { fileOf, firstSlot, stoppingPoint } from "./stoppingPoints";
 
-describe("stoppingPoints", () => {
-  it("gives the files of the preview audit measured for end_epoch 1395", () => {
-    expect(stoppingPoints("preview", 1395)).toEqual({
-      endDownloadEnd: 27920,
-      afterDownloadStart: 27919,
-      afterDownloadEnd: 27941,
-      stopEpoch: 1397,
+describe("stoppingPoint", () => {
+  it("gives the file and epoch of the preview audit measured for end_epoch 1428", () => {
+    expect(stoppingPoint("preview", 1428)).toEqual({
+      downloadEnd: 28581,
+      stopEpoch: 1429,
     });
   });
 
@@ -26,14 +24,14 @@ describe("stoppingPoints", () => {
   it.each(SIGNED)(
     "places the files Mithril signed in $network epoch $epoch",
     ({ network, epoch, files: [earliest, latest] }) => {
-      const first = stoppingPoints(network, epoch - 1).endDownloadEnd;
-      const last = stoppingPoints(network, epoch).afterDownloadStart;
+      const first = fileOf(network, firstSlot(network, epoch));
+      const last = fileOf(network, firstSlot(network, epoch + 1) - 1);
       expect(latest).toBeLessThanOrEqual(last);
       expect(first - earliest).toBeLessThanOrEqual(4);
     },
   );
 
   it("refuses an epoch before Shelley", () => {
-    expect(() => stoppingPoints("mainnet", 100)).toThrow(/before Shelley/);
+    expect(() => stoppingPoint("mainnet", 100)).toThrow(/before Shelley/);
   });
 });

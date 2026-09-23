@@ -1,0 +1,95 @@
+AccountState {
+    registered_at: Some(
+        31176641,
+    ),
+    stake: EpochValue {
+        epoch: Epoch(
+            1429,
+        ),
+        next: None,
+        live: Some(
+            Stake {
+                utxo_sum: 0,
+                rewards_sum: 8073247350332,
+                withdrawals_sum: 0,
+                utxo_sum_at_pointer_addresses: 0,
+            },
+        ),
+        mark: Some(
+            Stake {
+                utxo_sum: 0,
+                rewards_sum: 8073247350332,
+                withdrawals_sum: 0,
+                utxo_sum_at_pointer_addresses: 0,
+            },
+        ),
+        set: Some(
+            Stake {
+                utxo_sum: 0,
+                rewards_sum: 8043630999966,
+                withdrawals_sum: 0,
+                utxo_sum_at_pointer_addresses: 0,
+            },
+        ),
+        go: Some(
+            Stake {
+                utxo_sum: 0,
+                rewards_sum: 8013769281981,
+                withdrawals_sum: 0,
+                utxo_sum_at_pointer_addresses: 0,
+            },
+        ),
+    },
+    pool: EpochValue {
+        epoch: Epoch(
+            1429,
+        ),
+        next: None,
+        live: Some(
+            Pool(
+                Hash<28>(
+                    "2afbef2f8a3a624f6f4492260fe2053f6daebd8c5ff13f6f14574417",
+                ),
+            ),
+        ),
+        mark: Some(
+            Pool(
+                Hash<28>(
+                    "2afbef2f8a3a624f6f4492260fe2053f6daebd8c5ff13f6f14574417",
+                ),
+            ),
+        ),
+        set: Some(
+            Pool(
+                Hash<28>(
+                    "2afbef2f8a3a624f6f4492260fe2053f6daebd8c5ff13f6f14574417",
+                ),
+            ),
+        ),
+        go: Some(
+            Pool(
+                Hash<28>(
+                    "2afbef2f8a3a624f6f4492260fe2053f6daebd8c5ff13f6f14574417",
+                ),
+            ),
+        ),
+    },
+    drep: EpochValue {
+        epoch: Epoch(
+            1429,
+        ),
+        next: None,
+        live: None,
+        mark: None,
+        set: None,
+        go: None,
+    },
+    vote_delegated_at: None,
+    deregistered_at: None,
+    credential: AddrKeyhash(
+        Hash<28>(
+            "cbf787411c70bb4bb974ddd7709676fa5858d2b98b31b7a99b6f0f4a",
+        ),
+    ),
+    retired_pool: None,
+}

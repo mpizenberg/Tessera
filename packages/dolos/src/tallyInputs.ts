@@ -1,91 +1,76 @@
 /**
- * A {@link TallyInputSource} over two Dolos nodes replayed from Mithril-
- * certified immutable files and stopped at two points around a survey's
- * `end_epoch = E`:
- *  - `end`, whose tip is the last block of `E`: DRep power and registration
- *    (`/governance/dreps/{id}`, whose `amount` is the distribution for the
- *    tip's epoch) and stake registration (`/accounts/{id}` `registered`) are
- *    read from its state, which answers for the tip only;
- *  - `after`, at least one block into `E + 2`: each account's active stake for
- *    `E` (`/accounts/{id}/history`), a log the node writes when it closes
- *    `E + 1`.
- * No route serves the electorate totals, so this source reads none.
+ * A {@link TallyInputSource} over a Dolos node replayed from Mithril-certified
+ * immutable files to the first block of `end_epoch + 1 = E + 1`, where
+ * `stop_epoch` halts it. The boundary out of `E` has run, so the store holds
+ * the ledger at the end of `E`, which no route serves: each account's stake
+ * and pool in the snapshot taken then (its `mark`), a DRep's `voting_power`
+ * from the distribution taken then, a pool's standing then. They are read with
+ * `dolos data dump-entity` ({@link DolosNode.dump}), one entity at a time;
+ * the one block of `E + 1` applied writes none of them but what its
+ * certificates change, and registration is judged by slot against `E + 1`'s
+ * first. No route serves the electorate totals either, so this source reads
+ * none.
  */
 
 import type { Credential } from "cip-179";
-import { credentialKey } from "cip-179/domain";
-import { evolutionCodec } from "cip-179/evolution";
+import { bytesToHex, credentialKey } from "cip-179/domain";
 import type { TallyInputSource, WeightInfo } from "cip-179/tally";
+import type { Network } from "cardano-tessera-client";
 
-import { lastBlockOf, type BlockRow, type Minibf } from "./minibfClient";
+import { accountAtEnd, drepAtEnd, poolStandsAt } from "./dump";
+import type { DolosNode } from "./node";
+import { firstSlot } from "./stoppingPoints";
 
-interface DrepRow {
-  amount: string;
-  retired: boolean;
-  /** The epoch of the DRep's latest registration. */
-  active_epoch: number | null;
-}
+const hashOf = (cred: Credential): string =>
+  bytesToHex(cred.type === "key" ? cred.keyHash : cred.scriptHash);
+
+/** The state's account key: the credential's CBOR, `[0 / 1, hash]`. */
+const accountKey = (cred: Credential): string =>
+  `820${cred.type === "key" ? 0 : 1}581c${hashOf(cred)}`;
+
+/** The state's DRep key: the CIP-129 payload, header `0x22` / `0x23`. */
+const drepKey = (cred: Credential): string =>
+  `${cred.type === "key" ? "22" : "23"}${hashOf(cred)}`;
 
 export class DolosTallyInputs implements TallyInputSource {
-  private readonly checked = new Map<number, Promise<void>>();
+  private readonly pools = new Map<string, boolean>();
 
   constructor(
-    private readonly end: Minibf,
-    private readonly after: Minibf,
-    private readonly network: string,
+    private readonly node: Pick<DolosNode, "dir" | "tipSlot" | "dump">,
+    private readonly network: Network,
   ) {}
 
-  /** Both nodes stand where `epoch`'s inputs are read, or this throws. */
-  private stoppedFor(epoch: number): Promise<void> {
-    let check = this.checked.get(epoch);
-    if (!check) {
-      check = (async () => {
-        const [tip, last, later] = await Promise.all([
-          this.end.get<BlockRow>("/blocks/latest"),
-          lastBlockOf(this.after, epoch),
-          this.after.get<BlockRow>("/blocks/latest"),
-        ]);
-        if (tip.hash !== last.hash) {
-          throw new Error(
-            `the node at ${this.end.url} stands at block ${tip.height}, not ${last.height}, the last of epoch ${epoch}`,
-          );
-        }
-        if (later.epoch < epoch + 2) {
-          throw new Error(
-            `the node at ${this.after.url} is in epoch ${later.epoch}; the stake of ${epoch} is logged from ${epoch + 2}`,
-          );
-        }
-      })();
-      this.checked.set(epoch, check);
-    }
-    return check;
+  /** `E + 1`'s first slot, once the store is seen standing in `E + 1`. */
+  private async nextStart(epoch: number): Promise<number> {
+    const start = firstSlot(this.network, epoch + 1);
+    const tip = await this.node.tipSlot();
+    if (
+      tip === null ||
+      tip < start ||
+      tip >= firstSlot(this.network, epoch + 2)
+    )
+      throw new Error(
+        `the Dolos store in ${this.node.dir} stands at slot ${tip}, not in epoch ${epoch + 1}, where the end of ${epoch} is read`,
+      );
+    return start;
   }
 
   async drepWeights(
     epoch: number,
     credentials: readonly Credential[],
   ): Promise<Map<string, WeightInfo>> {
-    await this.stoppedFor(epoch);
+    const start = await this.nextStart(epoch);
     const out = new Map<string, WeightInfo>();
     for (const cred of credentials) {
-      const id = evolutionCodec.drepId(cred);
-      const d = await this.end.find<DrepRow>(`/governance/dreps/${id}`);
-      if (!d || d.retired) {
-        out.set(credentialKey(cred), { registered: false, weight: 0n });
-        continue;
-      }
-      // Registration applies the deposit as `amount`, which stands until the
-      // next distribution: for such a DRep it is not the power for `epoch`,
-      // and no case has been measured to read that power from.
-      if (d.active_epoch === epoch) {
-        throw new Error(
-          `DRep ${id} registered during epoch ${epoch}: its amount is its deposit, not its power`,
-        );
-      }
-      out.set(credentialKey(cred), {
-        registered: true,
-        weight: BigInt(d.amount || "0"),
-      });
+      const text = await this.node.dump("dreps", drepKey(cred));
+      const drep =
+        text === null ? null : atEnd(cred, () => drepAtEnd(text, epoch, start));
+      out.set(
+        credentialKey(cred),
+        drep?.registered
+          ? { registered: true, weight: drep.power }
+          : { registered: false, weight: 0n },
+      );
     }
     return out;
   }
@@ -94,37 +79,45 @@ export class DolosTallyInputs implements TallyInputSource {
     epoch: number,
     credentials: readonly Credential[],
   ): Promise<Map<string, WeightInfo>> {
-    await this.stoppedFor(epoch);
+    const start = await this.nextStart(epoch);
     const out = new Map<string, WeightInfo>();
     for (const cred of credentials) {
-      const address = evolutionCodec.stakeAddress(cred, this.network);
-      const account = await this.end.find<{ registered: boolean }>(
-        `/accounts/${address}`,
-      );
-      if (account?.registered !== true) {
+      const text = await this.node.dump("accounts", accountKey(cred));
+      const account =
+        text === null
+          ? null
+          : atEnd(cred, () => accountAtEnd(text, epoch, start));
+      if (!account?.registered) {
         out.set(credentialKey(cred), { registered: false, weight: 0n });
         continue;
       }
       out.set(credentialKey(cred), {
         registered: true,
-        weight: await this.activeStake(address, epoch),
+        weight:
+          account.pool !== null && (await this.poolStands(account.pool, epoch))
+            ? account.stake
+            : 0n,
       });
     }
     return out;
   }
 
-  /** The account's active stake for `epoch`; 0 when it has no row (no pool). */
-  private async activeStake(address: string, epoch: number): Promise<bigint> {
-    for (let page = 1; ; page++) {
-      const rows =
-        (await this.after.find<{ active_epoch: number; amount: string }[]>(
-          `/accounts/${address}/history?order=desc&count=100&page=${page}`,
-        )) ?? [];
-      for (const r of rows) {
-        if (r.active_epoch === epoch) return BigInt(r.amount);
-        if (r.active_epoch < epoch) return 0n;
-      }
-      if (rows.length < 100) return 0n;
+  private async poolStands(pool: string, epoch: number): Promise<boolean> {
+    let stands = this.pools.get(pool);
+    if (stands === undefined) {
+      const text = await this.node.dump("pools", pool);
+      stands = text !== null && poolStandsAt(text, epoch);
+      this.pools.set(pool, stands);
     }
+    return stands;
+  }
+}
+
+/** `read`'s answer, or its refusal naming the credential. */
+function atEnd<T>(cred: Credential, read: () => T): T {
+  try {
+    return read();
+  } catch (err) {
+    throw new Error(`${credentialKey(cred)}: ${(err as Error).message}`);
   }
 }

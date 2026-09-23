@@ -1,0 +1,70 @@
+AccountState {
+    registered_at: None,
+    stake: EpochValue {
+        epoch: Epoch(
+            1429,
+        ),
+        next: None,
+        live: Some(
+            Stake {
+                utxo_sum: 0,
+                rewards_sum: 0,
+                withdrawals_sum: 0,
+                utxo_sum_at_pointer_addresses: 0,
+            },
+        ),
+        mark: Some(
+            Stake {
+                utxo_sum: 0,
+                rewards_sum: 0,
+                withdrawals_sum: 0,
+                utxo_sum_at_pointer_addresses: 0,
+            },
+        ),
+        set: None,
+        go: None,
+    },
+    pool: EpochValue {
+        epoch: Epoch(
+            1429,
+        ),
+        next: None,
+        live: Some(
+            NotDelegated,
+        ),
+        mark: Some(
+            NotDelegated,
+        ),
+        set: None,
+        go: None,
+    },
+    drep: EpochValue {
+        epoch: Epoch(
+            1429,
+        ),
+        next: None,
+        live: Some(
+            NotDelegated,
+        ),
+        mark: Some(
+            NotDelegated,
+        ),
+        set: None,
+        go: None,
+    },
+    vote_delegated_at: Some(
+        (
+            123408401,
+            2,
+        ),
+    ),
+    deregistered_at: Some(
+        123412190,
+    ),
+    credential: AddrKeyhash(
+        Hash<28>(
+            "b965366df08b172b2102d8b63167b312581553e54bddf7eef2d6405c",
+        ),
+    ),
+    retired_pool: None,
+}
