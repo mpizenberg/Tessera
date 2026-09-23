@@ -15,7 +15,7 @@
  * validation hiccup must never sink the snapshot refresh.
  */
 
-import { validateResponse } from "cip-179";
+import { validateResponse, type Credential } from "cip-179";
 
 import {
   BINDABLE_ROLES,
@@ -26,10 +26,11 @@ import {
   type GovLink,
   type ResponseRecord,
   type SurveyRecord,
+  type TxProof,
   type UnresolvedGovAction,
 } from "cip-179/domain";
 import { decodeResponseRecord, decodeSurveyRecord } from "cip-179/tally";
-import type { KoiosDataSource } from "cardano-tessera-koios";
+import { recordProofs, type KoiosDataSource } from "cardano-tessera-koios";
 
 import type { SnapshotStore, TallyStore, ValidatedResponseRow } from "./store";
 import { validationKey } from "./store";
@@ -86,8 +87,12 @@ export type ValidateStore = TallyStore &
 export async function validateNewResponses(
   store: ValidateStore,
   responses: readonly ResponseRecord[],
-  source: Pick<KoiosDataSource, "txBlockIndices" | "txProofs">,
+  source: Pick<
+    KoiosDataSource,
+    "txBlockIndices" | "txProofs" | "nativeScripts"
+  >,
   finalizationFloor: number,
+  finalThroughEpoch: number,
   govLinksReliable = true,
   unresolved: readonly UnresolvedGovAction[] = [],
 ): Promise<void> {
@@ -201,28 +206,43 @@ export async function validateNewResponses(
     );
   }
   // A script-credentialed response's native script may not be attached to its
-  // tx (mechanism A permits chain resolution); tell `txProofs` which script hash
-  // to resolve by hash for each response tx (finding 7).
-  const neededScripts = new Map<string, string[]>();
-  for (const r of candidates) {
-    const scriptHash = scriptCredentialHash(r.response.credential);
-    if (!scriptHash) continue;
-    const list = neededScripts.get(r.txHash);
-    if (list) list.push(scriptHash);
-    else neededScripts.set(r.txHash, [scriptHash]);
-  }
-  const [blockIndices, proofs] = await Promise.all([
+  // tx (mechanism A permits chain resolution), so it is resolved by hash, on
+  // chain by its survey's end_epoch (finding 7).
+  const enriched = new Set(txHashes);
+  const judged = candidates.filter(
+    (r) => enriched.has(r.txHash) && defByKey.has(refKey(r.response.surveyRef)),
+  );
+  const [blockIndices, proofList] = await Promise.all([
     source.txBlockIndices(txHashes),
-    source.txProofs(txHashes, neededScripts),
+    recordProofs(
+      source,
+      judged.map((r) => ({
+        txHash: r.txHash,
+        credential: r.response.credential,
+        endEpoch: defByKey.get(refKey(r.response.surveyRef))!.endEpoch,
+      })),
+    ),
   ]);
+  const proofs = new Map(judged.map((r, i) => [r, proofList[i]!]));
 
   const checkedAt = Math.floor(Date.now() / 1000);
+  const awaitsScript = (
+    credential: Credential,
+    proof: TxProof,
+    endEpoch: number,
+  ): boolean => {
+    if (endEpoch <= finalThroughEpoch) return false;
+    const hash = scriptCredentialHash(credential);
+    return (
+      hash !== null && !proof.nativeScripts.some((s) => s.scriptHash === hash)
+    );
+  };
   const rows: ValidatedResponseRow[] = [];
   for (const r of candidates) {
     const surveyKey = refKey(r.response.surveyRef);
     const def = defByKey.get(surveyKey);
     if (!def) continue; // unknown survey — nothing to validate against
-    const proof = proofs.get(r.txHash) ?? null;
+    const proof = proofs.get(r) ?? null;
     const linkedActionIds = (linksByKey.get(surveyKey) ?? []).map(
       (l) => l.actionId,
     );
@@ -232,8 +252,11 @@ export async function validateNewResponses(
     //  - proven → true;
     //  - unknown (voted on an unresolved epoch-aligned action) → null, retry;
     //  - unproven → false, EXCEPT a bindable role's negative when the whole
-    //    gov-links fetch failed (every link then unknown) → null, retry.
-    // Mechanism B only ever adds proof, so a pass is always final (finding 6).
+    //    gov-links fetch failed (every link then unknown) → null, retry;
+    //    and a native-script credential whose script is not found while its
+    //    survey's end_epoch is not final → null: the script can still land.
+    // Mechanism B only ever adds proof, and a script found stays found, so a
+    // pass is always final (finding 6).
     let proofOk: boolean | null;
     if (proof === null) {
       proofOk = null;
@@ -251,7 +274,9 @@ export async function validateNewResponses(
             ? null
             : !govLinksReliable && BINDABLE_ROLES.has(r.response.role)
               ? null
-              : false;
+              : awaitsScript(r.response.credential, proof, def.endEpoch)
+                ? null
+                : false;
     }
     rows.push({
       txHash: r.txHash,

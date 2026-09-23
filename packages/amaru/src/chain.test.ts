@@ -47,35 +47,19 @@ function stores(): AmaruStores {
   return new AmaruStores(dir);
 }
 
-const needed = new Map([[TX, [SIG_SCRIPT.scriptHash]]]);
-
-describe("AmaruChain.txProofs", () => {
-  it("proves with a script the lookup finds and the transaction does not witness", async () => {
-    const chain = new AmaruChain(stores(), "preview", async (missing) => {
-      expect([...missing]).toEqual([[TX, [SIG_SCRIPT.scriptHash]]]);
-      return new Map([
-        [TX, new Map([[SIG_SCRIPT.scriptHash, SIG_SCRIPT.script]])],
-      ]);
-    });
-    const proof = (await chain.txProofs([TX], needed)).get(TX);
-    expect(proof?.nativeScripts).toEqual([
-      { scriptHash: SIG_SCRIPT.scriptHash, script: SIG_SCRIPT.script },
-    ]);
-  });
-
-  it("keeps the proof without the script when there is no lookup", async () => {
-    const chain = new AmaruChain(stores(), "preview");
-    const proof = (await chain.txProofs([TX], needed)).get(TX);
+describe("AmaruChain", () => {
+  it("reads a transaction's proof from the walk", async () => {
+    const proof = (
+      await new AmaruChain(stores(), "preview").txProofs([TX])
+    ).get(TX);
     expect(proof?.requiredSigners).toEqual([KEYHASH]);
     expect(proof?.nativeScripts).toEqual([]);
   });
 
-  it("leaves the proof unknown when the lookup could not ask", async () => {
-    const chain = new AmaruChain(
-      stores(),
-      "preview",
-      async (missing) => new Map([...missing.keys()].map((tx) => [tx, null])),
+  it("finds no native script without a lookup", async () => {
+    const chain = new AmaruChain(stores(), "preview");
+    expect(await chain.nativeScripts([SIG_SCRIPT.scriptHash])).toEqual(
+      new Map(),
     );
-    expect((await chain.txProofs([TX], needed)).get(TX)).toBeNull();
   });
 });

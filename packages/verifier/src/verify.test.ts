@@ -363,6 +363,47 @@ describe("verifyArtifact", () => {
     expect(result.match).toBe(false);
   });
 
+  it("counts a script credential resolved by hash only if on chain by end_epoch", async () => {
+    const script: Credential = {
+      type: "script",
+      scriptHash: hexToBytes("5c".repeat(28)),
+    };
+    const rebuiltResponders = async (epoch: number) => {
+      const result = await verifyArtifact(
+        inputs({
+          bundle: {
+            ...bundle,
+            responses: [R_A, response(R_B.txHash, script, 1)],
+          },
+          scripts: new Map([
+            [
+              "5c".repeat(28),
+              { script: { kind: "sig", keyHash: "b2".repeat(28) }, epoch },
+            ],
+          ]),
+          weights: {
+            ...weights,
+            async stakeholderWeights(_e, creds) {
+              return new Map(
+                creds.map((c) => [
+                  credentialKey(c),
+                  { weight: 7n, registered: true },
+                ]),
+              );
+            },
+          },
+        }),
+      );
+      return result.rebuilt.perRole.flatMap((r) =>
+        r.responders.map((x) => x.credential),
+      );
+    };
+    expect(await rebuiltResponders(END_EPOCH)).toContain(credentialKey(script));
+    expect(await rebuiltResponders(END_EPOCH + 1)).not.toContain(
+      credentialKey(script),
+    );
+  });
+
   it("MISMATCHes a tampered aggregate, naming the difference", async () => {
     const artifact = emittedArtifact();
     const role = artifact.tally.perRole[0]!;

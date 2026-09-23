@@ -115,8 +115,10 @@ Why four of the rules are shaped as they are:
 
 **Validate early what can be validated early.** Everything except membership and
 the weights is fixed once the response transaction is confirmed, well before
-`end_epoch`: its block epoch, its witnesses and any native-script resolution, the
-payload itself. The serving tier persists those verdicts incrementally as
+`end_epoch`: its block epoch, its witnesses, the payload itself. A native script
+the transaction does not carry is the one exception: it counts if it is on chain
+by the last block of `end_epoch`, so a script found settles the proof early, and
+a script not found yet leaves it open until that epoch is final. The serving tier persists those verdicts incrementally as
 responses land (`ARCHITECTURE.md` §5) rather than re-running them in a batch at
 close, so finalization does only the boundary-bound work — otherwise epoch end is
 a burst of transaction fetches, proof checking and CPU, and the Koios rate

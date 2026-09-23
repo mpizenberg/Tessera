@@ -105,7 +105,7 @@ function amaruSources(network: Network, dir: string): Sources {
     chain: new AmaruChain(
       stores,
       network,
-      koios ? (missing) => koios.resolveNativeScripts(missing) : undefined,
+      koios ? (hashes) => koios.nativeScripts(hashes) : undefined,
     ),
     weights: new AmaruTallyInputs(stores),
   };

@@ -212,8 +212,8 @@ mainnet.
 - Without `--minikupo`, the proof of a native-script credential that its
   transaction does not carry stays unknown. With it, two such scripts are
   judged unlike the Koios source, and the hash differs if a survey holds one.
-  A script first on chain after the transaction that needs it counts here,
-  since minikupo does not say when a script appeared. A script only ever
+  A script first on chain after the survey's `end_epoch` counts here, since
+  minikupo does not say when a script appeared. A script only ever
   published in auxiliary data is not found, since minikupo indexes witness
   sets and outputs only.
 - The electorate totals are not read: no Dolos route serves the DRep total.

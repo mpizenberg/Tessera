@@ -146,11 +146,15 @@ const untouchedSource = () => ({
   txProofs: vi.fn(async () => {
     throw new Error("unexpected txProofs fetch");
   }),
+  nativeScripts: vi.fn(async () => {
+    throw new Error("unexpected nativeScripts fetch");
+  }),
 });
 
 /** A source with no evidence to offer — an unverifiable claim stays one. */
 const emptySource = {
   txProofs: async () => new Map<string, null>(),
+  nativeScripts: async () => new Map(),
 };
 
 // --- the differential ----------------------------------------------------------
@@ -543,6 +547,7 @@ describe("segment integration mechanics", () => {
         expect(hashes).toEqual([cancel.txHash]);
         return new Map([[cancel.txHash, { ...signerProof(3), votes: [] }]]);
       }),
+      nativeScripts: async () => new Map(),
     };
     const range = { fromSlot: 600 - MARGIN, toSlot: 600 };
     await integrateSegment(store, source, {

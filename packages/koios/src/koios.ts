@@ -15,6 +15,7 @@
 import {
   decodePayloadItems,
   METADATA_LABEL,
+  type Credential,
   type DecodedPayloadItems,
   type SurveyRef,
 } from "cip-179";
@@ -106,6 +107,7 @@ interface TxByLabel {
 interface TxInfoRow {
   tx_hash: string;
   absolute_slot: number;
+  epoch_no: number;
   /** Position of the tx within its block (same-slot ordering). */
   tx_block_index: number | null;
 }
@@ -113,6 +115,7 @@ interface TxInfoRow {
 /** Where a transaction sits in the chain: a slot holds at most one block. */
 export interface TxPosition {
   readonly slot: number;
+  readonly epoch: number;
   readonly index: number;
 }
 
@@ -808,54 +811,41 @@ export class KoiosDataSource implements DataSource {
       else closedCancellations.push(c);
     }
 
-    // A script-credentialed owner's native script may not be attached to the tx
-    // that has to prove it (CIP-179 mechanism A allows chain resolution), so
-    // tell `txProofs` which script hash each tx claims and let it resolve the
-    // hash when the witness set lacks it (finding 7).
-    const ownerByKey = new Map(
-      surveys.map((s) => [refKeyOf(s.ref), s.definition.owner]),
+    // An owner's native script its transaction does not carry is resolved by
+    // hash, on chain by the survey's end_epoch (finding 7).
+    const surveyByKey = new Map(surveys.map((s) => [refKeyOf(s.ref), s]));
+    const cancelled = openCancellations.map(
+      (c) => [c, surveyByKey.get(refKeyOf(c.target))!] as const,
     );
-    const neededScripts = new Map<string, string[]>();
-    const needScript = (txHash: string, scriptHash: string | null): void => {
-      if (!scriptHash) return;
-      const list = neededScripts.get(txHash);
-      if (list) list.push(scriptHash);
-      else neededScripts.set(txHash, [scriptHash]);
-    };
-    for (const s of openSurveys) {
-      needScript(s.txHash, scriptCredentialHash(s.definition.owner));
-    }
-    for (const c of openCancellations) {
-      const owner = ownerByKey.get(refKeyOf(c.target));
-      needScript(c.txHash, owner ? scriptCredentialHash(owner) : null);
-    }
-
-    const proofTxs = [
-      ...new Set([
-        ...openSurveys.map((s) => s.txHash),
-        ...openCancellations.map((c) => c.txHash),
+    const ownerNeed = (txHash: string, s: SurveyRecord): ProofNeed => ({
+      txHash,
+      credential: s.definition.owner,
+      endEpoch: s.definition.endEpoch,
+    });
+    const proofs = await recordProofs(this, [
+      ...openSurveys.map((s) => ownerNeed(s.txHash, s)),
+      ...cancelled.map(([c, s]) => ownerNeed(c.txHash, s)),
+    ]);
+    const surveyProof = new Map(
+      openSurveys.map((s, i) => [
+        refKeyOf(s.ref),
+        mechanismAProofOf(proofs[i]),
       ]),
-    ];
-    const proofs =
-      proofTxs.length === 0
-        ? new Map<string, TxProof | null>()
-        : await this.txProofs(proofTxs, neededScripts);
+    );
+    const cancellationProofs = cancelled.map(([c], i) => ({
+      ...c,
+      proof: mechanismAProofOf(proofs[openSurveys.length + i]),
+    }));
 
     return {
       records: {
         surveys: surveys.map((s) =>
-          openSurveyKeys.has(refKeyOf(s.ref))
-            ? { ...s, proof: mechanismAProofOf(proofs.get(s.txHash)) }
+          surveyProof.has(refKeyOf(s.ref))
+            ? { ...s, proof: surveyProof.get(refKeyOf(s.ref)) ?? null }
             : s,
         ),
         responses,
-        cancellations: [
-          ...openCancellations.map((c) => ({
-            ...c,
-            proof: mechanismAProofOf(proofs.get(c.txHash)),
-          })),
-          ...closedCancellations,
-        ],
+        cancellations: [...cancellationProofs, ...closedCancellations],
         incomplete,
       },
       unfetched,
@@ -946,8 +936,8 @@ export class KoiosDataSource implements DataSource {
    * the serving tier's validation pass. Each unique tx is fetched and decoded
    * once, so a batch that carries several records costs one row — and where a
    * {@link ScanCache} is present, once across all refreshes.
-   * The decode runs per call even on a cached hit, so the mechanism-A merge
-   * below is never banked and a decoder fix needs no re-fetch.
+   * The decode runs per call even on a cached hit, so a decoder fix needs no
+   * re-fetch.
    *
    * The two map outcomes are semantically distinct and callers MUST NOT conflate
    * them:
@@ -959,18 +949,12 @@ export class KoiosDataSource implements DataSource {
    *    *unknown*, so the caller must retry on a later refresh, never treat it as
    *    a negative verdict (freezing an artifact on it would be wrong — finding 1).
    *
-   * `neededScripts` maps a tx hash to the native-script *credential* hashes its
-   * record(s) claim (a script owner/response credential). CIP-179 mechanism A
-   * lets that script be resolved by hash through a chain index, not only from the
-   * carrying tx's witness set — a metadata-only tx need not attach it — so any
-   * such hash absent from the witness set is looked up with
-   * {@link resolveNativeScripts} and folded into that tx's `nativeScripts` (the
-   * pure evaluation is unchanged; see {@link resolveMechanismAScripts} for how
-   * each outcome reaches the proof).
+   * The witness set is all a proof holds: a native script resolved by hash
+   * depends on the survey a record names, so {@link withResolvedScript} adds
+   * it per record.
    */
   async txProofs(
     txHashes: readonly string[],
-    neededScripts: ReadonlyMap<string, readonly string[]> = new Map(),
   ): Promise<Map<string, TxProof | null>> {
     const proofByHash = new Map<string, TxProof | null>(
       txHashes.map((h) => [h, null]),
@@ -978,9 +962,6 @@ export class KoiosDataSource implements DataSource {
     for (const [hash, cbor] of await this.txCbor(txHashes)) {
       proofByHash.set(hash, decodeTxProof(evolutionCodec, cbor));
     }
-    await resolveMechanismAScripts(proofByHash, neededScripts, (needed) =>
-      this.resolveNativeScripts(needed),
-    );
     return proofByHash;
   }
 
@@ -1034,29 +1015,27 @@ export class KoiosDataSource implements DataSource {
   }
 
   /**
-   * The native scripts each needing transaction can be proven with: for every
-   * tx in `needed`, the scripts among its hashes that were on chain by that tx
-   * (CIP-179 settles a proof once its transaction is confirmed, so a script
-   * made available later cannot count), or `null` when a request failed.
+   * The native scripts `hashes` name, each with the epoch it was first on
+   * chain, as {@link ResolvedNativeScripts}.
    *
    * Koios serves a native script as JSON only (`/script_info` `value`), so its
    * bytes are rebuilt canonically and kept when they hash to the script's
    * hash. Otherwise its on-chain encoding is another one, and the bytes are
    * read from the witness set of the transaction where it first became
-   * available (`creation_tx_hash`). Final, never retried: a hash Koios does
-   * not list, a Plutus script, one first available after the needing tx, and
-   * one found in neither form. The last is a non-canonically encoded script
-   * first made available outside a witness set (an output's reference script,
-   * auxiliary data), which this lookup does not read.
+   * available (`creation_tx_hash`). Absent: a hash Koios does not list, a
+   * Plutus script, and one found in neither form. The last is a
+   * non-canonically encoded script first made available outside a witness set
+   * (an output's reference script, auxiliary data), which this lookup does
+   * not read.
    */
-  async resolveNativeScripts(
-    needed: ReadonlyMap<string, readonly string[]>,
-  ): Promise<Map<string, Map<string, NativeScriptInfo> | null>> {
-    const hashes = [...new Set([...needed.values()].flat())];
-    const failed = new Set<string>();
+  async nativeScripts(
+    hashes: readonly string[],
+  ): Promise<Map<string, ResolvedNativeScript | null>> {
+    const unique = [...new Set(hashes)];
+    const out = new Map<string, ResolvedNativeScript | null>();
     const rows: ScriptInfoRow[] = [];
-    for (let i = 0; i < hashes.length; i += SCRIPT_INFO_BATCH) {
-      const batch = hashes.slice(i, i + SCRIPT_INFO_BATCH);
+    for (let i = 0; i < unique.length; i += SCRIPT_INFO_BATCH) {
+      const batch = unique.slice(i, i + SCRIPT_INFO_BATCH);
       try {
         const answer = await this.post<ScriptInfoRow[]>(
           "/script_info?select=script_hash,type,creation_tx_hash,value",
@@ -1069,7 +1048,7 @@ export class KoiosDataSource implements DataSource {
         console.warn(
           `script_info batch failed; its scripts stay unresolved: ${String(err)}`,
         );
-        for (const h of batch) failed.add(h);
+        for (const h of batch) out.set(h, null);
       }
     }
 
@@ -1092,7 +1071,7 @@ export class KoiosDataSource implements DataSource {
       for (const r of reencoded) {
         const tx = cbor.get(r.creation_tx_hash);
         if (!tx) {
-          failed.add(r.script_hash);
+          out.set(r.script_hash, null);
           continue;
         }
         const witnessed = decodeTxProof(evolutionCodec, tx)?.nativeScripts.find(
@@ -1111,32 +1090,13 @@ export class KoiosDataSource implements DataSource {
       found.size === 0
         ? new Map<string, TxPosition>()
         : await this.txPositions([
-            ...new Set([
-              ...needed.keys(),
-              ...[...found.values()].map((f) => f.createdIn),
-            ]),
+            ...new Set([...found.values()].map((f) => f.createdIn)),
           ]);
-    const byTx = new Map<string, Map<string, NativeScriptInfo> | null>();
-    for (const [txHash, scriptHashes] of needed) {
-      const scripts = new Map<string, NativeScriptInfo>();
-      let unknown = false;
-      for (const h of scriptHashes) {
-        if (failed.has(h)) unknown = true;
-        const f = found.get(h);
-        if (!f) continue;
-        const at = positions.get(txHash);
-        const since = positions.get(f.createdIn);
-        if (!at || !since) unknown = true;
-        else if (
-          since.slot < at.slot ||
-          (since.slot === at.slot && since.index <= at.index)
-        ) {
-          scripts.set(h, f.script);
-        }
-      }
-      byTx.set(txHash, unknown ? null : scripts);
+    for (const [hash, f] of found) {
+      const at = positions.get(f.createdIn);
+      out.set(hash, at ? { script: f.script, epoch: at.epoch } : null);
     }
-    return byTx;
+    return out;
   }
 
   /**
@@ -1163,13 +1123,14 @@ export class KoiosDataSource implements DataSource {
       const batch = txHashes.slice(i, i + TX_METADATA_BATCH);
       try {
         const rows = await this.post<TxInfoRow[]>(
-          "/tx_info?select=tx_hash,absolute_slot,tx_block_index",
+          "/tx_info?select=tx_hash,absolute_slot,epoch_no,tx_block_index",
           { _tx_hashes: batch },
         );
         for (const r of rows) {
           if (r.tx_block_index !== null)
             byHash.set(r.tx_hash, {
               slot: r.absolute_slot,
+              epoch: r.epoch_no,
               index: r.tx_block_index,
             });
         }
@@ -1325,58 +1286,106 @@ export function classifyPayload(
 }
 
 /**
- * Fold chain-resolved native scripts into `proofByHash` for the mechanism-A
- * script credentials in `neededScripts` that aren't already in their tx's
- * witness set (CIP-179 lets the script be resolved by hash, not only from the
- * carrying tx). `resolve` is asked, per tx, for those missing hashes, and
- * answers the scripts it found for that tx, or `null` when it could not ask.
- * Mutates `proofByHash` in place:
- *  - a resolved script is appended to its tx's `nativeScripts`;
- *  - a script the lookup *answered* without (never on-chain, or Plutus) is
- *    left out → mechanism A finds no match → a *final* unproven (so a bogus
- *    script-hash response is simply excluded, never a perpetual postponement);
- *  - a tx the lookup answered `null` for, or left out, has its proof nulled →
- *    unknown/retry, so an unresolvable-this-refresh script is surfaced, not
- *    silently decided.
+ * A native script resolved by hash, with the epoch it was first on chain;
+ * `null` when the source cannot tell.
  */
-export async function resolveMechanismAScripts(
-  proofByHash: Map<string, TxProof | null>,
-  neededScripts: ReadonlyMap<string, readonly string[]>,
-  resolve: (
-    missing: ReadonlyMap<string, readonly string[]>,
-  ) => Promise<
-    ReadonlyMap<string, ReadonlyMap<string, NativeScriptInfo> | null>
-  >,
-): Promise<void> {
-  // The script hashes actually missing from their own tx's witness set — the
-  // only ones needing a chain lookup.
-  const missingByTx = new Map<string, string[]>();
-  for (const [txHash, hashes] of neededScripts) {
-    const proof = proofByHash.get(txHash);
-    if (!proof) continue; // tx unknown already → nothing to add
-    const witnessed = new Set(proof.nativeScripts.map((ns) => ns.scriptHash));
-    const missing = [...new Set(hashes)].filter((h) => !witnessed.has(h));
-    if (missing.length > 0) missingByTx.set(txHash, missing);
-  }
-  if (missingByTx.size === 0) return;
+export interface ResolvedNativeScript {
+  readonly script: NativeScriptInfo;
+  readonly epoch: number | null;
+}
 
-  const resolved = await resolve(missingByTx);
-  for (const [txHash, missing] of missingByTx) {
-    const proof = proofByHash.get(txHash)!;
-    const scripts = resolved.get(txHash);
-    if (!scripts) {
-      proofByHash.set(txHash, null);
-      continue;
-    }
-    const add = missing.flatMap((h) => {
-      const script = scripts.get(h);
-      return script ? [{ scriptHash: h, script }] : [];
-    });
-    if (add.length > 0) {
-      proofByHash.set(txHash, {
-        ...proof,
-        nativeScripts: [...proof.nativeScripts, ...add],
-      });
-    }
+/**
+ * Native scripts resolved by hash, keyed by script hash: `null` when the
+ * lookup failed (unknown, retried), absent when there is no such native
+ * script on chain.
+ */
+export type ResolvedNativeScripts = ReadonlyMap<
+  string,
+  ResolvedNativeScript | null
+>;
+
+/**
+ * A record's claim on a transaction: `txHash` must prove `credential`, for a
+ * survey ending at `endEpoch`.
+ */
+export interface ProofNeed {
+  readonly txHash: string;
+  readonly credential: Credential;
+  readonly endEpoch: number;
+}
+
+/**
+ * The proof each of `needs` is judged on ({@link withResolvedScript}), in
+ * order: each transaction fetched once, each script it does not witness
+ * looked up once.
+ */
+export async function recordProofs(
+  source: Pick<KoiosDataSource, "txProofs" | "nativeScripts">,
+  needs: readonly ProofNeed[],
+): Promise<(TxProof | null)[]> {
+  if (needs.length === 0) return [];
+  const proofs = await source.txProofs([
+    ...new Set(needs.map((n) => n.txHash)),
+  ]);
+  const missing = unwitnessedScripts(
+    needs.map((n) => [proofs.get(n.txHash), n.credential] as const),
+  );
+  const scripts: ResolvedNativeScripts =
+    missing.length === 0 ? new Map() : await source.nativeScripts(missing);
+  return needs.map((n) =>
+    withResolvedScript(proofs.get(n.txHash), n.credential, n.endEpoch, scripts),
+  );
+}
+
+/**
+ * The script hashes `needs` must resolve by hash: each native-script
+ * credential its transaction's proof does not witness. A `null` proof is
+ * unknown already and needs none.
+ */
+export function unwitnessedScripts(
+  needs: Iterable<readonly [TxProof | null | undefined, Credential]>,
+): string[] {
+  const out = new Set<string>();
+  for (const [proof, credential] of needs) {
+    const hash = scriptCredentialHash(credential);
+    if (
+      hash &&
+      proof &&
+      !proof.nativeScripts.some((s) => s.scriptHash === hash)
+    )
+      out.add(hash);
   }
+  return [...out];
+}
+
+/**
+ * The proof a record naming `credential`, in a survey ending at `endEpoch`,
+ * is judged on: its transaction's `proof`, plus the credential's native
+ * script when the transaction does not witness it and it was on chain by the
+ * end of `endEpoch` (CIP-179 lets mechanism A resolve it by hash; the bound
+ * makes the verdict the same whenever it is reached). A script on chain only
+ * later, or not at all, leaves the proof without it: unproven by mechanism A.
+ * `null` when `proof` is, or when the lookup failed: unknown, never unproven.
+ * A script with no epoch (a source that cannot tell) is taken as on time.
+ */
+export function withResolvedScript(
+  proof: TxProof | null | undefined,
+  credential: Credential,
+  endEpoch: number,
+  scripts: ResolvedNativeScripts,
+): TxProof | null {
+  if (!proof) return null;
+  const hash = scriptCredentialHash(credential);
+  if (!hash || proof.nativeScripts.some((s) => s.scriptHash === hash))
+    return proof;
+  const found = scripts.get(hash);
+  if (found === null) return null;
+  if (!found || (found.epoch !== null && found.epoch > endEpoch)) return proof;
+  return {
+    ...proof,
+    nativeScripts: [
+      ...proof.nativeScripts,
+      { scriptHash: hash, script: found.script },
+    ],
+  };
 }

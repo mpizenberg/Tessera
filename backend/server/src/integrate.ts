@@ -31,7 +31,6 @@
 import {
   mechanismAProofOf,
   refKey,
-  scriptCredentialHash,
   type ChainTip,
   type Cip179Records,
   type GovLink,
@@ -42,7 +41,7 @@ import {
   decodeResponseRecord,
   decodeSurveyRecord,
 } from "cip-179/tally";
-import type { KoiosDataSource } from "cardano-tessera-koios";
+import { recordProofs, type KoiosDataSource } from "cardano-tessera-koios";
 
 import {
   cancellationRowOf,
@@ -141,7 +140,7 @@ const linkSliceText = (links: readonly GovLink[] | undefined): string =>
 
 export async function integrateSegment(
   store: IntegrateStore,
-  source: Pick<KoiosDataSource, "txProofs">,
+  source: Pick<KoiosDataSource, "txProofs" | "nativeScripts">,
   args: SegmentArgs,
 ): Promise<SegmentIntegration> {
   const { records, range, tip, govPass, settledBelowSlot, generation } = args;
@@ -225,27 +224,23 @@ export async function integrateSegment(
   });
   let cancellations = records.cancellations;
   if (needProof.length > 0) {
-    const neededScripts = new Map<string, string[]>();
-    for (const c of needProof) {
-      const scriptHash = scriptCredentialHash(
-        surveyByKey.get(refKey(c.target))!.definition.owner,
-      );
-      if (!scriptHash) continue;
-      const list = neededScripts.get(c.txHash);
-      if (list) list.push(scriptHash);
-      else neededScripts.set(c.txHash, [scriptHash]);
-    }
-    const proofs = await source
-      .txProofs([...new Set(needProof.map((c) => c.txHash))], neededScripts)
-      .catch((err) => {
-        console.warn(`cancellation proof fetch failed: ${String(err)}`);
-        return new Map<string, null>();
-      });
-    const attach = new Set(needProof);
+    const proofs = await recordProofs(
+      source,
+      needProof.map((c) => {
+        const def = surveyByKey.get(refKey(c.target))!.definition;
+        return {
+          txHash: c.txHash,
+          credential: def.owner,
+          endEpoch: def.endEpoch,
+        };
+      }),
+    ).catch((err) => {
+      console.warn(`cancellation proof fetch failed: ${String(err)}`);
+      return needProof.map(() => null);
+    });
+    const proofOf = new Map(needProof.map((c, i) => [c, proofs[i]]));
     cancellations = records.cancellations.map((c) =>
-      attach.has(c)
-        ? { ...c, proof: mechanismAProofOf(proofs.get(c.txHash)) }
-        : c,
+      proofOf.has(c) ? { ...c, proof: mechanismAProofOf(proofOf.get(c)) } : c,
     );
   }
 

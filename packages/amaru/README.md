@@ -27,7 +27,7 @@ transaction needs no script, so a native-script credential's script is
 almost never in the record's own transaction. `AmaruChain` therefore takes
 a script lookup from its caller; the verifier's `--koios-scripts` passes
 Koios's, which checks each script against its hash and that it was on chain
-by the transaction needing it. Without a lookup, such a script is resolved
+by the end of the survey's `end_epoch`. Without a lookup, such a script is resolved
 nowhere, and the ruleset then counts the record as unproven: a response is
 excluded, a cancellation does not cancel, a definition makes its survey
 untalliable. Other records in the same transaction stand. A lookup that

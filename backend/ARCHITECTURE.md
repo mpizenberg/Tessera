@@ -587,9 +587,9 @@ applied to storage rather than to queries.
   lists it, and its cache entry simply stops being requested.
 - **`tx_proof_cache`** (`migrations/0015`) — the transaction CBOR behind every
   owner and response proof, which an open survey would otherwise re-fetch on
-  every scan. Raw bytes only, never a decoded proof: mechanism-A resolution
-  merges scripts fetched by hash, and a script absent today can be registered
-  tomorrow, so a merged proof is true only as of its fetch. A hash Koios returned
+  every scan. Raw bytes only, never a decoded proof: mechanism A adds to it,
+  per record, a script resolved by hash, and a script absent today can be
+  registered tomorrow, so such a proof is true only as of its lookup. A hash Koios returned
   no row for is a node that is behind, not an answer, and is banked as nothing.
 
 - **`response_count_bank`** (`migrations/0023`, `0026`) — per survey, the

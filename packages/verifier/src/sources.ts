@@ -5,14 +5,17 @@
 
 import {
   refKey,
-  scriptCredentialHash,
   voteDeadlineUnix,
   type GovLinkScan,
   type SurveyBundle,
   type TxProof,
 } from "cip-179/domain";
 import type { AppConfig } from "cardano-tessera-core";
-import { KoiosDataSource } from "cardano-tessera-koios";
+import {
+  KoiosDataSource,
+  unwitnessedScripts,
+  type ResolvedNativeScript,
+} from "cardano-tessera-koios";
 
 import { linkedActionIdsFor, type VerifyInputs } from "./verify";
 
@@ -21,10 +24,11 @@ export interface SurveyChain {
   /** Rejects when the source knows no such survey. */
   bundle(key: string): Promise<{ bundle: SurveyBundle; incomplete: boolean }>;
   txBlockIndices(txHashes: readonly string[]): Promise<Map<string, number>>;
-  txProofs(
-    txHashes: readonly string[],
-    neededScripts: ReadonlyMap<string, readonly string[]>,
-  ): Promise<Map<string, TxProof | null>>;
+  txProofs(txHashes: readonly string[]): Promise<Map<string, TxProof | null>>;
+  /** As `KoiosDataSource.nativeScripts`. */
+  nativeScripts(
+    hashes: readonly string[],
+  ): Promise<Map<string, ResolvedNativeScript | null>>;
   fetchGovernanceLinks(endEpochs: readonly number[]): Promise<GovLinkScan>;
 }
 
@@ -83,7 +87,8 @@ export function koiosChain(config: AppConfig): SurveyChain {
       };
     },
     txBlockIndices: (txHashes) => source.txBlockIndices(txHashes),
-    txProofs: (txHashes, needed) => source.txProofs(txHashes, needed),
+    txProofs: (txHashes) => source.txProofs(txHashes),
+    nativeScripts: (hashes) => source.nativeScripts(hashes),
     fetchGovernanceLinks: (endEpochs) => source.fetchGovernanceLinks(endEpochs),
   };
 }
@@ -100,6 +105,7 @@ export async function chainEvidence(
     VerifyInputs,
     | "blockIndices"
     | "proofs"
+    | "scripts"
     | "linkedActionIds"
     | "unresolvedActionIds"
     | "govLinksReliable"
@@ -114,22 +120,6 @@ export async function chainEvidence(
       ...bundle.cancellations.map((c) => c.txHash),
     ]),
   ];
-  // Native-script credentials whose script may not be attached to the carrying
-  // tx: resolve them by hash so mechanism A is evaluated the same way the emitter
-  // does (finding 7). Cancellations all target this survey → its owner.
-  const neededScripts = new Map<string, string[]>();
-  const addNeeded = (txHash: string, scriptHash: string | null) => {
-    if (!scriptHash) return;
-    const list = neededScripts.get(txHash);
-    if (list) list.push(scriptHash);
-    else neededScripts.set(txHash, [scriptHash]);
-  };
-  const ownerScriptHash = scriptCredentialHash(bundle.survey.definition.owner);
-  addNeeded(bundle.survey.txHash, ownerScriptHash);
-  for (const c of bundle.cancellations) addNeeded(c.txHash, ownerScriptHash);
-  for (const r of bundle.responses)
-    addNeeded(r.txHash, scriptCredentialHash(r.response.credential));
-
   // Only actions expiring with this survey can link it, or — unresolved — cloud
   // its mechanism-B verdicts, so the scan reads that one epoch and no more. Each
   // action's anchor is dereferenced here and checked against its on-chain hash:
@@ -140,7 +130,7 @@ export async function chainEvidence(
   let govLinksReliable = true;
   const [blockIndices, proofs, govScan] = await Promise.all([
     chain.txBlockIndices(txHashes),
-    chain.txProofs(txHashes, neededScripts),
+    chain.txProofs(txHashes),
     chain.fetchGovernanceLinks([endEpoch]).catch((err) => {
       // A fetch failure is UNKNOWN, not "no links" — flag it so a mechanism-B
       // proof it might decide comes back INDETERMINATE, never a silent exclude.
@@ -151,9 +141,23 @@ export async function chainEvidence(
       return { links: [], unresolved: [] };
     }),
   ]);
+  // A native-script credential its transaction does not carry is resolved by
+  // hash, as the emitter does (finding 7). Cancellations all target this
+  // survey, so they need its owner.
+  const owner = bundle.survey.definition.owner;
+  const missing = unwitnessedScripts([
+    [proofs.get(bundle.survey.txHash), owner],
+    ...bundle.cancellations.map((c) => [proofs.get(c.txHash), owner] as const),
+    ...bundle.responses.map(
+      (r) => [proofs.get(r.txHash), r.response.credential] as const,
+    ),
+  ]);
+  const scripts =
+    missing.length === 0 ? new Map() : await chain.nativeScripts(missing);
   return {
     blockIndices,
     proofs,
+    scripts,
     linkedActionIds: linkedActionIdsFor(bundle, govScan.links),
     unresolvedActionIds: govScan.unresolved.map((u) => u.actionId),
     govLinksReliable,

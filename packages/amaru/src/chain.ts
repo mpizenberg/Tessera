@@ -36,28 +36,26 @@ import {
   govLinkScan,
   govProposal,
   resolveGovAnchors,
-  resolveMechanismAScripts,
   type GovProposal,
+  type ResolvedNativeScript,
 } from "cardano-tessera-koios";
 
 import type { AmaruStores, WalkedTx } from "./stores";
 
-/**
- * Looks up, per transaction, the native scripts its records name but its
- * witness set lacks, as {@link resolveMechanismAScripts} asks for them.
- */
-type NativeScriptLookup = Parameters<typeof resolveMechanismAScripts>[2];
+/** Resolves native scripts by hash, as `KoiosDataSource.nativeScripts` does. */
+type NativeScriptLookup = (
+  hashes: readonly string[],
+) => Promise<Map<string, ResolvedNativeScript | null>>;
 
 /**
- * No lookup: a script a transaction does not witness is resolved nowhere, so
- * the records needing it are unproven and the rest of the transaction stands.
+ * No lookup: a script a transaction does not witness is found nowhere, so the
+ * records needing it are unproven.
  */
-const noLookup: NativeScriptLookup = async (missing) => {
-  for (const [tx, hashes] of missing)
-    console.warn(
-      `tx ${tx} does not witness native scripts ${hashes.join(", ")}, and no script lookup was given: records needing them are unproven`,
-    );
-  return new Map([...missing.keys()].map((tx) => [tx, new Map()]));
+const noLookup: NativeScriptLookup = async (hashes) => {
+  console.warn(
+    `native scripts ${hashes.join(", ")} are not witnessed where needed, and no script lookup was given: records needing them are unproven`,
+  );
+  return new Map();
 };
 
 export class AmaruChain {
@@ -120,13 +118,9 @@ export class AmaruChain {
     return new Map([...this.walked(txHashes)].map(([h, t]) => [h, t.index]));
   }
 
-  /**
-   * Proof evidence per transaction, as `KoiosDataSource.txProofs` gives it,
-   * the scripts a transaction does not witness asked of `lookupScripts`.
-   */
+  /** Proof evidence per transaction, as `KoiosDataSource.txProofs` gives it. */
   async txProofs(
     txHashes: readonly string[],
-    neededScripts: ReadonlyMap<string, readonly string[]> = new Map(),
   ): Promise<Map<string, TxProof | null>> {
     const walked = this.walked(txHashes);
     const proofs = new Map<string, TxProof | null>(
@@ -135,8 +129,13 @@ export class AmaruChain {
         return [h, t ? decodeTxProof(evolutionCodec, t.cbor) : null];
       }),
     );
-    await resolveMechanismAScripts(proofs, neededScripts, this.lookupScripts);
     return proofs;
+  }
+
+  nativeScripts(
+    hashes: readonly string[],
+  ): Promise<Map<string, ResolvedNativeScript | null>> {
+    return this.lookupScripts(hashes);
   }
 
   /**

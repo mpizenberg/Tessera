@@ -16,7 +16,6 @@ import {
   hexToBytes,
   type CancellationRecord,
   type GovLinkScan,
-  type NativeScriptInfo,
   type ResponseRecord,
   type SurveyBundle,
   type SurveyRecord,
@@ -29,8 +28,8 @@ import {
   govLinkScan,
   govProposal,
   resolveGovAnchors,
-  resolveMechanismAScripts,
   type GovProposal,
+  type ResolvedNativeScript,
 } from "cardano-tessera-koios";
 
 import { lastBlockOf, type BlockRow, type Minibf } from "./minibfClient";
@@ -192,37 +191,31 @@ export class DolosChain {
   /** Proof evidence per transaction, as `KoiosDataSource.txProofs` gives it. */
   async txProofs(
     txHashes: readonly string[],
-    neededScripts: ReadonlyMap<string, readonly string[]> = new Map(),
   ): Promise<Map<string, TxProof | null>> {
     const proofs = new Map<string, TxProof | null>();
     for (const h of txHashes) {
       const row = await this.node.find<{ cbor: string }>(`/txs/${h}/cbor`);
       proofs.set(h, row ? decodeTxProof(evolutionCodec, row.cbor) : null);
     }
-    await resolveMechanismAScripts(proofs, neededScripts, (needed) =>
-      this.nativeScripts(needed),
-    );
     return proofs;
   }
 
   /**
-   * The scripts minikupo serves by hash, the same for every needing tx:
-   * minikupo gives no script's first appearance, so whether a script was on
-   * chain by the needing tx is not checked. An empty map, leaving every tx
-   * out, means unknown.
+   * The native scripts minikupo serves by hash, as
+   * `KoiosDataSource.nativeScripts` gives them but with no epoch: minikupo
+   * gives no script's first appearance, so whether a script was on chain by
+   * the survey's end is not checked.
    */
-  private async nativeScripts(
-    needed: ReadonlyMap<string, readonly string[]>,
-  ): Promise<Map<string, Map<string, NativeScriptInfo>>> {
-    const hashes = [...new Set([...needed.values()].flat())];
-    if (!this.minikupo) {
-      console.warn(
-        `no minikupo URL: native scripts ${hashes.join(", ")} stay unresolved`,
-      );
-      return new Map();
-    }
-    const scripts = new Map<string, NativeScriptInfo>();
-    for (const h of hashes) {
+  async nativeScripts(
+    hashes: readonly string[],
+  ): Promise<Map<string, ResolvedNativeScript | null>> {
+    const out = new Map<string, ResolvedNativeScript | null>();
+    for (const h of new Set(hashes)) {
+      if (!this.minikupo) {
+        console.warn(`no minikupo URL: native script ${h} stays unresolved`);
+        out.set(h, null);
+        continue;
+      }
       try {
         const res = await fetch(`${this.minikupo}/scripts/${h}`);
         if (!res.ok && res.status !== 404) throw new Error(`${res.status}`);
@@ -231,13 +224,14 @@ export class DolosChain {
           : null;
         if (row?.language !== "native") continue;
         const decoded = decodeResolvedNativeScript(evolutionCodec, row.script);
-        if (decoded) scripts.set(decoded.scriptHash, decoded.script);
+        if (decoded?.scriptHash === h)
+          out.set(h, { script: decoded.script, epoch: null });
       } catch (err) {
         console.warn(`minikupo /scripts/${h} failed: ${String(err)}`);
-        return new Map();
+        out.set(h, null);
       }
     }
-    return new Map([...needed.keys()].map((tx) => [tx, scripts]));
+    return out;
   }
 
   /**

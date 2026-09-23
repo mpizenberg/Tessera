@@ -43,9 +43,10 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
   a response or cancellation published in an earlier block. The
   `definition-validity` and `credential-proof` rules now say that mechanism A
   takes a native script witnessed by the transaction or resolved by hash
-  among the scripts on chain by it, as the code already did, and that a
-  script resolved neither way does not prove. `rulesetHash()` is
-  `18bb6982cf2f70423f04a9a83591b15e10b3895807142a255be077123aee213b`; the
+  among the scripts on chain by the last block of the survey's `end_epoch`,
+  and that a script resolved neither way does not prove. A script first on
+  chain after the transaction needing it, but by that block, now proves. `rulesetHash()` is
+  `0db08c4f854f1b66552d8078e45ca37df547528b83dcc38125095f7169ab53be`; the
   README's table gains its row with the release.
 - **Breaking: `TallyInputSource` loses `stakeholderTotal` and `drepTotal`**,
   which move unchanged to a new `ElectorateTotals` interface. A tally input

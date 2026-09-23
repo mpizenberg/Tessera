@@ -13,6 +13,8 @@ import {
   type UnresolvedGovAction,
 } from "cip-179/domain";
 
+import type { ResolvedNativeScript } from "cardano-tessera-koios";
+
 import { materializeSnapshot } from "./materialize";
 import { ALL_SLOTS, testStore, type TestStore } from "./testing/store";
 import { validateNewResponses } from "./validate";
@@ -22,6 +24,7 @@ import { validateNewResponses } from "./validate";
 function fakeSource(
   proofByTx: Record<string, TxProof | null>,
   blockIndexByTx: Record<string, number>,
+  scriptByHash: Record<string, ResolvedNativeScript | null> = {},
 ) {
   return {
     txBlockIndices: vi.fn(async (hashes: readonly string[]) => {
@@ -33,6 +36,11 @@ function fakeSource(
     txProofs: vi.fn(async (hashes: readonly string[]) => {
       const m = new Map<string, TxProof | null>();
       for (const h of hashes) m.set(h, proofByTx[h] ?? null);
+      return m;
+    }),
+    nativeScripts: vi.fn(async (hashes: readonly string[]) => {
+      const m = new Map<string, ResolvedNativeScript | null>();
+      for (const h of hashes) if (h in scriptByHash) m.set(h, scriptByHash[h]!);
       return m;
     }),
   };
@@ -148,6 +156,7 @@ async function validatePass(
   govLinksReliable = true,
   unresolved: readonly UnresolvedGovAction[] = [],
   input: readonly ResponseRecord[] = stored.responses,
+  finalThroughEpoch = 0,
 ) {
   await publish(store, stored, links);
   await validateNewResponses(
@@ -155,6 +164,7 @@ async function validatePass(
     input,
     source,
     0,
+    finalThroughEpoch,
     govLinksReliable,
     unresolved,
   );
@@ -578,33 +588,25 @@ describe("validateNewResponses", () => {
       source,
     );
     // One tx → one fetch, two rows; only cred 1 signed. Key credentials, so no
-    // native scripts to resolve by hash (empty needed-scripts map).
-    expect(source.txProofs).toHaveBeenCalledWith(["t1"], new Map());
+    // native scripts to resolve by hash.
+    expect(source.txProofs).toHaveBeenCalledWith(["t1"]);
+    expect(source.nativeScripts).not.toHaveBeenCalled();
     expect(store.validated.get("t1:0")!.proofOk).toBe(true);
     expect(store.validated.get("t1:1")!.proofOk).toBe(false);
   });
 
-  it("hands a script credential's hash to txProofs for by-hash resolution (finding 7)", async () => {
-    const store = testStore();
+  describe("a script credential its tx does not witness (finding 7)", () => {
     const scriptCred: Credential = {
       type: "script",
       scriptHash: Uint8Array.of(9),
     };
     const scriptHashHex = bytesToHex(scriptCred.scriptHash);
-    // The proof `txProofs` returns already carries the chain-resolved script
-    // (the merge happens inside the real `txProofs`; the fake just supplies the
-    // post-merge proof), so mechanism A verifies.
-    const proof: TxProof = {
+    const signed: TxProof = {
       requiredSigners: [hexOf(9)],
-      nativeScripts: [
-        {
-          scriptHash: scriptHashHex,
-          script: { kind: "sig", keyHash: hexOf(9) },
-        },
-      ],
+      nativeScripts: [],
       votes: [],
     };
-    const source = fakeSource({ ts: proof }, { ts: 3 });
+    const script = { kind: "sig", keyHash: hexOf(9) } as const;
     const scriptResp: ResponseRecord = {
       txHash: "ts",
       slot: 200,
@@ -618,13 +620,49 @@ describe("validateNewResponses", () => {
         answers: { type: "public", answers: [answer] },
       },
     };
-    await validatePass(store, records(scriptResp), [], source);
-    // The script hash is passed so the source can resolve it by hash when the
-    // carrying tx doesn't attach it; a key-credentialed response passes nothing.
-    expect(source.txProofs).toHaveBeenCalledWith(
-      ["ts"],
-      new Map([["ts", [scriptHashHex]]]),
-    );
-    expect(store.validated.get("ts:0")!.proofOk).toBe(true);
+    const judge = async (
+      scripts: Record<string, ResolvedNativeScript | null>,
+      finalThroughEpoch: number,
+    ) => {
+      const store = testStore();
+      const source = fakeSource({ ts: signed }, { ts: 3 }, scripts);
+      const stored = records(scriptResp);
+      await validatePass(
+        store,
+        stored,
+        [],
+        source,
+        true,
+        [],
+        stored.responses,
+        finalThroughEpoch,
+      );
+      expect(source.nativeScripts).toHaveBeenCalledWith([scriptHashHex]);
+      return store.validated.get("ts:0")!.proofOk;
+    };
+
+    it("proves with a script on chain by end_epoch", async () => {
+      expect(
+        await judge({ [scriptHashHex]: { script, epoch: DEF.endEpoch } }, 0),
+      ).toBe(true);
+    });
+
+    it("waits while end_epoch is not final and the script is not found", async () => {
+      expect(await judge({}, DEF.endEpoch - 1)).toBeNull();
+    });
+
+    it("is unproven once end_epoch is final and the script was not on chain by it", async () => {
+      expect(await judge({}, DEF.endEpoch)).toBe(false);
+      expect(
+        await judge(
+          { [scriptHashHex]: { script, epoch: DEF.endEpoch + 1 } },
+          DEF.endEpoch,
+        ),
+      ).toBe(false);
+    });
+
+    it("waits when the lookup failed", async () => {
+      expect(await judge({ [scriptHashHex]: null }, DEF.endEpoch)).toBeNull();
+    });
   });
 });

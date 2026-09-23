@@ -284,6 +284,7 @@ function proofsStub(
           ]),
         ),
     ),
+    nativeScripts: vi.fn(async () => new Map()),
   };
 }
 

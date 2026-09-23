@@ -354,6 +354,7 @@ async function seed(store: BackendStore, profile: Profile): Promise<Corpus> {
 
 const noKoios = {
   txProofs: async () => new Map<string, null>(),
+  nativeScripts: async () => new Map(),
   txBlockIndices: async () => new Map<string, number>(),
 };
 const noInputs: TallyInputSource & ElectorateTotals = {
@@ -401,7 +402,13 @@ async function steadyRun(
     network: CONFIG.app.network,
   });
   const finalFloor = bank.finalizationFloor;
-  await validateNewResponses(store, segment.responses, noKoios, finalFloor);
+  await validateNewResponses(
+    store,
+    segment.responses,
+    noKoios,
+    finalFloor,
+    bank.finalThroughEpoch,
+  );
   const finalized = await finalizeClosedSurveys(
     CONFIG,
     store,

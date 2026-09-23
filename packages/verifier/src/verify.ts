@@ -24,6 +24,7 @@ import {
   isSurveyTalliable,
   surveyErrors,
   validateResponse,
+  type Credential,
   type SurveyResponse,
 } from "cip-179";
 
@@ -58,6 +59,10 @@ import {
   type TallyInputSource,
   type WeightedResponder,
 } from "cip-179/tally";
+import {
+  withResolvedScript,
+  type ResolvedNativeScripts,
+} from "cardano-tessera-koios";
 
 /** Everything the rebuild needs — all independently (re)fetched by the CLI. */
 export interface VerifyInputs {
@@ -84,6 +89,11 @@ export interface VerifyInputs {
   readonly blockIndices: ReadonlyMap<string, number>;
   /** Decoded proof evidence per tx of the bundle, from its CBOR. */
   readonly proofs: ReadonlyMap<string, TxProof | null>;
+  /**
+   * The native scripts of the records' credentials their transactions do not
+   * witness, resolved by hash. Default: none found.
+   */
+  readonly scripts?: ResolvedNativeScripts;
   /** Membership + weights at `end_epoch`. */
   readonly weights: TallyInputSource;
   /**
@@ -178,9 +188,17 @@ export async function rebuildTally(
   // no artifact. Decided from the independently fetched record and defining-tx
   // evidence, so a backend can't dress an invalid survey up as talliable
   // (findings 10, 11, 45, 12).
+  const scripts = inputs.scripts ?? new Map();
+  const proofOf = (txHash: string, credential: Credential) =>
+    withResolvedScript(
+      inputs.proofs.get(txHash),
+      credential,
+      endEpoch,
+      scripts,
+    );
   const survey = {
     ...bundle.survey,
-    proof: inputs.proofs.get(bundle.survey.txHash) ?? null,
+    proof: proofOf(bundle.survey.txHash, def.owner),
   };
   if (!isSurveyTalliable(survey)) {
     const codes = surveyErrors(survey)
@@ -209,10 +227,10 @@ export async function rebuildTally(
     .sort(byCancellationChainOrder)
     .find((c) => {
       if (!inSurveyWindow(survey, c)) return false;
-      const proof = inputs.proofs.get(c.txHash) ?? null;
+      const proof = proofOf(c.txHash, def.owner);
       return proof === null || mechanismAProven(def.owner, proof);
     });
-  if (winning && !inputs.proofs.get(winning.txHash)) {
+  if (winning && !proofOf(winning.txHash, def.owner)) {
     indeterminate.push(
       `cancellation ${winning.txHash} could not be fetched or decoded, or its owner script not looked up, so whether it cancels is unknown`,
     );
@@ -251,7 +269,7 @@ export async function rebuildTally(
     // hash — filter them before the proof step (and before flagging indeterminacy
     // on an unresolvable link they'd be dropped for regardless).
     if (!COVERED_ROLES.includes(r.response.role)) continue;
-    const proof = inputs.proofs.get(r.txHash) ?? null;
+    const proof = proofOf(r.txHash, r.response.credential);
     if (!proof) {
       indeterminate.push(
         `response ${r.txHash}:${r.responseIndex} has no proof evidence (the ` +

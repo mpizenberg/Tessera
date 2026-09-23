@@ -45,15 +45,14 @@ import {
   laterInChain,
   parseCredentialKey,
   refKey,
-  scriptCredentialHash,
   voteDeadlineUnix,
   type CancellationRecord,
   type ChainTip,
   type GovLink,
   type ResponseRecord,
   type SurveyRecord,
-  type TxProof,
 } from "cip-179/domain";
+import { recordProofs, type ProofNeed } from "cardano-tessera-koios";
 import {
   RULESET_DESCRIPTOR,
   artifactHash,
@@ -93,7 +92,7 @@ export type FinalizeStore = TallyStore &
 /** What finalization reads of a defining or cancelling transaction. */
 export type FinalizeSource = Pick<
   import("cardano-tessera-koios").KoiosDataSource,
-  "txProofs"
+  "txProofs" | "nativeScripts"
 >;
 
 /**
@@ -669,31 +668,28 @@ export async function finalizeClosedSurveys(
  * `proof: null` — unknown, which the caller postpones rather than reads as a
  * failed proof.
  *
- * One transaction can define several surveys, so proofs are fetched per tx and
- * fanned back out; a native-script owner may not attach its script to that tx
- * (mechanism A permits chain resolution), hence the same by-hash resolution the
+ * A native-script owner may not attach its script to that tx (mechanism A
+ * permits chain resolution), hence the same by-hash resolution the
  * cancellation path uses.
  */
 async function withOwnerProofs(
   source: FinalizeSource,
   candidates: readonly SurveyRecord[],
 ): Promise<SurveyRecord[]> {
-  const neededScripts = new Map<string, string[]>();
-  for (const s of candidates) {
-    const scriptHash = scriptCredentialHash(s.definition.owner);
-    if (!scriptHash) continue;
-    const list = neededScripts.get(s.txHash);
-    if (list) list.push(scriptHash);
-    else neededScripts.set(s.txHash, [scriptHash]);
-  }
-  const proofs = await source.txProofs(
-    [...new Set(candidates.map((s) => s.txHash))],
-    neededScripts,
+  const proofs = await recordProofs(
+    source,
+    candidates.map((s) => ownerNeed(s)),
   );
-  return candidates.map((s) => ({
-    ...s,
-    proof: proofs.get(s.txHash) ?? null,
-  }));
+  return candidates.map((s, i) => ({ ...s, proof: proofs[i]! }));
+}
+
+/** The owner proof `txHash` owes survey `s`. */
+function ownerNeed(s: SurveyRecord, txHash = s.txHash): ProofNeed {
+  return {
+    txHash,
+    credential: s.definition.owner,
+    endEpoch: s.definition.endEpoch,
+  };
 }
 
 /**
@@ -721,31 +717,22 @@ async function withCancellations(
   nowSec: number,
   emitted: FinalStates,
 ): Promise<SurveyRecord[]> {
-  const ownerByKey = new Map(
-    candidates.map((s) => [refKey(s.ref), s.definition.owner]),
-  );
+  const surveyByKey = new Map(candidates.map((s) => [refKey(s.ref), s]));
   const relevant = candidates.flatMap(
     (s) => cancellationsByKey.get(refKey(s.ref)) ?? [],
   );
   if (relevant.length === 0) return [...candidates];
 
   // A native-script owner may not attach its script to the cancelling tx
-  // (mechanism A permits chain resolution); tell `txProofs` which script hash to
-  // resolve by hash for each cancellation tx (finding 7).
-  const neededScripts = new Map<string, string[]>();
-  for (const c of relevant) {
-    const owner = ownerByKey.get(refKey(c.target));
-    const scriptHash = owner ? scriptCredentialHash(owner) : null;
-    if (!scriptHash) continue;
-    const list = neededScripts.get(c.txHash);
-    if (list) list.push(scriptHash);
-    else neededScripts.set(c.txHash, [scriptHash]);
-  }
-
-  const proofs: Map<string, TxProof | null> = await source.txProofs(
-    [...new Set(relevant.map((c) => c.txHash))],
-    neededScripts,
+  // (mechanism A permits chain resolution), so it is resolved by hash
+  // (finding 7).
+  const proofList = await recordProofs(
+    source,
+    relevant.map((c) =>
+      ownerNeed(surveyByKey.get(refKey(c.target))!, c.txHash),
+    ),
   );
+  const proofs = new Map(relevant.map((c, i) => [c, proofList[i]!]));
 
   const open: SurveyRecord[] = [];
   for (const s of candidates) {
@@ -764,7 +751,7 @@ async function withCancellations(
     let winning: (typeof inWindow)[number] | undefined;
     let unknown: (typeof inWindow)[number] | undefined;
     for (const c of inWindow) {
-      const proof = proofs.get(c.txHash) ?? null;
+      const proof = proofs.get(c) ?? null;
       if (proof === null) {
         unknown = c;
         break;

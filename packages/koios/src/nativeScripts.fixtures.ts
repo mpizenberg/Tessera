@@ -1,8 +1,8 @@
 /**
  * Koios answers recorded on preview on 2026-09-18, for the native-script
- * lookup: two sig scripts, the transactions where they first became available,
- * and those transactions' positions. Koios serves native scripts as JSON only
- * (`bytes` is null), which is why `value` is the column read.
+ * lookup: a sig script, the transaction where it first became available, and
+ * positions. Koios serves native scripts as JSON only (`bytes` is null),
+ * which is why `value` is the column read.
  */
 
 /** Script 6c969320…, first available in tx e5602443…, which witnesses it. */
@@ -17,33 +17,21 @@ export const SCRIPT_A = {
   },
 };
 
-/** Script 065270…, first available in tx ce5a6f24…, after tx e5602443…. */
-export const SCRIPT_B = {
-  script_hash: "065270479316f1d92e00f7f9f095ebeaac9d009c878dc35ce36d3404",
-  type: "timelock",
-  creation_tx_hash:
-    "ce5a6f2496277b4cc1ecde1ec5d0b65334de9147295ab44a413001a1d309357a",
-  value: {
-    type: "sig",
-    keyHash: "04dcb4bb06ca1bf5bd1650a66def721e22e4d3e18fafd0b03a60e453",
-  },
-};
-
-/** `/tx_info` rows: A's creation tx, B's, and the DRep vote tx f3dbbed5…. */
+/**
+ * `/tx_info` rows: A's creation tx and the DRep vote tx f3dbbed5….
+ * `epoch_no` is derived from the slot (preview epochs are 86400 slots).
+ */
 export const TX_POSITIONS = [
   {
     tx_hash: "e5602443710892625b8526d2499b29d25b8f5d830eb5bb374323fdb74e17a674",
     absolute_slot: 722540,
+    epoch_no: 8,
     tx_block_index: 0,
-  },
-  {
-    tx_hash: "ce5a6f2496277b4cc1ecde1ec5d0b65334de9147295ab44a413001a1d309357a",
-    absolute_slot: 728697,
-    tx_block_index: 1,
   },
   {
     tx_hash: "f3dbbed5146f3481bf3a14bd1ded73c3a757f94e9f2c35be313791b7796e7f67",
     absolute_slot: 115741586,
+    epoch_no: 1339,
     tx_block_index: 0,
   },
 ];

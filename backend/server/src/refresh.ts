@@ -544,6 +544,7 @@ export async function refreshSnapshot(
       records.responses,
       source,
       finalFloor,
+      bank.finalThroughEpoch,
       govLinksReliable,
       govUnresolved,
     ).catch((err) =>

@@ -4,7 +4,7 @@ import type { AppConfig } from "cardano-tessera-core";
 import type { Credential } from "cip-179";
 import type { ChainTip } from "cip-179/domain";
 import { bytesToHex, hexToBytes, mechanismAProven } from "cip-179/domain";
-import { decodeResolvedNativeScript } from "cip-179/txproof";
+import { decodeResolvedNativeScript, decodeTxProof } from "cip-179/txproof";
 import { evolutionCodec } from "cip-179/evolution";
 
 import { Transaction } from "@evolution-sdk/evolution";
@@ -12,11 +12,14 @@ import { Koios } from "@evolution-sdk/evolution/sdk/provider/Koios";
 
 import epochParams from "./epoch-params-mainnet.json" with { type: "json" };
 import { stringifyKoiosJson } from "./json";
-import { KoiosDataSource } from "./koios";
+import {
+  KoiosDataSource,
+  unwitnessedScripts,
+  withResolvedScript,
+} from "./koios";
 import {
   SCRIPT_A,
   SCRIPT_A_CREATION_TX_CBOR,
-  SCRIPT_B,
   TX_POSITIONS,
 } from "./nativeScripts.fixtures";
 import { type ProposalRow } from "./govLinks";
@@ -881,8 +884,6 @@ const SCRIPT_HASH = decodeResolvedNativeScript(
   evolutionCodec,
   SIG_SCRIPT_CBOR,
 )!.scriptHash;
-const VOTE_TX =
-  "f3dbbed5146f3481bf3a14bd1ded73c3a757f94e9f2c35be313791b7796e7f67";
 // The DRep vote tx f3dbbed5…: KEYHASH in required_signers, no script attached.
 const SIGNED_TX_CBOR =
   "84a600d9010281825820128d8098467043c6ba9d84d5360782ec3841084625afde5e0d7fdf7e" +
@@ -942,40 +943,16 @@ function stubKoiosAnswers(answers: KoiosAnswers, failing: string[] = []) {
 
 const signedTx = { txCbor: { [TX]: SIGNED_TX_CBOR } };
 
-describe("txProofs — mechanism-A script lookup", () => {
-  it("resolves a script its transaction does not carry from Koios's JSON", async () => {
-    stubKoiosAnswers({
-      txCbor: { [VOTE_TX]: SIGNED_TX_CBOR },
-      scriptInfo: [SCRIPT_A],
-      txInfo: TX_POSITIONS,
-    });
-    const proofs = await new KoiosDataSource(CONFIG).txProofs(
-      [VOTE_TX],
-      new Map([[VOTE_TX, [SCRIPT_A.script_hash]]]),
-    );
-    expect(proofs.get(VOTE_TX)!.nativeScripts).toEqual([
-      {
-        scriptHash: SCRIPT_A.script_hash,
-        script: { kind: "sig", keyHash: SCRIPT_A.value.keyHash },
-      },
+describe("nativeScripts — resolved by hash", () => {
+  it("resolves a script from Koios's JSON, with the epoch it appeared in", async () => {
+    stubKoiosAnswers({ scriptInfo: [SCRIPT_A], txInfo: TX_POSITIONS });
+    const scripts = await new KoiosDataSource(CONFIG).nativeScripts([
+      SCRIPT_A.script_hash,
     ]);
-  });
-
-  it("leaves out a script first available after the transaction needing it", async () => {
-    // B became available at slot 728697; A's creation tx, at 722540, needs it.
-    const needing = SCRIPT_A.creation_tx_hash;
-    stubKoiosAnswers({
-      txCbor: { [needing]: SCRIPT_A_CREATION_TX_CBOR },
-      scriptInfo: [SCRIPT_B],
-      txInfo: TX_POSITIONS,
+    expect(scripts.get(SCRIPT_A.script_hash)).toEqual({
+      script: { kind: "sig", keyHash: SCRIPT_A.value.keyHash },
+      epoch: 8,
     });
-    const proofs = await new KoiosDataSource(CONFIG).txProofs(
-      [needing],
-      new Map([[needing, [SCRIPT_B.script_hash]]]),
-    );
-    expect(proofs.get(needing)!.nativeScripts.map((s) => s.scriptHash)).toEqual(
-      [SCRIPT_A.script_hash],
-    );
   });
 
   // A's creation tx with its witness set replaced by one sig script over
@@ -1001,83 +978,124 @@ describe("txProofs — mechanism-A script lookup", () => {
   it("reads a non-canonical script from the witness set it first appeared in", async () => {
     stubKoiosAnswers({
       txCbor: {
-        [VOTE_TX]: SIGNED_TX_CBOR,
         [nonCanonical.creation_tx_hash]: creationTx(`a10181${NON_CANONICAL}`),
       },
       scriptInfo: [nonCanonical],
       txInfo: positions,
     });
-    const proofs = await new KoiosDataSource(CONFIG).txProofs(
-      [VOTE_TX],
-      new Map([[VOTE_TX, [nonCanonical.script_hash]]]),
-    );
+    const scripts = await new KoiosDataSource(CONFIG).nativeScripts([
+      nonCanonical.script_hash,
+    ]);
     const owner: Credential = {
       type: "script",
       scriptHash: hexToBytes(nonCanonical.script_hash),
     };
-    expect(mechanismAProven(owner, proofs.get(VOTE_TX)!)).toBe(true);
+    const proof = withResolvedScript(
+      decodeTxProof(evolutionCodec, SIGNED_TX_CBOR),
+      owner,
+      8,
+      scripts,
+    );
+    expect(mechanismAProven(owner, proof)).toBe(true);
   });
 
-  it("leaves out, final, a non-canonical script outside that witness set", async () => {
+  it("finds none, final, for a non-canonical script outside that witness set", async () => {
     // Where the lookup does not read: an output's reference script, auxiliary
     // data. Still a verdict, so no survey waits on it.
     stubKoiosAnswers({
-      txCbor: {
-        [VOTE_TX]: SIGNED_TX_CBOR,
-        [nonCanonical.creation_tx_hash]: creationTx("a0"),
-      },
+      txCbor: { [nonCanonical.creation_tx_hash]: creationTx("a0") },
       scriptInfo: [nonCanonical],
       txInfo: positions,
     });
-    const proofs = await new KoiosDataSource(CONFIG).txProofs(
-      [VOTE_TX],
-      new Map([[VOTE_TX, [nonCanonical.script_hash]]]),
-    );
-    expect(proofs.get(VOTE_TX)!.nativeScripts).toEqual([]);
+    const scripts = await new KoiosDataSource(CONFIG).nativeScripts([
+      nonCanonical.script_hash,
+    ]);
+    expect(scripts.has(nonCanonical.script_hash)).toBe(false);
   });
 
   it.each([["/script_info"], ["/tx_info"]])(
-    "nulls the proof (unknown, retry) when %s can't be reached",
+    "answers null (unknown, retry) when %s can't be reached",
     async (endpoint) => {
-      stubKoiosAnswers(
-        {
-          txCbor: { [VOTE_TX]: SIGNED_TX_CBOR },
-          scriptInfo: [SCRIPT_A],
-          txInfo: TX_POSITIONS,
-        },
-        [endpoint],
-      );
-      const proofs = await new KoiosDataSource(CONFIG).txProofs(
-        [VOTE_TX],
-        new Map([[VOTE_TX, [SCRIPT_A.script_hash]]]),
-      );
-      // A needed, non-witnessed script we couldn't resolve is surfaced as
-      // unknown, never silently decided "unproven" (findings 6/7).
-      expect(proofs.get(VOTE_TX)).toBeNull();
+      stubKoiosAnswers({ scriptInfo: [SCRIPT_A], txInfo: TX_POSITIONS }, [
+        endpoint,
+      ]);
+      const scripts = await new KoiosDataSource(CONFIG).nativeScripts([
+        SCRIPT_A.script_hash,
+      ]);
+      expect(scripts.get(SCRIPT_A.script_hash)).toBeNull();
     },
   );
 
-  it("leaves a definitively-absent script unmerged → a final unproven (no paralysis)", async () => {
-    // A successful fetch that returns no such native script (Plutus, or a hash
-    // never on-chain — e.g. a bogus claim). The proof stays non-null, the script
-    // stays absent, so mechanism A is a final negative and finalization proceeds.
-    stubKoiosAnswers(signedTx);
-    const proofs = await new KoiosDataSource(CONFIG).txProofs(
-      [TX],
-      new Map([[TX, [SCRIPT_HASH]]]),
-    );
-    const proof = proofs.get(TX);
+  it("finds none for a hash Koios does not list", async () => {
+    stubKoiosAnswers({});
+    const scripts = await new KoiosDataSource(CONFIG).nativeScripts([
+      SCRIPT_HASH,
+    ]);
+    expect(scripts.size).toBe(0);
+  });
+});
+
+describe("withResolvedScript — the end_epoch bound", () => {
+  const signed = () => decodeTxProof(evolutionCodec, SIGNED_TX_CBOR)!;
+  const sig = { kind: "sig", keyHash: KEYHASH } as const;
+  const found = (epoch: number | null) =>
+    new Map([[SCRIPT_HASH, { script: sig, epoch }]]);
+
+  it.each([[499], [500], [null]])(
+    "proves with a script first on chain in epoch %s, for a survey ending at 500",
+    (epoch) => {
+      const proof = withResolvedScript(
+        signed(),
+        scriptOwner(),
+        500,
+        found(epoch),
+      );
+      expect(mechanismAProven(scriptOwner(), proof)).toBe(true);
+    },
+  );
+
+  it("does not prove with a script first on chain after end_epoch", () => {
+    const proof = withResolvedScript(signed(), scriptOwner(), 500, found(501));
     expect(proof).not.toBeNull();
-    expect(proof!.nativeScripts).toEqual([]);
-    expect(mechanismAProven(scriptOwner(), proof!)).toBe(false);
+    expect(mechanismAProven(scriptOwner(), proof)).toBe(false);
   });
 
-  it("makes no /script_info request when nothing needs resolving", async () => {
-    const fetchMock = stubKoiosAnswers(signedTx);
-    await new KoiosDataSource(CONFIG).txProofs([TX]); // no needed-scripts map
+  it("judges the same transaction per survey", () => {
+    // One transaction answering two surveys: the script, first on chain in
+    // epoch 501, is on time for the later one only.
+    const scripts = found(501);
+    const early = withResolvedScript(signed(), scriptOwner(), 500, scripts);
+    const late = withResolvedScript(signed(), scriptOwner(), 502, scripts);
+    expect(mechanismAProven(scriptOwner(), early)).toBe(false);
+    expect(mechanismAProven(scriptOwner(), late)).toBe(true);
+  });
+
+  it("is unknown when the lookup failed, unproven when it found none", () => {
     expect(
-      fetchMock.mock.calls.some((c) => String(c[0]).includes("/script_info")),
-    ).toBe(false);
+      withResolvedScript(
+        signed(),
+        scriptOwner(),
+        500,
+        new Map([[SCRIPT_HASH, null]]),
+      ),
+    ).toBeNull();
+    const none = withResolvedScript(signed(), scriptOwner(), 500, new Map());
+    expect(none).toEqual(signed());
+  });
+
+  it("asks only for scripts the transaction does not witness", () => {
+    expect(unwitnessedScripts([[signed(), scriptOwner()]])).toEqual([
+      SCRIPT_HASH,
+    ]);
+    const withScript = found(null);
+    const witnessed = withResolvedScript(
+      signed(),
+      scriptOwner(),
+      500,
+      withScript,
+    );
+    expect(unwitnessedScripts([[witnessed, scriptOwner()]])).toEqual([]);
+    expect(unwitnessedScripts([[null, scriptOwner()]])).toEqual([]);
   });
 });
 
