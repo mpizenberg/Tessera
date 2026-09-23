@@ -11,7 +11,8 @@
  *
  *   pnpm --filter cardano-tessera-verifier verify -- \
  *     --backend https://<backend> --survey <txHash>:<index> \
- *     --amaru <dir> [--out <dir>]
+ *     --amaru <dir> [--koios-scripts [--koios <url>] [--token <koios token>]] \
+ *     [--out <dir>]
  *
  * Fetches ONLY the artifact-under-test from the backend. The survey definition,
  * the response *set*, and every response's *answers* are re-derived by an
@@ -24,7 +25,10 @@
  * one at least a block into `end_epoch + 2` (`--dolos-after`), with the
  * second's minikupo API resolving native scripts by hash, or a directory of
  * `amaru-store-reader` output (`--amaru`): the snapshots of `end_epoch - 2`
- * to `end_epoch` and a block walk spanning the survey's window. The tally is
+ * to `end_epoch` and a block walk spanning the survey's window, with Koios
+ * resolving native scripts by hash under `--koios-scripts` (Amaru keeps no
+ * script index, and a record's own transaction rarely witnesses its script;
+ * without the flag such a proof is unknown). The tally is
  * rebuilt under the pinned ruleset and its content hash compared; the
  * electorate totals, outside the hash, are re-fetched too when the source is
  * Koios, and a difference is printed as a note, as is a ruleset other than
@@ -61,7 +65,7 @@ import {
 } from "cardano-tessera-amaru";
 import { KOIOS_URL, type AppConfig } from "cardano-tessera-core";
 import { DolosChain, DolosTallyInputs, Minibf } from "cardano-tessera-dolos";
-import { KoiosTallyInputs } from "cardano-tessera-koios";
+import { KoiosDataSource, KoiosTallyInputs } from "cardano-tessera-koios";
 import { revealResponses } from "cip-179/tlock";
 import { evolutionCodec } from "cip-179/evolution";
 
@@ -75,8 +79,8 @@ interface Sources {
   readonly totals?: ElectorateTotals;
 }
 
-function koiosSources(network: Network): Sources {
-  const config: AppConfig = {
+function koiosConfig(network: Network): AppConfig {
+  return {
     network,
     koiosUrl: argOf("koios") ?? KOIOS_URL[network],
     koiosToken: argOf("token") ?? process.env["KOIOS_TOKEN"] ?? undefined,
@@ -84,14 +88,25 @@ function koiosSources(network: Network): Sources {
     sinceUnix: 0,
     secondsPerEpoch: SECONDS_PER_EPOCH[network],
   };
+}
+
+function koiosSources(network: Network): Sources {
+  const config = koiosConfig(network);
   const koios = new KoiosTallyInputs(config);
   return { chain: koiosChain(config), weights: koios, totals: koios };
 }
 
 function amaruSources(network: Network, dir: string): Sources {
   const stores = new AmaruStores(dir);
+  const koios = process.argv.includes("--koios-scripts")
+    ? new KoiosDataSource(koiosConfig(network))
+    : null;
   return {
-    chain: new AmaruChain(stores, network),
+    chain: new AmaruChain(
+      stores,
+      network,
+      koios ? (missing) => koios.resolveNativeScripts(missing) : undefined,
+    ),
     weights: new AmaruTallyInputs(stores),
   };
 }
@@ -137,7 +152,7 @@ function usage(): never {
       "       verify --backend <url> --survey <txHash>:<index> " +
       "--dolos-end <url> --dolos-after <url> [--minikupo <url>] [--out <dir>]\n" +
       "       verify --backend <url> --survey <txHash>:<index> " +
-      "--amaru <dir> [--out <dir>]",
+      "--amaru <dir> [--koios-scripts [--koios <url>] [--token <koios token>]] [--out <dir>]",
   );
   exit(2);
 }

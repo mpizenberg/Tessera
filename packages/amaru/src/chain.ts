@@ -42,10 +42,32 @@ import {
 
 import type { AmaruStores, WalkedTx } from "./stores";
 
+/**
+ * Looks up, per transaction, the native scripts its records name but its
+ * witness set lacks, as {@link resolveMechanismAScripts} asks for them.
+ */
+type NativeScriptLookup = Parameters<typeof resolveMechanismAScripts>[2];
+
+/** No lookup: every transaction that lacks a script it needs stays unknown. */
+const noLookup: NativeScriptLookup = async (missing) => {
+  for (const [tx, hashes] of missing)
+    console.warn(
+      `tx ${tx} does not witness native scripts ${hashes.join(", ")}, and no script lookup was given`,
+    );
+  return new Map();
+};
+
 export class AmaruChain {
+  /**
+   * `lookupScripts` finds the native scripts Amaru's stores cannot: the
+   * ledger lets a transaction witness only the scripts it needs, and a
+   * metadata-only record needs none, so a script credential's script is
+   * rarely in its record's transaction.
+   */
   constructor(
     private readonly stores: AmaruStores,
     private readonly network: Network,
+    private readonly lookupScripts: NativeScriptLookup = noLookup,
   ) {}
 
   /**
@@ -96,9 +118,8 @@ export class AmaruChain {
   }
 
   /**
-   * Proof evidence per transaction, as `KoiosDataSource.txProofs` gives it.
-   * Amaru keeps no index from a script hash to a script, so a native script
-   * the carrying transaction does not witness leaves that proof unknown.
+   * Proof evidence per transaction, as `KoiosDataSource.txProofs` gives it,
+   * the scripts a transaction does not witness asked of `lookupScripts`.
    */
   async txProofs(
     txHashes: readonly string[],
@@ -111,13 +132,7 @@ export class AmaruChain {
         return [h, t ? decodeTxProof(evolutionCodec, t.cbor) : null];
       }),
     );
-    await resolveMechanismAScripts(proofs, neededScripts, async (missing) => {
-      for (const [tx, hashes] of missing)
-        console.warn(
-          `tx ${tx} does not witness native scripts ${hashes.join(", ")}: unresolvable from Amaru's stores`,
-        );
-      return new Map();
-    });
+    await resolveMechanismAScripts(proofs, neededScripts, this.lookupScripts);
     return proofs;
   }
 

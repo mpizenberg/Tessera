@@ -69,12 +69,12 @@ was not asked about a credential it needs. On preview, each snapshot takes
 2 s, most of it Amaru computing the epoch's stake summary, and prints 4 KB
 for two responders; a 30-epoch walk takes 2 s.
 
-Known limit: Amaru keeps no index from a script hash to a script, so a
-responder's native script is only available when the transaction carrying
-the record witnesses it; a script credential witnessed elsewhere (an earlier
-transaction, a reference script in the UTxO set) cannot be checked from these
-stores and its record stays unknown, where an indexer resolves the script by
-hash.
+Known limit: these stores cannot resolve a native script by hash. Amaru
+keeps no index from a script hash to a script, and its ledger rejects a
+witnessed script the transaction does not need, or takes from a reference
+input, so a record in a metadata-only transaction never carries the script
+of the native-script credential it names. The verifier looks such scripts
+up elsewhere (`packages/amaru/README.md`).
 
 How this fits Tessera's audit, what it trusts and what it measured:
 `backend/RESEARCH-AUDIT.md`.

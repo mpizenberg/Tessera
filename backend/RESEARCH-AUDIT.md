@@ -467,12 +467,17 @@ the survey's end, 10 s an epoch early on and 40 s on the full ones past
 1300, so it is the choice of set that decides it. Preprod and mainnet have
 not been tried.
 
-**Limits.** Amaru keeps no index from a script hash to a script: a
-responder's native script is only checkable when the transaction carrying
-its record witnesses it, where Koios resolves the script by hash from
-anywhere on chain and Dolos through minikupo. A response whose script is
-elsewhere is excluded from the rebuild with a note, and the hash no longer
-matches; the target survey needs no such script. Amaru's conformance tests
+**Limits.** Amaru keeps no index from a script hash to a script, and its
+ledger rejects a witnessed script the transaction does not need, or takes
+from a reference input. A record in a metadata-only transaction needs no
+script, so a native-script credential's script is almost never in its own
+transaction, where Koios resolves it by hash from anywhere on chain and
+Dolos through minikupo. The verifier's Amaru route asks Koios for it under
+`--koios-scripts`, a trust in Koios limited to when the script appeared,
+since its bytes are checked against the hash; without the flag, the
+transaction's proof is unknown, every response in it is excluded with a
+note, and the hash no longer matches. The target survey needs no such
+script. Amaru's conformance tests
 cover preview epochs 1000 to 1315 and 1395 sits outside them; this audit is
 the check for that epoch. Amaru is beta with frequent breaking releases, and
 its crates are internal APIs rather than a library contract, so the reader
