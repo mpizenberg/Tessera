@@ -241,8 +241,9 @@ and the survey's end. Preprod and mainnet have not been tried.
 Amaru has no query surface. It keeps its last three epoch snapshots and
 every block it validated in RocksDB stores, and `packages/amaru-store-reader`,
 a Rust crate built with Amaru's own toolchain, prints from them what the
-verifier needs: the snapshots of `E-2` to `E` and a walk of the survey's
-window. Its README has the commands. In outline, for a survey created in
+verifier needs: a walk of the survey's window, kept to the transactions
+that name the survey, and the snapshots of `E-2` to `E`, kept to the
+credentials that respond. Its README has the commands. In outline, for a survey created in
 epoch `C` with `end_epoch = E`:
 
 1. `amaru node bootstrap` from the newest PRAGMA set ending before `C`, so
@@ -254,7 +255,9 @@ epoch `C` with `end_epoch = E`:
    Amaru writes snapshot `E` at that point and keeps three snapshots, so
    a stop inside `E + 1` leaves `E-2` to `E` and the transition into
    `E + 2` would drop `E-2`.
-3. Print the three snapshots and the walk into one directory, then:
+3. Walk the survey's window, print the credentials its responses name,
+   and print the three snapshots for those credentials only, all into one
+   directory; then:
 
 ```sh
 pnpm --filter cardano-tessera-verifier verify -- \

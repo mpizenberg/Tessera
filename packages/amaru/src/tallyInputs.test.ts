@@ -11,12 +11,16 @@ import { AmaruTallyInputs } from "./tallyInputs";
 
 const KEY = "aa".repeat(28);
 const SCRIPT = "bb".repeat(28);
+const ABSENT = "cc".repeat(28);
 const cred = (hash: string, kind: "key" | "script" = "key"): Credential =>
   kind === "key"
     ? { type: "key", keyHash: hexToBytes(hash) }
     : { type: "script", scriptHash: hexToBytes(hash) };
 
-/** Three snapshots where each question has a different answer per epoch. */
+/**
+ * Three snapshots asked about the same three credentials, where each question
+ * has a different answer per epoch.
+ */
 function stores(): AmaruStores {
   const dir = mkdtempSync(join(tmpdir(), "amaru-"));
   const write = (epoch: number, body: object) =>
@@ -33,17 +37,29 @@ function stores(): AmaruStores {
     accounts: {
       [`key:${KEY}`]: { stake: "1000", pool: "pool" },
       [`script:${SCRIPT}`]: { stake: "500", pool: null },
+      [`key:${ABSENT}`]: null,
     },
-    dreps: { [`key:${KEY}`]: { voting_stake: "98" } },
+    dreps: {
+      [`key:${KEY}`]: { voting_stake: "98" },
+      [`script:${SCRIPT}`]: null,
+    },
   });
   write(99, {
-    accounts: { [`key:${KEY}`]: { stake: "2000", pool: "pool" } },
-    dreps: { [`key:${KEY}`]: { voting_stake: "99" } },
+    accounts: {
+      [`key:${KEY}`]: { stake: "2000", pool: "pool" },
+      [`script:${SCRIPT}`]: null,
+      [`key:${ABSENT}`]: null,
+    },
+    dreps: {
+      [`key:${KEY}`]: { voting_stake: "99" },
+      [`script:${SCRIPT}`]: null,
+    },
   });
   write(100, {
     accounts: {
       [`key:${KEY}`]: { stake: "3000", pool: "pool" },
       [`script:${SCRIPT}`]: { stake: "700", pool: "pool" },
+      [`key:${ABSENT}`]: null,
     },
     dreps: {
       [`key:${KEY}`]: { voting_stake: "100" },
@@ -60,7 +76,7 @@ describe("AmaruTallyInputs", () => {
     const got = await inputs.stakeholderWeights(100, [
       cred(KEY),
       cred(SCRIPT, "script"),
-      cred("cc".repeat(28)),
+      cred(ABSENT),
     ]);
     expect(got.get(`key:${KEY}`)).toEqual({ registered: true, weight: 1000n });
     // Registered at E, but no pool at E-2: registered and empty.
@@ -68,7 +84,7 @@ describe("AmaruTallyInputs", () => {
       registered: true,
       weight: 0n,
     });
-    expect(got.get(`key:${"cc".repeat(28)}`)).toEqual({
+    expect(got.get(`key:${ABSENT}`)).toEqual({
       registered: false,
       weight: 0n,
     });
@@ -85,6 +101,12 @@ describe("AmaruTallyInputs", () => {
       registered: true,
       weight: 0n,
     });
+  });
+
+  it("refuses a credential the snapshots were not asked about", async () => {
+    await expect(inputs.drepWeights(100, [cred(ABSENT)])).rejects.toThrow(
+      `snapshot-100.json was not asked about key:${ABSENT}`,
+    );
   });
 
   it("refuses a snapshot file whose epoch is not its name", () => {

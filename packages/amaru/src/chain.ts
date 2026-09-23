@@ -4,7 +4,8 @@
  * their transactions' block positions and proof evidence from the block walk,
  * the governance actions that could link it from the epoch snapshot at its
  * `end_epoch`. The walk must start at or before the survey's defining
- * transaction and reach the last slot of `end_epoch`.
+ * transaction and reach the last slot of `end_epoch`; the reader keeps in it
+ * only the transactions that can name the survey.
  */
 
 import {
@@ -48,21 +49,16 @@ export class AmaruChain {
   ) {}
 
   /**
-   * The survey's records from its defining transaction's slot through the
-   * last block of its `end_epoch`, or a throw when the walk does not span
-   * that window. Never `incomplete`: the walk is a file, read whole.
+   * The survey's records, as {@link surveyWindow} reads them, with the tip
+   * the walk started from, or a throw when the walk stops inside `end_epoch`.
+   * Never `incomplete`: the walk is a file, read whole.
    */
   async bundle(
     key: string,
   ): Promise<{ bundle: SurveyBundle; incomplete: boolean }> {
     const walk = this.stores.blocks();
-    const records = this.records(walk.transactions);
-    const survey = records.surveys.find((s) => refKey(s.ref) === key);
-    if (!survey)
-      throw new Error(
-        `survey ${key}: no transaction in ${this.stores.dir}/blocks.json defines it`,
-      );
-    const endEpoch = survey.definition.endEpoch;
+    const window = surveyWindow(this.stores, key);
+    const endEpoch = window.survey.definition.endEpoch;
     const tip = {
       epoch: walk.tip.epoch,
       slot: walk.tip.slot,
@@ -78,51 +74,7 @@ export class AmaruChain {
       throw new Error(
         `survey ${key}: the walk stops at slot ${walk.to}, inside epoch ${endEpoch}`,
       );
-    const inWindow = (r: { slot: number; epochNo: number }) =>
-      r.slot >= survey.slot && r.epochNo <= endEpoch;
-    return {
-      bundle: {
-        survey,
-        responses: records.responses.filter(
-          (r) => inWindow(r) && refKey(r.response.surveyRef) === key,
-        ),
-        cancellations: records.cancellations.filter(
-          (c) => inWindow(c) && refKey(c.target) === key,
-        ),
-        tip,
-      },
-      incomplete: false,
-    };
-  }
-
-  private records(transactions: readonly WalkedTx[]) {
-    const out = {
-      surveys: [] as SurveyRecord[],
-      responses: [] as ResponseRecord[],
-      cancellations: [] as CancellationRecord[],
-    };
-    for (const tx of transactions) {
-      let decoded: DecodedPayloadItems;
-      try {
-        decoded = decodePayloadItems(
-          cborToMetadatum(hexToBytes(tx.metadata)) as Metadatum,
-        );
-      } catch (err) {
-        console.warn(`skipping label-17 tx ${tx.hash}: ${String(err)}`);
-        continue;
-      }
-      for (const s of decoded.skipped)
-        console.warn(
-          `skipping label-17 item ${tx.hash}[${s.index}]: ${String(s.error)}`,
-        );
-      classifyPayload(
-        decoded.payload,
-        tx.hash,
-        { slot: tx.slot, epochNo: tx.epoch },
-        out,
-      );
-    }
-    return out;
+    return { bundle: { ...window, tip }, incomplete: false };
   }
 
   private walked(txHashes: readonly string[]): Map<string, WalkedTx> {
@@ -200,4 +152,63 @@ export class AmaruChain {
     if (proposals.length === 0) return { links: [], unresolved: [] };
     return govLinkScan(proposals, await resolveGovAnchors(proposals));
   }
+}
+
+/**
+ * The survey's records from its defining transaction's slot through the last
+ * block of its `end_epoch`, from the walk alone: no snapshot is read, so the
+ * credentials to ask the snapshots about can be taken from it.
+ */
+export function surveyWindow(
+  stores: AmaruStores,
+  key: string,
+): Omit<SurveyBundle, "tip"> {
+  const records = decodeRecords(stores.blocks().transactions);
+  const survey = records.surveys.find((s) => refKey(s.ref) === key);
+  if (!survey)
+    throw new Error(
+      `survey ${key}: no transaction in ${stores.dir}/blocks.json defines it`,
+    );
+  const endEpoch = survey.definition.endEpoch;
+  const inWindow = (r: { slot: number; epochNo: number }) =>
+    r.slot >= survey.slot && r.epochNo <= endEpoch;
+  return {
+    survey,
+    responses: records.responses.filter(
+      (r) => inWindow(r) && refKey(r.response.surveyRef) === key,
+    ),
+    cancellations: records.cancellations.filter(
+      (c) => inWindow(c) && refKey(c.target) === key,
+    ),
+  };
+}
+
+function decodeRecords(transactions: readonly WalkedTx[]) {
+  const out = {
+    surveys: [] as SurveyRecord[],
+    responses: [] as ResponseRecord[],
+    cancellations: [] as CancellationRecord[],
+  };
+  for (const tx of transactions) {
+    let decoded: DecodedPayloadItems;
+    try {
+      decoded = decodePayloadItems(
+        cborToMetadatum(hexToBytes(tx.metadata)) as Metadatum,
+      );
+    } catch (err) {
+      console.warn(`skipping label-17 tx ${tx.hash}: ${String(err)}`);
+      continue;
+    }
+    for (const s of decoded.skipped)
+      console.warn(
+        `skipping label-17 item ${tx.hash}[${s.index}]: ${String(s.error)}`,
+      );
+    classifyPayload(
+      decoded.payload,
+      tx.hash,
+      { slot: tx.slot, epochNo: tx.epoch },
+      out,
+    );
+  }
+  return out;
 }

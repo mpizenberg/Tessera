@@ -166,10 +166,11 @@ matters here is its bootstrap pipeline and its ledger model.
   on disk after a bootstrap.
 - **Reading it** is `packages/amaru-store-reader`, a Rust binary over
   `amaru-ledger`, `amaru-stores` and `amaru-ouroboros-traits`: it opens the
-  RocksDB snapshot of an epoch and prints `StakeSummary::new`'s view of it
-  with the governance actions, and walks the chain store's best chain for a
-  window's label-17 transactions. `StakeSummary` lists every registered
-  account, not only the delegated ones as its comment says.
+  RocksDB snapshot of an epoch and prints `StakeSummary::new`'s view of the
+  credentials it is asked about with the governance actions, and walks the
+  chain store's best chain for the label-17 transactions of a window that
+  hold the survey's hash. `StakeSummary` lists every registered account, not
+  only the delegated ones as its comment says.
 - **As a node** (run on preview, 2026-09-21 and 2026-09-22, release
   v10.11.20260918). PRAGMA's preview bucket holds bootstrap sets ending at
   epochs 999, 1118 and 1392. The node checkpoints its store as snapshot `E`
@@ -412,8 +413,9 @@ verifier takes the reader's output directory with `--amaru`.
    (§2). A node already running for another purpose serves the same survey
    if read before `end_epoch + 2`, or later with
    `--max-extra-ledger-snapshots`.
-3. **Read** the three snapshots and walk the window with the reader, then
-   run the verifier on the files. Registration at `E` is presence in
+3. **Read** the window with the reader, keeping the transactions that hold
+   the survey's hash, then the three snapshots for the credentials its
+   responses name, and run the verifier on the files. Registration at `E` is presence in
    snapshot `E`; a stakeholder's stake is snapshot `E-2`'s behind a pool
    still standing there; a DRep's power is snapshot `E-1`'s voting stake;
    the linking action is in snapshot `E`'s proposal store with
@@ -436,10 +438,12 @@ row can go wrong:
   verifier reads the same way (registered, weight 0). DRep power agrees on
   all 3016 rows, Amaru printing 0 for the 5962 DReps the distribution omits.
   Every sampled row agrees with Koios, the two responders included.
-- Column A: the same 18 label-17 transactions as Koios in the window, with
-  slot, epoch and block index equal, the transaction CBOR identical byte for
-  byte, the metadata and the proof evidence equal once decoded, and the one
-  linking action equal in transaction, index, anchor URL and hash.
+- Column A, on a walk of every label-17 transaction: the same 18 as Koios
+  in the window, with slot, epoch and block index equal, the transaction
+  CBOR identical byte for byte, the metadata and the proof evidence equal
+  once decoded, and the one linking action equal in transaction, index,
+  anchor URL and hash. The three that hold the survey's hash are the ones
+  the reader keeps.
 - Two Amaru behaviours worth knowing, neither of which changes a reading.
   The snapshots keep the delegation rows of 79 accounts to pools since
   retired and 69 to DReps since deregistered, which the Haskell ledger
@@ -455,7 +459,7 @@ row can go wrong:
 | ------------------------------------------- | ---------------------------- | ----------- | ----------------------------------------- |
 | Bootstrap from the 1118 set                 | 3.5 min                      | —           | 722 MB download                           |
 | Sync 1119 to 1396 from Mithril (280 epochs) | about 90 min at 155 blocks/s | 1.1 GB peak | 2.2 GB of immutable files, 3 GB of stores |
-| Read three snapshots and walk 30 epochs     | 2 s each, 2 s                | —           | 16 MB per snapshot, 36 KB for the walk    |
+| Walk 30 epochs and read three snapshots     | 2 s, 2 s each                | —           | 9 KB for the walk, 4 KB per snapshot      |
 | Rebuild from the files                      | 0.4 s (4 s from Koios)       | —           | —                                         |
 
 The sync cost is proportional to the epochs between the bootstrap set and

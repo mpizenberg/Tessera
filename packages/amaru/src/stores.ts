@@ -12,15 +12,20 @@ export interface SnapshotFile {
   readonly epoch: number;
   readonly gov_action_lifetime: number;
   /**
-   * Keyed `key:<hex>` or `script:<hex>`, every registered stake credential
-   * with the node's end-of-epoch view of it: its stake, and its pool when
-   * that pool still stands.
+   * Keyed `key:<hex>` or `script:<hex>`, each stake credential the reader
+   * was asked about with the node's end-of-epoch view of it, its stake and
+   * its pool when that pool still stands; `null` when not registered.
    */
   readonly accounts: Readonly<
-    Record<string, { readonly stake: string; readonly pool: string | null }>
+    Record<
+      string,
+      { readonly stake: string; readonly pool: string | null } | null
+    >
   >;
-  /** Keyed like `accounts`, every registered DRep. */
-  readonly dreps: Readonly<Record<string, { readonly voting_stake: string }>>;
+  /** Keyed like `accounts`, each DRep asked about, `null` when not registered. */
+  readonly dreps: Readonly<
+    Record<string, { readonly voting_stake: string } | null>
+  >;
   /** Keyed `<tx hash>#<index>`, every governance action still in the state. */
   readonly proposals: Readonly<
     Record<

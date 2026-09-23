@@ -5,10 +5,13 @@ Amaru node's stores instead of Koios: a survey's label-17 records, their
 proofs and block positions and its governance links from the block walk and
 the epoch snapshot, its responders' weights and registration from the
 snapshots. Private to the workspace; the verifier's `--amaru` flag names a
-directory holding `snapshot-<epoch>.json` for `end_epoch - 2` to `end_epoch`
-and `blocks.json` for a walk from the survey's defining transaction through
-the last slot of `end_epoch`. How to produce those files:
-`packages/amaru-store-reader/README.md`.
+directory holding `blocks.json` for a walk from the survey's defining
+transaction through the last slot of `end_epoch`, and
+`snapshot-<epoch>.json` for `end_epoch - 2` to `end_epoch`. The snapshots
+hold only the credentials they were asked about; the `credentials` command
+prints those from the walk, every credential the survey's responses name as
+a Stakeholder or a DRep, and the tally refuses a snapshot missing one it
+needs. How to produce those files: `packages/amaru-store-reader/README.md`.
 
 Each question is read from the snapshot that answers it: registration at
 `end_epoch`, of a stake credential or a DRep, from that epoch's snapshot; a
