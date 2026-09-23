@@ -101,7 +101,7 @@ describe("responsesCsv", () => {
       {
         ...base,
         weight: 45_000_000_000n,
-        weightUnit: "active_stake_at_end_epoch",
+        weightUnit: "active_stake_at_end_of_end_epoch",
       },
     ]);
     expect(rows(live)[0]).toEqual(rows(chainWeighted)[0]);

@@ -183,7 +183,7 @@ const survey: Messages = {
   weightedCancelledBody:
     "Une annulation prouvée par le propriétaire a été enregistrée sur la chaîne à l'époque {epoch} ; aucun résultat n'est décompté.",
   weightedFootnote:
-    "appartenance & pondérations figées à l'époque de clôture {epoch} depuis {provider} · re-vérifiable indépendamment · artefact {hash}",
+    "appartenance & pondérations lues à la fin de l'époque {epoch} depuis {provider} · re-vérifiable indépendamment · artefact {hash}",
 
   // Role filter
   roleFilterLabel: "Décompte par rôle",

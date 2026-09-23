@@ -132,14 +132,22 @@ export const RULESET_DESCRIPTOR = {
   // cancellation could land first and was counted wherever a reader's scan
   // happened to start. The body schema changes, and so can the counted set of
   // a survey with such a record, so v14 hashes are incomparable with v13.
-  rulesetVersion: 14,
+  // v15: weights and membership are read at one instant, the end of
+  // end_epoch. A DRep weighs the distribution the ledger takes then, the one
+  // governance ratifies with for an action whose last votable epoch is
+  // end_epoch, where v14 read the one taken a boundary earlier: a delegation
+  // made during end_epoch now counts, and a DRep retiring during it no longer
+  // does. A stakeholder weighs the stake snapshot taken at the same instant
+  // (the ledger's mark), where v14 read the one taken two boundaries earlier.
+  // Every weighted result can move, so v15 hashes are incomparable with v14.
+  rulesetVersion: 15,
   cip179SpecVersion: 5,
   /** Roles artifacts cover: 0 DRep, 3 Stakeholder, 4 Keyholder (SPO/CC deferred). */
   coveredRoles: [0, 3, 4],
   /** What one unit of weight measures, per covered role. */
   roleMeasures: {
-    "0": "drep_voting_power_at_end_epoch",
-    "3": "active_stake_at_end_epoch",
+    "0": "drep_voting_power_at_end_of_end_epoch",
+    "3": "active_stake_at_end_of_end_epoch",
     "4": "count",
   },
   rules: [
@@ -150,7 +158,7 @@ export const RULESET_DESCRIPTOR = {
     "validity: a response must pass full CIP-179 codec validation against the on-chain definition (eligible role, at least one answer, in-constraint answers including require_all rating coverage, required questions answered)",
     "credential-proof: mechanism A (credential key in required_signers, or its native script, witnessed by the response transaction or resolved by hash among the scripts on chain by the last block of the survey's end_epoch, satisfied; a script resolved neither way does not prove) or mechanism B (a voting_procedures vote in the response transaction by the same credential on any governance action linked to the survey, with the voter tag's role equal to the claimed role — sufficient on its own); a response with no qualifying vote falls back to mechanism A (a non-qualifying vote never invalidates); mechanism B applies only to governance-linked surveys, and votability needs no separate check — the ledger only accepts votes on actions still in the proposal set",
     "dedup: at most one counted response per (survey, role, credential) — the latest in chain order wins, ordered by (slot, tx_block_index, response_index)",
-    "membership+weight: role membership and weights are snapshotted at the survey's end_epoch; a credential registered at end_epoch but without stake counts with weight 0; unregistered credentials are excluded",
+    "membership+weight: role membership and weights are read from the ledger at the end of the survey's end_epoch, one instant for every role — a DRep's weight is the DRep stake distribution the ledger takes at that instant (the one ratification uses for an action whose last votable epoch is end_epoch; labelled end_epoch + 1), a stakeholder's weight its stake behind its pool in the stake snapshot taken at that same instant (the mark; labelled end_epoch + 2), 0 when delegated to no pool; a credential registered at that instant but without stake counts with weight 0; one not registered then is excluded",
     "cancellation: a survey is cancelled iff a cancelling transaction in its window proves the definition's owner credential via mechanism A; the earliest such transaction in chain order (slot, then tx hash) is the one recorded; a cancelled survey's artifact carries no per-role tallies",
     "sealed-reveal: for a sealed survey, decrypt every in-window (rule 1), structurally-valid (rule 2), credential-proven (rule 3) response with the definition-pinned round's BLS-verified drand beacon, then decode the plaintext as the CBOR answers array (trailing zero padding to padding_size is ignored; an empty array is a decode failure) and re-validate those answers against the definition; a response that fails to decrypt, decode, or re-validate is excluded",
     "sealed-dedup: latest-in-chain dedup (rule 4) runs only over sealed responses whose decrypted answers re-validated; undecryptable/invalid responses are excluded and never supersede an earlier valid one; excluded responses are not committed to the artifact",
@@ -277,7 +285,8 @@ export interface TallyArtifact {
    */
   readonly info: {
     /**
-     * Each weighted role's electorate total at end_epoch (decimal lovelace),
+     * Each weighted role's electorate total at the end of end_epoch (decimal
+     * lovelace), from the same snapshot as the weights,
      * turnout's denominator, sorted by role: one entry per DRep or Stakeholder
      * role in `tally.perRole`. The count-only Keyholder role has none, and a
      * cancellation has no roles.

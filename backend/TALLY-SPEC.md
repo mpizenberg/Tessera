@@ -18,16 +18,16 @@ Tallies and weighting are **always per-role; never combined** (the same ada woul
 otherwise be double-counted across a holder's stakeholder stake, their DRep's
 voting power, and their pool's stake).
 
-| Role            | Weight measure                   | Membership gate                                        | Browser-producible?          |
-| --------------- | -------------------------------- | ------------------------------------------------------ | ---------------------------- |
-| **Stakeholder** | active ada stake at `end_epoch`  | stake address **registered** at `end_epoch`            | yes                          |
-| **DRep**        | DRep voting power at `end_epoch` | DRep **registered** at `end_epoch`                     | yes                          |
-| **SPO**         | pool active stake at `end_epoch` | pool registered at `end_epoch`                         | **no** (specified, deferred) |
-| **Keyholder**   | **count-only** (weight = 1)      | credential proof (already on-chain, client-verifiable) | yes                          |
-| **CC**          | **TODO**                         | **TODO**                                               | no                           |
+| Role            | Weight measure                              | Membership gate                                        | Browser-producible?          |
+| --------------- | ------------------------------------------- | ------------------------------------------------------ | ---------------------------- |
+| **Stakeholder** | active ada stake at the end of `end_epoch`  | stake address **registered** at the end of `end_epoch` | yes                          |
+| **DRep**        | DRep voting power at the end of `end_epoch` | DRep **registered** at the end of `end_epoch`          | yes                          |
+| **SPO**         | pool active stake at the end of `end_epoch` | pool registered at the end of `end_epoch`              | **no** (specified, deferred) |
+| **Keyholder**   | **count-only** (weight = 1)                 | credential proof (already on-chain, client-verifiable) | yes                          |
+| **CC**          | **TODO**                                    | **TODO**                                               | no                           |
 
 - **Membership = registration.** A Stakeholder/DRep response whose credential is
-  **not registered** at `end_epoch` is **excluded as invalid** (it is not a
+  **not registered** at the end of `end_epoch` is **excluded as invalid** (it is not a
   member). A registered credential is counted with `weight = snapshot value`,
   which **may legitimately be 0** (registered but empty). There is no separate
   "weight-0 vs excluded" ambiguity: registration is the gate, the snapshot value
@@ -43,16 +43,34 @@ voting power, and their pool's stake).
 
 ## 2. Epoch semantics (the load-bearing definition)
 
-> **Weight = the `active_stake` / voting power for the survey's `end_epoch`.**
+> **Weight = the ledger at the end of the survey's `end_epoch`.**
+
+One instant for every role, the ledger as its last block leaves it, and the
+membership gate (§1) is judged at the same instant:
+
+- **DRep:** the DRep stake distribution the ledger takes at that instant.
+  It is the one Cardano governance ratifies with for an action whose last
+  votable epoch is `end_epoch`: ratification lags a boundary, so the last
+  evaluation of such an action sees delegations as they stood at the end of
+  that epoch. A delegator can therefore move their delegation until the last
+  block of `end_epoch`, as for the governance action a survey may be linked
+  to. The ledger labels this distribution `end_epoch + 1`.
+- **Stakeholder:** the stake snapshot the ledger takes at the same instant,
+  its "mark": each account's stake behind the pool it delegates to, which
+  the ledger makes active two epochs on. It labels this snapshot
+  `end_epoch + 2`. An account delegated to no pool counts with weight 0.
 
 - This is the **deadline snapshot**, not response-time stake. A responder who
-  held stake mid-survey but moved it before `end_epoch` is weighted at their
-  `end_epoch` value (possibly 0). Deliberate, matching governance snapshot
+  held stake mid-survey but moved it before the end of `end_epoch` is weighted
+  at their value then (possibly 0). Deliberate, matching governance snapshot
   semantics. This rule string is part of `rulesetHash` (§3).
-- **Row-freeze timing.** Koios per-epoch history freezes epoch `E`'s row once
-  epoch `E` _begins_ (the latest row, for the next epoch, is the live-evolving
-  value until the boundary). Finalization runs **after `end_epoch` closes**, so
-  `E`'s row is always frozen and available — no estimation needed.
+- **When the snapshot exists.** Both are taken at the boundary out of
+  `end_epoch`, so neither exists before the chain reaches `end_epoch + 1`, and
+  finalization, which waits until the end of `end_epoch` can no longer roll
+  back, reads them after it. An indexer may write the stake snapshot over the
+  first blocks of `end_epoch + 1` (db-sync does): a reader must wait until it
+  is whole rather than read part of it, since a missing row reads as
+  weight 0.
 - **Sealed surveys** use **deadline weights**: freeze the `end_epoch` weights at
   close; compute the tally later, after the drand reveal, re-validating decrypted
   answers (`audit.ts` already separates sealed handling). The artifact records
@@ -103,8 +121,9 @@ Why four of the rules are shaped as they are:
   decide.
 - **Dedup runs over the tally-valid set**, not over all responses, so an invalid
   later response never suppresses a valid earlier one.
-- **Membership is checked only at `end_epoch`** (§1). Response-time membership
-  (CIP-179 phase 1) is presentation-only — a deliberate deviation.
+- **Membership is checked only at the end of `end_epoch`** (§1).
+  Response-time membership (CIP-179 phase 1) is presentation-only — a
+  deliberate deviation.
 - **Talliability gates the definition**, not only the responses. A survey whose
   on-chain definition fails semantic validation produces no artifact and is never
   counted, and the gate includes CIP-179's owner rule: the defining transaction
@@ -189,8 +208,9 @@ how, when, and under which rules it counted goes in `provenance`.
   field; sealed and public responders have the same shape — no answers are
   committed), integer `questions` aggregates.
 - **`info` (not hashed, required):** per role, sorted, `role` and `total`, the
-  electorate total at `end_epoch` (total active stake, total DRep voting
-  power) that turnout divides by — one entry per DRep or Stakeholder role in
+  electorate total at the end of `end_epoch` (the total stake of the same
+  snapshot, the total DRep voting power of the same distribution) that
+  turnout divides by — one entry per DRep or Stakeholder role in
   `tally`; the count-only Keyholder has none, and a cancellation has no roles.
   Unhashed because ledger implementations read a total differently without
   reading any responder's weight differently (a vote delegation one keeps and
@@ -268,7 +288,8 @@ Shape (the typed definition is `TallyArtifact` in `cip-179/tally`'s
   answer from the chain — for a sealed survey, by decrypting its ciphertext
   with the beacon of the round the definition pins — re-runs the pure
   `cip-179/tally` computation and reproduces both the results and the hash;
-  every weight is re-fetchable from Koios at `end_epoch`. The totals in `info`
+  every weight is re-fetchable from Koios for the end of `end_epoch`. The totals in `info`
   are re-fetchable too, and a verifier reports a different one without
-  changing its verdict. Trust reduces to Koios's stake numbers for epoch E,
-  which the node tier later removes — without changing this format.
+  changing its verdict. Trust reduces to Koios's stake numbers for the end of
+  `end_epoch`, which the node tier later removes — without changing this
+  format.

@@ -212,7 +212,7 @@ const survey = {
    * {hash} the artifact content address.
    */
   weightedFootnote:
-    "membership & weights snapshotted at end epoch {epoch} from {provider} \u00b7 independently re-verifiable \u00b7 artifact {hash}",
+    "membership & weights read at the end of epoch {epoch} from {provider} \u00b7 independently re-verifiable \u00b7 artifact {hash}",
 
   // Role filter
   roleFilterLabel: "Tally by role",

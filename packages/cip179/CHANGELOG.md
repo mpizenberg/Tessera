@@ -50,8 +50,19 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
   takes a native script witnessed by the transaction or resolved by hash
   among the scripts on chain by the last block of the survey's `end_epoch`,
   and that a script resolved neither way does not prove. A script first on
-  chain after the transaction needing it, but by that block, now proves. `rulesetHash()` is
-  `0db08c4f854f1b66552d8078e45ca37df547528b83dcc38125095f7169ab53be`; the
+  chain after the transaction needing it, but by that block, now proves.
+- **Ruleset bump: `rulesetVersion` 14 → 15**, for when weights are read. The
+  `membership+weight` rule and the role measures now read every role at one
+  instant, the end of `end_epoch`: a DRep weighs the distribution the ledger
+  takes then, the one governance ratifies with for an action whose last
+  votable epoch is `end_epoch`, and a stakeholder the stake snapshot taken
+  at the same instant (the ledger's mark). Ruleset 14 read the DRep
+  distribution taken a boundary earlier and the stake snapshot taken two
+  earlier, so a delegation made during `end_epoch` did not count and a DRep
+  retiring during it did. Every weighted result can move. `TallyInputSource`
+  and `ElectorateTotals` keep their signatures: given a survey's
+  `end_epoch`, they now answer for its end. `rulesetHash()` is
+  `d945b740312f383250fb4c2f5752207cd3858c960e74de29450ba8c275b072e7`; the
   README's table gains its row with the release.
 - **Breaking: `TallyInputSource` loses `stakeholderTotal` and `drepTotal`**,
   which move unchanged to a new `ElectorateTotals` interface. A tally input

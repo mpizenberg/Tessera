@@ -67,7 +67,7 @@ describe("rulesetHash", () => {
   // auditor is never sent to rules the emitter did not run.
   it("matches its pinned golden hash (bump rulesetVersion on any change)", () => {
     expect(rulesetHash()).toBe(
-      "0db08c4f854f1b66552d8078e45ca37df547528b83dcc38125095f7169ab53be",
+      "d945b740312f383250fb4c2f5752207cd3858c960e74de29450ba8c275b072e7",
     );
   });
 
@@ -80,8 +80,8 @@ describe("rulesetHash", () => {
       "required_signers",
       "voting_procedures",
       "(slot, tx_block_index, response_index)",
-      "drep_voting_power_at_end_epoch",
-      "active_stake_at_end_epoch",
+      "drep_voting_power_at_end_of_end_epoch",
+      "active_stake_at_end_of_end_epoch",
     ]) {
       expect(text).toContain(needle);
     }
