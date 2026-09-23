@@ -111,7 +111,7 @@ export interface VerifyResult {
    * needs could not be read, or a governance link needed to decide a
    * mechanism-B proof couldn't be resolved (finding 6).
    * `match` is then not meaningful (it is `false`, but this is NOT a MISMATCH);
-   * the reason is in `notes`. Re-run when the inputs are resolvable.
+   * the reasons are in `notes`. Re-run when the inputs are resolvable.
    */
   readonly indeterminate: boolean;
   /**
@@ -143,16 +143,19 @@ const ROLE_KEYHOLDER = 4;
 /**
  * Rebuild the hashed tally body from chain data + the pinned ruleset. Needs no
  * artifact, so two sources' rebuilds can be compared with each other.
+ * `indeterminate` lists every input the rebuild could not read or resolve;
+ * empty when the counted set is decided.
  */
 export async function rebuildTally(
   inputs: Omit<VerifyInputs, "artifact" | "totals">,
 ): Promise<{
   tally: TallyBody;
   notes: string[];
-  indeterminate: string | null;
+  indeterminate: string[];
   untalliable: string | null;
 }> {
   const notes: string[] = [];
+  const indeterminate: string[] = [];
   const { bundle } = inputs;
   const def = bundle.survey.definition;
   const endEpoch = def.endEpoch;
@@ -186,19 +189,16 @@ export async function rebuildTally(
     return {
       tally: emptyTallyBody(id),
       notes,
-      indeterminate: null,
+      indeterminate,
       untalliable: `definition is spec-invalid (${codes}) — untalliable, no artifact should exist`,
     };
   }
   // Everything else was decidable from the record alone; the owner rule was not,
   // and an unread proof is unknown rather than unproven (finding 6's discipline).
   if (!survey.proof) {
-    return {
-      tally: emptyTallyBody(id),
-      notes,
-      indeterminate: `the defining transaction ${survey.txHash} could not be fetched or decoded, so its owner-proof is unknown`,
-      untalliable: null,
-    };
+    indeterminate.push(
+      `the defining transaction ${survey.txHash} could not be fetched or decoded, or its owner script not looked up, so its owner-proof is unknown`,
+    );
   }
 
   // Cancellation first: the earliest owner-proven, in-window cancellation (in
@@ -213,14 +213,18 @@ export async function rebuildTally(
       return proof === null || mechanismAProven(def.owner, proof);
     });
   if (winning && !inputs.proofs.get(winning.txHash)) {
-    return {
-      tally: emptyTallyBody(id),
-      notes,
-      indeterminate: `cancellation ${winning.txHash} could not be fetched or decoded, or its owner script not looked up, so whether it cancels is unknown`,
-      untalliable: null,
-    };
-  }
-  if (winning) {
+    indeterminate.push(
+      `cancellation ${winning.txHash} could not be fetched or decoded, or its owner script not looked up, so whether it cancels is unknown`,
+    );
+  } else if (winning) {
+    // Cancelled whatever the responses hold: only the reasons above count.
+    if (indeterminate.length > 0)
+      return {
+        tally: emptyTallyBody(id),
+        notes,
+        indeterminate,
+        untalliable: null,
+      };
     return {
       tally: cancelledTallyBody(id, {
         txHash: winning.txHash,
@@ -228,7 +232,7 @@ export async function rebuildTally(
         epoch: winning.epochNo,
       }),
       notes,
-      indeterminate: null,
+      indeterminate,
       untalliable: null,
     };
   }
@@ -240,7 +244,6 @@ export async function rebuildTally(
   const unresolvedActionIds = inputs.unresolvedActionIds ?? [];
   const govLinksReliable = inputs.govLinksReliable ?? true;
   const eligible: ResponseRecord[] = [];
-  let indeterminate: string | null = null;
   for (const r of bundle.responses) {
     if (!inSurveyWindow(survey, r)) continue;
     if (validateResponse(def, r.response).length !== 0) continue;
@@ -250,10 +253,11 @@ export async function rebuildTally(
     if (!COVERED_ROLES.includes(r.response.role)) continue;
     const proof = inputs.proofs.get(r.txHash) ?? null;
     if (!proof) {
-      indeterminate ??=
+      indeterminate.push(
         `response ${r.txHash}:${r.responseIndex} has no proof evidence (the ` +
-        `transaction could not be fetched or decoded, or a script lookup ` +
-        `failed) — retry when it is readable`;
+          `transaction could not be fetched or decoded, or a script lookup ` +
+          `failed) — retry when it is readable`,
+      );
       continue;
     }
     const verdict = responseCredentialProof(
@@ -273,10 +277,11 @@ export async function rebuildTally(
         !govLinksReliable &&
         BINDABLE_ROLES.has(r.response.role))
     ) {
-      indeterminate ??=
+      indeterminate.push(
         `credential proof for ${r.txHash}:${r.responseIndex} depends on a ` +
-        `governance-link anchor this verifier could not resolve — the counted ` +
-        `set cannot be reproduced; retry when the link is resolvable`;
+          `governance-link anchor this verifier could not resolve — the counted ` +
+          `set cannot be reproduced; retry when the link is resolvable`,
+      );
       continue;
     }
     if (verdict !== "proven") continue;
@@ -289,17 +294,18 @@ export async function rebuildTally(
       // POSTPONES finalization in exactly this case (`countedRows`), so match
       // that discipline: make the rebuild INDETERMINATE (retry when resolvable)
       // rather than silently risk a false MISMATCH (finding 16).
-      indeterminate ??=
+      indeterminate.push(
         `response ${r.txHash}:${r.responseIndex} has no tx_block_index ` +
-        `(the source did not resolve it) — the counted order cannot be ` +
-        `reproduced; retry when it is resolvable`;
+          `(the source did not resolve it) — the counted order cannot be ` +
+          `reproduced; retry when it is resolvable`,
+      );
       continue;
     }
     eligible.push({ ...r, blockIndex });
   }
-  // A single unresolved-link uncertainty makes the whole rebuild indeterminate:
-  // we can't produce THE counted set, so a hash comparison would be misleading.
-  if (indeterminate) {
+  // A single unknown makes the whole rebuild indeterminate: we can't produce
+  // THE counted set, so a hash comparison would be misleading.
+  if (indeterminate.length > 0) {
     return {
       tally: emptyTallyBody(id),
       notes,
@@ -321,7 +327,7 @@ export async function rebuildTally(
       return {
         tally: emptyTallyBody(id),
         notes,
-        indeterminate: null,
+        indeterminate,
         untalliable: null,
       };
     }
@@ -412,7 +418,7 @@ export async function rebuildTally(
   return {
     tally: assembleTallyBody(def, id, roles),
     notes,
-    indeterminate: null,
+    indeterminate,
     untalliable: null,
   };
 }
@@ -545,7 +551,7 @@ export async function verifyArtifact(
     }
   }
 
-  if (indeterminate !== null) {
+  if (indeterminate.length > 0) {
     return {
       match: false,
       indeterminate: true,
@@ -553,7 +559,7 @@ export async function verifyArtifact(
       receivedHash,
       rebuiltHash,
       rebuilt,
-      notes: [...notes, indeterminate],
+      notes: [...notes, ...indeterminate],
       diffs: [],
     };
   }

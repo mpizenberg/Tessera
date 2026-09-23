@@ -333,6 +333,16 @@ describe("verifyArtifact", () => {
     expect(result.match).toBe(false);
   });
 
+  it("names every input it could not read", async () => {
+    const unknown = new Map(proofs);
+    for (const tx of [SURVEY_TX, R_A.txHash, R_B.txHash]) unknown.set(tx, null);
+    const result = await verifyArtifact(inputs({ proofs: unknown }));
+    expect(result.indeterminate).toBe(true);
+    const notes = result.notes.join("\n");
+    for (const tx of [SURVEY_TX, R_A.txHash, R_B.txHash])
+      expect(notes).toContain(tx);
+  });
+
   it("is INDETERMINATE when an in-window cancellation's tx couldn't be read", async () => {
     const cancellation = {
       txHash: "cc".repeat(32),
