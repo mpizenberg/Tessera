@@ -158,6 +158,37 @@ const ROLE_DREP = 0;
 const ROLE_KEYHOLDER = 4;
 
 /**
+ * Why a survey is untalliable, or null (the `definition-validity` ruleset
+ * rule): a survey that is non-v5, structurally invalid, ending in the epoch
+ * that published it, or defined by a transaction that never proved its
+ * `owner` has no reproducible tally, and a conformant emitter writes no
+ * artifact. Decided from the independently fetched record and defining-tx
+ * evidence, so a backend can't dress an invalid survey up as talliable
+ * (findings 10, 11, 45, 12). An owner proof that could not be read decides
+ * nothing: only the record's own rules apply.
+ */
+export function untalliableReason(
+  inputs: Pick<VerifyInputs, "bundle" | "proofs" | "scripts">,
+): string | null {
+  const record = inputs.bundle.survey;
+  const def = record.definition;
+  const survey = {
+    ...record,
+    proof: withResolvedScript(
+      inputs.proofs.get(record.txHash),
+      def.owner,
+      def.endEpoch,
+      inputs.scripts ?? new Map(),
+    ),
+  };
+  if (isSurveyTalliable(survey)) return null;
+  const codes = surveyErrors(survey)
+    .map((p) => p.code)
+    .join(", ");
+  return `the survey is spec-invalid (${codes}), so it has no reproducible tally and no artifact should exist`;
+}
+
+/**
  * Rebuild the hashed tally body from chain data + the pinned ruleset. Needs no
  * artifact, so two sources' rebuilds can be compared with each other.
  * `indeterminate` lists every input the rebuild could not read or resolve;
@@ -188,13 +219,6 @@ export async function rebuildTally(
     sealed,
   };
 
-  // Talliability first (the `definition-validity` ruleset rule): a spec-invalid
-  // survey — non-v5, structurally invalid, ending in the epoch that published
-  // it, or defined by a transaction that never proved its `owner` — is
-  // untalliable, so it has no reproducible tally and a conformant emitter writes
-  // no artifact. Decided from the independently fetched record and defining-tx
-  // evidence, so a backend can't dress an invalid survey up as talliable
-  // (findings 10, 11, 45, 12).
   const scripts = inputs.scripts ?? new Map();
   const proofOf = (txHash: string, credential: Credential) =>
     withResolvedScript(
@@ -203,26 +227,14 @@ export async function rebuildTally(
       endEpoch,
       scripts,
     );
-  const survey = {
-    ...bundle.survey,
-    proof: proofOf(bundle.survey.txHash, def.owner),
-  };
-  if (!isSurveyTalliable(survey)) {
-    const codes = surveyErrors(survey)
-      .map((p) => p.code)
-      .join(", ");
-    return {
-      tally: emptyTallyBody(id),
-      notes,
-      indeterminate,
-      untalliable: `definition is spec-invalid (${codes}) — untalliable, no artifact should exist`,
-    };
-  }
+  const untalliable = untalliableReason(inputs);
+  if (untalliable !== null)
+    return { tally: emptyTallyBody(id), notes, indeterminate, untalliable };
   // Everything else was decidable from the record alone; the owner rule was not,
   // and an unread proof is unknown rather than unproven (finding 6's discipline).
-  if (!survey.proof) {
+  if (!proofOf(bundle.survey.txHash, def.owner)) {
     indeterminate.push(
-      `the defining transaction ${survey.txHash} could not be fetched or decoded, or its owner script not looked up, so its owner-proof is unknown`,
+      `the defining transaction ${bundle.survey.txHash} could not be fetched or decoded, or its owner script not looked up, so its owner-proof is unknown`,
     );
   }
 
@@ -233,7 +245,7 @@ export async function rebuildTally(
   const winning = [...bundle.cancellations]
     .sort(byCancellationChainOrder)
     .find((c) => {
-      if (!inSurveyWindow(survey, c)) return false;
+      if (!inSurveyWindow(bundle.survey, c)) return false;
       const proof = proofOf(c.txHash, def.owner);
       return proof === null || mechanismAProven(def.owner, proof);
     });
@@ -270,7 +282,7 @@ export async function rebuildTally(
   const govLinksReliable = inputs.govLinksReliable ?? true;
   const eligible: ResponseRecord[] = [];
   for (const r of bundle.responses) {
-    if (!inSurveyWindow(survey, r)) continue;
+    if (!inSurveyWindow(bundle.survey, r)) continue;
     if (validateResponse(def, r.response).length !== 0) continue;
     // Uncovered roles never count, so their proof verdict can't affect the
     // hash — filter them before the proof step (and before flagging indeterminacy

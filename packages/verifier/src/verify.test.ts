@@ -28,7 +28,12 @@ import {
 } from "cip-179/tally";
 
 import { saveArtifacts } from "./save";
-import { diffResponseSets, verifyArtifact, type VerifyInputs } from "./verify";
+import {
+  diffResponseSets,
+  untalliableReason,
+  verifyArtifact,
+  type VerifyInputs,
+} from "./verify";
 
 // --- fixtures ------------------------------------------------------------------
 
@@ -315,6 +320,22 @@ describe("verifyArtifact", () => {
     expect(result.untalliable).toBe(true);
     expect(result.match).toBe(false);
     expect(result.notes.join(" ")).toContain("ownerUnproven");
+  });
+
+  // The CLI's no-artifact path decides from the defining tx alone, so an
+  // untalliable survey exits UNTALLIABLE rather than "not finalized".
+  it("names the owner rule from the defining tx alone, and waits on an unread one", () => {
+    const stranger = new Map(proofs);
+    stranger.set(SURVEY_TX, {
+      requiredSigners: ["99".repeat(28)],
+      nativeScripts: [],
+      votes: [],
+    });
+    expect(untalliableReason({ bundle, proofs: stranger })).toContain(
+      "ownerUnproven",
+    );
+    expect(untalliableReason({ bundle, proofs: new Map() })).toBeNull();
+    expect(untalliableReason({ bundle, proofs })).toBeNull();
   });
 
   it("is INDETERMINATE when the defining tx couldn't be read at all", async () => {

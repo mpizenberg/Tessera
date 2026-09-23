@@ -94,6 +94,25 @@ export function koiosChain(config: AppConfig): SurveyChain {
 }
 
 /**
+ * What the owner rule reads, from `chain`: the defining transaction's proof,
+ * and the owner's native script by hash when that transaction does not
+ * witness it.
+ */
+export async function ownerEvidence(
+  chain: SurveyChain,
+  bundle: SurveyBundle,
+): Promise<Pick<VerifyInputs, "proofs" | "scripts">> {
+  const { txHash, definition } = bundle.survey;
+  const proofs = await chain.txProofs([txHash]);
+  const missing = unwitnessedScripts([[proofs.get(txHash), definition.owner]]);
+  return {
+    proofs,
+    scripts:
+      missing.length === 0 ? new Map() : await chain.nativeScripts(missing),
+  };
+}
+
+/**
  * The evidence behind `bundle`'s records, from `chain`: each transaction's
  * block position and credential proofs, and the governance links.
  */

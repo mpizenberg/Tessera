@@ -49,8 +49,7 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { exit } from "node:process";
-
-import { isSurveyTalliable, surveyErrors } from "cip-179";
+import { parseArgs } from "node:util";
 
 import type { SurveyBundle } from "cip-179/domain";
 import {
@@ -78,8 +77,15 @@ import { fetchBeacon, revealWithBeacon } from "cip-179/tlock";
 import { evolutionCodec } from "cip-179/evolution";
 
 import { saveArtifacts } from "./save";
-import { chainEvidence, koiosChain, type SurveyChain } from "./sources";
-import { diffResponseSets, verifyArtifact } from "./verify";
+import {
+  chainEvidence,
+  koiosChain,
+  ownerEvidence,
+  type SurveyChain,
+} from "./sources";
+import { diffResponseSets, untalliableReason, verifyArtifact } from "./verify";
+
+const flags = readFlags();
 
 interface Sources {
   readonly chain: SurveyChain;
@@ -91,8 +97,8 @@ interface Sources {
 function koiosConfig(network: Network): AppConfig {
   return {
     network,
-    koiosUrl: argOf("koios") ?? KOIOS_URL[network],
-    koiosToken: argOf("token") ?? process.env["KOIOS_TOKEN"] ?? undefined,
+    koiosUrl: flags.koios ?? KOIOS_URL[network],
+    koiosToken: flags.token ?? process.env["KOIOS_TOKEN"] ?? undefined,
     // Unread: the scan starts at the survey's defining transaction.
     sinceUnix: 0,
     secondsPerEpoch: SECONDS_PER_EPOCH[network],
@@ -112,7 +118,7 @@ function koiosSources(network: Network): Sources {
 
 function amaruSources(network: Network, dir: string): Sources {
   const stores = new AmaruStores(dir);
-  const koios = process.argv.includes("--koios-scripts")
+  const koios = flags["koios-scripts"]
     ? new KoiosDataSource(koiosConfig(network))
     : null;
   return {
@@ -127,11 +133,11 @@ function amaruSources(network: Network, dir: string): Sources {
 }
 
 function dolosSources(network: Network, endUrl: string): Sources {
-  const afterUrl = argOf("dolos-after");
+  const afterUrl = flags["dolos-after"];
   if (!afterUrl) usage();
   const after = new Minibf(afterUrl);
   return {
-    chain: new DolosChain(after, argOf("minikupo")),
+    chain: new DolosChain(after, flags.minikupo),
     weights: new DolosTallyInputs(new Minibf(endUrl), after, network),
     source: { provider: "dolos", baseUrl: afterUrl },
   };
@@ -176,34 +182,53 @@ function usage(): never {
 function untalliable(served: boolean): never {
   if (served) {
     console.warn(
-      "note: the backend served an artifact for this survey, but its " +
-        "definition is spec-invalid — no artifact should exist",
+      "note: the backend served an artifact for this survey, but no " +
+        "artifact should exist",
     );
   }
   console.log(
-    "UNTALLIABLE — the survey's on-chain definition is spec-invalid, so it " +
+    "UNTALLIABLE — the survey is spec-invalid (see the note above), so it " +
       "has no reproducible tally (this is neither MATCH nor MISMATCH)",
   );
   exit(4);
 }
 
-function argOf(name: string): string | undefined {
-  const i = process.argv.indexOf(`--${name}`);
-  return i >= 0 ? process.argv[i + 1] : undefined;
+function readFlags() {
+  // `pnpm <script> -- <flags>` hands the script its `--` as well.
+  const args = process.argv.slice(2);
+  if (args[0] === "--") args.shift();
+  try {
+    return parseArgs({
+      args,
+      options: {
+        backend: { type: "string" },
+        survey: { type: "string" },
+        koios: { type: "string" },
+        token: { type: "string" },
+        out: { type: "string" },
+        "dolos-end": { type: "string" },
+        "dolos-after": { type: "string" },
+        minikupo: { type: "string" },
+        amaru: { type: "string" },
+        "koios-scripts": { type: "boolean" },
+      },
+    }).values;
+  } catch (err) {
+    console.error((err as Error).message);
+    return usage();
+  }
 }
 
 /** pnpm runs the script from its package; `INIT_CWD` is where it was invoked. */
-function pathOf(name: string): string | undefined {
-  const p = argOf(name);
+function pathOf(p: string | undefined): string | undefined {
   return p === undefined
     ? undefined
     : resolve(process.env["INIT_CWD"] ?? "", p);
 }
 
 async function main(): Promise<void> {
-  const backend = argOf("backend");
-  const surveyArg = argOf("survey");
-  const out = pathOf("out");
+  const { backend, survey: surveyArg } = flags;
+  const out = pathOf(flags.out);
   if (!backend || !surveyArg) usage();
   const m = /^([0-9a-fA-F]{64}):(\d+)$/.exec(surveyArg);
   if (!m) usage();
@@ -214,8 +239,8 @@ async function main(): Promise<void> {
 
   // The backend's network decides which chain the rebuild reads.
   const network = parseNetwork((await client.liveness()).network);
-  const dolosEnd = argOf("dolos-end");
-  const amaruDir = pathOf("amaru");
+  const dolosEnd = flags["dolos-end"];
+  const amaruDir = pathOf(flags.amaru);
   const { chain, weights, totals, source } = dolosEnd
     ? dolosSources(network, dolosEnd)
     : amaruDir
@@ -236,22 +261,21 @@ async function main(): Promise<void> {
   // the records the tally is built from, so it cannot omit or alter a response
   // and still reproduce the hash.
   const { bundle, incomplete } = await chain.bundle(key);
-  const survey = bundle.survey;
 
-  // Talliability is decided from the *independent* on-chain definition, not from
-  // the artifact — so a backend cannot make an invalid survey look talliable. An
-  // untalliable survey (non-v5 or spec-invalid definition, findings 10/11) must
-  // have no artifact; if one was served anyway the backend is non-conformant,
-  // which we surface rather than trying to verify a tally that shouldn't exist.
-  // Only the rules the record decides on its own are checked here, before any
-  // fetching; the owner-proof rule needs the defining tx and is applied by
-  // `rebuildTally`, which reaches the same UNTALLIABLE verdict.
-  if (!isSurveyTalliable(survey)) {
-    for (const p of surveyErrors(survey))
-      console.warn(`note: definition problem: ${p.code}`);
-    untalliable(artifact !== null);
-  }
+  // Talliability is decided from the *independent* record and defining
+  // transaction, never from the artifact, so a backend cannot make an invalid
+  // survey look talliable. With an artifact the rebuild decides it; without
+  // one, only the defining transaction is read, to tell an untalliable survey
+  // (which has no artifact by design) from one not finalized yet.
   if (!artifact) {
+    const reason = untalliableReason({
+      bundle,
+      ...(await ownerEvidence(chain, bundle)),
+    });
+    if (reason !== null) {
+      console.warn(`note: ${reason}`);
+      untalliable(false);
+    }
     console.error("no artifact for this survey yet (open, or not finalized)");
     exit(2);
   }
