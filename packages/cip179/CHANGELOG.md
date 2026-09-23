@@ -16,6 +16,11 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
 
 ### Changed
 
+- **Breaking: `SurveyBundle` no longer carries `tip`.** It is what a tally
+  rebuild reads, and no rebuild reads the tip. The backend's bundle payload
+  (`SurveyBundlePayload` in `cardano-tessera-client`) still serves it, so
+  the wire is unchanged.
+- `epochOfSlot` asks only for the tip's `epoch`, `slot` and `epochSlot`.
 - **Breaking: `auditResponses` takes the survey's record**
   (`Pick<SurveyRecord, "slot" | "definition">`) instead of its definition,
   and excludes a response published in a block before the survey's under a

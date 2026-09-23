@@ -113,7 +113,7 @@ function statusOf(
  */
 export function epochOfSlot(
   slot: number,
-  tip: ChainTip,
+  tip: Pick<ChainTip, "epoch" | "slot" | "epochSlot">,
   secondsPerEpoch: number,
 ): number {
   const epochStartSlot = tip.slot - tip.epochSlot;

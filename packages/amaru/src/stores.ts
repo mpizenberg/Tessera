@@ -10,7 +10,6 @@ import { join } from "node:path";
 
 export interface SnapshotFile {
   readonly epoch: number;
-  readonly gov_action_lifetime: number;
   /**
    * Keyed `key:<hex>` or `script:<hex>`, each stake credential the reader
    * was asked about with the node's end-of-epoch view of it, its stake and
@@ -57,7 +56,6 @@ export interface BlocksFile {
     readonly slot: number;
     readonly epoch: number;
     readonly epoch_slot: number;
-    readonly time: number;
   };
   readonly transactions: readonly WalkedTx[];
 }

@@ -236,13 +236,12 @@ export interface GovLinkScan {
 /**
  * The self-contained slice for one survey: its definition record, ALL of its
  * responses (sealed ciphertexts included — client-side audit/tally/reveal need
- * the raw set), the cancellations targeting it, and the tip that anchors
- * epoch-dependent checks. A published result re-verifies from exactly this
- * bundle; a verifier never needs a full snapshot.
+ * the raw set) and the cancellations targeting it. A published result
+ * re-verifies from exactly this bundle; a verifier never needs a full
+ * snapshot.
  */
 export interface SurveyBundle {
   readonly survey: SurveyRecord;
   readonly responses: readonly ResponseRecord[];
   readonly cancellations: readonly CancellationRecord[];
-  readonly tip: ChainTip;
 }

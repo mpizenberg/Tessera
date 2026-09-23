@@ -147,7 +147,6 @@ fn snapshot(
     Ok(json!({
         "epoch": u64::from(snapshot.epoch()),
         "tip": { "slot": u64::from(tip.slot_or_default()), "hash": hex::encode(tip.hash()) },
-        "gov_action_lifetime": snapshot.protocol_parameters()?.gov_action_lifetime,
         "accounts": accounts,
         "dreps": dreps,
         "proposals": proposals,
@@ -330,14 +329,6 @@ fn blocks(
     let tip_slot = tip.slot_or_default();
     let tip_epoch = era_history.slot_to_epoch_unchecked_horizon(tip_slot)?;
     let epoch_start = era_history.epoch_bounds(tip_epoch)?.start;
-    let system_start = network
-        .as_global_parameters()
-        .ok_or_else(|| anyhow!("no global parameters for {network}"))?
-        .system_start;
-    let tip_time = system_start / 1000
-        + era_history
-            .slot_to_relative_time_unchecked_horizon(tip_slot)?
-            .as_secs();
     Ok(json!({
         "from": u64::from(from),
         "to": u64::from(to),
@@ -347,7 +338,6 @@ fn blocks(
             "hash": hex::encode(tip.hash()),
             "epoch": u64::from(tip_epoch),
             "epoch_slot": tip_slot.elapsed_from(epoch_start)?,
-            "time": tip_time,
         },
         "blocks": window.len(),
         "transactions": transactions,

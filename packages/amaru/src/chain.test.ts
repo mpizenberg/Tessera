@@ -38,7 +38,7 @@ function stores(): AmaruStores {
     JSON.stringify({
       from: 0,
       to: 1,
-      tip: { slot: 1, epoch: 0, epoch_slot: 1, time: 0 },
+      tip: { slot: 1, epoch: 0, epoch_slot: 1 },
       transactions: [
         { hash: TX, slot: 1, epoch: 0, index: 0, cbor: TX_CBOR, metadata: "" },
       ],

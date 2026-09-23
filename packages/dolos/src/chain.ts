@@ -89,22 +89,8 @@ export class DolosChain {
       last.height,
     );
     return {
-      bundle: { survey, responses, cancellations, tip: await this.tip() },
+      bundle: { survey, responses, cancellations },
       incomplete: false,
-    };
-  }
-
-  private async tip(): Promise<SurveyBundle["tip"]> {
-    const block = await this.node.get<BlockRow>("/blocks/latest");
-    const params = await this.node.get<{
-      gov_action_lifetime: string | number | null;
-    }>("/epochs/latest/parameters");
-    return {
-      epoch: block.epoch,
-      slot: block.slot,
-      time: block.time,
-      epochSlot: block.epoch_slot,
-      govActionLifetime: Number(params.gov_action_lifetime ?? 0),
     };
   }
 

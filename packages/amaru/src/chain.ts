@@ -72,8 +72,8 @@ export class AmaruChain {
   ) {}
 
   /**
-   * The survey's records, as {@link surveyWindow} reads them, with the tip
-   * the walk started from, or a throw when the walk stops inside `end_epoch`.
+   * The survey's records, as {@link surveyWindow} reads them, or a throw when
+   * the walk stops inside `end_epoch`.
    * Never `incomplete`: the walk is a file, read whole.
    */
   async bundle(
@@ -85,9 +85,7 @@ export class AmaruChain {
     const tip = {
       epoch: walk.tip.epoch,
       slot: walk.tip.slot,
-      time: walk.tip.time,
       epochSlot: walk.tip.epoch_slot,
-      govActionLifetime: this.stores.snapshot(endEpoch).gov_action_lifetime,
     };
     // The walk covers the window when the slot after its last is in a later
     // epoch than the survey's last.
@@ -97,7 +95,7 @@ export class AmaruChain {
       throw new Error(
         `survey ${key}: the walk stops at slot ${walk.to}, inside epoch ${endEpoch}`,
       );
-    return { bundle: { ...window, tip }, incomplete: false };
+    return { bundle: window, incomplete: false };
   }
 
   private walked(txHashes: readonly string[]): Map<string, WalkedTx> {
@@ -176,10 +174,7 @@ export class AmaruChain {
  * block of its `end_epoch`, from the walk alone: no snapshot is read, so the
  * credentials to ask the snapshots about can be taken from it.
  */
-export function surveyWindow(
-  stores: AmaruStores,
-  key: string,
-): Omit<SurveyBundle, "tip"> {
+export function surveyWindow(stores: AmaruStores, key: string): SurveyBundle {
   const records = decodeRecords(stores.blocks().transactions);
   const survey = records.surveys.find((s) => refKey(s.ref) === key);
   if (!survey)

@@ -102,13 +102,6 @@ const bundle: SurveyBundle = {
   },
   responses: [R_A, R_B],
   cancellations: [],
-  tip: {
-    epoch: 502,
-    slot: 1,
-    time: 1,
-    epochSlot: 0,
-    govActionLifetime: 6,
-  },
 };
 
 const WEIGHTS: Record<string, WeightInfo> = {

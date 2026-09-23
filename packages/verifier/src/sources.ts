@@ -78,7 +78,6 @@ export function koiosChain(config: AppConfig): SurveyChain {
           cancellations: scan.records.cancellations.filter(
             (c) => refKey(c.target) === key,
           ),
-          tip,
         },
         incomplete:
           scan.records.incomplete === true ||

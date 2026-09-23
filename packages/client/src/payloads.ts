@@ -260,6 +260,8 @@ export interface SurveyChangesPayload extends Omit<
  * Absent entirely when the source has no proof machinery.
  */
 export interface SurveyBundlePayload extends SurveyBundle, SnapshotStamp {
+  /** The chain tip the serving tier's snapshot was read at. */
+  readonly tip: ChainTip;
   readonly verdicts?: ProofVerdicts;
   /**
    * The governance actions linked to this survey — the same relation

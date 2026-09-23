@@ -38,7 +38,6 @@ import type {
   ChainTip,
   GovLink,
   ResponseRecord,
-  SurveyBundle,
   SurveyRecord,
 } from "cip-179/domain";
 
@@ -798,7 +797,7 @@ describe("GET /api/surveys/{txHash}/{index}", () => {
     const app = appWith(await seededStore());
     const res = await app.request(`/api/surveys/${TX_A}/0`);
     expect(res.status).toBe(200);
-    const body = fromJsonSafe(await res.json()) as unknown as SurveyBundle;
+    const body = fromJsonSafe(await res.json()) as unknown as SurveyBundlePayload;
     expect(body.survey.txHash).toBe(TX_A);
     // ALL of A's responses ride along (raw, superseded one included) — the
     // client audit needs them; B's don't.
@@ -814,7 +813,7 @@ describe("GET /api/surveys/{txHash}/{index}", () => {
   it("includes the cancellations targeting the survey", async () => {
     const app = appWith(await seededStore());
     const res = await app.request(`/api/surveys/${TX_B}/1`);
-    const body = fromJsonSafe(await res.json()) as unknown as SurveyBundle;
+    const body = fromJsonSafe(await res.json()) as unknown as SurveyBundlePayload;
     expect(body.cancellations.map((c) => c.txHash)).toEqual(["99".repeat(32)]);
     expect(body.responses.map((r) => r.txHash)).toEqual(["ff".repeat(32)]);
   });

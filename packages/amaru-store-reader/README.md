@@ -40,7 +40,7 @@ with its voting stake, or `null`. Under `proposals`, keyed
 `<tx hash>#<index>`, every governance action still in the state with the last
 epoch it can be voted in (`valid_until`) and its anchor; an action stays one
 epoch past `valid_until`, until the boundary that ratifies or drops it.
-`gov_action_lifetime` is the protocol parameter at that end. Lovelace are
+Lovelace are
 decimal strings. The electorate totals are not printed: they sit outside the
 artifact's hash.
 

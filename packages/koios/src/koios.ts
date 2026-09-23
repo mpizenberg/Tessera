@@ -37,7 +37,6 @@ import type {
   GovLinkScan,
   NativeScriptInfo,
   ResponseRecord,
-  SurveyBundle,
   SurveyRecord,
   TxProof,
 } from "cip-179/domain";
@@ -45,6 +44,7 @@ import {
   SECURITY_PARAM,
   stabilityWindowSlots,
   type Settling,
+  type SurveyBundlePayload,
   type SurveyListPayload,
 } from "cardano-tessera-client";
 import type { AppConfig, DataSource } from "cardano-tessera-core";
@@ -918,7 +918,7 @@ export class KoiosDataSource implements DataSource {
     };
   }
 
-  async surveyBundle(ref: SurveyRef): Promise<SurveyBundle> {
+  async surveyBundle(ref: SurveyRef): Promise<SurveyBundlePayload> {
     const { records, tip } = await this.scan();
     const key = refKey(ref);
     const survey = records.surveys.find((s) => refKey(s.ref) === key);

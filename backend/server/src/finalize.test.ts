@@ -1065,7 +1065,6 @@ describe("finalizeClosedSurveys", () => {
           survey: survey(),
           responses: [rA, rB],
           cancellations: [],
-          tip: TIP,
         } satisfies SurveyBundle,
         artifact,
         network: "preview",
@@ -1372,7 +1371,7 @@ describe("finalizeClosedSurveys", () => {
       proofs: Record<string, TxProof>,
     ) =>
       verifyArtifact({
-        bundle: { survey: survey(), responses, cancellations, tip: TIP },
+        bundle: { survey: survey(), responses, cancellations },
         artifact: emitted(store),
         network: "preview",
         linkedActionIds: [],
