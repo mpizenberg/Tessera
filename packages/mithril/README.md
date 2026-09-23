@@ -31,8 +31,10 @@ the commands from this directory.
    and stay 28 days. An archive is named by the epoch the aggregator was in
    when it made it and by the newest completed immutable file. It holds the
    next, unfinished immutable file and whichever ledger snapshot the node had
-   written last, at a slot the node chose: on preview, 2 to 30 blocks before
-   the end of the named immutable, and once past it. Every Cardano network
+   written last, at a slot the node chose. On preview most sat 2 to 30
+   blocks before the end of the named immutable and one just past it, but
+   `preview-e1424-i28482` holds the end of immutable 28479, three
+   immutables (about 3.6 hours) earlier. Every Cardano network
    completes twenty immutables per epoch, and on preview epoch `E` owns
    immutables `20E` to `20E+19`, so the latest state inside `E` is usually in
    `preview-e<E+1>-i<20E+19>`, the label having already rolled over, and
