@@ -256,7 +256,7 @@ async function main(args: string[]): Promise<void> {
   const d = state.drepDistribution;
   console.log(
     [
-      `Koios epoch ${epoch} against the state at epoch ${state.epoch}, slot ${state.slot}` +
+      `Koios at the end of epoch ${epoch} against the state at epoch ${state.epoch}, slot ${state.slot}` +
         (previous
           ? `, changes since the state at epoch ${previous.epoch}, slot ${previous.slot}`
           : ""),

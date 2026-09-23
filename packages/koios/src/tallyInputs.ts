@@ -1,14 +1,25 @@
 /**
  * Koios-backed {@link TallyInputSource} and {@link ElectorateTotals}: role
- * membership + weights at a survey's `end_epoch` (TALLY-SPEC.md §1,
- * ARCHITECTURE.md §6.2), and the electorate totals.
+ * membership + weights at the end of a survey's `end_epoch = E`
+ * (TALLY-SPEC.md §1, §2, ARCHITECTURE.md §6.2), and the electorate totals.
+ * db-sync labels the snapshots taken at that instant by the epoch they serve:
+ * the DRep distribution `E + 1`, the stake snapshot (the mark) `E + 2`.
+ *
+ * Nothing is read before Koios can serve that instant whole
+ * ({@link KoiosTallyInputs.readable}). db-sync writes the mark in slices over
+ * the first blocks of `E + 1`, and a partial read would weigh every missing
+ * account 0, so the read waits for Koios's stake cache to hold the mark,
+ * which it fills only once db-sync has written all of it. Koios answers from
+ * several instances behind one URL, and the cache proves only the one that
+ * answered, so the read also waits a margin past `E + 1`'s start, well beyond
+ * the slices' writing and any plausible lag between instances.
  *
  * Stakeholders (role 3) resolve in two bulk reads per 50-credential chunk:
  *  - `/account_update_history?epoch_no=lte.E&action_type=in.(registration,
  *    deregistration)` — registration state. Only registration/deregistration
  *    change it (delegations/withdrawals merely imply registration), so we filter
- *    to those two server-side; a credential is registered at E iff the last
- *    event in chain order (up to E) is not a deregistration. Chain order is
+ *    to those two server-side; a credential is registered at E's end iff the
+ *    last event in chain order (up to E) is not a deregistration. Chain order is
  *    `(absolute_slot, tx_block_index, cert_index)`, and only the account's max
  *    slot can decide (earlier slots are overridden). When that slot holds both a
  *    registration and a deregistration — in different txs *or* the same tx — we
@@ -19,30 +30,33 @@
  *    `/tx_info` read. Read newest-first and stopped once every address in the
  *    batch has been passed, so the cost tracks the batch's deciding slots
  *    rather than its accounts' lifetimes.
- *  - `/account_stake_history?epoch_no=eq.E` — active stake. One row per
- *    account *delegated to a pool* at E; a registered account with no row
- *    counts with weight 0 ("registered but empty").
+ *  - `/account_stake_history?epoch_no=eq.E+2` — the mark. One row per account
+ *    *delegated to a pool* then; a registered account with no row counts with
+ *    weight 0 ("registered but empty").
  *
  * DReps (role 0) resolve in bulk too:
- *  - `/drep_voting_power_history?_epoch_no=E&epoch_no=eq.E&drep_id=in.(…)` —
- *    voting power, one row per DRep *some account has delegated to* at E. Both
- *    epoch filters, deliberately: `_epoch_no` keeps the server-side query to
- *    one epoch, and the PostgREST column filter guards against its known
+ *  - `/drep_voting_power_history?_epoch_no=E+1&epoch_no=eq.E+1&drep_id=in.(…)`
+ *    — voting power, one row per DRep *some account has delegated to* then.
+ *    Both epoch filters, deliberately: `_epoch_no` keeps the server-side query
+ *    to one epoch, and the PostgREST column filter guards against its known
  *    misbehaviour for current epochs. A 50-id `in.(…)` list is ~3 KB of URL,
  *    verified live to return amounts byte-identical to the single-id form.
  *  - `/drep_updates?drep_id=in.(…)&block_time=lte.<E's end>` — registration,
  *    read only for the ids the power read returned nothing for. A power row
- *    proves registration, but its absence disproves nothing: Koios omits a
- *    registered DRep nobody has delegated to, and TALLY-SPEC.md §1 counts that
- *    DRep at weight 0 rather than excluding it as a non-member. Registered at E
- *    iff the newest registration event at or before E's end is not a
- *    deregistration; `updated` events are filtered out server-side, leaving
+ *    proves registration at E's end, since the ledger takes the distribution
+ *    over the DReps registered then, but its absence disproves nothing: Koios
+ *    omits a registered DRep nobody has delegated to, and TALLY-SPEC.md §1
+ *    counts that DRep at weight 0 rather than excluding it as a non-member.
+ *    Registered iff the newest registration event at or before E's end is not
+ *    a deregistration; `updated` events are filtered out server-side, leaving
  *    registration unchanged exactly as the delegations the stakeholder read
  *    drops do. The endpoint carries no epoch column, so the boundary comes from
  *    `/epoch_info`'s `end_time`.
  *
- * Totals come from `/epoch_info` (known to fail with db-sync word128 errors on
- * some preview epochs — hence null-means-retry) and `/drep_epoch_summary`.
+ * Totals: the mark's total from `/epoch_info` for `E + 2` once that epoch has
+ * begun (known to fail with db-sync word128 errors on some preview epochs —
+ * hence null-means-retry), from `/pool_stake_snapshot` before, and the DRep
+ * distribution's from `/drep_epoch_summary` for `E + 1`.
  */
 
 import type { Credential } from "cip-179";
@@ -89,6 +103,14 @@ const TX_INFO_BATCH = 50;
  */
 const REGISTRATION_CERT_TYPES = new Set(["stake_registration"]);
 const DEREGISTRATION_CERT_TYPES = new Set(["stake_deregistration"]);
+
+/**
+ * How long past `E + 1`'s start the end of `E` is read: a margin for the
+ * Koios instances behind one URL to agree, where the stake cache proves only
+ * the one that answered. db-sync writes the mark within about 700 blocks of
+ * the boundary on mainnet (~4 h), 40 on preview.
+ */
+const SETTLING_MARGIN_SECONDS = 12 * 3600;
 
 /**
  * Page cap for the two offset-paginated reads. {@link KoiosTallyInputs.postAll}
@@ -152,6 +174,13 @@ interface DrepPowerRow {
   amount: string | number | bigint;
 }
 
+interface PoolSnapshotRow {
+  /** The epoch the snapshot serves: `Mark` is Koios's current epoch + 1. */
+  epoch_no: number;
+  /** The snapshot's total active stake, over every pool. */
+  active_stake: string | number | bigint;
+}
+
 interface DrepUpdateRow {
   drep_id: string;
   /** Wall clock of the carrying block — the endpoint has no epoch column. */
@@ -161,6 +190,9 @@ interface DrepUpdateRow {
 }
 
 export class KoiosTallyInputs implements TallyInputSource, ElectorateTotals {
+  /** End epochs {@link readable} has passed: once whole, a snapshot stays so. */
+  private readonly readableEpochs = new Set<number>();
+
   /**
    * `onRequest` fires once per Koios HTTP request (each `postAll` page counts
    * individually) — the serving tier counts calls per refresh.
@@ -433,6 +465,7 @@ export class KoiosTallyInputs implements TallyInputSource, ElectorateTotals {
     epoch: number,
     credentials: readonly Credential[],
   ): Promise<Map<string, WeightInfo>> {
+    await this.readable(epoch);
     // Pair each credential with its bech32 reward address (the form every
     // account endpoint keys on).
     const byAddress = new Map<string, string>(); // address → credentialKey
@@ -444,12 +477,12 @@ export class KoiosTallyInputs implements TallyInputSource, ElectorateTotals {
     }
     const addresses = [...byAddress.keys()];
 
-    const registered = new Set<string>(); // addresses registered at `epoch`
+    const registered = new Set<string>(); // registered at `epoch`'s end
     const stakeByAddress = new Map<string, bigint>();
     for (let i = 0; i < addresses.length; i += CREDENTIAL_BATCH) {
       const batch = addresses.slice(i, i + CREDENTIAL_BATCH);
-      // A credential is registered at E iff the last state-changing cert in
-      // chain order (≤ E) is not a deregistration. One slot holds at most one
+      // A credential is registered at E's end iff the last state-changing cert
+      // in chain order (≤ E) is not a deregistration. One slot holds at most one
       // block (Praos), so only the account's deciding (newest) slot matters —
       // earlier slots are overridden, and the read below never fetches them.
       // The only case that needs more than the deciding slot's event types is a
@@ -458,7 +491,7 @@ export class KoiosTallyInputs implements TallyInputSource, ElectorateTotals {
       const [decidingByAddress, stakes] = await Promise.all([
         this.decidingEvents(epoch, batch),
         this.postAll<AccountStakeRow>(
-          `/account_stake_history?epoch_no=eq.${epoch}` +
+          `/account_stake_history?epoch_no=eq.${epoch + 2}` +
             `&select=stake_address,epoch_no,active_stake` +
             // Epoch is fixed, so one row per account — `stake_address` is a total
             // order (this never actually paginates, but the contract holds).
@@ -538,9 +571,9 @@ export class KoiosTallyInputs implements TallyInputSource, ElectorateTotals {
   }
 
   /**
-   * Which of `ids` were registered DReps at `epoch` — asked only about ids the
-   * voting-power read said nothing about, so a survey whose responders all have
-   * delegators pays nothing for this.
+   * Which of `ids` were registered DReps at the end of `epoch` — asked only
+   * about ids the voting-power read said nothing about, so a survey whose
+   * responders all have delegators pays nothing for this.
    *
    * The newest event decides and the read is newest-first, so an id's first row
    * is its deciding one; the pass stops once every id has one and the cursor has
@@ -621,6 +654,7 @@ export class KoiosTallyInputs implements TallyInputSource, ElectorateTotals {
     epoch: number,
     credentials: readonly Credential[],
   ): Promise<Map<string, WeightInfo>> {
+    await this.readable(epoch);
     // Pair each credential with its CIP-129 id (the form the endpoint keys on).
     const byId = new Map<string, string>(); // drep id → credentialKey
     for (const cred of credentials) {
@@ -632,7 +666,7 @@ export class KoiosTallyInputs implements TallyInputSource, ElectorateTotals {
     for (let i = 0; i < ids.length; i += CREDENTIAL_BATCH) {
       const batch = ids.slice(i, i + CREDENTIAL_BATCH);
       const rows = await this.get<DrepPowerRow[]>(
-        `/drep_voting_power_history?_epoch_no=${epoch}&epoch_no=eq.${epoch}` +
+        `/drep_voting_power_history?_epoch_no=${epoch + 1}&epoch_no=eq.${epoch + 1}` +
           `&drep_id=in.(${batch.join(",")})`,
       );
       for (const row of rows) {
@@ -668,26 +702,35 @@ export class KoiosTallyInputs implements TallyInputSource, ElectorateTotals {
 
   async stakeholderTotal(epoch: number): Promise<bigint | null> {
     try {
+      await this.readable(epoch);
+      const mark = epoch + 2;
       const rows = await this.get<
         { active_stake: string | number | bigint | null }[]
       >(
-        `/epoch_info?_epoch_no=${epoch}&_include_next_epoch=false&select=active_stake`,
+        `/epoch_info?_epoch_no=${mark}&_include_next_epoch=false&select=active_stake`,
       );
-      const total = rows[0]?.active_stake ?? null;
+      const total =
+        rows[0]?.active_stake ??
+        // `/epoch_info` has no row for an epoch not begun yet; the pool
+        // snapshot reads the same stake cache.
+        (await this.poolSnapshots()).find((r) => r.epoch_no === mark)
+          ?.active_stake ??
+        null;
       return total === null ? null : natural(total, "epoch_info.active_stake");
     } catch (err) {
-      // Known flaky on some (preview) epochs: db-sync word128 errors. Null =
-      // the caller retries on a later run.
-      console.warn(`epoch_info total unavailable for ${epoch}: ${String(err)}`);
+      // Not readable yet, or known flaky on some (preview) epochs: db-sync
+      // word128 errors. Null = the caller retries on a later run.
+      console.warn(`stake total unavailable for ${epoch}: ${String(err)}`);
       return null;
     }
   }
 
   async drepTotal(epoch: number): Promise<bigint | null> {
     try {
+      await this.readable(epoch);
       const rows = await this.get<
         { amount: string | number | bigint | null }[]
-      >(`/drep_epoch_summary?_epoch_no=${epoch}&select=amount`);
+      >(`/drep_epoch_summary?_epoch_no=${epoch + 1}&select=amount`);
       const total = rows[0]?.amount ?? null;
       return total === null
         ? null
@@ -698,5 +741,52 @@ export class KoiosTallyInputs implements TallyInputSource, ElectorateTotals {
       );
       return null;
     }
+  }
+
+  /**
+   * Throws until the ledger at the end of `epoch` can be read whole: the
+   * margin past `epoch + 1`'s start has run, and Koios's stake cache holds
+   * the mark (`epoch + 2`). `/pool_stake_snapshot` serves that cache for its
+   * current epoch ± 1, from any pool: the pool is only a join key, and the
+   * row exists once db-sync has written the whole snapshot, not the pool's
+   * share of it. From `epoch + 3` on, the mark was complete long ago, and
+   * from `epoch + 4` no pool serves it.
+   */
+  private async readable(epoch: number): Promise<void> {
+    if (this.readableEpochs.has(epoch)) return;
+    const from = (await this.epochEndTime(epoch)) + SETTLING_MARGIN_SECONDS;
+    if (Date.now() / 1000 < from) {
+      throw new Error(
+        `the end of epoch ${epoch} is read from ${new Date(from * 1000).toISOString()}, ` +
+          "once every Koios instance has written it",
+      );
+    }
+    const [tip] = await this.get<{ epoch_no: number }[]>(
+      "/tip?select=epoch_no",
+    );
+    if (tip === undefined) throw new Error("Koios serves no tip");
+    if (
+      tip.epoch_no < epoch + 3 &&
+      !(await this.poolSnapshots()).some((r) => r.epoch_no === epoch + 2)
+    ) {
+      throw new Error(
+        `Koios has not finished writing the stake snapshot taken at the end of epoch ${epoch}`,
+      );
+    }
+    this.readableEpochs.add(epoch);
+  }
+
+  /** The snapshots Koios's stake cache serves now, through any active pool. */
+  private async poolSnapshots(): Promise<PoolSnapshotRow[]> {
+    // `active_stake` orders as text, so "the largest pool" is not askable:
+    // any pool standing with stake does.
+    const [pool] = await this.get<{ pool_id_bech32: string }[]>(
+      "/pool_list?pool_status=eq.registered&active_stake=not.is.null" +
+        "&retiring_epoch=is.null&select=pool_id_bech32&limit=1",
+    );
+    if (pool === undefined) throw new Error("pool_list serves no active pool");
+    return this.get<PoolSnapshotRow[]>(
+      `/pool_stake_snapshot?_pool_bech32=${pool.pool_id_bech32}&select=epoch_no,active_stake`,
+    );
   }
 }

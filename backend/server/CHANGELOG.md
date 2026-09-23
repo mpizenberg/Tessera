@@ -50,6 +50,15 @@ has read an ended survey's artifact, and the app deploys with the backend.
   flag and artifact count such a cancellation. Such a record can name the
   survey's hash before the survey lands; it is outside the survey's window
   (see `cip-179`'s changelog).
+- Artifacts are counted under ruleset 15: every DRep and Stakeholder weight,
+  and its registration, is read at the end of `end_epoch` (see `cip-179`'s
+  changelog), and each `info` total is the total of the same snapshot. The
+  shape is unchanged. The stake snapshot taken then exists only once the next
+  epoch has begun, so a survey is finalized 12 hours past that epoch's start
+  at the earliest, once Koios has written the snapshot whole: on preview
+  that is later than the `k`-block depth, and `finalState` stays absent
+  meanwhile. Migration 0036 drops the weights and totals frozen under the
+  old instant.
 - `GET /api/surveys/{txHash}/{index}/artifact` is served `no-cache` rather
   than `immutable`, since a survey's artifact changes when it is re-emitted;
   its `ETag` is still the artifact hash, so a revalidation is a bodiless

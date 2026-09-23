@@ -114,8 +114,10 @@ pnpm compare preview snapshots/preview-e1413-i28259/ledger/*/state 1412 snapshot
 
 The output is a measurement, not a pass or fail. A reading that does not
 answer a question disagrees by construction, so a well-chosen state still
-prints disagreements; what matters is which column agrees on every row. Name
-the epoch the state is in, as above. Koios reads registration at that
-epoch's end, so a credential whose registration changed after the state's
-slot can disagree even then. Step 2's archive is inside epoch 1414; compared
+prints disagreements; what matters is which column agrees on every row.
+Koios is asked about the end of the named epoch: the DRep distribution and
+the `mark` the ledger takes then, which a state inside the next epoch holds,
+so name the epoch before the one the state is in, as above. Koios reads
+registration at that epoch's end, so a credential whose registration changed
+between then and the state's slot can disagree even then. Step 2's archive is inside epoch 1414; compared
 with 1412, neither total matches.

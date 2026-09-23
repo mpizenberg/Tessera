@@ -82,12 +82,42 @@ type Handler = (
   } | null,
 ) => unknown;
 
-function stubFetch(handler: Handler) {
+/**
+ * What the readiness check reads: the end time of the survey's end epoch
+ * (`null`: Koios serves none), Koios's tip epoch, and the epochs its stake
+ * cache serves. By default the end is long past and Koios far beyond it.
+ */
+interface Readiness {
+  readonly endTime?: number | null;
+  readonly tipEpoch?: number;
+  readonly snapshots?: readonly { epoch_no: number; active_stake: string }[];
+}
+
+/**
+ * Answers the readiness check's reads itself, so `handler` sees only the
+ * reads under test.
+ */
+function stubFetch(handler: Handler, readiness: Readiness = {}) {
+  const {
+    endTime = 1_700_000_000,
+    tipEpoch = 1_000_000,
+    snapshots = [],
+  } = readiness;
   const mock = vi.fn(async (input: string | URL, init?: RequestInit) => {
+    const url = String(input);
     const body = init?.body ? (JSON.parse(String(init.body)) as never) : null;
-    return new Response(stringifyKoiosJson(handler(String(input), body)), {
-      status: 200,
-    });
+    const answer = url.includes("select=end_time")
+      ? endTime === null
+        ? []
+        : [{ end_time: endTime }]
+      : url.includes("/tip?")
+        ? [{ epoch_no: tipEpoch }]
+        : url.includes("/pool_list?")
+          ? [{ pool_id_bech32: "pool1test" }]
+          : url.includes("/pool_stake_snapshot?")
+            ? snapshots
+            : handler(url, body);
+    return new Response(stringifyKoiosJson(answer), { status: 200 });
   });
   vi.stubGlobal("fetch", mock);
   return mock;
@@ -96,7 +126,7 @@ function stubFetch(handler: Handler) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("KoiosTallyInputs.stakeholderWeights", () => {
-  it("joins registration state and active stake at the epoch", async () => {
+  it("joins registration at the end of the epoch with the mark taken then", async () => {
     const [addrA, addrB, addrC] = await Promise.all([
       stakeAddress(cred(HASH_A), "preview"),
       stakeAddress(cred(HASH_B), "preview"),
@@ -157,11 +187,12 @@ describe("KoiosTallyInputs.stakeholderWeights", () => {
         ];
       }
       if (url.includes("/account_stake_history")) {
-        expect(url).toContain("epoch_no=eq.1345");
+        // The mark, taken at the end of 1345.
+        expect(url).toContain("epoch_no=eq.1347");
         return [
           {
             stake_address: addrA,
-            epoch_no: 1345,
+            epoch_no: 1347,
             active_stake: "45000000000000000",
           },
         ];
@@ -529,8 +560,8 @@ describe("KoiosTallyInputs.drepWeights", () => {
     stubFetch((url) => {
       seen.push(url);
       return [
-        { drep_id: idA, epoch_no: 1345, amount: "157298068" },
-        { drep_id: idB, epoch_no: 1345, amount: "0" },
+        { drep_id: idA, epoch_no: 1346, amount: "157298068" },
+        { drep_id: idB, epoch_no: 1346, amount: "0" },
       ];
     });
     const weights = await new KoiosTallyInputs(CONFIG).drepWeights(1345, [
@@ -538,11 +569,12 @@ describe("KoiosTallyInputs.drepWeights", () => {
       cred(HASH_B),
     ]);
     expect(seen).toHaveLength(1);
-    // Both epoch filters (the endpoint's own bounds the query, the PostgREST
-    // column filter is the reliable one), and every id of the batch in one
-    // `in.(…)` list.
+    // The distribution taken at the end of 1345, labelled 1346. Both epoch
+    // filters (the endpoint's own bounds the query, the PostgREST column
+    // filter is the reliable one), and every id of the batch in one `in.(…)`
+    // list.
     expect(seen[0]).toContain(
-      `/drep_voting_power_history?_epoch_no=1345&epoch_no=eq.1345&drep_id=in.(${idA},${idB})`,
+      `/drep_voting_power_history?_epoch_no=1346&epoch_no=eq.1346&drep_id=in.(${idA},${idB})`,
     );
     expect(weights.get(`key:${HASH_A}`)).toEqual({
       registered: true,
@@ -584,9 +616,8 @@ describe("KoiosTallyInputs.drepWeights", () => {
     stubFetch((url) => {
       seen.push(url);
       if (url.includes("/drep_voting_power_history")) {
-        return [{ drep_id: idA, epoch_no: 1345, amount: "157298068" }];
+        return [{ drep_id: idA, epoch_no: 1346, amount: "157298068" }];
       }
-      if (url.includes("/epoch_info")) return [{ end_time: 1_700_000_000 }];
       // Registered, and nobody delegated to it — a member at weight 0.
       return [drepUpdate(idB, 1_699_000_000, "registered")];
     });
@@ -612,8 +643,9 @@ describe("KoiosTallyInputs.drepWeights", () => {
     const idA = evolutionCodec.drepId(cred(HASH_A));
     const idB = evolutionCodec.drepId(cred(HASH_B));
     stubFetch((url) => {
+      // B retired during the end epoch: the distribution taken at its end
+      // holds no row for it, though the one taken at its start did.
       if (url.includes("/drep_voting_power_history")) return [];
-      if (url.includes("/epoch_info")) return [{ end_time: 1_700_000_000 }];
       // Newest first, as the query asks for.
       return [
         // A: re-registered after a deregistration — a member.
@@ -647,7 +679,6 @@ describe("KoiosTallyInputs.drepWeights", () => {
     const idA = evolutionCodec.drepId(cred(HASH_A));
     stubFetch((url) => {
       if (url.includes("/drep_voting_power_history")) return [];
-      if (url.includes("/epoch_info")) return [{ end_time: 1_700_000_000 }];
       return [
         drepUpdate(idA, 1_699_000_500, "registered"),
         drepUpdate(idA, 1_699_000_500, "deregistered"),
@@ -659,11 +690,7 @@ describe("KoiosTallyInputs.drepWeights", () => {
   });
 
   it("postpones when the epoch's end time is unavailable", async () => {
-    stubFetch((url) => {
-      if (url.includes("/drep_voting_power_history")) return [];
-      if (url.includes("/epoch_info")) return [];
-      return [];
-    });
+    stubFetch(() => [], { endTime: null });
     await expect(
       new KoiosTallyInputs(CONFIG).drepWeights(1345, [cred(HASH_A)]),
     ).rejects.toThrow(/no end_time/);
@@ -677,7 +704,7 @@ describe("KoiosTallyInputs.drepWeights", () => {
     stubFetch((url) => {
       seen.push(url);
       const ids = /drep_id=in\.\(([^)]*)\)/.exec(url)![1]!.split(",");
-      return ids.map((id) => ({ drep_id: id, epoch_no: 1345, amount: "7" }));
+      return ids.map((id) => ({ drep_id: id, epoch_no: 1346, amount: "7" }));
     });
     const weights = await new KoiosTallyInputs(CONFIG).drepWeights(1345, creds);
     expect(seen).toHaveLength(3);
@@ -724,5 +751,110 @@ describe("totals", () => {
     const inputs = new KoiosTallyInputs(CONFIG);
     expect(await inputs.stakeholderTotal(654)).toBeNull();
     expect(await inputs.drepTotal(654)).toBeNull();
+  });
+});
+
+describe("reading the end of end_epoch", () => {
+  const drepRows = (url: string) => {
+    const ids = /drep_id=in\.\(([^)]*)\)/.exec(url)?.[1]?.split(",") ?? [];
+    return ids.map((id) => ({ drep_id: id, epoch_no: 1346, amount: "7" }));
+  };
+
+  it("waits the margin past the next epoch's start, before asking anything more", async () => {
+    const seen: string[] = [];
+    const mock = stubFetch(
+      (url) => {
+        seen.push(url);
+        return [];
+      },
+      { endTime: Math.floor(Date.now() / 1000) - 3600 },
+    );
+    const inputs = new KoiosTallyInputs(CONFIG);
+    await expect(inputs.drepWeights(1345, [cred(HASH_A)])).rejects.toThrow(
+      /the end of epoch 1345 is read from/,
+    );
+    await expect(
+      inputs.stakeholderWeights(1345, [cred(HASH_A)]),
+    ).rejects.toThrow(/the end of epoch 1345 is read from/);
+    expect(await inputs.stakeholderTotal(1345)).toBeNull();
+    expect(await inputs.drepTotal(1345)).toBeNull();
+    expect(seen).toEqual([]);
+    expect(
+      mock.mock.calls.every(([u]) => String(u).includes("select=end_time")),
+    ).toBe(true);
+  });
+
+  it("waits for Koios's stake cache to hold the mark while the tip is in the next epoch", async () => {
+    stubFetch(drepRows, {
+      tipEpoch: 1346,
+      snapshots: [
+        { epoch_no: 1345, active_stake: "1" },
+        { epoch_no: 1346, active_stake: "2" },
+      ],
+    });
+    await expect(
+      new KoiosTallyInputs(CONFIG).drepWeights(1345, [cred(HASH_A)]),
+    ).rejects.toThrow(
+      /not finished writing the stake snapshot taken at the end of epoch 1345/,
+    );
+  });
+
+  it("reads once the cache holds the mark, asking any active pool", async () => {
+    const mock = stubFetch(drepRows, {
+      tipEpoch: 1346,
+      snapshots: [
+        { epoch_no: 1345, active_stake: "1" },
+        { epoch_no: 1346, active_stake: "2" },
+        { epoch_no: 1347, active_stake: "3" },
+      ],
+    });
+    const inputs = new KoiosTallyInputs(CONFIG);
+    expect(
+      (await inputs.drepWeights(1345, [cred(HASH_A)])).get(`key:${HASH_A}`),
+    ).toEqual({ registered: true, weight: 7n });
+    const urls = mock.mock.calls.map(([u]) => String(u));
+    expect(urls.find((u) => u.includes("/pool_list?"))).toContain(
+      "pool_status=eq.registered&active_stake=not.is.null&retiring_epoch=is.null",
+    );
+    expect(urls.find((u) => u.includes("/pool_stake_snapshot?"))).toContain(
+      "_pool_bech32=pool1test",
+    );
+    // Passed once, the check is not repeated.
+    const asked = urls.length;
+    await inputs.drepWeights(1345, [cred(HASH_A)]);
+    expect(mock.mock.calls.length - asked).toBe(1);
+  });
+
+  it("needs no pool once the tip is three epochs on", async () => {
+    const mock = stubFetch(drepRows, { tipEpoch: 1348 });
+    await new KoiosTallyInputs(CONFIG).drepWeights(1345, [cred(HASH_A)]);
+    expect(
+      mock.mock.calls.some(([u]) => String(u).includes("/pool_list?")),
+    ).toBe(false);
+  });
+});
+
+describe("totals at the end of end_epoch", () => {
+  it("reads the mark's total and the next epoch's DRep distribution", async () => {
+    const seen: string[] = [];
+    stubFetch((url) => {
+      seen.push(url);
+      return url.includes("/epoch_info")
+        ? [{ active_stake: "11" }]
+        : [{ amount: "22" }];
+    });
+    const inputs = new KoiosTallyInputs(CONFIG);
+    expect(await inputs.stakeholderTotal(1345)).toBe(11n);
+    expect(await inputs.drepTotal(1345)).toBe(22n);
+    expect(seen[0]).toContain("/epoch_info?_epoch_no=1347&");
+    expect(seen[1]).toContain("/drep_epoch_summary?_epoch_no=1346&");
+  });
+
+  it("takes the mark's total from the stake cache before its epoch begins", async () => {
+    stubFetch(() => [], {
+      tipEpoch: 1346,
+      snapshots: [{ epoch_no: 1347, active_stake: "33" }],
+    });
+    expect(await new KoiosTallyInputs(CONFIG).stakeholderTotal(1345)).toBe(33n);
   });
 });
