@@ -33,8 +33,9 @@
  * electorate totals, outside the hash, are re-fetched too when the source is
  * Koios, and a difference is printed as a note, as is a ruleset other than
  * the pinned one named in the artifact's provenance. On a MATCH or MISMATCH,
- * `--out <dir>` keeps both sides there: `rebuilt.json`, the exact bytes the
- * rebuilt hash is computed over, and `served.json`, the artifact under test.
+ * `--out <dir>` keeps both artifacts there: `rebuilt.json`, this verifier's
+ * (its tally, the totals it read, its own provenance), and `served.json`, the
+ * artifact under test.
  * Exit codes: 0 MATCH, 1 MISMATCH (differences printed), 2 usage / not
  * finalized / survey not found on-chain / fetch failure, 3 INDETERMINATE (a
  * required input — e.g. a governance-link anchor, or a missing
@@ -45,12 +46,19 @@
  * 12).
  */
 
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { exit } from "node:process";
 
 import { isSurveyTalliable, surveyErrors } from "cip-179";
 
 import type { SurveyBundle } from "cip-179/domain";
-import type { ElectorateTotals, TallyInputSource } from "cip-179/tally";
+import {
+  rulesetHash,
+  type ElectorateTotals,
+  type TallyArtifact,
+  type TallyInputSource,
+} from "cip-179/tally";
 import {
   createTesseraClient,
   parseNetwork,
@@ -66,10 +74,10 @@ import {
 import { KOIOS_URL, type AppConfig } from "cardano-tessera-core";
 import { DolosChain, DolosTallyInputs, Minibf } from "cardano-tessera-dolos";
 import { KoiosDataSource, KoiosTallyInputs } from "cardano-tessera-koios";
-import { revealResponses } from "cip-179/tlock";
+import { fetchBeacon, revealWithBeacon } from "cip-179/tlock";
 import { evolutionCodec } from "cip-179/evolution";
 
-import { saveTallies } from "./save";
+import { saveArtifacts } from "./save";
 import { chainEvidence, koiosChain, type SurveyChain } from "./sources";
 import { diffResponseSets, verifyArtifact } from "./verify";
 
@@ -77,6 +85,7 @@ interface Sources {
   readonly chain: SurveyChain;
   readonly weights: TallyInputSource;
   readonly totals?: ElectorateTotals;
+  readonly source: TallyArtifact["provenance"]["source"];
 }
 
 function koiosConfig(network: Network): AppConfig {
@@ -93,7 +102,12 @@ function koiosConfig(network: Network): AppConfig {
 function koiosSources(network: Network): Sources {
   const config = koiosConfig(network);
   const koios = new KoiosTallyInputs(config);
-  return { chain: koiosChain(config), weights: koios, totals: koios };
+  return {
+    chain: koiosChain(config),
+    weights: koios,
+    totals: koios,
+    source: { provider: "koios", baseUrl: config.koiosUrl },
+  };
 }
 
 function amaruSources(network: Network, dir: string): Sources {
@@ -108,6 +122,7 @@ function amaruSources(network: Network, dir: string): Sources {
       koios ? (hashes) => koios.nativeScripts(hashes) : undefined,
     ),
     weights: new AmaruTallyInputs(stores),
+    source: { provider: "amaru", baseUrl: pathToFileURL(dir).href },
   };
 }
 
@@ -118,6 +133,7 @@ function dolosSources(network: Network, endUrl: string): Sources {
   return {
     chain: new DolosChain(after, argOf("minikupo")),
     weights: new DolosTallyInputs(new Minibf(endUrl), after, network),
+    source: { provider: "dolos", baseUrl: afterUrl },
   };
 }
 
@@ -176,10 +192,18 @@ function argOf(name: string): string | undefined {
   return i >= 0 ? process.argv[i + 1] : undefined;
 }
 
+/** pnpm runs the script from its package; `INIT_CWD` is where it was invoked. */
+function pathOf(name: string): string | undefined {
+  const p = argOf(name);
+  return p === undefined
+    ? undefined
+    : resolve(process.env["INIT_CWD"] ?? "", p);
+}
+
 async function main(): Promise<void> {
   const backend = argOf("backend");
   const surveyArg = argOf("survey");
-  const out = argOf("out");
+  const out = pathOf("out");
   if (!backend || !surveyArg) usage();
   const m = /^([0-9a-fA-F]{64}):(\d+)$/.exec(surveyArg);
   if (!m) usage();
@@ -191,8 +215,8 @@ async function main(): Promise<void> {
   // The backend's network decides which chain the rebuild reads.
   const network = parseNetwork((await client.liveness()).network);
   const dolosEnd = argOf("dolos-end");
-  const amaruDir = argOf("amaru");
-  const { chain, weights, totals } = dolosEnd
+  const amaruDir = pathOf("amaru");
+  const { chain, weights, totals, source } = dolosEnd
     ? dolosSources(network, dolosEnd)
     : amaruDir
       ? amaruSources(network, amaruDir)
@@ -246,6 +270,7 @@ async function main(): Promise<void> {
   const evidence = await chainEvidence(chain, bundle);
 
   // 4. Rebuild + compare.
+  let sealedReveal: TallyArtifact["provenance"]["sealedReveal"];
   const result = await verifyArtifact({
     bundle,
     artifact,
@@ -256,12 +281,20 @@ async function main(): Promise<void> {
     // Sealed reveal, wired independently of the backend: fetch (and BLS-verify)
     // the drand beacon ourselves, then decrypt offline. Unused for public
     // artifacts.
-    reveal: (records, { round }) =>
-      revealResponses(
+    reveal: async (records, { chainHash, round }) => {
+      const beacon = await fetchBeacon(round);
+      const { randomness, signature } = beacon;
+      sealedReveal = {
+        chainHash,
+        round,
+        beacon: { round, randomness, signature },
+      };
+      return revealWithBeacon(
         evolutionCodec,
         records.map((r) => r.response),
-        round,
-      ),
+        beacon,
+      );
+    },
   });
 
   for (const note of preNotes) console.warn(`note: ${note}`);
@@ -276,7 +309,25 @@ async function main(): Promise<void> {
     );
     exit(3);
   }
-  if (out) await saveTallies(out, result.rebuilt, artifact);
+  if (out) {
+    const rebuilt: TallyArtifact = {
+      tally: result.rebuilt,
+      info: result.info,
+      provenance: {
+        rulesetHash: rulesetHash(),
+        source,
+        fetchedAt: Math.floor(Date.now() / 1000),
+        byRole: [],
+        // A cancellation has no links evaluated, as in the emitter's.
+        ...(!result.rebuilt.cancelled && {
+          govLinks: [...evidence.linkedActionIds].sort(),
+        }),
+        ...(sealedReveal && { sealedReveal }),
+      },
+    };
+    await saveArtifacts(out, rebuilt, artifact);
+    console.log(`saved rebuilt.json and served.json in ${out}`);
+  }
   if (result.match) {
     console.log("MATCH — the artifact reproduces from chain data");
     exit(0);

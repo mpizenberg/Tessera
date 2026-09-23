@@ -6,6 +6,7 @@
  *     --dir <dir> --survey <txHash>:<index> > <dir>/credentials.json
  */
 
+import { resolve } from "node:path";
 import { exit } from "node:process";
 import { parseArgs } from "node:util";
 
@@ -25,7 +26,9 @@ if (!values.dir || !values.survey) {
   exit(2);
 }
 try {
-  const window = surveyWindow(new AmaruStores(values.dir), values.survey);
+  // pnpm runs the script from its package; `INIT_CWD` is where it was invoked.
+  const dir = resolve(process.env["INIT_CWD"] ?? "", values.dir);
+  const window = surveyWindow(new AmaruStores(dir), values.survey);
   console.log(JSON.stringify(askedCredentials(window)));
 } catch (err) {
   console.error(String(err));

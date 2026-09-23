@@ -718,11 +718,11 @@ export function createApp(
     return c.json(body);
   });
 
-  // Final tally artifacts (TALLY-SPEC §5), content-addressed. The stored JSON
-  // text is served verbatim (byte identity with the hash), with the hash as a
-  // strong ETag. Only the by-hash address is cached for good: a survey's
-  // artifact is re-emitted under a new hash when the ruleset changes its
-  // shape, so the by-survey address revalidates.
+  // Final tally artifacts (TALLY-SPEC §5), content-addressed. The stored
+  // canonical JSON, whose `tally` section is the hashed bytes, is served
+  // verbatim, with the hash as a strong ETag. Only the by-hash address is
+  // cached for good: a survey's artifact is re-emitted under a new hash when
+  // the ruleset changes its shape, so the by-survey address revalidates.
   const serveArtifact = (
     c: Context,
     row: { artifact: string; artifactHash: string } | null,

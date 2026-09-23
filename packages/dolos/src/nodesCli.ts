@@ -113,7 +113,8 @@ async function main(): Promise<void> {
     );
     exit(2);
   }
-  const dir = resolve(dirArg);
+  // pnpm runs the script from its package; `INIT_CWD` is where it was invoked.
+  const dir = resolve(process.env["INIT_CWD"] ?? "", dirArg);
   const endDir = join(dir, "end");
   const afterDir = join(dir, "after");
 

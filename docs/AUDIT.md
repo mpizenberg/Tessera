@@ -68,24 +68,37 @@ cd Tessera
 pnpm install
 ```
 
-Every approach takes the backend's URL, such as
-`https://tessera-backend-preview.matthieu-pizenberg.workers.dev` on preview,
-and the survey's key, `<txHash>:<index>`: its defining transaction and its
-index there. The app's survey page address ends with the key, its colon
-written `%3A`.
+Every approach takes the backend's URL and the survey's key. The backend is
+the Tessera deployment whose result you are auditing, the one behind the app
+you read it in. Each deployment serves one network, which its `/health` route
+names. The Tessera deployments are:
 
-Every approach also takes `--out <dir>`, which keeps the two tallies a MATCH
-or MISMATCH compared: `rebuilt.json`, the rebuilt tally in exactly the bytes
-its hash is computed over, and `served.json`, the artifact exactly as the
-backend served it. The saved tally can be checked later with no clone and no
-network: its blake2b-256 is the rebuilt hash, which on a MATCH is the
-survey's `artifactHash`.
+| Network | App                                                      | Backend                                                          |
+| ------- | -------------------------------------------------------- | ---------------------------------------------------------------- |
+| mainnet | `https://tessera-mainnet.matthieu-pizenberg.workers.dev` | `https://tessera-backend-mainnet.matthieu-pizenberg.workers.dev` |
+| preprod | `https://tessera-preprod.matthieu-pizenberg.workers.dev` | `https://tessera-backend-preprod.matthieu-pizenberg.workers.dev` |
+| preview | `https://tessera-preview.matthieu-pizenberg.workers.dev` | `https://tessera-backend-preview.matthieu-pizenberg.workers.dev` |
+
+The survey's key is `<txHash>:<index>`: its defining transaction and its index
+there. The app's survey page address ends with the key, its colon written
+`%3A`.
+
+Every approach also takes `--out <dir>`, which keeps the two artifacts a
+MATCH or MISMATCH compared: `served.json`, exactly as the backend served it,
+and `rebuilt.json`, the verifier's own. Only their `tally` sections are
+compared. Their `info` and `provenance` sections always differ, since they
+describe two different runs: the source read, when, and the electorate
+totals, governance links and drand beacon each run found. On a mismatch they
+are the first clues. Both files are canonical JSON (keys sorted, no
+whitespace), so on a MATCH their `tally` sections are the same bytes.
+
+A saved file can be checked later with no clone and no network: the
+blake2b-256 of its `tally` section, in canonical form, is the hash, which on
+a MATCH is the survey's `artifactHash`.
 
 ```sh
-python3 -c 'import hashlib, sys; print(hashlib.blake2b(open(sys.argv[1], "rb").read(), digest_size=32).hexdigest())' rebuilt.json
+python3 -c 'import hashlib, json, sys; t = json.dumps(json.load(open(sys.argv[1]))["tally"], sort_keys=True, separators=(",", ":"), ensure_ascii=False); print(hashlib.blake2b(t.encode(), digest_size=32).hexdigest())' rebuilt.json
 ```
-
-GNU coreutils' `b2sum -l 256 rebuilt.json` prints the same hash.
 
 ## Koios
 

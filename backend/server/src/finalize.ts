@@ -57,6 +57,7 @@ import {
   RULESET_DESCRIPTOR,
   artifactHash,
   assembleTallyBody,
+  canonicalJson,
   cancelledTallyBody,
   decodeCancellationRecord,
   decodeResponseRecord,
@@ -802,7 +803,7 @@ async function withCancellations(
       surveyKey: key,
       endEpoch: s.definition.endEpoch,
       artifactHash: hash,
-      artifact: JSON.stringify(artifact),
+      artifact: canonicalJson(artifact),
       createdAt: nowSec,
     });
     emitted.set(key, { state: "cancelled", artifactHash: hash });
@@ -1196,5 +1197,5 @@ function buildArtifact(
       ...(opts.sealedReveal && { sealedReveal: opts.sealedReveal }),
     },
   };
-  return { json: JSON.stringify(artifact), hash: artifactHash(tally) };
+  return { json: canonicalJson(artifact), hash: artifactHash(tally) };
 }

@@ -22,6 +22,7 @@ import {
 import { verifyArtifact } from "cardano-tessera-verifier";
 import {
   artifactHash,
+  canonicalJson,
   rulesetHash,
   type ElectorateTotals,
   type TallyArtifact,
@@ -415,6 +416,8 @@ describe("finalizeClosedSurveys", () => {
 
     expect(row).toBeDefined();
     const artifact = JSON.parse(row!.artifact) as TallyArtifact;
+    // Stored canonical, so a verifier's rebuilt artifact diffs against it.
+    expect(row!.artifact).toBe(canonicalJson(artifact));
     // The stored hash is the content address of the canonical tally body.
     expect(artifactHash(artifact.tally as TallyBody)).toBe(row!.artifactHash);
     expect(artifact.tally.network).toBe("preview");
@@ -1218,9 +1221,9 @@ describe("finalizeClosedSurveys", () => {
       ]),
     );
 
-    const artifact = JSON.parse(
-      store.artifacts.get(SURVEY_KEY)!.artifact,
-    ) as TallyArtifact;
+    const stored = store.artifacts.get(SURVEY_KEY)!.artifact;
+    const artifact = JSON.parse(stored) as TallyArtifact;
+    expect(stored).toBe(canonicalJson(artifact));
     expect(artifact.tally.cancelled).toEqual({
       txHash: cancellation.txHash,
       slot: 300,

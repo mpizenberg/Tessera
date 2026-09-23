@@ -138,6 +138,12 @@ export interface VerifyResult {
   readonly rebuiltHash: string;
   readonly rebuilt: TallyBody;
   /**
+   * The electorate totals this verifier read, in the artifact's `info` shape.
+   * A role it could not read is left out, as is every role without
+   * {@link VerifyInputs.totals} or without a MATCH or MISMATCH verdict.
+   */
+  readonly info: TallyArtifact["info"];
+  /**
    * Caveats hit during the rebuild, and electorate totals that differ from the artifact's or could not be
    * re-fetched.
    */
@@ -146,6 +152,7 @@ export interface VerifyResult {
   readonly diffs: readonly string[];
 }
 
+const NO_TOTALS: TallyArtifact["info"] = { perRole: [] };
 const COVERED_ROLES: readonly number[] = [...RULESET_DESCRIPTOR.coveredRoles];
 const ROLE_DREP = 0;
 const ROLE_KEYHOLDER = 4;
@@ -446,13 +453,14 @@ export async function rebuildTally(
  * weighted role the rebuild counted. The totals only scale turnout, and ledger
  * implementations read them slightly differently, so a difference is a note.
  */
-async function totalNotes(
+async function readTotals(
   totals: ElectorateTotals,
   artifact: TallyArtifact,
   rebuilt: TallyBody,
-): Promise<string[]> {
+): Promise<{ info: TallyArtifact["info"]; notes: string[] }> {
   const stated = new Map(artifact.info.perRole.map((r) => [r.role, r.total]));
   const epoch = rebuilt.survey.endEpoch;
+  const perRole: { role: number; total: string }[] = [];
   const notes: string[] = [];
   for (const { role } of rebuilt.perRole) {
     if (role === ROLE_KEYHOLDER) continue;
@@ -465,13 +473,16 @@ async function totalNotes(
       notes.push(
         `role ${role} total: the artifact states ${claim}, which this verifier could not re-fetch`,
       );
-    } else if (claim !== String(read)) {
+      continue;
+    }
+    perRole.push({ role, total: String(read) });
+    if (claim !== String(read)) {
       notes.push(
         `role ${role} total: the artifact states ${claim}, this verifier reads ${read} (outside the hash)`,
       );
     }
   }
-  return notes;
+  return { info: { perRole }, notes };
 }
 
 /** Human-readable differences between the received and rebuilt tallies. */
@@ -546,6 +557,7 @@ export async function verifyArtifact(
       receivedHash,
       rebuiltHash,
       rebuilt,
+      info: NO_TOTALS,
       notes: [...notes, untalliable],
       diffs: [],
     };
@@ -577,13 +589,17 @@ export async function verifyArtifact(
       receivedHash,
       rebuiltHash,
       rebuilt,
+      info: NO_TOTALS,
       notes: [...notes, ...indeterminate],
       diffs: [],
     };
   }
 
+  let info = NO_TOTALS;
   if (inputs.totals) {
-    notes.push(...(await totalNotes(inputs.totals, inputs.artifact, rebuilt)));
+    const read = await readTotals(inputs.totals, inputs.artifact, rebuilt);
+    info = read.info;
+    notes.push(...read.notes);
   }
   const match = rebuiltHash === receivedHash;
   return {
@@ -593,6 +609,7 @@ export async function verifyArtifact(
     receivedHash,
     rebuiltHash,
     rebuilt,
+    info,
     notes,
     diffs: match ? [] : diffTallies(inputs.artifact.tally, rebuilt),
   };

@@ -15,6 +15,7 @@ import {
 import {
   artifactHash,
   blake2b256Hex,
+  canonicalJson,
   rulesetHash,
   toArtifactQuestions,
   toArtifactResponders,
@@ -26,7 +27,7 @@ import {
   type WeightInfo,
 } from "cip-179/tally";
 
-import { saveTallies } from "./save";
+import { saveArtifacts } from "./save";
 import { diffResponseSets, verifyArtifact, type VerifyInputs } from "./verify";
 
 // --- fixtures ------------------------------------------------------------------
@@ -250,15 +251,19 @@ describe("diffResponseSets", () => {
   });
 });
 
-describe("saveTallies", () => {
-  it("writes the rebuilt tally as the bytes its hash is computed over", async () => {
+describe("saveArtifacts", () => {
+  it("writes the rebuilt artifact canonical, its tally the hashed bytes", async () => {
     const artifact = emittedArtifact();
     const dir = await mkdtemp(join(tmpdir(), "tessera-verifier-"));
     try {
       const out = join(dir, "out");
-      await saveTallies(out, artifact.tally, artifact);
+      await saveArtifacts(out, artifact, artifact);
       const rebuilt = await readFile(join(out, "rebuilt.json"), "utf8");
-      expect(blake2b256Hex(rebuilt)).toBe(artifactHash(artifact.tally));
+      expect(rebuilt).toBe(canonicalJson(artifact));
+      const { tally } = JSON.parse(rebuilt) as TallyArtifact;
+      expect(blake2b256Hex(canonicalJson(tally))).toBe(
+        artifactHash(artifact.tally),
+      );
       const served = await readFile(join(out, "served.json"), "utf8");
       expect(JSON.parse(served)).toEqual(artifact);
     } finally {
@@ -577,6 +582,7 @@ describe("verifyArtifact", () => {
     expect(other.notes).toEqual([
       "role 3 total: the artifact states 1000, this verifier reads 1001 (outside the hash)",
     ]);
+    expect(other.info).toEqual({ perRole: [{ role: 3, total: "1001" }] });
   });
 
   it("names an electorate total it could not re-fetch, and still MATCHes", async () => {
@@ -587,6 +593,7 @@ describe("verifyArtifact", () => {
     expect(result.notes).toEqual([
       "role 3 total: the artifact states 1000, which this verifier could not re-fetch",
     ]);
+    expect(result.info).toEqual({ perRole: [] });
   });
 
   it("is INDETERMINATE when a counted response has no tx_block_index (finding 16)", async () => {
