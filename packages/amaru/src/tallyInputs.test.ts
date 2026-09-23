@@ -17,69 +17,39 @@ const cred = (hash: string, kind: "key" | "script" = "key"): Credential =>
     ? { type: "key", keyHash: hexToBytes(hash) }
     : { type: "script", scriptHash: hexToBytes(hash) };
 
-/**
- * Three snapshots asked about the same three credentials, where each question
- * has a different answer per epoch.
- */
+/** Snapshot 100, the ledger at the end of epoch 100. */
 function stores(): AmaruStores {
   const dir = mkdtempSync(join(tmpdir(), "amaru-"));
-  const write = (epoch: number, body: object) =>
-    writeFileSync(
-      join(dir, `snapshot-${epoch}.json`),
-      JSON.stringify({
-        epoch,
-        gov_action_lifetime: 30,
-        proposals: {},
-        ...body,
-      }),
-    );
-  write(98, {
-    accounts: {
-      [`key:${KEY}`]: { stake: "1000", pool: "pool" },
-      [`script:${SCRIPT}`]: { stake: "500", pool: null },
-      [`key:${ABSENT}`]: null,
-    },
-    dreps: {
-      [`key:${KEY}`]: { voting_stake: "98" },
-      [`script:${SCRIPT}`]: null,
-    },
-  });
-  write(99, {
-    accounts: {
-      [`key:${KEY}`]: { stake: "2000", pool: "pool" },
-      [`script:${SCRIPT}`]: null,
-      [`key:${ABSENT}`]: null,
-    },
-    dreps: {
-      [`key:${KEY}`]: { voting_stake: "99" },
-      [`script:${SCRIPT}`]: null,
-    },
-  });
-  write(100, {
-    accounts: {
-      [`key:${KEY}`]: { stake: "3000", pool: "pool" },
-      [`script:${SCRIPT}`]: { stake: "700", pool: "pool" },
-      [`key:${ABSENT}`]: null,
-    },
-    dreps: {
-      [`key:${KEY}`]: { voting_stake: "100" },
-      [`script:${SCRIPT}`]: { voting_stake: "1" },
-    },
-  });
+  writeFileSync(
+    join(dir, "snapshot-100.json"),
+    JSON.stringify({
+      epoch: 100,
+      proposals: {},
+      accounts: {
+        [`key:${KEY}`]: { stake: "3000", pool: "pool" },
+        [`script:${SCRIPT}`]: { stake: "700", pool: null },
+        [`key:${ABSENT}`]: null,
+      },
+      dreps: {
+        [`key:${KEY}`]: { voting_stake: "100" },
+        [`script:${SCRIPT}`]: { voting_stake: "0" },
+      },
+    }),
+  );
   return new AmaruStores(dir);
 }
 
 describe("AmaruTallyInputs", () => {
   const inputs = new AmaruTallyInputs(stores());
 
-  it("weighs a stakeholder registered at E by the stake of E-2 behind a standing pool", async () => {
+  it("weighs a stakeholder registered at E's end by its stake behind a standing pool then", async () => {
     const got = await inputs.stakeholderWeights(100, [
       cred(KEY),
       cred(SCRIPT, "script"),
       cred(ABSENT),
     ]);
-    expect(got.get(`key:${KEY}`)).toEqual({ registered: true, weight: 1000n });
-    // Registered at E, but no pool at E-2: registered and empty.
+    expect(got.get(`key:${KEY}`)).toEqual({ registered: true, weight: 3000n });
+    // Registered, but no pool standing: registered and empty.
     expect(got.get(`script:${SCRIPT}`)).toEqual({
       registered: true,
       weight: 0n,
@@ -90,20 +60,19 @@ describe("AmaruTallyInputs", () => {
     });
   });
 
-  it("weighs a DRep registered at E by the voting stake of E-1", async () => {
+  it("weighs a DRep registered at E's end by the distribution taken then", async () => {
     const got = await inputs.drepWeights(100, [
       cred(KEY),
       cred(SCRIPT, "script"),
     ]);
-    expect(got.get(`key:${KEY}`)).toEqual({ registered: true, weight: 99n });
-    // Registered at E, absent from E-1's distribution.
+    expect(got.get(`key:${KEY}`)).toEqual({ registered: true, weight: 100n });
     expect(got.get(`script:${SCRIPT}`)).toEqual({
       registered: true,
       weight: 0n,
     });
   });
 
-  it("refuses a credential the snapshots were not asked about", async () => {
+  it("refuses a credential the snapshot was not asked about", async () => {
     await expect(inputs.drepWeights(100, [cred(ABSENT)])).rejects.toThrow(
       `snapshot-100.json was not asked about key:${ABSENT}`,
     );

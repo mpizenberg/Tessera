@@ -46,6 +46,13 @@ turnout, and since ruleset 14 (2026-09-18) they sit in the artifact's unhashed
 `info`: an audit that cannot read them still reproduces the hash, and the
 verifier compares them only as a note.
 
+> **Since ruleset 15 (2026-09-23)** every fact in B is read at one instant,
+> the end of `E`: DRep power from the distribution taken then (Koios row
+> `E+1`), active stake from the snapshot taken then (the `mark`, row `E+2`),
+> both held by a ledger state standing in `E+1`. This document records the
+> research as done for ruleset 14, whose three boundaries follow; how each
+> tool reads the new instant is in `docs/AUDIT.md`.
+
 **Which ledger state holds B.** These are not "the state at the end of `E`":
 
 - **Active stake for `E`** is the snapshot the ledger took at the `E-2 → E-1`

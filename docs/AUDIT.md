@@ -255,21 +255,20 @@ Amaru has no query surface. It keeps its last three epoch snapshots and
 every block it validated in RocksDB stores, and `packages/amaru-store-reader`,
 a Rust crate built with Amaru's own toolchain, prints from them what the
 verifier needs: a walk of the survey's window, kept to the transactions
-that name the survey, and the snapshots of `E-2` to `E`, kept to the
-credentials that respond. Its README has the commands. In outline, for a survey created in
+that name the survey, and snapshot `E`, the ledger at the end of the
+survey's `end_epoch`, kept to the credentials that respond. Its README has the commands. In outline, for a survey created in
 epoch `C` with `end_epoch = E`:
 
 1. `amaru node bootstrap` from the newest PRAGMA set ending before `C`, so
    the stores hold the survey's whole window. The release binary cannot
    then sync from Mithril: until upstream ships the fixes, build the
    maintainer's fork branch named in `backend/RESEARCH-AUDIT.md`.
-2. `amaru mithril sync --ingest-until-slot <slot>` with a slot inside
-   `E + 1`, past its first `k` blocks (432 on preview, 2160 elsewhere).
-   Amaru writes snapshot `E` at that point and keeps three snapshots, so
-   a stop inside `E + 1` leaves `E-2` to `E` and the transition into
-   `E + 2` would drop `E-2`.
+2. `amaru mithril sync --ingest-until-slot <slot>` with a slot past the
+   first `k` blocks of `E + 1` (432 on preview, 2160 elsewhere), where
+   Amaru writes snapshot `E`. It keeps three snapshots, so `E` stays until
+   the transition into `E + 3`.
 3. Walk the survey's window, print the credentials its responses name,
-   and print the three snapshots for those credentials only, all into one
+   and print snapshot `E` for those credentials only, all into one
    directory; then:
 
 ```sh
@@ -278,9 +277,9 @@ pnpm --filter cardano-tessera-verifier verify -- \
 ```
 
 The verifier checks that the walk reaches the end of `E` and keeps the
-survey's window from it. Each ledger fact is read from the snapshot that
-holds it: registration from `E`, a stakeholder's stake from `E-2`, a DRep's
-power from `E-1`.
+survey's window from it. Every ledger fact comes from snapshot `E`:
+registration, a stakeholder's stake behind its pool (the mark taken at the
+end of `E`), and a DRep's power (the distribution taken then).
 
 ### Limits
 

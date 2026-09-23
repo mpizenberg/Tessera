@@ -1,13 +1,12 @@
 /**
- * A {@link TallyInputSource} over an Amaru node's epoch snapshots, as
- * `amaru-store-reader` printed them. For a survey ending at `E`:
- *  - registration at `E`, of a stake credential or a DRep, is a row in
- *    snapshot `E`, the state at that epoch's end;
- *  - a stakeholder's active stake for `E` is the stake snapshot `E-2` holds
- *    behind a pool still standing there, the distribution the ledger takes
- *    two boundaries ahead; 0 without a pool or a row;
- *  - a DRep's voting power for `E` is snapshot `E-1`'s `voting_stake`, the
- *    distribution taken one boundary ahead; 0 without a row.
+ * A {@link TallyInputSource} over an Amaru node's epoch snapshot `E`, the
+ * ledger at the end of a survey's `end_epoch = E`, as `amaru-store-reader`
+ * printed it:
+ *  - registration, of a stake credential or a DRep, is a row;
+ *  - a stakeholder's weight is the row's stake behind a pool still standing,
+ *    the mark taken at that instant; 0 without a pool;
+ *  - a DRep's weight is the row's `voting_stake`, the distribution taken at
+ *    that instant.
  * The electorate totals sit outside the artifact's hash and are not read.
  * Each snapshot holds only the credentials the reader was asked about, so one
  * it was not asked about is refused rather than read as unregistered.
@@ -27,9 +26,9 @@ export class AmaruTallyInputs implements TallyInputSource {
     credentials: readonly Credential[],
   ): Promise<Map<string, WeightInfo>> {
     return weights(credentials, (key) => {
-      if (!this.row(epoch, "accounts", key)) return null;
-      const staked = this.row(epoch - 2, "accounts", key);
-      return staked?.pool ? BigInt(staked.stake) : 0n;
+      const account = this.row(epoch, "accounts", key);
+      if (!account) return null;
+      return account.pool ? BigInt(account.stake) : 0n;
     });
   }
 
@@ -38,8 +37,8 @@ export class AmaruTallyInputs implements TallyInputSource {
     credentials: readonly Credential[],
   ): Promise<Map<string, WeightInfo>> {
     return weights(credentials, (key) => {
-      if (!this.row(epoch, "dreps", key)) return null;
-      return BigInt(this.row(epoch - 1, "dreps", key)?.voting_stake ?? "0");
+      const drep = this.row(epoch, "dreps", key);
+      return drep ? BigInt(drep.voting_stake) : null;
     });
   }
 
@@ -57,7 +56,7 @@ export class AmaruTallyInputs implements TallyInputSource {
   }
 }
 
-/** `weightOf` gives `null` for a credential not registered at `end_epoch`. */
+/** `weightOf` gives `null` for a credential not registered at the end of `end_epoch`. */
 function weights(
   credentials: readonly Credential[],
   weightOf: (key: string) => bigint | null,

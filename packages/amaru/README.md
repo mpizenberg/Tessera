@@ -4,21 +4,20 @@ The verifier's inputs read from what `amaru-store-reader` printed out of an
 Amaru node's stores instead of Koios: a survey's label-17 records, their
 proofs and block positions and its governance links from the block walk and
 the epoch snapshot, its responders' weights and registration from the
-snapshots. Private to the workspace; the verifier's `--amaru` flag names a
-directory holding `blocks.json` for a walk from the survey's defining
+same snapshot. Private to the workspace; the verifier's `--amaru` flag names
+a directory holding `blocks.json` for a walk from the survey's defining
 transaction through the last slot of `end_epoch`, and
-`snapshot-<epoch>.json` for `end_epoch - 2` to `end_epoch`. The snapshots
-hold only the credentials they were asked about; the `credentials` command
-prints those from the walk, every credential the survey's responses name as
-a Stakeholder or a DRep, and the tally refuses a snapshot missing one it
-needs. How to produce those files: `packages/amaru-store-reader/README.md`.
+`snapshot-<end_epoch>.json`. The snapshot holds only the credentials it was
+asked about; the `credentials` command prints those from the walk, every
+credential the survey's responses name as a Stakeholder or a DRep, and the
+tally refuses a snapshot missing one it needs. How to produce those files:
+`packages/amaru-store-reader/README.md`.
 
-Each question is read from the snapshot that answers it: registration at
-`end_epoch`, of a stake credential or a DRep, from that epoch's snapshot; a
-stakeholder's active stake from the snapshot two epochs earlier, behind a
-pool still standing there; a DRep's voting power from the snapshot one epoch
-earlier. The electorate totals sit outside the artifact's hash and are not
-read.
+Every weight question is read from snapshot `end_epoch`, the ledger at that
+epoch's end: registration, of a stake credential or a DRep; a stakeholder's
+stake behind a pool still standing, the snapshot the ledger takes then; a
+DRep's voting power, the distribution taken then. The electorate totals sit
+outside the artifact's hash and are not read.
 
 Native scripts are the approach's gap. Amaru keeps no index from a script
 hash to a script, and its ledger rejects a witnessed script the transaction

@@ -24,8 +24,8 @@
  * stopped at the last block of the survey's `end_epoch` (`--dolos-end`) and
  * one at least a block into `end_epoch + 2` (`--dolos-after`), with the
  * second's minikupo API resolving native scripts by hash, or a directory of
- * `amaru-store-reader` output (`--amaru`): the snapshots of `end_epoch - 2`
- * to `end_epoch` and a block walk spanning the survey's window, with Koios
+ * `amaru-store-reader` output (`--amaru`): snapshot `end_epoch`, the ledger
+ * at that epoch's end, and a block walk spanning the survey's window, with Koios
  * resolving native scripts by hash under `--koios-scripts` (Amaru keeps no
  * script index, and a record's own transaction rarely witnesses its script;
  * without the flag such a record is unproven). The tally is
