@@ -19,6 +19,7 @@ import type {
   SurveyListFilter,
 } from "cardano-tessera-client";
 import type { ResponseCursor } from "cardano-tessera-core";
+import type { ResolvedNativeScript } from "cardano-tessera-koios";
 import type { ChainTip, GovLink, GovLinkDoc } from "cip-179/domain";
 
 import type { ChangesCursor } from "./changes";
@@ -85,10 +86,10 @@ export interface ValidatedResponseRow {
   /** Unix seconds of the (latest) validation attempt. */
   readonly checkedAt: number;
   /**
-   * Lookups by hash that found no native script for the responder's
-   * credential while its survey was open; null when no such question is
-   * open. With `proofOk` false the verdict is parked: it waits for one more
-   * lookup once the survey's `end_epoch` is final.
+   * Non-null while the verdict is parked: `proofOk` false because the
+   * responder's native script was not found by hash in all the lookups its
+   * survey's open window allows (the misses they counted), owed one more
+   * once the survey's `end_epoch` is final. Null otherwise.
    */
   readonly scriptLookups: number | null;
 }
@@ -332,8 +333,9 @@ export interface TallyStore {
 
 /**
  * Fetch-once caches behind the snapshot scan (they back `cardano-tessera-koios`'s
- * `ScanCache`). Both are keyed by tx hash, which content-addresses what they
- * hold, so every `put` is insert-or-ignore and no row is ever rewritten.
+ * `ScanCache`). The first two are keyed by tx hash, which content-addresses
+ * what they hold, so every `put` is insert-or-ignore and no row is ever
+ * rewritten.
  *
  * Metadata is the scan's resume state: membership in a snapshot is decided by
  * each run's fresh label-index scan, never by the cache, and a refresh cut
@@ -341,9 +343,10 @@ export interface TallyStore {
  * over-budget runs converge instead of re-fetching forever.
  *
  * Proof CBOR is the credential-proof evidence behind every owner-proof and
- * response proof. It is the one cache here that is *pruned* — its rows are
- * large and a survey's proof stops being read once its artifact is frozen (see
- * `proofCache.ts`).
+ * response proof. It is *pruned* — its rows are large and a survey's proof
+ * stops being read once its artifact is frozen (see `proofCache.ts`). So are
+ * the by-hash script lookups beside it, keyed by script hash; a lookup that
+ * found none is the one row here that is rewritten.
  */
 export interface ScanCacheStore {
   /** Cached metadata JSON for the cached subset of the requested hashes. */
@@ -365,7 +368,32 @@ export interface ScanCacheStore {
   unclaimedTxProofHashes(minEndEpoch: number): Promise<readonly string[]>;
   /** Drop cached CBOR no live survey bears on any more. */
   deleteTxProofCbor(txHashes: readonly string[]): Promise<void>;
+  /** Banked by-hash script lookups for the banked subset of `scriptHashes`. */
+  cachedScriptLookups(
+    scriptHashes: readonly string[],
+  ): Promise<Map<string, BankedScriptLookup>>;
+  /**
+   * Bank the scripts found, and a lookup that found none for each of
+   * `missed`, both as of `at` (unix seconds). A found row is never rewritten.
+   */
+  putScriptLookups(
+    found: ReadonlyMap<string, ResolvedNativeScript>,
+    missed: readonly string[],
+    at: number,
+  ): Promise<void>;
+  /**
+   * The banked script hashes no live survey names, as its owner or as a
+   * response's credential — the prune's drop set; live as in
+   * {@link unclaimedTxProofHashes}.
+   */
+  unclaimedScriptHashes(minEndEpoch: number): Promise<readonly string[]>;
+  deleteScriptLookups(scriptHashes: readonly string[]): Promise<void>;
 }
+
+/** A banked by-hash lookup of a native script (see `scriptLookups.ts`). */
+export type BankedScriptLookup =
+  | { readonly found: ResolvedNativeScript }
+  | { readonly misses: number; readonly checkedAt: number };
 
 /** One expiration epoch whose governance-link set is final. */
 export interface SettledGovEpoch {

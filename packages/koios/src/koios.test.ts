@@ -16,6 +16,7 @@ import {
   KoiosDataSource,
   unwitnessedScripts,
   withResolvedScript,
+  type ResolvedNativeScript,
 } from "./koios";
 import {
   SCRIPT_A,
@@ -729,12 +730,33 @@ describe("fetchSegment — slot-bounded ascending scan", () => {
 // --- fetchAll: scan resume via the tx-metadata cache (finding 5) -------------
 
 /** In-memory ScanCache with the stores' insert-or-ignore semantics. */
+/** A cache whose banked misses are never due again, except when fresh. */
 function memCache() {
   const map = new Map<string, unknown>();
   const cbor = new Map<string, string>();
+  const scripts = new Map<string, ResolvedNativeScript | "none">();
   return {
     map,
     cbor,
+    scripts: Object.assign(
+      async (hashes: readonly string[], fresh: ReadonlySet<string>) => {
+        const out = new Map<string, ResolvedNativeScript | "none">();
+        for (const h of hashes) {
+          const hit = scripts.get(h);
+          if (hit !== undefined && !(hit === "none" && fresh.has(h)))
+            out.set(h, hit);
+        }
+        return out;
+      },
+      { banked: scripts },
+    ),
+    async putScripts(
+      found: ReadonlyMap<string, ResolvedNativeScript>,
+      missed: readonly string[],
+    ) {
+      for (const [h, f] of found) scripts.set(h, f);
+      for (const h of missed) if (!scripts.has(h)) scripts.set(h, "none");
+    },
     async metadata(hashes: readonly string[]) {
       const out = new Map<string, unknown>();
       for (const h of hashes) if (map.has(h)) out.set(h, map.get(h));
@@ -1032,6 +1054,44 @@ describe("nativeScripts — resolved by hash", () => {
       SCRIPT_HASH,
     ]);
     expect(scripts.size).toBe(0);
+  });
+});
+
+describe("nativeScripts — the lookup cache", () => {
+  const lookups = (mock: { mock: { calls: unknown[][] } }) =>
+    mock.mock.calls.filter((c) => String(c[0]).includes("/script_info")).length;
+
+  it("banks a script found and reuses it", async () => {
+    const cache = memCache();
+    const mock = stubKoiosAnswers({
+      scriptInfo: [SCRIPT_A],
+      txInfo: TX_POSITIONS,
+    });
+    const source = new KoiosDataSource(CONFIG, undefined, cache);
+    await source.nativeScripts([SCRIPT_A.script_hash]);
+    const again = await source.nativeScripts([SCRIPT_A.script_hash]);
+    expect(again.get(SCRIPT_A.script_hash)?.epoch).toBe(8);
+    expect(lookups(mock)).toBe(1);
+  });
+
+  it("reuses a lookup that found none, unless fresh", async () => {
+    const cache = memCache();
+    const mock = stubKoiosAnswers({});
+    const source = new KoiosDataSource(CONFIG, undefined, cache);
+    await source.nativeScripts([SCRIPT_HASH]);
+    expect(await source.nativeScripts([SCRIPT_HASH])).toEqual(new Map());
+    expect(lookups(mock)).toBe(1);
+    await source.nativeScripts([SCRIPT_HASH], [SCRIPT_HASH]);
+    expect(lookups(mock)).toBe(2);
+  });
+
+  it("banks nothing for a failed lookup", async () => {
+    const cache = memCache();
+    stubKoiosAnswers({ scriptInfo: [SCRIPT_A] }, ["/script_info"]);
+    const source = new KoiosDataSource(CONFIG, undefined, cache);
+    const answer = await source.nativeScripts([SCRIPT_A.script_hash]);
+    expect(answer.get(SCRIPT_A.script_hash)).toBeNull();
+    expect(cache.scripts.banked.size).toBe(0);
   });
 });
 

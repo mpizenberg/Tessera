@@ -16,6 +16,7 @@ import {
 import type { ResolvedNativeScript } from "cardano-tessera-koios";
 
 import { materializeSnapshot } from "./materialize";
+import { reusableScripts } from "./scriptLookups";
 import { ALL_SLOTS, testStore, type TestStore } from "./testing/store";
 import { validateNewResponses } from "./validate";
 
@@ -24,7 +25,6 @@ import { validateNewResponses } from "./validate";
 function fakeSource(
   proofByTx: Record<string, TxProof | null>,
   blockIndexByTx: Record<string, number>,
-  scriptByHash: Record<string, ResolvedNativeScript | null> = {},
 ) {
   return {
     txBlockIndices: vi.fn(async (hashes: readonly string[]) => {
@@ -38,11 +38,12 @@ function fakeSource(
       for (const h of hashes) m.set(h, proofByTx[h] ?? null);
       return m;
     }),
-    nativeScripts: vi.fn(async (hashes: readonly string[]) => {
-      const m = new Map<string, ResolvedNativeScript | null>();
-      for (const h of hashes) if (h in scriptByHash) m.set(h, scriptByHash[h]!);
-      return m;
-    }),
+    nativeScripts: vi.fn(
+      async (
+        _hashes: readonly string[],
+        _fresh?: readonly string[],
+      ): Promise<Map<string, ResolvedNativeScript | null>> => new Map(),
+    ),
   };
 }
 
@@ -620,16 +621,120 @@ describe("validateNewResponses", () => {
         answers: { type: "public", answers: [answer] },
       },
     };
-    /** One refresh per entry of `finalThroughEpochs`, on one store. */
-    const refreshes = async (
+    /**
+     * A source whose script lookups go through the store's bank as the
+     * refresh wires them (`reusableScripts`), at `clock.now`, answering from
+     * `scripts`: absent, none found; `null`, a failed lookup.
+     */
+    function cachingSource(
+      store: TestStore,
+      clock: { now: number },
       scripts: Record<string, ResolvedNativeScript | null>,
-      finalThroughEpochs: readonly number[],
-    ) => {
+    ) {
+      const source = fakeSource({ ts: signed }, { ts: 3 });
+      source.nativeScripts.mockImplementation(
+        async (hashes: readonly string[], fresh: readonly string[] = []) => {
+          const out = new Map<string, ResolvedNativeScript | null>();
+          const reused = await reusableScripts(
+            store,
+            hashes,
+            new Set(fresh),
+            clock.now,
+          );
+          for (const [h, a] of reused) if (a !== "none") out.set(h, a);
+          const found = new Map<string, ResolvedNativeScript>();
+          const missed: string[] = [];
+          for (const h of hashes.filter((h) => !reused.has(h))) {
+            asked.push(h);
+            const answer = scripts[h];
+            if (answer === undefined) missed.push(h);
+            else {
+              out.set(h, answer);
+              if (answer !== null) found.set(h, answer);
+            }
+          }
+          await store.putScriptLookups(found, missed, clock.now);
+          return out;
+        },
+      );
+      const asked: string[] = [];
+      return { source, asked };
+    }
+    const OPEN = DEF.endEpoch - 1;
+    const FINAL = DEF.endEpoch;
+    const DAY = 86400;
+
+    /** Refreshes at the given times and finality, on one store. */
+    async function refreshes(
+      scripts: Record<string, ResolvedNativeScript | null>,
+      passes: readonly { at: number; final: number; listed?: boolean }[],
+    ) {
       const store = testStore();
-      const source = fakeSource({ ts: signed }, { ts: 3 }, scripts);
+      const clock = { now: 0 };
+      const { source, asked } = cachingSource(store, clock, scripts);
       const stored = records(scriptResp);
       const seen = [];
-      for (const finalThroughEpoch of finalThroughEpochs) {
+      for (const { at, final, listed = true } of passes) {
+        clock.now = at;
+        await validatePass(
+          store,
+          stored,
+          [],
+          source,
+          true,
+          [],
+          listed ? stored.responses : [],
+          final,
+        );
+        const { proofOk, scriptLookups } = store.validated.get("ts:0")!;
+        seen.push({ proofOk, scriptLookups });
+      }
+      return { seen, asked: asked.length, source };
+    }
+
+    it("proves with a script on chain by end_epoch", async () => {
+      const { seen } = await refreshes(
+        { [scriptHashHex]: { script, epoch: DEF.endEpoch } },
+        [{ at: 0, final: OPEN }],
+      );
+      expect(seen).toEqual([{ proofOk: true, scriptLookups: null }]);
+    });
+
+    it("waits between lookups on the backoff, answered from the bank", async () => {
+      const { seen, asked } = await refreshes({}, [
+        { at: 0, final: OPEN },
+        { at: 179, final: OPEN },
+        { at: 180, final: OPEN },
+        { at: 539, final: OPEN },
+      ]);
+      expect(seen.every((v) => v.proofOk === null)).toBe(true);
+      expect(asked).toBe(2);
+    });
+
+    it("parks once the lookups are used up, and stops looking", async () => {
+      const passes = Array.from({ length: 12 }, (_, i) => ({
+        at: i * 10 * DAY,
+        final: OPEN,
+      }));
+      const { seen, asked } = await refreshes({}, passes);
+      expect(seen[8]).toEqual({ proofOk: null, scriptLookups: null });
+      expect(seen[9]).toEqual({ proofOk: false, scriptLookups: 10 });
+      expect(seen[11]).toEqual({ proofOk: false, scriptLookups: 10 });
+      expect(asked).toBe(10);
+    });
+
+    it("looks once more when end_epoch is final, and counts a script landed by then", async () => {
+      const scripts: Record<string, ResolvedNativeScript | null> = {};
+      const passes = Array.from({ length: 10 }, (_, i) => ({
+        at: i * 10 * DAY,
+        final: OPEN,
+      }));
+      const store = testStore();
+      const clock = { now: 0 };
+      const { source, asked } = cachingSource(store, clock, scripts);
+      const stored = records(scriptResp);
+      for (const { at, final } of passes) {
+        clock.now = at;
         await validatePass(
           store,
           stored,
@@ -638,90 +743,42 @@ describe("validateNewResponses", () => {
           true,
           [],
           stored.responses,
-          finalThroughEpoch,
+          final,
         );
-        const { proofOk, scriptLookups } = store.validated.get("ts:0")!;
-        seen.push({ proofOk, scriptLookups });
       }
-      return { seen, lookups: source.nativeScripts.mock.calls.length };
-    };
-    const OPEN = DEF.endEpoch - 1;
-    const FINAL = DEF.endEpoch;
-
-    it("proves with a script on chain by end_epoch", async () => {
-      const { seen } = await refreshes(
-        { [scriptHashHex]: { script, epoch: DEF.endEpoch } },
-        [OPEN],
-      );
-      expect(seen).toEqual([{ proofOk: true, scriptLookups: null }]);
-    });
-
-    it("looks three times while the survey is open, then stops looking", async () => {
-      const { seen, lookups } = await refreshes({}, [
-        OPEN,
-        OPEN,
-        OPEN,
-        OPEN,
-        OPEN,
-      ]);
-      expect(seen).toEqual([
-        { proofOk: null, scriptLookups: 1 },
-        { proofOk: null, scriptLookups: 2 },
-        { proofOk: false, scriptLookups: 3 },
-        { proofOk: false, scriptLookups: 3 },
-        { proofOk: false, scriptLookups: 3 },
-      ]);
-      expect(lookups).toBe(3);
-    });
-
-    it("looks once more when end_epoch is final, and counts a script landed by then", async () => {
-      const scripts: Record<string, ResolvedNativeScript | null> = {};
-      const store = testStore();
-      const source = fakeSource({ ts: signed }, { ts: 3 }, scripts);
-      const stored = records(scriptResp);
-      // The last passes' scan no longer lists the response: the parked
-      // verdict alone brings it back once end_epoch is final.
-      const pass = (finalThroughEpoch: number, input = stored.responses) =>
-        validatePass(
-          store,
-          stored,
-          [],
-          source,
-          true,
-          [],
-          input,
-          finalThroughEpoch,
-        );
-      for (let i = 0; i < 3; i++) await pass(OPEN);
       scripts[scriptHashHex] = { script, epoch: DEF.endEpoch };
-      await pass(FINAL, []);
-      await pass(FINAL, []);
+      // The scan no longer lists the response: the parked verdict alone
+      // brings it back once end_epoch is final, and its lookup is fresh.
+      clock.now += 1;
+      await validatePass(store, stored, [], source, true, [], [], FINAL);
+      await validatePass(store, stored, [], source, true, [], [], FINAL);
       expect(store.validated.get("ts:0")).toMatchObject({
         proofOk: true,
         scriptLookups: null,
       });
-      expect(source.nativeScripts).toHaveBeenCalledTimes(4);
+      expect(asked.length).toBe(11);
     });
 
     it("is unproven for good when the last lookup finds nothing on time", async () => {
       const late = { [scriptHashHex]: { script, epoch: DEF.endEpoch + 1 } };
-      const { seen, lookups } = await refreshes(late, [
-        OPEN,
-        OPEN,
-        OPEN,
-        FINAL,
-        FINAL,
+      const { seen } = await refreshes(late, [
+        { at: 0, final: OPEN },
+        { at: DAY, final: FINAL },
+        { at: 2 * DAY, final: FINAL },
       ]);
       expect(seen.at(-1)).toEqual({ proofOk: false, scriptLookups: null });
-      expect(lookups).toBe(4);
     });
 
-    it("does not count a failed lookup", async () => {
-      const { seen } = await refreshes({ [scriptHashHex]: null }, [OPEN, OPEN]);
+    it("banks nothing for a failed lookup", async () => {
+      const { seen, asked } = await refreshes({ [scriptHashHex]: null }, [
+        { at: 0, final: OPEN },
+        { at: 1, final: OPEN },
+      ]);
       expect(seen).toEqual([
         { proofOk: null, scriptLookups: null },
         { proofOk: null, scriptLookups: null },
       ]);
+      expect(asked).toBe(2);
     });
   });
 });

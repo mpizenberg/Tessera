@@ -32,7 +32,13 @@ import {
 import { decodeResponseRecord, decodeSurveyRecord } from "cip-179/tally";
 import { recordProofs, type KoiosDataSource } from "cardano-tessera-koios";
 
-import type { SnapshotStore, TallyStore, ValidatedResponseRow } from "./store";
+import { lookupsExhausted } from "./scriptLookups";
+import type {
+  ScanCacheStore,
+  SnapshotStore,
+  TallyStore,
+  ValidatedResponseRow,
+} from "./store";
 import { validationKey } from "./store";
 
 /**
@@ -48,13 +54,8 @@ const MAX_VALIDATION_TXS_PER_PASS = 250;
 
 /** What validation reads and writes: verdict state, plus stored rows. */
 export type ValidateStore = TallyStore &
-  Pick<SnapshotStore, "responseRowsForSurveys" | "surveyRowsByKeys">;
-
-/**
- * Lookups by hash of a response's native script while its survey is open,
- * one per refresh; past them the verdict waits for the survey's end.
- */
-const MAX_SCRIPT_LOOKUPS = 3;
+  Pick<SnapshotStore, "responseRowsForSurveys" | "surveyRowsByKeys"> &
+  Pick<ScanCacheStore, "cachedScriptLookups">;
 
 /**
  * Validate the scan's responses that were never (fully) validated before, plus
@@ -231,10 +232,23 @@ export async function validateNewResponses(
         txHash: r.txHash,
         credential: r.response.credential,
         endEpoch: defByKey.get(refKey(r.response.surveyRef))!.endEpoch,
+        final:
+          defByKey.get(refKey(r.response.surveyRef))!.endEpoch <=
+          finalThroughEpoch,
       })),
     ),
   ]);
   const proofs = new Map(judged.map((r, i) => [r, proofList[i]!]));
+  // How far the lookups of each script still missing have gone: the source
+  // banked them per hash, on a backoff (scriptLookups.ts).
+  const banked = await store.cachedScriptLookups([
+    ...new Set(
+      judged.flatMap((r) => {
+        const hash = scriptCredentialHash(r.response.credential);
+        return hash ? [hash] : [];
+      }),
+    ),
+  ]);
 
   const checkedAt = Math.floor(Date.now() / 1000);
   const scriptMissing = (credential: Credential, proof: TxProof): boolean => {
@@ -260,10 +274,10 @@ export async function validateNewResponses(
     //  - unproven → false, EXCEPT a bindable role's negative when the whole
     //    gov-links fetch failed (every link then unknown) → null, retry;
     //    and a native-script credential whose script is not found while its
-    //    survey's end_epoch is not final: the script can still land, so it is
-    //    looked up again on the next refreshes, MAX_SCRIPT_LOOKUPS in all,
-    //    then parked as false until that epoch is final and looked up once
-    //    more. Bounded, so a far-off survey cannot buy a lookup per refresh.
+    //    survey's end_epoch is not final: the script can still land, so the
+    //    verdict waits while its lookups go on (on a backoff, answered from
+    //    the cache in between), then is parked as false once they are used
+    //    up, until that epoch is final and it is looked up once more.
     // Mechanism B only ever adds proof, and a script found stays found, so a
     // pass is always final (finding 6).
     const previous = stored.get(validationKey(r.txHash, r.responseIndex));
@@ -292,8 +306,11 @@ export async function validateNewResponses(
         def.endEpoch > finalThroughEpoch &&
         scriptMissing(r.response.credential, proof)
       ) {
-        scriptLookups = (previous?.scriptLookups ?? 0) + 1;
-        if (scriptLookups < MAX_SCRIPT_LOOKUPS) proofOk = null;
+        const lookups = banked.get(
+          scriptCredentialHash(r.response.credential)!,
+        );
+        if (lookupsExhausted(lookups)) scriptLookups = lookups.misses;
+        else proofOk = null;
       }
     }
     rows.push({

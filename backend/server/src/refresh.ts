@@ -28,7 +28,8 @@ import { finalizeClosedSurveys } from "./finalize";
 import { refreshGovLinks } from "./govLinks";
 import { integrateSegment } from "./integrate";
 import { upstreamMeter } from "./meter";
-import { pruneTxProofCache } from "./proofCache";
+import { pruneScriptLookupCache, pruneTxProofCache } from "./proofCache";
+import { reusableScripts } from "./scriptLookups";
 import {
   finalStateEntries,
   OPERATIONAL_RETENTION_SECONDS,
@@ -355,7 +356,9 @@ export async function refreshSnapshot(
   // The store-backed scan cache banks what a tx hash content-addresses. Its
   // metadata half is read keyed by the segment's listed hashes only; its
   // proof half spares an open survey the /tx_cbor batches its owner-proof
-  // (and cancellation-proof) checks would otherwise cost on every single run.
+  // (and cancellation-proof) checks would otherwise cost on every single run,
+  // and its script half the /script_info requests, on a backoff for a script
+  // not found yet.
   const source = new KoiosDataSource(
     config.app,
     undefined,
@@ -364,6 +367,10 @@ export async function refreshSnapshot(
       putMetadata: (entries) => store.putTxMetadata(entries),
       proofCbor: (hashes) => store.cachedTxProofCbor(hashes),
       putProofCbor: (entries) => store.putTxProofCbor(entries),
+      scripts: (hashes, fresh) =>
+        reusableScripts(store, hashes, fresh, Math.floor(Date.now() / 1000)),
+      putScripts: (found, missed) =>
+        store.putScriptLookups(found, missed, Math.floor(Date.now() / 1000)),
     },
     countKoios,
   );
@@ -599,6 +606,9 @@ export async function refreshSnapshot(
     // cache that keeps too much is only a cache that costs storage.
     await pruneTxProofCache(store, incomplete, tip).catch((err) =>
       console.warn(`tx proof cache prune failed: ${String(err)}`),
+    );
+    await pruneScriptLookupCache(store, incomplete, tip).catch((err) =>
+      console.warn(`script lookup cache prune failed: ${String(err)}`),
     );
 
     // Banked chip counts move only when rows changed or the epoch turned, so

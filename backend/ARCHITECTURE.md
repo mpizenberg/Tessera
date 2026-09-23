@@ -576,10 +576,20 @@ applied to storage rather than to queries.
   land. A completed verdict is re-judged only when what it was decided against
   has moved, so the steady state adds no subrequests; a failed enrichment leaves
   NULLs the next refresh retries. A native script its transaction does not
-  carry, not found by hash, is looked up on at most three refreshes while the
-  survey is open, then parked as unproven (`script_lookups`, `migrations/0033`)
-  and looked up once more when its `end_epoch` is final: a survey ending far
-  off cannot buy a lookup per refresh.
+  carry, not found by hash, keeps the verdict pending while its lookups go on
+  (see `script_lookup_cache`), then parks it as unproven
+  (`script_lookups`, `migrations/0033`) until its `end_epoch` is final, when
+  it is looked up once more.
+- **`script_lookup_cache`** (`migrations/0034`) — by-hash native script
+  lookups per script hash: the script found, for good, with its first epoch;
+  or the lookups that found none, asked again 3 minutes, then 6, 12, …
+  after the last, ten in all (`scriptLookups.ts`). So a made-up hash named by a
+  response or as an owner, even of a survey ending far off, costs ten
+  `/script_info` requests over about a day, not one per refresh; the scan's
+  owner proofs of open surveys and the segment's cancellation proofs read
+  through it too. A failed lookup banks nothing. Pruned like
+  `tx_proof_cache`: a hash stays while a live survey names it as its owner or
+  as a response's credential.
 - **`tx_metadata_cache`** (`migrations/0005`) — fetch-once label-17 metadata per
   tx hash. Metadata is immutable, so each fulfilled batch is banked as it
   completes and a refresh cut short by the subrequest cap keeps what it fetched.

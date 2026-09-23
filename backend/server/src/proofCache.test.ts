@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Role, type SurveyDefinition } from "cip-179";
+import { Role, type Credential, type SurveyDefinition } from "cip-179";
 import {
   hexToBytes,
   refKey,
@@ -12,7 +12,7 @@ import {
 } from "cip-179/domain";
 
 import { materializeSnapshot } from "./materialize";
-import { pruneTxProofCache } from "./proofCache";
+import { pruneScriptLookupCache, pruneTxProofCache } from "./proofCache";
 import { ALL_SLOTS, testStore } from "./testing/store";
 
 const tx = (byte: string) => byte.repeat(32);
@@ -242,5 +242,65 @@ describe("pruneTxProofCache", () => {
       new Set([`${tx("bb")}:0`]),
     );
     expect(cache.calls).toBe(0);
+  });
+});
+
+describe("pruneScriptLookupCache", () => {
+  const scriptCred = (b: string): Credential => ({
+    type: "script",
+    scriptHash: hexToBytes(b.repeat(28)),
+  });
+  const owned = (txHash: string, endEpoch: number, owner: string) => {
+    const s = survey(txHash, endEpoch);
+    return {
+      ...s,
+      definition: { ...s.definition, owner: scriptCred(owner) },
+    };
+  };
+  const answering = (txHash: string, target: SurveyRecord, cred: string) => {
+    const r = response(txHash, target);
+    return { ...r, response: { ...r.response, credential: scriptCred(cred) } };
+  };
+
+  it("keeps the scripts a live survey names and drops the rest", async () => {
+    const open = owned(tx("aa"), 600, "01");
+    const done = owned(tx("bb"), 400, "02");
+    const mem = testStore();
+    const snapshot = materializeSnapshot(
+      records({
+        surveys: [open, done],
+        responses: [
+          answering(tx("r1"), open, "03"),
+          answering(tx("r2"), done, "04"),
+        ],
+      }),
+      TIP,
+      [],
+      new Map(),
+    );
+    await mem.reconcileSegment(
+      ALL_SLOTS,
+      snapshot.surveys,
+      snapshot.responses,
+      snapshot.cancellations,
+      [],
+      1,
+    );
+    const banked = ["01", "02", "03", "04", "05"].map((b) => b.repeat(28));
+    await mem.putScriptLookups(new Map(), banked, 1);
+    const deleted: string[] = [];
+    await pruneScriptLookupCache(
+      {
+        unclaimedScriptHashes: (e) => mem.unclaimedScriptHashes(e),
+        deleteScriptLookups: async (h) => {
+          deleted.push(...h);
+        },
+      },
+      false,
+      TIP,
+    );
+    // "02" and "04" belong to a survey that ended past the grace epochs,
+    // "05" to nothing.
+    expect(deleted.sort()).toEqual(["02", "04", "05"].map((b) => b.repeat(28)));
   });
 });

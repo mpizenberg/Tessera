@@ -283,6 +283,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0031_totals_out_of_hash.sql",
       "0032_finality_gate.sql",
       "0033_script_lookups.sql",
+      "0034_script_lookup_cache.sql",
     ]);
   });
 });

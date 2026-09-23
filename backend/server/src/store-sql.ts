@@ -11,15 +11,25 @@
  */
 
 import type { SurveyListCounts } from "cardano-tessera-client";
-import { parseKoiosJson, stringifyKoiosJson } from "cardano-tessera-koios";
+import {
+  parseKoiosJson,
+  stringifyKoiosJson,
+  type ResolvedNativeScript,
+} from "cardano-tessera-koios";
 import type { ResponseCursor } from "cardano-tessera-core";
-import { BINDABLE_ROLES, type GovLink, type GovLinkDoc } from "cip-179/domain";
+import {
+  BINDABLE_ROLES,
+  type GovLink,
+  type GovLinkDoc,
+  type NativeScriptInfo,
+} from "cip-179/domain";
 
 import type { ChangesCursor } from "./changes";
 import type {
   ArtifactRow,
   BackendStore,
   BankedScan,
+  BankedScriptLookup,
   FinalStateEntry,
   FinalStates,
   CancellationRow,
@@ -72,6 +82,7 @@ import {
   cancellationsBySurveysSql,
   changedSurveysSql,
   storedValidationsSql,
+  cachedScriptLookupsSql,
   markFinalStatesSql,
   ownedCountSql,
   putUntalliableSql,
@@ -340,6 +351,28 @@ const UNFINALIZED_CLOSED_SURVEYS = `
  * tables that could claim it — a survey key is "<txHash>:<index>", so a
  * definition is a prefix seek. Binds: (minEndEpoch, minEndEpoch).
  */
+/**
+ * The banked script hashes no live survey names — {@link
+ * UNCLAIMED_TX_PROOF_HASHES}'s live set, each hash probed as a live survey's
+ * owner (`survey_index_owner`) and as a live response's credential
+ * (`response_credential`). A cancellation proves its survey's owner, so the
+ * owner covers it. Binds: (minEndEpoch, minEndEpoch).
+ */
+const UNCLAIMED_SCRIPT_HASHES = `
+  WITH live AS MATERIALIZED (
+    SELECT survey_key FROM survey_index
+    WHERE end_epoch >= ?
+      AND survey_key NOT IN (
+        SELECT survey_key FROM tally_artifact WHERE end_epoch >= ?))
+  SELECT c.script_hash AS scriptHash FROM script_lookup_cache c
+  WHERE NOT EXISTS (
+      SELECT 1 FROM survey_index s
+      WHERE s.owner = 'script:' || c.script_hash AND s.survey_key IN live)
+    AND NOT EXISTS (
+      SELECT 1 FROM response r
+      WHERE r.credential = 'script:' || c.script_hash
+        AND r.survey_key IN live)`;
+
 const UNCLAIMED_TX_PROOF_HASHES = `
   WITH live AS MATERIALIZED (
     SELECT survey_key FROM survey_index
@@ -779,6 +812,84 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       await db.batchWrite(
         txHashes.map((hash) =>
           query("DELETE FROM tx_proof_cache WHERE tx_hash = ?", hash),
+        ),
+      );
+    },
+    async cachedScriptLookups(
+      scriptHashes: readonly string[],
+    ): Promise<Map<string, BankedScriptLookup>> {
+      const out = new Map<string, BankedScriptLookup>();
+      if (scriptHashes.length === 0) return out;
+      const batches = await db.batchAll<{
+        scriptHash: string;
+        script: string | null;
+        epoch: number | null;
+        misses: number;
+        checkedAt: number;
+      }>(cachedScriptLookupsSql(scriptHashes));
+      for (const r of batches.flat())
+        out.set(
+          r.scriptHash,
+          r.script === null
+            ? { misses: r.misses, checkedAt: r.checkedAt }
+            : {
+                found: {
+                  script: JSON.parse(r.script) as NativeScriptInfo,
+                  epoch: r.epoch,
+                },
+              },
+        );
+      return out;
+    },
+    async putScriptLookups(
+      found: ReadonlyMap<string, ResolvedNativeScript>,
+      missed: readonly string[],
+      at: number,
+    ): Promise<void> {
+      await db.batchWrite([
+        ...[...found].map(([hash, f]) =>
+          query(
+            `INSERT INTO script_lookup_cache
+               (script_hash, script, epoch, misses, checked_at)
+             VALUES (?, ?, ?, 0, ?)
+             ON CONFLICT(script_hash) DO UPDATE SET
+               script = excluded.script,
+               epoch = excluded.epoch,
+               checked_at = excluded.checked_at
+             WHERE script IS NULL`,
+            hash,
+            JSON.stringify(f.script),
+            f.epoch,
+            at,
+          ),
+        ),
+        ...missed.map((hash) =>
+          query(
+            `INSERT INTO script_lookup_cache
+               (script_hash, script, epoch, misses, checked_at)
+             VALUES (?, NULL, NULL, 1, ?)
+             ON CONFLICT(script_hash) DO UPDATE SET
+               misses = misses + 1,
+               checked_at = excluded.checked_at
+             WHERE script IS NULL`,
+            hash,
+            at,
+          ),
+        ),
+      ]);
+    },
+    async unclaimedScriptHashes(
+      minEndEpoch: number,
+    ): Promise<readonly string[]> {
+      const rows = await db.all<{ scriptHash: string }>(
+        query(UNCLAIMED_SCRIPT_HASHES, minEndEpoch, minEndEpoch),
+      );
+      return rows.map((r) => r.scriptHash);
+    },
+    async deleteScriptLookups(scriptHashes: readonly string[]): Promise<void> {
+      await db.batchWrite(
+        scriptHashes.map((hash) =>
+          query("DELETE FROM script_lookup_cache WHERE script_hash = ?", hash),
         ),
       );
     },

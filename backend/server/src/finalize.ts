@@ -689,6 +689,7 @@ function ownerNeed(s: SurveyRecord, txHash = s.txHash): ProofNeed {
     txHash,
     credential: s.definition.owner,
     endEpoch: s.definition.endEpoch,
+    final: true,
   };
 }
 

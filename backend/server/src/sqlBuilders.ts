@@ -806,6 +806,17 @@ export const putUntalliableSql = (
     }),
   );
 
+/** Banked script lookups of the given script hashes, a primary-key seek each. */
+export const cachedScriptLookupsSql = (
+  scriptHashes: readonly string[],
+): SqlQuery[] =>
+  byKeysSql(
+    `SELECT script_hash AS scriptHash, script, epoch, misses,
+            checked_at AS checkedAt
+     FROM script_lookup_cache WHERE script_hash IN ${JSON_KEY_SET}`,
+    scriptHashes,
+  );
+
 /**
  * Stored validation verdicts of the given transactions — a primary-key seek
  * per hash, so validation reads the verdicts of the responses in front of it

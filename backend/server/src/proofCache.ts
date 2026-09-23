@@ -1,5 +1,6 @@
 /**
- * Eviction for the tx-CBOR cache (`tx_proof_cache`).
+ * Eviction for the tx-CBOR cache (`tx_proof_cache`) and the by-hash script
+ * lookups beside it (`script_lookup_cache`).
  *
  * The cache holds whole transactions, so unlike its metadata twin it cannot be
  * allowed to grow forever. What keeps it bounded is that a proof stops being
@@ -57,4 +58,25 @@ export async function pruneTxProofCache(
   if (hashes.length === 0) return;
   await store.deleteTxProofCbor(hashes);
   console.log(`tx proof cache: pruned ${hashes.length} transaction(s)`);
+}
+
+/**
+ * Drop every banked script lookup no live survey names, as its owner or as a
+ * response's credential; live, and skipped on an incomplete scan, as in
+ * {@link pruneTxProofCache}. A made-up hash named in a response is kept only
+ * while that response's survey is live.
+ */
+export async function pruneScriptLookupCache(
+  store: Pick<ScanCacheStore, "unclaimedScriptHashes" | "deleteScriptLookups">,
+  incomplete: boolean,
+  tip: ChainTip,
+): Promise<void> {
+  if (incomplete) return;
+
+  const hashes = await store.unclaimedScriptHashes(
+    tip.epoch - PROOF_GRACE_EPOCHS,
+  );
+  if (hashes.length === 0) return;
+  await store.deleteScriptLookups(hashes);
+  console.log(`script lookup cache: pruned ${hashes.length} script(s)`);
 }

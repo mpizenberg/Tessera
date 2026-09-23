@@ -213,15 +213,35 @@ interface ScriptInfoRow {
  * decoding and the mechanism-A merge run per call, so a decoder fix needs no
  * re-fetch.
  *
- * The implementation is expected to *evict* proof CBOR (unlike metadata, whose
- * rows are small and always potentially wanted); a miss only ever costs the
- * re-fetch it would have cost anyway.
+ * Script lookups spare the `/script_info` requests an open survey's native
+ * script owner, or a response's native script credential, would cost on
+ * every run. A script found is on chain for good, with its first epoch; a
+ * lookup that found nothing is asked again on a schedule the implementation
+ * decides, so a made-up hash cannot buy a request per run.
+ *
+ * The implementation is expected to *evict* proof CBOR and script lookups
+ * (unlike metadata, whose rows are small and always potentially wanted); a
+ * miss only ever costs the re-fetch it would have cost anyway.
  */
 export interface ScanCache {
   metadata(txHashes: readonly string[]): Promise<Map<string, unknown>>;
   putMetadata(entries: ReadonlyMap<string, unknown>): Promise<void>;
   proofCbor(txHashes: readonly string[]): Promise<Map<string, string>>;
   putProofCbor(entries: ReadonlyMap<string, string>): Promise<void>;
+  /**
+   * The banked by-hash script lookups the caller may reuse: the script, or
+   * `"none"` for a lookup that found nothing and is not due again. A hash in
+   * `fresh` is never answered `"none"`.
+   */
+  scripts(
+    hashes: readonly string[],
+    fresh: ReadonlySet<string>,
+  ): Promise<Map<string, ResolvedNativeScript | "none">>;
+  /** Bank the scripts found and the hashes looked up with none found. */
+  putScripts(
+    found: ReadonlyMap<string, ResolvedNativeScript>,
+    missed: readonly string[],
+  ): Promise<void>;
 }
 
 /**
@@ -1027,8 +1047,48 @@ export class KoiosDataSource implements DataSource {
    * non-canonically encoded script first made available outside a witness set
    * (an output's reference script, auxiliary data), which this lookup does
    * not read.
+   *
+   * Where a {@link ScanCache} is present, a script it banked is reused, and so
+   * is a lookup that found nothing and is not due again, except for the
+   * hashes in `fresh`; what Koios answers is banked. A failed lookup banks
+   * nothing.
    */
   async nativeScripts(
+    hashes: readonly string[],
+    fresh: readonly string[] = [],
+  ): Promise<Map<string, ResolvedNativeScript | null>> {
+    const unique = [...new Set(hashes)];
+    const banked = this.cache
+      ? await this.cache.scripts(unique, new Set(fresh)).catch((err) => {
+          console.warn(`script lookup cache read failed: ${String(err)}`);
+          return new Map<string, ResolvedNativeScript | "none">();
+        })
+      : new Map<string, ResolvedNativeScript | "none">();
+    const out = new Map<string, ResolvedNativeScript | null>();
+    for (const [hash, answer] of banked)
+      if (answer !== "none") out.set(hash, answer);
+    const asked = unique.filter((h) => !banked.has(h));
+    if (asked.length === 0) return out;
+    const answered = await this.lookupNativeScripts(asked);
+    if (this.cache) {
+      const found = new Map<string, ResolvedNativeScript>();
+      for (const [hash, answer] of answered)
+        if (answer) found.set(hash, answer);
+      await this.cache
+        .putScripts(
+          found,
+          asked.filter((h) => !answered.has(h)),
+        )
+        .catch((err) =>
+          console.warn(`script lookup cache write failed: ${String(err)}`),
+        );
+    }
+    for (const [hash, answer] of answered) out.set(hash, answer);
+    return out;
+  }
+
+  /** {@link nativeScripts}' lookup, asked of Koios. */
+  private async lookupNativeScripts(
     hashes: readonly string[],
   ): Promise<Map<string, ResolvedNativeScript | null>> {
     const unique = [...new Set(hashes)];
@@ -1312,6 +1372,11 @@ export interface ProofNeed {
   readonly txHash: string;
   readonly credential: Credential;
   readonly endEpoch: number;
+  /**
+   * The verdict is final (its survey's `end_epoch` is): a native script is
+   * looked up even when a banked lookup found none recently.
+   */
+  readonly final?: boolean;
 }
 
 /**
@@ -1330,8 +1395,15 @@ export async function recordProofs(
   const missing = unwitnessedScripts(
     needs.map((n) => [proofs.get(n.txHash), n.credential] as const),
   );
+  const fresh = unwitnessedScripts(
+    needs
+      .filter((n) => n.final)
+      .map((n) => [proofs.get(n.txHash), n.credential] as const),
+  );
   const scripts: ResolvedNativeScripts =
-    missing.length === 0 ? new Map() : await source.nativeScripts(missing);
+    missing.length === 0
+      ? new Map()
+      : await source.nativeScripts(missing, fresh);
   return needs.map((n) =>
     withResolvedScript(proofs.get(n.txHash), n.credential, n.endEpoch, scripts),
   );
