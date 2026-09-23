@@ -63,8 +63,19 @@ describe("AmaruChain.txProofs", () => {
     ]);
   });
 
-  it("leaves the proof unknown without a lookup", async () => {
+  it("keeps the proof without the script when there is no lookup", async () => {
     const chain = new AmaruChain(stores(), "preview");
+    const proof = (await chain.txProofs([TX], needed)).get(TX);
+    expect(proof?.requiredSigners).toEqual([KEYHASH]);
+    expect(proof?.nativeScripts).toEqual([]);
+  });
+
+  it("leaves the proof unknown when the lookup could not ask", async () => {
+    const chain = new AmaruChain(
+      stores(),
+      "preview",
+      async (missing) => new Map([...missing.keys()].map((tx) => [tx, null])),
+    );
     expect((await chain.txProofs([TX], needed)).get(TX)).toBeNull();
   });
 });

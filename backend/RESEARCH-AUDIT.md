@@ -474,9 +474,9 @@ script, so a native-script credential's script is almost never in its own
 transaction, where Koios resolves it by hash from anywhere on chain and
 Dolos through minikupo. The verifier's Amaru route asks Koios for it under
 `--koios-scripts`, a trust in Koios limited to when the script appeared,
-since its bytes are checked against the hash; without the flag, the
-transaction's proof is unknown, every response in it is excluded with a
-note, and the hash no longer matches. The target survey needs no such
+since its bytes are checked against the hash; without the flag, those
+records are unproven, and the hash no longer matches wherever the emitter
+resolved one. The target survey needs no such
 script. Amaru's conformance tests
 cover preview epochs 1000 to 1315 and 1395 sits outside them; this audit is
 the check for that epoch. Amaru is beta with frequent breaking releases, and

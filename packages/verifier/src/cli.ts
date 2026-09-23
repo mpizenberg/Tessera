@@ -28,7 +28,7 @@
  * to `end_epoch` and a block walk spanning the survey's window, with Koios
  * resolving native scripts by hash under `--koios-scripts` (Amaru keeps no
  * script index, and a record's own transaction rarely witnesses its script;
- * without the flag such a proof is unknown). The tally is
+ * without the flag such a record is unproven). The tally is
  * rebuilt under the pinned ruleset and its content hash compared; the
  * electorate totals, outside the hash, are re-fetched too when the source is
  * Koios, and a difference is printed as a note, as is a ruleset other than

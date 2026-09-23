@@ -40,8 +40,12 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
   window. The `window` rule now opens a survey's window at the block that
   published its definition, and the `cancellation` rule counts only a
   cancellation in that window, so the counted set changes for a survey with
-  a response or cancellation published in an earlier block. `rulesetHash()` is
-  `e0f0736a2f1ae150c248c11095abe7de590d3e190983a595bdf0300a64be0d8f`; the
+  a response or cancellation published in an earlier block. The
+  `definition-validity` and `credential-proof` rules now say that mechanism A
+  takes a native script witnessed by the transaction or resolved by hash
+  among the scripts on chain by it, as the code already did, and that a
+  script resolved neither way does not prove. `rulesetHash()` is
+  `18bb6982cf2f70423f04a9a83591b15e10b3895807142a255be077123aee213b`; the
   README's table gains its row with the release.
 - **Breaking: `TallyInputSource` loses `stakeholderTotal` and `drepTotal`**,
   which move unchanged to a new `ElectorateTotals` interface. A tally input

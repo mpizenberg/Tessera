@@ -48,13 +48,16 @@ import type { AmaruStores, WalkedTx } from "./stores";
  */
 type NativeScriptLookup = Parameters<typeof resolveMechanismAScripts>[2];
 
-/** No lookup: every transaction that lacks a script it needs stays unknown. */
+/**
+ * No lookup: a script a transaction does not witness is resolved nowhere, so
+ * the records needing it are unproven and the rest of the transaction stands.
+ */
 const noLookup: NativeScriptLookup = async (missing) => {
   for (const [tx, hashes] of missing)
     console.warn(
-      `tx ${tx} does not witness native scripts ${hashes.join(", ")}, and no script lookup was given`,
+      `tx ${tx} does not witness native scripts ${hashes.join(", ")}, and no script lookup was given: records needing them are unproven`,
     );
-  return new Map();
+  return new Map([...missing.keys()].map((tx) => [tx, new Map()]));
 };
 
 export class AmaruChain {

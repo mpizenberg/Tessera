@@ -323,6 +323,36 @@ describe("verifyArtifact", () => {
     expect(result.match).toBe(false);
   });
 
+  it("is INDETERMINATE when a response's tx couldn't be read", async () => {
+    // The emitter postpones on it, so excluding it would report a sound
+    // artifact as a MISMATCH over a network error.
+    const unknown = new Map(proofs);
+    unknown.set(R_B.txHash, null);
+    const result = await verifyArtifact(inputs({ proofs: unknown }));
+    expect(result.indeterminate).toBe(true);
+    expect(result.match).toBe(false);
+  });
+
+  it("is INDETERMINATE when an in-window cancellation's tx couldn't be read", async () => {
+    const cancellation = {
+      txHash: "cc".repeat(32),
+      slot: 300,
+      epochNo: 499,
+      target: { txId: hexToBytes(SURVEY_TX), index: 0 },
+      proof: null,
+    };
+    const unknown = new Map(proofs);
+    unknown.set(cancellation.txHash, null);
+    const result = await verifyArtifact(
+      inputs({
+        bundle: { ...bundle, cancellations: [cancellation] },
+        proofs: unknown,
+      }),
+    );
+    expect(result.indeterminate).toBe(true);
+    expect(result.match).toBe(false);
+  });
+
   it("MISMATCHes a tampered aggregate, naming the difference", async () => {
     const artifact = emittedArtifact();
     const role = artifact.tally.perRole[0]!;

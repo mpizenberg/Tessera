@@ -276,9 +276,8 @@ power from `E-1`.
   a metadata-only transaction never carries its native script. Add
   `--koios-scripts` (with `--koios`, `--token` if needed) to have Koios
   resolve such scripts by hash; the rest of the inputs still come from the
-  stores. Without it, a response whose credential is a native script is
-  excluded with a note, along with every other response in its
-  transaction, and the hash differs.
+  stores. Without it, every record whose credential is a native script is
+  unproven, so the hash differs wherever the emitter resolved one.
 - Whether PRAGMA keeps old bootstrap sets published is not known; the
   preview bucket lists three. A survey older than the oldest set has no
   starting point.

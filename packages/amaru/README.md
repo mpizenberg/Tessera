@@ -27,11 +27,12 @@ transaction needs no script, so a native-script credential's script is
 almost never in the record's own transaction. `AmaruChain` therefore takes
 a script lookup from its caller; the verifier's `--koios-scripts` passes
 Koios's, which checks each script against its hash and that it was on chain
-by the transaction needing it. Without a lookup, a transaction missing a
-script it needs has its whole proof unknown: every response in it is
-excluded with a note, a cancellation in it does not cancel, and a
-definition in it makes the rebuild indeterminate; the first two change the
-hash.
+by the transaction needing it. Without a lookup, such a script is resolved
+nowhere, and the ruleset then counts the record as unproven: a response is
+excluded, a cancellation does not cancel, a definition makes its survey
+untalliable. Other records in the same transaction stand. A lookup that
+fails, rather than finds nothing, leaves the proof unknown, and the rebuild
+is indeterminate.
 
 What an audit through these stores trusts and its limits:
 `backend/RESEARCH-AUDIT.md`.

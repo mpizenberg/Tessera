@@ -107,8 +107,9 @@ export interface VerifyInputs {
 export interface VerifyResult {
   readonly match: boolean;
   /**
-   * True when the rebuild couldn't reach a definite counted set — a governance
-   * link needed to decide a mechanism-B proof couldn't be resolved (finding 6).
+   * True when the rebuild couldn't reach a definite counted set — a proof it
+   * needs could not be read, or a governance link needed to decide a
+   * mechanism-B proof couldn't be resolved (finding 6).
    * `match` is then not meaningful (it is `false`, but this is NOT a MISMATCH);
    * the reason is in `notes`. Re-run when the inputs are resolvable.
    */
@@ -127,8 +128,7 @@ export interface VerifyResult {
   readonly rebuiltHash: string;
   readonly rebuilt: TallyBody;
   /**
-   * Caveats hit during the rebuild (e.g. a response with no proof evidence),
-   * and electorate totals that differ from the artifact's or could not be
+   * Caveats hit during the rebuild, and electorate totals that differ from the artifact's or could not be
    * re-fetched.
    */
   readonly notes: readonly string[];
@@ -202,14 +202,24 @@ export async function rebuildTally(
   }
 
   // Cancellation first: the earliest owner-proven, in-window cancellation (in
-  // chain order — the choice the ruleset pins) short-circuits the tally.
+  // chain order — the choice the ruleset pins) short-circuits the tally. One
+  // with an unknown proof before it could be the winner, so the emitter
+  // postpones there, and the rebuild cannot decide either.
   const winning = [...bundle.cancellations]
     .sort(byCancellationChainOrder)
-    .find(
-      (c) =>
-        inSurveyWindow(survey, c) &&
-        mechanismAProven(def.owner, inputs.proofs.get(c.txHash) ?? null),
-    );
+    .find((c) => {
+      if (!inSurveyWindow(survey, c)) return false;
+      const proof = inputs.proofs.get(c.txHash) ?? null;
+      return proof === null || mechanismAProven(def.owner, proof);
+    });
+  if (winning && !inputs.proofs.get(winning.txHash)) {
+    return {
+      tally: emptyTallyBody(id),
+      notes,
+      indeterminate: `cancellation ${winning.txHash} could not be fetched or decoded, or its owner script not looked up, so whether it cancels is unknown`,
+      untalliable: null,
+    };
+  }
   if (winning) {
     return {
       tally: cancelledTallyBody(id, {
@@ -240,7 +250,10 @@ export async function rebuildTally(
     if (!COVERED_ROLES.includes(r.response.role)) continue;
     const proof = inputs.proofs.get(r.txHash) ?? null;
     if (!proof) {
-      notes.push(`no proof evidence for tx ${r.txHash} — response excluded`);
+      indeterminate ??=
+        `response ${r.txHash}:${r.responseIndex} has no proof evidence (the ` +
+        `transaction could not be fetched or decoded, or a script lookup ` +
+        `failed) — retry when it is readable`;
       continue;
     }
     const verdict = responseCredentialProof(
