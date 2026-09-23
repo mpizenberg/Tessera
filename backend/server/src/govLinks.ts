@@ -95,7 +95,7 @@ export async function refreshGovLinks(
   tipEpoch: number,
   nowSec: number,
   floor: number,
-  opts: Omit<ResolveAnchorsOptions, "limit" | "rotate"> = {},
+  opts: ResolveAnchorsOptions = {},
 ): Promise<GovLinkPass> {
   const expirations = [...new Set(endEpochs)]
     .map((e) => e + 1)

@@ -86,47 +86,6 @@ describe("resolveGovAnchors", () => {
     expect(docs.has(HASH_B)).toBe(false); // couldn't read it — no verdict
   });
 
-  it("attempts at most `limit` anchors, so a pass stays inside a budget", async () => {
-    const fetchDoc = vi.fn(async () => linkDoc());
-    const docs = await resolveGovAnchors(
-      [
-        proposal("gov_action1a", HASH_A),
-        proposal("gov_action1b", HASH_B),
-        proposal("gov_action1c", HASH_C),
-      ],
-      { fetchDoc, limit: 2, rotate: 0 },
-    );
-    expect(fetchDoc).toHaveBeenCalledTimes(2);
-    expect([...docs.keys()].sort()).toEqual([HASH_A, HASH_B]);
-  });
-
-  // Failures are banked nowhere, so a capped pass that always started at the
-  // same place would re-attempt the same dead anchors forever and never reach a
-  // live one queued behind them.
-  it("rotates the attempt window so every anchor eventually gets a turn", async () => {
-    const proposals = [
-      proposal("gov_action1a", HASH_A),
-      proposal("gov_action1b", HASH_B),
-      proposal("gov_action1c", HASH_C),
-    ];
-    const attempted = async (rotate: number) => {
-      const seen: string[] = [];
-      await resolveGovAnchors(proposals, {
-        limit: 1,
-        rotate,
-        fetchDoc: async (anchor) => {
-          seen.push(anchor.uri.slice(-64));
-          throw new Error("dead");
-        },
-      });
-      return seen;
-    };
-    expect(await attempted(0)).toEqual([HASH_A]);
-    expect(await attempted(1)).toEqual([HASH_B]);
-    expect(await attempted(2)).toEqual([HASH_C]);
-    expect(await attempted(3)).toEqual([HASH_A]); // wraps
-  });
-
   it("resolves nothing for no proposals, without fetching", async () => {
     const fetchDoc = vi.fn(async () => linkDoc());
     expect(await resolveGovAnchors([], { fetchDoc })).toEqual(new Map());

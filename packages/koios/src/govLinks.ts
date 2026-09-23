@@ -76,19 +76,6 @@ export interface GovProposal {
 export type GovAnchorDocs = ReadonlyMap<string, GovLinkDoc | null>;
 
 export interface ResolveAnchorsOptions extends AnchorFetchOptions {
-  /**
-   * Distinct anchors to attempt in this pass; defaults to all of them. A caller
-   * on a subrequest budget spends part of it here and converges over later
-   * passes, exactly as the tx-metadata cache does.
-   */
-  readonly limit?: number | undefined;
-  /**
-   * Where in the attempt order this pass starts; defaults to a random offset.
-   * With a `limit` this matters for liveness, not fairness: failures are not
-   * banked, so a fixed order would re-attempt the same dead anchors every pass
-   * and never reach a live one queued behind them.
-   */
-  readonly rotate?: number | undefined;
   /** Fetch + verify + parse one anchor; injectable for tests. */
   readonly fetchDoc?: ((anchor: ContentAnchor) => Promise<unknown>) | undefined;
 }
@@ -118,7 +105,7 @@ export function govProposal(row: ProposalRow): GovProposal | null {
 /**
  * Fetch, hash-verify and classify the distinct anchors behind `proposals`,
  * returning only the ones that resolved. An absent hash means "not resolved
- * this pass" — a failure is banked nowhere and decides nothing.
+ * this pass" — a failure is no answer and decides nothing.
  */
 export async function resolveGovAnchors(
   proposals: readonly GovProposal[],
@@ -132,19 +119,12 @@ export async function resolveGovAnchors(
   const docs = new Map<string, GovLinkDoc | null>();
   if (anchors.size === 0) return docs;
 
-  const hashes = [...anchors.keys()].sort();
-  const rotate = opts.rotate ?? Math.floor(Math.random() * hashes.length);
-  const start = ((rotate % hashes.length) + hashes.length) % hashes.length;
-  const window = Array.from(
-    { length: Math.min(opts.limit ?? hashes.length, hashes.length) },
-    (_, i) => hashes[(start + i) % hashes.length]!,
-  );
-
-  const outcomes = await mapSettled(window, ANCHOR_CONCURRENCY, async (hash) =>
+  const hashes = [...anchors.keys()];
+  const outcomes = await mapSettled(hashes, ANCHOR_CONCURRENCY, async (hash) =>
     parseGovLinkDoc(await fetchDoc(anchors.get(hash)!)),
   );
   outcomes.forEach((outcome, i) => {
-    const hash = window[i]!;
+    const hash = hashes[i]!;
     if (outcome.status === "fulfilled") docs.set(hash, outcome.value);
     else console.warn(`anchor ${hash} unresolved: ${String(outcome.reason)}`);
   });
