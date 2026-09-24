@@ -8,10 +8,23 @@ same snapshot. Private to the workspace; the verifier's `--amaru` flag names
 a directory holding `blocks.json` for a walk from the survey's defining
 transaction through the last slot of `end_epoch`, and
 `snapshot-<end_epoch>.json`. The snapshot holds only the credentials it was
-asked about; the `credentials` command prints those from the walk, every
-credential the survey's responses name as a Stakeholder or a DRep, and the
-tally refuses a snapshot missing one it needs. How to produce those files:
-`packages/amaru-store-reader/README.md`.
+asked about, every one the survey's responses name as a Stakeholder or a
+DRep, and the tally refuses a snapshot missing one it needs.
+
+The `build-stores` command produces that directory for one survey, from
+nothing: it bootstraps an Amaru node from PRAGMA's states no later than the
+survey's creation epoch, syncs it from Mithril until the ledger writes
+snapshot `end_epoch`, and runs `amaru-store-reader` over the stores, printing
+each command before running it. A rerun takes up after the last step that
+finished.
+
+```
+pnpm --filter cardano-tessera-amaru build-stores -- \
+  --backend <url> --survey <txHash>:<index> --dir <dir> [--amaru <amaru binary>]
+```
+
+It needs `cargo` for the reader, and an `amaru` able to sync from Mithril
+after a bootstrap; `docs/AUDIT.md` says which.
 
 Every weight question is read from snapshot `end_epoch`, the ledger at that
 epoch's end: registration, of a stake credential or a DRep; a stakeholder's

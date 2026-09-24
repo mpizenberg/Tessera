@@ -50,15 +50,9 @@ For a survey created at slot `S` with `end_epoch = E`, a node whose stores
 hold the blocks from `S` and snapshot `E`, that is one synced past the
 first `k` blocks of `E+1` and short of the transition into `E+3`, which
 prunes `E`. The walk comes first: the credentials the snapshot is asked
-about are the ones its responses name, printed by `packages/amaru`.
-
-```
-mkdir <dir>
-cargo run --release -- blocks <network> <chain-dir> S <last slot of E> <survey tx hash> > <dir>/blocks.json
-pnpm --silent --filter cardano-tessera-amaru credentials -- --dir <dir> --survey <key> > <dir>/credentials.json
-cargo run --release -- snapshot <network> <ledger-dir> E < <dir>/credentials.json > <dir>/snapshot-E.json
-pnpm --filter cardano-tessera-verifier verify -- --backend <url> --survey <key> --amaru <dir>
-```
+about are the ones its responses name. `build-stores` in `packages/amaru`
+builds such a node and runs both commands, printing each; its
+`README.md` has the command.
 
 The walk may start earlier than `S` and stop later than `E`'s last slot;
 the verifier keeps the survey's window. The verifier refuses a snapshot that

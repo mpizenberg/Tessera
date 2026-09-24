@@ -263,32 +263,62 @@ and the survey's end. Preprod and mainnet have not been tried.
 Amaru has no query surface. It keeps its last three epoch snapshots and
 every block it validated in RocksDB stores, and `packages/amaru-store-reader`,
 a Rust crate built with Amaru's own toolchain, prints from them what the
-verifier needs: a walk of the survey's window, kept to the transactions
-that name the survey, and snapshot `E`, the ledger at the end of the
-survey's `end_epoch`, kept to the credentials that respond. Its README has the commands. In outline, for a survey created in
-epoch `C` with `end_epoch = E`:
+verifier needs: a walk of the survey's window, kept to the transactions that
+name the survey, and snapshot `E`, the ledger at the end of the survey's
+`end_epoch`, kept to the credentials that respond. The verifier reads those
+printed files and nothing else. Every ledger fact comes from snapshot `E`:
+registration, a stakeholder's stake behind its pool (the mark taken at the end
+of `E`), and a DRep's power (the distribution taken then).
 
-1. `amaru node bootstrap` from the newest PRAGMA set ending before `C`, so
-   the stores hold the survey's whole window. The release binary cannot
-   then sync from Mithril: until upstream ships the fixes, build the
-   maintainer's fork branch named in `backend/RESEARCH-AUDIT.md`.
-2. `amaru mithril sync --ingest-until-slot <slot>` with a slot past the
-   first `k` blocks of `E + 1` (432 on preview, 2160 elsewhere), where
-   Amaru writes snapshot `E`. It keeps three snapshots, so `E` stays until
-   the transition into `E + 3`.
-3. Walk the survey's window, print the credentials its responses name,
-   and print snapshot `E` for those credentials only, all into one
-   directory; then:
+### Building the stores
+
+This needs `cargo`, through `rustup`, which fetches the nightly the reader
+pins. It also needs an Amaru binary that can sync from Mithril after a
+bootstrap, which the releases cannot yet: until PRAGMA ships the fixes, build
+the maintainer's fork, branch `fix/fast-sync-unavailable-stake-dist` of
+`https://github.com/mpizenberg/amaru`, with `cargo build --release`. One
+command builds the stores and reads them, from the repository root:
+
+```sh
+pnpm --filter cardano-tessera-amaru build-stores -- \
+  --backend <backend URL> --survey <txHash>:<index> --dir <directory> \
+  --amaru <path to the amaru binary>
+```
+
+`--amaru` can be left out when `amaru` is on the `PATH`. The command reads
+the network, the survey's creation slot and epoch `C`, and `E` from the
+backend, which adds no trust: a walk started too late misses the survey's
+definition, and the verifier checks the walk against the `end_epoch` it
+reads from the chain. It then works one step at a time, printing each
+command before running it, and a rerun skips the steps already done:
+
+1. `amaru node bootstrap --epoch X`, which loads PRAGMA's states at the end
+   of `X - 3`, `X - 2` and `X - 1`. `X` is the latest start PRAGMA's index
+   offers that is no later than `C`, so the chain store holds the survey's
+   whole window.
+2. `amaru mithril sync --ingest-until-slot <slot>`, which validates every
+   Mithril-certified block from there to the slot `3k/f` into `E + 1`
+   (25920 on preview, 129600 elsewhere), the window within which the chain
+   grows by `k` blocks, where Amaru writes snapshot `E`. This is the long
+   step. A sync that stops short, because Mithril does not certify that far
+   yet, leaves snapshot `E` unwritten, and the command says to run again
+   later. The node keeps snapshot `E` until its transition into `E + 3`.
+3. `amaru-store-reader blocks`, from the survey's slot through the last slot
+   of `E`, into `blocks.json`.
+4. `credentials.json`: every credential the walk's responses name as a
+   Stakeholder or a DRep.
+5. `amaru-store-reader snapshot` of `E` for those credentials, into
+   `snapshot-<E>.json`.
+6. It prints the verify command:
 
 ```sh
 pnpm --filter cardano-tessera-verifier verify -- \
-  --backend <backend URL> --survey <txHash>:<index> --amaru <dir>
+  --backend <backend URL> --survey <txHash>:<index> --amaru <directory>
 ```
 
-The verifier checks that the walk reaches the end of `E` and keeps the
-survey's window from it. Every ledger fact comes from snapshot `E`:
-registration, a stakeholder's stake behind its pool (the mark taken at the
-end of `E`), and a DRep's power (the distribution taken then).
+On preview, a survey created in 1365 with `E` = 1395 starts from 1119, and
+its rebuild from these stores gave the same `artifactHash` as the Koios
+source.
 
 ### Limits
 
