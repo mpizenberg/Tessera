@@ -7,33 +7,14 @@
  */
 
 import {
-  SECONDS_PER_EPOCH,
   SECURITY_PARAM,
+  firstSlot,
   type Network,
 } from "cardano-tessera-client";
-
-/** The first Shelley epoch, reached by protocol update, so in no genesis. */
-const SHELLEY_EPOCH: Record<Network, number> = {
-  mainnet: 208,
-  preprod: 4,
-  preview: 0,
-};
 
 /** The immutable file holding `slot`. */
 export function fileOf(network: Network, slot: number): number {
   return Math.floor(slot / (10 * SECURITY_PARAM[network]));
-}
-
-/** The first slot of a Shelley-era `epoch`; a Shelley slot is one second. */
-export function firstSlot(network: Network, epoch: number): number {
-  const shelleyEpoch = SHELLEY_EPOCH[network];
-  if (epoch < shelleyEpoch) {
-    throw new Error(`epoch ${epoch} is before Shelley on ${network}`);
-  }
-  return (
-    shelleyEpoch * 10 * SECURITY_PARAM[network] +
-    (epoch - shelleyEpoch) * SECONDS_PER_EPOCH[network]
-  );
 }
 
 export interface StoppingPoint {

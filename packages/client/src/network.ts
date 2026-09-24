@@ -71,6 +71,44 @@ export const EPOCH_ZERO_UNIX: Record<Network, number> = {
   preview: 1666656000,
 };
 
+/** The first Shelley epoch, reached by protocol update, so in no genesis. */
+const SHELLEY_EPOCH: Record<Network, number> = {
+  mainnet: 208,
+  preprod: 4,
+  preview: 0,
+};
+
+/**
+ * A Byron epoch is `10k` slots, `k` the security parameter; a Shelley slot
+ * is one second.
+ */
+function shelleyStart(network: Network): number {
+  return SHELLEY_EPOCH[network] * 10 * SECURITY_PARAM[network];
+}
+
+/** The first slot of a Shelley-era `epoch`. */
+export function firstSlot(network: Network, epoch: number): number {
+  const shelleyEpoch = SHELLEY_EPOCH[network];
+  if (epoch < shelleyEpoch) {
+    throw new Error(`epoch ${epoch} is before Shelley on ${network}`);
+  }
+  return (
+    shelleyStart(network) + (epoch - shelleyEpoch) * SECONDS_PER_EPOCH[network]
+  );
+}
+
+/** The epoch holding a Shelley-era `slot`, the inverse of {@link firstSlot}. */
+export function epochOfShelleySlot(network: Network, slot: number): number {
+  const start = shelleyStart(network);
+  if (slot < start) {
+    throw new Error(`slot ${slot} is before Shelley on ${network}`);
+  }
+  return (
+    SHELLEY_EPOCH[network] +
+    Math.floor((slot - start) / SECONDS_PER_EPOCH[network])
+  );
+}
+
 /**
  * The epoch a network's calendar is in at `nowUnix` (default: now).
  *

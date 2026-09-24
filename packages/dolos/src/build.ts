@@ -8,9 +8,9 @@
  * overlay passed with `-c`, which Dolos merges over it.
  */
 
-import type { Network } from "cardano-tessera-client";
+import { firstSlot, type Network } from "cardano-tessera-client";
 
-import { firstSlot, stoppingPoint } from "./stoppingPoints";
+import { stoppingPoint } from "./stoppingPoints";
 
 /** The part of `dolos data summary` read here. */
 export interface StoreSummary {

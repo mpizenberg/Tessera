@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { fileOf, firstSlot, stoppingPoint } from "./stoppingPoints";
+import { firstSlot } from "cardano-tessera-client";
+
+import { fileOf, stoppingPoint } from "./stoppingPoints";
 
 describe("stoppingPoint", () => {
   it("gives the file and epoch of the preview audit measured for end_epoch 1428", () => {
@@ -30,8 +32,4 @@ describe("stoppingPoint", () => {
       expect(first - earliest).toBeLessThanOrEqual(4);
     },
   );
-
-  it("refuses an epoch before Shelley", () => {
-    expect(() => stoppingPoint("mainnet", 100)).toThrow(/before Shelley/);
-  });
 });

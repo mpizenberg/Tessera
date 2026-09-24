@@ -5,6 +5,8 @@ import {
   NETWORKS,
   SECONDS_PER_EPOCH,
   currentEpoch,
+  epochOfShelleySlot,
+  firstSlot,
   parseNetwork,
 } from "./network.js";
 
@@ -54,5 +56,29 @@ describe("currentEpoch", () => {
     const start = EPOCH_ZERO_UNIX.preview + 1409 * SECONDS_PER_EPOCH.preview;
     expect(currentEpoch("preview", start - 1)).toBe(1408);
     expect(currentEpoch("preview", start)).toBe(1409);
+  });
+});
+
+describe("Shelley slots", () => {
+  it.each(NETWORKS)("maps an epoch's first and last slot back on %s", (n) => {
+    const epoch = 420;
+    expect(epochOfShelleySlot(n, firstSlot(n, epoch))).toBe(epoch);
+    expect(epochOfShelleySlot(n, firstSlot(n, epoch + 1) - 1)).toBe(epoch);
+  });
+
+  // The last block of an epoch, as PRAGMA's bootstrap index names it.
+  it.each([
+    { network: "preview", slot: 86399953, epoch: 999 },
+    { network: "preprod", slot: 114134379, epoch: 267 },
+    { network: "mainnet", slot: 172972789, epoch: 597 },
+  ] as const)("puts slot $slot in $network epoch $epoch", (c) => {
+    expect(epochOfShelleySlot(c.network, c.slot)).toBe(c.epoch);
+  });
+
+  it("refuses an epoch or a slot before Shelley", () => {
+    expect(() => firstSlot("mainnet", 100)).toThrow(/before Shelley/);
+    expect(() => epochOfShelleySlot("mainnet", 4_000_000)).toThrow(
+      /before Shelley/,
+    );
   });
 });

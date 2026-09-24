@@ -20,6 +20,8 @@ Speaks contract `2.1`.
 - `SECURITY_PARAM` (`k` per network), `ACTIVE_SLOTS_COEFF` (`f`),
   `stabilityWindowSlots` (`3k / f`) and the `Settling` type: how far the end
   of the epoch before the tip's is from `k` blocks deep.
+- `firstSlot` and its inverse `epochOfShelleySlot`: the calendar in slots,
+  for the Shelley era.
 
 ### Changed
 

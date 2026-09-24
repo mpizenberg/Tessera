@@ -1,7 +1,7 @@
 {
   "name": "cardano-tessera-amaru",
   "version": "0.0.0",
-  "description": "Tessera's verifier inputs read from what amaru-store-reader printed out of an Amaru node's stores instead of Koios.",
+  "description": "Tessera's verifier inputs read from what amaru-store-reader printed out of an Amaru node's stores instead of Koios, and the command that builds those stores from PRAGMA's states and Mithril.",
   "type": "module",
   "private": true,
   "engines": {
@@ -14,7 +14,7 @@
     }
   },
   "scripts": {
-    "credentials": "tsx src/credentialsCli.ts",
+    "build-stores": "tsx src/buildCli.ts",
     "type-check": "tsc -p tsconfig.json",
     "test": "vitest run"
   },

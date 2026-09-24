@@ -15,11 +15,10 @@
 import type { Credential } from "cip-179";
 import { bytesToHex, credentialKey } from "cip-179/domain";
 import type { TallyInputSource, WeightInfo } from "cip-179/tally";
-import type { Network } from "cardano-tessera-client";
+import { firstSlot, type Network } from "cardano-tessera-client";
 
 import { accountAtEnd, drepAtEnd, poolStandsAt } from "./dump";
 import type { DolosNode } from "./node";
-import { firstSlot } from "./stoppingPoints";
 
 const hashOf = (cred: Credential): string =>
   bytesToHex(cred.type === "key" ? cred.keyHash : cred.scriptHash);
