@@ -151,7 +151,8 @@ One node serves a survey with `end_epoch = E`: a replay stopped at the first
 block of `E + 1`. Dolos runs the boundary out of `E` when that block
 arrives, applies the block and stops, so its store holds the ledger at the
 end of `E`: the DRep distribution taken then, and each account's stake and
-pool in the snapshot taken then (its `mark`). No route serves the second, so
+pool in the snapshot taken then (its `mark`). No route serves the second
+(txpipe/dolos#1373 asks for history routes), so
 the ledger is read with `dolos data dump-entity`, which prints one stored
 account, DRep or pool. The one block of `E + 1` writes neither snapshot;
 registration is judged by slot against `E + 1`'s first, and a responder
