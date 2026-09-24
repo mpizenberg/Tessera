@@ -76,6 +76,7 @@ import { KoiosDataSource, KoiosTallyInputs } from "cardano-tessera-koios";
 import { fetchBeacon, revealWithBeacon } from "cip-179/tlock";
 import { evolutionCodec } from "cip-179/evolution";
 
+import { Progress, type Counter } from "./progress";
 import { saveArtifacts } from "./save";
 import {
   chainEvidence,
@@ -86,12 +87,39 @@ import {
 import { diffResponseSets, untalliableReason, verifyArtifact } from "./verify";
 
 const flags = readFlags();
+const progress = new Progress();
+const tick = () => progress.tick();
+const KOIOS_REQUESTS: Counter = { unit: "Koios request" };
 
 interface Sources {
   readonly chain: SurveyChain;
   readonly weights: TallyInputSource;
   readonly totals?: ElectorateTotals;
   readonly source: TallyArtifact["provenance"]["source"];
+  /** What a step reading the chain from this source counts, if anything. */
+  readonly counter?: Counter;
+}
+
+/** `weights`, each read announced as a step that `counter` counts. */
+function stepped(
+  weights: TallyInputSource,
+  counter: (credentials: number) => Counter | undefined,
+): TallyInputSource {
+  const announce = (role: string, n: number) =>
+    progress.step(
+      `reading ${n} ${role} weight${n === 1 ? "" : "s"}`,
+      counter(n),
+    );
+  return {
+    stakeholderWeights(epoch, credentials) {
+      announce("stakeholder", credentials.length);
+      return weights.stakeholderWeights(epoch, credentials);
+    },
+    drepWeights(epoch, credentials) {
+      announce("DRep", credentials.length);
+      return weights.drepWeights(epoch, credentials);
+    },
+  };
 }
 
 function koiosConfig(network: Network): AppConfig {
@@ -107,19 +135,29 @@ function koiosConfig(network: Network): AppConfig {
 
 function koiosSources(network: Network): Sources {
   const config = koiosConfig(network);
-  const koios = new KoiosTallyInputs(config);
+  const koios = new KoiosTallyInputs(config, undefined, tick);
   return {
-    chain: koiosChain(config),
-    weights: koios,
-    totals: koios,
+    chain: koiosChain(config, tick),
+    weights: stepped(koios, () => KOIOS_REQUESTS),
+    totals: {
+      stakeholderTotal(epoch) {
+        progress.step("reading the stake total", KOIOS_REQUESTS);
+        return koios.stakeholderTotal(epoch);
+      },
+      drepTotal(epoch) {
+        progress.step("reading the DRep total", KOIOS_REQUESTS);
+        return koios.drepTotal(epoch);
+      },
+    },
     source: { provider: "koios", baseUrl: config.koiosUrl },
+    counter: KOIOS_REQUESTS,
   };
 }
 
 function amaruSources(network: Network, dir: string): Sources {
   const stores = new AmaruStores(dir);
   const koios = flags["koios-scripts"]
-    ? new KoiosDataSource(koiosConfig(network))
+    ? new KoiosDataSource(koiosConfig(network), undefined, undefined, tick)
     : null;
   return {
     chain: new AmaruChain(
@@ -127,8 +165,9 @@ function amaruSources(network: Network, dir: string): Sources {
       network,
       koios ? (hashes) => koios.nativeScripts(hashes) : undefined,
     ),
-    weights: new AmaruTallyInputs(stores),
+    weights: stepped(new AmaruTallyInputs(stores), () => undefined),
     source: { provider: "amaru", baseUrl: pathToFileURL(dir).href },
+    ...(koios && { counter: KOIOS_REQUESTS }),
   };
 }
 
@@ -138,10 +177,23 @@ function amaruSources(network: Network, dir: string): Sources {
  */
 async function dolosSources(network: Network, dir: string): Promise<Sources> {
   const node = new DolosNode(dir);
+  progress.step("serving the Dolos node");
   const { minibf, minikupo } = await node.serve();
+  // Each credential is one `accounts` or `dreps` dump; a pool's is extra.
+  const counted = {
+    dir,
+    tipSlot: () => node.tipSlot(),
+    dump: (namespace: "accounts" | "dreps" | "pools", key: string) => {
+      if (namespace !== "pools") tick();
+      return node.dump(namespace, key);
+    },
+  };
   return {
     chain: new DolosChain(minibf, minikupo),
-    weights: new DolosTallyInputs(node, network),
+    weights: stepped(new DolosTallyInputs(counted, network), (total) => ({
+      unit: "credential",
+      total,
+    })),
     source: { provider: "dolos", baseUrl: pathToFileURL(dir).href },
   };
 }
@@ -242,7 +294,7 @@ async function main(): Promise<void> {
   const network = parseNetwork((await client.liveness()).network);
   const dolosDir = pathOf(flags.dolos);
   const amaruDir = pathOf(flags.amaru);
-  const { chain, weights, totals, source } = dolosDir
+  const { chain, weights, totals, source, counter } = dolosDir
     ? await dolosSources(network, dolosDir)
     : amaruDir
       ? amaruSources(network, amaruDir)
@@ -261,6 +313,7 @@ async function main(): Promise<void> {
   // *answers*. This is the crux of the trust story: the backend never supplies
   // the records the tally is built from, so it cannot omit or alter a response
   // and still reproduce the hash.
+  progress.step("reading the survey's records from the chain", counter);
   const { bundle, incomplete } = await chain.bundle(key);
 
   // Talliability is decided from the *independent* record and defining
@@ -269,6 +322,7 @@ async function main(): Promise<void> {
   // one, only the defining transaction is read, to tell an untalliable survey
   // (which has no artifact by design) from one not finalized yet.
   if (!artifact) {
+    progress.step("reading the survey's defining transaction", counter);
     const reason = untalliableReason({
       bundle,
       ...(await ownerEvidence(chain, bundle)),
@@ -289,9 +343,11 @@ async function main(): Promise<void> {
         "MISMATCH may be a false alarm (missing responders); a MATCH is still sound",
     );
   }
+  progress.step("cross-checking the backend's bundle");
   preNotes.push(...(await crossCheckBackendBundle(client, key, bundle)));
 
   // 3. The remaining independent inputs, from the same source.
+  progress.step("reading the records' evidence", counter);
   const evidence = await chainEvidence(chain, bundle);
 
   // 4. Rebuild + compare.
@@ -307,6 +363,7 @@ async function main(): Promise<void> {
     // the drand beacon ourselves, then decrypt offline. Unused for public
     // artifacts.
     reveal: async (records, { chainHash, round }) => {
+      progress.step("fetching the drand beacon");
       const beacon = await fetchBeacon(round);
       const { randomness, signature } = beacon;
       sealedReveal = {
@@ -321,6 +378,7 @@ async function main(): Promise<void> {
       );
     },
   });
+  progress.done();
 
   for (const note of preNotes) console.warn(`note: ${note}`);
   for (const note of result.notes) console.warn(`note: ${note}`);

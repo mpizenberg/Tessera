@@ -37,8 +37,11 @@ export interface SurveyChain {
  * so the label-17 scan reads from its defining transaction's slot through the
  * last slot of its `end_epoch`, and no further.
  */
-export function koiosChain(config: AppConfig): SurveyChain {
-  const source = new KoiosDataSource(config);
+export function koiosChain(
+  config: AppConfig,
+  onRequest?: () => void,
+): SurveyChain {
+  const source = new KoiosDataSource(config, undefined, undefined, onRequest);
   return {
     async bundle(key) {
       const txHash = key.split(":")[0]!;

@@ -2,8 +2,9 @@
 
 A Tessera backend tallies each closed survey into a result artifact and serves
 it under its content hash, `artifactHash`. The artifact exists once the end of
-the survey's `end_epoch` can no longer roll back, about 12 hours after that
-epoch ends on mainnet and preprod and 3.5 on preview. An audit rebuilds the artifact from
+the survey's `end_epoch` can no longer roll back and the ledger at that
+instant has been written whole, about 12 hours after that epoch ends. An
+audit rebuilds the artifact from
 the chain and compares the two hashes. `packages/verifier` does the rebuild.
 This guide says what it needs, where it can get it, and whom each source asks
 you to trust. The evidence behind it (measurements, candidate tools, source
@@ -46,9 +47,10 @@ scripts by hash. Any source that serves the blocks faithfully gives the same
 answers.
 
 **Ledger facts at the survey's `end_epoch` `E`**, which a ledger computes from
-the blocks and no block states: each Stakeholder responder's active stake for
-`E`, each DRep responder's voting power for `E`, and whether each was
-registered at the end of `E`. Keyholder surveys need none. This is where an
+the blocks and no block states, all read at the end of `E`: each
+Stakeholder responder's stake in the snapshot the ledger takes then, each
+DRep responder's power in the distribution it takes then, and whether each
+was registered. Keyholder surveys need none. This is where an
 audit's trust sits, and what sets the approaches below apart.
 
 Two more inputs need no choice of source. A sealed survey's reveal takes the
@@ -82,6 +84,11 @@ names. The Tessera deployments are:
 The survey's key is `<txHash>:<index>`: its defining transaction and its index
 there. The app's survey page address ends with the key, its colon written
 `%3A`.
+
+While it runs, the verifier names each step on stderr: reading the survey's
+records, their evidence, the weights and the totals. On a terminal each step
+also counts what it has done so far: Koios requests, or the responders read
+from a Dolos node out of the total. The verdict goes to stdout.
 
 Every approach also takes `--out <dir>`, which keeps the two artifacts a
 MATCH or MISMATCH compared: `served.json`, exactly as the backend served it,
