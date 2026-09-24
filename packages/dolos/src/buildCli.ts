@@ -138,13 +138,14 @@ async function main(): Promise<void> {
 
     switch (step.kind) {
       case "init":
-        fail(
-          "First write the node's config; `dolos init` asks every question itself:\n\n" +
+        console.log(
+          "\nFirst write the node's config; `dolos init` asks every question itself:\n\n" +
             `  mkdir -p ${quote(dir)} && ${shown(dir, ["dolos", ...step.args])}\n\n` +
             "Take each default it offers, except the history to keep: choose " +
             '"keep everything". Its last question, the bootstrap method, comes after ' +
             "it saves the config: press Ctrl-C there. Then run this again.",
         );
+        return;
       case "refuse":
         fail(step.reason);
       case "overlay":
