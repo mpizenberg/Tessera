@@ -21,8 +21,8 @@ importers:
         specifier: ^0.5.14
         version: 0.5.14
       '@hono/node-server':
-        specifier: ^1.19.17
-        version: 1.19.17(hono@4.13.9)
+        specifier: ^2.1.1
+        version: 2.1.1(hono@4.13.9)
       '@mattpiz/tlock-js':
         specifier: 0.10.0
         version: 0.10.0
@@ -938,9 +938,9 @@ packages:
   '@evolution-sdk/evolution@0.5.14':
     resolution: {integrity: sha512-sem0rqleDYxUWngEdezboAbnxXbqeh2XzqSHnQECQnapwELkEAwcsiMtMqpLAmbJAjTlUKYnTvz+picopp+kug==}
 
-  '@hono/node-server@1.19.17':
-    resolution: {integrity: sha512-dSneS5qhiauZWGDCeK4o695Xd9nUNjviSZCMQrj10eetr8Uln1ucn6bbphOM6UynAMMtNIzZNSpL9vnASJwrPQ==}
-    engines: {node: '>=18.14.1'}
+  '@hono/node-server@2.1.1':
+    resolution: {integrity: sha512-ELuehkj5VCBdgEw9zs+ivkKwyzzUCSQuE96YmiPvn1ECBoZCczbFXJLeEGMTYjphP6gydh4pHMqEYPVMYUVgQg==}
+    engines: {node: '>=20'}
     peerDependencies:
       hono: ^4
 
@@ -2547,7 +2547,7 @@ snapshots:
       '@scure/bip39': 2.4.0
       effect: 3.22.2
 
-  '@hono/node-server@1.19.17(hono@4.13.9)':
+  '@hono/node-server@2.1.1(hono@4.13.9)':
     dependencies:
       hono: 4.13.9
 
