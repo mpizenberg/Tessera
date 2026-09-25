@@ -1,7 +1,7 @@
 import { defineConfig, type Plugin } from "vite";
 import solid from "vite-plugin-solid";
 import { fileURLToPath } from "node:url";
-import { resolveDeployment } from "./deployments";
+import { resolveDeployment } from "./deployments.ts";
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
