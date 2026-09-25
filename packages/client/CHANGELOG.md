@@ -11,6 +11,8 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-25
+
 Speaks contract `2.1`.
 
 ### Added
@@ -27,10 +29,13 @@ Speaks contract `2.1`.
 
 - **Breaking:** an artifact's electorate totals move, following `cip-179`,
   from `tally.perRole[].total` to the new required `info.perRole`, outside
-  the hash; `decodeArtifact` refuses a body without `info`. The contract
-  version stays `2.0` because the backend re-emits every stored artifact in
-  the new shape at once, and no consumer but Tessera's own app read an ended
-  survey's artifact.
+  the hash; `decodeArtifact` refuses a body without `info`.
+- **Breaking:** an artifact's `rulesetHash` moves, following `cip-179`, from
+  `tally` to `provenance`, outside the hash.
+- Neither artifact change bumps the contract's major: the backend re-emits
+  every stored artifact in the new shape at once, and no consumer but
+  Tessera's own app read an ended survey's artifact.
+- The `cip-179` peer dependency is `^0.6.0`.
 
 ## [0.3.0] - 2026-09-15
 

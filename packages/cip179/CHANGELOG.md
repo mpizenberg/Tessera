@@ -8,6 +8,8 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-25
+
 ### Added
 
 - `inSurveyWindow(survey, record)`, in `cip-179/domain`: whether a response

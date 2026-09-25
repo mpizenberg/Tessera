@@ -259,6 +259,7 @@ artifact records (in `provenance`, or in `tally` before ruleset 14):
 | 0.2.0             | 5                    | 4               | `64efbd0fb3614348e5c2620275baa9f9eb3e274e4ae9fa46d7fb9f8643fd24bc` |
 | 0.3.0             | 5                    | 12              | `c11a980bc23a6fdfb8fb5878d4764225dc46b1a2010b43da8c68b918cf7bbc97` |
 | 0.5.0             | 5                    | 13              | `38a4367b6ffe50ad032bc319cf43f017ff231fe7ea1d63cc611d6386ac9c6259` |
+| 0.6.0             | 5                    | 15              | `d945b740312f383250fb4c2f5752207cd3858c960e74de29450ba8c275b072e7` |
 
 When the rules change, the ruleset version and hash change; add a new row rather
 than editing an existing one, so old artifacts stay re-verifiable against the
