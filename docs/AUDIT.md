@@ -333,8 +333,9 @@ the survey's `artifactHash`.
   preview bucket lists three. A survey older than the oldest set has no
   starting point.
 - The electorate totals are not read.
-- Measured on one survey, on preview, with one beta release, whose crates
-  are internal APIs: the reader pins that release.
+- Measured on one survey, on preview, with one beta release. The reader
+  opens the stores directly, and their format is not a stable interface:
+  it pins that release.
 
 ## Other routes
 

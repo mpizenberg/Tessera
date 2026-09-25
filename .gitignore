@@ -3,7 +3,5 @@ node_modules/
 .DS_Store
 plans/
 snapshots/
-dolos-audit/
-amaru-audit/
 target/
 temp/
