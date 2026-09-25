@@ -100,7 +100,7 @@ export class DolosChain {
    */
   private async records(key: string, from: number, to: number) {
     const metadata = new Map<string, string>();
-    for (let start = from; ; ) {
+    for (let start = from; ;) {
       let page = 1;
       for (; page * PAGE <= MAX_SCAN_ITEMS; page++) {
         const rows =

@@ -24,21 +24,21 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@evolution-sdk/evolution": "^0.5.14",
+    "@hono/node-server": "^1.19.17",
+    "@mattpiz/tlock-js": "0.10.0",
     "cardano-tessera-client": "workspace:*",
     "cardano-tessera-core": "workspace:*",
     "cardano-tessera-koios": "workspace:*",
     "cip-179": "workspace:*",
-    "@evolution-sdk/evolution": "^0.5.9",
-    "hono": "^4.6.0",
-    "@hono/node-server": "^1.13.0",
-    "@mattpiz/tlock-js": "0.10.0"
+    "hono": "^4.13.9"
   },
   "devDependencies": {
+    "@types/node": "^25.9.8",
     "cardano-tessera-verifier": "workspace:*",
-    "@types/node": "^25.9.3",
-    "tsx": "^4.19.0",
-    "typescript": "^5.6.0",
-    "vitest": "^2.1.0",
-    "wrangler": "^4.0.0"
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9",
+    "wrangler": "^4.138.0"
   }
 }

@@ -84,14 +84,12 @@ export function createSealedReveal(
   // The fingerprint = round + the sorted response tx hashes, so it changes on a
   // genuine membership change but stays stable across ticks and object identity.
   const revealKey = (): string | null => {
-    if (
-      !(
-        requested() &&
-        available() &&
-        !props.s.sealedUnsupported &&
-        !props.s.cancelled
-      )
-    )
+    if (!(
+      requested() &&
+      available() &&
+      !props.s.sealedUnsupported &&
+      !props.s.cancelled
+    ))
       return null;
     const hashes = inWindow()
       .map((r) => r.txHash)

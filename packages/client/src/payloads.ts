@@ -79,12 +79,7 @@ export type SurveyFinalState =
 
 /** The Explore filter chips; `mine` matches on the caller's credentials. */
 export type SurveyListFilter =
-  | "all"
-  | "linked"
-  | "active"
-  | "sealed"
-  | "public"
-  | "mine";
+  "all" | "linked" | "active" | "sealed" | "public" | "mine";
 
 const SURVEY_LIST_FILTERS: readonly SurveyListFilter[] = [
   "all",

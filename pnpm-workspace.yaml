@@ -24,8 +24,9 @@ allowBuilds:
   sharp: false
   workerd: false
 
-# `@mattpiz/tlock-js` is the maintainer's own package; its latest release is
-# newer than the global `minimumReleaseAge` supply-chain delay, so allow it
-# explicitly instead of relaxing the delay for every dependency.
+# Exceptions to the global `minimumReleaseAge` supply-chain delay, instead of
+# relaxing it for every dependency: `@mattpiz/tlock-js` is the maintainer's own
+# package; evolution 0.5.14 is one release, reviewed by the maintainer.
 minimumReleaseAgeExclude:
   - "@mattpiz/tlock-js"
+  - "@evolution-sdk/evolution@0.5.14"

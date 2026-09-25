@@ -18,13 +18,13 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@evolution-sdk/evolution": "^0.5.14",
     "cardano-tessera-client": "workspace:*",
     "cardano-tessera-core": "workspace:*",
-    "cip-179": "workspace:*",
-    "@evolution-sdk/evolution": "^0.5.9"
+    "cip-179": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9"
   }
 }

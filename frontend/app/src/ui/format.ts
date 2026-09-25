@@ -118,11 +118,7 @@ export function roleColors(role: number): readonly [string, string] {
  * lifecycle or cancellation).
  */
 export type ViewStatus =
-  | "public"
-  | "sealed"
-  | "ended"
-  | "cancelled"
-  | "invalid";
+  "public" | "sealed" | "ended" | "cancelled" | "invalid";
 
 export function viewStatus(a: SurveyAggregate): ViewStatus {
   if (!a.talliable) return "invalid";

@@ -65,8 +65,7 @@ export interface TesseraClientOptions {
  * non-2xx status throws {@link TesseraHttpError}.
  */
 export type SnapshotAnswer<T> =
-  | { readonly ready: true; readonly body: T }
-  | { readonly ready: false };
+  { readonly ready: true; readonly body: T } | { readonly ready: false };
 
 /** A non-2xx answer from the backend, other than the typed not-ready state. */
 export class TesseraHttpError extends Error {

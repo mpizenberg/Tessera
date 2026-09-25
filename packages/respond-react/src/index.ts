@@ -90,8 +90,7 @@ const useClientLayoutEffect =
 
 type Callbacks = {
   [K in "onResponse" | "onChange" | "onInvalid"]:
-    | TesseraRespondProps[K]
-    | undefined;
+    TesseraRespondProps[K] | undefined;
 };
 
 /**

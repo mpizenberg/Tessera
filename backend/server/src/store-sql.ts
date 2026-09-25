@@ -1026,8 +1026,7 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
         responsesForSurveyPageSql(surveyKey, page.cursor, page.limit),
       ]);
       const row = surveys?.[0] as
-        | { record: string; cancellations: string; govLinks: string }
-        | undefined;
+        { record: string; cancellations: string; govLinks: string } | undefined;
       if (!row) return null;
       return {
         ...row,

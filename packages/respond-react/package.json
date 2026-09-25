@@ -51,14 +51,14 @@
     "react": "^18.0.0 || ^19.0.0"
   },
   "devDependencies": {
-    "@types/node": "^25.9.3",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
+    "@types/node": "^25.9.8",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "cardano-tessera-respond": "workspace:*",
-    "happy-dom": "^20.10.6",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "happy-dom": "^20.14.5",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9"
   }
 }

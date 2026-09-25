@@ -393,8 +393,7 @@ export interface ScanCacheStore {
 
 /** A banked by-hash lookup of a native script (see `scriptLookups.ts`). */
 export type BankedScriptLookup =
-  | { readonly found: ResolvedNativeScript }
-  | Misses;
+  { readonly found: ResolvedNativeScript } | Misses;
 
 /** One expiration epoch whose governance-link set is final. */
 export interface SettledGovEpoch {

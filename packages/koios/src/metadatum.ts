@@ -28,11 +28,7 @@ import type { Metadatum } from "cip-179";
 
 /** A Koios JSON metadata value (one label's payload). */
 export type KoiosJson =
-  | number
-  | bigint
-  | string
-  | KoiosJson[]
-  | { [key: string]: KoiosJson };
+  number | bigint | string | KoiosJson[] | { [key: string]: KoiosJson };
 
 const HEX_RE = /^[0-9a-fA-F]*$/;
 

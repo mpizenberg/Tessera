@@ -59,8 +59,7 @@ const txInfoRow = (
   tx_hash: string,
   tx_block_index: number | null,
   certificates:
-    | { type: string; index: number; info: { stake_address?: string } }[]
-    | null,
+    { type: string; index: number; info: { stake_address?: string } }[] | null,
 ) => ({ tx_hash, tx_block_index, certificates });
 const regCert = (addr: string, index: number) => ({
   type: "stake_registration",

@@ -422,14 +422,12 @@ export function toArtifactResponders(
   responders: readonly WeightedResponder[],
 ): ArtifactResponder[] {
   return responders
-    .map(
-      (r): ArtifactResponder => ({
-        credential: r.credentialKey,
-        weight: String(r.weight),
-        txHash: r.txHash,
-        responseIndex: r.responseIndex,
-      }),
-    )
+    .map((r): ArtifactResponder => ({
+      credential: r.credentialKey,
+      weight: String(r.weight),
+      txHash: r.txHash,
+      responseIndex: r.responseIndex,
+    }))
     .sort((a, b) =>
       a.credential < b.credential ? -1 : a.credential > b.credential ? 1 : 0,
     );

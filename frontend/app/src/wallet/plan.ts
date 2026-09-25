@@ -88,18 +88,16 @@ export function plan(
       }),
       ctx,
     ),
-    ...ofKind(actions, "govAction").map(
-      (action): PlannedTx => ({
-        body: {
-          type: "proposal",
-          anchorUrl: action.anchorUrl,
-          anchorDataHash: action.anchorDataHash,
-        },
-        actions: [action],
-        proveCredentials: action.proveCredentials,
-        dependsOn: dependencies([action], ctx),
-      }),
-    ),
+    ...ofKind(actions, "govAction").map((action): PlannedTx => ({
+      body: {
+        type: "proposal",
+        anchorUrl: action.anchorUrl,
+        anchorDataHash: action.anchorDataHash,
+      },
+      actions: [action],
+      proveCredentials: action.proveCredentials,
+      dependsOn: dependencies([action], ctx),
+    })),
   ];
 }
 

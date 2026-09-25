@@ -134,8 +134,7 @@ export const RESPOND_EVENTS = {
  */
 export type TesseraRespondElementProps = {
   [K in keyof Required<TesseraRespondProps>]:
-    | TesseraRespondProps[K]
-    | undefined;
+    TesseraRespondProps[K] | undefined;
 };
 
 /**
