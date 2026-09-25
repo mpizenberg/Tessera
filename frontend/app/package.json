@@ -24,7 +24,7 @@
     "@evolution-sdk/evolution": "^0.5.14",
     "@mattpiz/tlock-js": "0.10.0",
     "@noble/hashes": "^2.4.0",
-    "@solidjs/router": "^0.16.3",
+    "@solidjs/router": "^1.0.0",
     "cardano-tessera-client": "workspace:*",
     "cardano-tessera-core": "workspace:*",
     "cardano-tessera-koios": "workspace:*",
