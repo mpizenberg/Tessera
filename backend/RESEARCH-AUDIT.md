@@ -404,8 +404,15 @@ on 2026-09-21 and 2026-09-22 with release v10.11.20260918, the sync run on
 the maintainer's fork build of it (below), on the same survey
 `1356f08e…:0`: the verifier's rebuild from the reader's output gives the
 `artifactHash` its Koios rebuild gives, through the same code
-(`e35675f0…`). The recipe is `packages/amaru-store-reader/README.md`; the
-verifier takes the reader's output directory with `--amaru`.
+(`e35675f0…`). The recipe was then written by hand in
+`packages/amaru-store-reader/README.md`, following the steps below. Since
+ruleset 15, snapshot `E` alone answers every reading: registration, stake
+behind a pool still standing, and DRep voting stake, all as taken at the
+end of `E`. So a node serves the audit from `k` blocks into `E+1` until the
+transition into `E+3`. `build-stores` in `packages/amaru` now picks the
+bootstrap set and the sync slot and runs every step (`docs/AUDIT.md`), and
+the verifier takes its directory with `--amaru`. On 2026-09-25 it rebuilt
+the same survey from the 1119 set and matched the served `artifactHash`.
 
 1. **Bootstrap** from the newest PRAGMA set ending before the survey's
    creation epoch, so the chain store will hold the survey's whole window:
@@ -430,10 +437,12 @@ verifier takes the reader's output directory with `--amaru`.
    `valid_until = E`, kept there one epoch past that. The electorate totals
    are not read.
 
-The release binary cannot run step 2 after a bootstrap: three defects in
-the Mithril route, fixed in the maintainer's fork
-(`fix/fast-sync-unavailable-stake-dist`) and drafted upstream. Until
-upstream ships them, an auditor builds that branch.
+The release binary cannot run step 2 after a bootstrap, because of defects
+in the Mithril route. They are fixed in the maintainer's fork
+(`fix/fast-sync-unavailable-stake-dist`) and reported upstream as
+pragma-org/amaru#1390, with fixes proposed in #1391, and #1393. The fixes are
+expected to land with PRAGMA's rework of that workflow, pragma-org/amaru#1376.
+Until a release carries them, an auditor builds that branch.
 
 **Measured at 1395** against the Haskell state of the Rung 1 snapshots on
 the whole population, and against Koios through the verifier's own Koios
@@ -570,7 +579,7 @@ is a multi-day PostgreSQL job.
   there); a Dolos-fed rebuild reproducing the same `tally` hash is the whole
   point of that split.
 - **The verifier's seam is `TallyInputSource` plus `SurveyChain`**,
-  implemented for Koios, in `packages/dolos` for two Dolos nodes and in
+  implemented for Koios, in `packages/dolos` for a Dolos node and in
   `packages/amaru` for the files an Amaru node's stores yield; the totals
   sit apart in `ElectorateTotals`, which the two node sources leave out. The
   backend still reads Koios. Fed by a node, its provenance would carry the
