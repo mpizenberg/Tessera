@@ -255,7 +255,7 @@ to 1315; on epoch 1395 its readings equalled the Haskell node's on every
 account and DRep.
 
 **Cost:** on preview, a bootstrap took 3.5 minutes and 722 MB, a sync of 280
-epochs about 90 minutes (5.4 hours on a second run) with 1.1 GB of memory, 2.2 GB of immutable files
+epochs about 90 minutes with 1.1 GB of memory, 2.2 GB of immutable files
 and 3 GB of stores; reading the stores takes seconds and the rebuild under
 a second. The sync is proportional to the epochs between the bootstrap set
 and the survey's end. Preprod and mainnet have not been tried.
@@ -295,10 +295,7 @@ command before running it, and a rerun skips the steps already done:
 1. `amaru node bootstrap --epoch X`, which loads PRAGMA's states at the end
    of `X - 3`, `X - 2` and `X - 1`. `X` is the latest start PRAGMA's index
    offers that is no later than `C`, so the chain store holds the survey's
-   whole window. PRAGMA's downloads can break off; the bootstrap takes an
-   archive already in `snapshots/<network>/`, so fetch each
-   `<network>/<slot>.<hash>.tar.zst` the index names there with a client
-   that resumes, such as `curl -C -`, and run the command again.
+   whole window.
 2. `amaru mithril sync --ingest-until-slot <slot>`, which validates every
    Mithril-certified block from there to the slot `3k/f` into `E + 1`
    (25920 on preview, 129600 elsewhere), the window within which the chain
