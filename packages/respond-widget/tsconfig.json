@@ -18,7 +18,6 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "forceConsistentCasingInFileNames": true,
-    "baseUrl": ".",
     "paths": {
       "cardano-tessera-respond-core": ["../respond-core/src/index.ts"],
       "cardano-tessera-respond-ui": ["../respond-ui/src/index.ts"]

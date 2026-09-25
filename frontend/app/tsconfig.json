@@ -17,7 +17,6 @@
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
-    "baseUrl": ".",
     "paths": {
       "cardano-tessera-core": ["../../packages/core/src/index.ts"],
       "cardano-tessera-koios": ["../../packages/koios/src/index.ts"],

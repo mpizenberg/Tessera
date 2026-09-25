@@ -30,3 +30,8 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - "@mattpiz/tlock-js"
   - "@evolution-sdk/evolution@0.5.14"
+
+# TypeScript 7 has no compiler API; dts-bundle-generator (the widget's
+# declaration bundle) still needs one.
+overrides:
+  "dts-bundle-generator>typescript": "^6.0.3"
