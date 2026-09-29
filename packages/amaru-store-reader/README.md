@@ -50,9 +50,9 @@ For a survey created at slot `S` with `end_epoch = E`, a node whose stores
 hold the blocks from `S` and snapshot `E`, that is one synced past the
 first `k` blocks of `E+1` and short of the transition into `E+3`, which
 prunes `E`. The walk comes first: the credentials the snapshot is asked
-about are the ones its responses name. `build-stores` in `packages/amaru`
-builds such a node and runs both commands, printing each; its
-`README.md` has the command.
+about are the ones its responses name. The verifier's `build-source --amaru`
+builds such a node and runs both commands, printing each;
+`packages/amaru/README.md` has the command.
 
 The walk may start earlier than `S` and stop later than `E`'s last slot;
 the verifier keeps the survey's window. The verifier refuses a snapshot that

@@ -11,10 +11,13 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./build": {
+      "types": "./src/build.ts",
+      "import": "./src/build.ts"
     }
   },
   "scripts": {
-    "build-node": "tsx src/buildCli.ts",
     "type-check": "tsc -p tsconfig.json",
     "test": "vitest run"
   },

@@ -14,8 +14,8 @@ at the end of an epoch. The node's position is checked before a weight is
 read. The electorate totals sit outside the artifact's hash and no Dolos
 route serves the DRep total, so this source reads neither.
 
-`pnpm --filter cardano-tessera-dolos build-node -- --backend <url> --survey
-<key> --dir <dir>` builds the node for a survey from Mithril, skipping on a
+`pnpm --filter cardano-tessera-verifier build-source -- --backend <url>
+--survey <key> --dolos <dir>` builds the node for a survey from Mithril, skipping on a
 rerun the steps already done, and prints the command that runs the verifier.
 How that works, what an audit through it trusts, and its limits:
 `docs/AUDIT.md`. The research it came from: `backend/RESEARCH-AUDIT.md`.

@@ -173,8 +173,8 @@ genesis, so a survey of any age can be audited. One command builds the node,
 from the repository root:
 
 ```sh
-pnpm --filter cardano-tessera-dolos build-node -- \
-  --backend <backend URL> --survey <txHash>:<index> --dir <empty directory>
+pnpm --filter cardano-tessera-verifier build-source -- \
+  --backend <backend URL> --survey <txHash>:<index> --dolos <empty directory>
 ```
 
 It reads the network and `E` from the backend, which adds no trust: the
@@ -280,12 +280,12 @@ the maintainer's fork, branch `fix/fast-sync-unavailable-stake-dist` of
 command builds the stores and reads them, from the repository root:
 
 ```sh
-pnpm --filter cardano-tessera-amaru build-stores -- \
-  --backend <backend URL> --survey <txHash>:<index> --dir <directory> \
-  --amaru <path to the amaru binary>
+pnpm --filter cardano-tessera-verifier build-source -- \
+  --backend <backend URL> --survey <txHash>:<index> --amaru <directory> \
+  --amaru-bin <path to the amaru binary>
 ```
 
-`--amaru` can be left out when `amaru` is on the `PATH`. The command reads
+`--amaru-bin` can be left out when `amaru` is on the `PATH`. The command reads
 the network, the survey's creation slot and epoch `C`, and `E` from the
 backend, which adds no trust: a walk started too late misses the survey's
 definition, and the verifier checks the walk against the `end_epoch` it

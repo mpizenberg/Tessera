@@ -156,8 +156,8 @@ and epoch snapshots in its own stores.
   DRep voting stake from `StakeSummary::new` over it, and the survey's
   transactions from the chain store's best chain. `StakeSummary` lists every
   registered account, not only the delegated ones its comment names.
-  `build-stores` in `packages/amaru` picks the bootstrap set and the sync
-  slot and runs every step.
+  The verifier's `build-source --amaru` picks the bootstrap set and the
+  sync slot and runs every step.
 
 The release binary cannot sync after a bootstrap. The defects are fixed in
 the maintainer's fork (`fix/fast-sync-unavailable-stake-dist`) and reported
@@ -166,7 +166,7 @@ expected to land with PRAGMA's rework of that workflow, #1376.
 
 **Measured on preview**, survey `1356f08e…:0` (`end_epoch` 1395):
 
-- The rebuild from snapshot 1395, in stores `build-stores` made from the
+- The rebuild from snapshot 1395, in stores `build-source --amaru` made from the
   1119 set, matches the served ruleset-15 `artifactHash` (2026-09-25).
 - In the ruleset-14 run, against the Haskell ledger state of the Mithril
   ancillary archive on the whole population: registration agrees on all

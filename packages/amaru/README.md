@@ -11,7 +11,7 @@ transaction through the last slot of `end_epoch`, and
 asked about, every one the survey's responses name as a Stakeholder or a
 DRep, and the tally refuses a snapshot missing one it needs.
 
-The `build-stores` command produces that directory for one survey, from
+The verifier's `build-source` command produces that directory for one survey, from
 nothing: it bootstraps an Amaru node from PRAGMA's states no later than the
 survey's creation epoch, syncs it from Mithril until the ledger writes
 snapshot `end_epoch`, and runs `amaru-store-reader` over the stores, printing
@@ -19,8 +19,8 @@ each command before running it. A rerun takes up after the last step that
 finished.
 
 ```
-pnpm --filter cardano-tessera-amaru build-stores -- \
-  --backend <url> --survey <txHash>:<index> --dir <dir> [--amaru <amaru binary>]
+pnpm --filter cardano-tessera-verifier build-source -- \
+  --backend <url> --survey <txHash>:<index> --amaru <dir> [--amaru-bin <amaru binary>]
 ```
 
 It needs `cargo` for the reader, and an `amaru` able to sync from Mithril
