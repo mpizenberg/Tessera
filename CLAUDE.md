@@ -23,7 +23,7 @@ Some choices you make while working are worth surfacing even though they didn't 
 
 `backend/ARCHITECTURE.md` and `backend/TALLY-SPEC.md` are cited by section number from code comments, which makes their numbering a public interface.
 
-- Published packages (`packages/cip179`, `packages/koios`, `packages/respond-*`) name the rule instead of citing a coordinate — someone who installed the package cannot follow a pointer into a document they do not have. `backend/server` and `frontend/app` do cite, file-qualified.
+- Published packages (`packages/cip179`, `packages/client`, `packages/respond-widget`, `packages/respond-react`) name the rule instead of citing a coordinate — someone who installed the package cannot follow a pointer into a document they do not have. `backend/server` and `frontend/app` do cite, file-qualified.
 - READMEs name the concept and point at the document, never at a section. They are read by people who have not read the design doc and will not notice a coordinate that has drifted.
 
 ## Keep the codebase lean
