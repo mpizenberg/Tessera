@@ -18,6 +18,7 @@
 import { hexToBytes, type SurveyRecord } from "cip-179/domain";
 
 import { envNetwork } from "~/config";
+import { readJson, writeJson } from "~/storage";
 import {
   actionSurveyKey,
   decodeAction,
@@ -214,14 +215,7 @@ interface StoredPendingTx {
  * re-checked, but still projected until the indexer serves what it published.
  */
 export function loadPendingTxs(now: number = Date.now()): PendingTx[] {
-  let raw: unknown;
-  try {
-    const text = localStorage.getItem(storageKey());
-    if (!text) return [];
-    raw = JSON.parse(text);
-  } catch {
-    return []; // storage unavailable, or not JSON — start empty
-  }
+  const raw = readJson(storageKey());
   if (!Array.isArray(raw)) return [];
   const txs: PendingTx[] = [];
   for (const entry of raw) {
@@ -264,12 +258,7 @@ function revive(entry: unknown, now: number): PendingTx | null {
 
 /** Persist the set for this network (best-effort). */
 export function storePendingTxs(txs: readonly PendingTx[]): void {
-  try {
-    if (txs.length === 0) localStorage.removeItem(storageKey());
-    else localStorage.setItem(storageKey(), JSON.stringify(txs.map(toStored)));
-  } catch {
-    // storage unavailable or full — the set just won't survive a reload
-  }
+  writeJson(storageKey(), txs.length === 0 ? undefined : txs.map(toStored));
 }
 
 function toStored(p: PendingTx): StoredPendingTx {

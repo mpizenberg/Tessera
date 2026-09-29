@@ -21,6 +21,7 @@ import {
 import type { DraftStash } from "cardano-tessera-respond-ui";
 
 import { envNetwork } from "~/config";
+import { readJson, writeJson } from "~/storage";
 import type { RationaleInputs } from "./Rationale";
 
 const storageKey = (): string => `tessera.responseDrafts.${envNetwork()}`;
@@ -87,14 +88,7 @@ export function responseDrafts(survey: {
 }
 
 function read(): Kept {
-  let raw: unknown;
-  try {
-    const text = localStorage.getItem(storageKey());
-    if (!text) return {};
-    raw = JSON.parse(text);
-  } catch {
-    return {}; // storage unavailable, or not JSON — nothing kept
-  }
+  const raw = readJson(storageKey());
   const kept: Kept = {};
   if (!isFields(raw)) return kept;
   for (const [key, entry] of Object.entries(raw)) {
@@ -125,12 +119,7 @@ function write(kept: Kept, tipEpoch: number | undefined): void {
       Object.keys(entry.forms).length === 0 && entry.rationale === undefined;
     if (ended || empty) delete kept[key];
   }
-  try {
-    if (Object.keys(kept).length === 0) localStorage.removeItem(storageKey());
-    else localStorage.setItem(storageKey(), JSON.stringify(kept));
-  } catch {
-    // storage unavailable or full — the answers just won't survive a reload
-  }
+  writeJson(storageKey(), Object.keys(kept).length === 0 ? undefined : kept);
 }
 
 type Fields = Record<string, unknown>;

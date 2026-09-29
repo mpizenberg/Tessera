@@ -8,6 +8,7 @@ import { For, Show, type Component, type JSX } from "solid-js";
 
 import { FormMosaic, VisGlyph } from "~/ui/components/glyphs";
 import { t } from "~/i18n";
+import { readText, writeText } from "~/storage";
 import css from "./explore.module.css";
 
 export const HeaderRow: Component = () => {
@@ -126,18 +127,10 @@ export const Legend: Component = () => (
 const INTRO_DISMISSED_KEY = "tessera.introDismissed";
 
 export function introIsDismissed(): boolean {
-  try {
-    return localStorage.getItem(INTRO_DISMISSED_KEY) === "1";
-  } catch {
-    return false;
-  }
+  return readText(INTRO_DISMISSED_KEY) === "1";
 }
 export function rememberIntroDismissed(): void {
-  try {
-    localStorage.setItem(INTRO_DISMISSED_KEY, "1");
-  } catch {
-    // storage unavailable — the intro just shows again next load
-  }
+  writeText(INTRO_DISMISSED_KEY, "1");
 }
 
 /** Dismissible first-visit explainer, shown until a wallet connects. */

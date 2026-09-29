@@ -17,6 +17,8 @@
 import { createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
 
+import { readText, writeText } from "~/storage";
+
 import en, { type Dict } from "./en";
 
 /** Supported locales, each with its autonym (shown untranslated in the picker). */
@@ -48,12 +50,8 @@ const LOADERS: Record<Locale, () => Promise<{ default: Dict }>> = {
 };
 
 function storedLocale(): Locale | undefined {
-  try {
-    const v = localStorage.getItem(STORAGE_KEY);
-    return isLocale(v) ? v : undefined;
-  } catch {
-    return undefined;
-  }
+  const v = readText(STORAGE_KEY);
+  return isLocale(v) ? v : undefined;
 }
 
 function detectLocale(): Locale {
@@ -90,11 +88,7 @@ function setHtmlLang(l: Locale): void {
  * code-split catalog is in flight.
  */
 export async function setLocale(l: Locale): Promise<void> {
-  try {
-    localStorage.setItem(STORAGE_KEY, l);
-  } catch {
-    // storage unavailable — the choice just won't persist across reloads
-  }
+  writeText(STORAGE_KEY, l);
   await ensureLoaded(l);
   setLocaleSig(l);
   setHtmlLang(l);

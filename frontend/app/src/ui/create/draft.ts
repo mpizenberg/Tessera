@@ -13,6 +13,7 @@
 import { ROLE_VALUES } from "cip-179";
 
 import { envNetwork } from "~/config";
+import { readJson, writeJson } from "~/storage";
 import {
   QUESTION_TYPES,
   initDefinitionMeta,
@@ -49,27 +50,16 @@ export function blankDraft(): SurveyDraft {
 
 /** The draft an earlier visit left, if one decodes and has text in it. */
 export function loadDraft(): SurveyDraft | undefined {
-  let raw: unknown;
-  try {
-    const text = localStorage.getItem(storageKey());
-    if (!text) return undefined;
-    raw = JSON.parse(text);
-  } catch {
-    return undefined; // storage unavailable, or not JSON — start blank
-  }
-  const draft = decodeDraft(raw);
+  const draft = decodeDraft(readJson(storageKey()));
   return draft && hasText(draft) ? draft : undefined;
 }
 
 /** Keep the draft for this network, or clear it when there is none (best-effort). */
 export function storeDraft(draft: SurveyDraft | undefined): void {
-  try {
-    if (draft === undefined || !hasText(draft))
-      localStorage.removeItem(storageKey());
-    else localStorage.setItem(storageKey(), JSON.stringify(draft));
-  } catch {
-    // storage unavailable or full — the draft just won't survive a reload
-  }
+  writeJson(
+    storageKey(),
+    draft === undefined || !hasText(draft) ? undefined : draft,
+  );
 }
 
 /**

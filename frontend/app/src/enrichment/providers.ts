@@ -1,11 +1,13 @@
 /**
  * IPFS pinning providers — where the app can upload off-chain content.
  *
- * Pure metadata + localStorage helpers, safe to import eagerly (the Settings
+ * Pure metadata + token storage, safe to import eagerly (the Settings
  * screen needs the provider list). The actual uploads live in the lazy `pin.ts`
  * chunk; the read side (gateways + hash-verified fetch) lives in
  * `cip-179/content`, shared with the serving tier.
  */
+
+import { readText, writeText } from "~/storage";
 
 /** Identifier of a pinning provider the app can upload to. */
 export type ProviderId = "pinata" | "blockfrost" | "nmkr";
@@ -44,32 +46,22 @@ export const IPFS_PROVIDERS: readonly ProviderMeta[] = [
 /** Per-provider token map (absent / empty = not configured). */
 export type ProviderTokens = Partial<Record<ProviderId, string>>;
 
-/** localStorage key for a provider's token. */
+/** Storage key for a provider's token. */
 function providerTokenKey(id: ProviderId): string {
   return `tessera.ipfs.${id}`;
 }
 
-/** Read all configured provider tokens from localStorage (best-effort). */
+/** Read all configured provider tokens (best-effort). */
 export function loadProviderTokens(): ProviderTokens {
   const tokens: ProviderTokens = {};
   for (const p of IPFS_PROVIDERS) {
-    try {
-      const v = localStorage.getItem(providerTokenKey(p.id));
-      if (v && v.trim()) tokens[p.id] = v.trim();
-    } catch {
-      // storage unavailable — leave unset
-    }
+    const v = readText(providerTokenKey(p.id))?.trim();
+    if (v) tokens[p.id] = v;
   }
   return tokens;
 }
 
 /** Persist (or clear, when empty) a provider token. */
 export function storeProviderToken(id: ProviderId, token: string): void {
-  const trimmed = token.trim();
-  try {
-    if (trimmed) localStorage.setItem(providerTokenKey(id), trimmed);
-    else localStorage.removeItem(providerTokenKey(id));
-  } catch {
-    // storage unavailable — keep the in-memory value only
-  }
+  writeText(providerTokenKey(id), token.trim());
 }

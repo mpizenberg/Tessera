@@ -13,20 +13,14 @@
  */
 
 import { envNetwork } from "~/config";
+import { readJson, writeJson } from "~/storage";
 import { decodeAction, encodeAction, type Action } from "./action";
 
 const storageKey = (): string => `tessera.cart.${envNetwork()}`;
 
 /** Read the queue back, dropping entries that no longer decode. */
 export function loadCart(): Action[] {
-  let raw: unknown;
-  try {
-    const text = localStorage.getItem(storageKey());
-    if (!text) return [];
-    raw = JSON.parse(text);
-  } catch {
-    return []; // storage unavailable, or not JSON — start empty
-  }
+  const raw = readJson(storageKey());
   if (!Array.isArray(raw)) return [];
   const actions: Action[] = [];
   for (const entry of raw) {
@@ -38,14 +32,8 @@ export function loadCart(): Action[] {
 
 /** Persist the queue for this network (best-effort). */
 export function storeCart(actions: readonly Action[]): void {
-  try {
-    if (actions.length === 0) localStorage.removeItem(storageKey());
-    else
-      localStorage.setItem(
-        storageKey(),
-        JSON.stringify(actions.map(encodeAction)),
-      );
-  } catch {
-    // storage unavailable or full — the queue just won't survive a reload
-  }
+  writeJson(
+    storageKey(),
+    actions.length === 0 ? undefined : actions.map(encodeAction),
+  );
 }

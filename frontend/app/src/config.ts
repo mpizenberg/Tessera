@@ -7,6 +7,8 @@ import {
 } from "cardano-tessera-client";
 import { KOIOS_URL, type AppConfig } from "cardano-tessera-core";
 
+import { readText, writeText } from "~/storage";
+
 // The config *shape* + endpoint tables are shared with the serving tier and
 // live in `cardano-tessera-core` (the networks in `cardano-tessera-client`);
 // this module owns only how the browser *resolves* them (localStorage overrides
@@ -77,50 +79,27 @@ const directSinceKey = (): string => `tessera.directSince.${envNetwork()}`;
 
 /** The CIP-30 key of the last connected wallet, if one was remembered. */
 export function storedLastWallet(): string | undefined {
-  try {
-    return localStorage.getItem(LAST_WALLET_STORAGE_KEY) || undefined;
-  } catch {
-    return undefined;
-  }
+  return readText(LAST_WALLET_STORAGE_KEY);
 }
 
 /** Remember (or, when empty, forget) the last connected wallet key. */
 export function storeLastWallet(key: string): void {
-  try {
-    if (key) localStorage.setItem(LAST_WALLET_STORAGE_KEY, key);
-    else localStorage.removeItem(LAST_WALLET_STORAGE_KEY);
-  } catch {
-    // storage unavailable — auto-reconnect just won't persist
-  }
+  writeText(LAST_WALLET_STORAGE_KEY, key);
 }
 
 /** Forget the remembered wallet (on explicit disconnect). */
 export function clearLastWallet(): void {
-  try {
-    localStorage.removeItem(LAST_WALLET_STORAGE_KEY);
-  } catch {
-    // storage unavailable — nothing to clear
-  }
+  writeText(LAST_WALLET_STORAGE_KEY, undefined);
 }
 
 /** The Koios token for this network, if the user set one in Settings. */
 export function storedKoiosToken(): string | undefined {
-  try {
-    return localStorage.getItem(koiosTokenKey()) || undefined;
-  } catch {
-    return undefined;
-  }
+  return readText(koiosTokenKey());
 }
 
 /** Persist (or clear, when empty) the Koios token for this network. */
 export function storeKoiosToken(token: string): void {
-  const trimmed = token.trim();
-  try {
-    if (trimmed) localStorage.setItem(koiosTokenKey(), trimmed);
-    else localStorage.removeItem(koiosTokenKey());
-  } catch {
-    // storage unavailable — keep the in-memory value only
-  }
+  writeText(koiosTokenKey(), token.trim());
 }
 
 /**
@@ -137,22 +116,12 @@ export function envIndexerUrl(): string | undefined {
 
 /** A persisted Tier-1 backend URL override for this network, if the user set one. */
 export function storedIndexerUrl(): string | undefined {
-  try {
-    return localStorage.getItem(indexerUrlKey()) || undefined;
-  } catch {
-    return undefined;
-  }
+  return readText(indexerUrlKey());
 }
 
 /** Persist (or clear, when empty) the Tier-1 backend URL override for this network. */
 export function storeIndexerUrl(url: string): void {
-  const trimmed = url.trim();
-  try {
-    if (trimmed) localStorage.setItem(indexerUrlKey(), trimmed);
-    else localStorage.removeItem(indexerUrlKey());
-  } catch {
-    // storage unavailable — keep the in-memory value only
-  }
+  writeText(indexerUrlKey(), url.trim());
 }
 
 /**
@@ -169,22 +138,14 @@ export const DIRECT_MODE_TTL_MS = 24 * 60 * 60 * 1000;
  * one — all meaning the serving tier applies.
  */
 export function directModeUntil(): number | undefined {
-  try {
-    const since = Number(localStorage.getItem(directSinceKey()));
-    const until = since + DIRECT_MODE_TTL_MS;
-    return since > 0 && Date.now() < until ? until : undefined;
-  } catch {
-    return undefined;
-  }
+  const since = Number(readText(directSinceKey()));
+  const until = since + DIRECT_MODE_TTL_MS;
+  return since > 0 && Date.now() < until ? until : undefined;
 }
 
 /** Enter emergency direct mode: stamp now; expires after the TTL. */
 export function activateDirectMode(): void {
-  try {
-    localStorage.setItem(directSinceKey(), String(Date.now()));
-  } catch {
-    // storage unavailable — activation can't outlive the session anyway
-  }
+  writeText(directSinceKey(), String(Date.now()));
 }
 
 /**
@@ -192,11 +153,7 @@ export function activateDirectMode(): void {
  * token survives, so re-activating is one click, not a re-paste.
  */
 export function deactivateDirectMode(): void {
-  try {
-    localStorage.removeItem(directSinceKey());
-  } catch {
-    // storage unavailable — nothing stamped
-  }
+  writeText(directSinceKey(), undefined);
 }
 
 /**
