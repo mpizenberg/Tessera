@@ -5,7 +5,12 @@
  */
 
 import type { SurveyRef } from "cip-179";
-import { refKey, type ChainTip } from "cip-179/domain";
+import {
+  parseRefKey,
+  refKey,
+  type ChainTip,
+  type SurveyRefLite,
+} from "cip-179/domain";
 import { fromJsonSafe, type TallyArtifact } from "cip-179/tally";
 
 import { collectSurveyBundle } from "./bundle.js";
@@ -27,7 +32,6 @@ import {
   MAX_CREDENTIALS,
   MAX_PAGE_LIMIT,
   MAX_TX_STATUS_HASHES,
-  SURVEY_KEY_RE,
   apiMajor,
   type BackendHealth,
   type BackendLiveness,
@@ -180,11 +184,11 @@ const NOT_READY_BODY = "snapshot not ready";
 /** Thrown inside a page collection to surface the not-ready state past it. */
 class NotReadySignal extends Error {}
 
-const surveyKeyOf = (survey: SurveyId): string => {
-  if (typeof survey !== "string") return refKey(survey);
-  if (!SURVEY_KEY_RE.test(survey))
-    throw new RangeError(`malformed survey key: ${survey}`);
-  return survey;
+const surveyRefOf = (survey: SurveyId): SurveyRefLite => {
+  const key = typeof survey === "string" ? survey : refKey(survey);
+  const ref = parseRefKey(key);
+  if (!ref) throw new RangeError(`malformed survey key: ${key}`);
+  return ref;
 };
 
 const hex64 = (value: string, what: string): string => {
@@ -286,8 +290,8 @@ export function createTesseraClient(
   };
 
   const bundleUrl = (survey: SurveyId): string => {
-    const [txHash, index] = surveyKeyOf(survey).split(":");
-    return `${base}/api/surveys/${txHash}/${index}`;
+    const { txId, index } = surveyRefOf(survey);
+    return `${base}/api/surveys/${txId}/${index}`;
   };
 
   const bundle = (
@@ -328,7 +332,7 @@ export function createTesseraClient(
         throw new RangeError(
           `refs takes 1 to ${MAX_PAGE_LIMIT} survey keys, got ${keys.length}`,
         );
-      for (const key of keys) surveyKeyOf(key);
+      for (const key of keys) surveyRefOf(key);
       const qs = new URLSearchParams({ refs: keys.join(",") });
       return snapshot(`${base}/api/surveys?${qs}`, decodeSurveyList);
     },

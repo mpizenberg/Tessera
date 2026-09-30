@@ -22,7 +22,12 @@ import {
 import { A, useParams } from "@solidjs/router";
 import type { SurveyRef } from "cip-179";
 
-import { hexToBytes, type SurveyRefLite } from "cip-179/domain";
+import {
+  hexToBytes,
+  parseRefKey,
+  refKey,
+  type SurveyRefLite,
+} from "cip-179/domain";
 
 import { useApp } from "~/state";
 import {
@@ -61,7 +66,7 @@ const refusalText = (r: Exclude<InjectResult, { ok: true }>): string => {
     case "alreadyLinked":
       return r.linkedRef
         ? t("linkSurvey.refusalAlreadyLinkedTo", {
-            ref: `${r.linkedRef.txId}:${r.linkedRef.index}`,
+            ref: refKey(r.linkedRef),
           })
         : t("linkSurvey.refusalAlreadyLinked");
   }
@@ -74,13 +79,9 @@ export const LinkSurvey: Component = () => {
 
   // The route's "txHex:index" as the two ref shapes downstream code wants:
   // bytes for the bundle fetch, lowercased hex for the document layer.
-  const refLite = createMemo<SurveyRefLite | null>(() => {
-    const [hash, index] = key().split(":");
-    const i = Number(index);
-    if (!hash || !/^[0-9a-fA-F]{64}$/.test(hash)) return null;
-    if (!Number.isInteger(i) || i < 0) return null;
-    return { txId: hash.toLowerCase(), index: i };
-  });
+  const refLite = createMemo<SurveyRefLite | null>(() =>
+    parseRefKey(key().toLowerCase()),
+  );
   const ref = (): SurveyRef | undefined => {
     const r = refLite();
     return r ? { txId: hexToBytes(r.txId), index: r.index } : undefined;
@@ -204,7 +205,7 @@ export const LinkSurvey: Component = () => {
       kind: "govAction",
       anchorUrl: p.url,
       anchorDataHash: p.anchor.hash,
-      surveyKey: r ? `${r.txId}:${r.index}` : undefined,
+      surveyKey: r ? refKey(r) : undefined,
       title: p.linkedSurveyTitle,
       proveCredentials: [],
     };

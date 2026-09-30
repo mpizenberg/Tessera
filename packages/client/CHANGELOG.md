@@ -11,6 +11,12 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
 
 ## [Unreleased]
 
+### Changed
+
+- `SURVEY_KEY_RE` is re-exported from `cip-179/domain`, where the survey key
+  form now lives beside `refKey` and `parseRefKey`; same value, same export.
+  Needs the `cip-179` release that adds it.
+
 ## [0.4.0] - 2026-09-25
 
 Speaks contract `2.1`.

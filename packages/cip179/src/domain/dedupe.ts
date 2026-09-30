@@ -26,12 +26,34 @@
 
 import type { Credential, SurveyRef } from "../index.js";
 
+import type { SurveyRefLite } from "./govLink.js";
 import { bytesToHex, hexToBytes } from "./hex.js";
 import type { ResponseRecord } from "./records.js";
 
-/** Stable string identity for a survey reference: "<txHex>:<index>". */
-export function refKey(ref: SurveyRef): string {
-  return `${bytesToHex(ref.txId)}:${ref.index}`;
+/**
+ * A survey key, `<txHash>:<index>`: lowercase hex, index without leading
+ * zeros — the one form {@link refKey} returns.
+ */
+export const SURVEY_KEY_RE = /^[0-9a-f]{64}:(0|[1-9][0-9]*)$/;
+
+/**
+ * Stable string identity for a survey reference: "<txHex>:<index>", from a
+ * bytes or a hex tx id. Hex is lowercased, so the key never depends on how
+ * the ref was spelled.
+ */
+export function refKey(ref: SurveyRef | SurveyRefLite): string {
+  const txHex =
+    typeof ref.txId === "string"
+      ? ref.txId.toLowerCase()
+      : bytesToHex(ref.txId);
+  return `${txHex}:${ref.index}`;
+}
+
+/** Inverse of {@link refKey}; null unless `key` matches {@link SURVEY_KEY_RE}. */
+export function parseRefKey(key: string): SurveyRefLite | null {
+  if (!SURVEY_KEY_RE.test(key)) return null;
+  const sep = key.indexOf(":");
+  return { txId: key.slice(0, sep), index: Number(key.slice(sep + 1)) };
 }
 
 /** Stable identity for a responder credential: "key:<hex>" | "script:<hex>". */

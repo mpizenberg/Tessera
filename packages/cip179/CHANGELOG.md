@@ -8,6 +8,19 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
 
 ## [Unreleased]
 
+### Added
+
+- `parseRefKey(key)`, in `cip-179/domain`: the inverse of `refKey`, a
+  `SurveyRefLite` or null, strict on the canonical form.
+- `SURVEY_KEY_RE`, in `cip-179/domain`: that canonical form, lowercase hex
+  and an index without leading zeros (moved from `cardano-tessera-client`,
+  which re-exports it).
+
+### Changed
+
+- `refKey` also takes a `SurveyRefLite` (hex tx id), lowercasing it, so a
+  key never depends on how its ref was spelled.
+
 ## [0.6.0] - 2026-09-25
 
 ### Added

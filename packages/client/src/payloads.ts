@@ -32,12 +32,12 @@ export const apiMajor = (version: string): string =>
   version.split(".")[0] ?? version;
 
 /**
- * A survey key, `<txHash>:<index>`: lowercase hex, index without leading
- * zeros. The form the contract carries wherever it names a survey — `refs=`,
- * the keys of `responseCounts` / `countedByRole` / `finalState`, the answers
- * of `/api/responded` and `/api/responses`.
+ * The survey key form, `cip-179`'s `refKey`, is the one the contract carries
+ * wherever it names a survey — `refs=`, the keys of `responseCounts` /
+ * `countedByRole` / `finalState`, the answers of `/api/responded` and
+ * `/api/responses`.
  */
-export const SURVEY_KEY_RE = /^[0-9a-f]{64}:(0|[1-9][0-9]*)$/;
+export { SURVEY_KEY_RE } from "cip-179/domain";
 
 /** Page size of `GET /api/surveys` when `limit` is not given. */
 export const DEFAULT_PAGE_LIMIT = 50;

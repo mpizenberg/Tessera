@@ -12,6 +12,8 @@
 
 import { SPEC_VERSION } from "../constants.js";
 
+import { refKey } from "./dedupe.js";
+
 /** Anchor's declared `body.cip179.kind` for a survey link. */
 export const GOV_LINK_KIND = "survey-link";
 
@@ -210,5 +212,5 @@ export function parseGovLinkDoc(doc: unknown): GovLinkDoc | null {
   const body = (doc as { body: Record<string, unknown> }).body;
   const title = typeof body["title"] === "string" ? body["title"] : null;
 
-  return { surveyKey: `${surveyRef.txId}:${surveyRef.index}`, title };
+  return { surveyKey: refKey(surveyRef), title };
 }

@@ -6,6 +6,7 @@ import {
   credentialKey,
   dedupeResponses,
   laterInChain,
+  parseRefKey,
   refKey,
   responseCounts,
 } from "./dedupe.js";
@@ -58,6 +59,33 @@ describe("refKey / credentialKey", () => {
     expect(credentialKey({ type: "key", keyHash: hash })).not.toBe(
       credentialKey({ type: "script", scriptHash: hash }),
     );
+  });
+
+  it("spells a hex ref the way it spells the same ref in bytes", () => {
+    const bytes: SurveyRef = { txId: new Uint8Array(32).fill(0xab), index: 3 };
+    expect(refKey({ txId: "AB".repeat(32), index: 3 })).toBe(refKey(bytes));
+  });
+});
+
+describe("parseRefKey", () => {
+  const hex = "ab".repeat(32);
+
+  it("inverts refKey", () => {
+    expect(parseRefKey(`${hex}:0`)).toEqual({ txId: hex, index: 0 });
+    expect(refKey(parseRefKey(`${hex}:12`)!)).toBe(`${hex}:12`);
+  });
+
+  it("refuses anything but the canonical form", () => {
+    for (const key of [
+      `${"AB".repeat(32)}:0`,
+      `${hex}:01`,
+      `${hex}:-1`,
+      `${hex}:`,
+      `${hex.slice(2)}:0`,
+      hex,
+      "",
+    ])
+      expect(parseRefKey(key)).toBeNull();
   });
 });
 

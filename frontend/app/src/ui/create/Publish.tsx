@@ -6,6 +6,7 @@
 
 import { Show, type Component } from "solid-js";
 import { useNavigate } from "@solidjs/router";
+import { refKey } from "cip-179/domain";
 
 import type { DefinitionMeta } from "~/domain/create";
 import { formatRevealDate } from "~/tlock/drand";
@@ -127,7 +128,7 @@ export const PublishButton: Component<{
 
 export const SubmittedPanel: Component<{ hash: string }> = (props) => {
   const navigate = useNavigate();
-  const surveyKey = () => `${props.hash}:0`;
+  const surveyKey = () => refKey({ txId: props.hash, index: 0 });
   return (
     <SubmissionReceipt
       title={t("create.surveyPublished")}
