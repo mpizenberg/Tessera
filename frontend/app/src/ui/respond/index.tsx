@@ -101,7 +101,7 @@ export const Respond: Component = () => {
         : undefined;
     },
     preferredRole: () => app.activeRole() as Role | null,
-    stash: kept.stash,
+    stash: () => kept.stash,
   });
 
   const sealedMode = createMemo<SealedSubmissionMode | null>(() => {

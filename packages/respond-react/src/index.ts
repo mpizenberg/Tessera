@@ -33,6 +33,7 @@ import type {
 
 export type {
   CredentialProof,
+  DraftStash,
   ProofKeyKind,
   Responder,
   RespondChangeDetail,
@@ -70,6 +71,7 @@ const ELEMENT_PROPS = {
   layout: true,
   initialRole: true,
   maxTextBytes: true,
+  stash: true,
 } as const satisfies Record<keyof ElementProps, true>;
 
 const ELEMENT_PROP_KEYS = Object.keys(

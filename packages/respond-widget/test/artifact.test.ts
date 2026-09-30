@@ -379,6 +379,31 @@ describe("built <tessera-respond> artifact", () => {
     expect(root.querySelectorAll(".optionRowOn").length).toBe(0);
   });
 
+  it("keeps answers in a host stash across elements, keyed as the response says", async () => {
+    // A stash that holds only JSON text, as localStorage would.
+    const kept = new Map<string, string>();
+    const stash = {
+      get: (k: string) => {
+        const json = kept.get(k);
+        return json === undefined ? undefined : JSON.parse(json);
+      },
+      set: (k: string, form: unknown) => void kept.set(k, JSON.stringify(form)),
+      delete: (k: string) => void kept.delete(k),
+    };
+    const def = oneQuestionDef({ type: "public" });
+    click(shadow(mount(def, { stash })), ".optionRow");
+    document.body.innerHTML = "";
+
+    const el = mount(def, { stash });
+    const root = shadow(el);
+    expect(root.querySelectorAll(".optionRowOn").length).toBe(1);
+
+    const responded = once(el, "tessera:response");
+    click(root, ".submitBtn");
+    const detail = (await responded).detail as RespondResult;
+    expect([...kept.keys()]).toEqual([detail.formKey]);
+  });
+
   it("restores in-progress answers when switching back to a role", () => {
     const def: SurveyDefinition = {
       ...oneQuestionDef({ type: "public" }),

@@ -45,7 +45,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && pnpm run dts",
-    "dts": "pnpm --filter cip-179 build && dts-bundle-generator -o dist/tessera-respond.es.d.ts src/element.tsx --project tsconfig.dts.json --external-inlines cardano-tessera-respond-core --inline-declare-global --no-banner",
+    "dts": "pnpm --filter cip-179 build && dts-bundle-generator -o dist/tessera-respond.es.d.ts src/element.tsx --project tsconfig.dts.json --external-inlines cardano-tessera-respond-core cardano-tessera-respond-ui --inline-declare-global --no-banner",
     "prepublishOnly": "pnpm run build && node ../../scripts/check-publishable.mjs",
     "type-check": "tsc -p tsconfig.json",
     "test": "pnpm run build && vitest run"

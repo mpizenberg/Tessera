@@ -24,8 +24,9 @@ import type {
   Responder,
   RespondMessages,
 } from "cardano-tessera-respond-core";
+import type { DraftStash } from "cardano-tessera-respond-ui";
 
-export type { Responder };
+export type { DraftStash, Responder };
 
 export interface TesseraRespondProps {
   /** Required. Display definition — on-chain, or host-enriched with off-chain labels. */
@@ -87,6 +88,13 @@ export interface TesseraRespondProps {
    * fits in a transaction.
    */
   maxTextBytes?: number;
+  /**
+   * Where unsent answers are kept, per survey, role and credential. Without
+   * one they live in memory, for as long as the element does; a durable one
+   * (localStorage, say) brings them back after a reload. A kept form that no
+   * longer fits the questions is ignored.
+   */
+  stash?: DraftStash;
 }
 
 /** Which wallet/pool key must sign for a credential's proof. */
@@ -107,6 +115,8 @@ export interface RespondResult {
   /** Prove each through the carrying tx (required_signers or a governance-vote binding); keyKind names the signing key. */
   proveCredentials: CredentialProof[];
   sealed: boolean;
+  /** The answered form's key in the `stash`; delete it once the response is on chain. */
+  formKey: string;
 }
 
 /** Emitted on `tessera:change` — progress, for host-driven submit buttons. */

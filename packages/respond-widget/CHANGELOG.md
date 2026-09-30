@@ -16,6 +16,13 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
   UTF-8 length. The input shows a byte count, and a longer text leaves its
   question undecided; it is never cut. The `messages` prop gains
   `respond.customBytes` for the count.
+- `stash` prop: where unsent answers are kept, as plain JSON, one form per
+  survey, role and credential. A durable one, such as `localStorage`, brings
+  them back after a reload; a kept form that no longer fits the questions is
+  ignored. Without one they stay in memory, as before. The `DraftStash` type
+  is exported.
+- `formKey` in the `tessera:response` detail: the answered form's key in the
+  stash, for the host to delete once the response is on chain.
 
 ### Changed
 

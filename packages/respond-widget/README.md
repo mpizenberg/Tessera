@@ -211,6 +211,7 @@ ones (`locale`, `layout`, `tip-epoch`, `initial-role`, `max-text-bytes`,
 | `layout`          | `"one-per-screen" \| "list"`    |      | `"one-per-screen"` | Stepper (one question at a time) or all questions at once.                                                         |
 | `initialRole`     | `Role`                          |      | —                  | Initial role when the responder is eligible in several. The user can still switch.                                 |
 | `maxTextBytes`    | `number`                        |      | —                  | Cap on a custom answer's UTF-8 length. The input shows a byte count; a longer text leaves its question undecided.  |
+| `stash`           | `DraftStash`                    |      | memory             | Where unsent answers are kept — see [Unsent answers](#unsent-answers).                                             |
 
 ## Events
 
@@ -233,6 +234,7 @@ interface RespondResult {
   payload: Metadatum; // attach at metadata label 17
   proveCredentials: CredentialProof[]; // prove each in the carrying tx
   sealed: boolean;
+  formKey: string; // the answered form's key in the stash
 }
 
 interface CredentialProof {
@@ -366,6 +368,43 @@ Pass **sealed** priors too. Their ciphertext can't prefill the form, but the
 widget still marks it as a replacement — on a sealed survey that's the only way
 a responder learns they already answered. The reference host `DevWidgetHost.tsx`
 does exactly this against a survey bundle.
+
+## Unsent answers
+
+Every edit is written to the `stash`, one form per survey, role and
+credential, and a form the user has not touched yet is seeded from it first:
+before a prior response, before defaults. Without a `stash` the forms live in
+memory, so switching roles loses nothing but a reload does. A stash is three
+functions over plain JSON; this one keeps forms in `localStorage`:
+
+```ts
+const prefix = "my-app.answers.";
+el.stash = {
+  get: (key) => {
+    try {
+      const json = localStorage.getItem(prefix + key);
+      return json === null ? undefined : JSON.parse(json);
+    } catch {
+      return undefined;
+    }
+  },
+  set: (key, form) => {
+    try {
+      localStorage.setItem(prefix + key, JSON.stringify(form));
+    } catch {}
+  },
+  delete: (key) => {
+    try {
+      localStorage.removeItem(prefix + key);
+    } catch {}
+  },
+};
+```
+
+The widget checks what `get` returns against the questions and ignores a form
+that no longer fits them, so a damaged or hand-edited entry costs the kept
+answers, not the survey. Once a response is on chain, delete its form:
+`tessera:response` carries its key as `formKey`.
 
 ## What the host must do
 

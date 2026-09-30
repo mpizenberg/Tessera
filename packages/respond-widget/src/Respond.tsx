@@ -132,6 +132,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     priorResponses: () => props.priorResponses,
     preferredRole: () => props.initialRole,
     maxTextBytes: () => props.maxTextBytes,
+    stash: () => props.stash,
   });
 
   // Stepper position for the one-per-screen layout — reset whenever the form's
@@ -188,6 +189,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     const def = props.definition;
     const r = role();
     const cred = credential();
+    const key = formKey();
     if (r === null || !cred) return;
 
     // Validate the answers as plaintext first — for a sealed survey nobody can
@@ -248,6 +250,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
         payload,
         proveCredentials,
         sealed: sealed !== null,
+        formKey: key,
       };
       dispatch(RESPOND_EVENTS.response, result);
     } catch (e) {

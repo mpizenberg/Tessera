@@ -10,7 +10,12 @@ import {
   type SurveyRef,
   type SurveyResponse,
 } from "cip-179";
-import type { Draft, Responder } from "cardano-tessera-respond-core";
+import { credentialKey, refKey } from "cip-179/domain";
+import {
+  decodeKeptForm,
+  encodeKeptForm,
+  type Responder,
+} from "cardano-tessera-respond-core";
 
 import {
   createResponseDraft,
@@ -89,12 +94,12 @@ const pick = (optionIndex: number | null) =>
   ({ type: "singleChoice", optionIndex }) as const;
 
 /** A stash whose kept forms a test can read and plant directly. */
-function mapStash(): DraftStash & { forms: Map<string, readonly Draft[]> } {
-  const forms = new Map<string, readonly Draft[]>();
+function mapStash(): DraftStash & { forms: Map<string, unknown> } {
+  const forms = new Map<string, unknown>();
   return {
     forms,
     get: (formKey) => forms.get(formKey),
-    set: (formKey, drafts) => void forms.set(formKey, drafts),
+    set: (formKey, form) => void forms.set(formKey, form),
     delete: (formKey) => void forms.delete(formKey),
   };
 }
@@ -258,13 +263,16 @@ describe("createResponseDraft", () => {
       responder: () => both,
       priorResponses: () => [],
       preferredRole: () => null,
-      stash,
+      stash: () => stash,
     });
 
     expect(stash.forms.size).toBe(0);
     draft.setValue(0, pick(2));
     draft.setSkipped(1, true);
-    expect(stash.forms.get(draft.formKey())).toEqual([
+    // Plain JSON, big integers included, so any store can hold it.
+    const form = stash.forms.get(draft.formKey());
+    expect(JSON.parse(JSON.stringify(form))).toEqual(form);
+    expect(decodeKeptForm(form, defWith(Role.DRep).questions)).toEqual([
       { skipped: false, value: pick(2) },
       { skipped: true, value: draft.drafts[1]?.value },
     ]);
@@ -277,7 +285,7 @@ describe("createResponseDraft", () => {
       surveyRef: () => ref(1),
       responder: () => both,
       preferredRole: () => null,
-      stash,
+      stash: () => stash,
     };
     draftIn({ ...source, priorResponses: () => [] }).setValue(0, pick(1));
     for (const dispose of disposers.splice(0)) dispose();
@@ -298,17 +306,49 @@ describe("createResponseDraft", () => {
 
   it("falls back to the prior when the stash has no form that fits", () => {
     const stash = mapStash();
+    stash.forms.set(
+      `${refKey(ref(1))}|${Role.DRep}:${credentialKey(cred(3))}`,
+      [
+        { skipped: false, value: { type: "singleChoice", optionIndex: 9 } },
+        { skipped: true, value: { type: "numeric", value: null } },
+      ],
+    );
     const draft = draftIn({
       definition: () => defWith(Role.DRep),
       surveyRef: () => ref(1),
       responder: () => both,
       priorResponses: () => [priorPick(ref(1), Role.DRep, cred(3), 2)],
       preferredRole: () => null,
-      stash: { ...stash, get: () => undefined },
+      stash: () => stash,
     });
 
     expect(draft.drafts[0]?.value).toEqual(pick(2));
     expect(draft.restored()).toBe(false);
+  });
+
+  it("restores from a stash that arrives after the form, while untouched", () => {
+    const stash = mapStash();
+    const [late, setLate] = createSignal<DraftStash | undefined>(undefined);
+    const draft = draftIn({
+      definition: () => defWith(Role.DRep),
+      surveyRef: () => ref(1),
+      responder: () => both,
+      priorResponses: () => [],
+      preferredRole: () => null,
+      stash: late,
+    });
+    stash.forms.set(
+      draft.formKey(),
+      encodeKeptForm([
+        { skipped: false, value: pick(1) },
+        { skipped: true, value: { type: "numeric", value: null } },
+      ]),
+    );
+    expect(draft.drafts[0]?.value).toEqual(pick(null));
+
+    setLate(stash);
+    expect(draft.drafts[0]?.value).toEqual(pick(1));
+    expect(draft.restored()).toBe(true);
   });
 
   it("discards a kept form back to the prior", () => {
@@ -319,12 +359,15 @@ describe("createResponseDraft", () => {
       responder: () => both,
       priorResponses: () => [priorPick(ref(1), Role.DRep, cred(3), 2)],
       preferredRole: () => null,
-      stash,
+      stash: () => stash,
     });
-    stash.forms.set(draft.formKey(), [
-      { skipped: false, value: pick(0) },
-      { skipped: true, value: { type: "numeric", value: 0n } },
-    ]);
+    stash.forms.set(
+      draft.formKey(),
+      encodeKeptForm([
+        { skipped: false, value: pick(0) },
+        { skipped: true, value: { type: "numeric", value: 0n } },
+      ]),
+    );
     draft.pickRole(Role.Keyholder);
     draft.pickRole(Role.DRep);
     expect(draft.drafts[0]?.value).toEqual(pick(0));

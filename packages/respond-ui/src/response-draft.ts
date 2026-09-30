@@ -33,7 +33,6 @@ import { createStore, unwrap } from "solid-js/store";
 
 import type {
   Credential,
-  Question,
   Role,
   SurveyDefinition,
   SurveyRef,
@@ -43,6 +42,8 @@ import { credentialKey, refKey } from "cip-179/domain";
 import {
   credentialForRole,
   decided,
+  decodeKeptForm,
+  encodeKeptForm,
   findPriorResponse,
   hasAnyAnswer,
   initDraft,
@@ -69,24 +70,26 @@ export interface ResponseDraftSource {
   readonly maxTextBytes?: Accessor<number | undefined>;
   /**
    * Where edited forms are kept. Defaults to memory, for as long as the spine
-   * lives; a host passes a durable one to keep answers across reloads.
+   * lives; a host passes a durable one to keep answers across reloads. A
+   * stash arriving after the form did restores into it while it is untouched.
    */
-  readonly stash?: DraftStash;
+  readonly stash?: Accessor<DraftStash | undefined>;
 }
 
-/** Edited forms by {@link ResponseDraft.formKey}, each written whole on every edit. */
+/**
+ * Edited forms by {@link ResponseDraft.formKey}, each written whole on every
+ * edit as plain JSON. What `get` returns is checked against the questions, so
+ * a form that no longer fits them is refused, not restored.
+ */
 export interface DraftStash {
-  /** The form kept under `formKey`, unless there is none that fits `questions`. */
-  get(
-    formKey: string,
-    questions: readonly Question[],
-  ): readonly Draft[] | undefined;
-  set(formKey: string, drafts: readonly Draft[]): void;
+  /** The form last set under `formKey`, or `undefined`. */
+  get(formKey: string): unknown;
+  set(formKey: string, form: unknown): void;
   delete(formKey: string): void;
 }
 
 function memoryStash(): DraftStash {
-  const forms = new Map<string, readonly Draft[]>();
+  const forms = new Map<string, unknown>();
   return {
     get: (formKey) => forms.get(formKey),
     set: (formKey, drafts) => void forms.set(formKey, drafts),
@@ -172,7 +175,8 @@ export function createResponseDraft(
   // clobbers in-progress input.
   const [touched, setTouched] = createSignal(false);
   const [restored, setRestored] = createSignal(false);
-  const stash = source.stash ?? memoryStash();
+  const fallback = memoryStash();
+  const stash = () => source.stash?.() ?? fallback;
 
   const surveyKey = createMemo(() => {
     const ref = source.surveyRef();
@@ -186,7 +190,7 @@ export function createResponseDraft(
 
   const seed = () => {
     const def = source.definition();
-    const kept = def && stash.get(formKey(), def.questions);
+    const kept = def && decodeKeptForm(stash().get(formKey()), def.questions);
     // A kept form counts as edited, so a prior response arriving later cannot
     // replace it.
     setTouched(kept !== undefined);
@@ -204,7 +208,7 @@ export function createResponseDraft(
 
   createEffect(
     on(
-      () => [formKey(), source.definition(), prefillFrom()] as const,
+      () => [formKey(), source.definition(), prefillFrom(), stash()] as const,
       ([key], prev) => {
         if (prev && prev[0] !== key) setTouched(false);
         if (!touched()) seed();
@@ -214,15 +218,12 @@ export function createResponseDraft(
 
   // The record is set rather than the path to its `value`: a path set merges
   // into the old value object in place, which would change the answers under
-  // anyone holding an earlier snapshot — the stash, or a submission awaiting
-  // its signature.
+  // anyone holding an earlier snapshot, such as a submission awaiting its
+  // signature.
   const edit = (index: number, change: Partial<Draft>) => {
     setTouched(true);
     setDrafts(index, change);
-    stash.set(
-      formKey(),
-      unwrap(drafts).map((d) => ({ skipped: d.skipped, value: d.value })),
-    );
+    stash().set(formKey(), encodeKeptForm(unwrap(drafts)));
   };
 
   const total = () => source.definition()?.questions.length ?? 0;
@@ -251,7 +252,7 @@ export function createResponseDraft(
     setSkipped: (index, skipped) => edit(index, { skipped }),
     restored,
     discard: () => {
-      stash.delete(formKey());
+      stash().delete(formKey());
       seed();
     },
     total,

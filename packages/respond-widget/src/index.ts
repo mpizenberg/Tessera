@@ -22,6 +22,7 @@ export { I18nContext, useI18n } from "cardano-tessera-respond-ui";
 export { RESPOND_EVENTS } from "./types";
 export type {
   CredentialProof,
+  DraftStash,
   ProofKeyKind,
   Responder,
   RespondChangeDetail,
