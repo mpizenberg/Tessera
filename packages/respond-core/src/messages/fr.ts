@@ -104,8 +104,9 @@ const fr: RespondMessages = {
     // --- Custom body -------------------------------------------------------
     customSchemaTag: "schéma",
     customPlaceholder: "Votre réponse",
+    customBytes: "{used} / {max} octets",
     customHint:
-      "Encodé comme un metadatum texte brut et interprété par la méthode à l'ancre.",
+      "Encodé comme un metadatum texte, en morceaux de 64 octets au-delà, et interprété par la méthode à l'ancre.",
 
     // --- Submit bar --------------------------------------------------------
     decidedCount: "{decided} sur {total} renseignées",

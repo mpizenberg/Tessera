@@ -9,7 +9,7 @@
 
 import { For, Show, createMemo, type Component } from "solid-js";
 
-import type { Question } from "cip-179";
+import { utf8ByteLength, type Question } from "cip-179";
 import {
   initDraft,
   optionCount,
@@ -479,10 +479,12 @@ const RatingBody: Component<{
 const CustomBody: Component<{
   q: Extract<Question, { type: "custom" }>;
   v: Extract<DraftValue, { type: "custom" }>;
+  maxTextBytes: number | undefined;
   onChange: (v: DraftValue) => void;
 }> = (props) => {
   const i18n = useI18n();
   const cls = useClasses();
+  const used = () => utf8ByteLength(props.v.text);
   return (
     <>
       <div class={cls.customSchema}>
@@ -491,8 +493,8 @@ const CustomBody: Component<{
         </span>
         <span class={cls.customSchemaUri}>{props.q.methodSchema.uri}</span>
       </div>
-      <input
-        type="text"
+      <textarea
+        rows={3}
         value={props.v.text}
         placeholder={i18n.t("respond.customPlaceholder")}
         onInput={(e) =>
@@ -500,6 +502,19 @@ const CustomBody: Component<{
         }
         class={cls.customInput}
       />
+      <Show when={props.maxTextBytes}>
+        {(max) => (
+          <p
+            class={cls.customBytes}
+            classList={{ [cls.customBytesOver]: used() > max() }}
+          >
+            {i18n.t("respond.customBytes", {
+              used: i18n.n(used()),
+              max: i18n.n(max()),
+            })}
+          </p>
+        )}
+      </Show>
       <p class={cls.customHint}>{i18n.t("respond.customHint")}</p>
     </>
   );
@@ -536,6 +551,8 @@ const DRAFT_TYPE = {
 export const QuestionBody: Component<{
   q: Question;
   value: DraftValue;
+  /** Cap on a custom answer's UTF-8 length, shown as a byte count. */
+  maxTextBytes?: number | undefined;
   onChange: (v: DraftValue) => void;
 }> = (props) => {
   type V<T extends DraftValue["type"]> = Extract<DraftValue, { type: T }>;
@@ -599,6 +616,7 @@ export const QuestionBody: Component<{
         <CustomBody
           q={props.q as Q<"custom">}
           v={value() as V<"custom">}
+          maxTextBytes={props.maxTextBytes}
           onChange={props.onChange}
         />
       );

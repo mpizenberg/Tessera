@@ -69,6 +69,8 @@ export const BODY_CLASS_NAMES = [
   "customSchemaTag",
   "customSchemaUri",
   "customInput",
+  "customBytes",
+  "customBytesOver",
   "customHint",
 ] as const;
 

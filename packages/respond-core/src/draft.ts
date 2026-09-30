@@ -14,9 +14,13 @@
 
 import {
   SPEC_VERSION,
+  decodeChunkedText,
+  encodeChunkedText,
+  utf8ByteLength,
   type AnswerItem,
   type ContentAnchor,
   type Credential,
+  type Metadatum,
   type NumericConstraints,
   type OptionsOrCount,
   type Question,
@@ -88,8 +92,15 @@ function initValue(q: Question): DraftValue {
  * Is a question settled — either skipped, or carrying a complete, in-bounds
  * answer? Submission is gated on every question being decided; the codec's
  * validator is the final authority on the assembled response.
+ *
+ * `maxTextBytes` caps a custom answer's UTF-8 length; a longer text leaves the
+ * question unsettled rather than being cut.
  */
-export function decided(q: Question, draft: Draft): boolean {
+export function decided(
+  q: Question,
+  draft: Draft,
+  maxTextBytes?: number,
+): boolean {
   if (draft.skipped) return true;
   const v = draft.value;
   switch (q.type) {
@@ -132,7 +143,11 @@ export function decided(q: Question, draft: Draft): boolean {
       return rated.length >= 1 && rated.every((r) => ratingInScale(r, q.scale));
     }
     case "custom":
-      return v.type === "custom" && v.text.trim() !== "";
+      return (
+        v.type === "custom" &&
+        v.text.trim() !== "" &&
+        (maxTextBytes === undefined || utf8ByteLength(v.text) <= maxTextBytes)
+      );
   }
 }
 
@@ -210,7 +225,11 @@ function buildAnswerItem(
       };
     case "custom":
       if (v.type !== "custom") return null;
-      return { type: "custom", questionIndex: index, value: v.text };
+      return {
+        type: "custom",
+        questionIndex: index,
+        value: encodeChunkedText(v.text),
+      };
   }
 }
 
@@ -372,7 +391,19 @@ function valueFromAnswer(q: Question, a: AnswerItem): DraftValue | null {
     }
     case "custom":
       return a.type === "custom"
-        ? { type: "custom", text: typeof a.value === "string" ? a.value : "" }
+        ? { type: "custom", text: customAnswerText(a.value) ?? "" }
         : null;
+  }
+}
+
+/**
+ * A custom answer's text, as this module encodes it (`chunked_text`); null for
+ * any other value, which some other method schema must have produced.
+ */
+export function customAnswerText(value: Metadatum): string | null {
+  try {
+    return decodeChunkedText(value);
+  } catch {
+    return null;
   }
 }

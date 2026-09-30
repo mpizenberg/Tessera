@@ -4,6 +4,7 @@ import {
   Role,
   SPEC_VERSION,
   type Credential,
+  type Metadatum,
   type Question,
   type SurveyRef,
 } from "cip-179";
@@ -262,5 +263,64 @@ describe("prefillDrafts", () => {
     });
     // q1 was omitted and isn't required → reconstructed as a skip.
     expect(refilled[1]!.skipped).toBe(true);
+  });
+});
+
+describe("custom answers", () => {
+  const custom: Question = {
+    type: "custom",
+    prompt: "tell us",
+    required: false,
+    methodSchema: { uri: "ipfs://schema", hash: new Uint8Array(32) },
+  };
+  const text = (t: string): Draft => ({
+    skipped: false,
+    value: { type: "custom", text: t },
+  });
+  const valueOf = (t: string) => collectAnswers([custom], [text(t)])[0];
+
+  it("writes text up to 64 bytes as one string", () => {
+    const t = "a".repeat(64);
+    expect(valueOf(t)).toEqual({ type: "custom", questionIndex: 0, value: t });
+  });
+
+  it("writes longer text as 64-byte chunks", () => {
+    expect(valueOf("a".repeat(65))).toMatchObject({
+      value: ["a".repeat(64), "a"],
+    });
+  });
+
+  it("never splits a code point across chunks", () => {
+    // 63 one-byte chars then a 4-byte emoji: the emoji moves to chunk two.
+    expect(valueOf(`${"a".repeat(63)}🙂`)).toMatchObject({
+      value: ["a".repeat(63), "🙂"],
+    });
+  });
+
+  it("prefills from either form, and blank from any other value", () => {
+    const prefilled = (value: Metadatum) =>
+      prefillDrafts([custom], {
+        specVersion: SPEC_VERSION,
+        surveyRef: ref,
+        role: Role.Keyholder,
+        credential,
+        answers: {
+          type: "public",
+          answers: [{ type: "custom", questionIndex: 0, value }],
+        },
+      })[0]!.value;
+    expect(prefilled("short")).toEqual({ type: "custom", text: "short" });
+    expect(prefilled(["a".repeat(64), "b"])).toEqual({
+      type: "custom",
+      text: `${"a".repeat(64)}b`,
+    });
+    expect(prefilled(7n)).toEqual({ type: "custom", text: "" });
+  });
+
+  it("a text over maxTextBytes is not decided", () => {
+    // "é" is two UTF-8 bytes: four of them are 8 bytes, one character count off.
+    expect(decided(custom, text("éééé"), 8)).toBe(true);
+    expect(decided(custom, text("éééé"), 7)).toBe(false);
+    expect(decided(custom, text("éééé"))).toBe(true);
   });
 });

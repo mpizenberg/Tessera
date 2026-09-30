@@ -74,6 +74,8 @@ const bodyClasses: BodyClasses = {
   customSchemaTag: css.customSchemaTag,
   customSchemaUri: css.customSchemaUri,
   customInput: css.customInput,
+  customBytes: css.customBytes,
+  customBytesOver: css.customBytesOver,
   customHint: css.customHint,
 };
 

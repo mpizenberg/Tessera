@@ -761,8 +761,22 @@
   font-family: inherit;
   font-size: 14.5px;
   color: var(--tessera-ink);
+  line-height: 1.45;
+  resize: vertical;
   outline: none;
   box-sizing: border-box;
+}
+
+.customBytes {
+  font-family: var(--tessera-mono);
+  font-size: 11.5px;
+  color: var(--tessera-dim);
+  text-align: right;
+  margin: 6px 0 0;
+}
+
+.customBytesOver {
+  color: var(--tessera-danger);
 }
 
 .customHint {

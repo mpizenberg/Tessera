@@ -65,6 +65,8 @@ export interface ResponseDraftSource {
   readonly priorResponses: Accessor<readonly SurveyResponse[] | undefined>;
   /** Role to answer as when it is respondable here; else the first claimable. */
   readonly preferredRole: Accessor<Role | null | undefined>;
+  /** Cap on a custom answer's UTF-8 length; a longer one is not decided. */
+  readonly maxTextBytes?: Accessor<number | undefined>;
   /**
    * Where edited forms are kept. Defaults to memory, for as long as the spine
    * lives; a host passes a durable one to keep answers across reloads.
@@ -227,8 +229,10 @@ export function createResponseDraft(
   const decidedCount = createMemo(() => {
     const def = source.definition();
     if (!def) return 0;
-    return def.questions.filter((q, i) => drafts[i] && decided(q, drafts[i]!))
-      .length;
+    const max = source.maxTextBytes?.();
+    return def.questions.filter(
+      (q, i) => drafts[i] && decided(q, drafts[i]!, max),
+    ).length;
   });
   const answered = createMemo(() => {
     const def = source.definition();

@@ -69,6 +69,7 @@ const ELEMENT_PROPS = {
   theme: true,
   layout: true,
   initialRole: true,
+  maxTextBytes: true,
 } as const satisfies Record<keyof ElementProps, true>;
 
 const ELEMENT_PROP_KEYS = Object.keys(

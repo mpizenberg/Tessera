@@ -131,6 +131,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     responder: () => props.responder,
     priorResponses: () => props.priorResponses,
     preferredRole: () => props.initialRole,
+    maxTextBytes: () => props.maxTextBytes,
   });
 
   // Stepper position for the one-per-screen layout — reset whenever the form's
@@ -306,6 +307,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
                         q={q}
                         index={stepIndex()}
                         draft={drafts[stepIndex()]}
+                        maxTextBytes={props.maxTextBytes}
                         onChange={(v) => setValue(stepIndex(), v)}
                         onSkip={(sk) => setSkipped(stepIndex(), sk)}
                       />
@@ -326,6 +328,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
                       q={q}
                       index={i()}
                       draft={drafts[i()]}
+                      maxTextBytes={props.maxTextBytes}
                       onChange={(v) => setValue(i(), v)}
                       onSkip={(sk) => setSkipped(i(), sk)}
                     />
@@ -519,6 +522,7 @@ const QuestionCard: Component<{
   q: Question;
   index: number;
   draft: Draft | undefined;
+  maxTextBytes: number | undefined;
   onChange: (v: DraftValue) => void;
   onSkip: (skipped: boolean) => void;
 }> = (props) => {
@@ -557,6 +561,7 @@ const QuestionCard: Component<{
             <QuestionBody
               q={props.q}
               value={props.draft!.value}
+              maxTextBytes={props.maxTextBytes}
               onChange={props.onChange}
             />
           </Show>

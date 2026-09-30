@@ -9,6 +9,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 while `< 1.0.0`, breaking changes bump the **minor** version.
 
+## [Unreleased]
+
+### Added
+
+- `maxTextBytes` prop, following the element: a cap on a custom answer's
+  UTF-8 length.
+
+### Changed
+
+- A custom answer longer than 64 bytes is written as `chunked_text`, following
+  the element; it used to be an invalid metadatum.
+
 ## [0.2.0] - 2026-09-15
 
 ### Changed

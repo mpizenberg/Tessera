@@ -189,11 +189,11 @@ declaration shown in [TypeScript](#typescript) when installing from npm.
 ## Props
 
 Object-valued props (everything but `locale`, `layout`, `cancelled`, `tipEpoch`,
-`initialRole`) **must be set as DOM properties** (`el.definition = …`), never as
-HTML attributes. `solid-element` exposes each as a reactive prop with a
-hyphenated attribute alias, so the string/number/boolean ones (`locale`,
-`layout`, `tip-epoch`, `initial-role`, `cancelled`) _may_ also be written as
-plain attributes. `cancelled` also works HTML boolean-attribute style — a bare
+`initialRole`, `maxTextBytes`) **must be set as DOM properties**
+(`el.definition = …`), never as HTML attributes. `solid-element` exposes each as
+a reactive prop with a hyphenated attribute alias, so the string/number/boolean
+ones (`locale`, `layout`, `tip-epoch`, `initial-role`, `max-text-bytes`,
+`cancelled`) _may_ also be written as plain attributes. `cancelled` also works HTML boolean-attribute style — a bare
 `<tessera-respond cancelled>` means cancelled.
 
 | Prop              | Type                            | Req. | Default            | Notes                                                                                                              |
@@ -210,6 +210,7 @@ plain attributes. `cancelled` also works HTML boolean-attribute style — a bare
 | `theme`           | `Record<string, string>`        |      | —                  | Design-token overrides, reflected as `--tessera-<key>` on the host — see [Theming](#theming--fonts).               |
 | `layout`          | `"one-per-screen" \| "list"`    |      | `"one-per-screen"` | Stepper (one question at a time) or all questions at once.                                                         |
 | `initialRole`     | `Role`                          |      | —                  | Initial role when the responder is eligible in several. The user can still switch.                                 |
+| `maxTextBytes`    | `number`                        |      | —                  | Cap on a custom answer's UTF-8 length. The input shows a byte count; a longer text leaves its question undecided.  |
 
 ## Events
 

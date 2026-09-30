@@ -118,8 +118,10 @@ const en = {
     // --- Custom body -------------------------------------------------------
     customSchemaTag: "schema",
     customPlaceholder: "Your answer",
+    /** {used}/{max} are locale-formatted UTF-8 byte counts. */
+    customBytes: "{used} / {max} bytes",
     customHint:
-      "Encoded as a raw text metadatum and interpreted by the method at the anchor.",
+      "Encoded as a text metadatum, in 64-byte chunks when longer, and interpreted by the method at the anchor.",
 
     // --- Submit bar --------------------------------------------------------
     /** {decided}/{total} are locale-formatted counts. */

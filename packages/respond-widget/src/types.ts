@@ -3,8 +3,8 @@
  *
  * Object-valued props (`definition`, `responder`, `surveyRef`, …) are set as DOM
  * **properties** (`el.definition = …`), not attributes; `solid-element`
- * exposes them as reactive props. `locale` / `layout` may also
- * be plain string attributes. The widget emits everything back through
+ * exposes them as reactive props. `locale` / `layout` / `max-text-bytes` may
+ * also be plain attributes. The widget emits everything back through
  * `CustomEvent`s (`bubbles: true, composed: true`, so they cross the shadow
  * boundary) — it never touches a wallet, chain, or the host's `<html>`.
  */
@@ -81,6 +81,12 @@ export interface TesseraRespondProps {
    * reflection would stop working).
    */
   initialRole?: Role;
+  /**
+   * Cap on a custom answer's UTF-8 length. The input shows a byte count, and a
+   * longer text leaves its question undecided. Unset means no cap beyond what
+   * fits in a transaction.
+   */
+  maxTextBytes?: number;
 }
 
 /** Which wallet/pool key must sign for a credential's proof. */

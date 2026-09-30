@@ -70,6 +70,7 @@ const defaults: TesseraRespondElementProps = {
   theme: undefined,
   layout: "one-per-screen",
   initialRole: undefined,
+  maxTextBytes: undefined,
 };
 
 // Registration reaches for `window.customElements`; guarded so an SSR host

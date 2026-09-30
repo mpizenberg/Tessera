@@ -40,6 +40,7 @@ import {
   type TallyArtifact,
   type WeightedResponder,
 } from "cip-179/tally";
+import { customAnswerText } from "cardano-tessera-respond-core";
 
 // ---------------------------------------------------------------------------
 // Exact integers to display values
@@ -374,8 +375,8 @@ function questionDetail(
   const samples: string[] = [];
   for (const a of answersTo(responders, index)) {
     if (samples.length >= SAMPLE_LIMIT) break;
-    if (a.type === "custom" && typeof a.value === "string")
-      samples.push(a.value);
+    const text = a.type === "custom" ? customAnswerText(a.value) : null;
+    if (text !== null) samples.push(text);
   }
   return samples.length > 0 ? { samples } : {};
 }

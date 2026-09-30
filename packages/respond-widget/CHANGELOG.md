@@ -8,6 +8,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 while `< 1.0.0`, breaking changes bump the **minor** version.
 
+## [Unreleased]
+
+### Added
+
+- `maxTextBytes` prop (attribute `max-text-bytes`): a cap on a custom answer's
+  UTF-8 length. The input shows a byte count, and a longer text leaves its
+  question undecided; it is never cut. The `messages` prop gains
+  `respond.customBytes` for the count.
+
+### Changed
+
+- A custom answer longer than 64 bytes is written as `chunked_text`, an array
+  of 64-byte chunks that never splits a character. It used to be written as
+  one string, which is not a valid metadatum past 64 bytes. A prior response
+  prefills from either form.
+- The custom answer input is a multi-line text area.
+
 ## [0.2.0] - 2026-09-15
 
 ### Changed
