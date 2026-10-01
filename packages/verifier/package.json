@@ -20,7 +20,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@evolution-sdk/evolution": "^0.5.14",
+    "@evolution-sdk/evolution": "^0.5.16",
     "@mattpiz/tlock-js": "0.10.0",
     "cardano-tessera-amaru": "workspace:*",
     "cardano-tessera-client": "workspace:*",

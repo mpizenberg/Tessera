@@ -18,8 +18,8 @@ importers:
   backend/server:
     dependencies:
       '@evolution-sdk/evolution':
-        specifier: ^0.5.14
-        version: 0.5.14
+        specifier: ^0.5.16
+        version: 0.5.16
       '@hono/node-server':
         specifier: ^2.1.1
         version: 2.1.1(hono@4.13.9)
@@ -120,8 +120,8 @@ importers:
   frontend/app:
     dependencies:
       '@evolution-sdk/evolution':
-        specifier: ^0.5.14
-        version: 0.5.14
+        specifier: ^0.5.16
+        version: 0.5.16
       '@mattpiz/tlock-js':
         specifier: 0.10.0
         version: 0.10.0
@@ -210,8 +210,8 @@ importers:
         version: 2.4.0
     devDependencies:
       '@evolution-sdk/evolution':
-        specifier: ^0.5.14
-        version: 0.5.14
+        specifier: ^0.5.16
+        version: 0.5.16
       '@mattpiz/tlock-js':
         specifier: 0.10.0
         version: 0.10.0
@@ -278,8 +278,8 @@ importers:
   packages/koios:
     dependencies:
       '@evolution-sdk/evolution':
-        specifier: ^0.5.14
-        version: 0.5.14
+        specifier: ^0.5.16
+        version: 0.5.16
       cardano-tessera-client:
         specifier: workspace:*
         version: link:../client
@@ -335,8 +335,8 @@ importers:
         version: link:../cip179
     devDependencies:
       '@evolution-sdk/evolution':
-        specifier: ^0.5.14
-        version: 0.5.14
+        specifier: ^0.5.16
+        version: 0.5.16
       '@mattpiz/tlock-js':
         specifier: 0.10.0
         version: 0.10.0
@@ -408,8 +408,8 @@ importers:
   packages/respond-widget:
     devDependencies:
       '@evolution-sdk/evolution':
-        specifier: ^0.5.14
-        version: 0.5.14
+        specifier: ^0.5.16
+        version: 0.5.16
       '@mattpiz/tlock-js':
         specifier: 0.10.0
         version: 0.10.0
@@ -453,8 +453,8 @@ importers:
   packages/verifier:
     dependencies:
       '@evolution-sdk/evolution':
-        specifier: ^0.5.14
-        version: 0.5.14
+        specifier: ^0.5.16
+        version: 0.5.16
       '@mattpiz/tlock-js':
         specifier: 0.10.0
         version: 0.10.0
@@ -935,8 +935,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@evolution-sdk/evolution@0.5.14':
-    resolution: {integrity: sha512-sem0rqleDYxUWngEdezboAbnxXbqeh2XzqSHnQECQnapwELkEAwcsiMtMqpLAmbJAjTlUKYnTvz+picopp+kug==}
+  '@evolution-sdk/evolution@0.5.16':
+    resolution: {integrity: sha512-W2uKEybDrGRMuRjTpyol8mBjWAbbfPpSr/d1ufDwDKI4h2WjvwoiCIn3xDDIskCqnEdfsQBU3Fj3LvluSqu5jQ==}
 
   '@hono/node-server@2.1.1':
     resolution: {integrity: sha512-ELuehkj5VCBdgEw9zs+ivkKwyzzUCSQuE96YmiPvn1ECBoZCczbFXJLeEGMTYjphP6gydh4pHMqEYPVMYUVgQg==}
@@ -2538,7 +2538,7 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
-  '@evolution-sdk/evolution@0.5.14':
+  '@evolution-sdk/evolution@0.5.16':
     dependencies:
       '@noble/curves': 2.4.0
       '@noble/hashes': 2.4.0

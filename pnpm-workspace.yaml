@@ -26,10 +26,10 @@ allowBuilds:
 
 # Exceptions to the global `minimumReleaseAge` supply-chain delay, instead of
 # relaxing it for every dependency: `@mattpiz/tlock-js` is the maintainer's own
-# package; evolution 0.5.14 is one release, reviewed by the maintainer.
+# package; evolution 0.5.16 is one release, reviewed by the maintainer.
 minimumReleaseAgeExclude:
   - "@mattpiz/tlock-js"
-  - "@evolution-sdk/evolution@0.5.14"
+  - "@evolution-sdk/evolution@0.5.16"
 
 # TypeScript 7 has no compiler API; dts-bundle-generator (the widget's
 # declaration bundle) still needs one.
