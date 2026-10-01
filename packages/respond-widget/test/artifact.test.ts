@@ -29,7 +29,13 @@ import { hexToBytes, refKey } from "cip-179/domain";
 import { QUICKNET_CHAIN_HASH } from "cip-179/tlock";
 import { buildResponse } from "cardano-tessera-respond-core";
 
-import { SAMPLES, SURVEY_REFS, TIP_EPOCH, responder } from "../dev/samples";
+import {
+  SAMPLES,
+  SURVEY_REFS,
+  TIP_EPOCH,
+  TRANSLATIONS,
+  responder,
+} from "../dev/samples";
 import type { RespondResult, TesseraRespondElement } from "../src/types";
 
 beforeAll(async () => {
@@ -394,6 +400,26 @@ describe("built <tessera-respond> artifact", () => {
     const root = shadow(el);
     expect(root.querySelectorAll(".optionRowOn").length).toBe(1);
     expect([...kept.keys()]).toEqual([refKey(SURVEY_REFS.public)]);
+  });
+
+  it("shows the survey's translated text, and a locale switch keeps the form", () => {
+    const fr = TRANSLATIONS.translations!.fr!;
+    const el = mount(SAMPLES.public, { translations: TRANSLATIONS });
+    const root = shadow(el);
+    const text = (selector: string) =>
+      root.querySelector(selector)?.textContent;
+    expect(text(".qPrompt")).toBe(SAMPLES.public.questions[0]!.prompt);
+
+    click(root, ".optionRow");
+    click(root, ".stepperNav .stepNavBtn:last-child");
+    el.locale = "fr-CA";
+    expect(text(".headerDesc")).toBe(fr.description);
+    expect(text(".headerTitle")).toBe(SAMPLES.public.title);
+    expect(text(".qPrompt")).toBe(fr.questions![1]!.prompt);
+    click(root, ".stepperNav .stepNavBtn:first-child");
+    expect(text(".qPrompt")).toBe(fr.questions![0]!.prompt);
+    expect(text(".optionRowOn")).toBe(fr.questions![0]!.options![0]);
+    expect(root.querySelectorAll(".optionRowOn").length).toBe(1);
   });
 
   it("keeps in-progress answers when switching role", () => {

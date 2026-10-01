@@ -32,11 +32,15 @@ import type {
 export { RESPOND_EVENTS } from "./types";
 export type {
   CredentialProof,
+  DraftStash,
   ProofKeyKind,
+  QuestionTranslation,
   Responder,
   RespondChangeDetail,
   RespondInvalidDetail,
   RespondResult,
+  SurveyTranslation,
+  SurveyTranslations,
   TesseraRespondElement,
   TesseraRespondElementProps,
   TesseraRespondProps,
@@ -72,6 +76,7 @@ const defaults: TesseraRespondElementProps = {
   initialRole: undefined,
   maxTextBytes: undefined,
   stash: undefined,
+  translations: undefined,
 };
 
 // Registration reaches for `window.customElements`; guarded so an SSR host

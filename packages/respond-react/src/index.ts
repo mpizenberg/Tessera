@@ -35,10 +35,13 @@ export type {
   CredentialProof,
   DraftStash,
   ProofKeyKind,
+  QuestionTranslation,
   Responder,
   RespondChangeDetail,
   RespondInvalidDetail,
   RespondResult,
+  SurveyTranslation,
+  SurveyTranslations,
   TesseraRespondElement,
 } from "cardano-tessera-respond/artifact";
 
@@ -72,6 +75,7 @@ const ELEMENT_PROPS = {
   initialRole: true,
   maxTextBytes: true,
   stash: true,
+  translations: true,
 } as const satisfies Record<keyof ElementProps, true>;
 
 const ELEMENT_PROP_KEYS = Object.keys(

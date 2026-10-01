@@ -1,8 +1,8 @@
 /**
  * Dev harness: mount `RespondRoot` into a shadow root — the same isolation
  * `solid-element` gives it in the registered element — adopt the widget
- * styles, drive it with the sample props, keep unsent answers in
- * `localStorage`, and log every emitted event.
+ * styles, drive it with the sample props and a French translations overlay,
+ * keep unsent answers in `localStorage`, and log every emitted event.
  *
  * The events (`tessera:*`) are `composed: true`, so a listener on the light-DOM
  * host element sees them cross the shadow boundary. Run with
@@ -22,6 +22,7 @@ import {
   otherResponder,
   responder,
   TIP_EPOCH,
+  TRANSLATIONS,
   type SampleKey,
 } from "./samples";
 
@@ -224,6 +225,7 @@ render(
       // Cancellation is a host-observed on-chain fact, passed as a prop.
       cancelled={sample() === "cancelled"}
       locale={locale()}
+      translations={TRANSLATIONS}
       layout={layout()}
       theme={{ ...THEMES[themeName()], ...FONTS[fontName()] }}
     />

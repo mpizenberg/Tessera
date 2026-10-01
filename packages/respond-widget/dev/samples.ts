@@ -15,7 +15,10 @@ import {
 } from "cip-179";
 import { hexToBytes } from "cip-179/domain";
 import { QUICKNET_CHAIN_HASH } from "cip-179/tlock";
-import type { Responder } from "cardano-tessera-respond-core";
+import type {
+  Responder,
+  SurveyTranslations,
+} from "cardano-tessera-respond-core";
 
 const keyCred = (hex: string): Credential => ({
   type: "key",
@@ -113,6 +116,49 @@ const QUESTIONS: Question[] = [
     },
   },
 ];
+
+/**
+ * French text for every sample, shown under the `fr` locale. It leaves the
+ * titles out, so they show the per-field fallback to the definition's text.
+ */
+export const TRANSLATIONS: SurveyTranslations = {
+  defaultLanguage: "en",
+  translations: {
+    fr: {
+      description:
+        "Une enquête de démonstration pour le widget <tessera-respond>.",
+      questions: [
+        {
+          prompt: "Quelle mise à niveau livrer en premier ?",
+          options: [
+            "Passage à l'échelle (Leios)",
+            "Finitions de gouvernance",
+            "Outils pour développeurs",
+          ],
+        },
+        {
+          prompt: "Quels domaines financer ? (jusqu'à 2, ou aucun)",
+          options: ["Protocole", "Portefeuilles", "Éducation", "Marketing"],
+        },
+        {
+          prompt: "Classez ces valeurs par importance.",
+          options: ["Décentralisation", "Durabilité", "Facilité d'usage"],
+        },
+        { prompt: "Part de trésorerie suggérée (%) ?" },
+        {
+          prompt: "Répartissez 100 points entre les piliers.",
+          options: ["Recherche", "Communauté", "Infrastructure"],
+        },
+        {
+          prompt: "Notez chaque proposition (laissez vide au besoin).",
+          options: ["Proposition A", "Proposition B"],
+          ratingLabels: ["Faible", "Passable", "Bien", "Excellent"],
+        },
+        { prompt: "Autre chose ? (interprété par un schéma externe)" },
+      ],
+    },
+  },
+};
 
 function makeDef(o: {
   title: string;

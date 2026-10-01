@@ -21,6 +21,13 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
   `localStorage`, brings them back after a reload; a kept form that no longer
   fits the questions is ignored. Without one they stay in memory, as before.
   The `DraftStash` type is exported.
+- `translations` prop: the survey's title, description, prompts, option
+  labels and rating labels in other languages, as an overlay document beside
+  the definition. `locale` picks the text field by field (`fr-CA`, then `fr`,
+  then the definition's own); answers and payload are unchanged. An entry for
+  the default language, or one that does not match the questions, is ignored
+  with a console warning. The `SurveyTranslations`, `SurveyTranslation` and
+  `QuestionTranslation` types are exported.
 
 ### Changed
 

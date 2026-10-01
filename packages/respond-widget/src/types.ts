@@ -21,12 +21,21 @@ import type {
 } from "cip-179";
 import type {
   DeepPartial,
+  QuestionTranslation,
   Responder,
   RespondMessages,
+  SurveyTranslation,
+  SurveyTranslations,
 } from "cardano-tessera-respond-core";
 import type { DraftStash } from "cardano-tessera-respond-ui";
 
-export type { DraftStash, Responder };
+export type {
+  DraftStash,
+  QuestionTranslation,
+  Responder,
+  SurveyTranslation,
+  SurveyTranslations,
+};
 
 export interface TesseraRespondProps {
   /** Required. Display definition — on-chain, or host-enriched with off-chain labels. */
@@ -97,6 +106,17 @@ export interface TesseraRespondProps {
    * longer fits the questions is ignored.
    */
   stash?: DraftStash;
+  /**
+   * The survey's text in other languages, shown by `locale`: `defaultLanguage`
+   * names the language of the definition's own text, and `translations` holds
+   * one entry per other language, keyed by BCP-47 tag, each mirroring the
+   * title, description and questions (prompt, option labels, rating labels).
+   * Each field falls back on its own, `fr-CA` to `fr` to the definition's
+   * text. An entry for the default language, or one whose questions, options
+   * or rating levels do not match the definition's, is ignored with a console
+   * warning.
+   */
+  translations?: SurveyTranslations;
 }
 
 /** Which wallet/pool key must sign for a credential's proof. */

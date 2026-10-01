@@ -6,7 +6,9 @@
  * decide open/closed via `surveyStatus(definition.endEpoch, tipEpoch)`, and
  * `locale` / `messages` build an instance `createI18n(…)` provided through
  * {@link I18nContext} (never a module global, so two instances can render in
- * different locales). It reaches no router, wallet, chain, or network state:
+ * different locales). `locale` also picks the survey's own text from
+ * `translations`; only what is shown changes, so the form, the answers and the
+ * payload stay those of the on-chain definition. It reaches no router, wallet, chain, or network state:
  * `onSubmit` **emits** a `tessera:response` for the host to sign and submit.
  *
  * Role choice, drafts and progress come from `createResponseDraft`, the same
@@ -44,6 +46,8 @@ import {
   buildSealedResponse,
   collectAnswers,
   createI18n,
+  localizeDefinition,
+  readTranslations,
   renderProblem,
   roleBrowserClaimable,
   roleLabel,
@@ -81,6 +85,24 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
       ...(props.messages ? { messages: props.messages } : {}),
     }),
   );
+
+  // The definition as shown. The form, the checks and the payload read
+  // `props.definition`, which a locale switch leaves alone.
+  const translations = createMemo(() =>
+    props.translations === undefined
+      ? undefined
+      : readTranslations(props.definition, props.translations),
+  );
+  createEffect(() => {
+    for (const why of translations()?.dropped ?? [])
+      console.warn(`tessera-respond: translations: ${why}`);
+  });
+  const shown = createMemo(() => {
+    const read = translations();
+    return read
+      ? localizeDefinition(props.definition, read, props.locale ?? "en")
+      : props.definition;
+  });
 
   // Events cross the shadow boundary from the widget's own root node
   // (`composed: true`); a listener outside the shadow sees the host element as
@@ -275,7 +297,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     <I18nContext.Provider value={i18n}>
       <div class="root" ref={rootRef}>
         <SurveyHeader
-          def={props.definition}
+          def={shown()}
           role={role()}
           respondable={respondable()}
           onPickRole={pickRole}
@@ -305,9 +327,9 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
                 <div class="questionList">
                   {/* `keyed` remounts the card when the question changes: a
                       QuestionBody picks its widget by question type at creation
-                      (see bodies/index.tsx), so it must not outlive its
+                      (see respond-ui's bodies.tsx), so it must not outlive its
                       question the way a non-keyed Show would let it. */}
-                  <Show keyed when={props.definition.questions[stepIndex()]}>
+                  <Show keyed when={shown().questions[stepIndex()]}>
                     {(q) => (
                       <QuestionCard
                         q={q}
@@ -328,7 +350,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
               }
             >
               <div class="questionList">
-                <For each={props.definition.questions}>
+                <For each={shown().questions}>
                   {(q, i) => (
                     <QuestionCard
                       q={q}

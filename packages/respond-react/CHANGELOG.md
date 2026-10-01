@@ -17,6 +17,9 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
   UTF-8 length.
 - `stash` prop, following the element: where unsent answers are kept, one
   form per survey. The `DraftStash` type is exported.
+- `translations` prop, following the element: the survey's text in other
+  languages, shown by `locale`. The `SurveyTranslations`,
+  `SurveyTranslation` and `QuestionTranslation` types are exported.
 
 ### Changed
 

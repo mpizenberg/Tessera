@@ -24,10 +24,13 @@ export type {
   CredentialProof,
   DraftStash,
   ProofKeyKind,
+  QuestionTranslation,
   Responder,
   RespondChangeDetail,
   RespondInvalidDetail,
   RespondResult,
+  SurveyTranslation,
+  SurveyTranslations,
   TesseraRespondElement,
   TesseraRespondProps,
 } from "./types";

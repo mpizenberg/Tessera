@@ -6,6 +6,7 @@
  * - `draft.ts`: response drafting (drafts → validated answers → `SurveyResponse`,
  *   the `decided()` progress gate, prefill for the edit/replace flow).
  * - `kept.ts`: a form kept between visits, as plain JSON checked on read.
+ * - `translations.ts`: survey text in other languages, from an overlay document.
  * - `eligibility.ts`: the {@link Responder} role→credential map + which roles a
  *   responder may claim to a survey. Wallet-agnostic: deriving the map from a
  *   wallet is the host's job (respond-core never validates credentials).
@@ -21,5 +22,6 @@ export * from "./eligibility.js";
 export * from "./roles.js";
 export * from "./draft.js";
 export * from "./kept.js";
+export * from "./translations.js";
 export * from "./i18n.js";
 export * from "./seal.js";

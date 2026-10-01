@@ -212,6 +212,7 @@ ones (`locale`, `layout`, `tip-epoch`, `initial-role`, `max-text-bytes`,
 | `initialRole`     | `Role`                          |      | —                  | Initial role when the responder is eligible in several. The user can still switch.                                 |
 | `maxTextBytes`    | `number`                        |      | —                  | Cap on a custom answer's UTF-8 length. The input shows a byte count; a longer text leaves its question undecided.  |
 | `stash`           | `DraftStash`                    |      | memory             | Where unsent answers are kept — see [Unsent answers](#unsent-answers).                                             |
+| `translations`    | `SurveyTranslations`            |      | —                  | The survey's own text in other languages, picked by `locale` — see [Translated surveys](#translated-surveys).      |
 
 ## Events
 
@@ -469,6 +470,46 @@ el.locale = "fr"; // bundled
 el.locale = "de";
 el.messages = { respond: { signAndSubmit: "Absenden" } /* … */ }; // supply/override strings
 ```
+
+### Translated surveys
+
+`messages` translates the widget; the survey's own text — title, description,
+prompts, option labels, rating labels — comes from `translations`, an overlay
+document beside the definition. `defaultLanguage` names the language of the
+definition's text, and each other language mirrors it under its BCP-47 tag:
+
+```ts
+el.translations = {
+  defaultLanguage: "en",
+  translations: {
+    fr: {
+      title: "Allocation du budget Dijkstra",
+      description: "Répartissez des points de priorité entre les chantiers.",
+      questions: [
+        {
+          prompt: "Répartissez 100 points entre ces chantiers.",
+          options: ["Simplification du registre", "UX de gouvernance"],
+        },
+      ],
+    },
+  },
+};
+```
+
+The widget shows the text matching `locale`, field by field: `fr-CA` reads the
+`fr-CA` entry, then `fr`, then the definition. A field left out, or a question
+entry left `{}`, falls back the same way. A locale that reaches the default
+language stops there, so a `pt-BR` survey is not shown a `pt` entry's text.
+Only what is shown changes: answers carry option indices, so the payload is
+the same in every language, and switching `locale` mid-form keeps the answers.
+
+An entry's `questions`, when present, lists every question in order, and its
+`options` and `ratingLabels` every option and rating level in order
+(`ratingLabels` only for a scale of labels or a level count).
+An entry that does not, or one for the default language, is ignored with a
+`console.warn`: a label paired with the wrong option would change what a
+responder answers. The overlay's shape follows a draft proposal for
+multilingual CIP-179 surveys and may change with it.
 
 ## Theming & fonts
 
