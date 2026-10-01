@@ -608,7 +608,7 @@ const HiddenRow: Component<{ index: number }> = (props) => {
       <span class="qChip">
         {i18n.t("respond.questionChip", { n: i18n.n(props.index + 1) })}
       </span>
-      <span>{i18n.t("respond.hiddenNote")}</span>
+      <span class="hiddenNote">{i18n.t("respond.hiddenNote")}</span>
     </div>
   );
 };
