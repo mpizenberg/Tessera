@@ -1,7 +1,8 @@
 /**
  * Dev harness: mount `RespondRoot` into a shadow root — the same isolation
  * `solid-element` gives it in the registered element — adopt the widget
- * styles, drive it with the sample props, and log every emitted event.
+ * styles, drive it with the sample props, keep unsent answers in
+ * `localStorage`, and log every emitted event.
  *
  * The events (`tessera:*`) are `composed: true`, so a listener on the light-DOM
  * host element sees them cross the shadow boundary. Run with
@@ -11,12 +12,15 @@
 import { render } from "solid-js/web";
 import { createSignal } from "solid-js";
 
-import { RespondRoot, adoptWidgetStyles } from "../src/index";
+import { Role } from "cip-179";
+
+import { RespondRoot, adoptWidgetStyles, type DraftStash } from "../src/index";
 import {
   SAMPLES,
+  SURVEY_REFS,
+  hostSpoCredential,
+  otherResponder,
   responder,
-  spoResponder,
-  surveyRef,
   TIP_EPOCH,
   type SampleKey,
 } from "./samples";
@@ -24,6 +28,7 @@ import {
 const mount = document.getElementById("mount") as HTMLElement;
 const logEl = document.getElementById("log") as HTMLElement;
 const changeLine = document.getElementById("change") as HTMLElement;
+const stashEl = document.getElementById("stash") as HTMLElement;
 
 // --- Event log --------------------------------------------------------------
 
@@ -68,12 +73,61 @@ mount.addEventListener("tessera:change", (e) =>
   log("change", (e as CustomEvent).detail),
 );
 
+// --- Stash -----------------------------------------------------------------
+
+// The README's localStorage stash, plus a view of what it holds.
+const STASH_PREFIX = "tessera-dev.answers.";
+
+const stash: DraftStash = {
+  get: (key) => {
+    try {
+      const json = localStorage.getItem(STASH_PREFIX + key);
+      return json === null ? undefined : JSON.parse(json);
+    } catch {
+      return undefined;
+    }
+  },
+  set: (key, form) => {
+    try {
+      localStorage.setItem(STASH_PREFIX + key, JSON.stringify(form));
+    } catch {}
+    showStash();
+  },
+  delete: (key) => {
+    try {
+      localStorage.removeItem(STASH_PREFIX + key);
+    } catch {}
+    showStash();
+  },
+};
+
+function stashKeys(): string[] {
+  try {
+    return Object.keys(localStorage).filter((k) => k.startsWith(STASH_PREFIX));
+  } catch {
+    return [];
+  }
+}
+
+function showStash(): void {
+  const keys = stashKeys().map((k) => k.slice(STASH_PREFIX.length));
+  stashEl.textContent =
+    keys.length > 0 ? `stash → ${keys.join("\n        ")}` : "stash → (empty)";
+}
+showStash();
+
+document.getElementById("clear-stash")?.addEventListener("click", () => {
+  for (const k of stashKeys()) localStorage.removeItem(k);
+  showStash();
+});
+
 // --- Shadow mount -----------------------------------------------------------
 
 const shadow = mount.attachShadow({ mode: "open" });
 adoptWidgetStyles(shadow);
 
 const [sample, setSample] = createSignal<SampleKey>("public");
+const [wallet, setWallet] = createSignal<"a" | "b">("a");
 const [locale, setLocale] = createSignal("en");
 const [layout, setLayout] = createSignal<"one-per-screen" | "list">(
   "one-per-screen",
@@ -158,10 +212,14 @@ render(
   () => (
     <RespondRoot
       definition={SAMPLES[sample()]}
-      surveyRef={surveyRef}
+      surveyRef={SURVEY_REFS[sample()]}
       // The SPO sample's host vouches for a pool credential the wallet can't
       // hold — that's what makes its SPO/CC-only survey answerable.
-      responder={sample() === "spo" ? spoResponder : responder}
+      responder={{
+        ...(wallet() === "a" ? responder : otherResponder),
+        ...(sample() === "spo" && { [Role.SPO]: hostSpoCredential }),
+      }}
+      stash={stash}
       tipEpoch={TIP_EPOCH}
       // Cancellation is a host-observed on-chain fact, passed as a prop.
       cancelled={sample() === "cancelled"}
@@ -181,6 +239,14 @@ for (const btn of document.querySelectorAll<HTMLButtonElement>(
   btn.addEventListener("click", () => {
     setSample(btn.dataset.sample as SampleKey);
     syncActive("data-sample", btn.dataset.sample!);
+  });
+}
+for (const btn of document.querySelectorAll<HTMLButtonElement>(
+  "[data-wallet]",
+)) {
+  btn.addEventListener("click", () => {
+    setWallet(btn.dataset.wallet as "a" | "b");
+    syncActive("data-wallet", btn.dataset.wallet!);
   });
 }
 for (const btn of document.querySelectorAll<HTMLButtonElement>(

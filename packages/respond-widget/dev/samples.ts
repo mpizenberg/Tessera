@@ -24,12 +24,6 @@ const keyCred = (hex: string): Credential => ({
 
 const OWNER = keyCred("00".repeat(28));
 
-/** The survey's on-chain location (a definition carries no ref — the host has it). */
-export const surveyRef: SurveyRef = {
-  txId: hexToBytes("11".repeat(32)),
-  index: 0,
-};
-
 /**
  * A wallet-shaped responder eligible as DRep / Stakeholder / Keyholder — the
  * role→credential map a host derives from a connected wallet.
@@ -40,16 +34,20 @@ export const responder: Responder = {
   [Role.DRep]: keyCred("cc".repeat(28)),
 };
 
-/**
- * The same wallet, on a host that also vouches for an SPO credential (a pool
- * cold key hash a browser wallet can't hold) — just an extra entry in the map.
- * The widget trusts it, lets the user answer as SPO, and hands the credential
- * back in `proveCredentials`; proving it through the tx stays the host's job.
- */
-export const spoResponder: Responder = {
-  ...responder,
-  [Role.SPO]: keyCred("dd".repeat(28)),
+/** Another wallet with the same roles, for switching wallet mid-form. */
+export const otherResponder: Responder = {
+  [Role.Keyholder]: keyCred("ab".repeat(28)),
+  [Role.Stakeholder]: keyCred("bc".repeat(28)),
+  [Role.DRep]: keyCred("cd".repeat(28)),
 };
+
+/**
+ * An SPO credential the host vouches for (a pool cold key hash a browser
+ * wallet can't hold) — just an extra entry in the responder map. The widget
+ * trusts it, lets the user answer as SPO, and hands the credential back in
+ * `proveCredentials`; proving it through the tx stays the host's job.
+ */
+export const hostSpoCredential: Credential = keyCred("dd".repeat(28));
 
 /** Current chain tip — before every sample's `endEpoch` except `closed`. */
 export const TIP_EPOCH = 500;
@@ -159,8 +157,8 @@ export const SAMPLES = {
     title: "SPO/CC-only demo survey",
     eligibleRoles: [Role.SPO, Role.CC],
   }),
-  // Same SPO/CC-only gate, but main.tsx pairs this sample with `spoResponder`
-  // (host-supplied SPO credential) — so it's answerable, unlike `ineligible`.
+  // Same SPO/CC-only gate, but main.tsx adds `hostSpoCredential` to the
+  // responder for this sample — so it's answerable, unlike `ineligible`.
   spo: makeDef({
     title: "SPO/CC-only demo survey (host credential)",
     eligibleRoles: [Role.SPO, Role.CC],
@@ -168,3 +166,22 @@ export const SAMPLES = {
 } satisfies Record<string, SurveyDefinition>;
 
 export type SampleKey = keyof typeof SAMPLES;
+
+const ref = (index: number): SurveyRef => ({
+  txId: hexToBytes("11".repeat(32)),
+  index,
+});
+
+/**
+ * Each sample's on-chain location (a definition carries no ref — the host has
+ * it). One per sample: a reference holds a single survey, and the stash keeps
+ * one form per reference.
+ */
+export const SURVEY_REFS = {
+  public: ref(0),
+  sealed: ref(1),
+  closed: ref(2),
+  cancelled: ref(3),
+  ineligible: ref(4),
+  spo: ref(5),
+} satisfies Record<SampleKey, SurveyRef>;

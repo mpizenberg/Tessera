@@ -63,6 +63,8 @@
         color: var(--muted);
       }
       button[data-sample],
+      button[data-wallet],
+      #clear-stash,
       button[data-locale],
       button[data-layout],
       button[data-theme],
@@ -107,7 +109,8 @@
         color: var(--muted);
         margin: 0 0 8px;
       }
-      #change {
+      #change,
+      #stash {
         font-family: "IBM Plex Mono", ui-monospace, monospace;
         font-size: 11.5px;
         color: var(--muted);
@@ -117,6 +120,9 @@
         padding: 10px 12px;
         white-space: pre-wrap;
         word-break: break-word;
+      }
+      #stash {
+        margin-top: 8px;
       }
       #log {
         font-family: "IBM Plex Mono", ui-monospace, monospace;
@@ -142,9 +148,10 @@
         <h1>&lt;tessera-respond&gt; dev harness</h1>
         <p class="sub">
           <code>RespondRoot</code> mounted in a shadow root with plain sample
-          props. Submit to emit <code>tessera:response</code>; the sealed sample
-          timelock-encrypts fully offline. The Plum theme goes through the
-          <code>theme</code> prop (inline <code>--tessera-*</code>
+          props. Answers are kept in <code>localStorage</code> per sample, so a
+          reload restores them. Submit to emit <code>tessera:response</code>;
+          the sealed sample timelock-encrypts fully offline. The Plum theme goes
+          through the <code>theme</code> prop (inline <code>--tessera-*</code>
           overrides on the host).
         </p>
         <div class="controls">
@@ -156,6 +163,15 @@
             <button data-sample="cancelled">Cancelled</button>
             <button data-sample="ineligible">Ineligible</button>
             <button data-sample="spo">SPO (host cred)</button>
+          </div>
+          <div class="group">
+            <b>Wallet</b>
+            <button data-wallet="a" class="active">A</button>
+            <button data-wallet="b">B</button>
+          </div>
+          <div class="group">
+            <b>Stash</b>
+            <button id="clear-stash">Clear</button>
           </div>
           <div class="group">
             <b>Locale</b>
@@ -187,6 +203,7 @@
       <div class="aside">
         <h2>Emitted events</h2>
         <div id="change">tessera:change → (waiting…)</div>
+        <div id="stash"></div>
         <pre id="log"></pre>
       </div>
     </div>

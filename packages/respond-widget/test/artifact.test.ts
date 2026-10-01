@@ -29,7 +29,7 @@ import { hexToBytes, refKey } from "cip-179/domain";
 import { QUICKNET_CHAIN_HASH } from "cip-179/tlock";
 import { buildResponse } from "cardano-tessera-respond-core";
 
-import { SAMPLES, TIP_EPOCH, responder, surveyRef } from "../dev/samples";
+import { SAMPLES, SURVEY_REFS, TIP_EPOCH, responder } from "../dev/samples";
 import type { RespondResult, TesseraRespondElement } from "../src/types";
 
 beforeAll(async () => {
@@ -69,7 +69,7 @@ function mount(
 ): TesseraRespondElement {
   const el = document.createElement("tessera-respond");
   el.definition = definition;
-  el.surveyRef = surveyRef;
+  el.surveyRef = SURVEY_REFS.public;
   el.responder = responder;
   el.tipEpoch = TIP_EPOCH;
   Object.assign(el, extra);
@@ -270,7 +270,7 @@ describe("built <tessera-respond> artifact", () => {
     // Connected without data: nothing rendered, no crash.
     expect(shadow(el).querySelector(".root")).toBe(null);
     el.definition = SAMPLES.public;
-    el.surveyRef = surveyRef;
+    el.surveyRef = SURVEY_REFS.public;
     el.responder = responder;
     el.tipEpoch = TIP_EPOCH;
     // Now rendered — in French, from the plain `locale` attribute.
@@ -300,7 +300,7 @@ describe("built <tessera-respond> artifact", () => {
     expect(detail.role).toBe(Role.Keyholder);
     expect(detail.proveCredentials).toHaveLength(1);
     expect(detail.proveCredentials[0]!.keyKind).toBe("payment");
-    expect(detail.surveyRef).toEqual(surveyRef);
+    expect(detail.surveyRef).toEqual(SURVEY_REFS.public);
 
     // The payload is the final label-17 metadatum: decode it back and check
     // the response validates against the definition it was built for.
@@ -330,7 +330,7 @@ describe("built <tessera-respond> artifact", () => {
     document.body.innerHTML = `<tessera-respond cancelled></tessera-respond>`;
     const el = document.body.querySelector("tessera-respond")!;
     el.definition = SAMPLES.public;
-    el.surveyRef = surveyRef;
+    el.surveyRef = SURVEY_REFS.public;
     el.responder = responder;
     el.tipEpoch = TIP_EPOCH;
     const root = shadow(el);
@@ -393,7 +393,7 @@ describe("built <tessera-respond> artifact", () => {
     const el = mount(def, { stash });
     const root = shadow(el);
     expect(root.querySelectorAll(".optionRowOn").length).toBe(1);
-    expect([...kept.keys()]).toEqual([refKey(surveyRef)]);
+    expect([...kept.keys()]).toEqual([refKey(SURVEY_REFS.public)]);
   });
 
   it("keeps in-progress answers when switching role", () => {
@@ -429,7 +429,7 @@ describe("built <tessera-respond> artifact", () => {
     document.body.innerHTML = `<tessera-respond initial-role="3"></tessera-respond>`;
     const el2 = document.body.querySelector("tessera-respond")!;
     el2.definition = def;
-    el2.surveyRef = surveyRef;
+    el2.surveyRef = SURVEY_REFS.public;
     el2.responder = responder;
     el2.tipEpoch = TIP_EPOCH;
     expect(shadow(el2).querySelector(".rolePickOn")?.textContent).toBe(
@@ -498,7 +498,7 @@ describe("built <tessera-respond> artifact", () => {
     // DRep → "First" (0), Stakeholder → "Second" (1). `responder` is the
     // role→credential map, so index it for each role's credential.
     const prior = (role: Role, optionIndex: number) =>
-      buildResponse(surveyRef, role, responder[role]!, def.questions, [
+      buildResponse(SURVEY_REFS.public, role, responder[role]!, def.questions, [
         { skipped: false, value: { type: "singleChoice", optionIndex } },
       ]);
     const el = mount(def, {
