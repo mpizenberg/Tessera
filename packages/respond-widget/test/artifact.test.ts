@@ -222,6 +222,19 @@ describe("built <tessera-respond> artifact", () => {
     expect(root.querySelector(".stepperNav")).toBe(null);
   });
 
+  it("leaves out the anchor and hint of a hidden schema", () => {
+    const custom = SAMPLES.public.questions.find((q) => q.type === "custom");
+    if (custom?.type !== "custom") throw new Error("no custom sample");
+    const el = mount(SAMPLES.public, { layout: "list" });
+    const root = shadow(el);
+    expect(root.querySelector(".customSchema")).not.toBe(null);
+    expect(root.querySelector(".customHint")).not.toBe(null);
+    el.hiddenSchemas = [custom.methodSchema.uri];
+    expect(root.querySelector(".customSchema")).toBe(null);
+    expect(root.querySelector(".customHint")).toBe(null);
+    expect(root.querySelector(".customInput")).not.toBe(null);
+  });
+
   it("remounts the right body for every question type while stepping", () => {
     // Regression: the stepper card must be keyed by its question — a
     // QuestionBody picks its widget at creation, so an unkeyed card kept

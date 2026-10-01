@@ -78,6 +78,7 @@ const defaults: TesseraRespondElementProps = {
   initialRole: undefined,
   showRole: true,
   maxTextBytes: undefined,
+  hiddenSchemas: undefined,
   stash: undefined,
   translations: undefined,
   conditions: undefined,

@@ -480,6 +480,7 @@ const CustomBody: Component<{
   q: Extract<Question, { type: "custom" }>;
   v: Extract<DraftValue, { type: "custom" }>;
   maxTextBytes: number | undefined;
+  hideSchema: boolean;
   onChange: (v: DraftValue) => void;
 }> = (props) => {
   const i18n = useI18n();
@@ -487,12 +488,14 @@ const CustomBody: Component<{
   const used = () => utf8ByteLength(props.v.text);
   return (
     <>
-      <div class={cls.customSchema}>
-        <span class={cls.customSchemaTag}>
-          {i18n.t("respond.customSchemaTag")}
-        </span>
-        <span class={cls.customSchemaUri}>{props.q.methodSchema.uri}</span>
-      </div>
+      <Show when={!props.hideSchema}>
+        <div class={cls.customSchema}>
+          <span class={cls.customSchemaTag}>
+            {i18n.t("respond.customSchemaTag")}
+          </span>
+          <span class={cls.customSchemaUri}>{props.q.methodSchema.uri}</span>
+        </div>
+      </Show>
       <textarea
         rows={3}
         value={props.v.text}
@@ -515,7 +518,9 @@ const CustomBody: Component<{
           </p>
         )}
       </Show>
-      <p class={cls.customHint}>{i18n.t("respond.customHint")}</p>
+      <Show when={!props.hideSchema}>
+        <p class={cls.customHint}>{i18n.t("respond.customHint")}</p>
+      </Show>
     </>
   );
 };
@@ -553,6 +558,8 @@ export const QuestionBody: Component<{
   value: DraftValue;
   /** Cap on a custom answer's UTF-8 length, shown as a byte count. */
   maxTextBytes?: number | undefined;
+  /** Leave out a custom question's schema anchor and the hint that names it. */
+  hideSchema?: boolean;
   onChange: (v: DraftValue) => void;
 }> = (props) => {
   type V<T extends DraftValue["type"]> = Extract<DraftValue, { type: T }>;
@@ -617,6 +624,7 @@ export const QuestionBody: Component<{
           q={props.q as Q<"custom">}
           v={value() as V<"custom">}
           maxTextBytes={props.maxTextBytes}
+          hideSchema={props.hideSchema ?? false}
           onChange={props.onChange}
         />
       );

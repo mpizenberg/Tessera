@@ -372,6 +372,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
                         index={stepIndex()}
                         draft={drafts[stepIndex()]}
                         maxTextBytes={props.maxTextBytes}
+                        hiddenSchemas={props.hiddenSchemas}
                         onChange={(v) => setValue(stepIndex(), v)}
                         onSkip={(sk) => setSkipped(stepIndex(), sk)}
                       />
@@ -399,6 +400,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
                         index={i()}
                         draft={drafts[i()]}
                         maxTextBytes={props.maxTextBytes}
+                        hiddenSchemas={props.hiddenSchemas}
                         onChange={(v) => setValue(i(), v)}
                         onSkip={(sk) => setSkipped(i(), sk)}
                       />
@@ -617,11 +619,15 @@ const QuestionCard: Component<{
   index: number;
   draft: Draft | undefined;
   maxTextBytes: number | undefined;
+  hiddenSchemas: readonly string[] | undefined;
   onChange: (v: DraftValue) => void;
   onSkip: (skipped: boolean) => void;
 }> = (props) => {
   const i18n = useI18n();
   const skipped = () => props.draft?.skipped ?? false;
+  const hideSchema = () =>
+    props.q.type === "custom" &&
+    (props.hiddenSchemas?.includes(props.q.methodSchema.uri) ?? false);
   return (
     <div class="card">
       <div class="qHead">
@@ -656,6 +662,7 @@ const QuestionCard: Component<{
               q={props.q}
               value={props.draft!.value}
               maxTextBytes={props.maxTextBytes}
+              hideSchema={hideSchema()}
               onChange={props.onChange}
             />
           </Show>

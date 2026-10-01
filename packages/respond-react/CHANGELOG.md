@@ -15,6 +15,8 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
 
 - `showRole` prop, following the element: `false` hides the "Responding as"
   row.
+- `hiddenSchemas` prop, following the element: schema URIs a custom question
+  doesn't show.
 
 ## [0.3.0] - 2026-10-01
 

@@ -77,6 +77,7 @@ const ELEMENT_PROPS = {
   initialRole: true,
   showRole: true,
   maxTextBytes: true,
+  hiddenSchemas: true,
   stash: true,
   translations: true,
   conditions: true,

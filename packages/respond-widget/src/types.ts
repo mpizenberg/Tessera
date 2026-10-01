@@ -110,6 +110,12 @@ export interface TesseraRespondProps {
    */
   maxTextBytes?: number;
   /**
+   * Schema URIs whose anchor a custom question leaves out, along with the hint
+   * that names it: for a schema the respondent needn't see, such as plain
+   * text. Matched against each question's schema URI exactly.
+   */
+  hiddenSchemas?: readonly string[];
+  /**
    * Where unsent answers are kept, one form per survey under its
    * `<txHash>:<index>` key, kept through a change of role or wallet. Without
    * one they live in memory, for as long as the element does; a durable one

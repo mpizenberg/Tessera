@@ -15,6 +15,9 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
 - `showRole` prop (attribute `show-role`): `false` hides the "Responding as"
   row, for a host that settles the role itself through `initialRole` or a
   single-role `responder`. Default `true`.
+- `hiddenSchemas` prop: schema URIs whose anchor a custom question leaves
+  out, along with the hint that names it, for a schema the respondent needn't
+  see, such as plain text.
 
 ### Changed
 

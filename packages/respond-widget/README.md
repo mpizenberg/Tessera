@@ -212,6 +212,7 @@ ones (`locale`, `layout`, `tip-epoch`, `initial-role`, `show-role`,
 | `initialRole`     | `Role`                          |      | —                  | Initial role when the responder is eligible in several. The user can still switch.                                 |
 | `showRole`        | `boolean`                       |      | `true`             | Show the "Responding as" row. `false` leaves the role to the host: `initialRole`, or a single-role `responder`.    |
 | `maxTextBytes`    | `number`                        |      | —                  | Cap on a custom answer's UTF-8 length. The input shows a byte count; a longer text leaves its question undecided.  |
+| `hiddenSchemas`   | `readonly string[]`             |      | —                  | Schema URIs a custom question doesn't show, with the hint that names them — a plain-text schema, say.              |
 | `stash`           | `DraftStash`                    |      | memory             | Where unsent answers are kept — see [Unsent answers](#unsent-answers).                                             |
 | `translations`    | `SurveyTranslations`            |      | —                  | The survey's own text in other languages, picked by `locale` — see [Translated surveys](#translated-surveys).      |
 | `conditions`      | `DisplayConditions`             |      | —                  | Questions shown only after some earlier answers — see [Conditional questions](#conditional-questions).             |
