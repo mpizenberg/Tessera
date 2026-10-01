@@ -234,7 +234,6 @@ interface RespondResult {
   payload: Metadatum; // attach at metadata label 17
   proveCredentials: CredentialProof[]; // prove each in the carrying tx
   sealed: boolean;
-  formKey: string; // the answered form's key in the stash
 }
 
 interface CredentialProof {
@@ -351,7 +350,8 @@ For an edit/replace flow, pass the responder's prior responses in
 
 The role is chosen _inside_ the widget, so the host can't know up front which
 prior response applies: pass them all, and the widget selects the one matching the
-current role + credential, re-prefilling as the user switches roles. A responder
+current role + credential, re-prefilling as the user switches roles until they
+start editing; after that, their answers stay. A responder
 who answered as both DRep and Stakeholder passes both; the array is
 order-independent.
 
@@ -371,11 +371,13 @@ does exactly this against a survey bundle.
 
 ## Unsent answers
 
-Every edit is written to the `stash`, one form per survey, role and
-credential, and a form the user has not touched yet is seeded from it first:
-before a prior response, before defaults. Without a `stash` the forms live in
-memory, so switching roles loses nothing but a reload does. A stash is three
-functions over plain JSON; this one keeps forms in `localStorage`:
+Every edit is written to the `stash`, one form per survey under its
+`<txHash>:<index>` key, and a form the user has not touched yet is seeded from
+it first: before a prior response, before defaults. The form belongs to the
+person answering, so it stays through a change of role or wallet, which is
+most often a correction. Without a `stash` the form lives in memory, and a
+reload loses it. A stash is three functions over plain JSON; this one keeps
+forms in `localStorage`:
 
 ```ts
 const prefix = "my-app.answers.";
@@ -403,8 +405,8 @@ el.stash = {
 
 The widget checks what `get` returns against the questions and ignores a form
 that no longer fits them, so a damaged or hand-edited entry costs the kept
-answers, not the survey. Once a response is on chain, delete its form:
-`tessera:response` carries its key as `formKey`.
+answers, not the survey. Once a response is on chain, delete the survey's
+form (`stash.delete` under its key) so a later visit starts from that response.
 
 ## What the host must do
 

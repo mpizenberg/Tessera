@@ -40,22 +40,20 @@ function surveyAt(key: string, endEpoch: number) {
   return { ...drafts, setTip: (epoch: number | undefined) => (tip = epoch) };
 }
 
-const FORM = "survey|0:key:ab";
-
 describe("unsent answers survive a reload", () => {
   test("an ended survey's entry goes on the next write, but not while the tip is unknown", () => {
     const ended = surveyAt("old", 99);
     ended.setTip(undefined);
-    ended.stash.set(FORM, form);
+    ended.stash.set("old", form);
     const open = surveyAt("new", 120);
     open.setTip(undefined);
-    open.stash.set(FORM, form);
-    expect(ended.stash.get(FORM)).toEqual(form);
+    open.stash.set("new", form);
+    expect(ended.stash.get("old")).toEqual(form);
 
     open.setTip(100);
-    open.stash.set(FORM, form);
-    expect(ended.stash.get(FORM)).toBeUndefined();
-    expect(open.stash.get(FORM)).toEqual(form);
+    open.stash.set("new", form);
+    expect(ended.stash.get("old")).toBeUndefined();
+    expect(open.stash.get("new")).toEqual(form);
   });
 
   test("the rationale is kept per survey until it is emptied", () => {
@@ -68,11 +66,11 @@ describe("unsent answers survive a reload", () => {
     expect(s.loadRationale()).toBeUndefined();
   });
 
-  test("the key goes once the last form and rationale do", () => {
+  test("the key goes once the survey's form and rationale do", () => {
     const s = surveyAt("s1", 120);
-    s.stash.set(FORM, form);
+    s.stash.set("s1", form);
     s.storeRationale(rationale);
-    s.stash.delete(FORM);
+    s.stash.delete("s1");
     expect(store.has(KEY)).toBe(true);
     s.storeRationale(undefined);
     expect(store.has(KEY)).toBe(false);
@@ -84,7 +82,7 @@ describe("unsent answers survive a reload", () => {
       endEpoch: () => undefined,
       tipEpoch: () => 100,
     });
-    loading.stash.set(FORM, form);
+    loading.stash.set("s1", form);
     loading.storeRationale(rationale);
     expect(store.size).toBe(0);
   });
@@ -102,10 +100,10 @@ describe("unsent answers survive a reload", () => {
       },
     });
     const s = surveyAt("s1", 120);
-    expect(() => s.stash.set(FORM, form)).not.toThrow();
-    expect(() => s.stash.delete(FORM)).not.toThrow();
+    expect(() => s.stash.set("s1", form)).not.toThrow();
+    expect(() => s.stash.delete("s1")).not.toThrow();
     expect(() => s.storeRationale(rationale)).not.toThrow();
-    expect(s.stash.get(FORM)).toBeUndefined();
+    expect(s.stash.get("s1")).toBeUndefined();
     expect(s.loadRationale()).toBeUndefined();
   });
 
@@ -115,7 +113,7 @@ describe("unsent answers survive a reload", () => {
       appUrls: {},
       commit: "test",
     });
-    surveyAt("s1", 120).stash.set(FORM, form);
+    surveyAt("s1", 120).stash.set("s1", form);
     expect([...store.keys()]).toEqual(["tessera.responseDrafts.preprod"]);
   });
 });

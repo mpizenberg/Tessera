@@ -10,7 +10,7 @@ import {
   type SurveyRef,
   type SurveyResponse,
 } from "cip-179";
-import { credentialKey, refKey } from "cip-179/domain";
+import { refKey } from "cip-179/domain";
 import {
   decodeKeptForm,
   encodeKeptForm,
@@ -98,9 +98,9 @@ function mapStash(): DraftStash & { forms: Map<string, unknown> } {
   const forms = new Map<string, unknown>();
   return {
     forms,
-    get: (formKey) => forms.get(formKey),
-    set: (formKey, form) => void forms.set(formKey, form),
-    delete: (formKey) => void forms.delete(formKey),
+    get: (key) => forms.get(key),
+    set: (key, form) => void forms.set(key, form),
+    delete: (key) => void forms.delete(key),
   };
 }
 
@@ -212,27 +212,34 @@ describe("createResponseDraft", () => {
     expect(draft.drafts[0]?.value).toEqual(pick(1));
   });
 
-  it("stashes edits per role and restores them when switching back", () => {
+  it("keeps an edited form when the role changes", () => {
     const draft = draftIn({
       definition: () => defWith(Role.DRep, Role.Keyholder),
       surveyRef: () => ref(1),
       responder: () => both,
-      priorResponses: () => [],
+      priorResponses: () => [priorPick(ref(1), Role.Keyholder, cred(1), 0)],
       preferredRole: () => null,
     });
 
     draft.setValue(0, pick(1));
-
     draft.pickRole(Role.Keyholder);
     expect(draft.credential()).toEqual(cred(1));
-    expect(draft.drafts[0]?.value).toEqual(pick(null));
-
-    draft.setValue(0, pick(2));
-    draft.pickRole(Role.DRep);
+    expect(draft.prior()).toBeDefined();
     expect(draft.drafts[0]?.value).toEqual(pick(1));
+  });
 
+  it("follows the role's prior while the form is untouched", () => {
+    const draft = draftIn({
+      definition: () => defWith(Role.DRep, Role.Keyholder),
+      surveyRef: () => ref(1),
+      responder: () => both,
+      priorResponses: () => [priorPick(ref(1), Role.Keyholder, cred(1), 0)],
+      preferredRole: () => null,
+    });
+
+    expect(draft.drafts[0]?.value).toEqual(pick(null));
     draft.pickRole(Role.Keyholder);
-    expect(draft.drafts[0]?.value).toEqual(pick(2));
+    expect(draft.drafts[0]?.value).toEqual(pick(0));
   });
 
   it("brings edits back when the survey returns", () => {
@@ -255,7 +262,7 @@ describe("createResponseDraft", () => {
     expect(draft.restored()).toBe(true);
   });
 
-  it("writes every edit to an injected stash under the form key", () => {
+  it("writes every edit to an injected stash under the survey key", () => {
     const stash = mapStash();
     const draft = draftIn({
       definition: () => defWith(Role.DRep),
@@ -270,7 +277,7 @@ describe("createResponseDraft", () => {
     draft.setValue(0, pick(2));
     draft.setSkipped(1, true);
     // Plain JSON, big integers included, so any store can hold it.
-    const form = stash.forms.get(draft.formKey());
+    const form = stash.forms.get(refKey(ref(1)));
     expect(JSON.parse(JSON.stringify(form))).toEqual(form);
     expect(decodeKeptForm(form, defWith(Role.DRep).questions)).toEqual([
       { skipped: false, value: pick(2) },
@@ -306,13 +313,10 @@ describe("createResponseDraft", () => {
 
   it("falls back to the prior when the stash has no form that fits", () => {
     const stash = mapStash();
-    stash.forms.set(
-      `${refKey(ref(1))}|${Role.DRep}:${credentialKey(cred(3))}`,
-      [
-        { skipped: false, value: { type: "singleChoice", optionIndex: 9 } },
-        { skipped: true, value: { type: "numeric", value: null } },
-      ],
-    );
+    stash.forms.set(refKey(ref(1)), [
+      { skipped: false, value: { type: "singleChoice", optionIndex: 9 } },
+      { skipped: true, value: { type: "numeric", value: null } },
+    ]);
     const draft = draftIn({
       definition: () => defWith(Role.DRep),
       surveyRef: () => ref(1),
@@ -338,7 +342,7 @@ describe("createResponseDraft", () => {
       stash: late,
     });
     stash.forms.set(
-      draft.formKey(),
+      refKey(ref(1)),
       encodeKeptForm([
         { skipped: false, value: pick(1) },
         { skipped: true, value: { type: "numeric", value: null } },
@@ -353,6 +357,13 @@ describe("createResponseDraft", () => {
 
   it("discards a kept form back to the prior", () => {
     const stash = mapStash();
+    stash.forms.set(
+      refKey(ref(1)),
+      encodeKeptForm([
+        { skipped: false, value: pick(0) },
+        { skipped: true, value: { type: "numeric", value: 0n } },
+      ]),
+    );
     const draft = draftIn({
       definition: () => defWith(Role.DRep, Role.Keyholder),
       surveyRef: () => ref(1),
@@ -361,39 +372,12 @@ describe("createResponseDraft", () => {
       preferredRole: () => null,
       stash: () => stash,
     });
-    stash.forms.set(
-      draft.formKey(),
-      encodeKeptForm([
-        { skipped: false, value: pick(0) },
-        { skipped: true, value: { type: "numeric", value: 0n } },
-      ]),
-    );
-    draft.pickRole(Role.Keyholder);
-    draft.pickRole(Role.DRep);
     expect(draft.drafts[0]?.value).toEqual(pick(0));
     expect(draft.restored()).toBe(true);
 
     draft.discard();
-    expect(stash.forms.has(draft.formKey())).toBe(false);
+    expect(stash.forms.has(refKey(ref(1)))).toBe(false);
     expect(draft.drafts[0]?.value).toEqual(pick(2));
-    expect(draft.restored()).toBe(false);
-  });
-
-  it("is no longer restored once reseeded for an identity with nothing kept", () => {
-    const draft = draftIn({
-      definition: () => defWith(Role.DRep, Role.Keyholder),
-      surveyRef: () => ref(1),
-      responder: () => both,
-      priorResponses: () => [],
-      preferredRole: () => null,
-    });
-
-    draft.setValue(0, pick(1));
-    draft.pickRole(Role.Keyholder);
-    draft.pickRole(Role.DRep);
-    expect(draft.restored()).toBe(true);
-
-    draft.pickRole(Role.Keyholder);
     expect(draft.restored()).toBe(false);
   });
 
@@ -416,7 +400,7 @@ describe("createResponseDraft", () => {
     expect(draft.drafts[0]?.value).toEqual(pick(2));
   });
 
-  it("reseeds under a swapped credential for the same role", () => {
+  it("keeps an edited form under a swapped credential for the same role", () => {
     const [responder, setResponder] = createSignal<Responder>({
       [Role.DRep]: cred(3),
     });
@@ -429,12 +413,10 @@ describe("createResponseDraft", () => {
     });
 
     draft.setValue(0, pick(1));
-    // A different wallet, same role: wallet A's answers must not be carried
-    // under wallet B's credential.
     setResponder({ [Role.DRep]: cred(9) });
 
     expect(draft.credential()).toEqual(cred(9));
-    expect(draft.drafts[0]?.value).toEqual(pick(null));
+    expect(draft.drafts[0]?.value).toEqual(pick(1));
   });
 
   it("counts a skipped optional question as decided but not as an answer", () => {
@@ -453,23 +435,5 @@ describe("createResponseDraft", () => {
     draft.setValue(0, pick(0));
     expect(draft.decidedCount()).toBe(2);
     expect(draft.answered()).toBe(true);
-  });
-
-  it("keeps the form key stable across data refreshes, not across identity", () => {
-    const [priors, setPriors] = createSignal<readonly SurveyResponse[]>([]);
-    const draft = draftIn({
-      definition: () => defWith(Role.DRep, Role.Keyholder),
-      surveyRef: () => ref(1),
-      responder: () => both,
-      priorResponses: priors,
-      preferredRole: () => null,
-    });
-
-    const initial = draft.formKey();
-    setPriors([priorPick(ref(1), Role.Keyholder, cred(1), 0)]);
-    expect(draft.formKey()).toBe(initial);
-
-    draft.pickRole(Role.Keyholder);
-    expect(draft.formKey()).not.toBe(initial);
   });
 });

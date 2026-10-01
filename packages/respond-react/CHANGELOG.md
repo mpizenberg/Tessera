@@ -15,14 +15,14 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
 
 - `maxTextBytes` prop, following the element: a cap on a custom answer's
   UTF-8 length.
-- `stash` prop and `formKey` in the `onResponse` detail, following the
-  element: where unsent answers are kept, and the key to delete once a
-  response is on chain. The `DraftStash` type is exported.
+- `stash` prop, following the element: where unsent answers are kept, one
+  form per survey. The `DraftStash` type is exported.
 
 ### Changed
 
 - A custom answer longer than 64 bytes is written as `chunked_text`, following
   the element; it used to be an invalid metadatum.
+- Switching role or wallet keeps the answers entered, following the element.
 
 ## [0.2.0] - 2026-09-15
 

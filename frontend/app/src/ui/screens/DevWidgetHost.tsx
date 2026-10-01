@@ -112,7 +112,8 @@ const DevWidgetHost: Component = () => {
   });
 
   // The responder's prior response for *each* role it can claim here, so the
-  // widget re-prefills as the user switches roles. One deduped set, filtered
+  // widget re-prefills an untouched form as the user switches roles. One
+  // deduped set, filtered
   // per role by the wallet's own credential (the built-in Respond screen does
   // the same, just for its single currently-selected role).
   const priorResponses = createMemo<SurveyResponse[]>(() => {

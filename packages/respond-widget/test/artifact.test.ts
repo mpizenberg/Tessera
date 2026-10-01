@@ -25,7 +25,7 @@ import {
   type SubmissionMode,
   type SurveyDefinition,
 } from "cip-179";
-import { hexToBytes } from "cip-179/domain";
+import { hexToBytes, refKey } from "cip-179/domain";
 import { QUICKNET_CHAIN_HASH } from "cip-179/tlock";
 import { buildResponse } from "cardano-tessera-respond-core";
 
@@ -365,21 +365,17 @@ describe("built <tessera-respond> artifact", () => {
     expect(root.querySelectorAll(".optionRowOn").length).toBe(0);
   });
 
-  it("reseeds pristine when the credential behind the current role changes", () => {
-    // Form identity is (survey, role, credential): a host swapping `responder`
-    // to a different wallet holding the same role must not keep wallet A's
-    // edits to submit under wallet B's credential.
+  it("keeps the answers when the host swaps the wallet behind the role", () => {
     const el = mount(oneQuestionDef({ type: "public" }));
     const root = shadow(el);
     click(root, ".optionRow");
-    expect(root.querySelectorAll(".optionRowOn").length).toBe(1);
     el.responder = {
       [Role.Keyholder]: { type: "key", keyHash: hexToBytes("ee".repeat(28)) },
     };
-    expect(root.querySelectorAll(".optionRowOn").length).toBe(0);
+    expect(root.querySelectorAll(".optionRowOn").length).toBe(1);
   });
 
-  it("keeps answers in a host stash across elements, keyed as the response says", async () => {
+  it("keeps answers in a host stash across elements, under the survey key", () => {
     // A stash that holds only JSON text, as localStorage would.
     const kept = new Map<string, string>();
     const stash = {
@@ -397,14 +393,10 @@ describe("built <tessera-respond> artifact", () => {
     const el = mount(def, { stash });
     const root = shadow(el);
     expect(root.querySelectorAll(".optionRowOn").length).toBe(1);
-
-    const responded = once(el, "tessera:response");
-    click(root, ".submitBtn");
-    const detail = (await responded).detail as RespondResult;
-    expect([...kept.keys()]).toEqual([detail.formKey]);
+    expect([...kept.keys()]).toEqual([refKey(surveyRef)]);
   });
 
-  it("restores in-progress answers when switching back to a role", () => {
+  it("keeps in-progress answers when switching role", () => {
     const def: SurveyDefinition = {
       ...oneQuestionDef({ type: "public" }),
       eligibleRoles: [Role.DRep, Role.Stakeholder],
@@ -419,9 +411,7 @@ describe("built <tessera-respond> artifact", () => {
       btn!.click();
     };
     click(root, ".optionRow"); // answer as DRep (first respondable)
-    pickRole("Stakeholder"); // fresh, pristine form for the other role
-    expect(root.querySelectorAll(".optionRowOn").length).toBe(0);
-    pickRole("DRep"); // a misclick isn't data loss: the edit is restored
+    pickRole("Stakeholder"); // a correction: the answers come along
     expect(root.querySelectorAll(".optionRowOn").length).toBe(1);
   });
 

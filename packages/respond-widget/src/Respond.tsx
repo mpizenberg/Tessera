@@ -36,7 +36,7 @@ import {
   type Question,
   type SurveyDefinition,
 } from "cip-179";
-import { isSealedUnsupported, surveyStatus } from "cip-179/domain";
+import { isSealedUnsupported, refKey, surveyStatus } from "cip-179/domain";
 import { unixTimeForRound } from "cip-179/tlock";
 
 import {
@@ -118,7 +118,6 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     pickRole,
     credential,
     prior,
-    formKey,
     drafts,
     setValue,
     setSkipped,
@@ -135,11 +134,17 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     stash: () => props.stash,
   });
 
-  // Stepper position for the one-per-screen layout — reset whenever the form's
-  // identity changes, and clamped in case the definition shrinks under it.
+  // Stepper position for the one-per-screen layout — reset for another survey,
+  // and clamped in case the definition shrinks under it.
   const layout = () => props.layout ?? "one-per-screen";
   const [step, setStep] = createSignal(0);
-  createEffect(on(formKey, () => setStep(0), { defer: true }));
+  createEffect(
+    on(
+      () => refKey(props.surveyRef),
+      () => setStep(0),
+      { defer: true },
+    ),
+  );
   const stepIndex = createMemo(() =>
     Math.min(step(), Math.max(0, total() - 1)),
   );
@@ -189,7 +194,6 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     const def = props.definition;
     const r = role();
     const cred = credential();
-    const key = formKey();
     if (r === null || !cred) return;
 
     // Validate the answers as plaintext first — for a sealed survey nobody can
@@ -250,7 +254,6 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
         payload,
         proveCredentials,
         sealed: sealed !== null,
-        formKey: key,
       };
       dispatch(RESPOND_EVENTS.response, result);
     } catch (e) {

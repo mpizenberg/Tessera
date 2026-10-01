@@ -11,15 +11,15 @@
  * router param, a list snapshot and a lazily-fetched response bundle while the
  * widget feeds it props. What comes back is the whole spine, `drafts` included.
  *
- * The delicate part is seeding. A form's identity is (survey, role, credential)
- * — the credential matters because a host may swap the responder to a different
- * wallet holding the same role, and wallet A's edits must never be submitted
- * under wallet B's credential. Every edit is written to a stash under that
- * identity, and a form the user has not touched is seeded from the stash first,
- * then from a public prior response, then from defaults. So a misclick on a role
- * chip does not destroy work, and neither does a reload when the host's stash
- * outlives the page. When only the backing data changes, the form is reseeded
- * only while the user has not started editing.
+ * The delicate part is seeding. There is one form per survey: the answers
+ * belong to the person filling it in, so switching role or wallet — most often
+ * a correction — keeps what they have written. Every edit is written to a stash
+ * under the survey's key, and a form the user has not touched is seeded from
+ * the stash first, then from the current role's public prior response, then
+ * from defaults. So a reload does not lose work when the host's stash outlives
+ * the page. While the user has not started editing, the form follows the
+ * backing data and the chosen role; once they have, only another survey
+ * reseeds it.
  */
 
 import {
@@ -38,7 +38,7 @@ import type {
   SurveyRef,
   SurveyResponse,
 } from "cip-179";
-import { credentialKey, refKey } from "cip-179/domain";
+import { refKey } from "cip-179/domain";
 import {
   credentialForRole,
   decided,
@@ -58,7 +58,7 @@ import {
 export interface ResponseDraftSource {
   /** The survey being answered — the display definition, if labels are enriched. */
   readonly definition: Accessor<SurveyDefinition | undefined>;
-  /** Its on-chain reference, for prior-response matching and form identity. */
+  /** Its on-chain reference, for prior-response matching and the stash key. */
   readonly surveyRef: Accessor<SurveyRef | undefined>;
   /** Who is answering: the role→credential map, taken verbatim. */
   readonly responder: Accessor<Responder>;
@@ -77,23 +77,23 @@ export interface ResponseDraftSource {
 }
 
 /**
- * Edited forms by {@link ResponseDraft.formKey}, each written whole on every
+ * Edited forms by survey key (`<txHash>:<index>`), each written whole on every
  * edit as plain JSON. What `get` returns is checked against the questions, so
  * a form that no longer fits them is refused, not restored.
  */
 export interface DraftStash {
-  /** The form last set under `formKey`, or `undefined`. */
-  get(formKey: string): unknown;
-  set(formKey: string, form: unknown): void;
-  delete(formKey: string): void;
+  /** The form last set under `surveyKey`, or `undefined`. */
+  get(surveyKey: string): unknown;
+  set(surveyKey: string, form: unknown): void;
+  delete(surveyKey: string): void;
 }
 
 function memoryStash(): DraftStash {
   const forms = new Map<string, unknown>();
   return {
-    get: (formKey) => forms.get(formKey),
-    set: (formKey, drafts) => void forms.set(formKey, drafts),
-    delete: (formKey) => void forms.delete(formKey),
+    get: (surveyKey) => forms.get(surveyKey),
+    set: (surveyKey, form) => void forms.set(surveyKey, form),
+    delete: (surveyKey) => void forms.delete(surveyKey),
   };
 }
 
@@ -106,8 +106,6 @@ export interface ResponseDraft {
   readonly credential: Accessor<Credential | null>;
   /** This responder's existing response for the current role, sealed included. */
   readonly prior: Accessor<SurveyResponse | undefined>;
-  /** Identity of the form; changing it reseeds. Stable across data refreshes. */
-  readonly formKey: Accessor<string>;
   /** One per question, index-aligned with `definition().questions`. */
   readonly drafts: readonly Draft[];
   readonly setValue: (index: number, value: DraftValue) => void;
@@ -182,15 +180,14 @@ export function createResponseDraft(
     const ref = source.surveyRef();
     return ref ? refKey(ref) : undefined;
   });
-  const formKey = createMemo(() => {
-    const r = role();
-    const cred = credential();
-    return `${surveyKey() ?? ""}|${r}:${cred ? credentialKey(cred) : ""}`;
-  });
 
   const seed = () => {
     const def = source.definition();
-    const kept = def && decodeKeptForm(stash().get(formKey()), def.questions);
+    const key = surveyKey();
+    const kept =
+      def && key !== undefined
+        ? decodeKeptForm(stash().get(key), def.questions)
+        : undefined;
     // A kept form counts as edited, so a prior response arriving later cannot
     // replace it.
     setTouched(kept !== undefined);
@@ -208,7 +205,7 @@ export function createResponseDraft(
 
   createEffect(
     on(
-      () => [formKey(), source.definition(), prefillFrom(), stash()] as const,
+      () => [surveyKey(), source.definition(), prefillFrom(), stash()] as const,
       ([key], prev) => {
         if (prev && prev[0] !== key) setTouched(false);
         if (!touched()) seed();
@@ -223,7 +220,8 @@ export function createResponseDraft(
   const edit = (index: number, change: Partial<Draft>) => {
     setTouched(true);
     setDrafts(index, change);
-    stash().set(formKey(), encodeKeptForm(unwrap(drafts)));
+    const key = surveyKey();
+    if (key !== undefined) stash().set(key, encodeKeptForm(unwrap(drafts)));
   };
 
   const total = () => source.definition()?.questions.length ?? 0;
@@ -246,13 +244,13 @@ export function createResponseDraft(
     pickRole: setRoleOverride,
     credential,
     prior,
-    formKey,
     drafts,
     setValue: (index, value) => edit(index, { value }),
     setSkipped: (index, skipped) => edit(index, { skipped }),
     restored,
     discard: () => {
-      stash().delete(formKey());
+      const key = surveyKey();
+      if (key !== undefined) stash().delete(key);
       seed();
     },
     total,

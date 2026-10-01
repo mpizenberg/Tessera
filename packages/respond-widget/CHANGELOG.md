@@ -17,15 +17,17 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
   question undecided; it is never cut. The `messages` prop gains
   `respond.customBytes` for the count.
 - `stash` prop: where unsent answers are kept, as plain JSON, one form per
-  survey, role and credential. A durable one, such as `localStorage`, brings
-  them back after a reload; a kept form that no longer fits the questions is
-  ignored. Without one they stay in memory, as before. The `DraftStash` type
-  is exported.
-- `formKey` in the `tessera:response` detail: the answered form's key in the
-  stash, for the host to delete once the response is on chain.
+  survey under its `<txHash>:<index>` key. A durable one, such as
+  `localStorage`, brings them back after a reload; a kept form that no longer
+  fits the questions is ignored. Without one they stay in memory, as before.
+  The `DraftStash` type is exported.
 
 ### Changed
 
+- Switching role, or the host swapping the wallet behind a role, keeps the
+  answers the user has entered. It used to start a fresh form for each role
+  and credential, prefilled from that one's prior response; that still
+  happens while the form is untouched.
 - A custom answer longer than 64 bytes is written as `chunked_text`, an array
   of 64-byte chunks that never splits a character. It used to be written as
   one string, which is not a valid metadatum past 64 bytes. A prior response

@@ -54,7 +54,8 @@ export interface TesseraRespondProps {
    * answered as. The role is chosen inside the widget (a responder eligible in
    * several roles switches between them), so the host can't know up front which
    * prior response applies; it passes them all and the widget selects the one
-   * matching the current role + credential. Pass sealed priors too — they mark
+   * matching the current role + credential, until the user starts editing.
+   * Pass sealed priors too — they mark
    * the form as a replacement, they just can't prefill it (ciphertext).
    */
   priorResponses?: readonly SurveyResponse[];
@@ -89,7 +90,8 @@ export interface TesseraRespondProps {
    */
   maxTextBytes?: number;
   /**
-   * Where unsent answers are kept, per survey, role and credential. Without
+   * Where unsent answers are kept, one form per survey under its
+   * `<txHash>:<index>` key, kept through a change of role or wallet. Without
    * one they live in memory, for as long as the element does; a durable one
    * (localStorage, say) brings them back after a reload. A kept form that no
    * longer fits the questions is ignored.
@@ -115,8 +117,6 @@ export interface RespondResult {
   /** Prove each through the carrying tx (required_signers or a governance-vote binding); keyKind names the signing key. */
   proveCredentials: CredentialProof[];
   sealed: boolean;
-  /** The answered form's key in the `stash`; delete it once the response is on chain. */
-  formKey: string;
 }
 
 /** Emitted on `tessera:change` — progress, for host-driven submit buttons. */

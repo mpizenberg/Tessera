@@ -10,7 +10,7 @@ import { A, useParams } from "@solidjs/router";
 import type { Role, SealedSubmissionMode, SurveyDefinition } from "cip-179";
 
 import { useApp } from "~/state";
-import { dedupeResponses, findSurvey } from "cip-179/domain";
+import { dedupeResponses, findSurvey, refKey } from "cip-179/domain";
 import type { Responder } from "cardano-tessera-respond-core";
 import { createResponseDraft } from "cardano-tessera-respond-ui";
 import { walletResponder } from "~/domain/roles";
@@ -134,12 +134,10 @@ export const Respond: Component = () => {
     kept.storeRationale(sent() ? undefined : rationale.inputs()),
   );
 
-  // The form's identity is taken at the click: the role chips stay live while
-  // the wallet signs, and only the form that was sent may be forgotten.
   const submit = async (queueOnly: boolean): Promise<void> => {
-    const formKey = draft.formKey();
     await submission.submit(queueOnly);
-    if (sent()) kept.stash.delete(formKey);
+    const ref = survey()?.record.ref;
+    if (sent() && ref) kept.stash.delete(refKey(ref));
   };
 
   const discard = () => {

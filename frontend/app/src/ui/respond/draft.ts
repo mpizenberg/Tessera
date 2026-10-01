@@ -3,9 +3,9 @@
  *
  * The answering spine writes every edit to the stash it is given; this is the
  * one the app gives it, so a reload (routine here: wallet popups, extension
- * reloads, emergency direct mode) brings the answers back. Forms are filed per
- * survey beside the survey's Pro rationale, and a survey's entry goes once the
- * survey has ended, since nothing can be sent to it any more.
+ * reloads, emergency direct mode) brings the answers back. A survey's form is
+ * filed beside its Pro rationale, and the entry goes once the survey has ended,
+ * since nothing can be sent to it any more.
  *
  * Sealed-survey answers are kept like any others: sealing hides them on chain,
  * and this storage never leaves the device.
@@ -19,10 +19,10 @@ import type { RationaleInputs } from "./Rationale";
 
 const storageKey = (): string => `tessera.responseDrafts.${envNetwork()}`;
 
-/** One survey's kept state. Forms are the spine's plain JSON, checked on read. */
+/** One survey's kept state. The form is the spine's plain JSON, checked on read. */
 interface SurveyEntry {
   endEpoch: number;
-  forms: Record<string, unknown>;
+  form?: unknown;
   rationale?: RationaleInputs;
 }
 
@@ -46,31 +46,31 @@ export function responseDrafts(survey: {
   readonly endEpoch: () => number | undefined;
   readonly tipEpoch: () => number | undefined;
 }): ResponseDrafts {
-  const update = (change: (entry: SurveyEntry) => void): void => {
+  const update = (key: string, change: (entry: SurveyEntry) => void): void => {
     const endEpoch = survey.endEpoch();
     if (endEpoch === undefined) return;
     const kept = read();
-    const entry = kept[survey.key()] ?? { endEpoch, forms: {} };
+    const entry = kept[key] ?? { endEpoch };
     change(entry);
-    kept[survey.key()] = entry;
+    kept[key] = entry;
     write(kept, survey.tipEpoch());
   };
 
   return {
     stash: {
-      get: (formKey) => read()[survey.key()]?.forms[formKey],
-      set: (formKey, form) =>
-        update((entry) => {
-          entry.forms[formKey] = form;
+      get: (key) => read()[key]?.form,
+      set: (key, form) =>
+        update(key, (entry) => {
+          entry.form = form;
         }),
-      delete: (formKey) =>
-        update((entry) => {
-          delete entry.forms[formKey];
+      delete: (key) =>
+        update(key, (entry) => {
+          delete entry.form;
         }),
     },
     loadRationale: () => read()[survey.key()]?.rationale,
     storeRationale: (inputs) =>
-      update((entry) => {
+      update(survey.key(), (entry) => {
         if (inputs && hasText(inputs)) entry.rationale = inputs;
         else delete entry.rationale;
       }),
@@ -82,16 +82,11 @@ function read(): Kept {
   const kept: Kept = {};
   if (!isFields(raw)) return kept;
   for (const [key, entry] of Object.entries(raw)) {
-    if (
-      !isFields(entry) ||
-      !Number.isInteger(entry.endEpoch) ||
-      !isFields(entry.forms)
-    )
-      continue;
+    if (!isFields(entry) || !Number.isInteger(entry.endEpoch)) continue;
     const rationale = decodeRationale(entry.rationale);
     kept[key] = {
       endEpoch: entry.endEpoch as number,
-      forms: entry.forms,
+      ...(entry.form !== undefined ? { form: entry.form } : {}),
       ...(rationale ? { rationale } : {}),
     };
   }
@@ -105,8 +100,7 @@ function read(): Kept {
 function write(kept: Kept, tipEpoch: number | undefined): void {
   for (const [key, entry] of Object.entries(kept)) {
     const ended = tipEpoch !== undefined && entry.endEpoch < tipEpoch;
-    const empty =
-      Object.keys(entry.forms).length === 0 && entry.rationale === undefined;
+    const empty = entry.form === undefined && entry.rationale === undefined;
     if (ended || empty) delete kept[key];
   }
   writeJson(storageKey(), Object.keys(kept).length === 0 ? undefined : kept);
