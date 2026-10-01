@@ -30,9 +30,10 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
   `QuestionTranslation` types are exported.
 - `conditions` prop: show a question only when an earlier single- or
   multi-choice question has one of some options selected (`anyOf`), or none
-  (`noneOf`). A hidden question records nothing and counts as decided. If any
-  condition is faulty, none applies, with a console warning and a notice; the
-  `messages` prop gains `respond.conditionsIgnoredTitle` and
+  (`noneOf`). A hidden question records nothing and counts as decided; the
+  list layout shows a one-line note in its place. If any condition is faulty,
+  none applies, with a console warning and a notice. The `messages` prop gains
+  `respond.hiddenNote`, `respond.conditionsIgnoredTitle` and
   `respond.conditionsIgnoredBody`. The `DisplayConditions` and
   `DisplayCondition` types are exported.
 

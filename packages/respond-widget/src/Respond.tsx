@@ -389,7 +389,10 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
               <div class="questionList">
                 <For each={shown().questions}>
                   {(q, i) => (
-                    <Show when={shows(i())}>
+                    <Show
+                      when={shows(i())}
+                      fallback={<HiddenRow index={i()} />}
+                    >
                       <QuestionCard
                         q={q}
                         index={i()}
@@ -596,6 +599,19 @@ const SealedBanner: Component<{ round: number }> = (props) => {
 // ----------------------------------------------------------------------------
 // Question card (header + skip + body switch)
 // ----------------------------------------------------------------------------
+
+// No prompt: shown, it would read as a question to unlock.
+const HiddenRow: Component<{ index: number }> = (props) => {
+  const i18n = useI18n();
+  return (
+    <div class="hiddenRow">
+      <span class="qChip">
+        {i18n.t("respond.questionChip", { n: i18n.n(props.index + 1) })}
+      </span>
+      <span>{i18n.t("respond.hiddenNote")}</span>
+    </div>
+  );
+};
 
 const QuestionCard: Component<{
   q: Question;

@@ -91,6 +91,7 @@ const en = {
     skip: "Skip",
     noPrompt: "(no prompt)",
     skippedNote: "Skipped — abstaining. Nothing is recorded for this question.",
+    hiddenNote: "Not asked, given your earlier answers.",
 
     // --- Stepper (one-per-screen layout) ------------------------------------
     stepPrev: "Previous",

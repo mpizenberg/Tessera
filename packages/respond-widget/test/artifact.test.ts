@@ -430,16 +430,21 @@ describe("built <tessera-respond> artifact", () => {
     });
     const root = shadow(el);
     const cards = () => root.querySelectorAll(".card").length;
+    const hiddenChips = () =>
+      [...root.querySelectorAll(".hiddenRow .qChip")].map((c) => c.textContent);
     const rowsOf = (card: number) =>
       root
         .querySelectorAll(".card")
         [card]!.querySelectorAll<HTMLElement>(".optionRow");
     // Nothing picked yet: the ranking (anyOf) hides, the points (noneOf) show.
     expect(cards()).toBe(6);
+    expect(hiddenChips()).toEqual(["Q3"]);
     rowsOf(0)[1]!.click(); // "Governance polish" shows the ranking
     expect(cards()).toBe(7);
+    expect(hiddenChips()).toEqual([]);
     rowsOf(1)[3]!.click(); // "Marketing" hides the points allocation
     expect(cards()).toBe(6);
+    expect(hiddenChips()).toEqual(["Q5"]);
     expect(root.querySelector(".noticeWarn")).toBe(null);
   });
 

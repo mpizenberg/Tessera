@@ -81,6 +81,7 @@ const fr: RespondMessages = {
     noPrompt: "(aucun énoncé)",
     skippedNote:
       "Ignorée — abstention. Rien n'est enregistré pour cette question.",
+    hiddenNote: "Non posée, d'après vos réponses précédentes.",
 
     // --- Navigation pas-à-pas (mode une question par écran) -----------------
     stepPrev: "Précédente",

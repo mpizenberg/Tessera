@@ -431,6 +431,9 @@ el.conditions = {
 - A hidden question records nothing and counts as decided, so the progress
   total stays the full question count and moves ahead as questions hide. Its
   answers are kept: changing the earlier answer back brings them back.
+- The list layout keeps a one-line row in a hidden question's place — its
+  number and `respond.hiddenNote`, without the prompt — so the numbering has
+  no unexplained gap. The stepper steps over it.
 - A condition may only name an earlier question, and a required question
   cannot carry one: hiding it would make the response invalid.
 
@@ -585,7 +588,8 @@ with a `-bg` pair). See [`src/theme.css`](./src/theme.css) for the full token li
 
 - **`"one-per-screen"`** (default) — a stepper: one question at a time with
   prev/next, stepping over hidden questions.
-- **`"list"`** — every question rendered at once.
+- **`"list"`** — every question rendered at once, a hidden one as a one-line
+  note.
 
 Both reuse the same body components, the same `decided()` gating, and the same
 answer collection; layout is pure presentation over shared state. The submit
