@@ -213,6 +213,7 @@ ones (`locale`, `layout`, `tip-epoch`, `initial-role`, `max-text-bytes`,
 | `maxTextBytes`    | `number`                        |      | —                  | Cap on a custom answer's UTF-8 length. The input shows a byte count; a longer text leaves its question undecided.  |
 | `stash`           | `DraftStash`                    |      | memory             | Where unsent answers are kept — see [Unsent answers](#unsent-answers).                                             |
 | `translations`    | `SurveyTranslations`            |      | —                  | The survey's own text in other languages, picked by `locale` — see [Translated surveys](#translated-surveys).      |
+| `conditions`      | `DisplayConditions`             |      | —                  | Questions shown only after some earlier answers — see [Conditional questions](#conditional-questions).             |
 
 ## Events
 
@@ -409,6 +410,40 @@ that no longer fits them, so a damaged or hand-edited entry costs the kept
 answers, not the survey. Once a response is on chain, delete the survey's
 form (`stash.delete` under its key) so a later visit starts from that response.
 
+## Conditional questions
+
+`conditions` shows a question only when an earlier single- or multi-choice
+question's answer matches. It maps the index of the question to show or hide
+to one test on an earlier question's option indices:
+
+```ts
+el.conditions = {
+  // Question 2 shows when question 0 has option 1 selected.
+  2: { question: 0, anyOf: [1] },
+  // Question 4 shows unless question 1 has option 3 selected.
+  4: { question: 1, noneOf: [3] },
+};
+```
+
+- A skipped or unanswered question has no option selected: `anyOf` is false,
+  `noneOf` true. A hidden question counts the same for later conditions, so a
+  chain of conditions hides together.
+- A hidden question records nothing and counts as decided, so the progress
+  total stays the full question count and moves ahead as questions hide. Its
+  answers are kept: changing the earlier answer back brings them back.
+- A condition may only name an earlier question, and a required question
+  cannot carry one: hiding it would make the response invalid.
+
+If any condition breaks a rule — it names a later question, a question that is
+not a single or multiple choice, or an option that does not exist, sits on a
+required question, or is malformed — **none** is applied. Every question
+shows, each fault is logged with `console.warn`, and a notice
+(`respond.conditionsIgnoredTitle` / `respond.conditionsIgnoredBody` in
+`messages`) tells the responder. Conditions are not part of CIP-179: a response
+submitted by another tool may answer a question this widget would hide, so a
+survey's own analysis applies the same rule if it needs to. The shape is a
+prototype for a later revision of the spec and may change with it.
+
 ## What the host must do
 
 The widget deliberately leaves these to you:
@@ -549,11 +584,13 @@ with a `-bg` pair). See [`src/theme.css`](./src/theme.css) for the full token li
 ## Layout
 
 - **`"one-per-screen"`** (default) — a stepper: one question at a time with
-  prev/next and progress dots.
+  prev/next, stepping over hidden questions.
 - **`"list"`** — every question rendered at once.
 
 Both reuse the same body components, the same `decided()` gating, and the same
-answer collection; layout is pure presentation over shared state.
+answer collection; layout is pure presentation over shared state. The submit
+bar has one progress dot per question: filled when answered, outlined when
+skipped or hidden, and ringed for the question on screen in the stepper.
 
 ## Single Solid instance
 

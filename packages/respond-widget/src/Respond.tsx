@@ -8,8 +8,10 @@
  * {@link I18nContext} (never a module global, so two instances can render in
  * different locales). `locale` also picks the survey's own text from
  * `translations`; only what is shown changes, so the form, the answers and the
- * payload stay those of the on-chain definition. It reaches no router, wallet, chain, or network state:
- * `onSubmit` **emits** a `tessera:response` for the host to sign and submit.
+ * payload stay those of the on-chain definition. `conditions` hide questions
+ * by earlier answers; a hidden question reads as skipped. It reaches no
+ * router, wallet, chain, or network state: `onSubmit` **emits** a
+ * `tessera:response` for the host to sign and submit.
  *
  * Role choice, drafts and progress come from `createResponseDraft`, the same
  * reactive spine the Tessera app's Respond screen runs on; what remains here is
@@ -23,6 +25,7 @@
 
 import {
   For,
+  Index,
   Show,
   createEffect,
   createMemo,
@@ -47,6 +50,7 @@ import {
   collectAnswers,
   createI18n,
   localizeDefinition,
+  readConditions,
   readTranslations,
   renderProblem,
   roleBrowserClaimable,
@@ -63,6 +67,7 @@ import {
   createResponseDraft,
   typeMeta,
   useI18n,
+  type QuestionProgress,
 } from "cardano-tessera-respond-ui";
 import { keyKindForRole, roleColors, roleDescription } from "./roles";
 import {
@@ -104,6 +109,17 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
       : props.definition;
   });
 
+  const conditions = createMemo(() =>
+    props.conditions === undefined
+      ? undefined
+      : readConditions(props.definition, props.conditions),
+  );
+  createEffect(() => {
+    for (const why of conditions()?.faults ?? [])
+      console.warn(`tessera-respond: conditions: ${why}`);
+  });
+  const conditionsIgnored = () => (conditions()?.faults.length ?? 0) > 0;
+
   // Events cross the shadow boundary from the widget's own root node
   // (`composed: true`); a listener outside the shadow sees the host element as
   // the retargeted `event.target`.
@@ -143,6 +159,9 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     drafts,
     setValue,
     setSkipped,
+    hidden,
+    answers,
+    progress,
     total,
     decidedCount,
     answered,
@@ -154,6 +173,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     preferredRole: () => props.initialRole,
     maxTextBytes: () => props.maxTextBytes,
     stash: () => props.stash,
+    conditions,
   });
 
   // Stepper position for the one-per-screen layout — reset for another survey,
@@ -167,9 +187,20 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
       { defer: true },
     ),
   );
-  const stepIndex = createMemo(() =>
-    Math.min(step(), Math.max(0, total() - 1)),
-  );
+  const shows = (i: number) => hidden()[i] !== true;
+  // A prior response or a kept form arriving can hide the question stepped
+  // to; the nearest shown one before it takes its place. Question 0 always
+  // shows, since a condition names an earlier question.
+  const stepIndex = createMemo(() => {
+    let i = Math.min(step(), Math.max(0, total() - 1));
+    while (i > 0 && !shows(i)) i--;
+    return i;
+  });
+  const shownFrom = (dir: 1 | -1): number | undefined => {
+    for (let i = stepIndex() + dir; i >= 0 && i < total(); i += dir)
+      if (shows(i)) return i;
+    return undefined;
+  };
 
   const sealedMode = createMemo(() => {
     const mode = props.definition.submissionMode;
@@ -217,12 +248,13 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     const r = role();
     const cred = credential();
     if (r === null || !cred) return;
+    const answersNow = answers();
 
     // Validate the answers as plaintext first — for a sealed survey nobody can
     // check them again until the reveal, so they must be well-formed now.
     const found = validateResponse(
       { ...def, submissionMode: { type: "public" } },
-      buildResponse(props.surveyRef, r, cred, def.questions, drafts),
+      buildResponse(props.surveyRef, r, cred, def.questions, answersNow),
     );
     if (found.length > 0) {
       const t = i18n();
@@ -244,7 +276,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
             // Timelock-encrypt the answers to the survey's drand round (lazy —
             // the only path that loads the tlock + evolution chunks).
             await sealResponse(
-              collectAnswers(def.questions, drafts),
+              collectAnswers(def.questions, answersNow),
               sealed.round,
               sealed.paddingSize,
             ),
@@ -255,7 +287,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
             r,
             cred,
             def.questions,
-            drafts,
+            answersNow,
             props.rationaleAnchor,
           );
 
@@ -320,6 +352,9 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
             <Show when={sealedUnsupported()}>
               <SealedUnsupportedNotice />
             </Show>
+            <Show when={conditionsIgnored()}>
+              <ConditionsIgnoredNotice />
+            </Show>
 
             <Show
               when={layout() === "list"}
@@ -344,6 +379,8 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
                   <StepperNav
                     index={stepIndex()}
                     total={total()}
+                    prev={shownFrom(-1)}
+                    next={shownFrom(1)}
                     onStep={setStep}
                   />
                 </div>
@@ -352,14 +389,16 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
               <div class="questionList">
                 <For each={shown().questions}>
                   {(q, i) => (
-                    <QuestionCard
-                      q={q}
-                      index={i()}
-                      draft={drafts[i()]}
-                      maxTextBytes={props.maxTextBytes}
-                      onChange={(v) => setValue(i(), v)}
-                      onSkip={(sk) => setSkipped(i(), sk)}
-                    />
+                    <Show when={shows(i())}>
+                      <QuestionCard
+                        q={q}
+                        index={i()}
+                        draft={drafts[i()]}
+                        maxTextBytes={props.maxTextBytes}
+                        onChange={(v) => setValue(i(), v)}
+                        onSkip={(sk) => setSkipped(i(), sk)}
+                      />
+                    </Show>
                   )}
                 </For>
               </div>
@@ -370,8 +409,8 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
             </Show>
 
             <SubmitBar
-              decided={decidedCount()}
-              total={total()}
+              progress={progress()}
+              current={layout() === "list" ? undefined : stepIndex()}
               answered={answered()}
               replacing={prior() !== undefined}
               submitting={submitting()}
@@ -459,6 +498,18 @@ const SealedUnsupportedNotice: Component = () => {
         {i18n.t("respond.sealedUnsupportedTitle")}
       </div>
       <p class="noticeBody">{i18n.t("respond.sealedUnsupportedBody")}</p>
+    </div>
+  );
+};
+
+const ConditionsIgnoredNotice: Component = () => {
+  const i18n = useI18n();
+  return (
+    <div class="notice noticeWarn">
+      <div class="noticeTitle noticeTitleWarn">
+        {i18n.t("respond.conditionsIgnoredTitle")}
+      </div>
+      <p class="noticeBody">{i18n.t("respond.conditionsIgnoredBody")}</p>
     </div>
   );
 };
@@ -606,6 +657,9 @@ const QuestionCard: Component<{
 const StepperNav: Component<{
   index: number;
   total: number;
+  /** The shown questions either side, if any; hidden ones are stepped over. */
+  prev: number | undefined;
+  next: number | undefined;
   onStep: (i: number) => void;
 }> = (props) => {
   const i18n = useI18n();
@@ -613,8 +667,8 @@ const StepperNav: Component<{
     <div class="stepperNav">
       <button
         class="stepNavBtn"
-        disabled={props.index <= 0}
-        onClick={() => props.onStep(Math.max(0, props.index - 1))}
+        disabled={props.prev === undefined}
+        onClick={() => props.prev !== undefined && props.onStep(props.prev)}
       >
         ← {i18n.t("respond.stepPrev")}
       </button>
@@ -626,8 +680,8 @@ const StepperNav: Component<{
       </span>
       <button
         class="stepNavBtn"
-        disabled={props.index >= props.total - 1}
-        onClick={() => props.onStep(Math.min(props.total - 1, props.index + 1))}
+        disabled={props.next === undefined}
+        onClick={() => props.next !== undefined && props.onStep(props.next)}
       >
         {i18n.t("respond.stepNext")} →
       </button>
@@ -654,8 +708,10 @@ const ProblemList: Component<{ problems: string[] }> = (props) => {
 };
 
 const SubmitBar: Component<{
-  decided: number;
-  total: number;
+  /** Each question's state, hidden ones reading skipped. */
+  progress: readonly QuestionProgress[];
+  /** The question on screen, in the one-per-screen layout. */
+  current: number | undefined;
   /** At least one question carries a recorded answer (not all-skipped). */
   answered: boolean;
   replacing: boolean;
@@ -666,11 +722,10 @@ const SubmitBar: Component<{
   onSubmit: () => void;
 }> = (props) => {
   const i18n = useI18n();
+  const decided = () => props.progress.filter((p) => p !== "undecided").length;
+  const total = () => props.progress.length;
   const ready = () =>
-    props.decided >= props.total &&
-    props.total > 0 &&
-    props.answered &&
-    !props.blocked;
+    decided() >= total() && total() > 0 && props.answered && !props.blocked;
   const idleText = () =>
     props.sealed
       ? i18n.t("respond.encryptAndSubmit")
@@ -680,19 +735,23 @@ const SubmitBar: Component<{
       <div class="submitInner">
         <div class="submitStatus">
           <span class="progressDots">
-            <For each={Array.from({ length: props.total }, (_, i) => i)}>
-              {(i) => (
+            <Index each={props.progress}>
+              {(p, i) => (
                 <span
                   class="progressDot"
-                  classList={{ progressDotOn: i < props.decided }}
+                  classList={{
+                    progressDotOn: p() === "answered",
+                    progressDotSkipped: p() === "skipped",
+                    progressDotCurrent: i === props.current,
+                  }}
                 />
               )}
-            </For>
+            </Index>
           </span>
           <span class="decidedCount">
             {i18n.t("respond.decidedCount", {
-              decided: i18n.n(props.decided),
-              total: i18n.n(props.total),
+              decided: i18n.n(decided()),
+              total: i18n.n(total()),
             })}
           </span>
           <Show when={props.replacing}>

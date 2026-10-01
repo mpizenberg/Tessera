@@ -16,6 +16,7 @@ import {
 import { hexToBytes } from "cip-179/domain";
 import { QUICKNET_CHAIN_HASH } from "cip-179/tlock";
 import type {
+  DisplayConditions,
   Responder,
   SurveyTranslations,
 } from "cardano-tessera-respond-core";
@@ -158,6 +159,16 @@ export const TRANSLATIONS: SurveyTranslations = {
       ],
     },
   },
+};
+
+/**
+ * Display rules for every sample: the ranking shows only to those who picked
+ * "Governance polish" first, and the points allocation hides once "Marketing"
+ * is among the funded areas.
+ */
+export const CONDITIONS: DisplayConditions = {
+  2: { question: 0, anyOf: [1] },
+  4: { question: 1, noneOf: [3] },
 };
 
 function makeDef(o: {

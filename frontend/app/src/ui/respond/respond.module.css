@@ -903,6 +903,12 @@
   background: var(--accent);
 }
 
+/* Settled with nothing recorded: skipped, or hidden by a condition. */
+.progressDotSkipped {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
 .decidedCount {
   font-size: 13.5px;
   font-weight: 700;

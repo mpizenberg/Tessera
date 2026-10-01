@@ -52,6 +52,11 @@ const fr: RespondMessages = {
     sealedUnsupportedNote:
       "Chaîne drand non prise en charge — révélation impossible",
 
+    // --- Conditions d'affichage non appliquées -----------------------------
+    conditionsIgnoredTitle: "Toutes les questions sont affichées",
+    conditionsIgnoredBody:
+      "Les règles de ce sondage qui affichent des questions selon les réponses précédentes sont erronées : elles ne sont pas appliquées. Certaines questions peuvent ne pas vous concerner.",
+
     // --- Indication de couverture de notation ------------------------------
     ratingRequireAll: "Notez chaque option pour que votre réponse compte.",
     ratingAllowSubset:

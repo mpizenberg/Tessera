@@ -28,6 +28,13 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
   the default language, or one that does not match the questions, is ignored
   with a console warning. The `SurveyTranslations`, `SurveyTranslation` and
   `QuestionTranslation` types are exported.
+- `conditions` prop: show a question only when an earlier single- or
+  multi-choice question has one of some options selected (`anyOf`), or none
+  (`noneOf`). A hidden question records nothing and counts as decided. If any
+  condition is faulty, none applies, with a console warning and a notice; the
+  `messages` prop gains `respond.conditionsIgnoredTitle` and
+  `respond.conditionsIgnoredBody`. The `DisplayConditions` and
+  `DisplayCondition` types are exported.
 
 ### Changed
 
@@ -40,6 +47,9 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
   one string, which is not a valid metadatum past 64 bytes. A prior response
   prefills from either form.
 - The custom answer input is a multi-line text area.
+- Each progress dot shows its own question's state: filled when answered,
+  outlined when skipped or hidden, ringed for the question on screen in the
+  stepper. The dots used to fill from the left by the decided count.
 
 ## [0.2.0] - 2026-09-15
 

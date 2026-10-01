@@ -14,6 +14,7 @@ import { refKey } from "cip-179/domain";
 import {
   decodeKeptForm,
   encodeKeptForm,
+  readConditions,
   type Responder,
 } from "cardano-tessera-respond-core";
 
@@ -435,5 +436,34 @@ describe("createResponseDraft", () => {
     draft.setValue(0, pick(0));
     expect(draft.decidedCount()).toBe(2);
     expect(draft.answered()).toBe(true);
+  });
+
+  it("reads a hidden question as skipped, and keeps its draft", () => {
+    const def = defWith(Role.DRep);
+    const draft = draftIn({
+      definition: () => def,
+      surveyRef: () => ref(1),
+      responder: () => both,
+      priorResponses: () => [],
+      preferredRole: () => null,
+      conditions: () => readConditions(def, { 1: { question: 0, anyOf: [0] } }),
+    });
+
+    draft.setValue(0, pick(0));
+    draft.setValue(1, { type: "numeric", value: 4n });
+    expect(draft.progress()).toEqual(["answered", "answered"]);
+
+    draft.setValue(0, pick(1));
+    expect(draft.hidden()).toEqual([false, true]);
+    expect(draft.progress()).toEqual(["answered", "skipped"]);
+    expect(draft.decidedCount()).toBe(2);
+    expect(draft.total()).toBe(2);
+    expect(draft.answers()[1]?.skipped).toBe(true);
+
+    draft.setValue(0, pick(0));
+    expect(draft.answers()[1]).toEqual({
+      skipped: false,
+      value: { type: "numeric", value: 4n },
+    });
   });
 });

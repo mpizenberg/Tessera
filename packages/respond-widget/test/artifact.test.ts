@@ -30,6 +30,7 @@ import { QUICKNET_CHAIN_HASH } from "cip-179/tlock";
 import { buildResponse } from "cardano-tessera-respond-core";
 
 import {
+  CONDITIONS,
   SAMPLES,
   SURVEY_REFS,
   TIP_EPOCH,
@@ -420,6 +421,66 @@ describe("built <tessera-respond> artifact", () => {
     expect(text(".qPrompt")).toBe(fr.questions![0]!.prompt);
     expect(text(".optionRowOn")).toBe(fr.questions![0]!.options![0]);
     expect(root.querySelectorAll(".optionRowOn").length).toBe(1);
+  });
+
+  it("shows a question only while its condition holds", () => {
+    const el = mount(SAMPLES.public, {
+      layout: "list",
+      conditions: CONDITIONS,
+    });
+    const root = shadow(el);
+    const cards = () => root.querySelectorAll(".card").length;
+    const rowsOf = (card: number) =>
+      root
+        .querySelectorAll(".card")
+        [card]!.querySelectorAll<HTMLElement>(".optionRow");
+    // Nothing picked yet: the ranking (anyOf) hides, the points (noneOf) show.
+    expect(cards()).toBe(6);
+    rowsOf(0)[1]!.click(); // "Governance polish" shows the ranking
+    expect(cards()).toBe(7);
+    rowsOf(1)[3]!.click(); // "Marketing" hides the points allocation
+    expect(cards()).toBe(6);
+    expect(root.querySelector(".noticeWarn")).toBe(null);
+  });
+
+  it("steps over a hidden question, and leaves it out of the payload", async () => {
+    const el = mount(SAMPLES.public, { conditions: CONDITIONS });
+    const root = shadow(el);
+    click(root, ".optionRow"); // "Scaling", so the ranking stays hidden
+    click(root, ".stepperNav .stepNavBtn:last-child");
+    click(root, ".stepperNav .stepNavBtn:last-child");
+    expect(root.querySelector(".rangeFull")).not.toBe(null);
+    expect(root.querySelector(".stepCount")?.textContent).toBe(
+      "Question 4 of 7",
+    );
+
+    el.layout = "list";
+    for (const skip of root.querySelectorAll<HTMLElement>(".skipBtn"))
+      skip.click();
+    expect(root.querySelectorAll(".progressDotOn").length).toBe(1);
+    expect(root.querySelectorAll(".progressDotSkipped").length).toBe(6);
+
+    const responded = once(el, "tessera:response");
+    click(root, ".submitBtn");
+    const payload = decodePayload(
+      ((await responded).detail as RespondResult).payload,
+    );
+    if (payload.type !== "responses") throw new Error("not a response");
+    const answers = payload.responses[0]!.answers;
+    if (answers.type !== "public") throw new Error("not public");
+    expect(answers.answers.map((a) => a.questionIndex)).toEqual([0]);
+  });
+
+  it("applies no condition when one is faulty, and says so", () => {
+    const el = mount(SAMPLES.public, {
+      layout: "list",
+      conditions: { ...CONDITIONS, 1: { question: 3, anyOf: [0] } },
+    });
+    const root = shadow(el);
+    expect(root.querySelectorAll(".card").length).toBe(7);
+    expect(root.querySelector(".noticeWarn .noticeTitle")?.textContent).toBe(
+      "Every question is shown",
+    );
   });
 
   it("keeps in-progress answers when switching role", () => {

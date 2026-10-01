@@ -44,7 +44,8 @@ export type ResponseSource = {
   readonly surveyRef: Accessor<SurveyRef | undefined>;
   readonly role: Accessor<Role | null>;
   readonly credential: Accessor<Credential | null>;
-  readonly drafts: readonly Draft[];
+  /** The drafts as submitted, detached from the form. */
+  readonly answers: Accessor<readonly Draft[]>;
   readonly sealedMode: Accessor<SealedSubmissionMode | null>;
 };
 
@@ -97,7 +98,7 @@ export function createOnchainPreview(
         p.role,
         p.credential,
         p.def.questions,
-        src.drafts,
+        src.answers(),
         rationale.preview(),
       );
       return encodePayload({ type: "responses", responses: [response] });
@@ -114,7 +115,7 @@ export function createOnchainPreview(
     const def = src.definition();
     if (!def || !src.sealedMode()) return undefined;
     try {
-      return collectAnswers(def.questions, src.drafts).map(encodeAnswerItem);
+      return collectAnswers(def.questions, src.answers()).map(encodeAnswerItem);
     } catch {
       return undefined;
     }
@@ -233,20 +234,16 @@ export function createSubmission(input: {
     // Everything the submission is built from is captured at click time:
     // pinning a rationale awaits, and the progress overlay blocks the pointer
     // but not the keyboard, so reading live state afterwards could submit
-    // something the validation below never saw. Draft values are replaced
-    // immutably on edit, so copying the records detaches them from the store.
+    // something the validation below never saw.
     const sealed = src.sealedMode();
-    const draftsNow = src.drafts.map((d) => ({
-      skipped: d.skipped,
-      value: d.value,
-    }));
+    const answersNow = src.answers();
 
     // Validate the answers as plaintext first — for a sealed survey nobody can
     // check them again until the reveal, so they must be well-formed now. The
     // rationale never affects answer validation, so it is resolved after.
     const found = validateResponse(
       { ...p.def, submissionMode: { type: "public" } },
-      buildResponse(p.ref, p.role, p.credential, p.def.questions, draftsNow),
+      buildResponse(p.ref, p.role, p.credential, p.def.questions, answersNow),
     );
     setProblems(found.map(problemText));
     if (found.length > 0) return;
@@ -265,7 +262,7 @@ export function createSubmission(input: {
         p.role,
         p.credential,
         p.def.questions,
-        draftsNow,
+        answersNow,
         anchor,
       );
       if (sealed) {
@@ -279,7 +276,7 @@ export function createSubmission(input: {
         const { evolutionCodec } = await import("~/wallet/cbor");
         const ciphertext = await sealAnswers(
           evolutionCodec,
-          collectAnswers(p.def.questions, draftsNow),
+          collectAnswers(p.def.questions, answersNow),
           sealed.round,
           sealed.paddingSize,
         );

@@ -20,12 +20,16 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
 - `translations` prop, following the element: the survey's text in other
   languages, shown by `locale`. The `SurveyTranslations`,
   `SurveyTranslation` and `QuestionTranslation` types are exported.
+- `conditions` prop, following the element: questions shown only after some
+  earlier answers. The `DisplayConditions` and `DisplayCondition` types are
+  exported.
 
 ### Changed
 
 - A custom answer longer than 64 bytes is written as `chunked_text`, following
   the element; it used to be an invalid metadatum.
 - Switching role or wallet keeps the answers entered, following the element.
+- Progress dots show each question's state, following the element.
 
 ## [0.2.0] - 2026-09-15
 

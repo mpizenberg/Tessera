@@ -33,6 +33,8 @@ import type {
 
 export type {
   CredentialProof,
+  DisplayCondition,
+  DisplayConditions,
   DraftStash,
   ProofKeyKind,
   QuestionTranslation,
@@ -76,6 +78,7 @@ const ELEMENT_PROPS = {
   maxTextBytes: true,
   stash: true,
   translations: true,
+  conditions: true,
 } as const satisfies Record<keyof ElementProps, true>;
 
 const ELEMENT_PROP_KEYS = Object.keys(

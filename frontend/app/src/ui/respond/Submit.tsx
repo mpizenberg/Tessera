@@ -3,17 +3,17 @@
  * is on its way.
  */
 
-import { For, Show, type Component } from "solid-js";
+import { Index, Show, type Component } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import { range } from "cardano-tessera-respond-ui";
+import type { QuestionProgress } from "cardano-tessera-respond-ui";
 
 import { SubmissionReceipt } from "~/ui/components/SubmissionReceipt";
 import { t, n } from "~/i18n";
 import css from "./respond.module.css";
 
 export const SubmitBar: Component<{
-  decided: number;
-  total: number;
+  /** Each question's state, hidden ones reading skipped. */
+  progress: readonly QuestionProgress[];
   /** At least one question carries a recorded answer (not all-skipped). */
   answered: boolean;
   replacing: boolean;
@@ -31,9 +31,11 @@ export const SubmitBar: Component<{
   onSubmit: () => void;
   onQueue: () => void;
 }> = (props) => {
+  const decided = () => props.progress.filter((p) => p !== "undecided").length;
+  const total = () => props.progress.length;
   const ready = () =>
-    props.decided >= props.total &&
-    props.total > 0 &&
+    decided() >= total() &&
+    total() > 0 &&
     props.answered &&
     !props.mismatch &&
     !props.blocked;
@@ -42,19 +44,22 @@ export const SubmitBar: Component<{
       <div class={css.submitInner}>
         <div class={css.submitStatus}>
           <span class={css.progressDots}>
-            <For each={range(props.total)}>
-              {(i) => (
+            <Index each={props.progress}>
+              {(p) => (
                 <span
                   class={css.progressDot}
-                  classList={{ [css.progressDotOn]: i < props.decided }}
+                  classList={{
+                    [css.progressDotOn]: p() === "answered",
+                    [css.progressDotSkipped]: p() === "skipped",
+                  }}
                 />
               )}
-            </For>
+            </Index>
           </span>
           <span class={css.decidedCount}>
             {t("respond.decidedCount", {
-              decided: n(props.decided),
-              total: n(props.total),
+              decided: n(decided()),
+              total: n(total()),
             })}
           </span>
           <Show when={props.replacing}>

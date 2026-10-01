@@ -46,11 +46,13 @@ import {
   encodeKeptForm,
   findPriorResponse,
   hasAnyAnswer,
+  hiddenQuestions,
   initDraft,
   prefillDrafts,
   respondableRolesFor,
   type Draft,
   type DraftValue,
+  type ReadConditions,
   type Responder,
 } from "cardano-tessera-respond-core";
 
@@ -74,6 +76,8 @@ export interface ResponseDraftSource {
    * stash arriving after the form did restores into it while it is untouched.
    */
   readonly stash?: Accessor<DraftStash | undefined>;
+  /** Which questions show, from earlier answers; all show without it. */
+  readonly conditions?: Accessor<ReadConditions | undefined>;
 }
 
 /**
@@ -114,6 +118,16 @@ export interface ResponseDraft {
   readonly restored: Accessor<boolean>;
   /** Forget this form's stashed answers and reseed from the prior or defaults. */
   readonly discard: () => void;
+  /** Hidden by a condition, index-aligned with the questions. */
+  readonly hidden: Accessor<readonly boolean[]>;
+  /**
+   * The drafts a response is built from: copies detached from the form, a
+   * hidden question's read as skipped, so it records nothing.
+   */
+  readonly answers: Accessor<readonly Draft[]>;
+  /** Each question's state, index-aligned; a hidden question reads skipped. */
+  readonly progress: Accessor<readonly QuestionProgress[]>;
+  /** Every question, hidden ones included: hiding moves a responder ahead. */
   readonly total: Accessor<number>;
   readonly decidedCount: Accessor<number>;
   /**
@@ -122,6 +136,8 @@ export interface ResponseDraft {
    */
   readonly answered: Accessor<boolean>;
 }
+
+export type QuestionProgress = "undecided" | "answered" | "skipped";
 
 export function createResponseDraft(
   source: ResponseDraftSource,
@@ -224,18 +240,37 @@ export function createResponseDraft(
     if (key !== undefined) stash().set(key, encodeKeptForm(unwrap(drafts)));
   };
 
-  const total = () => source.definition()?.questions.length ?? 0;
-  const decidedCount = createMemo(() => {
-    const def = source.definition();
-    if (!def) return 0;
-    const max = source.maxTextBytes?.();
-    return def.questions.filter(
-      (q, i) => drafts[i] && decided(q, drafts[i]!, max),
-    ).length;
+  const hidden = createMemo<readonly boolean[]>(() => {
+    const conditions = source.conditions?.();
+    return conditions ? hiddenQuestions(conditions, drafts) : [];
   });
+  // Draft values are replaced, never changed in place, so copying the records
+  // detaches them from the store.
+  const answers = createMemo<readonly Draft[]>(() =>
+    drafts.map((d, i) => ({
+      skipped: d.skipped || hidden()[i] === true,
+      value: d.value,
+    })),
+  );
+
+  const total = () => source.definition()?.questions.length ?? 0;
+  const progress = createMemo<readonly QuestionProgress[]>(() => {
+    const def = source.definition();
+    if (!def) return [];
+    const max = source.maxTextBytes?.();
+    const as = answers();
+    return def.questions.map((q, i) => {
+      const a = as[i];
+      if (!a || !decided(q, a, max)) return "undecided";
+      return a.skipped ? "skipped" : "answered";
+    });
+  });
+  const decidedCount = createMemo(
+    () => progress().filter((p) => p !== "undecided").length,
+  );
   const answered = createMemo(() => {
     const def = source.definition();
-    return def ? hasAnyAnswer(def.questions, drafts) : false;
+    return def ? hasAnyAnswer(def.questions, answers()) : false;
   });
 
   return {
@@ -253,6 +288,9 @@ export function createResponseDraft(
       if (key !== undefined) stash().delete(key);
       seed();
     },
+    hidden,
+    answers,
+    progress,
     total,
     decidedCount,
     answered,

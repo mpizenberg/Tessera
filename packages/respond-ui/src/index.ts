@@ -23,6 +23,7 @@ export { QuestionBody } from "./bodies";
 export { createResponseDraft } from "./response-draft";
 export type {
   DraftStash,
+  QuestionProgress,
   ResponseDraft,
   ResponseDraftSource,
 } from "./response-draft";
@@ -38,7 +39,6 @@ export {
   activateOnKey,
   clampStep,
   labelFor,
-  range,
   ratingLevels,
   typeLabel,
   typeMeta,

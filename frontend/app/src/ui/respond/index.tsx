@@ -114,7 +114,7 @@ export const Respond: Component = () => {
     surveyRef: () => survey()?.record.ref,
     role: draft.role,
     credential: draft.credential,
-    drafts: draft.drafts,
+    answers: draft.answers,
     sealedMode,
   };
   const deadline = createDeadline(definition);
@@ -290,8 +290,7 @@ export const Respond: Component = () => {
       >
         <Show when={!app.cartLocked()} fallback={<PublishLocked />}>
           <SubmitBar
-            decided={draft.decidedCount()}
-            total={draft.total()}
+            progress={draft.progress()}
             answered={draft.answered()}
             replacing={draft.prior() !== undefined}
             submitting={submission.submitting()}

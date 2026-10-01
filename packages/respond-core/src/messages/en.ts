@@ -61,6 +61,11 @@ const en = {
       "It's pinned to a drand chain Tessera can't decrypt, so a submitted answer could never be revealed. Submission is disabled.",
     sealedUnsupportedNote: "Unsupported drand chain — cannot reveal",
 
+    // --- Display conditions that could not be applied ---------------------
+    conditionsIgnoredTitle: "Every question is shown",
+    conditionsIgnoredBody:
+      "This survey's rules for showing questions depending on earlier answers are faulty, so they are not applied. Some questions may not apply to you.",
+
     // --- Rating coverage hint ---------------------------------------------
     ratingRequireAll: "Rate every option for your answer to count.",
     ratingAllowSubset:

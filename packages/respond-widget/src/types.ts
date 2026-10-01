@@ -21,6 +21,8 @@ import type {
 } from "cip-179";
 import type {
   DeepPartial,
+  DisplayCondition,
+  DisplayConditions,
   QuestionTranslation,
   Responder,
   RespondMessages,
@@ -30,6 +32,8 @@ import type {
 import type { DraftStash } from "cardano-tessera-respond-ui";
 
 export type {
+  DisplayCondition,
+  DisplayConditions,
   DraftStash,
   QuestionTranslation,
   Responder,
@@ -117,6 +121,16 @@ export interface TesseraRespondProps {
    * warning.
    */
   translations?: SurveyTranslations;
+  /**
+   * Which questions show, keyed by question index: a question shows when an
+   * earlier single- or multi-choice question has one of `anyOf` selected, or
+   * none of `noneOf`. A skipped or hidden question has no option selected. A
+   * hidden question keeps its draft but records nothing, and counts as
+   * decided. If any condition names a later question, a non-choice question
+   * or a missing option, or sits on a required question, none applies: every
+   * question shows, with a console warning and a notice.
+   */
+  conditions?: DisplayConditions;
 }
 
 /** Which wallet/pool key must sign for a credential's proof. */
