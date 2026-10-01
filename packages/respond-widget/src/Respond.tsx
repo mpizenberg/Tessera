@@ -332,6 +332,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
           def={shown()}
           role={role()}
           respondable={respondable()}
+          showRole={props.showRole !== false}
           onPickRole={pickRole}
         />
 
@@ -429,21 +430,19 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
 };
 
 // ----------------------------------------------------------------------------
-// Header (status + title + role selector)
+// Header (title + role selector)
 // ----------------------------------------------------------------------------
 
 const SurveyHeader: Component<{
   def: SurveyDefinition;
   role: Role | null;
   respondable: Role[];
+  showRole: boolean;
   onPickRole: (r: Role) => void;
 }> = (props) => {
   const i18n = useI18n();
   return (
     <div class="header">
-      <div class="headerTop">
-        <span class="respondLabel">{i18n.t("respond.respondLabel")}</span>
-      </div>
       <h1 class="headerTitle">
         {props.def.title || i18n.t("respond.untitledSurvey")}
       </h1>
@@ -451,7 +450,7 @@ const SurveyHeader: Component<{
         <p class="headerDesc">{props.def.description}</p>
       </Show>
 
-      <Show when={props.respondable.length > 0}>
+      <Show when={props.showRole && props.respondable.length > 0}>
         <div class="roleRow">
           <span class="roleRowLabel">{i18n.t("respond.respondingAs")}</span>
           <For each={props.respondable}>

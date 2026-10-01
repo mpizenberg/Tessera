@@ -106,8 +106,8 @@ describe("TesseraRespond (React wrapper)", () => {
     render(REQUIRED);
     expect(shadow(el).querySelector(".noticeTitle")).toBe(null);
     render({ ...REQUIRED, locale: "fr" });
-    expect(shadow(el).querySelector(".respondLabel")?.textContent).toBe(
-      "Répondre",
+    expect(shadow(el).querySelector(".roleRowLabel")?.textContent).toBe(
+      "Vous répondez en tant que",
     );
   });
 

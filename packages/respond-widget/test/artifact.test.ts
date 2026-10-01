@@ -281,8 +281,8 @@ describe("built <tessera-respond> artifact", () => {
     el.responder = responder;
     el.tipEpoch = TIP_EPOCH;
     // Now rendered — in French, from the plain `locale` attribute.
-    expect(shadow(el).querySelector(".respondLabel")?.textContent).toBe(
-      "Répondre",
+    expect(shadow(el).querySelector(".roleRowLabel")?.textContent).toBe(
+      "Vous répondez en tant que",
     );
   });
 
@@ -527,6 +527,24 @@ describe("built <tessera-respond> artifact", () => {
     expect(shadow(el2).querySelector(".rolePickOn")?.textContent).toBe(
       "Stakeholder",
     );
+  });
+
+  it("hides the role row when showRole is false (property or attribute)", () => {
+    const def: SurveyDefinition = {
+      ...oneQuestionDef({ type: "public" }),
+      eligibleRoles: [Role.DRep, Role.Stakeholder],
+    };
+    const el = mount(def);
+    expect(shadow(el).querySelector(".roleRow")).not.toBe(null);
+    el.showRole = false;
+    expect(shadow(el).querySelector(".roleRow")).toBe(null);
+    document.body.innerHTML = `<tessera-respond show-role="false" initial-role="3"></tessera-respond>`;
+    const el2 = document.body.querySelector("tessera-respond")!;
+    el2.definition = def;
+    el2.surveyRef = SURVEY_REFS.public;
+    el2.responder = responder;
+    el2.tipEpoch = TIP_EPOCH;
+    expect(shadow(el2).querySelector(".roleRow")).toBe(null);
   });
 
   it("adopts the stylesheet once even when the host moves the element", async () => {

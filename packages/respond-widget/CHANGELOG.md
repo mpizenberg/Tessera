@@ -8,6 +8,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 while `< 1.0.0`, breaking changes bump the **minor** version.
 
+## [Unreleased]
+
+### Added
+
+- `showRole` prop (attribute `show-role`): `false` hides the "Responding as"
+  row, for a host that settles the role itself through `initialRole` or a
+  single-role `responder`. Default `true`.
+
+### Changed
+
+- The header no longer shows the "Respond" label above the survey title.
+
+### Fixed
+
+- The progress dots wrap within the submit bar; with many questions they ran
+  past its right edge.
+
 ## [0.3.0] - 2026-10-01
 
 ### Added

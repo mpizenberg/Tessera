@@ -97,6 +97,13 @@ export interface TesseraRespondProps {
    */
   initialRole?: Role;
   /**
+   * Whether the header shows the "Responding as" row, with a button per role
+   * the responder can answer in. Default `true`. A host that settles the role
+   * itself sets it to `false` and picks the role with `initialRole` or by
+   * passing only that role in `responder`.
+   */
+  showRole?: boolean;
+  /**
    * Cap on a custom answer's UTF-8 length. The input shows a byte count, and a
    * longer text leaves its question undecided. Unset means no cap beyond what
    * fits in a transaction.

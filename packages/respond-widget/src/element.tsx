@@ -76,6 +76,7 @@ const defaults: TesseraRespondElementProps = {
   theme: undefined,
   layout: "one-per-screen",
   initialRole: undefined,
+  showRole: true,
   maxTextBytes: undefined,
   stash: undefined,
   translations: undefined,

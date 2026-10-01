@@ -125,28 +125,13 @@
   margin-top: 6px;
 }
 
-.headerTop {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.respondLabel {
-  font-family: var(--tessera-mono);
-  font-size: 11px;
-  color: var(--tessera-dim);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
 .headerTitle {
   font-family: var(--tessera-serif);
   font-size: 26px;
   font-weight: 700;
   letter-spacing: -0.018em;
   line-height: 1.16;
-  margin: 12px 0 0;
+  margin: 0;
   color: var(--tessera-ink);
 }
 
@@ -818,6 +803,8 @@
 }
 
 .submitStatus {
+  flex: 1 1 16rem;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -825,8 +812,9 @@
 
 .progressDots {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: 7px 4px;
 }
 
 .progressDot {

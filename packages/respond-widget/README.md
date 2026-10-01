@@ -189,11 +189,11 @@ declaration shown in [TypeScript](#typescript) when installing from npm.
 ## Props
 
 Object-valued props (everything but `locale`, `layout`, `cancelled`, `tipEpoch`,
-`initialRole`, `maxTextBytes`) **must be set as DOM properties**
+`initialRole`, `showRole`, `maxTextBytes`) **must be set as DOM properties**
 (`el.definition = …`), never as HTML attributes. `solid-element` exposes each as
 a reactive prop with a hyphenated attribute alias, so the string/number/boolean
-ones (`locale`, `layout`, `tip-epoch`, `initial-role`, `max-text-bytes`,
-`cancelled`) _may_ also be written as plain attributes. `cancelled` also works HTML boolean-attribute style — a bare
+ones (`locale`, `layout`, `tip-epoch`, `initial-role`, `show-role`,
+`max-text-bytes`, `cancelled`) _may_ also be written as plain attributes. `cancelled` also works HTML boolean-attribute style — a bare
 `<tessera-respond cancelled>` means cancelled.
 
 | Prop              | Type                            | Req. | Default            | Notes                                                                                                              |
@@ -210,6 +210,7 @@ ones (`locale`, `layout`, `tip-epoch`, `initial-role`, `max-text-bytes`,
 | `theme`           | `Record<string, string>`        |      | —                  | Design-token overrides, reflected as `--tessera-<key>` on the host — see [Theming](#theming--fonts).               |
 | `layout`          | `"one-per-screen" \| "list"`    |      | `"one-per-screen"` | Stepper (one question at a time) or all questions at once.                                                         |
 | `initialRole`     | `Role`                          |      | —                  | Initial role when the responder is eligible in several. The user can still switch.                                 |
+| `showRole`        | `boolean`                       |      | `true`             | Show the "Responding as" row. `false` leaves the role to the host: `initialRole`, or a single-role `responder`.    |
 | `maxTextBytes`    | `number`                        |      | —                  | Cap on a custom answer's UTF-8 length. The input shows a byte count; a longer text leaves its question undecided.  |
 | `stash`           | `DraftStash`                    |      | memory             | Where unsent answers are kept — see [Unsent answers](#unsent-answers).                                             |
 | `translations`    | `SurveyTranslations`            |      | —                  | The survey's own text in other languages, picked by `locale` — see [Translated surveys](#translated-surveys).      |
@@ -323,6 +324,8 @@ type Responder = Partial<Record<Role, Credential>>;
   transaction (see [Proving credentials](#proving-credentials)).
 - **The widget picks the role internally.** A responder eligible in several roles
   gets a role picker; the emitted `role` + `credential` reflect the one chosen.
+  A host that settles the role itself sets `showRole` to `false` and chooses it
+  with `initialRole`, or passes only that role in the map.
   The role → signing-key mapping is fixed: Keyholder→`payment`,
   Stakeholder→`stake`, DRep→`drep`, SPO→`pool`, CC→`cc`.
 

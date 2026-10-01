@@ -881,6 +881,8 @@
 }
 
 .submitStatus {
+  flex: 1 1 16rem;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -888,8 +890,9 @@
 
 .progressDots {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: 7px 4px;
 }
 
 .progressDot {
