@@ -56,6 +56,12 @@ pass through to the host element — style the widget itself via its
 [`--tessera-*` design tokens](https://github.com/mpizenberg/Tessera/tree/main/packages/respond-widget#theming--fonts).
 `ref` exposes the underlying `TesseraRespondElement`.
 
+Keep object props (`definition`, `stash`, `translations`, `conditions`, …)
+the same object across renders — a module constant, state, or `useMemo` —
+rather than a literal in JSX. The widget skips a same-reference write, but a
+new object is read again: a faulty `translations` or `conditions` document
+logs its console warnings on every render.
+
 Note the widget announces progress as soon as it renders, so `onChange` fires
 once on mount with the initial `{ decided, total, valid }`.
 
