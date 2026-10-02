@@ -57,6 +57,7 @@ const validation: Messages = {
   },
   detailedJson: {
     notJson: "le fichier n'est pas du JSON",
+    repeatedJsonKey: "{where} : écrit deux fois dans le même objet JSON",
     notObject: "le fichier doit être un objet JSON de labels de métadonnées",
     badLabel: "« {where} » n'est pas un label de métadonnées",
     badValue:

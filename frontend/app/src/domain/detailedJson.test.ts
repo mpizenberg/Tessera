@@ -104,6 +104,26 @@ describe("toDetailedJson / fromDetailedJson", () => {
 
   test.each<[string, string, DetailedJsonProblemCode, string?]>([
     ["not JSON", "{", "detailedJson.notJson"],
+    [
+      "a label written twice",
+      `{"17": {"int": 1}, "1\\u0037": {"int": 2}}`,
+      "detailedJson.repeatedJsonKey",
+      "17",
+    ],
+    [
+      "a tag written twice",
+      at17(`{"list": [{"int": 1}, {"int": 1, "int": 2}]}`),
+      "detailedJson.repeatedJsonKey",
+      "17.list[1].int",
+    ],
+    [
+      "a map entry with two v",
+      at17(
+        `{"map": [{"k": {"string": "a,\\"k"}, "v": {"int": 1}, "v": {"int": 2}}]}`,
+      ),
+      "detailedJson.repeatedJsonKey",
+      "17.map[0].v",
+    ],
     ["a list at the top", "[]", "detailedJson.notObject"],
     ["a number at the top", "5", "detailedJson.notObject"],
     ["a word label", `{"x": {"int": 1}}`, "detailedJson.badLabel", "x"],

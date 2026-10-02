@@ -28,6 +28,7 @@ export const METADATA_INT_MAX = 2n ** 64n - 1n;
 
 export const DETAILED_JSON_PROBLEM_CODES = [
   "detailedJson.notJson",
+  "detailedJson.repeatedJsonKey",
   "detailedJson.notObject",
   "detailedJson.badLabel",
   "detailedJson.badValue",
@@ -105,6 +106,14 @@ export function fromDetailedJson(
   } catch {
     return { problem: { code: "detailedJson.notJson" } };
   }
+  const repeated = repeatedJsonKey(text);
+  if (repeated !== undefined)
+    return {
+      problem: {
+        code: "detailedJson.repeatedJsonKey",
+        params: { where: repeated },
+      },
+    };
   try {
     if (!isObject(json)) throw reject("detailedJson.notObject");
     const metadata = new Map<bigint, Metadatum>();
@@ -118,6 +127,62 @@ export function fromDetailedJson(
     if (e instanceof Rejected) return { problem: e.problem };
     throw e;
   }
+}
+
+/**
+ * The path of the first key written twice in one object of `text` (JSON that
+ * parses). `JSON.parse` keeps the last of the two and cardano-cli the first,
+ * so such a file would import as something other than what cardano-cli
+ * publishes.
+ */
+function repeatedJsonKey(text: string): string | undefined {
+  interface Frame {
+    readonly path: string;
+    /** Keys seen so far, for an object; undefined for an array. */
+    readonly keys?: Set<string>;
+    key: string;
+    index: number;
+    expectKey: boolean;
+  }
+  const stack: Frame[] = [];
+  const child = (top: Frame | undefined): string =>
+    top === undefined
+      ? ""
+      : top.keys
+        ? top.path === ""
+          ? top.key
+          : `${top.path}.${top.key}`
+        : `${top.path}[${top.index}]`;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    const top = stack[stack.length - 1];
+    if (c === '"') {
+      let end = i + 1;
+      while (text[end] !== '"') end += text[end] === "\\" ? 2 : 1;
+      if (top?.keys && top.expectKey) {
+        const key = JSON.parse(text.slice(i, end + 1)) as string;
+        top.key = key;
+        if (top.keys.has(key)) return child(top);
+        top.keys.add(key);
+        top.expectKey = false;
+      }
+      i = end;
+    } else if (c === "{" || c === "[") {
+      stack.push({
+        path: child(top),
+        ...(c === "{" ? { keys: new Set<string>() } : {}),
+        key: "",
+        index: 0,
+        expectKey: c === "{",
+      });
+    } else if (c === "}" || c === "]") {
+      stack.pop();
+    } else if (c === "," && top) {
+      if (top.keys) top.expectKey = true;
+      else top.index++;
+    }
+  }
+  return undefined;
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> =>

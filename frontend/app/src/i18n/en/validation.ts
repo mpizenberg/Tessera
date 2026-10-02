@@ -65,6 +65,7 @@ const validation = {
   },
   detailedJson: {
     notJson: "the file is not JSON",
+    repeatedJsonKey: "{where}: written twice in the same JSON object",
     notObject: "the file must be a JSON object of metadata labels",
     badLabel: '"{where}" is not a metadata label',
     badValue:
