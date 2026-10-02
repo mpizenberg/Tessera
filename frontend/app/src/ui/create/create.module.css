@@ -209,7 +209,7 @@
   margin-top: 16px;
 }
 
-.startOver {
+.noteBtn {
   font-family: inherit;
   font-size: 12px;
   font-weight: 600;
@@ -952,6 +952,17 @@
 }
 
 /* ---- survey file ---------------------------------------------------------- */
+
+/* Replacing typed text with an import: asked inline, never in a dialog. */
+.importConfirm {
+  composes: restoredNote;
+  margin-top: 10px;
+}
+
+.noteBtnRow {
+  display: flex;
+  gap: 8px;
+}
 
 .fileCard {
   composes: summaryCard;

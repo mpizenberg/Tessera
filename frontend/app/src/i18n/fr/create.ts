@@ -198,6 +198,8 @@ const create: Messages = {
   exportDocument: "Télécharger le document de présentation",
   importReplaceConfirm:
     "Remplacer le sondage du formulaire par celui importé ?",
+  importReplace: "Remplacer",
+  importKeep: "Garder le mien",
   importFailed: "Échec de l'import",
   importNoPresentation:
     "Ce sondage garde son texte dans un document de présentation qui n'a pas été importé : ses questions et libellés sont vides. Importez le document avec le fichier de métadonnées pour récupérer le texte.",

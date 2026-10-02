@@ -19,6 +19,10 @@ export const SurveyFileCard: Component<{
   documentReady: boolean;
   onExportDocument: () => void;
   onImport: (files: File[]) => void;
+  /** An import waits for consent to replace the text in the form. */
+  confirmingImport: boolean;
+  onConfirmImport: () => void;
+  onCancelImport: () => void;
   importError: string | null;
   /** The imported survey keeps its text in a document that was not imported. */
   importTextMissing: boolean;
@@ -78,6 +82,27 @@ export const SurveyFileCard: Component<{
         >
           {t("create.exportDocument")}
         </button>
+      </Show>
+      <Show when={props.confirmingImport}>
+        <div class={css.importConfirm}>
+          <span>{t("create.importReplaceConfirm")}</span>
+          <div class={css.noteBtnRow}>
+            <button
+              type="button"
+              onClick={() => props.onConfirmImport()}
+              class={css.noteBtn}
+            >
+              {t("create.importReplace")}
+            </button>
+            <button
+              type="button"
+              onClick={() => props.onCancelImport()}
+              class={css.noteBtn}
+            >
+              {t("create.importKeep")}
+            </button>
+          </div>
+        </div>
       </Show>
       <Show when={props.importTextMissing}>
         <div class={css.warnNote}>{t("create.importNoPresentation")}</div>

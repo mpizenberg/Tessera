@@ -218,6 +218,13 @@ export const Create: Component = () => {
   const [importError, setImportError] = createSignal<string | null>(null);
   const [importTextMissing, setImportTextMissing] = createSignal(false);
 
+  /** An import that waits for the creator to confirm it may replace their text. */
+  interface Imported {
+    readonly draft: SurveyDraft;
+    readonly textMissing: boolean;
+  }
+  const [pendingImport, setPendingImport] = createSignal<Imported | null>(null);
+
   const replaceForm = (draft: SurveyDraft) => {
     setMeta(draft.meta);
     setQuestions([...draft.questions]);
@@ -230,6 +237,7 @@ export const Create: Component = () => {
     setExportedDocument(null);
     setImportError(null);
     setImportTextMissing(false);
+    setPendingImport(null);
   };
   const startOver = () => replaceForm(blankDraft());
 
@@ -259,6 +267,7 @@ export const Create: Component = () => {
   const onImport = async (files: File[]) => {
     if (files.length === 0) return;
     setImportError(null);
+    setPendingImport(null);
     const read = importSurvey(
       await Promise.all(
         files.map(async (f) => new Uint8Array(await f.arrayBuffer())),
@@ -268,18 +277,24 @@ export const Create: Component = () => {
       setImportError(problemText(read.problem));
       return;
     }
-    if (hasText(currentDraft()) && !confirm(t("create.importReplaceConfirm")))
-      return;
-    replaceForm({
-      ...formFromDefinition(read.definition, read.presentation),
-      drandMode: "auto",
-      drandRoundText: "",
-      govLinked: false,
-    });
-    setImportTextMissing(
-      read.definition.contentAnchor !== undefined &&
+    const imported: Imported = {
+      draft: {
+        ...formFromDefinition(read.definition, read.presentation),
+        drandMode: "auto",
+        drandRoundText: "",
+        govLinked: false,
+      },
+      textMissing:
+        read.definition.contentAnchor !== undefined &&
         read.presentation === undefined,
-    );
+    };
+    if (hasText(currentDraft())) setPendingImport(imported);
+    else applyImport(imported);
+  };
+
+  const applyImport = (imported: Imported) => {
+    replaceForm(imported.draft);
+    setImportTextMissing(imported.textMissing);
     setShowProblems(true);
   };
 
@@ -433,7 +448,7 @@ export const Create: Component = () => {
           <Show when={restored()}>
             <div class={css.restoredNote}>
               <span>{t("create.restoredDraft")}</span>
-              <button type="button" onClick={startOver} class={css.startOver}>
+              <button type="button" onClick={startOver} class={css.noteBtn}>
                 {t("create.startOver")}
               </button>
             </div>
@@ -565,6 +580,12 @@ export const Create: Component = () => {
                 documentReady={exportedDocument() !== null}
                 onExportDocument={onExportDocument}
                 onImport={(files) => void onImport(files)}
+                confirmingImport={pendingImport() !== null}
+                onConfirmImport={() => {
+                  const imported = pendingImport();
+                  if (imported) applyImport(imported);
+                }}
+                onCancelImport={() => setPendingImport(null)}
                 importError={importError()}
                 importTextMissing={importTextMissing()}
               />

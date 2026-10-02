@@ -208,6 +208,8 @@ const create = {
     "The survey's text is in its presentation document, a second file. Pin that file unchanged, then replace {placeholder} in the metadata file with its URI (a URI longer than 64 bytes is written as a list of strings).",
   exportDocument: "Download the presentation document",
   importReplaceConfirm: "Replace the survey in the form with the imported one?",
+  importReplace: "Replace",
+  importKeep: "Keep mine",
   importFailed: "Import failed",
   importNoPresentation:
     "This survey keeps its text in a presentation document, which was not imported, so its prompts and labels are blank. Import the document together with the metadata file to bring the text in.",
