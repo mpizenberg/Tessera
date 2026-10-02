@@ -14,6 +14,8 @@ export const SurveyFileCard: Component<{
   /** Whether the form builds a definition with no problems. */
   exportable: boolean;
   external: boolean;
+  /** The definition's owner is the placeholder, not a wallet's key. */
+  placeholderOwner: boolean;
   onExport: () => void;
   /** Set once an external survey's metadata is exported: its document. */
   documentReady: boolean;
@@ -65,7 +67,12 @@ export const SurveyFileCard: Component<{
         when={props.exportable}
         fallback={<p class={css.hint}>{t("create.exportNeedsValid")}</p>}
       >
-        <p class={css.hint}>{t("create.exportOwnerNote")}</p>
+        <Show
+          when={props.placeholderOwner}
+          fallback={<p class={css.hint}>{t("create.exportOwnerNote")}</p>}
+        >
+          <div class={css.warnNote}>{t("create.exportPlaceholderOwner")}</div>
+        </Show>
         <Show when={props.external}>
           <div class={css.warnNote}>
             {t("create.exportExternalWarning", {

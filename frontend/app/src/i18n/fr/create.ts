@@ -35,6 +35,12 @@ const create: Messages = {
   ownerHeading: "Détenu par votre credential de paiement.",
   ownerBody:
     "Vous signez avec lui pour publier, et lui seul peut annuler ce sondage par la suite.",
+  ownerNoWalletHeading: "Aucun wallet connecté.",
+  ownerNoWalletBody:
+    "Le sondage sera détenu par le wallet qui le publie, et seul ce wallet pourra l'annuler. Vous pouvez dès maintenant le rédiger et l'exporter ; connectez un wallet avec le bouton de l'en-tête pour le publier.",
+  ownerScriptHeading: "Ce wallet ne peut pas détenir de sondage.",
+  ownerScriptBody:
+    "Publier prouve le credential propriétaire par une signature, et le credential de paiement de ce wallet est à script — rien qu'il puisse signer ne le prouverait. Connectez un wallet dont le credential de paiement est à clé pour publier.",
 
   // --- Who can respond (roles) section ---
   sectionWhoCanRespond: "Qui peut répondre",
@@ -173,6 +179,9 @@ const create: Messages = {
   publishBlockedNetwork: "Basculez votre wallet sur {network} avant de publier",
   publishBlockedNoIpfs:
     "Ajoutez un fournisseur IPFS dans les Paramètres pour publier du contenu externe",
+  publishBlockedNoWallet: "Connectez un wallet pour publier",
+  publishBlockedScriptOwner:
+    "Ce wallet ne peut pas détenir de sondage : connectez-en un dont le credential de paiement est à clé",
   signAndPublish: "Signer et publier le sondage",
   publishNoteOkPre: "signe avec votre credential de détenteur · ",
   publishNoteOkPost: " · autorise l'annulation",
@@ -195,6 +204,8 @@ const create: Messages = {
     "Le fichier désigne la clé de votre wallet comme détentrice : la transaction qui le publie doit être signée par cette clé.",
   exportExternalWarning:
     "Le texte du sondage est dans son document de présentation, un second fichier. Épinglez ce fichier sans le modifier, puis remplacez {placeholder} dans le fichier de métadonnées par son URI (une URI de plus de 64 octets s'écrit comme une liste de chaînes).",
+  exportPlaceholderOwner:
+    "Aucun wallet connecté ne peut détenir ce sondage, le détenteur du fichier est donc un substitut : un hash de clé de 28 octets nuls. Publier le fichier tel quel achète un sondage que tout lecteur ignore ; remplacez-le par le hash de la clé qui signe la transaction de publication.",
   exportDocument: "Télécharger le document de présentation",
   importReplaceConfirm:
     "Remplacer le sondage du formulaire par celui importé ?",
@@ -213,12 +224,6 @@ const create: Messages = {
   allSurveysButton: "Tous les sondages",
 
   // --- Connect prompt ---
-  connectTitle: "Connectez un wallet pour créer",
-  connectBody:
-    "Le sondage est détenu par le credential de votre wallet, qui signe pour le publier et est la seule clé pouvant l'annuler. Utilisez le bouton « Connecter un wallet » dans l'en-tête.",
-  scriptOwnerTitle: "Ce wallet ne peut pas détenir de sondage",
-  scriptOwnerBody:
-    "Publier prouve le credential propriétaire par une signature, et le credential de paiement de ce wallet est à script — rien qu'il puisse signer ne le prouverait. Connectez un wallet dont le credential de paiement est à clé pour créer un sondage.",
 };
 
 export default create;

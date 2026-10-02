@@ -60,18 +60,45 @@ export const DetailsSection: Component<{
   </div>
 );
 
-export const OwnerSection: Component<{ identity: WalletIdentity }> = (
-  props,
-) => (
+/**
+ * The owner is the connected wallet's payment key. Without one that can own a
+ * survey (none connected, or a script-based credential) the form still works;
+ * publishing waits for a wallet.
+ */
+export const OwnerSection: Component<{
+  identity: WalletIdentity | null;
+  /** Whether the connected wallet's payment credential can own a survey. */
+  canOwn: boolean;
+}> = (props) => (
   <div class={css.section}>
     <SectionHead n="02" label={t("create.sectionWhoCanCancel")} />
     <div class={css.cardSoft}>
       <div class={css.ownerText}>
-        <b class={css.ownerHeading}>{t("create.ownerHeading")}</b>{" "}
-        {t("create.ownerBody")}
-        <span class={css.ownerKey}>
-          key:{shortHash(props.identity.payment.hashHex)}
-        </span>
+        <Show
+          when={props.identity !== null && props.canOwn && props.identity}
+          fallback={
+            <>
+              <b class={css.ownerHeading}>
+                {props.identity === null
+                  ? t("create.ownerNoWalletHeading")
+                  : t("create.ownerScriptHeading")}
+              </b>{" "}
+              {props.identity === null
+                ? t("create.ownerNoWalletBody")
+                : t("create.ownerScriptBody")}
+            </>
+          }
+        >
+          {(id) => (
+            <>
+              <b class={css.ownerHeading}>{t("create.ownerHeading")}</b>{" "}
+              {t("create.ownerBody")}
+              <span class={css.ownerKey}>
+                key:{shortHash(id().payment.hashHex)}
+              </span>
+            </>
+          )}
+        </Show>
       </div>
     </div>
   </div>

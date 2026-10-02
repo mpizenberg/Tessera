@@ -445,6 +445,17 @@ function toQuestion(
 // ----------------------------------------------------------------------------
 
 /**
+ * Owner of a definition built while no connected wallet can own it: the form
+ * still validates and exports, and publishing waits for a wallet's key. A
+ * transaction cannot prove this credential, so a definition carrying it is one
+ * every reader ignores.
+ */
+export const PLACEHOLDER_OWNER: Credential = {
+  type: "key",
+  keyHash: new Uint8Array(28),
+};
+
+/**
  * Placeholder anchor used to *preview/validate* an external-content definition
  * before its presentation document is pinned. Its only job is to make
  * `contentAnchor` present so the codec accepts count forms; the real anchor

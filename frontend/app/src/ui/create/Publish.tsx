@@ -1,7 +1,6 @@
 /**
- * The right-hand column — live summary and the publish controls — plus the two
- * panels that replace the builder outright: the receipt, and the refusal to
- * build a survey no connected wallet could own.
+ * The right-hand column — live summary and the publish controls — plus the
+ * receipt that replaces the builder once the survey is published.
  */
 
 import { Show, type Component } from "solid-js";
@@ -74,13 +73,17 @@ export const PublishButton: Component<{
   blockedReason: string | null;
   submitting: boolean;
   busyText: string;
-  paymentHashHex: string;
+  /** The owner key's hash; absent while no connected wallet can own the survey. */
+  paymentHashHex: string | undefined;
   /** True when publishing would queue the survey rather than sign it now. */
   queueing: boolean;
   onPublish: () => void;
   onQueue: () => void;
 }> = (props) => {
-  const ok = () => props.problemCount === 0 && !props.blockedReason;
+  const ok = () =>
+    props.problemCount === 0 &&
+    !props.blockedReason &&
+    props.paymentHashHex !== undefined;
   return (
     <>
       <button
@@ -120,7 +123,7 @@ export const PublishButton: Component<{
           }
         >
           {t("create.publishNoteOkPre")}
-          <span class={css.mono}>key:{shortHash(props.paymentHashHex)}</span>
+          <span class={css.mono}>key:{shortHash(props.paymentHashHex!)}</span>
           {t("create.publishNoteOkPost")}
         </Show>
       </p>
@@ -147,21 +150,3 @@ export const SubmittedPanel: Component<{ hash: string }> = (props) => {
     />
   );
 };
-
-/**
- * Shown instead of the builder when no wallet can own the survey: none
- * connected, or one whose payment credential is script-based — the only way to
- * have a wallet but no owner credential.
- */
-export const NoOwnerPanel: Component<{ connected: boolean }> = (props) => (
-  <div class={css.connectCard}>
-    <div class={css.connectTitle}>
-      {props.connected
-        ? t("create.scriptOwnerTitle")
-        : t("create.connectTitle")}
-    </div>
-    <p class={css.connectBody}>
-      {props.connected ? t("create.scriptOwnerBody") : t("create.connectBody")}
-    </p>
-  </div>
-);

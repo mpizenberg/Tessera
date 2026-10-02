@@ -911,28 +911,6 @@
   color: var(--dim);
 }
 
-/* ---- connect prompt ------------------------------------------------------- */
-
-.connectCard {
-  composes: card;
-  margin-top: 16px;
-  text-align: center;
-}
-
-.connectTitle {
-  font-size: 16px;
-  font-weight: 800;
-  color: var(--ink);
-}
-
-.connectBody {
-  font-size: 13.5px;
-  color: var(--muted);
-  line-height: 1.55;
-  margin: 8px auto 0;
-  max-width: 440px;
-}
-
 .queueBtn {
   width: 100%;
   margin-top: 8px;

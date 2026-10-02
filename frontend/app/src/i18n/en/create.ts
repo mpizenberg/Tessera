@@ -31,6 +31,12 @@ const create = {
   ownerHeading: "Owned by your payment credential.",
   ownerBody:
     "You sign with it to publish, and only it can cancel this survey later.",
+  ownerNoWalletHeading: "No wallet connected.",
+  ownerNoWalletBody:
+    "The survey will be owned by the wallet that publishes it, and only that wallet can cancel it. You can write and export it now; connect a wallet with the button in the header to publish.",
+  ownerScriptHeading: "This wallet can't own a survey.",
+  ownerScriptBody:
+    "Publishing proves the owner credential with a signature, and this wallet's payment credential is script-based — nothing it could sign would prove it. Connect a wallet with a key-based payment credential to publish.",
 
   // --- Who can respond (roles) section ---
   sectionWhoCanRespond: "Who can respond",
@@ -181,6 +187,9 @@ const create = {
   publishBlockedNetwork: "Switch your wallet to {network} before publishing",
   publishBlockedNoIpfs:
     "Add an IPFS provider in Settings to publish external content",
+  publishBlockedNoWallet: "Connect a wallet to publish",
+  publishBlockedScriptOwner:
+    "This wallet can't own a survey: connect one with a key-based payment credential",
   signAndPublish: "Sign & publish survey",
   /** Wraps the inline mono key span: pre + key + post. */
   publishNoteOkPre: "signs with your owner credential · ",
@@ -206,6 +215,8 @@ const create = {
   /** {placeholder} is the URI written in place of the document's. */
   exportExternalWarning:
     "The survey's text is in its presentation document, a second file. Pin that file unchanged, then replace {placeholder} in the metadata file with its URI (a URI longer than 64 bytes is written as a list of strings).",
+  exportPlaceholderOwner:
+    "No connected wallet can own this survey, so the file's owner is a placeholder: a key hash of 28 zero bytes. Publishing the file unchanged buys a survey every reader ignores; replace it with the hash of the key that signs the publishing transaction.",
   exportDocument: "Download the presentation document",
   importReplaceConfirm: "Replace the survey in the form with the imported one?",
   importReplace: "Replace",
@@ -222,14 +233,6 @@ const create = {
   submittedRef: "ref {ref}",
   viewSurvey: "View survey →",
   allSurveysButton: "All surveys",
-
-  // --- Connect prompt ---
-  connectTitle: "Connect a wallet to create",
-  connectBody:
-    "The survey is owned by your wallet's credential, which signs to publish it and is the only key that can cancel it. Use the Connect wallet button in the header.",
-  scriptOwnerTitle: "This wallet can't own a survey",
-  scriptOwnerBody:
-    "Publishing proves the owner credential with a signature, and this wallet's payment credential is script-based — nothing it could sign would prove it. Connect a wallet with a key-based payment credential to create a survey.",
 };
 
 export type Messages = typeof create;

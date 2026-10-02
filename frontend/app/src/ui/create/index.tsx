@@ -20,6 +20,7 @@ import { autoRevealRound } from "cip-179/tlock";
 import { useApp } from "~/state";
 import { ownerCredential } from "~/domain/roles";
 import {
+  PLACEHOLDER_OWNER,
   buildDefinition,
   buildPresentationDoc,
   formFromDefinition,
@@ -62,12 +63,7 @@ import {
   TimingSection,
   VisibilitySection,
 } from "./Sections";
-import {
-  NoOwnerPanel,
-  PublishButton,
-  SubmittedPanel,
-  SummaryCard,
-} from "./Publish";
+import { PublishButton, SubmittedPanel, SummaryCard } from "./Publish";
 import { SurveyFileCard } from "./SurveyFile";
 import css from "./create.module.css";
 
@@ -88,7 +84,8 @@ export const Create: Component = () => {
 
   // The survey is owned by the wallet's payment credential — it always signs the
   // funding tx, so ownership is proven automatically here and on a later cancel.
-  // Undefined for a script-based wallet, which the builder refuses outright.
+  // Undefined without a wallet or for a script-based one: the form then builds
+  // with the placeholder owner, and publishing waits for a wallet.
   const owner = createMemo<Credential | undefined>(() => {
     const id = identity();
     return id ? ownerCredential(id) : undefined;
@@ -144,14 +141,12 @@ export const Create: Component = () => {
     setMeta("sealedRound", manual ? drandRoundText() : String(autoRound()));
   });
 
-  const built = createMemo(() => {
-    const o = owner();
-    if (!o) return null;
-    return buildDefinition(o, meta, questions, {
+  const built = createMemo(() =>
+    buildDefinition(owner() ?? PLACEHOLDER_OWNER, meta, questions, {
       tipEpoch: app.list()?.tip.epoch,
-    });
-  });
-  const problems = (): CreateProblem[] => built()?.problems ?? [];
+    }),
+  );
+  const problems = (): CreateProblem[] => built().problems;
   const renderProblems = (ps: readonly CreateProblem[]): string[] =>
     ps.map(createProblemText);
   const problemStrings = (): string[] => renderProblems(problems());
@@ -161,7 +156,7 @@ export const Create: Component = () => {
   // anchor is only known after pinning at publish time).
   const previewPayload = createMemo<Metadatum | undefined>(() => {
     if (!app.ui.pro) return undefined;
-    const definition = built()?.definition;
+    const definition = built().definition;
     if (!definition) return undefined;
     try {
       return encodePayload({ type: "definitions", definitions: [definition] });
@@ -174,7 +169,7 @@ export const Create: Component = () => {
   // padding is the auto worst-case size unless the creator overrode it). Shown
   // in the sealed config; 0 until the form parses.
   const sealedMode = () => {
-    const mode = built()?.definition?.submissionMode;
+    const mode = built().definition?.submissionMode;
     return mode?.type === "sealed" ? mode : undefined;
   };
   const resolvedRound = (): number => sealedMode()?.round ?? 0;
@@ -242,10 +237,10 @@ export const Create: Component = () => {
   const startOver = () => replaceForm(blankDraft());
 
   const exportable = (): boolean =>
-    built()?.definition !== undefined && problems().length === 0;
+    built().definition !== undefined && problems().length === 0;
 
   const onExport = () => {
-    const definition = built()?.definition;
+    const definition = built().definition;
     if (!definition || !exportable()) return;
     const files = exportSurvey(
       definition,
@@ -408,7 +403,7 @@ export const Create: Component = () => {
     }
   };
 
-  // Published or queued: full-width receipt. Not connected: full-width prompt.
+  // Published or queued: full-width receipt.
   return (
     <Show
       when={txHash() === null && !queued()}
@@ -424,175 +419,177 @@ export const Create: Component = () => {
         </main>
       }
     >
-      <Show
-        when={owner()}
-        fallback={
-          <main class={css.singleColMain}>
-            <BackLink />
-            <NoOwnerPanel connected={identity() !== null} />
-          </main>
-        }
-      >
-        <main class={css.main}>
-          <Show when={submitting() && submitSteps().length > 1}>
-            <SubmitProgressModal
-              title={t("create.progressTitle")}
-              steps={submitSteps()}
-              currentKey={stepKey()}
+      <main class={css.main}>
+        <Show when={submitting() && submitSteps().length > 1}>
+          <SubmitProgressModal
+            title={t("create.progressTitle")}
+            steps={submitSteps()}
+            currentKey={stepKey()}
+          />
+        </Show>
+
+        <BackLink />
+        <h1 class={css.title}>{t("create.pageTitle")}</h1>
+        <p class={css.subtitle}>{t("create.pageSubtitle")}</p>
+        <Show when={restored()}>
+          <div class={css.restoredNote}>
+            <span>{t("create.restoredDraft")}</span>
+            <button type="button" onClick={startOver} class={css.noteBtn}>
+              {t("create.startOver")}
+            </button>
+          </div>
+        </Show>
+
+        <div class={`create-grid ${css.gridTop}`}>
+          {/* left: builder */}
+          <div>
+            <DetailsSection meta={meta} setMeta={setMeta} />
+            <OwnerSection
+              identity={identity()}
+              canOwn={owner() !== undefined}
             />
-          </Show>
+            <RolesSection roles={meta.eligibleRoles} onToggle={toggleRole} />
+            <TimingSection
+              value={meta.endEpoch}
+              onInput={(v) => setMeta("endEpoch", v)}
+              govLinked={govLinked()}
+              onGovLinked={setGovLinked}
+              tip={app.list()?.tip}
+              secondsPerEpoch={app.config.secondsPerEpoch}
+              network={app.config.network}
+            />
+            <VisibilitySection
+              mode={meta.mode}
+              onMode={(m) => setMeta("mode", m)}
+              drandMode={drandMode()}
+              onDrandMode={setDrandMode}
+              drandRoundText={drandRoundText()}
+              onDrandRoundText={setDrandRoundText}
+              resolvedRound={resolvedRound()}
+              paddingOverride={meta.sealedPadding}
+              onPaddingOverride={(v) => setMeta("sealedPadding", v)}
+              resolvedPadding={resolvedPadding()}
+              pro={app.ui.pro}
+            />
+            <ContentSection
+              mode={meta.contentMode}
+              onMode={(m) => setMeta("contentMode", m)}
+              hasPinning={hasPinning()}
+            />
 
-          <BackLink />
-          <h1 class={css.title}>{t("create.pageTitle")}</h1>
-          <p class={css.subtitle}>{t("create.pageSubtitle")}</p>
-          <Show when={restored()}>
-            <div class={css.restoredNote}>
-              <span>{t("create.restoredDraft")}</span>
-              <button type="button" onClick={startOver} class={css.noteBtn}>
-                {t("create.startOver")}
-              </button>
-            </div>
-          </Show>
-
-          <div class={`create-grid ${css.gridTop}`}>
-            {/* left: builder */}
-            <div>
-              <DetailsSection meta={meta} setMeta={setMeta} />
-              <OwnerSection identity={identity()!} />
-              <RolesSection roles={meta.eligibleRoles} onToggle={toggleRole} />
-              <TimingSection
-                value={meta.endEpoch}
-                onInput={(v) => setMeta("endEpoch", v)}
-                govLinked={govLinked()}
-                onGovLinked={setGovLinked}
-                tip={app.list()?.tip}
-                secondsPerEpoch={app.config.secondsPerEpoch}
-                network={app.config.network}
+            <div class={css.questionsSection}>
+              <SectionHead
+                n="07"
+                label={t("create.sectionQuestions")}
+                trailing={questions.length}
               />
-              <VisibilitySection
-                mode={meta.mode}
-                onMode={(m) => setMeta("mode", m)}
-                drandMode={drandMode()}
-                onDrandMode={setDrandMode}
-                drandRoundText={drandRoundText()}
-                onDrandRoundText={setDrandRoundText}
-                resolvedRound={resolvedRound()}
-                paddingOverride={meta.sealedPadding}
-                onPaddingOverride={(v) => setMeta("sealedPadding", v)}
-                resolvedPadding={resolvedPadding()}
-                pro={app.ui.pro}
-              />
-              <ContentSection
-                mode={meta.contentMode}
-                onMode={(m) => setMeta("contentMode", m)}
-                hasPinning={hasPinning()}
-              />
-
-              <div class={css.questionsSection}>
-                <SectionHead
-                  n="07"
-                  label={t("create.sectionQuestions")}
-                  trailing={questions.length}
-                />
-                <div class={css.questionList}>
-                  <For each={questions}>
-                    {(q, i) => (
-                      <QuestionEditor
-                        index={i()}
-                        draft={q}
-                        set={setQuestions}
-                        canRemove={questions.length > 1}
-                        onRemove={() => removeQuestion(i())}
-                      />
+              <div class={css.questionList}>
+                <For each={questions}>
+                  {(q, i) => (
+                    <QuestionEditor
+                      index={i()}
+                      draft={q}
+                      set={setQuestions}
+                      canRemove={questions.length > 1}
+                      onRemove={() => removeQuestion(i())}
+                    />
+                  )}
+                </For>
+              </div>
+              <div class={css.addPanel}>
+                <div class={css.addPanelHead}>{t("create.addAQuestion")}</div>
+                <div class={css.addBtnRow}>
+                  <For
+                    each={
+                      app.ui.pro
+                        ? ADD_BUTTONS
+                        : ADD_BUTTONS.filter((b) => b.type !== "custom")
+                    }
+                  >
+                    {(b) => (
+                      <button
+                        type="button"
+                        onClick={() => addQuestion(b.type)}
+                        class={css.addTypeBtn}
+                      >
+                        <span class={css.addTypeTag}>{b.tag}</span>
+                        {t(QUESTION_TYPE_KEYS[b.type])}
+                      </button>
                     )}
                   </For>
                 </div>
-                <div class={css.addPanel}>
-                  <div class={css.addPanelHead}>{t("create.addAQuestion")}</div>
-                  <div class={css.addBtnRow}>
-                    <For
-                      each={
-                        app.ui.pro
-                          ? ADD_BUTTONS
-                          : ADD_BUTTONS.filter((b) => b.type !== "custom")
-                      }
-                    >
-                      {(b) => (
-                        <button
-                          type="button"
-                          onClick={() => addQuestion(b.type)}
-                          class={css.addTypeBtn}
-                        >
-                          <span class={css.addTypeTag}>{b.tag}</span>
-                          {t(QUESTION_TYPE_KEYS[b.type])}
-                        </button>
-                      )}
-                    </For>
-                  </div>
-                </div>
               </div>
-
-              <Show when={showProblems() && problems().length > 0}>
-                <ProblemList
-                  title={t("create.fixBeforePublishing")}
-                  problems={problemStrings()}
-                />
-              </Show>
-              <Show when={submitError()}>
-                <ErrorBox message={submitError()!} />
-              </Show>
             </div>
 
-            {/* right: summary + publish */}
-            <aside class="create-aside">
-              <SummaryCard
-                meta={meta}
-                qCount={questions.length}
-                revealRound={resolvedRound()}
+            <Show when={showProblems() && problems().length > 0}>
+              <ProblemList
+                title={t("create.fixBeforePublishing")}
+                problems={problemStrings()}
               />
-              <Show when={app.ui.pro}>
-                <OnchainPreview payload={previewPayload()} />
-              </Show>
-              <Show when={!app.cartLocked()} fallback={<PublishLocked />}>
-                <PublishButton
-                  problemCount={problems().length}
-                  blockedReason={
-                    mismatch()
-                      ? t("create.publishBlockedNetwork", {
-                          network: app.config.network,
-                        })
-                      : externalNoTokens()
-                        ? t("create.publishBlockedNoIpfs")
-                        : null
-                  }
-                  submitting={submitting()}
-                  busyText={busyText()}
-                  paymentHashHex={identity()!.payment.hashHex}
-                  queueing={queueing()}
-                  onPublish={() => void onPublish(false)}
-                  onQueue={() => void onPublish(true)}
-                />
-              </Show>
-              <SurveyFileCard
-                exportable={exportable()}
-                external={meta.contentMode === "external"}
-                onExport={onExport}
-                documentReady={exportedDocument() !== null}
-                onExportDocument={onExportDocument}
-                onImport={(files) => void onImport(files)}
-                confirmingImport={pendingImport() !== null}
-                onConfirmImport={() => {
-                  const imported = pendingImport();
-                  if (imported) applyImport(imported);
-                }}
-                onCancelImport={() => setPendingImport(null)}
-                importError={importError()}
-                importTextMissing={importTextMissing()}
-              />
-            </aside>
+            </Show>
+            <Show when={submitError()}>
+              <ErrorBox message={submitError()!} />
+            </Show>
           </div>
-        </main>
-      </Show>
+
+          {/* right: summary + publish */}
+          <aside class="create-aside">
+            <SummaryCard
+              meta={meta}
+              qCount={questions.length}
+              revealRound={resolvedRound()}
+            />
+            <Show when={app.ui.pro}>
+              <OnchainPreview payload={previewPayload()} />
+            </Show>
+            <Show when={!app.cartLocked()} fallback={<PublishLocked />}>
+              <PublishButton
+                problemCount={problems().length}
+                blockedReason={
+                  identity() === null
+                    ? t("create.publishBlockedNoWallet")
+                    : owner() === undefined
+                      ? t("create.publishBlockedScriptOwner")
+                      : mismatch()
+                        ? t("create.publishBlockedNetwork", {
+                            network: app.config.network,
+                          })
+                        : externalNoTokens()
+                          ? t("create.publishBlockedNoIpfs")
+                          : null
+                }
+                submitting={submitting()}
+                busyText={busyText()}
+                paymentHashHex={
+                  owner() === undefined
+                    ? undefined
+                    : identity()?.payment.hashHex
+                }
+                queueing={queueing()}
+                onPublish={() => void onPublish(false)}
+                onQueue={() => void onPublish(true)}
+              />
+            </Show>
+            <SurveyFileCard
+              exportable={exportable()}
+              external={meta.contentMode === "external"}
+              placeholderOwner={owner() === undefined}
+              onExport={onExport}
+              documentReady={exportedDocument() !== null}
+              onExportDocument={onExportDocument}
+              onImport={(files) => void onImport(files)}
+              confirmingImport={pendingImport() !== null}
+              onConfirmImport={() => {
+                const imported = pendingImport();
+                if (imported) applyImport(imported);
+              }}
+              onCancelImport={() => setPendingImport(null)}
+              importError={importError()}
+              importTextMissing={importTextMissing()}
+            />
+          </aside>
+        </div>
+      </main>
     </Show>
   );
 };
