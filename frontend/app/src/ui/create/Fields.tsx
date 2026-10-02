@@ -76,6 +76,7 @@ export const MinMaxRow: Component<{
       </span>
       <input
         type="text"
+        inputMode="numeric"
         value={props.min}
         onInput={(e) => props.onMin(e.currentTarget.value)}
         class={css.miniNumber}
@@ -87,6 +88,7 @@ export const MinMaxRow: Component<{
       </span>
       <input
         type="text"
+        inputMode="numeric"
         value={props.max}
         onInput={(e) => props.onMax(e.currentTarget.value)}
         class={css.miniNumber}
@@ -126,6 +128,7 @@ export const NumericRow: Component<{
       <span class={css.fieldLabel}>{t("create.stepOptional")}</span>
       <input
         type="text"
+        inputMode="numeric"
         value={props.step}
         placeholder={t("create.numericStepPlaceholder")}
         onInput={(e) => props.onStep(e.currentTarget.value)}

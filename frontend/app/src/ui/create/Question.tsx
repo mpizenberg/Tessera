@@ -158,6 +158,7 @@ const TypeFields: Component<{
           <span class={css.fieldLabel}>{t("create.budget")}</span>
           <input
             type="text"
+            inputMode="numeric"
             value={props.draft.budget}
             onInput={(e) => props.set(i(), "budget", e.currentTarget.value)}
             class={css.budgetInput}

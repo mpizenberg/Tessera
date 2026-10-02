@@ -227,7 +227,8 @@ export const TimingSection: Component<{
             </Show>
           </span>
           <input
-            type="number"
+            type="text"
+            inputMode="numeric"
             value={props.value}
             readOnly={locked()}
             aria-disabled={locked()}
@@ -366,6 +367,7 @@ export const VisibilitySection: Component<{
             >
               <input
                 type="text"
+                inputMode="numeric"
                 value={props.drandRoundText}
                 placeholder={t("create.drandRoundPlaceholder")}
                 onInput={(e) => props.onDrandRoundText(e.currentTarget.value)}
@@ -395,6 +397,7 @@ export const VisibilitySection: Component<{
               <span class={css.fieldLabel}>{t("create.paddingLabel")}</span>
               <input
                 type="text"
+                inputMode="numeric"
                 value={props.paddingOverride}
                 placeholder={t("create.paddingAutoPlaceholder", {
                   size: n(props.resolvedPadding),
