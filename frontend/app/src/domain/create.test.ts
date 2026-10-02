@@ -1,9 +1,22 @@
 import { describe, expect, test } from "vitest";
 
-import { Role, type Credential } from "cip-179";
+import {
+  Role,
+  SPEC_VERSION,
+  decodePayload,
+  encodePayload,
+  type Credential,
+  type OptionsOrCount,
+  type Question,
+  type SurveyDefinition,
+} from "cip-179";
+import { QUICKNET_CHAIN_HASH, maxPlaintextSize } from "cip-179/tlock";
 
+import type { Presentation } from "~/enrichment/presentation";
 import {
   buildDefinition,
+  buildPresentationDoc,
+  formFromDefinition,
   initDefinitionMeta,
   initQuestionDraft,
   type DefinitionMeta,
@@ -201,6 +214,225 @@ describe("buildDefinition", () => {
       );
       expect(b.problems).toEqual([]);
       expect(b.definition?.submissionMode).toEqual({ type: "public" });
+    });
+  });
+});
+
+describe("formFromDefinition", () => {
+  const questions: Question[] = [
+    {
+      type: "singleChoice",
+      prompt: "Which?",
+      required: true,
+      options: { type: "options", labels: ["a", "b", "c"] },
+    },
+    {
+      type: "multiSelect",
+      prompt: "Which ones?",
+      options: { type: "options", labels: ["a", "b", "c"] },
+      minSelections: 1,
+      maxSelections: 2,
+    },
+    {
+      type: "ranking",
+      prompt: "Order them",
+      options: { type: "options", labels: ["a", "b", "c"] },
+      minRanked: 2,
+      maxRanked: 3,
+    },
+    {
+      type: "numericRange",
+      prompt: "How much?",
+      required: true,
+      constraints: { min: -(2n ** 64n - 1n), max: 2n ** 64n - 1n },
+    },
+    {
+      type: "numericRange",
+      prompt: "How many, by fives?",
+      constraints: { min: 0n, max: 100n, step: 5n },
+    },
+    {
+      type: "pointsAllocation",
+      prompt: "Split it",
+      options: { type: "options", labels: ["a", "b"] },
+      budget: 1000n,
+    },
+    {
+      type: "rating",
+      prompt: "Rate them",
+      options: { type: "options", labels: ["a", "b"] },
+      scale: { type: "numeric", constraints: { min: 1n, max: 9n, step: 2n } },
+      requireAll: false,
+    },
+    {
+      type: "rating",
+      prompt: "Judge them",
+      options: { type: "options", labels: ["a", "b"] },
+      scale: { type: "labels", labels: ["bad", "fine", "good"] },
+      requireAll: true,
+    },
+    {
+      type: "custom",
+      prompt: "Anything",
+      methodSchema: { uri: "ipfs://schema", hash: new Uint8Array(32).fill(9) },
+    },
+  ];
+
+  const definition = (
+    over: Partial<SurveyDefinition> = {},
+  ): SurveyDefinition => ({
+    specVersion: SPEC_VERSION,
+    owner,
+    title: "Survey",
+    description: "About things",
+    eligibleRoles: [Role.DRep, Role.Stakeholder],
+    endEpoch: 500,
+    submissionMode: { type: "public" },
+    questions,
+    ...over,
+  });
+
+  /** The definition the form builds, with the round the screen would set. */
+  const rebuilt = (
+    def: SurveyDefinition,
+    presentation?: Presentation,
+  ): ReturnType<typeof buildDefinition> => {
+    const form = formFromDefinition(def, presentation);
+    const mode = def.submissionMode;
+    return buildDefinition(
+      owner,
+      {
+        ...form.meta,
+        sealedRound: mode.type === "sealed" ? String(mode.round) : "",
+      },
+      form.questions,
+      { contentAnchor: def.contentAnchor },
+    );
+  };
+
+  /** The definition as a file brings it: through the wire format and back. */
+  const fromFile = (def: SurveyDefinition): SurveyDefinition => {
+    const payload = decodePayload(
+      encodePayload({ type: "definitions", definitions: [def] }),
+    );
+    if (payload.type !== "definitions") throw new Error(payload.type);
+    return payload.definitions[0]!;
+  };
+
+  test("an embedded public survey with every question type comes back whole", () => {
+    const def = fromFile(definition());
+    expect(rebuilt(def)).toEqual({ definition: def, problems: [] });
+  });
+
+  test("a sealed survey keeps its padding; the automatic one stays automatic", () => {
+    const sealed = (paddingSize: number) =>
+      fromFile(
+        definition({
+          submissionMode: {
+            type: "sealed",
+            chainHash: QUICKNET_CHAIN_HASH,
+            round: 12345,
+            paddingSize,
+          },
+        }),
+      );
+    const auto = sealed(maxPlaintextSize(questions));
+    expect(formFromDefinition(auto).meta.sealedPadding).toBe("");
+    expect(rebuilt(auto)).toEqual({ definition: auto, problems: [] });
+
+    const fixed = sealed(4096);
+    expect(formFromDefinition(fixed).meta.sealedPadding).toBe("4096");
+    expect(rebuilt(fixed)).toEqual({ definition: fixed, problems: [] });
+  });
+
+  test("a sealed survey on another drand chain comes back on quicknet", () => {
+    const def = definition({
+      submissionMode: {
+        type: "sealed",
+        chainHash: new Uint8Array(32).fill(1),
+        round: 12345,
+        paddingSize: 4096,
+      },
+    });
+    expect(rebuilt(def).definition?.submissionMode).toEqual({
+      type: "sealed",
+      chainHash: QUICKNET_CHAIN_HASH,
+      round: 12345,
+      paddingSize: 4096,
+    });
+  });
+
+  describe("external content", () => {
+    // The on-chain half: no text, option and level lists as counts.
+    const counted = (o: OptionsOrCount): OptionsOrCount => ({
+      type: "count",
+      count: o.type === "options" ? o.labels.length : o.count,
+    });
+    const countForm = (q: Question): Question => {
+      const prompt = "";
+      switch (q.type) {
+        case "custom":
+        case "numericRange":
+          return { ...q, prompt };
+        case "rating":
+          return {
+            ...q,
+            prompt,
+            options: counted(q.options),
+            scale:
+              q.scale.type === "labels"
+                ? { type: "count", count: q.scale.labels.length }
+                : q.scale,
+          };
+        default:
+          return { ...q, prompt, options: counted(q.options) };
+      }
+    };
+    const def = fromFile(
+      definition({
+        title: "",
+        description: "",
+        questions: questions.map(countForm),
+        contentAnchor: { uri: "ipfs://doc", hash: new Uint8Array(32).fill(3) },
+      }),
+    );
+    const presentation: Presentation = {
+      title: "Survey",
+      description: "About things",
+      questions: questions.map((q) => ({
+        prompt: q.prompt,
+        ...("options" in q && q.options.type === "options"
+          ? { options: q.options.labels }
+          : {}),
+        ...(q.type === "rating" && q.scale.type === "labels"
+          ? { ratingLabels: q.scale.labels }
+          : {}),
+      })),
+    };
+
+    test("the definition comes back up to its anchor, the text from the document", () => {
+      expect(rebuilt(def, presentation)).toEqual({
+        definition: def,
+        problems: [],
+      });
+      const form = formFromDefinition(def, presentation);
+      expect(
+        buildPresentationDoc({ ...form.meta, sealedRound: "" }, form.questions),
+      ).toMatchObject(presentation);
+    });
+
+    test("without the document, the text comes back blank and the counts as blank rows", () => {
+      const form = formFromDefinition(def);
+      expect(form.meta).toMatchObject({
+        contentMode: "external",
+        title: "",
+        description: "",
+      });
+      expect(form.questions.map((q) => q.prompt)).toEqual(
+        questions.map(() => ""),
+      );
+      expect(form.questions[0]!.labels).toEqual(["", "", ""]);
+      expect(form.questions[7]!.ratingLabels).toEqual(["", "", ""]);
     });
   });
 });

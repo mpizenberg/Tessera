@@ -26,8 +26,12 @@ import {
   type ValidationProblem,
 } from "cip-179";
 
-import { hexToBytes } from "cip-179/domain";
-import { PRESENTATION_KIND } from "~/enrichment/presentation";
+import { bytesToHex, hexToBytes } from "cip-179/domain";
+import {
+  PRESENTATION_KIND,
+  applyPresentation,
+  type Presentation,
+} from "~/enrichment/presentation";
 import { METADATA_INT_MAX } from "~/domain/detailedJson";
 import { QUICKNET_CHAIN_HASH, maxPlaintextSize } from "cip-179/tlock";
 
@@ -337,7 +341,8 @@ function toQuestion(
   // and option/level lists collapse to bare counts (the presentation document
   // supplies the text). Embedded mode keeps everything inline.
   const prompt = external ? "" : draft.prompt.trim();
-  const base = { prompt, required: draft.required };
+  // Absent when false, as the decoder reads it.
+  const base = { prompt, ...(draft.required ? { required: true } : {}) };
   const opts = (labels: readonly string[]): OptionsOrCount => {
     const inline = inlineLabels(labels);
     return external
@@ -468,7 +473,7 @@ export function buildDefinition(
   meta: DefinitionMeta,
   drafts: readonly QuestionDraft[],
   opts: {
-    contentAnchor?: ContentAnchor;
+    contentAnchor?: ContentAnchor | undefined;
     /** Chain-tip epoch, when known — enables the CIP-179 end_epoch rule below. */
     tipEpoch?: number | undefined;
   } = {},
@@ -534,6 +539,122 @@ export function buildDefinition(
     definition,
     problems: [...epochProblems, ...validateDefinition(definition)],
   };
+}
+
+/**
+ * The form that builds `def`: the inverse of {@link buildDefinition}, with the
+ * text of an external-content survey taken from its presentation document.
+ *
+ * What the form does not hold is left out: the owner and content anchor (the
+ * wallet and pinning supply them at publish time), the drand chain (the form
+ * writes quicknet, the only one a sealed survey can be revealed on) and the
+ * reveal round (the screen derives it, as after a reload). A padding equal to
+ * the automatic size comes back blank, so it keeps following the questions.
+ *
+ * Text the document does not supply, or does not supply in full, comes back
+ * blank: a prompt as "", a count form as that many blank labels.
+ */
+export function formFromDefinition(
+  def: SurveyDefinition,
+  presentation?: Presentation,
+): {
+  meta: Omit<DefinitionMeta, "sealedRound">;
+  questions: QuestionDraft[];
+} {
+  const text = presentation ? applyPresentation(def, presentation) : def;
+  const mode = def.submissionMode;
+  return {
+    meta: {
+      title: text.title,
+      description: text.description,
+      eligibleRoles: [...def.eligibleRoles],
+      contentMode: def.contentAnchor ? "external" : "embedded",
+      endEpoch: String(def.endEpoch),
+      mode: mode.type,
+      sealedPadding:
+        mode.type === "sealed" &&
+        mode.paddingSize !== maxPlaintextSize(def.questions)
+          ? String(mode.paddingSize)
+          : "",
+    },
+    questions: text.questions.map(questionDraft),
+  };
+}
+
+const blanks = (count: number): string[] => Array<string>(count).fill("");
+
+const labelsOf = (o: OptionsOrCount): string[] =>
+  o.type === "options" ? [...o.labels] : blanks(o.count);
+
+function questionDraft(q: Question): QuestionDraft {
+  const draft: QuestionDraft = {
+    ...initQuestionDraft(q.type),
+    prompt: q.prompt,
+    required: q.required ?? false,
+  };
+  const range = (c: NumericConstraints) => ({
+    min: String(c.min),
+    max: String(c.max),
+    step: c.step === undefined ? "" : String(c.step),
+  });
+  switch (q.type) {
+    case "custom":
+      return {
+        ...draft,
+        customUri: q.methodSchema.uri,
+        customHash: bytesToHex(q.methodSchema.hash),
+      };
+    case "singleChoice":
+      return { ...draft, labels: labelsOf(q.options) };
+    case "multiSelect":
+      return {
+        ...draft,
+        labels: labelsOf(q.options),
+        minSelections: String(q.minSelections),
+        maxSelections: String(q.maxSelections),
+      };
+    case "ranking":
+      return {
+        ...draft,
+        labels: labelsOf(q.options),
+        minRanked: String(q.minRanked),
+        maxRanked: String(q.maxRanked),
+      };
+    case "numericRange": {
+      const { min, max, step } = range(q.constraints);
+      return { ...draft, numMin: min, numMax: max, numStep: step };
+    }
+    case "pointsAllocation":
+      return {
+        ...draft,
+        labels: labelsOf(q.options),
+        budget: String(q.budget),
+      };
+    case "rating": {
+      const rated = {
+        ...draft,
+        labels: labelsOf(q.options),
+        requireAll: q.requireAll,
+      };
+      if (q.scale.type !== "numeric")
+        return {
+          ...rated,
+          ratingScale: "labels",
+          ratingLabels:
+            q.scale.type === "labels"
+              ? [...q.scale.labels]
+              : blanks(q.scale.count),
+        };
+      const { min, max, step } = range(q.scale.constraints);
+      return {
+        ...rated,
+        ratingScale: "numeric",
+        ratingMin: min,
+        ratingMax: max,
+        ratingStep: step,
+      };
+    }
+  }
 }
 
 /** The off-chain presentation document (JSON) for an external-content survey. */
