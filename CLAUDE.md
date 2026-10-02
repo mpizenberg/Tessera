@@ -16,7 +16,7 @@ Some choices you make while working are worth surfacing even though they didn't 
 - Log a decision whenever you: pick between viable alternatives, resolve an ambiguity in the plan, deviate from the plan, introduce a dependency or pattern not already in the codebase, or defer/skip something the plan implied.
 - Do not log routine mechanics — naming, formatting, obvious refactors, or anything the plan already specifies.
 - Write each entry as: what was decided, the alternative(s) not taken, and the one-line reason. Include a reversibility note when undoing it later would be costly.
-- Append entries to a **Decisions** section in the plan document as they occur, and repeat them in the increment's commit message or summary so they surface without opening the file.
+- Append entries to a **Decisions** section in the plan document as they occur, and summarize them in commit messages so they surface without opening the file.
 - Flag anything you are uncertain about explicitly rather than presenting it as settled; if a decision materially changes scope or architecture, raise it in the chat at the increment boundary instead of only logging it.
 
 ## Cross-references between docs and code
@@ -33,13 +33,14 @@ Every diff should leave the repo simpler, or at least no more complex. Removing 
 - **Swap rule:** when a change replaces X with Y, deleting X is part of the change — old code paths, obsolete tests, stale docs and comments, finished TODOs, all in the same diff. Never keep the old thing "for compatibility" unless explicitly asked.
 - **Bug fixes kill the cause.** No special-case `if` shielding a symptom; re-derive the design so the bug can't exist.
 - **Comments:** never narrate what the next line does. A comment earns its place only by stating a constraint the code can't express. If a refactor makes a comment stale, it dies in that refactor.
-- **No breadcrumbs.** Comments must read for someone with only the source in context — no "as discussed", "per the plan", links to plan files, or step numbers. Process belongs in the plan document or commit message.
+- **No breadcrumbs.** Comments must read for someone with only the source in context — no "as discussed", "per the plan", links to plan files, or step numbers. Process belongs in the plan document.
 - **Reuse before adding:** scan for an existing helper or concept before introducing a new one. Two names for one idea is a bug.
 - **Adding can be subtraction.** A new abstraction or generalization earns its place when it deletes more than it adds — absorbs special cases, replaces several ad-hoc mechanisms with one principled one. Judge it by net effect on the system, not the diff of the file it lands in.
 - **Old behavior is not sacred.** When a simplification justifies breaking behavior, propose it deliberately: name what changes, who could notice, and why the simpler shape wins. Tests pinning behavior nobody depends on die with that behavior; a kept test guards what the project still promises. Four surfaces here have outside dependents and need sign-off in chat, not just a Decisions entry: the published packages' APIs, the counting rules in `backend/TALLY-SPEC.md` (any rule change changes `rulesetHash`, and every result it changes gets a new hash), the section numbering of the two cited design docs, and the host contract in `interop/`.
 - **Docs are testimony, not ground truth.** Respect high-level goals and character, but detailed claims in docs and comments may be wrong, or right about code that no longer exists — the more technical they get, the less they deserve trust. When doc and code disagree, investigate; never preserve complexity because a comment claims it's needed. Two exceptions: `backend/TALLY-SPEC.md` is normative — code implements it, so a disagreement is a bug in one of the two; surface it rather than siding with either. And `ARCHITECTURE.md` §10 records alternatives that were weighed and rejected — those are decisions, not stale claims; re-open them with new evidence, don't rediscover them.
 - If something in the code surprised you or was hard to follow, that's a bad abstraction — fix it if it's in the area you're already changing, otherwise log it in the simplify backlog (below). Don't launch drive-by refactors outside the current task's scope; the backlog is where that pressure goes.
 - Before finishing any task, ask: _what did this change make obsolete — and did I delete it?_
+- Use very concise commit descriptions.
 
 ## The system rots between tasks
 
