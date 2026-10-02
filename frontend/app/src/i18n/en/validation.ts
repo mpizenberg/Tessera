@@ -13,7 +13,8 @@
  * `definition` and `question` codes are the app's alone — only it authors
  * surveys. The `form` codes are the Create form's own (`FORM_PROBLEM_CODES` in
  * ~/domain/create), and their `{where}` is a localized field name instead of a
- * machine locator.
+ * machine locator. The `detailedJson` codes are an imported metadata file's
+ * (~/domain/detailedJson), `{where}` a path into it such as `17.map[2].v`.
  */
 
 import { enMessages } from "cardano-tessera-respond-core";
@@ -61,6 +62,20 @@ const validation = {
     notHex: "{where}: not valid hex",
     hashLength: "{where}: must be a 32-byte hash (64 hex characters)",
     missing: "{where}: required",
+  },
+  detailedJson: {
+    notJson: "the file is not JSON",
+    notObject: "the file must be a JSON object of metadata labels",
+    badLabel: '"{where}" is not a metadata label',
+    badValue:
+      "{where}: expected one of int, bytes, string, list or map, as cardano-cli's detailed schema writes them",
+    notInteger: "{where}: not a whole number",
+    intOutOfRange:
+      "{where}: outside the range cardano-cli accepts (±18446744073709551615)",
+    badHex: "{where}: not hex bytes",
+    tooLong: "{where}: longer than 64 bytes",
+    badMapEntry: '{where}: a map entry must have exactly "k" and "v"',
+    duplicateKey: "{where}: repeats a key of the same map",
   },
 };
 

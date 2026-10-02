@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { VALIDATION_PROBLEM_CODES } from "cip-179";
 
 import { FORM_PROBLEM_CODES } from "~/domain/create";
+import { DETAILED_JSON_PROBLEM_CODES } from "~/domain/detailedJson";
 import { setLocale } from "~/i18n";
 import { createProblemText, problemText } from "./problem";
 
@@ -18,6 +19,14 @@ describe("problemText", () => {
       const text = problemText({ code });
       // A missing catalog entry falls through to the raw `validation.<code>`
       // key — assert we never see that, i.e. the catalog is exhaustive.
+      expect(text).not.toBe(`validation.${code}`);
+      expect(text.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("renders every detailed-JSON problem code from the catalog", () => {
+    for (const code of DETAILED_JSON_PROBLEM_CODES) {
+      const text = problemText({ code, params: { where: "17.int" } });
       expect(text).not.toBe(`validation.${code}`);
       expect(text.length).toBeGreaterThan(0);
     }

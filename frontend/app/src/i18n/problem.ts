@@ -17,10 +17,13 @@
 import type { ValidationProblem } from "cip-179";
 
 import type { CreateProblem, FormField, FormProblem } from "~/domain/create";
+import type { DetailedJsonProblem } from "~/domain/detailedJson";
 import { t, type MsgKey } from "~/i18n";
 
 /** Localized one-line rendering of a single structured validation problem. */
-export function problemText(problem: ValidationProblem): string {
+export function problemText(
+  problem: ValidationProblem | DetailedJsonProblem,
+): string {
   return t(`validation.${problem.code}` as MsgKey, problem.params);
 }
 

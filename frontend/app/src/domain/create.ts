@@ -28,6 +28,7 @@ import {
 
 import { hexToBytes } from "cip-179/domain";
 import { PRESENTATION_KIND } from "~/enrichment/presentation";
+import { METADATA_INT_MAX } from "~/domain/detailedJson";
 import { QUICKNET_CHAIN_HASH, maxPlaintextSize } from "cip-179/tlock";
 
 /** The question types the builder can author (all of them). */
@@ -230,12 +231,6 @@ type At = Pick<FormProblem, "field" | "question">;
 // Parsing helpers (push a problem and return undefined on failure)
 // ----------------------------------------------------------------------------
 
-/**
- * cardano-cli's metadata integer range. The ledger also accepts -2^64, but a
- * survey written here must export to a file cardano-cli accepts.
- */
-const METADATA_INT_MAX = 2n ** 64n - 1n;
-
 /** A whole number within [lo, hi], as typed: digits with an optional sign. */
 function parseWhole(
   text: string,
@@ -261,6 +256,7 @@ function parseWhole(
   return n;
 }
 
+/** A survey written here must export to a file cardano-cli accepts. */
 function parseBig(
   text: string,
   at: At,

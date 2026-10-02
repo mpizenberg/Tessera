@@ -55,6 +55,21 @@ const validation: Messages = {
       "{where} : doit être un hachage de 32 octets (64 caractères hexadécimaux)",
     missing: "{where} : obligatoire",
   },
+  detailedJson: {
+    notJson: "le fichier n'est pas du JSON",
+    notObject: "le fichier doit être un objet JSON de labels de métadonnées",
+    badLabel: "« {where} » n'est pas un label de métadonnées",
+    badValue:
+      "{where} : attendu int, bytes, string, list ou map, tels que les écrit le schéma détaillé de cardano-cli",
+    notInteger: "{where} : pas un nombre entier",
+    intOutOfRange:
+      "{where} : hors de l'intervalle accepté par cardano-cli (±18446744073709551615)",
+    badHex: "{where} : pas des octets en hexadécimal",
+    tooLong: "{where} : dépasse 64 octets",
+    badMapEntry:
+      "{where} : une entrée de map doit avoir exactement « k » et « v »",
+    duplicateKey: "{where} : répète une clé de la même map",
+  },
 };
 
 export default validation;
