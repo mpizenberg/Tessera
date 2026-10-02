@@ -216,7 +216,7 @@ const create = {
   exportExternalWarning:
     "The survey's text is in its presentation document, a second file. Pin that file unchanged, then replace {placeholder} in the metadata file with its URI (a URI longer than 64 bytes is written as a list of strings).",
   exportPlaceholderOwner:
-    "No connected wallet can own this survey, so the file's owner is a placeholder: a key hash of 28 zero bytes. Publishing the file unchanged buys a survey every reader ignores; replace it with the hash of the key that signs the publishing transaction.",
+    "Connect a wallet before exporting to make yourself the owner. Otherwise the file has a placeholder owner (all zeros), which you must replace with your key hash, or the survey will be ignored.",
   exportDocument: "Download the presentation document",
   importReplaceConfirm: "Replace the survey in the form with the imported one?",
   importReplace: "Replace",

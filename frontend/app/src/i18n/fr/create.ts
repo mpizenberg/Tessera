@@ -205,7 +205,7 @@ const create: Messages = {
   exportExternalWarning:
     "Le texte du sondage est dans son document de présentation, un second fichier. Épinglez ce fichier sans le modifier, puis remplacez {placeholder} dans le fichier de métadonnées par son URI (une URI de plus de 64 octets s'écrit comme une liste de chaînes).",
   exportPlaceholderOwner:
-    "Aucun wallet connecté ne peut détenir ce sondage, le détenteur du fichier est donc un substitut : un hash de clé de 28 octets nuls. Publier le fichier tel quel achète un sondage que tout lecteur ignore ; remplacez-le par le hash de la clé qui signe la transaction de publication.",
+    "Connectez un wallet avant d'exporter pour devenir le détenteur du sondage. Sinon, le fichier porte un détenteur fictif (que des zéros) à remplacer par le hash de votre clé, faute de quoi le sondage sera ignoré.",
   exportDocument: "Télécharger le document de présentation",
   importReplaceConfirm:
     "Remplacer le sondage du formulaire par celui importé ?",
