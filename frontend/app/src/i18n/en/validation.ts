@@ -15,6 +15,7 @@
  * ~/domain/create), and their `{where}` is a localized field name instead of a
  * machine locator. The `detailedJson` codes are an imported metadata file's
  * (~/domain/detailedJson), `{where}` a path into it such as `17.map[2].v`.
+ * The `surveyFile` codes are the import's (~/domain/surveyFile).
  */
 
 import { enMessages } from "cardano-tessera-respond-core";
@@ -77,6 +78,16 @@ const validation = {
     tooLong: "{where}: longer than 64 bytes",
     badMapEntry: '{where}: a map entry must have exactly "k" and "v"',
     duplicateKey: "{where}: repeats a key of the same map",
+  },
+  surveyFile: {
+    fileChoice:
+      "choose one survey metadata file, plus its presentation document if it has one",
+    noSurveyLabel: "the file has no CIP-179 metadata (label 17)",
+    notCip179: "label 17 is not a valid CIP-179 payload (at {where})",
+    definitionCount:
+      "the file holds {count} survey definitions; import takes exactly one",
+    presentationMismatch:
+      "the presentation document is not the one the survey's content anchor names",
   },
 };
 

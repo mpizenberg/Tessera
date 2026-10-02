@@ -7,7 +7,8 @@
  * under the `validation` catalog namespace; this maps it to
  * `validation.<code>` and interpolates its `params` via `t`. The Create form's
  * own problems take the same path, with `{where}` rendered from the labels the
- * form shows. Reactive: reads the locale signal through `t`, so rendered
+ * form shows. An imported file's problems (`detailedJson`, `surveyFile`) take
+ * the same path too. Reactive: reads the locale signal through `t`, so rendered
  * problems re-translate on locale change.
  *
  * `validation.test.ts` asserts the catalog covers every declared code, so the
@@ -18,11 +19,12 @@ import type { ValidationProblem } from "cip-179";
 
 import type { CreateProblem, FormField, FormProblem } from "~/domain/create";
 import type { DetailedJsonProblem } from "~/domain/detailedJson";
+import type { SurveyFileProblem } from "~/domain/surveyFile";
 import { t, type MsgKey } from "~/i18n";
 
 /** Localized one-line rendering of a single structured validation problem. */
 export function problemText(
-  problem: ValidationProblem | DetailedJsonProblem,
+  problem: ValidationProblem | DetailedJsonProblem | SurveyFileProblem,
 ): string {
   return t(`validation.${problem.code}` as MsgKey, problem.params);
 }

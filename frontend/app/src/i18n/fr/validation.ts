@@ -71,6 +71,18 @@ const validation: Messages = {
       "{where} : une entrée de map doit avoir exactement « k » et « v »",
     duplicateKey: "{where} : répète une clé de la même map",
   },
+  surveyFile: {
+    fileChoice:
+      "choisissez un fichier de métadonnées de sondage, et son document de présentation s'il en a un",
+    noSurveyLabel:
+      "le fichier ne contient pas de métadonnées CIP-179 (label 17)",
+    notCip179:
+      "le label 17 n'est pas une charge utile CIP-179 valide (à {where})",
+    definitionCount:
+      "le fichier contient {count} définitions de sondage ; l'import en prend exactement une",
+    presentationMismatch:
+      "le document de présentation n'est pas celui que désigne l'ancre de contenu du sondage",
+  },
 };
 
 export default validation;

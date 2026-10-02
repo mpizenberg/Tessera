@@ -4,6 +4,7 @@ import { VALIDATION_PROBLEM_CODES } from "cip-179";
 
 import { FORM_PROBLEM_CODES } from "~/domain/create";
 import { DETAILED_JSON_PROBLEM_CODES } from "~/domain/detailedJson";
+import { SURVEY_FILE_PROBLEM_CODES } from "~/domain/surveyFile";
 import { setLocale } from "~/i18n";
 import { createProblemText, problemText } from "./problem";
 
@@ -29,6 +30,14 @@ describe("problemText", () => {
       const text = problemText({ code, params: { where: "17.int" } });
       expect(text).not.toBe(`validation.${code}`);
       expect(text.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("renders every survey-file problem code from the catalog", () => {
+    for (const code of SURVEY_FILE_PROBLEM_CODES) {
+      const text = problemText({ code, params: { where: "17", count: "2" } });
+      expect(text).not.toBe(`validation.${code}`);
+      expect(text).not.toMatch(/[{}]/);
     }
   });
 

@@ -194,6 +194,24 @@ const create = {
   /** Where a form problem is: {question} is the question chip, {field} its input's label. */
   problemInQuestion: "{question} {field}",
 
+  // --- Survey file (export / import) ---
+  fileHead: "Survey file",
+  fileHint:
+    "Save the survey as a cardano-cli metadata file (label 17, detailed schema), or load one into the form.",
+  exportFile: "Export",
+  importFile: "Import",
+  exportNeedsValid: "Export is available once the survey has nothing to fix.",
+  exportOwnerNote:
+    "The file names your wallet's key as the owner: the transaction that publishes it must be signed by that key.",
+  /** {placeholder} is the URI written in place of the document's. */
+  exportExternalWarning:
+    "The survey's text is in its presentation document, a second file. Pin that file unchanged, then replace {placeholder} in the metadata file with its URI (a URI longer than 64 bytes is written as a list of strings).",
+  exportDocument: "Download the presentation document",
+  importReplaceConfirm: "Replace the survey in the form with the imported one?",
+  importFailed: "Import failed",
+  importNoPresentation:
+    "This survey keeps its text in a presentation document, which was not imported, so its prompts and labels are blank. Import the document together with the metadata file to bring the text in.",
+
   // --- Submitted receipt ---
   surveyPublished: "Survey published",
   submittedBody:

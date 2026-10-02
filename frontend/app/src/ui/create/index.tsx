@@ -22,12 +22,14 @@ import { ownerCredential } from "~/domain/roles";
 import {
   buildDefinition,
   buildPresentationDoc,
+  formFromDefinition,
   initQuestionDraft,
   type CreateProblem,
   type DefinitionMeta,
   type QuestionDraft,
   type QuestionType,
 } from "~/domain/create";
+import { exportSurvey, importSurvey } from "~/domain/surveyFile";
 import { IPFS_PROVIDERS } from "~/enrichment/providers";
 import {
   SubmitProgressModal,
@@ -37,11 +39,19 @@ import { OnchainPreview } from "~/ui/components/OnchainPreview";
 import { ErrorBox, ProblemList } from "~/ui/components/Feedback";
 import { PublishLocked, QueuedNote } from "~/ui/components/CartDrawer";
 import { networkMismatch } from "~/ui/format";
+import { downloadJson } from "~/util/csv";
 import type { Action } from "~/wallet/action";
 import type { WalletIdentity } from "~/wallet/types";
 import { t } from "~/i18n";
-import { createProblemText } from "~/i18n/problem";
-import { blankDraft, loadDraft, storeDraft, type DrandMode } from "./draft";
+import { createProblemText, problemText } from "~/i18n/problem";
+import {
+  blankDraft,
+  hasText,
+  loadDraft,
+  storeDraft,
+  type DrandMode,
+  type SurveyDraft,
+} from "./draft";
 import { QUESTION_TYPE_KEYS, QuestionEditor } from "./Question";
 import {
   ContentSection,
@@ -58,6 +68,7 @@ import {
   SubmittedPanel,
   SummaryCard,
 } from "./Publish";
+import { SurveyFileCard } from "./SurveyFile";
 import css from "./create.module.css";
 
 /** Add-a-question buttons: one per type, in tag order. Custom is Pro-only. */
@@ -177,41 +188,99 @@ export const Create: Component = () => {
   const [queued, setQueued] = createSignal(false);
   const [showProblems, setShowProblems] = createSignal(false);
 
-  // Storage holds the form until the survey is on chain or in the cart, which
-  // own it from then on. Each stored field is read by name: `sealedRound`
-  // follows the tip, and reading it would rewrite storage on every tip update.
-  createEffect(() => {
-    storeDraft(
-      txHash() === null && !queued()
-        ? {
-            meta: {
-              title: meta.title,
-              description: meta.description,
-              eligibleRoles: meta.eligibleRoles,
-              contentMode: meta.contentMode,
-              endEpoch: meta.endEpoch,
-              mode: meta.mode,
-              sealedPadding: meta.sealedPadding,
-            },
-            questions,
-            drandMode: drandMode(),
-            drandRoundText: drandRoundText(),
-            govLinked: govLinked(),
-          }
-        : undefined,
-    );
+  // Each stored field is read by name: `sealedRound` follows the tip, and
+  // reading it would rewrite storage on every tip update.
+  const currentDraft = (): SurveyDraft => ({
+    meta: {
+      title: meta.title,
+      description: meta.description,
+      eligibleRoles: meta.eligibleRoles,
+      contentMode: meta.contentMode,
+      endEpoch: meta.endEpoch,
+      mode: meta.mode,
+      sealedPadding: meta.sealedPadding,
+    },
+    questions,
+    drandMode: drandMode(),
+    drandRoundText: drandRoundText(),
+    govLinked: govLinked(),
   });
 
-  const startOver = () => {
-    const blank = blankDraft();
-    setMeta(blank.meta);
-    setQuestions([...blank.questions]);
-    setGovLinked(blank.govLinked);
-    setDrandMode(blank.drandMode);
-    setDrandRoundText(blank.drandRoundText);
+  // Storage holds the form until the survey is on chain or in the cart, which
+  // own it from then on.
+  createEffect(() => {
+    storeDraft(txHash() === null && !queued() ? currentDraft() : undefined);
+  });
+
+  const [exportedDocument, setExportedDocument] = createSignal<string | null>(
+    null,
+  );
+  const [importError, setImportError] = createSignal<string | null>(null);
+  const [importTextMissing, setImportTextMissing] = createSignal(false);
+
+  const replaceForm = (draft: SurveyDraft) => {
+    setMeta(draft.meta);
+    setQuestions([...draft.questions]);
+    setGovLinked(draft.govLinked);
+    setDrandMode(draft.drandMode);
+    setDrandRoundText(draft.drandRoundText);
     setShowProblems(false);
     setSubmitError(null);
     setRestored(false);
+    setExportedDocument(null);
+    setImportError(null);
+    setImportTextMissing(false);
+  };
+  const startOver = () => replaceForm(blankDraft());
+
+  const exportable = (): boolean =>
+    built()?.definition !== undefined && problems().length === 0;
+
+  const onExport = () => {
+    const definition = built()?.definition;
+    if (!definition || !exportable()) return;
+    const files = exportSurvey(
+      definition,
+      meta.contentMode === "external"
+        ? buildPresentationDoc(meta, questions)
+        : undefined,
+    );
+    downloadJson("survey-metadata.json", files.metadata);
+    setExportedDocument(files.presentation ?? null);
+  };
+
+  const onExportDocument = () => {
+    const doc = exportedDocument();
+    if (doc !== null) downloadJson("survey-presentation.json", doc);
+  };
+
+  // The file's reveal round is not imported: the drand mode goes back to auto,
+  // which derives it from the end epoch, as after a reload.
+  const onImport = async (files: File[]) => {
+    if (files.length === 0) return;
+    setImportError(null);
+    const read = importSurvey(
+      await Promise.all(
+        files.map(async (f) => new Uint8Array(await f.arrayBuffer())),
+      ),
+    );
+    if ("problem" in read) {
+      setImportError(problemText(read.problem));
+      return;
+    }
+    if (hasText(currentDraft()) && !confirm(t("create.importReplaceConfirm")))
+      return;
+    replaceForm({
+      ...formFromDefinition(read.definition, read.presentation),
+      drandMode: "auto",
+      drandRoundText: "",
+      govLinked: false,
+    });
+    setImportTextMissing(
+      read.definition.contentAnchor !== undefined &&
+        read.presentation === undefined,
+    );
+    setShowProblems(true);
   };
 
   // With something already waiting, publishing this survey would publish that
@@ -489,6 +558,16 @@ export const Create: Component = () => {
                   onQueue={() => void onPublish(true)}
                 />
               </Show>
+              <SurveyFileCard
+                exportable={exportable()}
+                external={meta.contentMode === "external"}
+                onExport={onExport}
+                documentReady={exportedDocument() !== null}
+                onExportDocument={onExportDocument}
+                onImport={(files) => void onImport(files)}
+                importError={importError()}
+                importTextMissing={importTextMissing()}
+              />
             </aside>
           </div>
         </main>

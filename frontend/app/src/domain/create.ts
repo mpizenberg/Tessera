@@ -449,9 +449,10 @@ function toQuestion(
  * before its presentation document is pinned. Its only job is to make
  * `contentAnchor` present so the codec accepts count forms; the real anchor
  * (from {@link buildPresentationDoc} → pin) is injected at publish time. Never
- * encode a definition built with this — rebuild with the real anchor first.
+ * publish a definition built with this — rebuild with the real anchor first.
+ * An exported file keeps its URI, with the document's real hash.
  */
-const PLACEHOLDER_ANCHOR: ContentAnchor = {
+export const PLACEHOLDER_ANCHOR: ContentAnchor = {
   uri: "ipfs://pending",
   hash: new Uint8Array(32),
 };

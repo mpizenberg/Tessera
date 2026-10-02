@@ -183,6 +183,25 @@ const create: Messages = {
   fixBeforePublishing: "À corriger avant de publier",
   problemInQuestion: "{question} {field}",
 
+  // --- Survey file (export / import) ---
+  fileHead: "Fichier du sondage",
+  fileHint:
+    "Enregistrez le sondage comme fichier de métadonnées cardano-cli (label 17, schéma détaillé), ou chargez-en un dans le formulaire.",
+  exportFile: "Exporter",
+  importFile: "Importer",
+  exportNeedsValid:
+    "L'export est disponible une fois que le sondage n'a plus rien à corriger.",
+  exportOwnerNote:
+    "Le fichier désigne la clé de votre wallet comme détentrice : la transaction qui le publie doit être signée par cette clé.",
+  exportExternalWarning:
+    "Le texte du sondage est dans son document de présentation, un second fichier. Épinglez ce fichier sans le modifier, puis remplacez {placeholder} dans le fichier de métadonnées par son URI (une URI de plus de 64 octets s'écrit comme une liste de chaînes).",
+  exportDocument: "Télécharger le document de présentation",
+  importReplaceConfirm:
+    "Remplacer le sondage du formulaire par celui importé ?",
+  importFailed: "Échec de l'import",
+  importNoPresentation:
+    "Ce sondage garde son texte dans un document de présentation qui n'a pas été importé : ses questions et libellés sont vides. Importez le document avec le fichier de métadonnées pour récupérer le texte.",
+
   // --- Submitted receipt ---
   surveyPublished: "Sondage publié",
   submittedBody:

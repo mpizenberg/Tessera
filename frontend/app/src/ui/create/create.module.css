@@ -950,3 +950,16 @@
   color: var(--faint);
   cursor: not-allowed;
 }
+
+/* ---- survey file ---------------------------------------------------------- */
+
+.fileCard {
+  composes: summaryCard;
+  margin-top: 16px;
+}
+
+.fileRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}

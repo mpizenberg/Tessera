@@ -67,7 +67,7 @@ export function storeDraft(draft: SurveyDraft | undefined): void {
  * form holding only those is not worth restoring, and clearing every text
  * field clears the draft.
  */
-function hasText(draft: SurveyDraft): boolean {
+export function hasText(draft: SurveyDraft): boolean {
   const typed = (s: string): boolean => s.trim() !== "";
   return (
     typed(draft.meta.title) ||
