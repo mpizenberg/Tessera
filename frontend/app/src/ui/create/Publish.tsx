@@ -18,6 +18,8 @@ import css from "./create.module.css";
 export const SummaryCard: Component<{
   meta: DefinitionMeta;
   qCount: number;
+  /** The definition's reveal round, 0 while unknown. */
+  revealRound: number;
 }> = (props) => {
   const roleList = () =>
     props.meta.eligibleRoles.length === 0
@@ -32,9 +34,9 @@ export const SummaryCard: Component<{
       : t("create.endsEpoch", { epoch: props.meta.endEpoch.trim() });
   const visibility = () =>
     props.meta.mode === "sealed"
-      ? props.meta.sealedRound > 0
+      ? props.revealRound > 0
         ? t("create.summarySealedReveals", {
-            date: formatRevealDate(props.meta.sealedRound),
+            date: formatRevealDate(props.revealRound),
           })
         : t("create.summarySealed")
       : t("create.summaryPublic");

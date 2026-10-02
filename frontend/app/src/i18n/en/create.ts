@@ -141,6 +141,7 @@ const create = {
   rankedLabel: "ranked",
   min: "min",
   max: "max",
+  step: "step",
   stepOptional: "step (optional)",
   numericStepPlaceholder: "1",
 
@@ -190,6 +191,8 @@ const create = {
 
   // --- Problem list & section heads ---
   fixBeforePublishing: "Fix before publishing",
+  /** Where a form problem is: {question} is the question chip, {field} its input's label. */
+  problemInQuestion: "{question} {field}",
 
   // --- Submitted receipt ---
   surveyPublished: "Survey published",

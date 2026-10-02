@@ -135,6 +135,7 @@ const create: Messages = {
   rankedLabel: "classées",
   min: "min",
   max: "max",
+  step: "pas",
   stepOptional: "pas (facultatif)",
   numericStepPlaceholder: "1",
 
@@ -180,6 +181,7 @@ const create: Messages = {
 
   // --- Problem list & section heads ---
   fixBeforePublishing: "À corriger avant de publier",
+  problemInQuestion: "{question} {field}",
 
   // --- Submitted receipt ---
   surveyPublished: "Sondage publié",

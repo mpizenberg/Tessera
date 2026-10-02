@@ -28,7 +28,7 @@ const written: SurveyDraft = {
     contentMode: "external",
     endEpoch: "321",
     mode: "sealed",
-    sealedPadding: 128,
+    sealedPadding: "128",
   },
   questions: [
     { ...initQuestionDraft("rating"), prompt: "Rate", ratingScale: "labels" },
@@ -107,7 +107,7 @@ describe("the survey being written survives a reload", () => {
       ...(draft.meta as object),
       endEpoch: 321,
       mode: "secret",
-      sealedPadding: "128",
+      sealedPadding: 128,
     };
     draft.questions = [
       { ...written.questions[0], labels: [1, 2], ratingScale: "stars" },

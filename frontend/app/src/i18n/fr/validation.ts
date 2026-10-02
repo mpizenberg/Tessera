@@ -47,6 +47,14 @@ const validation: Messages = {
       "{where} : max_ranked doit être <= au nombre d'options ({count})",
     budgetNotPositive: "{where} : budget doit être > 0",
   },
+  form: {
+    notWholeNumber: "{where} : « {text} » n'est pas un nombre entier",
+    outOfRange: "{where} : {text} n'est pas compris entre {min} et {max}",
+    notHex: "{where} : hexadécimal invalide",
+    hashLength:
+      "{where} : doit être un hachage de 32 octets (64 caractères hexadécimaux)",
+    missing: "{where} : obligatoire",
+  },
 };
 
 export default validation;

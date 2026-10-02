@@ -40,10 +40,9 @@ import { networkMismatch } from "~/ui/format";
 import type { Action } from "~/wallet/action";
 import type { WalletIdentity } from "~/wallet/types";
 import { t } from "~/i18n";
-import { problemText } from "~/i18n/problem";
+import { createProblemText } from "~/i18n/problem";
 import { blankDraft, loadDraft, storeDraft, type DrandMode } from "./draft";
-import { intOf } from "./Fields";
-import { QuestionEditor } from "./Question";
+import { QUESTION_TYPE_KEYS, QuestionEditor } from "./Question";
 import {
   ContentSection,
   DetailsSection,
@@ -61,45 +60,15 @@ import {
 } from "./Publish";
 import css from "./create.module.css";
 
-/**
- * Add-a-question buttons: one per type, in tag order. Custom is Pro-only.
- * `shortKey` is an i18n message key, translated at render time.
- */
-const ADD_BUTTONS: ReadonlyArray<{
-  type: QuestionType;
-  shortKey:
-    | "create.addSingle"
-    | "create.addMulti"
-    | "create.addRanking"
-    | "create.addNumeric"
-    | "create.addPoints"
-    | "create.addRating"
-    | "create.addCustom";
-  tag: number;
-}> = [
-  {
-    type: "singleChoice",
-    shortKey: "create.addSingle",
-    tag: QuestionTag.SingleChoice,
-  },
-  {
-    type: "multiSelect",
-    shortKey: "create.addMulti",
-    tag: QuestionTag.MultiSelect,
-  },
-  { type: "ranking", shortKey: "create.addRanking", tag: QuestionTag.Ranking },
-  {
-    type: "numericRange",
-    shortKey: "create.addNumeric",
-    tag: QuestionTag.NumericRange,
-  },
-  {
-    type: "pointsAllocation",
-    shortKey: "create.addPoints",
-    tag: QuestionTag.PointsAllocation,
-  },
-  { type: "rating", shortKey: "create.addRating", tag: QuestionTag.Rating },
-  { type: "custom", shortKey: "create.addCustom", tag: QuestionTag.Custom },
+/** Add-a-question buttons: one per type, in tag order. Custom is Pro-only. */
+const ADD_BUTTONS: ReadonlyArray<{ type: QuestionType; tag: number }> = [
+  { type: "singleChoice", tag: QuestionTag.SingleChoice },
+  { type: "multiSelect", tag: QuestionTag.MultiSelect },
+  { type: "ranking", tag: QuestionTag.Ranking },
+  { type: "numericRange", tag: QuestionTag.NumericRange },
+  { type: "pointsAllocation", tag: QuestionTag.PointsAllocation },
+  { type: "rating", tag: QuestionTag.Rating },
+  { type: "custom", tag: QuestionTag.Custom },
 ];
 
 export const Create: Component = () => {
@@ -121,7 +90,7 @@ export const Create: Component = () => {
   const [restored, setRestored] = createSignal(restoredDraft !== undefined);
   const [meta, setMeta] = createStore<DefinitionMeta>({
     ...initial.meta,
-    sealedRound: 0,
+    sealedRound: "",
   });
   const [questions, setQuestions] = createStore<QuestionDraft[]>([
     ...initial.questions,
@@ -161,7 +130,7 @@ export const Create: Component = () => {
   // Manual entry is a Pro-only affordance; Plain mode is always Auto.
   createEffect(() => {
     const manual = app.ui.pro && drandMode() === "manual";
-    setMeta("sealedRound", manual ? intOf(drandRoundText()) : autoRound());
+    setMeta("sealedRound", manual ? drandRoundText() : String(autoRound()));
   });
 
   const built = createMemo(() => {
@@ -172,9 +141,8 @@ export const Create: Component = () => {
     });
   });
   const problems = (): CreateProblem[] => built()?.problems ?? [];
-  /** Render structured codec problems in the active locale; pass strings through. */
   const renderProblems = (ps: readonly CreateProblem[]): string[] =>
-    ps.map((p) => (typeof p === "string" ? p : problemText(p)));
+    ps.map(createProblemText);
   const problemStrings = (): string[] => renderProblems(problems());
 
   // Pro on-chain preview: the label-17 definition payload, built live. External
@@ -182,26 +150,24 @@ export const Create: Component = () => {
   // anchor is only known after pinning at publish time).
   const previewPayload = createMemo<Metadatum | undefined>(() => {
     if (!app.ui.pro) return undefined;
-    const b = built();
-    if (!b) return undefined;
+    const definition = built()?.definition;
+    if (!definition) return undefined;
     try {
-      return encodePayload({
-        type: "definitions",
-        definitions: [b.definition],
-      });
+      return encodePayload({ type: "definitions", definitions: [definition] });
     } catch {
       return undefined;
     }
   });
 
-  // The padding size actually used for sealed responses — the auto worst-case
-  // size unless the creator overrode it. Shown in the sealed config.
-  const resolvedPadding = (): number => {
-    const b = built();
-    return b && b.definition.submissionMode.type === "sealed"
-      ? b.definition.submissionMode.paddingSize
-      : 0;
+  // The reveal round and padding size the sealed definition carries (the
+  // padding is the auto worst-case size unless the creator overrode it). Shown
+  // in the sealed config; 0 until the form parses.
+  const sealedMode = () => {
+    const mode = built()?.definition?.submissionMode;
+    return mode?.type === "sealed" ? mode : undefined;
   };
+  const resolvedRound = (): number => sealedMode()?.round ?? 0;
+  const resolvedPadding = (): number => sealedMode()?.paddingSize ?? 0;
 
   const [submitting, setSubmitting] = createSignal(false);
   const [busyText, setBusyText] = createSignal(t("create.busyPublishing"));
@@ -299,7 +265,7 @@ export const Create: Component = () => {
     const b = buildDefinition(o, metaNow, questionsNow, {
       tipEpoch: app.list()?.tip.epoch,
     });
-    if (b.problems.length > 0 || externalNoTokens(metaNow)) {
+    if (!b.definition || b.problems.length > 0 || externalNoTokens(metaNow)) {
       setShowProblems(true);
       return;
     }
@@ -324,7 +290,7 @@ export const Create: Component = () => {
         });
         // Same inputs as the validated build with only the anchor swapped, so a
         // problem here is the anchor's — never publish it.
-        if (rebuilt.problems.length > 0) {
+        if (!rebuilt.definition || rebuilt.problems.length > 0) {
           throw new Error(renderProblems(rebuilt.problems).join(" "));
         }
         definition = rebuilt.definition;
@@ -426,9 +392,9 @@ export const Create: Component = () => {
                 onDrandMode={setDrandMode}
                 drandRoundText={drandRoundText()}
                 onDrandRoundText={setDrandRoundText}
-                resolvedRound={meta.sealedRound}
+                resolvedRound={resolvedRound()}
                 paddingOverride={meta.sealedPadding}
-                onPaddingOverride={(n) => setMeta("sealedPadding", n)}
+                onPaddingOverride={(v) => setMeta("sealedPadding", v)}
                 resolvedPadding={resolvedPadding()}
                 pro={app.ui.pro}
               />
@@ -474,7 +440,7 @@ export const Create: Component = () => {
                           class={css.addTypeBtn}
                         >
                           <span class={css.addTypeTag}>{b.tag}</span>
-                          {t(b.shortKey)}
+                          {t(QUESTION_TYPE_KEYS[b.type])}
                         </button>
                       )}
                     </For>
@@ -495,7 +461,11 @@ export const Create: Component = () => {
 
             {/* right: summary + publish */}
             <aside class="create-aside">
-              <SummaryCard meta={meta} qCount={questions.length} />
+              <SummaryCard
+                meta={meta}
+                qCount={questions.length}
+                revealRound={resolvedRound()}
+              />
               <Show when={app.ui.pro}>
                 <OnchainPreview payload={previewPayload()} />
               </Show>

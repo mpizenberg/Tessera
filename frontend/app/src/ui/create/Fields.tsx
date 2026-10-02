@@ -64,11 +64,10 @@ export const OptionsEditor: Component<{
 
 export const MinMaxRow: Component<{
   label: string;
-  min: number;
-  max: number;
-  onMin: (n: number) => void;
-  onMax: (n: number) => void;
-  minAllowed: number;
+  min: string;
+  max: string;
+  onMin: (v: string) => void;
+  onMax: (v: string) => void;
 }> = (props) => (
   <div class={css.fieldRow}>
     <label class={css.inlineField}>
@@ -76,10 +75,9 @@ export const MinMaxRow: Component<{
         {t("create.minOf", { label: props.label })}
       </span>
       <input
-        type="number"
-        min={props.minAllowed}
+        type="text"
         value={props.min}
-        onInput={(e) => props.onMin(intOf(e.currentTarget.value))}
+        onInput={(e) => props.onMin(e.currentTarget.value)}
         class={css.miniNumber}
       />
     </label>
@@ -88,9 +86,9 @@ export const MinMaxRow: Component<{
         {t("create.maxOf", { label: props.label })}
       </span>
       <input
-        type="number"
+        type="text"
         value={props.max}
-        onInput={(e) => props.onMax(intOf(e.currentTarget.value))}
+        onInput={(e) => props.onMax(e.currentTarget.value)}
         class={css.miniNumber}
       />
     </label>
@@ -136,8 +134,3 @@ export const NumericRow: Component<{
     </label>
   </div>
 );
-
-export function intOf(s: string): number {
-  const n = parseInt(s, 10);
-  return Number.isFinite(n) ? n : 0;
-}

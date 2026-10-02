@@ -5,14 +5,24 @@ import type { SetStoreFunction } from "solid-js/store";
 
 import {
   QUESTION_TYPES,
-  questionTypeLabel,
   usesOptions,
   type QuestionDraft,
   type QuestionType,
 } from "~/domain/create";
-import { t } from "~/i18n";
+import { t, type MsgKey } from "~/i18n";
 import { MinMaxRow, NumericRow, OptionsEditor } from "./Fields";
 import css from "./create.module.css";
+
+/** Each question type's name, as the type picker and the add buttons show it. */
+export const QUESTION_TYPE_KEYS: Record<QuestionType, MsgKey> = {
+  singleChoice: "create.addSingle",
+  multiSelect: "create.addMulti",
+  ranking: "create.addRanking",
+  numericRange: "create.addNumeric",
+  pointsAllocation: "create.addPoints",
+  rating: "create.addRating",
+  custom: "create.addCustom",
+};
 
 export const QuestionEditor: Component<{
   index: number;
@@ -37,7 +47,9 @@ export const QuestionEditor: Component<{
             class={css.select}
           >
             <For each={QUESTION_TYPES}>
-              {(t) => <option value={t}>{questionTypeLabel(t)}</option>}
+              {(type) => (
+                <option value={type}>{t(QUESTION_TYPE_KEYS[type])}</option>
+              )}
             </For>
           </select>
         </div>
@@ -85,15 +97,16 @@ const TypeFields: Component<{
   set: SetStoreFunction<QuestionDraft[]>;
 }> = (props) => {
   const i = () => props.index;
-  // Add an option row; for multi-select / ranking, grow the max ceiling to the
-  // new option count (it can never exceed the number of options anyway).
+  // Add an option row; for multi-select / ranking, raise the max to the new
+  // option count when it was at the old one, so "all of them" stays all of them.
   const addOption = () => {
-    const newCount = props.draft.labels.length + 1;
+    const oldCount = String(props.draft.labels.length);
+    const newCount = String(props.draft.labels.length + 1);
     props.set(i(), "labels", (ls) => [...ls, ""]);
     if (props.draft.type === "multiSelect") {
-      props.set(i(), "maxSelections", (m) => Math.max(m, newCount));
+      props.set(i(), "maxSelections", (m) => (m === oldCount ? newCount : m));
     } else if (props.draft.type === "ranking") {
-      props.set(i(), "maxRanked", (m) => Math.max(m, newCount));
+      props.set(i(), "maxRanked", (m) => (m === oldCount ? newCount : m));
     }
   };
   return (
@@ -116,7 +129,6 @@ const TypeFields: Component<{
           max={props.draft.maxSelections}
           onMin={(v) => props.set(i(), "minSelections", v)}
           onMax={(v) => props.set(i(), "maxSelections", v)}
-          minAllowed={0}
         />
       </Show>
 
@@ -127,7 +139,6 @@ const TypeFields: Component<{
           max={props.draft.maxRanked}
           onMin={(v) => props.set(i(), "minRanked", v)}
           onMax={(v) => props.set(i(), "maxRanked", v)}
-          minAllowed={1}
         />
       </Show>
 

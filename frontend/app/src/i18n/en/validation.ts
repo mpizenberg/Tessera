@@ -11,7 +11,9 @@
  * The `response` and `answer` subtrees are `respond-core`'s: the widget renders
  * the same problems from the same codes, so the wording has one definition. The
  * `definition` and `question` codes are the app's alone — only it authors
- * surveys.
+ * surveys. The `form` codes are the Create form's own (`FORM_PROBLEM_CODES` in
+ * ~/domain/create), and their `{where}` is a localized field name instead of a
+ * machine locator.
  */
 
 import { enMessages } from "cardano-tessera-respond-core";
@@ -52,6 +54,13 @@ const validation = {
     maxRankedGtOptions:
       "{where}: max_ranked must be <= number of options ({count})",
     budgetNotPositive: "{where}: budget must be > 0",
+  },
+  form: {
+    notWholeNumber: '{where}: "{text}" is not a whole number',
+    outOfRange: "{where}: {text} is not between {min} and {max}",
+    notHex: "{where}: not valid hex",
+    hashLength: "{where}: must be a 32-byte hash (64 hex characters)",
+    missing: "{where}: required",
   },
 };
 

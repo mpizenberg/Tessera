@@ -14,7 +14,6 @@ import { roleColors, roleLabel, shortHash } from "~/ui/format";
 import { VisGlyph } from "~/ui/components/glyphs";
 import type { WalletIdentity } from "~/wallet/types";
 import { t, n } from "~/i18n";
-import { intOf } from "./Fields";
 import css from "./create.module.css";
 
 export const SectionHead: Component<{
@@ -296,8 +295,9 @@ export const VisibilitySection: Component<{
   drandRoundText: string;
   onDrandRoundText: (v: string) => void;
   resolvedRound: number;
-  paddingOverride: number;
-  onPaddingOverride: (n: number) => void;
+  /** Blank means auto. */
+  paddingOverride: string;
+  onPaddingOverride: (v: string) => void;
   resolvedPadding: number;
   pro: boolean;
 }> = (props) => (
@@ -365,7 +365,7 @@ export const VisibilitySection: Component<{
               fallback={<p class={css.hint}>{t("create.drandAutoHint")}</p>}
             >
               <input
-                type="number"
+                type="text"
                 value={props.drandRoundText}
                 placeholder={t("create.drandRoundPlaceholder")}
                 onInput={(e) => props.onDrandRoundText(e.currentTarget.value)}
@@ -394,19 +394,12 @@ export const VisibilitySection: Component<{
             <label class={css.blockLabelGap}>
               <span class={css.fieldLabel}>{t("create.paddingLabel")}</span>
               <input
-                type="number"
-                min={1}
-                step={1}
-                value={props.paddingOverride === 0 ? "" : props.paddingOverride}
+                type="text"
+                value={props.paddingOverride}
                 placeholder={t("create.paddingAutoPlaceholder", {
                   size: n(props.resolvedPadding),
                 })}
-                onInput={(e) => {
-                  const v = e.currentTarget.value.trim();
-                  const parsed = intOf(v);
-                  // Positive integers only; blank or anything < 1 means auto.
-                  props.onPaddingOverride(v === "" || parsed < 1 ? 0 : parsed);
-                }}
+                onInput={(e) => props.onPaddingOverride(e.currentTarget.value)}
                 class={css.paddingInput}
               />
             </label>

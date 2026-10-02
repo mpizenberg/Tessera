@@ -5,13 +5,11 @@
  * type-specific field lives on the same object, so switching a question's type
  * preserves shared fields (prompt, required) and the inputs stay controlled.
  * This module projects those drafts into typed CIP-179 {@link Question}s and a
- * full {@link SurveyDefinition}, collecting human-readable problems along the
- * way (parse failures the codec can't express) and then deferring to the codec's
- * own {@link validateDefinition} for the semantic invariants.
+ * full {@link SurveyDefinition}, collecting structured problems along the way
+ * (input the form cannot turn into a definition) and then deferring to the
+ * codec's own {@link validateDefinition} for the semantic invariants.
  *
  * No framework, no I/O — every function here is unit-testable in isolation.
- * This layer only builds inline-content surveys (labels supplied on-chain);
- * external-content mode (option counts + an anchor) is out of scope here.
  */
 
 import {
@@ -46,14 +44,15 @@ export interface QuestionDraft {
   required: boolean;
   /** Inline option labels (single/multi/ranking/points/rating). */
   labels: string[];
+  // Every number is kept as typed, so partial input doesn't fight the parser;
+  // `buildDefinition` parses it.
   // multiSelect
-  minSelections: number;
-  maxSelections: number;
+  minSelections: string;
+  maxSelections: string;
   // ranking
-  minRanked: number;
-  maxRanked: number;
-  // numericRange and pointsAllocation (kept as strings so partial input
-  // doesn't fight the parser, and parsed to bigint at any size)
+  minRanked: string;
+  maxRanked: string;
+  // numericRange and pointsAllocation
   numMin: string;
   numMax: string;
   numStep: string;
@@ -88,33 +87,18 @@ export interface DefinitionMeta {
   /** Public (plaintext) or sealed (tlock commit-reveal) responses. */
   mode: "public" | "sealed";
   /**
-   * Resolved drand round at which sealed responses become decryptable. Computed
-   * by the screen (from the end epoch, or entered manually) and passed in;
-   * ignored for public surveys.
+   * Drand round at which sealed responses become decryptable, as text. Set by
+   * the screen (from the end epoch, or as entered manually); ignored for public
+   * surveys.
    */
-  sealedRound: number;
+  sealedRound: string;
   /**
-   * Minimum plaintext byte length each sealed response is padded to. `0` (or
-   * any non-positive value) means **auto**: `buildDefinition` sizes it to the
-   * worst-case fully-answered response (see {@link maxPlaintextSize}). Ignored
-   * for public surveys.
+   * Minimum plaintext byte length each sealed response is padded to, as text.
+   * Blank means **auto**: `buildDefinition` sizes it to the worst-case
+   * fully-answered response (see {@link maxPlaintextSize}). Ignored for public
+   * surveys.
    */
-  sealedPadding: number;
-}
-
-const TYPE_LABELS: Record<QuestionType, string> = {
-  custom: "Custom",
-  singleChoice: "Single choice",
-  multiSelect: "Multi-select",
-  ranking: "Ranking",
-  numericRange: "Numeric range",
-  pointsAllocation: "Points allocation",
-  rating: "Rating",
-};
-
-/** Display label for a question type (builder type picker). */
-export function questionTypeLabel(t: QuestionType): string {
-  return TYPE_LABELS[t];
+  sealedPadding: string;
 }
 
 /** Every authorable question type, in tag order (custom last). */
@@ -137,8 +121,8 @@ export function initDefinitionMeta(): DefinitionMeta {
     contentMode: "embedded",
     endEpoch: "",
     mode: "public",
-    sealedRound: 0,
-    sealedPadding: 0, // 0 = auto (worst-case size, computed in buildDefinition)
+    sealedRound: "",
+    sealedPadding: "",
   };
 }
 
@@ -149,10 +133,10 @@ export function initQuestionDraft(type: QuestionType): QuestionDraft {
     prompt: "",
     required: false,
     labels: ["", ""],
-    minSelections: 0,
-    maxSelections: 2,
-    minRanked: 1,
-    maxRanked: 2,
+    minSelections: "0",
+    maxSelections: "2",
+    minRanked: "1",
+    maxRanked: "2",
     numMin: "0",
     numMax: "10",
     numStep: "",
@@ -193,45 +177,145 @@ export function usesOptions(type: QuestionType): boolean {
 }
 
 // ----------------------------------------------------------------------------
-// Parsing helpers (push a problem + return a fallback on failure)
+// Form problems
 // ----------------------------------------------------------------------------
 
-function parseBig(text: string, where: string, out: string[]): bigint {
+/** The inputs a {@link FormProblem} can point at. */
+export type FormField =
+  | "endEpoch"
+  | "revealRound"
+  | "padding"
+  | "min"
+  | "max"
+  | "step"
+  | "budget"
+  | "minSelections"
+  | "maxSelections"
+  | "minRanked"
+  | "maxRanked"
+  | "customUri"
+  | "customHash";
+
+export const FORM_PROBLEM_CODES = [
+  "form.notWholeNumber",
+  "form.outOfRange",
+  "form.notHex",
+  "form.hashLength",
+  "form.missing",
+] as const;
+
+export type FormProblemCode = (typeof FORM_PROBLEM_CODES)[number];
+
+/**
+ * Input the form cannot turn into a definition. `question` is the 0-based
+ * index of the question holding `field`, absent for survey-level fields.
+ */
+export interface FormProblem {
+  readonly code: FormProblemCode;
+  readonly field: FormField;
+  readonly question?: number;
+  readonly params?: Readonly<Record<string, string>>;
+}
+
+/**
+ * A single publish-blocking problem: the form's own, or one of the codec's
+ * semantic problems. Both are structured; the caller renders them in its own
+ * locale (see `~/i18n/problem`).
+ */
+export type CreateProblem = FormProblem | ValidationProblem;
+
+type At = Pick<FormProblem, "field" | "question">;
+
+// ----------------------------------------------------------------------------
+// Parsing helpers (push a problem and return undefined on failure)
+// ----------------------------------------------------------------------------
+
+/**
+ * cardano-cli's metadata integer range. The ledger also accepts -2^64, but a
+ * survey written here must export to a file cardano-cli accepts.
+ */
+const METADATA_INT_MAX = 2n ** 64n - 1n;
+
+/** A whole number within [lo, hi], as typed: digits with an optional sign. */
+function parseWhole(
+  text: string,
+  lo: bigint,
+  hi: bigint,
+  at: At,
+  out: FormProblem[],
+): bigint | undefined {
   const t = text.trim();
-  try {
-    if (!/^[+-]?\d+$/.test(t)) throw new Error("not an integer");
-    return BigInt(t);
-  } catch {
-    out.push(`${where}: "${text}" is not a whole number`);
-    return 0n;
+  if (!/^[+-]?\d+$/.test(t)) {
+    out.push({ ...at, code: "form.notWholeNumber", params: { text } });
+    return undefined;
   }
+  const n = BigInt(t);
+  if (n < lo || n > hi) {
+    out.push({
+      ...at,
+      code: "form.outOfRange",
+      params: { text: t, min: String(lo), max: String(hi) },
+    });
+    return undefined;
+  }
+  return n;
+}
+
+function parseBig(
+  text: string,
+  at: At,
+  out: FormProblem[],
+): bigint | undefined {
+  return parseWhole(text, -METADATA_INT_MAX, METADATA_INT_MAX, at, out);
+}
+
+/** A non-negative whole number held as a JS number (counts, epochs, rounds). */
+function parseCount(
+  text: string,
+  at: At,
+  out: FormProblem[],
+): number | undefined {
+  const n = parseWhole(text, 0n, BigInt(Number.MAX_SAFE_INTEGER), at, out);
+  return n === undefined ? undefined : Number(n);
 }
 
 function parseConstraints(
   min: string,
   max: string,
   step: string,
-  where: string,
-  out: string[],
-): NumericConstraints {
-  const lo = parseBig(min, `${where} min`, out);
-  const hi = parseBig(max, `${where} max`, out);
-  if (step.trim() === "") return { min: lo, max: hi };
-  return { min: lo, max: hi, step: parseBig(step, `${where} step`, out) };
+  question: number,
+  out: FormProblem[],
+): NumericConstraints | undefined {
+  const lo = parseBig(min, { field: "min", question }, out);
+  const hi = parseBig(max, { field: "max", question }, out);
+  if (step.trim() === "") {
+    return lo === undefined || hi === undefined
+      ? undefined
+      : { min: lo, max: hi };
+  }
+  const st = parseBig(step, { field: "step", question }, out);
+  return lo === undefined || hi === undefined || st === undefined
+    ? undefined
+    : { min: lo, max: hi, step: st };
 }
 
-function parseHash(hex: string, where: string, out: string[]): Uint8Array {
-  const t = hex.trim();
+function parseHash(
+  hex: string,
+  at: At,
+  out: FormProblem[],
+): Uint8Array | undefined {
+  let bytes: Uint8Array;
   try {
-    const bytes = hexToBytes(t);
-    if (bytes.length !== 32) {
-      out.push(`${where}: must be a 32-byte blake2b-256 hash (64 hex chars)`);
-    }
-    return bytes;
+    bytes = hexToBytes(hex.trim());
   } catch {
-    out.push(`${where}: not valid hex`);
-    return new Uint8Array(0);
+    out.push({ ...at, code: "form.notHex" });
+    return undefined;
   }
+  if (bytes.length !== 32) {
+    out.push({ ...at, code: "form.hashLength" });
+    return undefined;
+  }
+  return bytes;
 }
 
 /** Inline option labels, trimmed; blank rows are dropped (count enforced later). */
@@ -243,12 +327,16 @@ function inlineLabels(labels: readonly string[]): string[] {
 // Projection: draft -> Question
 // ----------------------------------------------------------------------------
 
+/**
+ * A draft as a {@link Question}, or undefined when one of its fields does not
+ * parse (the problem is pushed to `out`).
+ */
 function toQuestion(
   draft: QuestionDraft,
-  where: string,
+  question: number,
   external: boolean,
-  out: string[],
-): Question {
+  out: FormProblem[],
+): Question | undefined {
   // External-content mode moves prompts/labels off-chain: the prompt is blank
   // and option/level lists collapse to bare counts (the presentation document
   // supplies the text). Embedded mode keeps everything inline.
@@ -260,73 +348,86 @@ function toQuestion(
       ? { type: "count", count: inline.length }
       : { type: "options", labels: inline };
   };
+  const count = (text: string, field: FormField) =>
+    parseCount(text, { field, question }, out);
   switch (draft.type) {
     case "custom": {
-      if (draft.customUri.trim() === "") {
-        out.push(`${where}: custom question needs a method-schema URI`);
-      }
-      return {
-        ...base,
-        type: "custom",
-        methodSchema: {
-          uri: draft.customUri.trim(),
-          hash: parseHash(draft.customHash, `${where} schema hash`, out),
-        },
-      };
+      const uri = draft.customUri.trim();
+      if (uri === "")
+        out.push({ code: "form.missing", field: "customUri", question });
+      const hash = parseHash(
+        draft.customHash,
+        { field: "customHash", question },
+        out,
+      );
+      if (uri === "" || hash === undefined) return undefined;
+      return { ...base, type: "custom", methodSchema: { uri, hash } };
     }
     case "singleChoice":
       return { ...base, type: "singleChoice", options: opts(draft.labels) };
-    case "multiSelect":
+    case "multiSelect": {
+      const minSelections = count(draft.minSelections, "minSelections");
+      const maxSelections = count(draft.maxSelections, "maxSelections");
+      if (minSelections === undefined || maxSelections === undefined)
+        return undefined;
       return {
         ...base,
         type: "multiSelect",
         options: opts(draft.labels),
-        minSelections: draft.minSelections,
-        maxSelections: draft.maxSelections,
+        minSelections,
+        maxSelections,
       };
-    case "ranking":
+    }
+    case "ranking": {
+      const minRanked = count(draft.minRanked, "minRanked");
+      const maxRanked = count(draft.maxRanked, "maxRanked");
+      if (minRanked === undefined || maxRanked === undefined) return undefined;
       return {
         ...base,
         type: "ranking",
         options: opts(draft.labels),
-        minRanked: draft.minRanked,
-        maxRanked: draft.maxRanked,
+        minRanked,
+        maxRanked,
       };
-    case "numericRange":
-      return {
-        ...base,
-        type: "numericRange",
-        constraints: parseConstraints(
-          draft.numMin,
-          draft.numMax,
-          draft.numStep,
-          where,
-          out,
-        ),
-      };
-    case "pointsAllocation":
+    }
+    case "numericRange": {
+      const constraints = parseConstraints(
+        draft.numMin,
+        draft.numMax,
+        draft.numStep,
+        question,
+        out,
+      );
+      if (constraints === undefined) return undefined;
+      return { ...base, type: "numericRange", constraints };
+    }
+    case "pointsAllocation": {
+      const budget = parseBig(draft.budget, { field: "budget", question }, out);
+      if (budget === undefined) return undefined;
       return {
         ...base,
         type: "pointsAllocation",
         options: opts(draft.labels),
-        budget: parseBig(draft.budget, `${where} budget`, out),
+        budget,
       };
+    }
     case "rating": {
-      const scale: RatingScale =
-        draft.ratingScale === "labels"
-          ? external
-            ? { type: "count", count: inlineLabels(draft.ratingLabels).length }
-            : { type: "labels", labels: inlineLabels(draft.ratingLabels) }
-          : {
-              type: "numeric",
-              constraints: parseConstraints(
-                draft.ratingMin,
-                draft.ratingMax,
-                draft.ratingStep,
-                `${where} scale`,
-                out,
-              ),
-            };
+      let scale: RatingScale;
+      if (draft.ratingScale === "labels") {
+        scale = external
+          ? { type: "count", count: inlineLabels(draft.ratingLabels).length }
+          : { type: "labels", labels: inlineLabels(draft.ratingLabels) };
+      } else {
+        const constraints = parseConstraints(
+          draft.ratingMin,
+          draft.ratingMax,
+          draft.ratingStep,
+          question,
+          out,
+        );
+        if (constraints === undefined) return undefined;
+        scale = { type: "numeric", constraints };
+      }
       return {
         ...base,
         type: "rating",
@@ -343,18 +444,6 @@ function toQuestion(
 // ----------------------------------------------------------------------------
 
 /**
- * Build a {@link SurveyDefinition} from builder state. Always returns a
- * structurally-complete definition (parse failures fall back to safe defaults so
- * the codec validator can still run); `problems` is the concatenation of parse
- * problems and the codec's semantic problems. The definition is publishable iff
- * `problems` is empty.
- *
- * Produces public or sealed (tlock commit-reveal) surveys; sealed mode pins the
- * drand quicknet chain and carries the resolved reveal round + padding from
- * `meta`. `owner` must be a key credential the connected wallet controls so it
- * can later prove ownership for a cancellation.
- */
-/**
  * Placeholder anchor used to *preview/validate* an external-content definition
  * before its presentation document is pinned. Its only job is to make
  * `contentAnchor` present so the codec accepts count forms; the real anchor
@@ -367,13 +456,17 @@ const PLACEHOLDER_ANCHOR: ContentAnchor = {
 };
 
 /**
- * A single publish-blocking problem. Parse failures the builder detects itself
- * are already-localized (or literal) strings; the codec's semantic problems are
- * structured cip-179 {@link ValidationProblem}s the caller renders in its own
- * locale (see `~/i18n/problem`).
+ * Build a {@link SurveyDefinition} from builder state. The definition is
+ * returned only when every field parses, so it is always the form's; until
+ * then `problems` holds the form's own problems alone. Once it parses,
+ * `problems` holds the codec's semantic problems, and the definition is
+ * publishable iff there are none.
+ *
+ * Produces public or sealed (tlock commit-reveal) surveys; sealed mode pins the
+ * drand quicknet chain and carries the reveal round + padding from `meta`.
+ * `owner` must be a key credential the connected wallet controls so it can
+ * later prove ownership for a cancellation.
  */
-export type CreateProblem = string | ValidationProblem;
-
 export function buildDefinition(
   owner: Credential,
   meta: DefinitionMeta,
@@ -383,12 +476,29 @@ export function buildDefinition(
     /** Chain-tip epoch, when known — enables the CIP-179 end_epoch rule below. */
     tipEpoch?: number | undefined;
   } = {},
-): { definition: SurveyDefinition; problems: CreateProblem[] } {
-  const problems: string[] = [];
+): { definition?: SurveyDefinition; problems: CreateProblem[] } {
+  const problems: FormProblem[] = [];
   const external = meta.contentMode === "external";
+  const sealed = meta.mode === "sealed";
   const { contentAnchor, tipEpoch } = opts;
 
-  const endEpoch = parseEndEpoch(meta.endEpoch, problems);
+  const endEpoch = parseCount(meta.endEpoch, { field: "endEpoch" }, problems);
+  const round = sealed
+    ? parseCount(meta.sealedRound, { field: "revealRound" }, problems)
+    : undefined;
+  const padding =
+    sealed && meta.sealedPadding.trim() !== ""
+      ? parseCount(meta.sealedPadding, { field: "padding" }, problems)
+      : undefined;
+  const parsed = drafts.map((d, i) => toQuestion(d, i, external, problems));
+  if (
+    problems.length > 0 ||
+    endEpoch === undefined ||
+    (sealed && round === undefined)
+  )
+    return { problems };
+  const questions = parsed.filter((q) => q !== undefined);
+
   // CIP-179 §Epoch Semantics: end_epoch MUST be past the epoch the definition
   // is included in. Publishing one that isn't buys a survey no conformant
   // reader — this one included — will ever tally. Reported with the codec's own
@@ -402,9 +512,6 @@ export function buildDefinition(
           },
         ]
       : [];
-  const questions = drafts.map((d, i) =>
-    toQuestion(d, `Q${i + 1}`, external, problems),
-  );
 
   const definition: SurveyDefinition = {
     specVersion: SPEC_VERSION,
@@ -415,15 +522,12 @@ export function buildDefinition(
     eligibleRoles: [...meta.eligibleRoles].sort((a, b) => a - b),
     endEpoch,
     submissionMode:
-      meta.mode === "sealed"
+      round !== undefined
         ? {
             type: "sealed",
             chainHash: QUICKNET_CHAIN_HASH,
-            round: meta.sealedRound,
-            paddingSize:
-              meta.sealedPadding > 0
-                ? meta.sealedPadding
-                : maxPlaintextSize(questions),
+            round,
+            paddingSize: padding ?? maxPlaintextSize(questions),
           }
         : { type: "public" },
     questions,
@@ -432,11 +536,7 @@ export function buildDefinition(
 
   return {
     definition,
-    problems: [
-      ...problems,
-      ...epochProblems,
-      ...validateDefinition(definition),
-    ],
+    problems: [...epochProblems, ...validateDefinition(definition)],
   };
 }
 
@@ -476,16 +576,4 @@ export function buildPresentationDoc(
         : {}),
     })),
   };
-}
-
-function parseEndEpoch(text: string, out: string[]): number {
-  const t = text.trim();
-  // Digits only — same discipline as `parseBig`, so "1e3", "+5", whitespace,
-  // and other `Number()`-permissive forms are rejected rather than coerced.
-  const n = Number(t);
-  if (!/^\d+$/.test(t) || !Number.isSafeInteger(n)) {
-    out.push("end epoch must be a non-negative whole number");
-    return 0;
-  }
-  return n;
 }

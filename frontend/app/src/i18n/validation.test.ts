@@ -2,8 +2,9 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import { VALIDATION_PROBLEM_CODES } from "cip-179";
 
+import { FORM_PROBLEM_CODES } from "~/domain/create";
 import { setLocale } from "~/i18n";
-import { problemText } from "./problem";
+import { createProblemText, problemText } from "./problem";
 
 // Force a deterministic locale — the module otherwise sniffs navigator/storage,
 // which vary by machine. `en` is bundled, so this resolves synchronously.
@@ -20,6 +21,32 @@ describe("problemText", () => {
       expect(text).not.toBe(`validation.${code}`);
       expect(text.length).toBeGreaterThan(0);
     }
+  });
+
+  it("renders every form problem code from the catalog", () => {
+    for (const code of FORM_PROBLEM_CODES) {
+      const text = createProblemText({ code, field: "budget" });
+      expect(text).not.toBe(`validation.${code}`);
+      expect(text.startsWith("Budget: ")).toBe(true);
+    }
+  });
+
+  it("names a form problem by the question and the label of its input", () => {
+    expect(
+      createProblemText({
+        code: "form.notWholeNumber",
+        field: "maxSelections",
+        question: 2,
+        params: { text: "12abc" },
+      }),
+    ).toBe('Q3 max selections: "12abc" is not a whole number');
+    expect(
+      createProblemText({
+        code: "form.outOfRange",
+        field: "endEpoch",
+        params: { text: "-5", min: "0", max: "9" },
+      }),
+    ).toBe("End epoch (inclusive): -5 is not between 0 and 9");
   });
 
   it("interpolates params into the localized template", () => {
