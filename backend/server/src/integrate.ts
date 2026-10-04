@@ -98,10 +98,9 @@ export interface SegmentArgs {
   readonly range: SlotRange | null;
   readonly tip: ChainTip;
   /**
-   * This refresh's governance pass, or null when it asked nothing: a failed
-   * fetch, or a second integration riding on what the first one already
-   * wrote. Every touched survey is then its own link source and no
-   * link-change diff runs — nothing was re-read, so nothing may change.
+   * This refresh's governance pass, or null when its fetch failed. Every
+   * touched survey is then its own link source and no link-change diff runs —
+   * nothing was re-read, so nothing may change.
    */
   readonly govPass: GovPass | null;
   /**

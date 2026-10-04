@@ -108,8 +108,8 @@ export async function validateNewResponses(
   // link slices both come from their stored rows — integration has already
   // written this refresh's links there, so the row is the current answer and
   // a survey with no row has rolled back. The cursor read stops at the
-  // finalization floor: a survey below it froze its artifact against an
-  // already-settled link set, so none of its verdicts can go stale.
+  // finalization floor: a survey below it froze its artifact with no verdict
+  // still waiting on a link, so none of its verdicts can go stale.
   const { cursors, retrySurveys } = await store.revalidationInputs(
     finalizationFloor,
     finalThroughEpoch,

@@ -454,9 +454,11 @@ given up. Patience is counted in this backend's attempts, not in epochs alone:
 a backend catching up on past epochs meets them all on its first pass, and
 would otherwise give up every anchor that pass failed or never reached. That
 bound is load-bearing, not tidiness — validation holds a bindable response's
-verdict at "unknown" while an epoch-aligned action is unresolved, and
-finalization postpones on any unknown verdict, so one permanently dead anchor
-would otherwise postpone that survey's artifact forever.
+verdict at "unknown" while it voted on an epoch-aligned action still
+unresolved, and finalization postpones on any unknown verdict, so a dead
+anchor would otherwise postpone forever the artifact of any survey with a
+response that voted on its action. A survey none of whose responses did is
+not held up by it: finalization does not wait for its epoch to settle.
 
 The direct-Koios path resolves the same anchors the same way, but with no place
 to bank them (each page load is a fresh context), so it runs the whole
@@ -724,9 +726,11 @@ registered, provenance}`, plus per-`(epoch, role)` totals. This table is shared
   catch-up has not reached yet cannot finalize early. The covered instant also
   stops below any transaction the segment listed but could not fetch (§5.4), so
   a response one Koios instance has not served yet cannot be frozen out of an
-  artifact. Its governance epoch must
-  also be settled (§5.2): an artifact's provenance is immutable, so it may only
-  ever commit a link set that can no longer move. Fill any missing snapshot rows
+  artifact. Its governance epoch need not be settled (§5.2): the link set only
+  enters the hash through mechanism-B verdicts, which wait per response, and
+  provenance commits the set those verdicts were built on. It must have been
+  read, though — settled, or read by this refresh's pass — since a row first
+  written while that read failed holds a placeholder. Fill any missing snapshot rows
   from Koios, then emit each survey's artifact once complete: every counted
   responder has a weight row **and** every covered role has its electorate total
   (a flaky `/epoch_info` postpones emission to a later cron, never fails it).

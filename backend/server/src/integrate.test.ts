@@ -711,14 +711,14 @@ describe("segment integration mechanics", () => {
       tipAt(200).time,
     );
 
-    // The rescan asks the governance pass nothing: whatever the main segment
-    // resolved this run is already in the rows it walks.
+    // The rescan reuses the run's governance pass: whatever it resolved is
+    // already in the rows the rescan walks, so only the drift changes.
     const tip = tipAt(1000);
     const { changes } = await integrateSegment(store, emptySource, {
       records: fullRecords(chain),
       range: { fromSlot: 0, toSlot: 200 },
       tip,
-      govPass: null,
+      govPass: govPassFor(chain, tip),
       settledBelowSlot: 0,
       generation: tip.time,
     });
@@ -771,6 +771,43 @@ describe("segment integration mechanics", () => {
     expect(row.responseCount).toBe(1);
     expect(row.govLinked).toBe(true);
     expect(row.govLinks).toContain("gov_action1lost");
+    await expectOracleMatch(store, chain, tip);
+  });
+
+  // Finalization takes a row at an epoch the run's pass read as holding that
+  // read, so a row the rescan brings back must not carry a placeholder.
+  it("resurrects a row lost out-of-band at an epoch in motion with the run's links", async () => {
+    const store = testStore();
+    const chain: Chain = {
+      surveys: [surveyAt(1, 100, 5, 3)],
+      responses: [],
+      cancellations: [],
+      govLinks: [],
+      finalizedCancelled: new Set(),
+    };
+    chain.govLinks.push(govLinkTo(chain.surveys[0]!, "gov_action1moving"));
+    await runRefresh(store, chain, tipAt(150));
+    await store.reconcileSegment(
+      { fromSlot: 0, toSlot: 120 },
+      [],
+      [],
+      [],
+      [],
+      tipAt(150).time,
+    );
+    expect(store.surveyRows).toEqual([]);
+
+    // Epoch 5's expiration is still ahead of the tip: no settled memo exists.
+    const tip = tipAt(1000);
+    await integrateSegment(store, emptySource, {
+      records: fullRecords(chain),
+      range: { fromSlot: 0, toSlot: 120 },
+      tip,
+      govPass: govPassFor(chain, tip),
+      settledBelowSlot: 0,
+      generation: tip.time,
+    });
+    expect(store.surveyRows[0]!.govLinks).toContain("gov_action1moving");
     await expectOracleMatch(store, chain, tip);
   });
 

@@ -196,8 +196,8 @@ describe("refreshGovLinks — settlement", () => {
     expect(store.govEpochs.size).toBe(0);
   });
 
-  // The liveness bound: most anchors in the wild never resolve, and a held
-  // verdict on one of them would postpone the survey's artifact forever.
+  // The liveness bound: an anchor may never resolve, and a held verdict on
+  // its action would postpone the survey's artifact forever.
   it("settles without a dead anchor once patience and attempts run out", async () => {
     const store = testStore();
     const source = sourceOf([proposal(1, 510), proposal(2, 510)]);

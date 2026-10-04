@@ -356,6 +356,8 @@ async function finalizeRecords(
   coveredThroughUnix = Number.MAX_SAFE_INTEGER,
   // The epoch before the tip's is k blocks deep already.
   finalThroughEpoch = tip.epoch - 1,
+  // Nothing in motion was read; with every epoch settled nothing needs to be.
+  govEpochsRead: ReadonlySet<number> = new Set(),
 ) {
   const snapshot = materializeSnapshot(recs, tip, govLinks, new Map());
   await store.reconcileSegment(
@@ -377,6 +379,7 @@ async function finalizeRecords(
       coveredThroughUnix,
       finalThroughEpoch,
       settlementFloor,
+      govEpochsRead,
       finalizationFloor,
     },
     reveal,
@@ -1146,10 +1149,44 @@ describe("finalizeClosedSurveys", () => {
     expect(stored.artifactHash).toBe(artifactHash(artifact.tally));
   });
 
-  // An artifact's provenance is immutable, so a link set that can still change
-  // must never be committed: an anchor resolving tomorrow would add a link the
-  // artifact denies. The survey waits for its epoch to settle.
-  it("postpones a survey whose governance epoch has not settled", async () => {
+  // An anchor still unresolved at the survey's expiration matters only to a
+  // response that voted on its action, and that response's unknown verdict
+  // postpones on its own: the survey need not wait for the epoch to settle.
+  it("finalizes at an unsettled governance epoch this refresh read", async () => {
+    const store = testStore();
+    await seed(store, [validatedRow(rA)]);
+    const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
+    await finalizeRecords(
+      CONFIG,
+      store,
+      inputs,
+      noProofs,
+      records(survey(), [rA]),
+      TIP,
+      undefined,
+      [
+        {
+          surveyKey: SURVEY_KEY,
+          actionId: "gov_action1read",
+          endEpoch: END_EPOCH,
+          title: null,
+        },
+      ],
+      END_EPOCH + 1, // the survey's own expiration is still the frontier
+      0,
+      Number.MAX_SAFE_INTEGER,
+      TIP.epoch - 1,
+      new Set([END_EPOCH]),
+    );
+    const artifact = JSON.parse(
+      store.artifacts.get(SURVEY_KEY)!.artifact,
+    ) as TallyArtifact;
+    expect(artifact.provenance.govLinks).toEqual(["gov_action1read"]);
+  });
+
+  // A slice no pass has read — a row first written while the read failed —
+  // is a placeholder, and provenance is immutable.
+  it("postpones at an unsettled governance epoch this refresh did not read", async () => {
     const store = testStore();
     await seed(store, [validatedRow(rA)]);
     const inputs = fakeInputs({ [KEY_A]: { weight: 5n, registered: true } });
@@ -1162,7 +1199,7 @@ describe("finalizeClosedSurveys", () => {
       TIP,
       undefined,
       [],
-      END_EPOCH + 1, // the survey's own expiration is still the frontier
+      END_EPOCH + 1,
     );
     expect(store.artifacts.size).toBe(0);
   });
@@ -2141,6 +2178,7 @@ describe("re-emission after the totals left the hash (migration 0031)", () => {
         coveredThroughUnix: Number.MAX_SAFE_INTEGER,
         finalThroughEpoch: TIP.epoch - 1,
         settlementFloor: Number.MAX_SAFE_INTEGER,
+        govEpochsRead: new Set(),
         finalizationFloor,
       },
     );

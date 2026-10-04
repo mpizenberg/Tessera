@@ -460,17 +460,18 @@ export async function refreshSnapshot(
     // `startedAt`; the envelope that publishes it is written last.
     const range = coveredRange(plan, scan, tip.slot);
     const incomplete = records.incomplete === true || !scan.exhausted;
+    // A failed pass makes every row its own link source, which is both the
+    // display fallback (an unread set published as "none" would blank the
+    // linkage everywhere) and the honest one: nothing was re-read, so nothing
+    // may change.
+    const govPass = govLinksReliable
+      ? { links: govLinks, scope: new Set(govEpochs), floor: govFloor }
+      : null;
     const integration = await integrateSegment(store, source, {
       records,
       range,
       tip,
-      // A failed pass makes every row its own link source, which is both the
-      // display fallback (an unread set published as "none" would blank the
-      // linkage everywhere) and the honest one: nothing was re-read, so
-      // nothing may change.
-      govPass: govLinksReliable
-        ? { links: govLinks, scope: new Set(govEpochs), floor: govFloor }
-        : null,
+      govPass,
       settledBelowSlot: plan.settledBelowSlot,
       generation: startedAt,
     });
@@ -500,11 +501,13 @@ export async function refreshSnapshot(
       };
 
       // The drift-healing rescan: one page of the settled prefix per run,
-      // rotating oldest→newest through the same integration. It asks the
-      // governance pass nothing — the main integration already wrote whatever
-      // moved — so a settled row it re-derives is byte-identical unless the
-      // stored one had drifted, which is the whole point. Best-effort: the
-      // run's own segment is already banked either way.
+      // rotating oldest→newest through the same integration. It reuses this
+      // run's governance pass rather than asking anew — the main integration
+      // already wrote whatever moved — so a settled row it re-derives is
+      // byte-identical unless the stored one had drifted, which is the whole
+      // point, and a row it resurrects at an epoch still in motion gets this
+      // run's links, which finalization takes as read. Best-effort: the run's
+      // own segment is already banked either way.
       const rotation = planTrickle(next, plan, floorSlot);
       if (rotation !== null) {
         try {
@@ -520,7 +523,7 @@ export async function refreshSnapshot(
             records: rescan.records,
             range: coveredRange(rotation, rescan, rotation.toSlot),
             tip,
-            govPass: null,
+            govPass,
             settledBelowSlot: plan.settledBelowSlot,
             generation: startedAt,
           });
@@ -577,6 +580,7 @@ export async function refreshSnapshot(
         coveredThroughUnix: coveredThroughUnix(cursor, scan, tip),
         finalThroughEpoch: final.finalThroughEpoch,
         settlementFloor: nextGovFloor,
+        govEpochsRead: govPass?.scope ?? new Set(),
         finalizationFloor: finalFloor,
       },
     ).catch((err) => {

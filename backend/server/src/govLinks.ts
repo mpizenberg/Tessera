@@ -18,15 +18,16 @@
  * costs O(active surveys) rather than growing with every survey ever run.
  *
  * Settlement waits for every anchor at the epoch to resolve, but not forever:
- * most anchors in the wild are permanently dead, and a fetch failure is not
- * evidence of absence, so *something* has to end the wait. A failed fetch is
- * banked as a miss and retried on the backoff (`backoff.ts`); once an anchor's
- * attempts are used up and a last one {@link SETTLEMENT_PATIENCE_EPOCHS} past
- * its epoch fails too, the epoch settles with the links it has and that anchor
- * recorded as given up. Without that bound a single dead anchor at a
- * survey's end epoch postpones that survey's artifact permanently: validation
- * holds a bindable verdict at "unknown" while an epoch-aligned action is
- * unresolved (finding 6), and finalization postpones on any unknown verdict.
+ * an anchor can stay unreachable or never match its hash, and a fetch failure
+ * is not evidence of absence, so *something* has to end the wait. A failed
+ * fetch is banked as a miss and retried on the backoff (`backoff.ts`); once an
+ * anchor's attempts are used up and a last one
+ * {@link SETTLEMENT_PATIENCE_EPOCHS} past its epoch fails too, the epoch
+ * settles with the links it has and that anchor recorded as given up. Without
+ * that bound a dead anchor postpones forever the artifact of any survey with a
+ * response that voted on its action: validation holds such a bindable verdict
+ * at "unknown" while the epoch-aligned action is unresolved (finding 6), and
+ * finalization postpones on any unknown verdict.
  */
 
 import {

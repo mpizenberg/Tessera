@@ -421,6 +421,7 @@ async function steadyRun(
       coveredThroughUnix: TIP.time,
       finalThroughEpoch: TIP.epoch - 1,
       settlementFloor: govFloor,
+      govEpochsRead: new Set(govEpochs),
       finalizationFloor: finalFloor,
     },
   );

@@ -157,11 +157,17 @@ export interface FinalizeGates {
    */
   readonly finalThroughEpoch: number;
   /**
-   * The governance pass's frontier: a candidate whose expiration is at or above
-   * it still has links in motion and waits, while below it the candidate row's
-   * own slice is the settled set an artifact may commit to.
+   * The governance pass's frontier: below it a candidate row's own slice is
+   * the settled link set; at or above it the slice is this refresh's read,
+   * for the end epochs in {@link govEpochsRead}.
    */
   readonly settlementFloor: number;
+  /**
+   * The end epochs this refresh's governance pass read; empty when it failed.
+   * At an epoch still in motion that it did not read, a row first written
+   * this refresh holds a placeholder slice, not an answer.
+   */
+  readonly govEpochsRead: ReadonlySet<number>;
   /**
    * This pass's own frontier: the lowest end epoch that still holds a survey to
    * decide. Everything below it is finalized or permanently untalliable, so the
@@ -252,25 +258,29 @@ export async function finalizeClosedSurveys(
       ),
     ]),
   );
-  // An artifact's provenance is an immutable record of what its verdicts were
-  // built on, so it may only be stamped with a *settled* link set: below the
-  // settlement floor an epoch is decided for good and the row's slice is that
-  // decision, while at or above it an anchor still resolving could add a link
-  // tomorrow. Postponing is cheap — the pass is idempotent, and an epoch
-  // settles within one of them of the survey's close.
+  // An artifact's provenance records the link set its verdicts were built on:
+  // the row's slice, which is the settled set below the settlement floor and
+  // this refresh's read above it. An anchor still unresolved there can only
+  // matter to a response that voted on its action, and that response's
+  // verdict is unknown until it resolves or is given up, which postpones its
+  // survey alone. A slice no pass has read is no record at all, so an epoch
+  // still in motion waits for a refresh that reads it.
   const linksByKey = new Map(
     candidateRows.map((r) => [
       r.surveyKey,
       JSON.parse(r.govLinks) as GovLink[],
     ]),
   );
-  let unsettledLinks = 0;
+  let unreadLinks = 0;
   let notFinal = 0;
   const candidates = candidateRows
     .map((r) => decodeSurveyRecord(JSON.parse(r.record)))
     .filter((s) => {
-      if (s.definition.endEpoch + 1 >= settlementFloor) {
-        unsettledLinks++;
+      if (
+        s.definition.endEpoch + 1 >= settlementFloor &&
+        !gates.govEpochsRead.has(s.definition.endEpoch)
+      ) {
+        unreadLinks++;
         return false;
       }
       if (s.definition.endEpoch > gates.finalThroughEpoch) {
@@ -286,9 +296,9 @@ export async function finalizeClosedSurveys(
       `finalize: ${notFinal} survey(s) postponed — end epoch not final yet`,
     );
   }
-  if (unsettledLinks > 0) {
+  if (unreadLinks > 0) {
     console.log(
-      `finalize: ${unsettledLinks} survey(s) postponed — governance links not settled`,
+      `finalize: ${unreadLinks} survey(s) postponed — governance links not read this refresh`,
     );
   }
   if (candidates.length === 0) return settle();
