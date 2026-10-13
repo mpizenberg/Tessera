@@ -20,6 +20,7 @@ const respond = {
   notClaimable: " Not claimable in a browser wallet.",
 
   // --- Top-level navigation / progress ------------------------------------
+  respondLabel: "Respond",
   backToResults: "Back to results",
   submitting: "Submitting…",
   pinningRationale: "Pinning rationale…",

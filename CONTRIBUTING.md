@@ -31,6 +31,9 @@ with its changelog line in the same PR.
 - **The published packages** — `cip-179`, `cardano-tessera-client`,
   `cardano-tessera-respond` and `cardano-tessera-respond-react` — follow
   semver, with the pre-1.0 convention that a breaking change bumps the minor.
+  `cardano-tessera-respond-react` is released with `cardano-tessera-respond`
+  under the same version, which it peers on exactly: its prop types come from
+  the installed widget, so a range would let it type a prop it never assigns.
   `packages/cip179/CHANGELOG.md` records the codec, domain, tally and tlock
   changes; a change to a counting rule also changes `rulesetHash()`, which
   every artifact records, and gets a new row in that package's README table,

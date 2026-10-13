@@ -18,6 +18,16 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
 - `hiddenSchemas` prop, following the element: schema URIs a custom question
   doesn't show.
 
+### Changed
+
+- **Breaking:** the peer dependency on `cardano-tessera-respond` is the exact
+  version of the same number (was the range `^0.3.0`). The component's prop
+  types come from the installed widget while the props it assigns are fixed
+  at release, so a wrapper beside a newer widget accepted a prop it never
+  set. Install and update the two packages together.
+- **Breaking:** the `messages` prop loses `respond.respondLabel`, following
+  the element, whose header no longer shows the "Respond" label.
+
 ## [0.3.0] - 2026-10-01
 
 ### Added

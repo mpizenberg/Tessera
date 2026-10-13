@@ -61,7 +61,9 @@ export interface TesseraRespondProps extends ElementProps {
 
 // `satisfies` keeps this in lockstep with the element contract: a prop added
 // to (or dropped from) the widget fails this package's type-check instead of
-// silently never syncing.
+// silently never syncing. That holds only for the widget this was built
+// against: the prop types come from the installed widget, this list does
+// not, so the peer dependency names one exact version.
 const ELEMENT_PROPS = {
   definition: true,
   surveyRef: true,

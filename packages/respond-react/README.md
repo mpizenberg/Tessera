@@ -13,6 +13,9 @@ both through a ref — identically on React 18 and 19.
 npm install cardano-tessera-respond-react cardano-tessera-respond
 ```
 
+The two packages are released together under one version number, and this one
+requires the widget of that exact version: install and update them as a pair.
+
 ```tsx
 import { TesseraRespond } from "cardano-tessera-respond-react";
 

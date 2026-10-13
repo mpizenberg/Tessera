@@ -27,7 +27,6 @@ const fr: RespondMessages = {
       " Un portefeuille de navigateur ne peut pas détenir ce justificatif — le site doit le fournir.",
 
     // --- Header ------------------------------------------------------------
-    respondLabel: "Répondre",
     untitledSurvey: "Sondage sans titre",
     respondingAs: "Vous répondez en tant que",
 

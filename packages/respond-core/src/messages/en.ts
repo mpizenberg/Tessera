@@ -36,7 +36,6 @@ const en = {
       " Browser wallets can't hold this credential — the site must supply it.",
 
     // --- Header ------------------------------------------------------------
-    respondLabel: "Respond",
     untitledSurvey: "Untitled survey",
     respondingAs: "Responding as",
 

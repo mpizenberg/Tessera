@@ -21,7 +21,8 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
 
 ### Changed
 
-- The header no longer shows the "Respond" label above the survey title.
+- **Breaking:** the header no longer shows the "Respond" label above the
+  survey title, and the `messages` prop loses `respond.respondLabel` with it.
 
 ### Fixed
 

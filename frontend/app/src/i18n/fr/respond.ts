@@ -16,6 +16,7 @@ const respond: Messages = {
   notClaimable: " Non revendicable dans un portefeuille de navigateur.",
 
   // --- Top-level navigation / progress ------------------------------------
+  respondLabel: "Répondre",
   backToResults: "Retour aux résultats",
   submitting: "Envoi…",
   pinningRationale: "Épinglage de la justification…",

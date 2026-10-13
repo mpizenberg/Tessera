@@ -47,7 +47,7 @@
     "governance"
   ],
   "peerDependencies": {
-    "cardano-tessera-respond": "^0.3.0",
+    "cardano-tessera-respond": "workspace:*",
     "react": "^18.0.0 || ^19.0.0"
   },
   "devDependencies": {
