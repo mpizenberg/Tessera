@@ -573,9 +573,13 @@
   background: var(--accent);
 }
 
+/* Two columns when each gets 260px, else one; the 8px is the gap. */
 .multiGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(min(100%, max(260px, (100% - 8px) / 2)), 1fr)
+  );
   gap: 8px;
 }
 
