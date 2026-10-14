@@ -25,6 +25,9 @@ export const BODY_CLASS_NAMES = [
   "qPrompt",
   "qSkipped",
   "qBody",
+  // shortcut keys: a card that takes them, and an option's letter
+  "keysOn",
+  "keyBadge",
   // the native input under a choice row or a rating level
   "choiceInput",
   // single choice

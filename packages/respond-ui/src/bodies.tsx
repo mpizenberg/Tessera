@@ -6,6 +6,7 @@
  * draft store and `decided()` gating come from
  * `cardano-tessera-respond-core`. Strings come from the injected i18n (`useI18n()`),
  * class names from the injected map (`useClasses()`, identity by default).
+ * A body with shortcut keys hands their handler to its card, which listens.
  */
 
 import {
@@ -34,17 +35,50 @@ import {
   ratingLevels,
 } from "./shared";
 
+/** A shortcut key: a letter by its position from A as 0, or a digit. */
+export type Shortcut = { letter: number } | { digit: number };
+
+/**
+ * Acts on a shortcut pressed with the focus on `target`, in the body or on its
+ * prompt. False when the key means nothing to the body.
+ */
+export type ShortcutHandler = (key: Shortcut, target: Element) => boolean;
+
+/** The letter that picks the option at position `at`; past Z, none. */
+const KeyBadge: Component<{ at: number }> = (props) => {
+  const cls = useClasses();
+  return (
+    <Show when={props.at < 26}>
+      <kbd aria-hidden="true" class={cls.keyBadge}>
+        {String.fromCharCode(65 + props.at)}
+      </kbd>
+    </Show>
+  );
+};
+
 const SingleChoiceBody: Component<{
   q: Extract<Question, { type: "singleChoice" }>;
   v: Extract<DraftValue, { type: "singleChoice" }>;
   labelId: string;
+  shortcuts: (handler: ShortcutHandler) => void;
   onChange: (v: DraftValue) => void;
 }> = (props) => {
   const i18n = useI18n();
   const cls = useClasses();
   const name = createUniqueId();
+  const inputs: HTMLInputElement[] = [];
+  let group!: HTMLDivElement;
+  props.shortcuts((key, target) => {
+    if (!("letter" in key) || key.letter >= optionCount(props.q.options))
+      return false;
+    props.onChange({ type: "singleChoice", optionIndex: key.letter });
+    // In the group, the focus goes with the check, as an arrow key takes it.
+    if (group.contains(target)) inputs[key.letter]?.focus();
+    return true;
+  });
   return (
     <div
+      ref={group}
       role="radiogroup"
       aria-labelledby={props.labelId}
       aria-required={props.q.required}
@@ -59,6 +93,7 @@ const SingleChoiceBody: Component<{
               classList={{ [cls.optionRowOn]: on() }}
             >
               <input
+                ref={(el) => (inputs[i] = el)}
                 type="radio"
                 name={name}
                 checked={on()}
@@ -77,6 +112,7 @@ const SingleChoiceBody: Component<{
                 </Show>
               </span>
               <span>{labelFor(i18n, props.q.options, i)}</span>
+              <KeyBadge at={i} />
             </label>
           );
         }}
@@ -90,10 +126,12 @@ const MultiSelectBody: Component<{
   v: Extract<DraftValue, { type: "multiSelect" }>;
   labelId: string;
   noneLabel: string | undefined;
+  shortcuts: (handler: ShortcutHandler) => void;
   onChange: (v: DraftValue) => void;
 }> = (props) => {
   const i18n = useI18n();
   const cls = useClasses();
+  const count = optionCount(props.q.options);
   const selected = () => props.v.selected ?? [];
   const noneChosen = () => props.v.selected?.length === 0;
   const set = (next: readonly number[] | null) =>
@@ -106,23 +144,34 @@ const MultiSelectBody: Component<{
     // `[]` belongs to "None of these": unchecking the last option unsets.
     set(picked.size > 0 ? [...picked].sort((a, b) => a - b) : null);
   };
+  const toggleNone = () => set(noneChosen() ? null : []);
+  // The None box takes the letter after the last option.
+  props.shortcuts((key) => {
+    if (!("letter" in key)) return false;
+    if (key.letter < count) toggle(key.letter);
+    else if (key.letter === count && hasNoneBox(props.q)) toggleNone();
+    else return false;
+    return true;
+  });
   return (
     <>
       <div role="group" aria-labelledby={props.labelId} class={cls.multiGrid}>
-        <For each={range(optionCount(props.q.options))}>
+        <For each={range(count)}>
           {(i) => (
             <CheckRow
               on={selected().includes(i)}
               onToggle={() => toggle(i)}
               label={labelFor(i18n, props.q.options, i)}
+              at={i}
             />
           )}
         </For>
         <Show when={hasNoneBox(props.q)}>
           <CheckRow
             on={noneChosen()}
-            onToggle={() => set(noneChosen() ? null : [])}
+            onToggle={toggleNone}
             label={props.noneLabel ?? i18n.t("respond.noneOfThese")}
+            at={count}
           />
         </Show>
       </div>
@@ -141,6 +190,8 @@ const CheckRow: Component<{
   on: boolean;
   onToggle: () => void;
   label: string;
+  /** The row's position, which names its letter key. */
+  at: number;
 }> = (props) => {
   const cls = useClasses();
   return (
@@ -164,6 +215,7 @@ const CheckRow: Component<{
         <Show when={props.on}>✓</Show>
       </span>
       <span>{props.label}</span>
+      <KeyBadge at={props.at} />
     </label>
   );
 };
@@ -172,27 +224,34 @@ const RankingBody: Component<{
   q: Extract<Question, { type: "ranking" }>;
   v: Extract<DraftValue, { type: "ranking" }>;
   labelId: string;
+  shortcuts: (handler: ShortcutHandler) => void;
   onChange: (v: DraftValue) => void;
 }> = (props) => {
   const i18n = useI18n();
   const cls = useClasses();
+  const count = optionCount(props.q.options);
   const ranked = () => props.v.ranked;
   const full = () => ranked().length >= props.q.maxRanked;
-  const pool = () =>
-    range(optionCount(props.q.options)).filter((i) => !ranked().includes(i));
+  const pool = () => range(count).filter((i) => !ranked().includes(i));
   const set = (next: number[]) =>
     props.onChange({ type: "ranking", ranked: next });
   // A pressed button that leaves its list takes the focus with it: the one
   // now in its place takes it, or else the one before, or else the item's
-  // button in the other list. Both lists are keyed by option index.
+  // button in the other list. Both lists are keyed by option index. A letter
+  // key adds an item without its button, and the focus stays where it is.
   const removeBtns = new Map<number, HTMLButtonElement>();
   const poolBtns = new Map<number, HTMLButtonElement>();
   const near = (list: readonly number[], at: number) =>
     list[Math.min(at, list.length - 1)];
+  const focused = (el: HTMLElement | undefined) =>
+    el !== undefined &&
+    (el.getRootNode() as Document | ShadowRoot).activeElement === el;
   const add = (i: number) => {
     if (full()) return;
+    const held = focused(poolBtns.get(i));
     const at = pool().indexOf(i);
     set([...ranked(), i]);
+    if (!held) return;
     const next = full() ? undefined : near(pool(), at);
     (next === undefined ? removeBtns.get(i) : poolBtns.get(next))?.focus();
   };
@@ -202,6 +261,11 @@ const RankingBody: Component<{
     const next = near(ranked(), at);
     (next === undefined ? poolBtns.get(i) : removeBtns.get(next))?.focus();
   };
+  props.shortcuts((key) => {
+    if (!("letter" in key) || key.letter >= count) return false;
+    if (!ranked().includes(key.letter)) add(key.letter);
+    return true;
+  });
   // Reordering moves the row's element, which drops the focus it holds.
   const move = (btn: HTMLButtonElement, idx: number, delta: number) => {
     const next = [...ranked()];
@@ -267,6 +331,7 @@ const RankingBody: Component<{
                 classList={{ [cls.poolBtnDisabled]: full() }}
               >
                 + {labelFor(i18n, props.q.options, i)}
+                <KeyBadge at={i} />
               </button>
             )}
           </For>
@@ -462,10 +527,12 @@ const RatingBody: Component<{
   q: Extract<Question, { type: "rating" }>;
   v: Extract<DraftValue, { type: "rating" }>;
   labelId: string;
+  shortcuts: (handler: ShortcutHandler) => void;
   onChange: (v: DraftValue) => void;
 }> = (props) => {
   const i18n = useI18n();
   const cls = useClasses();
+  const count = optionCount(props.q.options);
   const levels = ratingLevels(props.q.scale);
   // Each item must be rated only when the question can't be skipped and
   // takes no subset.
@@ -477,9 +544,33 @@ const RatingBody: Component<{
     next[optIdx] = rating;
     props.onChange({ type: "rating", ratings: next });
   };
+  // A digit sets the level it labels, or on a scale of words the level at its
+  // position. A scale with a label that is not one digit takes none, so that
+  // typing 10 can't set the level labelled 0.
+  const digits =
+    levels === null
+      ? []
+      : props.q.scale.type === "labels"
+        ? levels.length <= 9
+          ? levels.map((_, i) => String(i + 1))
+          : []
+        : levels.every((l) => /^[0-9]$/.test(l.label))
+          ? levels.map((l) => l.label)
+          : [];
+  const groups: HTMLDivElement[] = [];
+  props.shortcuts((key, target) => {
+    if (!("digit" in key)) return false;
+    const level = digits.indexOf(String(key.digit));
+    const held = groups.findIndex((g) => g.contains(target));
+    const item = held === -1 && count === 1 ? 0 : held;
+    if (level === -1 || item === -1) return false;
+    setRating(item, levels![level]!.value);
+    if (held !== -1) groups[held]!.querySelectorAll("input")[level]?.focus();
+    return true;
+  });
   return (
     <div role="group" aria-labelledby={props.labelId} class={cls.ratingList}>
-      <For each={range(optionCount(props.q.options))}>
+      <For each={range(count)}>
         {(optIdx) => {
           const itemId = createUniqueId();
           return (
@@ -512,6 +603,7 @@ const RatingBody: Component<{
                 }
               >
                 <div
+                  ref={(el) => (groups[optIdx] = el)}
                   role="radiogroup"
                   aria-labelledby={itemId}
                   aria-required={itemRequired()}
@@ -652,6 +744,8 @@ export const QuestionBody: Component<{
   hideSchema?: boolean;
   /** A multi-select's None box label, in place of the catalog's. */
   noneLabel?: string | undefined;
+  /** Receives the body's shortcut handler, if it has keys. */
+  shortcuts: (handler: ShortcutHandler) => void;
   onChange: (v: DraftValue) => void;
 }> = (props) => {
   type V<T extends DraftValue["type"]> = Extract<DraftValue, { type: T }>;
@@ -667,6 +761,7 @@ export const QuestionBody: Component<{
         <SingleChoiceBody
           q={props.q as Q<"singleChoice">}
           v={value() as V<"singleChoice">}
+          shortcuts={props.shortcuts}
           labelId={props.labelId}
           onChange={props.onChange}
         />
@@ -676,6 +771,7 @@ export const QuestionBody: Component<{
         <MultiSelectBody
           q={props.q as Q<"multiSelect">}
           v={value() as V<"multiSelect">}
+          shortcuts={props.shortcuts}
           noneLabel={props.noneLabel}
           labelId={props.labelId}
           onChange={props.onChange}
@@ -686,6 +782,7 @@ export const QuestionBody: Component<{
         <RankingBody
           q={props.q as Q<"ranking">}
           v={value() as V<"ranking">}
+          shortcuts={props.shortcuts}
           labelId={props.labelId}
           onChange={props.onChange}
         />
@@ -713,6 +810,7 @@ export const QuestionBody: Component<{
         <RatingBody
           q={props.q as Q<"rating">}
           v={value() as V<"rating">}
+          shortcuts={props.shortcuts}
           labelId={props.labelId}
           onChange={props.onChange}
         />

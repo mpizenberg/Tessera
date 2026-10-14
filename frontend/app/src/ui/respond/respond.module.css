@@ -461,6 +461,32 @@
   margin-top: 14px;
 }
 
+/* --- Shortcut keys -------------------------------------------------------- */
+
+/* A key to press, shown only where there are keys: not on a touch screen. */
+.keyBadge {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .keysOn .keyBadge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    margin-left: auto;
+    border: 1px solid var(--line2);
+    border-radius: var(--r-3xs);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--dim);
+  }
+}
+
 /* --- Option rows (single choice / multi-select) --------------------------- */
 
 /* Takes the focus, the keys and the checked state; the row around it draws
@@ -625,6 +651,9 @@
 }
 
 .poolBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;

@@ -99,6 +99,23 @@ function click(root: ShadowRoot, selector: string): void {
   target!.click();
 }
 
+/** Send a key down from `target`, as a browser does; returns the event. */
+function keydown(
+  target: Element,
+  key: string,
+  init: KeyboardEventInit = {},
+): KeyboardEvent {
+  const e = new KeyboardEvent("keydown", {
+    key,
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    ...init,
+  });
+  target.dispatchEvent(e);
+  return e;
+}
+
 /** Await one event of `type` on `el` (they bubble, composed, to the host). */
 function once(
   el: EventTarget,
@@ -394,32 +411,215 @@ describe("built <tessera-respond> artifact", () => {
     const pool = () => [...root.querySelectorAll<HTMLElement>(".poolBtn")];
     const rows = () => [...root.querySelectorAll<HTMLElement>(".rankedRow")];
     const removeOf = (row: number) =>
-      rows()[row]!.querySelector<HTMLElement>(".rankBtnDanger");
+      rows()[row]!.querySelector<HTMLElement>(".rankBtnDanger")!;
+    // A browser focuses the button it clicks; happy-dom doesn't.
+    const press = (button: HTMLElement) => {
+      button.focus();
+      button.click();
+    };
 
     // An added item's place in the pool goes to the next one, else the one
     // before, else the item's own button in the ranking.
-    pool()[0]!.click(); // Decentralization
+    press(pool()[0]!); // Decentralization
     expect(root.activeElement?.textContent).toContain("Sustainability");
-    pool()[1]!.click(); // Usability, the last
+    press(pool()[1]!); // Usability, the last
     expect(root.activeElement?.textContent).toContain("Sustainability");
-    pool()[0]!.click(); // Sustainability, emptying the pool
+    press(pool()[0]!); // Sustainability, emptying the pool
     expect(root.activeElement).toBe(removeOf(2));
 
     // A moved item keeps the focus on the button that moved it.
     const up = rows()[2]!.querySelector<HTMLElement>(".rankBtn")!;
-    up.click();
+    press(up);
     expect(rows()[1]!.textContent).toContain("Sustainability");
     expect(root.activeElement).toBe(up);
 
     // A removed item's place goes to the item now in it, and the last one
     // back to the pool.
-    removeOf(0)!.click();
+    press(removeOf(0));
     expect(root.activeElement).toBe(removeOf(0));
-    removeOf(1)!.click();
+    press(removeOf(1));
     expect(root.activeElement).toBe(removeOf(0));
-    removeOf(0)!.click();
+    press(removeOf(0));
     expect(root.activeElement?.textContent).toContain("Sustainability");
     expect(rows().length).toBe(0);
+  });
+
+  it("picks, toggles and ranks options by their letter keys", () => {
+    const root = shadow(mount(SAMPLES.public));
+    const prompt = () => root.querySelector<HTMLElement>(".qPrompt")!;
+    const on = () =>
+      [...root.querySelectorAll(".optionRowOn > span:last-of-type")].map(
+        (s) => s.textContent,
+      );
+    const badges = () =>
+      [...root.querySelectorAll(".keyBadge")].map((b) => b.textContent);
+    expect(root.querySelector(".card")!.classList.contains("keysOn")).toBe(
+      true,
+    );
+    expect(badges().slice(0, 3)).toEqual(["A", "B", "C"]);
+
+    // From the prompt, a letter picks and the focus stays.
+    prompt().focus();
+    keydown(prompt(), "b");
+    expect(on()).toEqual(["Governance polish"]);
+    expect(root.activeElement).toBe(prompt());
+    keydown(prompt(), "a", { ctrlKey: true });
+    keydown(prompt(), "d");
+    expect(on()).toEqual(["Governance polish"]);
+    // A Cyrillic layout types ф on the key that bears A.
+    keydown(prompt(), "ф", { code: "KeyA" });
+    expect(on()).toEqual(["Scaling (Leios)"]);
+    // In the group, the focus goes with the check.
+    const radios = root.querySelectorAll<HTMLInputElement>(".choiceInput");
+    radios[0]!.focus();
+    keydown(radios[0]!, "C");
+    expect(on()).toEqual(["Developer tooling"]);
+    expect(root.activeElement).toBe(radios[2]);
+
+    // Up to 2 of 4, and the None box takes E.
+    keydown(radios[2]!, "Enter");
+    expect(badges().slice(0, 6)).toEqual([
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "Shift+Enter",
+    ]);
+    for (const k of ["a", "c", "d"]) keydown(prompt(), k);
+    expect(on()).toEqual(["Core protocol", "Education"]);
+    keydown(prompt(), "a", { repeat: true }); // held down
+    expect(on()).toEqual(["Core protocol", "Education"]);
+    keydown(prompt(), "e");
+    expect(on()).toEqual(["None of these"]);
+
+    // Typing C A ranks them in that order, from the prompt.
+    keydown(prompt(), "Enter");
+    keydown(prompt(), "c");
+    keydown(prompt(), "a");
+    expect(
+      [...root.querySelectorAll(".rankLabel")].map((l) => l.textContent),
+    ).toEqual(["Usability", "Decentralization"]);
+    expect(
+      [...root.querySelectorAll(".poolBtn .keyBadge")].map(
+        (b) => b.textContent,
+      ),
+    ).toEqual(["B"]);
+    expect(root.activeElement).toBe(prompt());
+
+    keydown(prompt(), "Enter", { shiftKey: true });
+    expect(root.querySelector(".stepCount")?.textContent).toBe(
+      "Question 2 of 7",
+    );
+    expect(root.activeElement).toBe(prompt());
+  });
+
+  it("rates by digit the item holding the focus, or the only one", () => {
+    const root = shadow(mount(SAMPLES.public));
+    for (let i = 0; i < 5; i++)
+      click(root, ".stepperNav .stepNavBtn:last-child");
+    const prompt = root.querySelector<HTMLElement>(".qPrompt")!;
+    const on = () =>
+      [...root.querySelectorAll(".ratingBtnOn")].map((b) => b.textContent);
+    // Two items: from the prompt a digit rates neither.
+    keydown(prompt, "3");
+    expect(on()).toEqual([]);
+    const second = root.querySelectorAll('[role="radiogroup"]')[1]!;
+    const inputs = second.querySelectorAll<HTMLInputElement>("input");
+    inputs[0]!.focus();
+    keydown(inputs[0]!, "3");
+    expect(on()).toEqual(["Good"]);
+    expect(inputs[2]!.checked).toBe(true);
+    expect(root.activeElement).toBe(inputs[2]);
+    keydown(inputs[2]!, "5"); // a four-level scale
+    expect(on()).toEqual(["Good"]);
+
+    // A scale of numbers takes the digit it shows; the only item takes it
+    // from the prompt.
+    document.body.innerHTML = "";
+    const root2 = shadow(
+      mount({
+        ...oneQuestionDef({ type: "public" }),
+        questions: [
+          {
+            type: "rating",
+            prompt: "Rate it",
+            requireAll: true,
+            scale: { type: "numeric", constraints: { min: 0n, max: 4n } },
+            options: { type: "options", labels: ["The plan"] },
+          },
+        ],
+      }),
+    );
+    keydown(root2.querySelector(".qPrompt")!, "0");
+    expect(root2.querySelector(".ratingBtnOn")?.textContent).toBe("0");
+  });
+
+  it("moves on with Enter, but not from a button or in a text area", () => {
+    const root = shadow(mount(SAMPLES.public, { layout: "list" }));
+    const prompts = [...root.querySelectorAll<HTMLElement>(".qPrompt")];
+    prompts[0]!.focus();
+    keydown(prompts[0]!, "Enter");
+    expect(root.activeElement).toBe(prompts[1]);
+    keydown(prompts[1]!, "Enter", { shiftKey: true });
+    expect(root.activeElement).toBe(prompts[0]);
+    keydown(prompts[0]!, "Enter", { shiftKey: true });
+    expect(root.activeElement).toBe(prompts[0]);
+
+    const skip = root.querySelector<HTMLElement>(".skipBtn")!;
+    skip.focus();
+    expect(keydown(skip, "Enter").defaultPrevented).toBe(false);
+    expect(root.activeElement).toBe(skip);
+    // A skipped question takes no letter.
+    skip.click();
+    keydown(prompts[1]!, "a");
+    skip.click();
+    expect(
+      root.querySelectorAll(".card")[1]!.querySelector(".optionRowOn"),
+    ).toBe(null);
+
+    // The last question's text area: Enter is a line break, Ctrl or Cmd
+    // with it moves on to the submit button, and with Shift goes back.
+    click(root, ".optionRow");
+    for (const s of [...root.querySelectorAll<HTMLElement>(".skipBtn")].slice(
+      0,
+      5,
+    ))
+      s.click();
+    const text = root.querySelector<HTMLTextAreaElement>(".customInput")!;
+    text.value = "More docs";
+    text.dispatchEvent(new Event("input", { bubbles: true }));
+    text.focus();
+    expect(keydown(text, "Enter").defaultPrevented).toBe(false);
+    expect(root.activeElement).toBe(text);
+    keydown(text, "Enter", { metaKey: true });
+    expect(root.activeElement).toBe(root.querySelector(".submitBtn"));
+    keydown(text, "Enter", { ctrlKey: true, shiftKey: true });
+    expect(root.activeElement).toBe(prompts[5]);
+  });
+
+  it("leaves every key to the host with keyboardShortcuts false", () => {
+    const check = (el: TesseraRespondElement) => {
+      const root = shadow(el);
+      const prompt = root.querySelector<HTMLElement>(".qPrompt")!;
+      expect(root.querySelector(".keysOn")).toBe(null);
+      expect(keydown(prompt, "a").defaultPrevented).toBe(false);
+      expect(keydown(prompt, "Enter").defaultPrevented).toBe(false);
+      expect(root.querySelector(".optionRowOn")).toBe(null);
+      expect(root.querySelector(".stepCount")?.textContent).toBe(
+        "Question 1 of 7",
+      );
+    };
+    check(mount(SAMPLES.public, { keyboardShortcuts: false }));
+    document.body.innerHTML = `<tessera-respond keyboard-shortcuts="false"></tessera-respond>`;
+    const el = document.body.querySelector("tessera-respond")!;
+    Object.assign(el, {
+      definition: SAMPLES.public,
+      surveyRef: SURVEY_REFS.public,
+      responder,
+      tipEpoch: TIP_EPOCH,
+    });
+    check(el);
   });
 
   it("upgrades from HTML markup, waits for props, and honors attributes", () => {
@@ -570,7 +770,9 @@ describe("built <tessera-respond> artifact", () => {
     expect(text(".qPrompt")).toBe(fr.questions![1]!.prompt);
     click(root, ".stepperNav .stepNavBtn:first-child");
     expect(text(".qPrompt")).toBe(fr.questions![0]!.prompt);
-    expect(text(".optionRowOn")).toBe(fr.questions![0]!.options![0]);
+    expect(text(".optionRowOn > span:last-of-type")).toBe(
+      fr.questions![0]!.options![0],
+    );
     expect(root.querySelectorAll(".optionRowOn").length).toBe(1);
   });
 
@@ -582,8 +784,10 @@ describe("built <tessera-respond> artifact", () => {
     });
     const root = shadow(el);
     const noneBox = () =>
-      root.querySelectorAll(".card")[1]!.querySelector(".multiGrid")!
-        .lastElementChild!.textContent;
+      root
+        .querySelectorAll(".card")[1]!
+        .querySelector(".multiGrid > :last-child > span:last-of-type")!
+        .textContent;
     expect(noneBox()).toBe(NONE_LABELS[1]);
     el.locale = "fr";
     expect(noneBox()).toBe(

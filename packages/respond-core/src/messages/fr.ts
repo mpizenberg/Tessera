@@ -86,6 +86,8 @@ const fr: RespondMessages = {
     stepPrev: "Précédente",
     stepNext: "Suivante",
     stepCount: "Question {n} sur {total}",
+    enterHint: "Entrée ↵",
+    shiftEnterHint: "Maj+Entrée",
 
     // --- Multi-select body -------------------------------------------------
     multiSelectCount: "sélectionnez {min}–{max} · {chosen} choisie(s)",

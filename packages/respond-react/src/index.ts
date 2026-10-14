@@ -86,6 +86,7 @@ const ELEMENT_PROPS = {
   translations: true,
   noneLabels: true,
   conditions: true,
+  keyboardShortcuts: true,
 } as const satisfies Record<keyof ElementProps, true>;
 
 const ELEMENT_PROP_KEYS = Object.keys(

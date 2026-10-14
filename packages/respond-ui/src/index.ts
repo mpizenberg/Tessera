@@ -20,7 +20,6 @@
  * @module
  */
 
-export { QuestionBody } from "./bodies";
 export { QuestionCard, focusPrompt } from "./card";
 export { createResponseDraft } from "./response-draft";
 export type {

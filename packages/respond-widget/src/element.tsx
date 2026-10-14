@@ -85,6 +85,7 @@ const defaults: TesseraRespondElementProps = {
   translations: undefined,
   noneLabels: undefined,
   conditions: undefined,
+  keyboardShortcuts: true,
 };
 
 // Registration reaches for `window.customElements`; guarded so an SSR host

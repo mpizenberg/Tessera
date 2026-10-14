@@ -222,14 +222,18 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     setStep(i);
     prompts[i]?.focus();
   };
-  const skip = (i: number, skipped: boolean): void => {
-    setSkipped(i, skipped);
-    if (!skipped) return;
-    const next = shownFrom(i, 1);
-    if (next === undefined) submitButton?.focus();
-    else if (layout() === "list") focusPrompt(prompts[next]);
-    else stepTo(next);
+  const goTo = (i: number): void =>
+    layout() === "list" ? focusPrompt(prompts[i]) : stepTo(i);
+  const next = (i: number): void => {
+    const to = shownFrom(i, 1);
+    if (to === undefined) submitButton?.focus();
+    else goTo(to);
   };
+  const prev = (i: number): void => {
+    const to = shownFrom(i, -1);
+    if (to !== undefined) goTo(to);
+  };
+  const shortcuts = () => props.keyboardShortcuts !== false;
 
   const sealedMode = createMemo(() => {
     const mode = props.definition.submissionMode;
@@ -403,8 +407,11 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
                         maxTextBytes={props.maxTextBytes}
                         hiddenSchemas={props.hiddenSchemas}
                         noneLabel={shownNoneLabels()[stepIndex()]}
+                        shortcuts={shortcuts()}
                         onChange={(v) => setValue(stepIndex(), v)}
-                        onSkip={(sk) => skip(stepIndex(), sk)}
+                        onSkip={(sk) => setSkipped(stepIndex(), sk)}
+                        onNext={() => next(stepIndex())}
+                        onPrev={() => prev(stepIndex())}
                         promptRef={(el) => (prompts[stepIndex()] = el)}
                       />
                     )}
@@ -414,6 +421,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
                     total={total()}
                     prev={shownFrom(stepIndex(), -1)}
                     next={shownFrom(stepIndex(), 1)}
+                    hints={shortcuts()}
                     onStep={stepTo}
                   />
                 </div>
@@ -433,8 +441,11 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
                         maxTextBytes={props.maxTextBytes}
                         hiddenSchemas={props.hiddenSchemas}
                         noneLabel={shownNoneLabels()[i()]}
+                        shortcuts={shortcuts()}
                         onChange={(v) => setValue(i(), v)}
-                        onSkip={(sk) => skip(i(), sk)}
+                        onSkip={(sk) => setSkipped(i(), sk)}
+                        onNext={() => next(i())}
+                        onPrev={() => prev(i())}
                         promptRef={(el) => (prompts[i()] = el)}
                       />
                     </Show>
@@ -658,17 +669,22 @@ const StepperNav: Component<{
   /** The shown questions either side, if any; hidden ones are stepped over. */
   prev: number | undefined;
   next: number | undefined;
+  /** Show the keys that step, beside the buttons. */
+  hints: boolean;
   onStep: (i: number) => void;
 }> = (props) => {
   const i18n = useI18n();
   return (
-    <div class="stepperNav">
+    <div class="stepperNav" classList={{ keysOn: props.hints }}>
       <button
         class="stepNavBtn"
         disabled={props.prev === undefined}
         onClick={() => props.prev !== undefined && props.onStep(props.prev)}
       >
         ← {i18n.t("respond.stepPrev")}
+        <kbd aria-hidden="true" class="keyBadge">
+          {i18n.t("respond.shiftEnterHint")}
+        </kbd>
       </button>
       <span class="stepCount">
         {i18n.t("respond.stepCount", {
@@ -682,6 +698,9 @@ const StepperNav: Component<{
         onClick={() => props.next !== undefined && props.onStep(props.next)}
       >
         {i18n.t("respond.stepNext")} →
+        <kbd aria-hidden="true" class="keyBadge">
+          {i18n.t("respond.enterHint")}
+        </kbd>
       </button>
     </div>
   );

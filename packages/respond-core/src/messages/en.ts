@@ -97,6 +97,9 @@ const en = {
     stepNext: "Next",
     /** {n}/{total} are locale-formatted counts. */
     stepCount: "Question {n} of {total}",
+    /** The keys that step, shown beside Next and Previous with a mouse. */
+    enterHint: "Enter ↵",
+    shiftEnterHint: "Shift+Enter",
 
     // --- Multi-select body -------------------------------------------------
     /** {min}/{max}/{chosen} are locale-formatted counts. */

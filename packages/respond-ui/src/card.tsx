@@ -1,7 +1,8 @@
 /**
  * The card around a question's body: its number, kind and Skip toggle, then
- * the prompt. Where focus goes after a skip is the host's call, since only the
- * host knows which question comes next and where its submit button is.
+ * the prompt. It takes the shortcut keys pressed inside it. Moving on, after
+ * a skip or on Enter, and going back are the host's to carry out, since only
+ * the host knows which question is next and where its submit button is.
  */
 
 import { Show, createUniqueId, type Component } from "solid-js";
@@ -9,7 +10,7 @@ import { Show, createUniqueId, type Component } from "solid-js";
 import type { Question } from "cip-179";
 import type { Draft, DraftValue } from "cardano-tessera-respond-core";
 
-import { QuestionBody } from "./bodies";
+import { QuestionBody, type Shortcut, type ShortcutHandler } from "./bodies";
 import { useClasses } from "./classes-context";
 import { useI18n } from "./i18n-context";
 import { typeMeta } from "./shared";
@@ -24,8 +25,14 @@ export const QuestionCard: Component<{
   hiddenSchemas?: readonly string[] | undefined;
   /** A multi-select's None box label, in place of the catalog's. */
   noneLabel?: string | undefined;
+  /** Letters, digits, Enter and Shift+Enter; on unless false. */
+  shortcuts?: boolean | undefined;
   onChange: (v: DraftValue) => void;
   onSkip: (skipped: boolean) => void;
+  /** Moves on from this question, after a skip or on Enter. */
+  onNext: () => void;
+  /** Goes back from this question, on Shift+Enter. */
+  onPrev: () => void;
   /** Receives the prompt, which takes focus from script only. */
   promptRef?: (el: HTMLElement) => void;
 }> = (props) => {
@@ -36,8 +43,31 @@ export const QuestionCard: Component<{
   const hideSchema = () =>
     props.q.type === "custom" &&
     (props.hiddenSchemas?.includes(props.q.methodSchema.uri) ?? false);
+  const keysOn = () => props.shortcuts !== false;
+  let bodyKeys: ShortcutHandler | undefined;
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (!keysOn() || e.repeat) return;
+    const target = e.target as Element;
+    if (e.key === "Enter") {
+      // A button keeps Enter, and a text area its line breaks.
+      if (target instanceof HTMLButtonElement) return;
+      if (target instanceof HTMLTextAreaElement && !(e.ctrlKey || e.metaKey))
+        return;
+      e.preventDefault();
+      if (e.shiftKey) props.onPrev();
+      else props.onNext();
+      return;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const key = shortcutOf(e);
+    if (key && !skipped() && bodyKeys?.(key, target)) e.preventDefault();
+  };
   return (
-    <div class={cls.card}>
+    <div
+      class={cls.card}
+      classList={{ [cls.keysOn]: keysOn() }}
+      onKeyDown={onKeyDown}
+    >
       <div class={cls.qHead}>
         <div class={cls.qHeadLeft}>
           <span class={cls.qChip}>
@@ -50,7 +80,11 @@ export const QuestionCard: Component<{
         </div>
         <Show when={!props.q.required}>
           <button
-            onClick={() => props.onSkip(!skipped())}
+            onClick={() => {
+              const skip = !skipped();
+              props.onSkip(skip);
+              if (skip) props.onNext();
+            }}
             class={cls.skipBtn}
             classList={{ [cls.skipBtnOn]: skipped() }}
           >
@@ -80,6 +114,7 @@ export const QuestionCard: Component<{
               maxTextBytes={props.maxTextBytes}
               hideSchema={hideSchema()}
               noneLabel={props.noneLabel}
+              shortcuts={(handler) => (bodyKeys = handler)}
               onChange={props.onChange}
             />
           </Show>
@@ -88,6 +123,20 @@ export const QuestionCard: Component<{
     </div>
   );
 };
+
+/**
+ * The letter or digit a key types. A letter in another script stands for the
+ * Latin letter on its key, so the badges work on a Cyrillic layout too.
+ */
+function shortcutOf(e: KeyboardEvent): Shortcut | undefined {
+  if (/^[0-9]$/.test(e.key)) return { digit: Number(e.key) };
+  const latin = /^[a-z]$/i.test(e.key)
+    ? e.key.toUpperCase()
+    : /^\p{L}$/u.test(e.key) && /^Key[A-Z]$/.test(e.code)
+      ? e.code.slice(3)
+      : undefined;
+  return latin === undefined ? undefined : { letter: latin.charCodeAt(0) - 65 };
+}
 
 /**
  * Moves focus to a prompt further down a list of cards, scrolled to the middle

@@ -34,6 +34,8 @@ const bodyClasses: BodyClasses = {
   qPrompt: css.qPrompt,
   qSkipped: css.qSkipped,
   qBody: css.qBody,
+  keysOn: css.keysOn,
+  keyBadge: css.keyBadge,
   choiceInput: css.choiceInput,
   optionGroup: css.optionGroup,
   optionRow: css.optionRow,
@@ -104,13 +106,11 @@ export const QuestionList: Component<{
   drafts: readonly Draft[];
   onChange: (index: number, value: DraftValue) => void;
   onSkip: (index: number, skipped: boolean) => void;
-  /** Takes focus past the last question, as a skip there moves on. */
+  /** Takes focus past the last question, as a skip or Enter there moves on. */
   focusSubmit: () => void;
 }> = (props) => {
   const prompts: HTMLElement[] = [];
-  const skip = (i: number, skipped: boolean): void => {
-    props.onSkip(i, skipped);
-    if (!skipped) return;
+  const next = (i: number): void => {
     if (i + 1 < props.questions.length) focusPrompt(prompts[i + 1]);
     else props.focusSubmit();
   };
@@ -125,7 +125,9 @@ export const QuestionList: Component<{
                 index={i()}
                 draft={props.drafts[i()]}
                 onChange={(v) => props.onChange(i(), v)}
-                onSkip={(sk) => skip(i(), sk)}
+                onSkip={(sk) => props.onSkip(i(), sk)}
+                onNext={() => next(i())}
+                onPrev={() => i() > 0 && focusPrompt(prompts[i() - 1])}
                 promptRef={(el) => (prompts[i()] = el)}
               />
             )}

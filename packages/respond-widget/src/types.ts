@@ -159,6 +159,18 @@ export interface TesseraRespondProps {
    * question shows, with a console warning and a notice.
    */
   conditions?: DisplayConditions;
+  /**
+   * Keys that answer and move while the focus is in a question. Default
+   * `true`. A letter picks, toggles or ranks the option it badges; the badges
+   * show with a mouse, not on a touch screen. A digit rates the item holding
+   * the focus, or a lone item: the level it labels, or on a scale of words
+   * the level at its position. Letters and digits never act with Ctrl, Cmd or
+   * Alt held. Enter moves on, and Shift+Enter goes back; in a text area,
+   * with Ctrl or Cmd held too. On the last question Enter moves the focus to
+   * the submit button, and never submits. Set to `false` for a host with keys
+   * of its own: Tab, the arrow keys and Space stay, as the controls' own.
+   */
+  keyboardShortcuts?: boolean;
 }
 
 /** Which wallet/pool key must sign for a credential's proof. */
