@@ -38,7 +38,6 @@ export {
 } from "./classes-context";
 export type { BodyClassName, BodyClasses } from "./classes-context";
 export {
-  activateOnKey,
   clampStep,
   labelFor,
   ratingLevels,

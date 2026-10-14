@@ -4,7 +4,7 @@
  * host knows which question comes next and where its submit button is.
  */
 
-import { Show, type Component } from "solid-js";
+import { Show, createUniqueId, type Component } from "solid-js";
 
 import type { Question } from "cip-179";
 import type { Draft, DraftValue } from "cardano-tessera-respond-core";
@@ -31,6 +31,7 @@ export const QuestionCard: Component<{
 }> = (props) => {
   const i18n = useI18n();
   const cls = useClasses();
+  const promptId = createUniqueId();
   const skipped = () => props.draft?.skipped ?? false;
   const hideSchema = () =>
     props.q.type === "custom" &&
@@ -57,7 +58,12 @@ export const QuestionCard: Component<{
           </button>
         </Show>
       </div>
-      <h3 ref={(el) => props.promptRef?.(el)} tabindex={-1} class={cls.qPrompt}>
+      <h3
+        id={promptId}
+        ref={(el) => props.promptRef?.(el)}
+        tabindex={-1}
+        class={cls.qPrompt}
+      >
         {props.q.prompt || i18n.t("respond.noPrompt")}
       </h3>
 
@@ -70,6 +76,7 @@ export const QuestionCard: Component<{
             <QuestionBody
               q={props.q}
               value={props.draft!.value}
+              labelId={promptId}
               maxTextBytes={props.maxTextBytes}
               hideSchema={hideSchema()}
               noneLabel={props.noneLabel}

@@ -320,9 +320,22 @@
   color: var(--tessera-ink);
 }
 
-/* Script moves focus here to mark the question reached; it is not a control. */
+/* Script moves focus here to mark the question reached; it is not a control,
+   and the card marks it instead of a ring. */
 .qPrompt:focus {
   outline: none;
+}
+
+/* Every control's ring; a choice's input is hidden, so its row carries it. */
+:focus-visible,
+:has(> .choiceInput:focus-visible) {
+  outline: 2px solid var(--tessera-accent);
+  outline-offset: 2px;
+}
+
+/* The question holding keyboard focus, its prompt included. */
+.card:has(:focus-visible) {
+  border-color: var(--tessera-accent);
 }
 
 .hiddenRow {
@@ -351,6 +364,17 @@
 }
 
 /* --- Option rows (single choice / multi-select) --------------------------- */
+
+/* Takes the focus, the keys and the checked state; the row around it draws
+   them. Out of the flow, it stays inside its row for a focus scroll. */
+.choiceInput {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  pointer-events: none;
+}
 
 .optionGroup {
   display: flex;
@@ -571,7 +595,6 @@
   font-family: var(--tessera-mono);
   font-size: 15px;
   color: var(--tessera-ink);
-  outline: none;
   box-sizing: border-box;
 }
 
@@ -647,7 +670,6 @@
   font-weight: 600;
   color: var(--tessera-ink);
   text-align: center;
-  outline: none;
   box-sizing: border-box;
 }
 
@@ -688,7 +710,6 @@
   font-family: var(--tessera-mono);
   font-size: 15px;
   color: var(--tessera-ink);
-  outline: none;
   box-sizing: border-box;
 }
 
@@ -699,6 +720,9 @@
 }
 
 .ratingBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 34px;
   height: 34px;
   border-radius: var(--tessera-r-xs);
@@ -767,7 +791,6 @@
   color: var(--tessera-ink);
   line-height: 1.45;
   resize: vertical;
-  outline: none;
   box-sizing: border-box;
 }
 

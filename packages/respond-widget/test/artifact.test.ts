@@ -316,6 +316,112 @@ describe("built <tessera-respond> artifact", () => {
     expect(root.activeElement).toBe(root.querySelector(".submitBtn"));
   });
 
+  it("moves focus to the new prompt on Next and Previous", () => {
+    const root = shadow(mount(SAMPLES.public));
+    click(root, ".stepperNav .stepNavBtn:last-child");
+    expect(root.querySelector(".stepCount")?.textContent).toBe(
+      "Question 2 of 7",
+    );
+    expect(root.activeElement).toBe(root.querySelector(".qPrompt"));
+    click(root, ".stepperNav .stepNavBtn:first-child");
+    expect(root.activeElement).toBe(root.querySelector(".qPrompt"));
+  });
+
+  it("answers choices through native inputs named by the prompt", () => {
+    const root = shadow(mount(SAMPLES.public));
+    const prompt = root.querySelector(".qPrompt")!;
+    const group = root.querySelector('[role="radiogroup"]')!;
+    expect(prompt.id).not.toBe("");
+    expect(group.getAttribute("aria-labelledby")).toBe(prompt.id);
+    const radios = [
+      ...root.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
+    ];
+    expect(new Set(radios.map((r) => r.name)).size).toBe(1);
+    click(root, ".optionRow");
+    expect(radios.map((r) => r.checked)).toEqual([true, false, false]);
+
+    // Up to 2 of 4: the third pick is refused, and its box stays unchecked.
+    click(root, ".stepperNav .stepNavBtn:last-child");
+    const rows = root.querySelectorAll<HTMLElement>(".optionRow");
+    for (const i of [0, 1, 2]) rows[i]!.click();
+    const boxes = root.querySelectorAll<HTMLInputElement>(
+      'input[type="checkbox"]',
+    );
+    expect([...boxes].map((b) => b.checked)).toEqual([
+      true,
+      true,
+      false,
+      false,
+      false,
+    ]);
+    expect(root.querySelectorAll(".optionRowOn").length).toBe(2);
+  });
+
+  it("clears a rating by clicking its level again, or with Delete", () => {
+    const root = shadow(mount(SAMPLES.public));
+    for (let i = 0; i < 5; i++)
+      click(root, ".stepperNav .stepNavBtn:last-child");
+    // One radio group per rated item, named by the item.
+    const groups = root.querySelectorAll('[role="radiogroup"]');
+    expect(groups.length).toBe(2);
+    expect(
+      root.getElementById(groups[0]!.getAttribute("aria-labelledby")!)
+        ?.textContent,
+    ).toBe("Proposal A");
+    const levels = groups[0]!.querySelectorAll<HTMLElement>(".ratingBtn");
+    const inputs = groups[0]!.querySelectorAll<HTMLInputElement>("input");
+    const on = () => root.querySelectorAll(".ratingBtnOn").length;
+
+    levels[2]!.click();
+    expect(on()).toBe(1);
+    expect(inputs[2]!.checked).toBe(true);
+    levels[2]!.click();
+    expect(on()).toBe(0);
+    expect(inputs[2]!.checked).toBe(false);
+
+    levels[1]!.click();
+    expect(on()).toBe(1);
+    inputs[1]!.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Delete", bubbles: true }),
+    );
+    expect(on()).toBe(0);
+  });
+
+  it("keeps the focus in a ranking as items move between the lists", () => {
+    const root = shadow(mount(SAMPLES.public));
+    for (let i = 0; i < 2; i++)
+      click(root, ".stepperNav .stepNavBtn:last-child");
+    const pool = () => [...root.querySelectorAll<HTMLElement>(".poolBtn")];
+    const rows = () => [...root.querySelectorAll<HTMLElement>(".rankedRow")];
+    const removeOf = (row: number) =>
+      rows()[row]!.querySelector<HTMLElement>(".rankBtnDanger");
+
+    // An added item's place in the pool goes to the next one, else the one
+    // before, else the item's own button in the ranking.
+    pool()[0]!.click(); // Decentralization
+    expect(root.activeElement?.textContent).toContain("Sustainability");
+    pool()[1]!.click(); // Usability, the last
+    expect(root.activeElement?.textContent).toContain("Sustainability");
+    pool()[0]!.click(); // Sustainability, emptying the pool
+    expect(root.activeElement).toBe(removeOf(2));
+
+    // A moved item keeps the focus on the button that moved it.
+    const up = rows()[2]!.querySelector<HTMLElement>(".rankBtn")!;
+    up.click();
+    expect(rows()[1]!.textContent).toContain("Sustainability");
+    expect(root.activeElement).toBe(up);
+
+    // A removed item's place goes to the item now in it, and the last one
+    // back to the pool.
+    removeOf(0)!.click();
+    expect(root.activeElement).toBe(removeOf(0));
+    removeOf(1)!.click();
+    expect(root.activeElement).toBe(removeOf(0));
+    removeOf(0)!.click();
+    expect(root.activeElement?.textContent).toContain("Sustainability");
+    expect(rows().length).toBe(0);
+  });
+
   it("upgrades from HTML markup, waits for props, and honors attributes", () => {
     document.body.innerHTML = `<tessera-respond locale="fr"></tessera-respond>`;
     const el = document.body.querySelector("tessera-respond")!;

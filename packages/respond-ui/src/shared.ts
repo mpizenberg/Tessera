@@ -13,19 +13,6 @@ export function range(n: number): number[] {
   return Array.from({ length: Math.max(0, n) }, (_, i) => i);
 }
 
-/**
- * Keyboard handler for div-based radio/checkbox rows: Enter or Space activates
- * the row (Space's default page-scroll is suppressed), matching native controls.
- */
-export function activateOnKey(fn: () => void) {
-  return (e: KeyboardEvent) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      fn();
-    }
-  };
-}
-
 export function clampStep(
   value: bigint,
   min: bigint,

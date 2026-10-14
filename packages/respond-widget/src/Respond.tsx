@@ -218,16 +218,17 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
   // `prompts` by the time it is focused.
   const prompts: HTMLElement[] = [];
   let submitButton: HTMLButtonElement | undefined;
+  const stepTo = (i: number): void => {
+    setStep(i);
+    prompts[i]?.focus();
+  };
   const skip = (i: number, skipped: boolean): void => {
     setSkipped(i, skipped);
     if (!skipped) return;
     const next = shownFrom(i, 1);
     if (next === undefined) submitButton?.focus();
     else if (layout() === "list") focusPrompt(prompts[next]);
-    else {
-      setStep(next);
-      prompts[next]?.focus();
-    }
+    else stepTo(next);
   };
 
   const sealedMode = createMemo(() => {
@@ -413,7 +414,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
                     total={total()}
                     prev={shownFrom(stepIndex(), -1)}
                     next={shownFrom(stepIndex(), 1)}
-                    onStep={setStep}
+                    onStep={stepTo}
                   />
                 </div>
               }

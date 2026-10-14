@@ -34,6 +34,7 @@ const bodyClasses: BodyClasses = {
   qPrompt: css.qPrompt,
   qSkipped: css.qSkipped,
   qBody: css.qBody,
+  choiceInput: css.choiceInput,
   optionGroup: css.optionGroup,
   optionRow: css.optionRow,
   optionRowOn: css.optionRowOn,

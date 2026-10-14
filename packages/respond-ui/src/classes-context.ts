@@ -25,6 +25,8 @@ export const BODY_CLASS_NAMES = [
   "qPrompt",
   "qSkipped",
   "qBody",
+  // the native input under a choice row or a rating level
+  "choiceInput",
   // single choice
   "optionGroup",
   "optionRow",
