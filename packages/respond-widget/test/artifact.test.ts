@@ -469,6 +469,11 @@ describe("built <tessera-respond> artifact", () => {
     // A Cyrillic layout types ф on the key that bears A.
     keydown(prompt(), "ф", { code: "KeyA" });
     expect(on()).toEqual(["Scaling (Leios)"]);
+    // Safari's click on an option focuses the card instead, if it can.
+    const card = root.querySelector<HTMLElement>(".card")!;
+    expect(card.getAttribute("tabindex")).toBe("-1");
+    keydown(card, "b");
+    expect(on()).toEqual(["Governance polish"]);
     // In the group, the focus goes with the check.
     const radios = root.querySelectorAll<HTMLInputElement>(".choiceInput");
     radios[0]!.focus();
@@ -533,6 +538,11 @@ describe("built <tessera-respond> artifact", () => {
     expect(root.activeElement).toBe(inputs[2]);
     keydown(inputs[2]!, "5"); // a four-level scale
     expect(on()).toEqual(["Good"]);
+    // Safari's click on a level focuses its group instead, if it can.
+    const first = root.querySelector<HTMLElement>('[role="radiogroup"]')!;
+    expect(first.getAttribute("tabindex")).toBe("-1");
+    keydown(first, "2");
+    expect(on()).toEqual(["Fair", "Good"]);
 
     // A scale of numbers takes the digit it shows; the only item takes it
     // from the prompt.

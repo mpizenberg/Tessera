@@ -602,8 +602,11 @@ const RatingBody: Component<{
                   />
                 }
               >
+                {/* Takes the focus Safari gives no clicked level, so its
+                    keys reach this item. */}
                 <div
                   ref={(el) => (groups[optIdx] = el)}
+                  tabindex={-1}
                   role="radiogroup"
                   aria-labelledby={itemId}
                   aria-required={itemRequired()}

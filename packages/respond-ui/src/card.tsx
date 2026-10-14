@@ -63,7 +63,10 @@ export const QuestionCard: Component<{
     if (key && !skipped() && bodyKeys?.(key, target)) e.preventDefault();
   };
   return (
+    // Safari gives a clicked button or check no focus; the card takes it
+    // instead, so its keys still arrive.
     <div
+      tabindex={-1}
       class={cls.card}
       classList={{ [cls.keysOn]: keysOn() }}
       onKeyDown={onKeyDown}

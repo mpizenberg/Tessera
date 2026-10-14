@@ -323,9 +323,12 @@
   color: var(--tessera-ink);
 }
 
-/* Script moves focus here to mark the question reached; it is not a control,
-   and the card marks it instead of a ring. */
-.qPrompt:focus {
+/* Script moves focus to the prompt to mark the question reached, and a click
+   to the card or a rating's levels where Safari gives the clicked control
+   none. None is a control, and the card marks it instead of a ring. */
+.card:focus,
+.qPrompt:focus,
+.ratingLevels:focus {
   outline: none;
 }
 
@@ -336,7 +339,8 @@
   outline-offset: 2px;
 }
 
-/* The question holding keyboard focus, its prompt included. */
+/* The question holding keyboard focus, itself or within. */
+.card:focus-visible,
 .card:has(:focus-visible) {
   border-color: var(--tessera-accent);
 }
