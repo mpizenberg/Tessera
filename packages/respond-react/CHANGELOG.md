@@ -9,6 +9,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 while `< 1.0.0`, breaking changes bump the **minor** version.
 
+## [0.5.0] - 2026-10-14
+
+### Added
+
+- `noneLabels` prop, following the element: the survey's own words for a
+  multi-select's None box. The `NoneLabels` type is exported.
+- `keyboardShortcuts` prop, following the element: `false` turns its letter,
+  digit and Enter keys off.
+- The `ConditionOption` type is exported, following the element: a
+  condition's `anyOf` and `noneOf` may hold `"none"`.
+- The `translations` prop takes a question's `noneLabel`, and the `messages`
+  prop `respond.enterHint` and `respond.shiftEnterHint`, following the
+  element.
+
 ## [0.4.0] - 2026-10-13
 
 ### Added

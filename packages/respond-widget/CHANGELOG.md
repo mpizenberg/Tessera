@@ -8,6 +8,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 while `< 1.0.0`, breaking changes bump the **minor** version.
 
+## [0.5.0] - 2026-10-14
+
+### Added
+
+- `noneLabels` prop: the survey's own words for a multi-select's "None of
+  these" box, keyed by question index, in the definition's language. A label
+  is 1 to 64 bytes; one on a question without that box, or out of bounds, is
+  dropped with a console warning. A translation words the box with a
+  question's `noneLabel`. The `NoneLabels` type is exported.
+- `"none"` in a condition's `anyOf` or `noneOf`: it matches a multi-select
+  answered with its None box, which a skip does not. It is valid only on a
+  multi-select with `minSelections: 0`. The `ConditionOption` type is
+  exported.
+- Keyboard shortcuts while the focus is in a question: a letter picks,
+  toggles or ranks the option it badges, a digit rates, Enter moves on and
+  Shift+Enter goes back (with Ctrl or Cmd held in a text area). Enter never
+  submits. The badges, and the stepper's key hints beside Previous and Next,
+  show with a mouse, not on a touch screen. The `messages` prop gains
+  `respond.enterHint` and `respond.shiftEnterHint` for the hints.
+- `keyboardShortcuts` prop (attribute `keyboard-shortcuts`): `false` turns the
+  shortcuts off, for a host with keys of its own. Default `true`.
+- Focus: choice rows and rating levels are native radios and checkboxes, so a
+  single choice, or a rating's item, is one Tab stop whose arrow keys move the
+  pick; Delete or Backspace clears a rating. Each group is named by its prompt.
+  After Previous, Next or Skip the focus goes to the new question's prompt.
+  Every control, text inputs included, shows a focus ring in the accent
+  colour, and the question holding the focus an accent border.
+
+### Changed
+
+- Skip moves on: to the next shown question, or after the last one to the
+  submit button. Taking the skip back stays on the question.
+- Enter no longer picks or toggles an option; it moves on. Space still picks.
+
+### Fixed
+
+- A multi-select's two columns overflowed a narrow screen. It now shows one
+  column when two would get less than 260px each.
+
 ## [0.4.0] - 2026-10-13
 
 ### Added

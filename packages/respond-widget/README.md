@@ -55,7 +55,7 @@ fine there):
 
 ```html
 <script type="module">
-  import "https://esm.sh/cardano-tessera-respond@0.4";
+  import "https://esm.sh/cardano-tessera-respond@0.5";
 </script>
 ```
 
@@ -189,34 +189,36 @@ declaration shown in [TypeScript](#typescript) when installing from npm.
 ## Props
 
 Object-valued props (everything but `locale`, `layout`, `cancelled`, `tipEpoch`,
-`initialRole`, `showRole`, `maxTextBytes`) **must be set as DOM properties**
-(`el.definition = …`), never as HTML attributes. `solid-element` exposes each as
-a reactive prop with a hyphenated attribute alias, so the string/number/boolean
-ones (`locale`, `layout`, `tip-epoch`, `initial-role`, `show-role`,
-`max-text-bytes`, `cancelled`) _may_ also be written as plain attributes. `cancelled` also works HTML boolean-attribute style — a bare
+`initialRole`, `showRole`, `maxTextBytes`, `keyboardShortcuts`) **must be set as
+DOM properties** (`el.definition = …`), never as HTML attributes. `solid-element`
+exposes each as a reactive prop with a hyphenated attribute alias, so the
+string/number/boolean ones (`locale`, `layout`, `tip-epoch`, `initial-role`,
+`show-role`, `max-text-bytes`, `keyboard-shortcuts`, `cancelled`) _may_ also be
+written as plain attributes. `cancelled` also works HTML boolean-attribute style — a bare
 `<tessera-respond cancelled>` means cancelled.
 
-| Prop              | Type                            | Req. | Default            | Notes                                                                                                              |
-| :---------------- | :------------------------------ | :--: | :----------------- | :----------------------------------------------------------------------------------------------------------------- |
-| `definition`      | `SurveyDefinition`              |  ✓   | —                  | On-chain, or host-enriched with off-chain labels. The widget never fetches — you supply the display definition.    |
-| `surveyRef`       | `SurveyRef` (`{ txId, index }`) |  ✓   | —                  | Where the definition lives on-chain. Rides back out on every result and into the built response.                   |
-| `responder`       | `Responder`                     |  ✓   | —                  | Who's answering — see [The responder](#the-responder--eligibility).                                                |
-| `tipEpoch`        | `number`                        |  ✓   | —                  | Current chain-tip epoch. The widget derives open/ended and blocks a closed survey. A snapshot — re-set to refresh. |
-| `cancelled`       | `boolean`                       |      | `false`            | A valid on-chain cancellation exists (you checked); renders the cancelled state, no form.                          |
-| `priorResponses`  | `readonly SurveyResponse[]`     |      | —                  | Prefill for an edit/replace flow — see [Prior responses](#prior-responses-editreplace).                            |
-| `rationaleAnchor` | `ContentAnchor`                 |      | —                  | A host-pre-pinned rationale (CIP-179 key 5). The widget never pins to IPFS.                                        |
-| `locale`          | `string` (BCP-47)               |      | `"en"`             | Drives both strings and number/date formatting — see [Internationalization](#internationalization).                |
-| `messages`        | `DeepPartial<RespondMessages>`  |      | —                  | Deep-merged string overrides, or a whole unshipped language.                                                       |
-| `theme`           | `Record<string, string>`        |      | —                  | Design-token overrides, reflected as `--tessera-<key>` on the host — see [Theming](#theming--fonts).               |
-| `layout`          | `"one-per-screen" \| "list"`    |      | `"one-per-screen"` | Stepper (one question at a time) or all questions at once.                                                         |
-| `initialRole`     | `Role`                          |      | —                  | Initial role when the responder is eligible in several. The user can still switch.                                 |
-| `showRole`        | `boolean`                       |      | `true`             | Show the "Responding as" row. `false` leaves the role to the host: `initialRole`, or a single-role `responder`.    |
-| `maxTextBytes`    | `number`                        |      | —                  | Cap on a custom answer's UTF-8 length. The input shows a byte count; a longer text leaves its question undecided.  |
-| `hiddenSchemas`   | `readonly string[]`             |      | —                  | Schema URIs a custom question doesn't show, with the hint that names them — a plain-text schema, say.              |
-| `stash`           | `DraftStash`                    |      | memory             | Where unsent answers are kept — see [Unsent answers](#unsent-answers).                                             |
-| `translations`    | `SurveyTranslations`            |      | —                  | The survey's own text in other languages, picked by `locale` — see [Translated surveys](#translated-surveys).      |
-| `noneLabels`      | `NoneLabels`                    |      | —                  | The survey's own words for a multi-select's "None of these" box — see [The None box](#the-none-box).               |
-| `conditions`      | `DisplayConditions`             |      | —                  | Questions shown only after some earlier answers — see [Conditional questions](#conditional-questions).             |
+| Prop                | Type                            | Req. | Default            | Notes                                                                                                              |
+| :------------------ | :------------------------------ | :--: | :----------------- | :----------------------------------------------------------------------------------------------------------------- |
+| `definition`        | `SurveyDefinition`              |  ✓   | —                  | On-chain, or host-enriched with off-chain labels. The widget never fetches — you supply the display definition.    |
+| `surveyRef`         | `SurveyRef` (`{ txId, index }`) |  ✓   | —                  | Where the definition lives on-chain. Rides back out on every result and into the built response.                   |
+| `responder`         | `Responder`                     |  ✓   | —                  | Who's answering — see [The responder](#the-responder--eligibility).                                                |
+| `tipEpoch`          | `number`                        |  ✓   | —                  | Current chain-tip epoch. The widget derives open/ended and blocks a closed survey. A snapshot — re-set to refresh. |
+| `cancelled`         | `boolean`                       |      | `false`            | A valid on-chain cancellation exists (you checked); renders the cancelled state, no form.                          |
+| `priorResponses`    | `readonly SurveyResponse[]`     |      | —                  | Prefill for an edit/replace flow — see [Prior responses](#prior-responses-editreplace).                            |
+| `rationaleAnchor`   | `ContentAnchor`                 |      | —                  | A host-pre-pinned rationale (CIP-179 key 5). The widget never pins to IPFS.                                        |
+| `locale`            | `string` (BCP-47)               |      | `"en"`             | Drives both strings and number/date formatting — see [Internationalization](#internationalization).                |
+| `messages`          | `DeepPartial<RespondMessages>`  |      | —                  | Deep-merged string overrides, or a whole unshipped language.                                                       |
+| `theme`             | `Record<string, string>`        |      | —                  | Design-token overrides, reflected as `--tessera-<key>` on the host — see [Theming](#theming--fonts).               |
+| `layout`            | `"one-per-screen" \| "list"`    |      | `"one-per-screen"` | Stepper (one question at a time) or all questions at once.                                                         |
+| `initialRole`       | `Role`                          |      | —                  | Initial role when the responder is eligible in several. The user can still switch.                                 |
+| `showRole`          | `boolean`                       |      | `true`             | Show the "Responding as" row. `false` leaves the role to the host: `initialRole`, or a single-role `responder`.    |
+| `maxTextBytes`      | `number`                        |      | —                  | Cap on a custom answer's UTF-8 length. The input shows a byte count; a longer text leaves its question undecided.  |
+| `hiddenSchemas`     | `readonly string[]`             |      | —                  | Schema URIs a custom question doesn't show, with the hint that names them — a plain-text schema, say.              |
+| `stash`             | `DraftStash`                    |      | memory             | Where unsent answers are kept — see [Unsent answers](#unsent-answers).                                             |
+| `translations`      | `SurveyTranslations`            |      | —                  | The survey's own text in other languages, picked by `locale` — see [Translated surveys](#translated-surveys).      |
+| `noneLabels`        | `NoneLabels`                    |      | —                  | The survey's own words for a multi-select's "None of these" box — see [The None box](#the-none-box).               |
+| `conditions`        | `DisplayConditions`             |      | —                  | Questions shown only after some earlier answers — see [Conditional questions](#conditional-questions).             |
+| `keyboardShortcuts` | `boolean`                       |      | `true`             | Letter, digit and Enter keys while the focus is in a question — see [Keyboard and focus](#keyboard-and-focus).     |
 
 ## Events
 
@@ -644,6 +646,49 @@ Both reuse the same question card, the same `decided()` gating, and the same
 answer collection; layout is pure presentation over shared state. The submit
 bar has one progress dot per question: filled when answered, outlined when
 skipped or hidden, and ringed for the question on screen in the stepper.
+
+Skip moves on, as Next does: to the next shown question, its prompt scrolled
+to the middle of the screen in the list, and after the last one to the submit
+button. Taking the skip back stays on the question.
+
+## Keyboard and focus
+
+A question's choices are native radios and checkboxes, so the browser's keys
+work: a single choice is one Tab stop whose arrow keys move the pick, each
+checkbox is a stop, and Space picks or toggles. A rating is one radio group
+per rated item, and Delete or Backspace clears the item's level. Each group is named by its prompt. After
+Previous, Next or Skip, the focus goes to the new question's prompt, so a
+screen reader reads it. Every control shows a focus ring in `--tessera-accent`,
+and the question holding the focus an accent border.
+
+While the focus is in a question, these keys act on it, unless
+`keyboardShortcuts` is `false`:
+
+| Key         | Action                                                                                                                                     |
+| :---------- | :----------------------------------------------------------------------------------------------------------------------------------------- |
+| A, B, C…    | Picks, toggles or ranks the option with that letter; a multi-select's None box takes the next one. Typing B A C ranks three in that order. |
+| 1, 2, 3…    | Rates the item holding the focus, or the only item: the level labelled with that digit, or on a scale of words the level at that position. |
+| Enter       | Moves on to the next shown question. After the last one it moves the focus to the submit button, and never submits.                        |
+| Shift+Enter | Goes back to the previous shown question.                                                                                                  |
+
+- In a text area, Enter breaks the line: Ctrl+Enter or Cmd+Enter moves on,
+  with Shift goes back. On a button, Enter presses it.
+- Letters and digits never act with Ctrl, Cmd or Alt held, so the browser's
+  shortcuts stay. Letters follow option positions, the same in every language
+  and as a ranking's pool shrinks; options past the 26th have none. On a
+  layout of another script, a letter stands for the Latin letter on its key.
+- With a mouse, each option shows its letter in a badge, and the stepper's
+  Previous and Next show their keys (`respond.shiftEnterHint` and
+  `respond.enterHint` in `messages`). A touch screen shows neither.
+- `keyboardShortcuts: false` (attribute `keyboard-shortcuts="false"`) is for a
+  host with keys of its own. Tab, the arrow keys and Space stay: they are the
+  controls' own.
+- While the submit button is disabled, Enter or Skip on the last question
+  leaves the focus where it is.
+- **Safari.** Its Tab reaches radios, checkboxes and buttons only with
+  Option+Tab, or with its "Press Tab to highlight each item" setting on;
+  plain Tab skips them. A click focuses the question, so the keys work after
+  one.
 
 ## Single Solid instance
 
