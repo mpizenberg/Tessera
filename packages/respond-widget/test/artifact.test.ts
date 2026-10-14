@@ -484,7 +484,7 @@ describe("built <tessera-respond> artifact", () => {
       "C",
       "D",
       "E",
-      "Shift+Enter",
+      "⇧ Enter ↵",
     ]);
     for (const k of ["a", "c", "d"]) keydown(prompt(), k);
     expect(on()).toEqual(["Core protocol", "Education"]);
