@@ -25,6 +25,7 @@ export type {
   DisplayCondition,
   DisplayConditions,
   DraftStash,
+  NoneLabels,
   ProofKeyKind,
   QuestionTranslation,
   Responder,

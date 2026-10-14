@@ -6,7 +6,8 @@
  * - `draft.ts`: response drafting (drafts → validated answers → `SurveyResponse`,
  *   the `decided()` progress gate, prefill for the edit/replace flow).
  * - `kept.ts`: a form kept between visits, as plain JSON checked on read.
- * - `translations.ts`: survey text in other languages, from an overlay document.
+ * - `translations.ts`: survey text beside the definition — None labels, and
+ *   the text in other languages.
  * - `conditions.ts`: which questions show, from earlier choice answers.
  * - `eligibility.ts`: the {@link Responder} role→credential map + which roles a
  *   responder may claim to a survey. Wallet-agnostic: deriving the map from a

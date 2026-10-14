@@ -1,20 +1,70 @@
 /**
- * Translated survey text: an overlay document that holds, beside the
- * definition, the survey's text in languages other than its default. Answers
- * carry option indices only, so a translation changes what a responder reads,
- * never what they submit.
+ * Survey text beside the definition. Answers carry option indices only, so
+ * this text changes what a responder reads, never what they submit.
  *
- * The overlay names the language of the on-chain text (`defaultLanguage`) and
- * keys each other language by BCP-47 tag. An entry mirrors the definition's
- * text: title, description, and per question its prompt, option labels and
- * rating labels, in question and option order. Every field is optional, and a
- * missing one falls back field by field through the locale's less specific
- * tags (`fr-CA`, then `fr`) to the on-chain text.
+ * None labels word a multi-select's "None of these" box, which CIP-179 has no
+ * field for, in the definition's language. A label is bounded like an option
+ * label, so the field could join the definition.
+ *
+ * The translations overlay names the language of the on-chain text
+ * (`defaultLanguage`) and keys each other language by BCP-47 tag. An entry
+ * mirrors the definition's text: title, description, and per question its
+ * prompt, option labels, rating labels and None label, in question and option
+ * order. Every field is optional, and a missing one falls back field by field
+ * through the locale's less specific tags (`fr-CA`, then `fr`) to the
+ * definition's own text.
  */
 
-import type { Question, SurveyDefinition } from "cip-179";
+import {
+  MAX_CHUNK_BYTES,
+  utf8ByteLength,
+  type Question,
+  type SurveyDefinition,
+} from "cip-179";
 
 import { optionCount } from "./draft.js";
+
+/** Labels keyed by the index of the multi-select whose None box each words. */
+export type NoneLabels = Readonly<Record<number, string>>;
+
+/** A None labels document's usable labels, and why the others were dropped. */
+export interface ReadNoneLabels {
+  /** One per question, index-aligned; `undefined` keeps the box's default. */
+  readonly labels: readonly (string | undefined)[];
+  /** One line per dropped label, for the console. */
+  readonly dropped: readonly string[];
+}
+
+/**
+ * The labels that fit the definition. A label on a question without a None
+ * box (a multi-select with a minimum of 0), or one that is not 1 to 64 bytes
+ * of text, is dropped: that box keeps its default.
+ */
+export function readNoneLabels(
+  definition: SurveyDefinition,
+  noneLabels: unknown,
+): ReadNoneLabels {
+  const questions = definition.questions;
+  const labels: (string | undefined)[] = questions.map(() => undefined);
+  if (!isFields(noneLabels))
+    return {
+      labels,
+      dropped: ["the labels are not an object keyed by question index"],
+    };
+  const dropped: string[] = [];
+  for (const [key, label] of Object.entries(noneLabels)) {
+    const index = Number(key);
+    const q = String(index) === key ? questions[index] : undefined;
+    if (q === undefined)
+      dropped.push(`question ${key} is not a question index`);
+    else if (!hasNoneBox(q))
+      dropped.push(`question ${key} is not a multi-select with a minimum of 0`);
+    else if (!isNoneLabel(label))
+      dropped.push(`question ${key} has no label of 1 to 64 bytes of text`);
+    else labels[index] = label;
+  }
+  return { labels, dropped };
+}
 
 export interface SurveyTranslations {
   /** BCP-47 tag of the definition's own text. */
@@ -36,6 +86,8 @@ export interface QuestionTranslation {
   readonly options?: readonly string[];
   /** One per level of a rating scale given as labels or a level count. */
   readonly ratingLabels?: readonly string[];
+  /** The None box's label, on a multi-select with a minimum of 0. */
+  readonly noneLabel?: string;
 }
 
 /** An overlay's usable entries, and why the others were dropped. */
@@ -50,9 +102,10 @@ export interface ReadTranslations {
 /**
  * The overlay's entries that fit the definition. An entry restating the
  * default language is dropped, and so is one whose shape differs from the
- * questions (count, option counts, rating levels) or whose text is not
- * strings: it could pair a label with the wrong option. A dropped language
- * renders in the default.
+ * questions (count, option counts, rating levels, None boxes) or whose text
+ * is not strings: it could pair a label with the wrong option. A None label
+ * is held to {@link readNoneLabels}'s bound. A dropped language renders in
+ * the default.
  */
 export function readTranslations(
   definition: SurveyDefinition,
@@ -91,21 +144,8 @@ export function localizeDefinition(
   translations: ReadTranslations,
   locale: string,
 ): SurveyDefinition {
-  const chain: SurveyTranslation[] = [];
-  for (const tag of lookupChain(locale)) {
-    if (tag === translations.defaultLanguage) break;
-    const entry = translations.entries.get(tag);
-    if (entry) chain.push(entry);
-  }
-  if (chain.length === 0) return definition;
-
-  const pick = <T>(get: (e: SurveyTranslation) => T | undefined) => {
-    for (const e of chain) {
-      const v = get(e);
-      if (v !== undefined) return v;
-    }
-    return undefined;
-  };
+  const pick = picker(translations, locale);
+  if (!pick) return definition;
   return {
     ...definition,
     title: pick((e) => e.title) ?? definition.title,
@@ -113,6 +153,46 @@ export function localizeDefinition(
     questions: definition.questions.map((q, i) =>
       localizeQuestion(q, (field) => pick((e) => e.questions?.[i]?.[field])),
     ),
+  };
+}
+
+/**
+ * Each None box's label in `locale`, picked as {@link localizeDefinition}
+ * picks the definition's text, over the labels of {@link readNoneLabels}.
+ */
+export function localizeNoneLabels(
+  labels: readonly (string | undefined)[],
+  translations: ReadTranslations,
+  locale: string,
+): readonly (string | undefined)[] {
+  const pick = picker(translations, locale);
+  return pick
+    ? labels.map((own, i) => pick((e) => e.questions?.[i]?.noneLabel) ?? own)
+    : labels;
+}
+
+type Picker = <T>(
+  get: (e: SurveyTranslation) => T | undefined,
+) => T | undefined;
+
+/** Picks a field from the entries `locale` reads; none when it reads none. */
+function picker(
+  translations: ReadTranslations,
+  locale: string,
+): Picker | undefined {
+  const chain: SurveyTranslation[] = [];
+  for (const tag of lookupChain(locale)) {
+    if (tag === translations.defaultLanguage) break;
+    const entry = translations.entries.get(tag);
+    if (entry) chain.push(entry);
+  }
+  if (chain.length === 0) return undefined;
+  return (get) => {
+    for (const e of chain) {
+      const v = get(e);
+      if (v !== undefined) return v;
+    }
+    return undefined;
   };
 }
 
@@ -181,9 +261,17 @@ function fitsQuestion(entry: unknown, q: Question): boolean {
     (entry.options === undefined ||
       (options !== undefined && isLabels(entry.options, options))) &&
     (entry.ratingLabels === undefined ||
-      (levels !== undefined && isLabels(entry.ratingLabels, levels)))
+      (levels !== undefined && isLabels(entry.ratingLabels, levels))) &&
+    (entry.noneLabel === undefined ||
+      (hasNoneBox(q) && isNoneLabel(entry.noneLabel)))
   );
 }
+
+const hasNoneBox = (q: Question): boolean =>
+  q.type === "multiSelect" && q.minSelections === 0;
+
+const isNoneLabel = (x: unknown): x is string =>
+  typeof x === "string" && x !== "" && utf8ByteLength(x) <= MAX_CHUNK_BYTES;
 
 /** Levels a rating scale names; a numeric scale names none. */
 function ratingLevelCount(

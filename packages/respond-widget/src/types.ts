@@ -23,6 +23,7 @@ import type {
   DeepPartial,
   DisplayCondition,
   DisplayConditions,
+  NoneLabels,
   QuestionTranslation,
   Responder,
   RespondMessages,
@@ -35,6 +36,7 @@ export type {
   DisplayCondition,
   DisplayConditions,
   DraftStash,
+  NoneLabels,
   QuestionTranslation,
   Responder,
   SurveyTranslation,
@@ -127,13 +129,23 @@ export interface TesseraRespondProps {
    * The survey's text in other languages, shown by `locale`: `defaultLanguage`
    * names the language of the definition's own text, and `translations` holds
    * one entry per other language, keyed by BCP-47 tag, each mirroring the
-   * title, description and questions (prompt, option labels, rating labels).
+   * title, description and questions (prompt, option labels, rating labels,
+   * None label).
    * Each field falls back on its own, `fr-CA` to `fr` to the definition's
    * text. An entry for the default language, or one whose questions, options
    * or rating levels do not match the definition's, is ignored with a console
    * warning.
    */
   translations?: SurveyTranslations;
+  /**
+   * The survey's own wording of a multi-select's "None of these" box, keyed by
+   * question index, in the definition's language; `translations` words it in
+   * the others. A label is 1 to 64 bytes of text, like an option label. One on
+   * a question that is not a multi-select with a minimum of 0, or that breaks
+   * the bound, is dropped with a console warning, and the box keeps its
+   * default text.
+   */
+  noneLabels?: NoneLabels;
   /**
    * Which questions show, keyed by question index: a question shows when an
    * earlier single- or multi-choice question has one of `anyOf` selected, or

@@ -2,7 +2,12 @@ import { describe, expect, test } from "vitest";
 
 import type { Question, SurveyDefinition } from "cip-179";
 
-import { localizeDefinition, readTranslations } from "../src/index.js";
+import {
+  localizeDefinition,
+  localizeNoneLabels,
+  readNoneLabels,
+  readTranslations,
+} from "../src/index.js";
 
 const questions: Question[] = [
   {
@@ -189,5 +194,97 @@ describe("localizeDefinition", () => {
     };
     expect(localize(overlay, "pt-BR").title).toBe("Survey");
     expect(localize(overlay, "pt-PT").title).toBe("Inquérito");
+  });
+});
+
+const multiSelect = (minSelections: number): Question => ({
+  type: "multiSelect",
+  prompt: "Pick some",
+  minSelections,
+  maxSelections: 2,
+  options: { type: "options", labels: ["A", "B"] },
+});
+const withNone = {
+  title: "Survey",
+  description: "",
+  questions: [multiSelect(0), multiSelect(1), questions[0]!],
+} as SurveyDefinition;
+
+describe("readNoneLabels", () => {
+  test("keeps a label of up to 64 bytes on a multi-select with a minimum of 0", () => {
+    expect(readNoneLabels(withNone, { 0: "é".repeat(32) })).toEqual({
+      labels: ["é".repeat(32), undefined, undefined],
+      dropped: [],
+    });
+  });
+
+  test.each([
+    ["on a multi-select with a minimum of 1", { 1: "Nothing" }],
+    ["on a single choice", { 2: "Nothing" }],
+    ["on a missing question", { 3: "Nothing" }],
+    ["keyed by something other than an index", { "00": "Nothing" }],
+    ["that is empty", { 0: "" }],
+    ["over 64 bytes", { 0: "é".repeat(33) }],
+    ["that is not a string", { 0: 7 }],
+  ])("drops a label %s", (_, entry) => {
+    const read = readNoneLabels(withNone, entry);
+    expect(read.labels).toEqual([undefined, undefined, undefined]);
+    expect(read.dropped).toHaveLength(1);
+  });
+
+  test("keeps a label beside a dropped one", () => {
+    const read = readNoneLabels(withNone, { 0: "Nothing", 2: "Nothing" });
+    expect(read.labels).toEqual(["Nothing", undefined, undefined]);
+    expect(read.dropped).toHaveLength(1);
+  });
+
+  test("drops a document that is not an object", () => {
+    const read = readNoneLabels(withNone, ["Nothing"]);
+    expect(read.labels).toEqual([undefined, undefined, undefined]);
+    expect(read.dropped).toHaveLength(1);
+  });
+});
+
+describe("None labels in translations", () => {
+  const overlay = (noneLabel: unknown, at = 0) => ({
+    defaultLanguage: "en",
+    translations: {
+      fr: { questions: [0, 1, 2].map((i) => (i === at ? { noneLabel } : {})) },
+    },
+  });
+  const localizeNone = (labels: object, overlay: unknown, locale: string) =>
+    localizeNoneLabels(
+      readNoneLabels(withNone, labels).labels,
+      readTranslations(withNone, overlay),
+      locale,
+    );
+
+  test("a translation's label replaces the survey's, region to language", () => {
+    expect(localizeNone({ 0: "Nothing" }, overlay("Rien"), "fr-CA")).toEqual([
+      "Rien",
+      undefined,
+      undefined,
+    ]);
+  });
+
+  test("words a box the survey leaves to its default", () => {
+    expect(localizeNone({}, overlay("Rien"), "fr")[0]).toBe("Rien");
+  });
+
+  test("falls back to the survey's label", () => {
+    const fallback = overlay(undefined);
+    expect(localizeNone({ 0: "Nothing" }, fallback, "fr")[0]).toBe("Nothing");
+    expect(localizeNone({ 0: "Nothing" }, fallback, "de")[0]).toBe("Nothing");
+  });
+
+  test.each([
+    ["on a question without a None box", overlay("Rien", 1)],
+    ["that is empty", overlay("")],
+    ["over 64 bytes", overlay("é".repeat(33))],
+    ["that is not a string", overlay(3)],
+  ])("drops an entry with a None label %s", (_, overlay) => {
+    const read = readTranslations(withNone, overlay);
+    expect(read.entries.size).toBe(0);
+    expect(read.dropped).toHaveLength(1);
   });
 });

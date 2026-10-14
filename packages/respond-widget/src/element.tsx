@@ -35,6 +35,7 @@ export type {
   DisplayCondition,
   DisplayConditions,
   DraftStash,
+  NoneLabels,
   ProofKeyKind,
   QuestionTranslation,
   Responder,
@@ -81,6 +82,7 @@ const defaults: TesseraRespondElementProps = {
   hiddenSchemas: undefined,
   stash: undefined,
   translations: undefined,
+  noneLabels: undefined,
   conditions: undefined,
 };
 

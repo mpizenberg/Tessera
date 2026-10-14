@@ -215,6 +215,7 @@ ones (`locale`, `layout`, `tip-epoch`, `initial-role`, `show-role`,
 | `hiddenSchemas`   | `readonly string[]`             |      | —                  | Schema URIs a custom question doesn't show, with the hint that names them — a plain-text schema, say.              |
 | `stash`           | `DraftStash`                    |      | memory             | Where unsent answers are kept — see [Unsent answers](#unsent-answers).                                             |
 | `translations`    | `SurveyTranslations`            |      | —                  | The survey's own text in other languages, picked by `locale` — see [Translated surveys](#translated-surveys).      |
+| `noneLabels`      | `NoneLabels`                    |      | —                  | The survey's own words for a multi-select's "None of these" box — see [The None box](#the-none-box).               |
 | `conditions`      | `DisplayConditions`             |      | —                  | Questions shown only after some earlier answers — see [Conditional questions](#conditional-questions).             |
 
 ## Events
@@ -451,6 +452,31 @@ submitted by another tool may answer a question this widget would hide, so a
 survey's own analysis applies the same rule if it needs to. The shape is a
 prototype for a later revision of the spec and may change with it.
 
+## The None box
+
+A multi-select with `minSelections: 0` offers a "None of these" box
+(`respond.noneOfThese` in `messages`), worded the same on every question.
+`noneLabels` words it per question, keyed by question index, in the
+definition's language:
+
+```ts
+el.noneLabels = {
+  // Question 3's box reads this instead of "None of these".
+  3: "None, I only build on Cardano",
+};
+```
+
+A translation words it in another language with `noneLabel` — see
+[Translated surveys](#translated-surveys).
+
+A label is 1 to 64 bytes of text, like an option label. One on a question
+that is not a multi-select with `minSelections: 0`, or that breaks the bound,
+is dropped with a `console.warn`, and that box keeps its default text. The
+label changes only what is shown: the answer is still no option selected.
+None labels are not part of CIP-179; the shape is a prototype of an optional
+`noneLabel` on a multi-select, and may change with a later revision of the
+spec.
+
 ## What the host must do
 
 The widget deliberately leaves these to you:
@@ -516,9 +542,10 @@ el.messages = { respond: { signAndSubmit: "Absenden" } /* … */ }; // supply/ov
 ### Translated surveys
 
 `messages` translates the widget; the survey's own text — title, description,
-prompts, option labels, rating labels — comes from `translations`, an overlay
-document beside the definition. `defaultLanguage` names the language of the
-definition's text, and each other language mirrors it under its BCP-47 tag:
+prompts, option labels, rating labels, None labels — comes from
+`translations`, an overlay document beside the definition. `defaultLanguage`
+names the language of the definition's text, and each other language mirrors
+it under its BCP-47 tag:
 
 ```ts
 el.translations = {
@@ -547,7 +574,9 @@ the same in every language, and switching `locale` mid-form keeps the answers.
 
 An entry's `questions`, when present, lists every question in order, and its
 `options` and `ratingLabels` every option and rating level in order
-(`ratingLabels` only for a scale of labels or a level count).
+(`ratingLabels` only for a scale of labels or a level count). A question's
+`noneLabel` sits only on a multi-select with `minSelections: 0`, within the
+same bound as [`noneLabels`](#the-none-box), and falls back to it.
 An entry that does not, or one for the default language, is ignored with a
 `console.warn`: a label paired with the wrong option would change what a
 responder answers. The overlay's shape follows a draft proposal for

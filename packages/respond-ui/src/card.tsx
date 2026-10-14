@@ -22,6 +22,8 @@ export const QuestionCard: Component<{
   maxTextBytes?: number | undefined;
   /** Schema URIs whose anchor a custom question leaves out. */
   hiddenSchemas?: readonly string[] | undefined;
+  /** A multi-select's None box label, in place of the catalog's. */
+  noneLabel?: string | undefined;
   onChange: (v: DraftValue) => void;
   onSkip: (skipped: boolean) => void;
   /** Receives the prompt, which takes focus from script only. */
@@ -70,6 +72,7 @@ export const QuestionCard: Component<{
               value={props.draft!.value}
               maxTextBytes={props.maxTextBytes}
               hideSchema={hideSchema()}
+              noneLabel={props.noneLabel}
               onChange={props.onChange}
             />
           </Show>

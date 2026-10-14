@@ -36,6 +36,7 @@ export type {
   DisplayCondition,
   DisplayConditions,
   DraftStash,
+  NoneLabels,
   ProofKeyKind,
   QuestionTranslation,
   Responder,
@@ -82,6 +83,7 @@ const ELEMENT_PROPS = {
   hiddenSchemas: true,
   stash: true,
   translations: true,
+  noneLabels: true,
   conditions: true,
 } as const satisfies Record<keyof ElementProps, true>;
 

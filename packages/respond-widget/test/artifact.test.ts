@@ -15,7 +15,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   Role,
@@ -31,6 +31,7 @@ import { buildResponse } from "cardano-tessera-respond-core";
 
 import {
   CONDITIONS,
+  NONE_LABELS,
   SAMPLES,
   SURVEY_REFS,
   TIP_EPOCH,
@@ -465,6 +466,45 @@ describe("built <tessera-respond> artifact", () => {
     expect(text(".qPrompt")).toBe(fr.questions![0]!.prompt);
     expect(text(".optionRowOn")).toBe(fr.questions![0]!.options![0]);
     expect(root.querySelectorAll(".optionRowOn").length).toBe(1);
+  });
+
+  it("words the None box in the survey's own text, translated by locale", () => {
+    const el = mount(SAMPLES.public, {
+      layout: "list",
+      noneLabels: NONE_LABELS,
+      translations: TRANSLATIONS,
+    });
+    const root = shadow(el);
+    const noneBox = () =>
+      root.querySelectorAll(".card")[1]!.querySelector(".multiGrid")!
+        .lastElementChild!.textContent;
+    expect(noneBox()).toBe(NONE_LABELS[1]);
+    el.locale = "fr";
+    expect(noneBox()).toBe(
+      TRANSLATIONS.translations!.fr!.questions![1]!.noneLabel,
+    );
+    el.translations = undefined;
+    el.noneLabels = undefined;
+    expect(noneBox()).toBe("Aucune de celles-ci");
+  });
+
+  it("drops a None label on a question without a None box, with a warning", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const el = mount(SAMPLES.public, {
+      layout: "list",
+      noneLabels: { ...NONE_LABELS, 0: "Neither" },
+    });
+    const root = shadow(el);
+    expect(root.querySelectorAll(".card")[1]!.textContent).toContain(
+      NONE_LABELS[1],
+    );
+    expect(root.querySelectorAll(".card")[0]!.textContent).not.toContain(
+      "Neither",
+    );
+    expect(warn).toHaveBeenCalledWith(
+      "tessera-respond: noneLabels: question 0 is not a multi-select with a minimum of 0",
+    );
+    warn.mockRestore();
   });
 
   it("shows a question only while its condition holds", () => {

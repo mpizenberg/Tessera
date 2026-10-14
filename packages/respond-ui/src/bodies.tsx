@@ -68,6 +68,7 @@ const SingleChoiceBody: Component<{
 const MultiSelectBody: Component<{
   q: Extract<Question, { type: "multiSelect" }>;
   v: Extract<DraftValue, { type: "multiSelect" }>;
+  noneLabel: string | undefined;
   onChange: (v: DraftValue) => void;
 }> = (props) => {
   const i18n = useI18n();
@@ -99,7 +100,7 @@ const MultiSelectBody: Component<{
           <CheckRow
             on={noneChosen()}
             onToggle={() => set(noneChosen() ? null : [])}
-            label={i18n.t("respond.noneOfThese")}
+            label={props.noneLabel ?? i18n.t("respond.noneOfThese")}
           />
         </Show>
       </div>
@@ -560,6 +561,8 @@ export const QuestionBody: Component<{
   maxTextBytes?: number | undefined;
   /** Leave out a custom question's schema anchor and the hint that names it. */
   hideSchema?: boolean;
+  /** A multi-select's None box label, in place of the catalog's. */
+  noneLabel?: string | undefined;
   onChange: (v: DraftValue) => void;
 }> = (props) => {
   type V<T extends DraftValue["type"]> = Extract<DraftValue, { type: T }>;
@@ -583,6 +586,7 @@ export const QuestionBody: Component<{
         <MultiSelectBody
           q={props.q as Q<"multiSelect">}
           v={value() as V<"multiSelect">}
+          noneLabel={props.noneLabel}
           onChange={props.onChange}
         />
       );

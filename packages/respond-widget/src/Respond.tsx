@@ -7,8 +7,9 @@
  * `locale` / `messages` build an instance `createI18n(…)` provided through
  * {@link I18nContext} (never a module global, so two instances can render in
  * different locales). `locale` also picks the survey's own text from
- * `translations`; only what is shown changes, so the form, the answers and the
- * payload stay those of the on-chain definition. `conditions` hide questions
+ * `translations`, and `noneLabels` word the None boxes; only what is shown
+ * changes, so the form, the answers and the payload stay those of the on-chain
+ * definition. `conditions` hide questions
  * by earlier answers; a hidden question reads as skipped. It reaches no
  * router, wallet, chain, or network state: `onSubmit` **emits** a
  * `tessera:response` for the host to sign and submit.
@@ -49,7 +50,9 @@ import {
   collectAnswers,
   createI18n,
   localizeDefinition,
+  localizeNoneLabels,
   readConditions,
+  readNoneLabels,
   readTranslations,
   renderProblem,
   roleBrowserClaimable,
@@ -104,6 +107,18 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     return read
       ? localizeDefinition(props.definition, read, props.locale ?? "en")
       : props.definition;
+  });
+  const noneLabels = createMemo(() =>
+    readNoneLabels(props.definition, props.noneLabels ?? {}),
+  );
+  createEffect(() => {
+    for (const why of noneLabels().dropped)
+      console.warn(`tessera-respond: noneLabels: ${why}`);
+  });
+  const shownNoneLabels = createMemo(() => {
+    const read = translations();
+    const own = noneLabels().labels;
+    return read ? localizeNoneLabels(own, read, props.locale ?? "en") : own;
   });
 
   const conditions = createMemo(() =>
@@ -386,6 +401,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
                         draft={drafts[stepIndex()]}
                         maxTextBytes={props.maxTextBytes}
                         hiddenSchemas={props.hiddenSchemas}
+                        noneLabel={shownNoneLabels()[stepIndex()]}
                         onChange={(v) => setValue(stepIndex(), v)}
                         onSkip={(sk) => skip(stepIndex(), sk)}
                         promptRef={(el) => (prompts[stepIndex()] = el)}
@@ -415,6 +431,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
                         draft={drafts[i()]}
                         maxTextBytes={props.maxTextBytes}
                         hiddenSchemas={props.hiddenSchemas}
+                        noneLabel={shownNoneLabels()[i()]}
                         onChange={(v) => setValue(i(), v)}
                         onSkip={(sk) => skip(i(), sk)}
                         promptRef={(el) => (prompts[i()] = el)}

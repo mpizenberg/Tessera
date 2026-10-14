@@ -17,6 +17,7 @@ import { hexToBytes } from "cip-179/domain";
 import { QUICKNET_CHAIN_HASH } from "cip-179/tlock";
 import type {
   DisplayConditions,
+  NoneLabels,
   Responder,
   SurveyTranslations,
 } from "cardano-tessera-respond-core";
@@ -140,6 +141,7 @@ export const TRANSLATIONS: SurveyTranslations = {
         {
           prompt: "Quels domaines financer ? (jusqu'à 2, ou aucun)",
           options: ["Protocole", "Portefeuilles", "Éducation", "Marketing"],
+          noneLabel: "Aucun, tout reste en trésorerie",
         },
         {
           prompt: "Classez ces valeurs par importance.",
@@ -159,6 +161,11 @@ export const TRANSLATIONS: SurveyTranslations = {
       ],
     },
   },
+};
+
+/** The funding question's None box, in the survey's own words. */
+export const NONE_LABELS: NoneLabels = {
+  1: "None, keep it all in the treasury",
 };
 
 /**
