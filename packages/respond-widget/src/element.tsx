@@ -31,6 +31,7 @@ import type {
 
 export { RESPOND_EVENTS } from "./types";
 export type {
+  ConditionOption,
   CredentialProof,
   DisplayCondition,
   DisplayConditions,

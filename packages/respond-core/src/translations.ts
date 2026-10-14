@@ -22,7 +22,7 @@ import {
   type SurveyDefinition,
 } from "cip-179";
 
-import { optionCount } from "./draft.js";
+import { hasNoneBox, optionCount } from "./draft.js";
 
 /** Labels keyed by the index of the multi-select whose None box each words. */
 export type NoneLabels = Readonly<Record<number, string>>;
@@ -266,9 +266,6 @@ function fitsQuestion(entry: unknown, q: Question): boolean {
       (hasNoneBox(q) && isNoneLabel(entry.noneLabel)))
   );
 }
-
-const hasNoneBox = (q: Question): boolean =>
-  q.type === "multiSelect" && q.minSelections === 0;
 
 const isNoneLabel = (x: unknown): x is string =>
   typeof x === "string" && x !== "" && utf8ByteLength(x) <= MAX_CHUNK_BYTES;

@@ -11,6 +11,7 @@ import { For, Show, createMemo, type Component } from "solid-js";
 
 import { utf8ByteLength, type Question } from "cip-179";
 import {
+  hasNoneBox,
   initDraft,
   optionCount,
   type DraftValue,
@@ -96,7 +97,7 @@ const MultiSelectBody: Component<{
             />
           )}
         </For>
-        <Show when={props.q.minSelections === 0}>
+        <Show when={hasNoneBox(props.q)}>
           <CheckRow
             on={noneChosen()}
             onToggle={() => set(noneChosen() ? null : [])}

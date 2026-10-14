@@ -32,6 +32,7 @@ import type {
 } from "cardano-tessera-respond/artifact";
 
 export type {
+  ConditionOption,
   CredentialProof,
   DisplayCondition,
   DisplayConditions,

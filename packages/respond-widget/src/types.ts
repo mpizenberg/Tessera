@@ -20,6 +20,7 @@ import type {
   ValidationProblem,
 } from "cip-179";
 import type {
+  ConditionOption,
   DeepPartial,
   DisplayCondition,
   DisplayConditions,
@@ -33,6 +34,7 @@ import type {
 import type { DraftStash } from "cardano-tessera-respond-ui";
 
 export type {
+  ConditionOption,
   DisplayCondition,
   DisplayConditions,
   DraftStash,
@@ -149,9 +151,10 @@ export interface TesseraRespondProps {
   /**
    * Which questions show, keyed by question index: a question shows when an
    * earlier single- or multi-choice question has one of `anyOf` selected, or
-   * none of `noneOf`. A skipped or hidden question has no option selected. A
-   * hidden question keeps its draft but records nothing, and counts as
-   * decided. If any condition names a later question, a non-choice question
+   * none of `noneOf`. Either list holds option indices, and may hold `"none"`
+   * for the None box of a multi-select with a minimum of 0. A skipped or
+   * hidden question has no option selected, not even the None box. A hidden
+   * question keeps its draft but records nothing, and counts as decided. If any condition names a later question, a non-choice question
    * or a missing option, or sits on a required question, none applies: every
    * question shows, with a console warning and a notice.
    */

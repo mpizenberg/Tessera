@@ -1,22 +1,26 @@
 /**
  * Conditional display: a document beside the definition that shows a question
  * only when an earlier choice question's answer matches. A hidden question
- * reads as skipped: it records nothing, and it counts as no option selected for
- * any later condition.
+ * reads as skipped: it records nothing, and for any later condition it has no
+ * option selected, not even the None box.
  */
 
 import type { Question, SurveyDefinition } from "cip-179";
 
-import { optionCount, type Draft } from "./draft.js";
+import { hasNoneBox, optionCount, type Draft } from "./draft.js";
 
 /**
  * Show a question when the single- or multi-choice question at index
  * `question`, which comes earlier, has one of `anyOf` selected, or none of
- * `noneOf`. A skipped or hidden question has no option selected.
+ * `noneOf`. A skipped or hidden question has no option selected, not even the
+ * None box.
  */
 export type DisplayCondition =
-  | { readonly question: number; readonly anyOf: readonly number[] }
-  | { readonly question: number; readonly noneOf: readonly number[] };
+  | { readonly question: number; readonly anyOf: readonly ConditionOption[] }
+  | { readonly question: number; readonly noneOf: readonly ConditionOption[] };
+
+/** An option index, or `"none"`: the None box of a multi-select with a minimum of 0. */
+export type ConditionOption = number | "none";
 
 /** Conditions keyed by the index of the question each one shows or hides. */
 export type DisplayConditions = Readonly<Record<number, DisplayCondition>>;
@@ -24,9 +28,9 @@ export type DisplayConditions = Readonly<Record<number, DisplayCondition>>;
 /** A condition as checked: the options it tests, and how. */
 export interface DisplayRule {
   readonly question: number;
-  readonly options: ReadonlySet<number>;
+  readonly options: ReadonlySet<ConditionOption>;
   /** Shown when one of `options` is selected, or when none is. */
-  readonly when: "any" | "none";
+  readonly when: "anyOf" | "noneOf";
 }
 
 /** A conditions document checked against the definition. */
@@ -40,8 +44,8 @@ export interface ReadConditions {
 /**
  * The document's rules, or none when any is faulty: a condition on a required
  * question, on a question it does not come after, naming a question that is
- * not a single or multiple choice, an option out of range, or a malformed
- * entry. A fault most likely means the whole document is wrong, so applying
+ * not a single or multiple choice, an option out of range, `"none"` on a
+ * question without a None box, or a malformed entry. A fault most likely means the whole document is wrong, so applying
  * the rest would show a flow its author never meant.
  */
 export function readConditions(
@@ -89,16 +93,16 @@ function readRule(
     return "needs exactly one of anyOf and noneOf";
   const options = hasAny ? entry.anyOf : entry.noneOf;
   const count = optionCount(named.options);
-  if (
-    !Array.isArray(options) ||
-    options.length === 0 ||
-    !options.every((o) => Number.isInteger(o) && o >= 0 && o < count)
-  )
+  const has = (o: unknown): o is ConditionOption =>
+    o === "none"
+      ? hasNoneBox(named)
+      : typeof o === "number" && Number.isInteger(o) && o >= 0 && o < count;
+  if (!Array.isArray(options) || options.length === 0 || !options.every(has))
     return `lists options that question ${question} does not have`;
   return {
     question,
-    options: new Set(options as number[]),
-    when: hasAny ? "any" : "none",
+    options: new Set(options),
+    when: hasAny ? "anyOf" : "noneOf",
   };
 }
 
@@ -119,16 +123,17 @@ export function hiddenQuestions(
         ? selectedOptions(draft)
         : [];
     const matched = selected.some((o) => rule.options.has(o));
-    hidden.push(rule.when === "any" ? !matched : matched);
+    hidden.push(rule.when === "anyOf" ? !matched : matched);
   });
   return hidden;
 }
 
-function selectedOptions(draft: Draft): readonly number[] {
+function selectedOptions(draft: Draft): readonly ConditionOption[] {
   const v = draft.value;
   if (v.type === "singleChoice")
     return v.optionIndex === null ? [] : [v.optionIndex];
-  if (v.type === "multiSelect") return v.selected ?? [];
+  if (v.type === "multiSelect")
+    return v.selected?.length === 0 ? ["none"] : (v.selected ?? []);
   return [];
 }
 

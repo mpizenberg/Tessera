@@ -37,6 +37,10 @@ export function optionCount(opts: OptionsOrCount): number {
   return opts.type === "options" ? opts.labels.length : opts.count;
 }
 
+/** Whether a question offers "None of these": a multi-select with a minimum of 0. */
+export const hasNoneBox = (q: Question): boolean =>
+  q.type === "multiSelect" && q.minSelections === 0;
+
 /** Per-question working value, discriminated by the question's type. */
 export type DraftValue =
   | { readonly type: "singleChoice"; readonly optionIndex: number | null }

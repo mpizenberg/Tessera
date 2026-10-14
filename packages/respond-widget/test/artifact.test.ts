@@ -532,6 +532,30 @@ describe("built <tessera-respond> artifact", () => {
     expect(root.querySelector(".noticeWarn")).toBe(null);
   });
 
+  it("tells the None box from a skip", () => {
+    const el = mount(SAMPLES.public, {
+      layout: "list",
+      conditions: CONDITIONS,
+    });
+    const root = shadow(el);
+    const hiddenChips = () =>
+      [...root.querySelectorAll(".hiddenRow .qChip")].map((c) => c.textContent);
+    const funding = () => root.querySelectorAll(".card")[1]!;
+    const skip = () =>
+      funding().querySelector<HTMLElement>(".skipBtn")!.click();
+    const none = () =>
+      [...funding().querySelectorAll<HTMLElement>(".optionRow")]
+        .at(-1)!
+        .click();
+    skip(); // the treasury cut (noneOf "none") stays
+    expect(hiddenChips()).toEqual(["Q3"]);
+    skip();
+    none();
+    expect(hiddenChips()).toEqual(["Q3", "Q4"]);
+    none();
+    expect(hiddenChips()).toEqual(["Q3"]);
+  });
+
   it("steps over a hidden question, and leaves it out of the payload", async () => {
     const el = mount(SAMPLES.public, { conditions: CONDITIONS });
     const root = shadow(el);

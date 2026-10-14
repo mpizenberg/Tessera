@@ -430,9 +430,23 @@ el.conditions = {
 };
 ```
 
-- A skipped or unanswered question has no option selected: `anyOf` is false,
-  `noneOf` true. A hidden question counts the same for later conditions, so a
-  chain of conditions hides together.
+Either list may hold `"none"` beside option indices: it matches a multi-select
+answered with its [None box](#the-none-box). It is valid only on a
+multi-select with `minSelections: 0`, the one with that box; elsewhere it is a
+fault, like an option that does not exist.
+
+```ts
+el.conditions = {
+  // Only to those who chose None at question 11.
+  12: { question: 11, anyOf: ["none"] },
+  // To everyone but them, including those who skipped it.
+  13: { question: 11, noneOf: ["none"] },
+};
+```
+
+- A skipped or unanswered question has no option selected, not even the None
+  box: `anyOf` is false, `noneOf` true. A hidden question counts the same for
+  later conditions, so a chain of conditions hides together.
 - A hidden question records nothing and counts as decided, so the progress
   total stays the full question count and moves ahead as questions hide. Its
   answers are kept: changing the earlier answer back brings them back.
@@ -472,7 +486,9 @@ A translation words it in another language with `noneLabel` — see
 A label is 1 to 64 bytes of text, like an option label. One on a question
 that is not a multi-select with `minSelections: 0`, or that breaks the bound,
 is dropped with a `console.warn`, and that box keeps its default text. The
-label changes only what is shown: the answer is still no option selected.
+label changes only what is shown: the answer is still no option selected. A
+condition tells the box from a skip with `"none"` — see
+[Conditional questions](#conditional-questions).
 None labels are not part of CIP-179; the shape is a prototype of an optional
 `noneLabel` on a multi-select, and may change with a later revision of the
 spec.

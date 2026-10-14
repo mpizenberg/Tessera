@@ -170,11 +170,13 @@ export const NONE_LABELS: NoneLabels = {
 
 /**
  * Display rules for every sample: the ranking shows only to those who picked
- * "Governance polish" first, and the points allocation hides once "Marketing"
- * is among the funded areas.
+ * "Governance polish" first, the treasury cut hides from those who fund no
+ * area (a skip keeps it), and the points allocation hides once "Marketing" is
+ * among the funded areas.
  */
 export const CONDITIONS: DisplayConditions = {
   2: { question: 0, anyOf: [1] },
+  3: { question: 1, noneOf: ["none"] },
   4: { question: 1, noneOf: [3] },
 };
 
