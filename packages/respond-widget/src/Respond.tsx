@@ -38,7 +38,6 @@ import {
   Role,
   encodePayload,
   validateResponse,
-  type Question,
   type SurveyDefinition,
 } from "cip-179";
 import { isSealedUnsupported, refKey, surveyStatus } from "cip-179/domain";
@@ -56,16 +55,14 @@ import {
   roleBrowserClaimable,
   roleLabel,
   sealResponse,
-  type Draft,
-  type DraftValue,
   type I18n,
 } from "cardano-tessera-respond-core";
 
 import {
   I18nContext,
-  QuestionBody,
+  QuestionCard,
   createResponseDraft,
-  typeMeta,
+  focusPrompt,
   useI18n,
   type QuestionProgress,
 } from "cardano-tessera-respond-ui";
@@ -196,10 +193,26 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     while (i > 0 && !shows(i)) i--;
     return i;
   });
-  const shownFrom = (dir: 1 | -1): number | undefined => {
-    for (let i = stepIndex() + dir; i >= 0 && i < total(); i += dir)
+  const shownFrom = (from: number, dir: 1 | -1): number | undefined => {
+    for (let i = from + dir; i >= 0 && i < total(); i += dir)
       if (shows(i)) return i;
     return undefined;
+  };
+
+  // The stepper's card remounts within `setStep`, so the new prompt is in
+  // `prompts` by the time it is focused.
+  const prompts: HTMLElement[] = [];
+  let submitButton: HTMLButtonElement | undefined;
+  const skip = (i: number, skipped: boolean): void => {
+    setSkipped(i, skipped);
+    if (!skipped) return;
+    const next = shownFrom(i, 1);
+    if (next === undefined) submitButton?.focus();
+    else if (layout() === "list") focusPrompt(prompts[next]);
+    else {
+      setStep(next);
+      prompts[next]?.focus();
+    }
   };
 
   const sealedMode = createMemo(() => {
@@ -374,15 +387,16 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
                         maxTextBytes={props.maxTextBytes}
                         hiddenSchemas={props.hiddenSchemas}
                         onChange={(v) => setValue(stepIndex(), v)}
-                        onSkip={(sk) => setSkipped(stepIndex(), sk)}
+                        onSkip={(sk) => skip(stepIndex(), sk)}
+                        promptRef={(el) => (prompts[stepIndex()] = el)}
                       />
                     )}
                   </Show>
                   <StepperNav
                     index={stepIndex()}
                     total={total()}
-                    prev={shownFrom(-1)}
-                    next={shownFrom(1)}
+                    prev={shownFrom(stepIndex(), -1)}
+                    next={shownFrom(stepIndex(), 1)}
                     onStep={setStep}
                   />
                 </div>
@@ -402,7 +416,8 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
                         maxTextBytes={props.maxTextBytes}
                         hiddenSchemas={props.hiddenSchemas}
                         onChange={(v) => setValue(i(), v)}
-                        onSkip={(sk) => setSkipped(i(), sk)}
+                        onSkip={(sk) => skip(i(), sk)}
+                        promptRef={(el) => (prompts[i()] = el)}
                       />
                     </Show>
                   )}
@@ -423,6 +438,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
               blocked={sealedUnsupported()}
               sealed={sealedMode() !== null}
               onSubmit={() => void onSubmit()}
+              submitRef={(el) => (submitButton = el)}
             />
           </Show>
         </Show>
@@ -598,7 +614,7 @@ const SealedBanner: Component<{ round: number }> = (props) => {
 };
 
 // ----------------------------------------------------------------------------
-// Question card (header + skip + body switch)
+// Hidden question row
 // ----------------------------------------------------------------------------
 
 // No prompt: shown, it would read as a question to unlock.
@@ -610,64 +626,6 @@ const HiddenRow: Component<{ index: number }> = (props) => {
         {i18n.t("respond.questionChip", { n: i18n.n(props.index + 1) })}
       </span>
       <span class="hiddenNote">{i18n.t("respond.hiddenNote")}</span>
-    </div>
-  );
-};
-
-const QuestionCard: Component<{
-  q: Question;
-  index: number;
-  draft: Draft | undefined;
-  maxTextBytes: number | undefined;
-  hiddenSchemas: readonly string[] | undefined;
-  onChange: (v: DraftValue) => void;
-  onSkip: (skipped: boolean) => void;
-}> = (props) => {
-  const i18n = useI18n();
-  const skipped = () => props.draft?.skipped ?? false;
-  const hideSchema = () =>
-    props.q.type === "custom" &&
-    (props.hiddenSchemas?.includes(props.q.methodSchema.uri) ?? false);
-  return (
-    <div class="card">
-      <div class="qHead">
-        <div class="qHeadLeft">
-          <span class="qChip">
-            {i18n.t("respond.questionChip", { n: i18n.n(props.index + 1) })}
-          </span>
-          <span class="qType">{typeMeta(i18n, props.q)}</span>
-          <Show when={props.q.required}>
-            <span class="qRequired">{i18n.t("respond.required")}</span>
-          </Show>
-        </div>
-        <Show when={!props.q.required}>
-          <button
-            onClick={() => props.onSkip(!skipped())}
-            class="skipBtn"
-            classList={{ skipBtnOn: skipped() }}
-          >
-            {skipped() ? i18n.t("respond.skipped") : i18n.t("respond.skip")}
-          </button>
-        </Show>
-      </div>
-      <h3 class="qPrompt">{props.q.prompt || i18n.t("respond.noPrompt")}</h3>
-
-      <Show
-        when={!skipped()}
-        fallback={<p class="qSkipped">{i18n.t("respond.skippedNote")}</p>}
-      >
-        <div class="qBody">
-          <Show when={props.draft}>
-            <QuestionBody
-              q={props.q}
-              value={props.draft!.value}
-              maxTextBytes={props.maxTextBytes}
-              hideSchema={hideSchema()}
-              onChange={props.onChange}
-            />
-          </Show>
-        </div>
-      </Show>
     </div>
   );
 };
@@ -742,6 +700,7 @@ const SubmitBar: Component<{
   blocked: boolean;
   sealed: boolean;
   onSubmit: () => void;
+  submitRef: (el: HTMLButtonElement) => void;
 }> = (props) => {
   const i18n = useI18n();
   const decided = () => props.progress.filter((p) => p !== "undecided").length;
@@ -786,6 +745,7 @@ const SubmitBar: Component<{
           </Show>
         </div>
         <button
+          ref={props.submitRef}
           onClick={() => props.onSubmit()}
           disabled={!ready() || props.submitting}
           class="submitBtn"

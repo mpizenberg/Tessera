@@ -1,5 +1,5 @@
 /**
- * Helpers shared by the per-question bodies and their host question cards.
+ * Helpers shared by the question card and its per-question bodies.
  *
  * The label helpers (`labelFor`, `typeLabel`, `typeMeta`) take the injected
  * {@link I18n} explicitly so every consumer renders from the same catalog.

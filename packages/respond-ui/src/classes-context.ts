@@ -1,5 +1,6 @@
 /**
- * Solid context carrying the class-name map the body components render with.
+ * Solid context carrying the class-name map the question card and its body
+ * components render with.
  *
  * The two consumers style the same markup differently: the widget's shadow DOM
  * uses the literal class names (styled by its adopted stylesheet), while the
@@ -10,8 +11,20 @@
 
 import { createContext, useContext } from "solid-js";
 
-/** Every class name the body components render. */
+/** Every class name the question card and its body components render. */
 export const BODY_CLASS_NAMES = [
+  // question card
+  "card",
+  "qHead",
+  "qHeadLeft",
+  "qChip",
+  "qType",
+  "qRequired",
+  "skipBtn",
+  "skipBtnOn",
+  "qPrompt",
+  "qSkipped",
+  "qBody",
   // single choice
   "optionGroup",
   "optionRow",

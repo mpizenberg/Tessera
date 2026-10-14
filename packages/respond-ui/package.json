@@ -1,7 +1,7 @@
 {
   "name": "cardano-tessera-respond-ui",
   "version": "0.1.0",
-  "description": "Shared SolidJS answering UI for CIP-179 surveys: the per-question body components and their helpers, consumed by both the Tessera app (light DOM + CSS modules) and the <tessera-respond> widget (shadow DOM + literal class names). Styling and i18n are injected via context.",
+  "description": "Shared SolidJS answering UI for CIP-179 surveys: the question card, its per-question body components and their helpers, consumed by both the Tessera app (light DOM + CSS modules) and the <tessera-respond> widget (shadow DOM + literal class names). Styling and i18n are injected via context.",
   "type": "module",
   "private": true,
   "sideEffects": false,

@@ -1,10 +1,11 @@
 /**
  * `cardano-tessera-respond-ui` — the shared SolidJS answering UI for CIP-179 surveys.
  *
- * One implementation of the per-question body components — and of the reactive
- * state behind them ({@link createResponseDraft}) — consumed by both the Tessera
- * app and the `<tessera-respond>` widget so their answering behavior cannot
- * drift. The two host-specific deltas are injected via context:
+ * One implementation of the question card and its per-question body components
+ * — and of the reactive state behind them ({@link createResponseDraft}) —
+ * consumed by both the Tessera app and the `<tessera-respond>` widget so their
+ * answering behavior cannot drift. The two host-specific deltas are injected
+ * via context:
  *
  * - {@link I18nContext} — an `I18n` accessor (strings, numbers, dates). Both
  *   hosts serve the same respond-core catalog by different routes: the widget
@@ -20,6 +21,7 @@
  */
 
 export { QuestionBody } from "./bodies";
+export { QuestionCard, focusPrompt } from "./card";
 export { createResponseDraft } from "./response-draft";
 export type {
   DraftStash,

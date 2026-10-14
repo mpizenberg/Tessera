@@ -148,6 +148,8 @@ export const Respond: Component = () => {
 
   const sealedUnsupported = (): boolean => survey()?.sealedUnsupported ?? false;
 
+  let submitButton: HTMLButtonElement | undefined;
+
   /** Why submitting is impossible right now, if it is. */
   const submitBlocked = (): string | undefined => {
     if (sealedUnsupported()) return t("respond.sealedUnsupportedNote");
@@ -249,6 +251,7 @@ export const Respond: Component = () => {
                 drafts={draft.drafts}
                 onChange={draft.setValue}
                 onSkip={draft.setSkipped}
+                focusSubmit={() => submitButton?.focus()}
               />
 
               <Show when={app.ui.pro}>
@@ -307,6 +310,7 @@ export const Respond: Component = () => {
             queueing={submission.queueing()}
             onSubmit={() => void submit(false)}
             onQueue={() => void submit(true)}
+            submitRef={(el) => (submitButton = el)}
           />
         </Show>
       </Show>

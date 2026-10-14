@@ -284,6 +284,37 @@ describe("built <tessera-respond> artifact", () => {
     expect(root.querySelectorAll(".optionRowOn").length).toBe(2);
   });
 
+  it("steps on after a skip, and stays on a skip taken back", () => {
+    const el = mount(SAMPLES.public);
+    const root = shadow(el);
+    const step = () => root.querySelector(".stepCount")?.textContent;
+    click(root, ".optionRow");
+    click(root, ".stepperNav .stepNavBtn:last-child");
+    click(root, ".skipBtn");
+    expect(step()).toBe("Question 3 of 7");
+    expect(root.activeElement).toBe(root.querySelector(".qPrompt"));
+
+    click(root, ".stepperNav .stepNavBtn:first-child");
+    click(root, ".skipBtn"); // "Skipped", taken back
+    expect(step()).toBe("Question 2 of 7");
+    expect(root.querySelector(".skipBtnOn")).toBe(null);
+
+    for (let q = 2; q <= 7; q++) click(root, ".skipBtn");
+    expect(step()).toBe("Question 7 of 7");
+    expect(root.activeElement).toBe(root.querySelector(".submitBtn"));
+  });
+
+  it("moves focus to the next prompt after a skip in the list layout", () => {
+    const el = mount(SAMPLES.public, { layout: "list" });
+    const root = shadow(el);
+    click(root, ".optionRow");
+    const skips = [...root.querySelectorAll<HTMLElement>(".skipBtn")];
+    skips[0]!.click(); // question 2's
+    expect(root.activeElement).toBe(root.querySelectorAll(".qPrompt")[2]);
+    for (const skip of skips.slice(1)) skip.click();
+    expect(root.activeElement).toBe(root.querySelector(".submitBtn"));
+  });
+
   it("upgrades from HTML markup, waits for props, and honors attributes", () => {
     document.body.innerHTML = `<tessera-respond locale="fr"></tessera-respond>`;
     const el = document.body.querySelector("tessera-respond")!;

@@ -1,17 +1,16 @@
 /**
  * The answerable body of the screen: one card per question, wrapped in the two
- * contexts the shared question bodies read from.
+ * contexts the shared question card reads from.
  */
 
-import { For, Show, type Component } from "solid-js";
+import { For, type Component } from "solid-js";
 import type { Question } from "cip-179";
 import type { Draft, DraftValue, I18n } from "cardano-tessera-respond-core";
 import {
   ClassesContext,
   I18nContext,
-  QuestionBody,
-  typeMeta,
-  useI18n,
+  QuestionCard,
+  focusPrompt,
   type BodyClasses,
 } from "cardano-tessera-respond-ui";
 
@@ -19,11 +18,22 @@ import { t, n, d } from "~/i18n";
 import css from "./respond.module.css";
 
 /**
- * The shared question bodies render class names through {@link ClassesContext};
+ * The shared question card renders class names through {@link ClassesContext};
  * this maps each one to this screen's CSS module. Keys are checked complete by
- * `BodyClasses`, so a body can't render a class this screen doesn't style.
+ * `BodyClasses`, so the card can't render a class this screen doesn't style.
  */
 const bodyClasses: BodyClasses = {
+  card: css.card,
+  qHead: css.qHead,
+  qHeadLeft: css.qHeadLeft,
+  qChip: css.qChip,
+  qType: css.qType,
+  qRequired: css.qRequired,
+  skipBtn: css.skipBtn,
+  skipBtnOn: css.skipBtnOn,
+  qPrompt: css.qPrompt,
+  qSkipped: css.qSkipped,
+  qBody: css.qBody,
   optionGroup: css.optionGroup,
   optionRow: css.optionRow,
   optionRowOn: css.optionRowOn,
@@ -80,7 +90,7 @@ const bodyClasses: BodyClasses = {
 };
 
 /**
- * i18n for the shared question bodies: the app's own engine wearing
+ * i18n for the shared question card: the app's own engine wearing
  * respond-core's `I18n` interface — compile-time sound because the app's
  * respond/roles/validation namespaces spread respond-core's catalogs, so every
  * core key is an app key. `t`/`n`/`d` each read the locale signal, so calls stay
@@ -93,73 +103,34 @@ export const QuestionList: Component<{
   drafts: readonly Draft[];
   onChange: (index: number, value: DraftValue) => void;
   onSkip: (index: number, skipped: boolean) => void;
-}> = (props) => (
-  <I18nContext.Provider value={() => bodiesI18n}>
-    <ClassesContext.Provider value={bodyClasses}>
-      <div class={css.questionList}>
-        <For each={props.questions}>
-          {(q, i) => (
-            <QuestionCard
-              q={q}
-              index={i()}
-              draft={props.drafts[i()]}
-              onChange={(v) => props.onChange(i(), v)}
-              onSkip={(sk) => props.onSkip(i(), sk)}
-            />
-          )}
-        </For>
-      </div>
-    </ClassesContext.Provider>
-  </I18nContext.Provider>
-);
-
-const QuestionCard: Component<{
-  q: Question;
-  index: number;
-  draft: Draft | undefined;
-  onChange: (v: DraftValue) => void;
-  onSkip: (skipped: boolean) => void;
+  /** Takes focus past the last question, as a skip there moves on. */
+  focusSubmit: () => void;
 }> = (props) => {
-  const i18n = useI18n();
-  const skipped = () => props.draft?.skipped ?? false;
+  const prompts: HTMLElement[] = [];
+  const skip = (i: number, skipped: boolean): void => {
+    props.onSkip(i, skipped);
+    if (!skipped) return;
+    if (i + 1 < props.questions.length) focusPrompt(prompts[i + 1]);
+    else props.focusSubmit();
+  };
   return (
-    <div class={css.card}>
-      <div class={css.qHead}>
-        <div class={css.qHeadLeft}>
-          <span class={css.qChip}>
-            {t("respond.questionChip", { n: n(props.index + 1) })}
-          </span>
-          <span class={css.qType}>{typeMeta(i18n, props.q)}</span>
-          <Show when={props.q.required}>
-            <span class={css.qRequired}>{t("respond.required")}</span>
-          </Show>
+    <I18nContext.Provider value={() => bodiesI18n}>
+      <ClassesContext.Provider value={bodyClasses}>
+        <div class={css.questionList}>
+          <For each={props.questions}>
+            {(q, i) => (
+              <QuestionCard
+                q={q}
+                index={i()}
+                draft={props.drafts[i()]}
+                onChange={(v) => props.onChange(i(), v)}
+                onSkip={(sk) => skip(i(), sk)}
+                promptRef={(el) => (prompts[i()] = el)}
+              />
+            )}
+          </For>
         </div>
-        <Show when={!props.q.required}>
-          <button
-            onClick={() => props.onSkip(!skipped())}
-            class={css.skipBtn}
-            classList={{ [css.skipBtnOn]: skipped() }}
-          >
-            {skipped() ? t("respond.skipped") : t("respond.skip")}
-          </button>
-        </Show>
-      </div>
-      <h3 class={css.qPrompt}>{props.q.prompt || t("respond.noPrompt")}</h3>
-
-      <Show
-        when={!skipped()}
-        fallback={<p class={css.qSkipped}>{t("respond.skippedNote")}</p>}
-      >
-        <div class={css.qBody}>
-          <Show when={props.draft}>
-            <QuestionBody
-              q={props.q}
-              value={props.draft!.value}
-              onChange={props.onChange}
-            />
-          </Show>
-        </div>
-      </Show>
-    </div>
+      </ClassesContext.Provider>
+    </I18nContext.Provider>
   );
 };

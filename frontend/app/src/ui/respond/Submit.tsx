@@ -30,6 +30,7 @@ export const SubmitBar: Component<{
   queueing: boolean;
   onSubmit: () => void;
   onQueue: () => void;
+  submitRef: (el: HTMLButtonElement) => void;
 }> = (props) => {
   const decided = () => props.progress.filter((p) => p !== "undecided").length;
   const total = () => props.progress.length;
@@ -88,6 +89,7 @@ export const SubmitBar: Component<{
             </button>
           </Show>
           <button
+            ref={props.submitRef}
             onClick={() =>
               props.queueing ? props.onQueue() : props.onSubmit()
             }

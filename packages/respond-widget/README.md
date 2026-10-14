@@ -595,7 +595,7 @@ with a `-bg` pair). See [`src/theme.css`](./src/theme.css) for the full token li
 - **`"list"`** — every question rendered at once, a hidden one as a one-line
   note.
 
-Both reuse the same body components, the same `decided()` gating, and the same
+Both reuse the same question card, the same `decided()` gating, and the same
 answer collection; layout is pure presentation over shared state. The submit
 bar has one progress dot per question: filled when answered, outlined when
 skipped or hidden, and ringed for the question on screen in the stepper.
@@ -662,7 +662,7 @@ with no build step.
 | `src/styles/`     | Component CSS, shadow-scoped plain CSS delivered via `?inline`.           |
 | `src/types.ts`    | The public prop/event TypeScript contract.                                |
 
-The per-question body components live in
+The question card and its per-question body components live in
 [`cardano-tessera-respond-ui`](../respond-ui/README.md), shared with the app; see
 [`cardano-tessera-respond-core`](../respond-core/README.md) for the pure logic both
 share.
