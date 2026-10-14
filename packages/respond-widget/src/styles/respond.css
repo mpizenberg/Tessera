@@ -320,6 +320,11 @@
   color: var(--tessera-ink);
 }
 
+/* Script moves focus here to mark the question reached; it is not a control. */
+.qPrompt:focus {
+  outline: none;
+}
+
 .hiddenRow {
   display: flex;
   align-items: center;
