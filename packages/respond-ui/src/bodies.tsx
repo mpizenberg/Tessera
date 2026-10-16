@@ -3,7 +3,7 @@
  * answering controls, consumed by both the Tessera app and the
  * `<tessera-respond>` widget so their behavior cannot drift. Each takes
  * `(q, v, onChange)` and the id of the prompt that names its controls; the
- * draft store and `decided()` gating come from
+ * drafts and their `draftState()` come from
  * `cardano-tessera-respond-core`. Strings come from the injected i18n (`useI18n()`),
  * class names from the injected map (`useClasses()`, identity by default).
  * A body with shortcut keys hands their handler to its card, which listens.

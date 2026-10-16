@@ -13,9 +13,8 @@ import {
   buildResponse,
   buildSealedResponse,
   collectAnswers,
-  decided,
+  draftState,
   findPriorResponse,
-  hasAnyAnswer,
   initDraft,
   prefillDrafts,
   type Draft,
@@ -40,35 +39,39 @@ const questions: Question[] = [single, numeric];
 const ref: SurveyRef = { txId: new Uint8Array(32), index: 0 };
 const credential: Credential = { type: "key", keyHash: new Uint8Array(28) };
 
-describe("decided", () => {
-  it("an un-answered required single-choice is not decided", () => {
-    expect(decided(single, initDraft(single))).toBe(false);
+describe("draftState", () => {
+  it("an untouched single choice is unanswered", () => {
+    expect(draftState(single, initDraft(single))).toBe("unanswered");
   });
 
-  it("a chosen option decides it", () => {
+  it("a chosen option answers it", () => {
     const draft: Draft = {
       skipped: false,
       value: { type: "singleChoice", optionIndex: 1 },
     };
-    expect(decided(single, draft)).toBe(true);
+    expect(draftState(single, draft)).toBe("answered");
   });
 
-  it("skip counts as decided (deliberate abstention)", () => {
-    expect(decided(single, { ...initDraft(single), skipped: true })).toBe(true);
+  it("a skip outranks the value", () => {
+    const draft: Draft = {
+      skipped: true,
+      value: { type: "singleChoice", optionIndex: 1 },
+    };
+    expect(draftState(single, draft)).toBe("skipped");
   });
 
-  it("an untouched number is not decided and records nothing", () => {
+  it("an untouched number is unanswered and records nothing", () => {
     const untouched = initDraft(numeric);
-    expect(decided(numeric, untouched)).toBe(false);
+    expect(draftState(numeric, untouched)).toBe("unanswered");
     expect(collectAnswers([numeric], [untouched])).toEqual([]);
   });
 
-  it("a chosen zero decides the number and is recorded", () => {
+  it("a chosen zero answers the number and is recorded", () => {
     const zero: Draft = {
       skipped: false,
       value: { type: "numeric", value: 0n },
     };
-    expect(decided(numeric, zero)).toBe(true);
+    expect(draftState(numeric, zero)).toBe("answered");
     expect(collectAnswers([numeric], [zero])).toEqual([
       { type: "numeric", questionIndex: 0, value: 0n },
     ]);
@@ -83,18 +86,18 @@ describe("decided", () => {
     maxSelections: 2,
   };
 
-  it("an untouched selection is not decided and records nothing, even when none is allowed", () => {
+  it("an untouched selection is unanswered and records nothing, even when none is allowed", () => {
     const untouched = initDraft(pickAny);
-    expect(decided(pickAny, untouched)).toBe(false);
-    expect(hasAnyAnswer([pickAny], [untouched])).toBe(false);
+    expect(draftState(pickAny, untouched)).toBe("unanswered");
+    expect(collectAnswers([pickAny], [untouched])).toEqual([]);
   });
 
-  it("a chosen none decides the selection and is recorded", () => {
+  it("a chosen none answers the selection and is recorded", () => {
     const none: Draft = {
       skipped: false,
       value: { type: "multiSelect", selected: [] },
     };
-    expect(decided(pickAny, none)).toBe(true);
+    expect(draftState(pickAny, none)).toBe("answered");
     expect(collectAnswers([pickAny], [none])).toEqual([
       { type: "multiSelect", questionIndex: 0, optionIndices: [] },
     ]);
@@ -107,13 +110,13 @@ describe("decided", () => {
     budget: 2n ** 60n + 1n,
   };
 
-  it("points summing exactly to a budget beyond 2^53 decide it, zeros dropped", () => {
+  it("points summing exactly to a budget beyond 2^53 answer it, zeros dropped", () => {
     const split: Draft = {
       skipped: false,
       value: { type: "pointsAllocation", points: [2n ** 60n, 0n, 1n] },
     };
-    expect(decided(lovelace, initDraft(lovelace))).toBe(false);
-    expect(decided(lovelace, split)).toBe(true);
+    expect(draftState(lovelace, initDraft(lovelace))).toBe("unanswered");
+    expect(draftState(lovelace, split)).toBe("answered");
     expect(collectAnswers([lovelace], [split])).toEqual([
       {
         type: "pointsAllocation",
@@ -128,7 +131,69 @@ describe("decided", () => {
       skipped: false,
       value: { type: "pointsAllocation", points: [2n ** 60n, 0n, 0n] },
     };
-    expect(decided(lovelace, short)).toBe(false);
+    expect(draftState(lovelace, short)).toBe("unfinished");
+  });
+});
+
+describe("drafts not answered record nothing", () => {
+  const options = { type: "options", labels: ["a", "b", "c"] } as const;
+  const every: Question[] = [
+    single,
+    {
+      type: "multiSelect",
+      prompt: "pick two",
+      options,
+      minSelections: 2,
+      maxSelections: 3,
+    },
+    { type: "ranking", prompt: "rank", options, minRanked: 2, maxRanked: 3 },
+    numeric,
+    { type: "pointsAllocation", prompt: "split", options, budget: 10n },
+    {
+      type: "rating",
+      prompt: "rate",
+      options,
+      scale: { type: "count", count: 5 },
+      requireAll: true,
+    },
+    {
+      type: "custom",
+      prompt: "tell us",
+      methodSchema: { uri: "ipfs://schema", hash: new Uint8Array(32) },
+    },
+  ];
+
+  it("untouched, of every type", () => {
+    const drafts = every.map(initDraft);
+    expect(every.map((q, i) => draftState(q, drafts[i]!))).toEqual(
+      every.map(() => "unanswered"),
+    );
+    expect(collectAnswers(every, drafts)).toEqual([]);
+  });
+
+  it("started but short of an answer", () => {
+    const drafts: Draft[] = [
+      initDraft(single),
+      { skipped: false, value: { type: "multiSelect", selected: [0] } },
+      { skipped: false, value: { type: "ranking", ranked: [2] } },
+      initDraft(numeric),
+      {
+        skipped: false,
+        value: { type: "pointsAllocation", points: [3n, 0n, 0n] },
+      },
+      { skipped: false, value: { type: "rating", ratings: [1n, null, 4n] } },
+      { skipped: false, value: { type: "custom", text: "  " } },
+    ];
+    expect(every.map((q, i) => draftState(q, drafts[i]!))).toEqual([
+      "unanswered",
+      "unfinished",
+      "unfinished",
+      "unanswered",
+      "unfinished",
+      "unfinished",
+      "unanswered",
+    ]);
+    expect(collectAnswers(every, drafts)).toEqual([]);
   });
 });
 
@@ -163,33 +228,6 @@ describe("collectAnswers + buildResponse", () => {
       },
     });
     expect("rationale" in response).toBe(false);
-  });
-});
-
-describe("hasAnyAnswer", () => {
-  // Two optional questions: an all-skipped form is fully `decided()` yet records
-  // nothing — the gap the submit gate must close (finding 9).
-  const optionals: Question[] = [{ ...single, required: false }, numeric];
-
-  it("is false when every question is skipped (all-optional form)", () => {
-    const drafts: Draft[] = optionals.map((q) => ({
-      ...initDraft(q),
-      skipped: true,
-    }));
-    expect(drafts.every((d, i) => decided(optionals[i]!, d))).toBe(true);
-    expect(hasAnyAnswer(optionals, drafts)).toBe(false);
-  });
-
-  it("is true once one question carries an answer", () => {
-    const drafts: Draft[] = [
-      { skipped: false, value: { type: "singleChoice", optionIndex: 0 } },
-      { skipped: true, value: { type: "numeric", value: 0n } },
-    ];
-    expect(hasAnyAnswer(optionals, drafts)).toBe(true);
-  });
-
-  it("is guard-safe against a transiently-missing draft", () => {
-    expect(hasAnyAnswer(optionals, [])).toBe(false);
   });
 });
 
@@ -317,10 +355,10 @@ describe("custom answers", () => {
     expect(prefilled(7n)).toEqual({ type: "custom", text: "" });
   });
 
-  it("a text over maxTextBytes is not decided", () => {
+  it("a text over maxTextBytes is unfinished", () => {
     // "é" is two UTF-8 bytes: four of them are 8 bytes, one character count off.
-    expect(decided(custom, text("éééé"), 8)).toBe(true);
-    expect(decided(custom, text("éééé"), 7)).toBe(false);
-    expect(decided(custom, text("éééé"))).toBe(true);
+    expect(draftState(custom, text("éééé"), 8)).toBe("answered");
+    expect(draftState(custom, text("éééé"), 7)).toBe("unfinished");
+    expect(draftState(custom, text("éééé"))).toBe("answered");
   });
 });

@@ -4,7 +4,7 @@
  * widget.
  *
  * - `draft.ts`: response drafting (drafts → validated answers → `SurveyResponse`,
- *   the `decided()` progress gate, prefill for the edit/replace flow).
+ *   each question's `draftState()`, prefill for the edit/replace flow).
  * - `kept.ts`: a form kept between visits, as plain JSON checked on read.
  * - `translations.ts`: survey text beside the definition — None labels, and
  *   the text in other languages.

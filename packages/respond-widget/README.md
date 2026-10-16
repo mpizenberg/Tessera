@@ -642,7 +642,7 @@ with a `-bg` pair). See [`src/theme.css`](./src/theme.css) for the full token li
 - **`"list"`** — every question rendered at once, a hidden one as a one-line
   note.
 
-Both reuse the same question card, the same `decided()` gating, and the same
+Both reuse the same question card, the same progress states, and the same
 answer collection; layout is pure presentation over shared state. The submit
 bar has one progress dot per question: filled when answered, outlined when
 skipped or hidden, and ringed for the question on screen in the stepper.

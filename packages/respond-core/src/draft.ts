@@ -3,7 +3,7 @@
  *
  * The Respond screen keeps a {@link Draft} per question (UI working state); this
  * module turns drafts into validated CIP-179 {@link AnswerItem}s and a
- * {@link SurveyResponse}, decides when a question is "answered" vs still pending,
+ * {@link SurveyResponse}, tells an answered question from one still pending,
  * and reconstructs drafts from a prior on-chain response (edit / replace flow).
  *
  * No framework, no I/O — every function here is unit-testable in isolation.
@@ -93,20 +93,35 @@ function initValue(q: Question): DraftValue {
 }
 
 /**
- * Is a question settled — either skipped, or carrying a complete, in-bounds
- * answer? Submission is gated on every question being decided; the codec's
- * validator is the final authority on the assembled response.
+ * Where a question's draft stands. `"answered"` is a complete, in-bounds
+ * answer, the only state recorded; `"unanswered"` is the draft {@link initDraft}
+ * gives, a text of only spaces included; `"unfinished"` is started but not an
+ * answer yet.
+ */
+export type DraftState = "skipped" | "answered" | "unanswered" | "unfinished";
+
+/**
+ * A question's {@link DraftState}. The codec's validator is the final authority
+ * on the assembled response.
  *
  * `maxTextBytes` caps a custom answer's UTF-8 length; a longer text leaves the
- * question unsettled rather than being cut.
+ * question unfinished rather than being cut.
  */
-export function decided(
+export function draftState(
   q: Question,
   draft: Draft,
   maxTextBytes?: number,
+): DraftState {
+  if (draft.skipped) return "skipped";
+  if (complete(q, draft.value, maxTextBytes)) return "answered";
+  return untouched(draft.value) ? "unanswered" : "unfinished";
+}
+
+function complete(
+  q: Question,
+  v: DraftValue,
+  maxTextBytes: number | undefined,
 ): boolean {
-  if (draft.skipped) return true;
-  const v = draft.value;
   switch (q.type) {
     case "singleChoice":
       return v.type === "singleChoice" && v.optionIndex !== null;
@@ -139,7 +154,7 @@ export function decided(
       if (v.type !== "rating") return false;
       // require_all: every option must carry an in-scale rating. Otherwise a
       // subset is allowed — at least one option rated, each in scale (an empty
-      // rating stays undecided; the responder skips to abstain).
+      // rating stays unanswered; the responder skips to abstain).
       if (q.requireAll) {
         return v.ratings.every((r) => r !== null && ratingInScale(r, q.scale));
       }
@@ -152,6 +167,25 @@ export function decided(
         v.text.trim() !== "" &&
         (maxTextBytes === undefined || utf8ByteLength(v.text) <= maxTextBytes)
       );
+  }
+}
+
+function untouched(v: DraftValue): boolean {
+  switch (v.type) {
+    case "singleChoice":
+      return v.optionIndex === null;
+    case "multiSelect":
+      return v.selected === null;
+    case "ranking":
+      return v.ranked.length === 0;
+    case "numeric":
+      return v.value === null;
+    case "pointsAllocation":
+      return v.points.every((p) => p === 0n);
+    case "rating":
+      return v.ratings.every((r) => r === null);
+    case "custom":
+      return v.text.trim() === "";
   }
 }
 
@@ -177,15 +211,16 @@ function ratingInScale(rating: bigint, scale: RatingScale): boolean {
 }
 
 /**
- * Build the CIP-179 answer item for a question, or null when there is no answer
- * to record (the question was skipped, or its draft isn't answerable yet).
+ * The CIP-179 answer item for a question, or null unless its draft is
+ * answered. A host's `maxTextBytes` is not applied here: that cap holds back
+ * the submission, not one answer.
  */
 function buildAnswerItem(
   q: Question,
   index: number,
   draft: Draft,
 ): AnswerItem | null {
-  if (draft.skipped) return null;
+  if (draftState(q, draft) !== "answered") return null;
   const v = draft.value;
   switch (q.type) {
     case "singleChoice":
@@ -237,7 +272,7 @@ function buildAnswerItem(
   }
 }
 
-/** All answer items for the non-skipped, answerable questions, in order. */
+/** All answer items for the answered questions, in order. */
 export function collectAnswers(
   questions: readonly Question[],
   drafts: readonly Draft[],
@@ -248,26 +283,6 @@ export function collectAnswers(
     if (item) out.push(item);
   });
   return out;
-}
-
-/**
- * Does the draft set record at least one answer (some non-skipped, answerable
- * question)? Submission must require it, on top of {@link decided}: an
- * all-optional survey can be fully "decided" with every question skipped, yet a
- * response with zero answer items is spec-invalid (CDDL
- * `response_answers = [+ answer_item]`) — the encoder refuses it and every
- * conformant reader would skip the whole carrying tx, so the responder would
- * pay a fee for a response that exists nowhere. Guard-safe against a
- * transiently-missing draft (returns false), like the progress gate.
- */
-export function hasAnyAnswer(
-  questions: readonly Question[],
-  drafts: readonly Draft[],
-): boolean {
-  return questions.some((q, i) => {
-    const d = drafts[i];
-    return d !== undefined && buildAnswerItem(q, i, d) !== null;
-  });
 }
 
 /** Assemble a public response from collected drafts. */

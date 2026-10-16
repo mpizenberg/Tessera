@@ -41,16 +41,16 @@ import type {
 import { refKey } from "cip-179/domain";
 import {
   credentialForRole,
-  decided,
   decodeKeptForm,
+  draftState,
   encodeKeptForm,
   findPriorResponse,
-  hasAnyAnswer,
   hiddenQuestions,
   initDraft,
   prefillDrafts,
   respondableRolesFor,
   type Draft,
+  type DraftState,
   type DraftValue,
   type ReadConditions,
   type Responder,
@@ -125,19 +125,24 @@ export interface ResponseDraft {
    * hidden question's read as skipped, so it records nothing.
    */
   readonly answers: Accessor<readonly Draft[]>;
-  /** Each question's state, index-aligned; a hidden question reads skipped. */
+  /** Each question's state, index-aligned. */
   readonly progress: Accessor<readonly QuestionProgress[]>;
   /** Every question, hidden ones included: hiding moves a responder ahead. */
   readonly total: Accessor<number>;
   readonly decidedCount: Accessor<number>;
   /**
-   * At least one question actually answered. Every-question-decided still allows
-   * an all-skipped (all-optional) form, which is spec-invalid and drops at scan.
+   * At least one question answered. A response without an answer is
+   * spec-invalid (CDDL `response_answers = [+ answer_item]`): the encoder
+   * refuses it, and a reader would skip the transaction carrying it.
    */
   readonly answered: Accessor<boolean>;
 }
 
-export type QuestionProgress = "undecided" | "answered" | "skipped";
+/**
+ * A question's {@link DraftState}, or `"hidden"` by a condition, which records
+ * nothing.
+ */
+export type QuestionProgress = DraftState | "hidden";
 
 export function createResponseDraft(
   source: ResponseDraftSource,
@@ -258,20 +263,17 @@ export function createResponseDraft(
     const def = source.definition();
     if (!def) return [];
     const max = source.maxTextBytes?.();
-    const as = answers();
     return def.questions.map((q, i) => {
-      const a = as[i];
-      if (!a || !decided(q, a, max)) return "undecided";
-      return a.skipped ? "skipped" : "answered";
+      if (hidden()[i] === true) return "hidden";
+      const d = drafts[i];
+      return d ? draftState(q, d, max) : "unanswered";
     });
   });
   const decidedCount = createMemo(
-    () => progress().filter((p) => p !== "undecided").length,
+    () =>
+      progress().filter((p) => p !== "unanswered" && p !== "unfinished").length,
   );
-  const answered = createMemo(() => {
-    const def = source.definition();
-    return def ? hasAnyAnswer(def.questions, answers()) : false;
-  });
+  const answered = createMemo(() => progress().includes("answered"));
 
   return {
     respondable,

@@ -129,6 +129,7 @@ describe("createResponseDraft", () => {
     expect(draft.drafts).toHaveLength(2);
     expect(draft.total()).toBe(2);
     // Nothing counts until the responder acts, the number included.
+    expect(draft.progress()).toEqual(["unanswered", "unanswered"]);
     expect(draft.decidedCount()).toBe(0);
     expect(draft.answered()).toBe(false);
     expect(draft.drafts[0]?.value).toEqual(pick(null));
@@ -438,7 +439,7 @@ describe("createResponseDraft", () => {
     expect(draft.answered()).toBe(true);
   });
 
-  it("reads a hidden question as skipped, and keeps its draft", () => {
+  it("records nothing for a hidden question, and keeps its draft", () => {
     const def = defWith(Role.DRep);
     const draft = draftIn({
       definition: () => def,
@@ -455,7 +456,7 @@ describe("createResponseDraft", () => {
 
     draft.setValue(0, pick(1));
     expect(draft.hidden()).toEqual([false, true]);
-    expect(draft.progress()).toEqual(["answered", "skipped"]);
+    expect(draft.progress()).toEqual(["answered", "hidden"]);
     expect(draft.decidedCount()).toBe(2);
     expect(draft.total()).toBe(2);
     expect(draft.answers()[1]?.skipped).toBe(true);

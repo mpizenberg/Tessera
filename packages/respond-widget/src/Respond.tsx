@@ -725,7 +725,7 @@ const ProblemList: Component<{ problems: string[] }> = (props) => {
 };
 
 const SubmitBar: Component<{
-  /** Each question's state, hidden ones reading skipped. */
+  /** Each question's state. */
   progress: readonly QuestionProgress[];
   /** The question on screen, in the one-per-screen layout. */
   current: number | undefined;
@@ -740,7 +740,9 @@ const SubmitBar: Component<{
   submitRef: (el: HTMLButtonElement) => void;
 }> = (props) => {
   const i18n = useI18n();
-  const decided = () => props.progress.filter((p) => p !== "undecided").length;
+  const decided = () =>
+    props.progress.filter((p) => p !== "unanswered" && p !== "unfinished")
+      .length;
   const total = () => props.progress.length;
   const ready = () =>
     decided() >= total() && total() > 0 && props.answered && !props.blocked;
@@ -759,7 +761,7 @@ const SubmitBar: Component<{
                   class="progressDot"
                   classList={{
                     progressDotOn: p() === "answered",
-                    progressDotSkipped: p() === "skipped",
+                    progressDotSkipped: p() === "skipped" || p() === "hidden",
                     progressDotCurrent: i === props.current,
                   }}
                 />

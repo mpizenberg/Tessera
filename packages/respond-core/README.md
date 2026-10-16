@@ -13,12 +13,12 @@ host-side; if you just embed the widget, you rarely import this package.
 
 ## What's inside
 
-| Module           | Exports                                                                                                                                                        |
-| :--------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `eligibility.ts` | `Responder` (the role→credential map), `respondableRolesFor`, `credentialForRole`.                                                                             |
-| `draft.ts`       | `Draft` / `DraftValue`, `initDraft`, `decided`, `collectAnswers`, `buildResponse`, `buildSealedResponse`, `findPriorResponse`, `prefillDrafts`, `optionCount`. |
-| `i18n.ts`        | `createI18n`, the `I18n` interface, `renderProblem`, catalog types.                                                                                            |
-| `seal.ts`        | `sealResponse` — the lazy tlock + evolution-CBOR wrapper.                                                                                                      |
+| Module           | Exports                                                                                                                                                           |
+| :--------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `eligibility.ts` | `Responder` (the role→credential map), `respondableRolesFor`, `credentialForRole`.                                                                                |
+| `draft.ts`       | `Draft` / `DraftValue`, `initDraft`, `draftState`, `collectAnswers`, `buildResponse`, `buildSealedResponse`, `findPriorResponse`, `prefillDrafts`, `optionCount`. |
+| `i18n.ts`        | `createI18n`, the `I18n` interface, `renderProblem`, catalog types.                                                                                               |
+| `seal.ts`        | `sealResponse` — the lazy tlock + evolution-CBOR wrapper.                                                                                                         |
 
 Everything is re-exported from the package root: `import { … } from "cardano-tessera-respond-core"`.
 
@@ -55,9 +55,10 @@ key.
 ## Drafting & building responses
 
 `draft.ts` is the pure answering pipeline: `initDraft(question)` seeds a `Draft`,
-`decided(question, draft)` is the per-question completion gate, `collectAnswers`
-turns drafts into validated `AnswerItem`s, and `buildResponse` /
-`buildSealedResponse` assemble the `SurveyResponse` for the `cip-179` codec.
+`draftState(question, draft)` tells whether it is skipped, answered, unanswered
+or unfinished, `collectAnswers` turns the answered drafts into `AnswerItem`s,
+and `buildResponse` / `buildSealedResponse` assemble the `SurveyResponse` for
+the `cip-179` codec.
 `findPriorResponse(responses, ref, role, credential)` selects a responder's own
 prior response from a set — sealed ones included, since a sealed envelope still
 proves they answered — and `prefillDrafts` seeds drafts from a public one (for an

@@ -213,7 +213,11 @@ describe("hiddenQuestions", () => {
   });
 
   test("a hidden question read as skipped leaves the payload", () => {
-    const drafts = [single(1), multi([2]), ...rest];
+    const text = (t: string): Draft => ({
+      skipped: false,
+      value: { type: "custom", text: t },
+    });
+    const drafts = [single(1), multi([2]), rest[0]!, text("a"), text("b")];
     const hidden = hiddenQuestions(chain, drafts);
     const answers = drafts.map((d, i) => ({
       ...d,

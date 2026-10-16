@@ -12,7 +12,7 @@ import { t, n } from "~/i18n";
 import css from "./respond.module.css";
 
 export const SubmitBar: Component<{
-  /** Each question's state, hidden ones reading skipped. */
+  /** Each question's state. */
   progress: readonly QuestionProgress[];
   /** At least one question carries a recorded answer (not all-skipped). */
   answered: boolean;
@@ -32,7 +32,9 @@ export const SubmitBar: Component<{
   onQueue: () => void;
   submitRef: (el: HTMLButtonElement) => void;
 }> = (props) => {
-  const decided = () => props.progress.filter((p) => p !== "undecided").length;
+  const decided = () =>
+    props.progress.filter((p) => p !== "unanswered" && p !== "unfinished")
+      .length;
   const total = () => props.progress.length;
   const ready = () =>
     decided() >= total() &&
@@ -51,7 +53,8 @@ export const SubmitBar: Component<{
                   class={css.progressDot}
                   classList={{
                     [css.progressDotOn]: p() === "answered",
-                    [css.progressDotSkipped]: p() === "skipped",
+                    [css.progressDotSkipped]:
+                      p() === "skipped" || p() === "hidden",
                   }}
                 />
               )}
