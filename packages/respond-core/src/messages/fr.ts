@@ -88,6 +88,15 @@ const fr: RespondMessages = {
     enterHint: "Entrée ↵",
     shiftEnterHint: "⇧ Entrée ↵",
 
+    // --- Carrés de progression, un par question ------------------------------
+    squares: "Questions",
+    squareUnseen: "Question {n}, pas encore vue",
+    squarePassed: "Question {n}, sans réponse",
+    squareAnswered: "Question {n}, répondue",
+    squareSkipped: "Question {n}, ignorée",
+    squareUnfinished: "Question {n}, à compléter",
+    squareHidden: "Question {n}, non posée",
+
     // --- Multi-select body -------------------------------------------------
     multiSelectCount: "sélectionnez {min}–{max} · {chosen} choisie(s)",
     noneOfThese: "Aucune de celles-ci",

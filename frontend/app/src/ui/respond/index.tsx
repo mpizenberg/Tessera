@@ -306,6 +306,7 @@ export const Respond: Component = () => {
         <Show when={!app.cartLocked()} fallback={<PublishLocked />}>
           <SubmitBar
             progress={draft.progress()}
+            drafts={draft.drafts}
             left={draft.left()}
             answered={draft.answered()}
             finish={finish}

@@ -52,6 +52,7 @@ import {
   type Draft,
   type DraftState,
   type DraftValue,
+  type KeptDraft,
   type ReadConditions,
   type Responder,
 } from "cardano-tessera-respond-core";
@@ -111,7 +112,7 @@ export interface ResponseDraft {
   /** This responder's existing response for the current role, sealed included. */
   readonly prior: Accessor<SurveyResponse | undefined>;
   /** One per question, index-aligned with `definition().questions`. */
-  readonly drafts: readonly Draft[];
+  readonly drafts: readonly KeptDraft[];
   readonly setValue: (index: number, value: DraftValue) => void;
   readonly setSkipped: (index: number, skipped: boolean) => void;
   /** Marks a question seen: its prompt has been on screen. */

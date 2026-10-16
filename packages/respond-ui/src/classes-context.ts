@@ -1,6 +1,7 @@
 /**
  * Solid context carrying the class-name map respond-ui's components render
- * with: the question card, its bodies, and the finish line and confirmation.
+ * with: the question card, its bodies, the finish line and confirmation, and
+ * the progress squares.
  *
  * The two consumers style the same markup differently: the widget's shadow DOM
  * uses the literal class names (styled by its adopted stylesheet), while the
@@ -101,6 +102,16 @@ export const BODY_CLASS_NAMES = [
   "skipConfirmActions",
   "goToBtn",
   "skipFinishBtn",
+  // the progress squares, one per question; their layout comes with them
+  "sq",
+  "sqUnseen",
+  "sqPassed",
+  "sqAnswered",
+  "sqSkipped",
+  "sqUnfinished",
+  "sqHidden",
+  // a number of three digits
+  "sqLong",
 ] as const;
 
 export type BodyClassName = (typeof BODY_CLASS_NAMES)[number];

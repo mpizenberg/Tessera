@@ -3,10 +3,12 @@
  * is on its way.
  */
 
-import { Index, Show, onCleanup, onMount, type Component } from "solid-js";
+import { Show, onCleanup, onMount, type Component } from "solid-js";
 import { useNavigate } from "@solidjs/router";
+import type { KeptDraft } from "cardano-tessera-respond-core";
 import {
   LeftNote,
+  ProgressSquares,
   SkipConfirm,
   type Finish,
   type Left,
@@ -21,6 +23,8 @@ import css from "./respond.module.css";
 export const SubmitBar: Component<{
   /** Each question's state. */
   progress: readonly QuestionProgress[];
+  /** Index-aligned with `progress`, for whether each question was seen. */
+  drafts: readonly KeptDraft[];
   left: Left;
   /** At least one question carries a recorded answer (not all-skipped). */
   answered: boolean;
@@ -58,25 +62,17 @@ export const SubmitBar: Component<{
     <div ref={bar} class={css.submitBar}>
       <div class={css.submitInner}>
         <RespondContexts>
+          <ProgressSquares
+            progress={props.progress}
+            drafts={props.drafts}
+            onGoTo={props.finish.goTo}
+            scroll
+          />
           <Show
             when={props.finish.asking() === "skip"}
             fallback={
               <>
                 <div class={css.submitStatus}>
-                  <span class={css.progressDots}>
-                    <Index each={props.progress}>
-                      {(p) => (
-                        <span
-                          class={css.progressDot}
-                          classList={{
-                            [css.progressDotOn]: p() === "answered",
-                            [css.progressDotSkipped]:
-                              p() === "skipped" || p() === "hidden",
-                          }}
-                        />
-                      )}
-                    </Index>
-                  </span>
                   <LeftNote
                     left={props.left}
                     answered={props.answered}

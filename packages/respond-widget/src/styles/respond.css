@@ -71,10 +71,103 @@
 }
 
 .stepCount {
-  text-align: center;
   font-family: var(--tessera-mono);
   font-size: 11px;
   color: var(--tessera-dim);
+}
+
+/* --- Progress squares, one per question ----------------------------------- */
+
+/* Their box, font size and lines come with the squares, from the count. */
+.sq {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--tessera-line);
+  border-radius: 25%;
+  background: var(--tessera-paper);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--tessera-mono);
+  font-size: inherit;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--tessera-dim);
+  cursor: pointer;
+}
+
+.sqLong {
+  font-size: 0.8em;
+  letter-spacing: -0.06em;
+}
+
+.sqUnseen {
+  background: var(--tessera-hair);
+}
+
+.sqPassed {
+  border: 1.5px solid var(--tessera-muted);
+  color: var(--tessera-muted);
+}
+
+.sqAnswered {
+  background: var(--tessera-accent);
+  border-color: var(--tessera-accent);
+  color: var(--tessera-on-accent);
+}
+
+.sqSkipped {
+  border: 1.5px solid var(--tessera-accent);
+  color: var(--tessera-accent);
+  background: linear-gradient(
+    to top right,
+    transparent calc(50% - 0.8px),
+    var(--tessera-accent-line) calc(50% - 0.8px) calc(50% + 0.8px),
+    transparent calc(50% + 0.8px)
+  );
+}
+
+.sqUnfinished {
+  border: 1.5px solid var(--tessera-accent);
+  color: var(--tessera-ink);
+  background: linear-gradient(
+    to top,
+    var(--tessera-accent-line) 50%,
+    var(--tessera-paper) 50%
+  );
+}
+
+/* Not a button: a faint dot keeps the question's place. */
+.sqHidden {
+  border: none;
+  background: none;
+  cursor: default;
+}
+
+.sqHidden::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--tessera-faint);
+}
+
+/* Out from the padding box, past the square's own border. */
+.sq[aria-current="step"]::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border: 1.5px solid var(--tessera-ink);
+  border-radius: 30%;
+  pointer-events: none;
+}
+
+/* Further out than the current question's ring, so the two differ by more
+   than colour. */
+.sq:focus-visible {
+  outline-offset: 5px;
 }
 
 /* --- Ineligible panel ----------------------------------------------------- */
@@ -887,35 +980,6 @@
   display: flex;
   flex-direction: column;
   gap: 5px;
-}
-
-.progressDots {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 7px 4px;
-}
-
-.progressDot {
-  width: 16px;
-  height: 5px;
-  border-radius: 3px;
-  background: var(--tessera-line2);
-}
-
-.progressDotOn {
-  background: var(--tessera-accent);
-}
-
-/* Settled with nothing recorded: skipped, or hidden by a condition. */
-.progressDotSkipped {
-  background: transparent;
-  box-shadow: inset 0 0 0 1.5px var(--tessera-accent);
-}
-
-.progressDotCurrent {
-  outline: 1.5px solid var(--tessera-ink);
-  outline-offset: 1.5px;
 }
 
 .leftNote {

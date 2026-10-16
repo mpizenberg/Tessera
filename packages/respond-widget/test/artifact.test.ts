@@ -295,23 +295,26 @@ describe("built <tessera-respond> artifact", () => {
     expect(root.querySelector(".customInput")).not.toBe(null);
   });
 
-  it("steps from a row above the card and one under it, the keys only under", () => {
+  it("steps from the squares' row above the card and one under it, the keys only under", () => {
     const el = mount(SAMPLES.public);
     const root = shadow(el);
-    const [above, under] = root.querySelectorAll<HTMLElement>(".stepperNav");
-    expect(above!.nextElementSibling).toBe(root.querySelector(".card"));
-    expect(above!.classList.contains("keysOn")).toBe(false);
-    expect(under!.classList.contains("keysOn")).toBe(true);
+    const above = root.querySelector<HTMLElement>("[data-squares-row]")!;
+    const under = root.querySelector<HTMLElement>(".stepperNav")!;
+    expect(above.nextElementSibling).toBe(root.querySelector(".card"));
+    expect(above.closest(".keysOn")).toBe(null);
+    expect(under.classList.contains("keysOn")).toBe(true);
     expect(root.querySelectorAll(".stepCount").length).toBe(1);
+    const count = () => root.querySelector(".stepCount")?.textContent;
 
-    under!.querySelector<HTMLElement>(".stepNavBtn:last-child")!.click();
-    expect(root.querySelector(".stepCount")?.textContent).toBe(
-      "Question 2 of 7",
-    );
-    under!.querySelector<HTMLElement>(".stepNavBtn:first-child")!.click();
-    expect(root.querySelector(".stepCount")?.textContent).toBe(
-      "Question 1 of 7",
-    );
+    above.querySelector<HTMLElement>("[data-squares-next] button")!.click();
+    expect(count()).toBe("Question 2 of 7");
+    under.querySelector<HTMLElement>(".stepNavBtn:first-child")!.click();
+    expect(count()).toBe("Question 1 of 7");
+    above.querySelectorAll<HTMLElement>(".sq")[4]!.click();
+    expect(count()).toBe("Question 5 of 7");
+    expect(
+      above.querySelector('[aria-current="step"]')?.getAttribute("aria-label"),
+    ).toBe("Question 5, not answered yet");
   });
 
   it("remounts the right body for every question type while stepping", () => {
@@ -1051,8 +1054,9 @@ describe("built <tessera-respond> artifact", () => {
     el.layout = "list";
     for (const skip of root.querySelectorAll<HTMLElement>(".skipBtn"))
       skip.click();
-    expect(root.querySelectorAll(".progressDotOn").length).toBe(1);
-    expect(root.querySelectorAll(".progressDotSkipped").length).toBe(6);
+    expect(root.querySelectorAll(".sqAnswered").length).toBe(1);
+    expect(root.querySelectorAll(".sqSkipped").length).toBe(5);
+    expect(root.querySelectorAll("span.sqHidden").length).toBe(1);
 
     const responded = once(el, "tessera:response");
     click(root, ".submitBtn");

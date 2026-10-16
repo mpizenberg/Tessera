@@ -26,14 +26,12 @@
 
 import {
   For,
-  Index,
   Show,
   createEffect,
   createMemo,
   createSignal,
   on,
   type Component,
-  type ParentComponent,
 } from "solid-js";
 
 import {
@@ -65,6 +63,7 @@ import {
 import {
   I18nContext,
   LeftNote,
+  ProgressSquares,
   QuestionCard,
   SkipConfirm,
   createFinish,
@@ -73,7 +72,6 @@ import {
   useI18n,
   type Finish,
   type Left,
-  type QuestionProgress,
 } from "cardano-tessera-respond-ui";
 import { keyKindForRole, roleColors, roleDescription } from "./roles";
 import {
@@ -409,18 +407,34 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
               when={layout() === "list"}
               fallback={
                 <div class="questionList">
-                  <StepperNav
-                    prev={shownFrom(stepIndex(), -1)}
-                    next={shownFrom(stepIndex(), 1)}
-                    onStep={stepTo}
-                  >
-                    <span class="stepCount">
-                      {i18n().t("respond.stepCount", {
-                        n: i18n().n(stepIndex() + 1),
-                        total: i18n().n(total()),
-                      })}
-                    </span>
-                  </StepperNav>
+                  <ProgressSquares
+                    progress={progress()}
+                    drafts={drafts}
+                    current={stepIndex()}
+                    onGoTo={finish.goTo}
+                    room={STEP_BUTTONS_WIDTH}
+                    prev={
+                      <StepButton
+                        to={shownFrom(stepIndex(), -1)}
+                        onStep={stepTo}
+                      />
+                    }
+                    next={
+                      <StepButton
+                        next
+                        to={shownFrom(stepIndex(), 1)}
+                        onStep={stepTo}
+                      />
+                    }
+                    count={
+                      <span class="stepCount">
+                        {i18n().t("respond.stepCount", {
+                          n: i18n().n(stepIndex() + 1),
+                          total: i18n().n(total()),
+                        })}
+                      </span>
+                    }
+                  />
                   {/* `keyed` remounts the card when the question changes: a
                       QuestionBody picks its widget by question type at creation
                       (see respond-ui's bodies.tsx), so it must not outlive its
@@ -454,6 +468,11 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
               }
             >
               <div class="questionList">
+                <ProgressSquares
+                  progress={progress()}
+                  drafts={drafts}
+                  onGoTo={finish.goTo}
+                />
                 <For each={shown().questions}>
                   {(q, i) => (
                     <Show
@@ -486,8 +505,6 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
             </Show>
 
             <SubmitBar
-              progress={progress()}
-              current={layout() === "list" ? undefined : stepIndex()}
               left={left()}
               answered={answered()}
               finish={finish}
@@ -692,40 +709,57 @@ const HiddenRow: Component<{ index: number }> = (props) => {
 // Stepper navigation (one-per-screen layout)
 // ----------------------------------------------------------------------------
 
-/** Previous and Next, with what sits between them. */
-const StepperNav: ParentComponent<{
+/**
+ * Width the squares' row keeps for Previous and Next: 169px in English, 212px
+ * in French. A wider pair, from a host's messages, wraps the squares.
+ */
+const STEP_BUTTONS_WIDTH = 240;
+
+/** Previous and Next under the question, with their keys. */
+const StepperNav: Component<{
   /** The shown questions either side, if any; hidden ones are stepped over. */
   prev: number | undefined;
   next: number | undefined;
   /** Show the keys that step, beside the buttons. */
-  hints?: boolean;
+  hints: boolean;
+  onStep: (i: number) => void;
+}> = (props) => (
+  <div class="stepperNav" classList={{ keysOn: props.hints }}>
+    <StepButton to={props.prev} onStep={props.onStep} />
+    <StepButton next to={props.next} onStep={props.onStep} />
+  </div>
+);
+
+/** Previous, or Next: steps to `to`, disabled without it. */
+const StepButton: Component<{
+  next?: boolean;
+  to: number | undefined;
   onStep: (i: number) => void;
 }> = (props) => {
   const i18n = useI18n();
   return (
-    <div class="stepperNav" classList={{ keysOn: props.hints === true }}>
-      <button
-        class="stepNavBtn"
-        disabled={props.prev === undefined}
-        onClick={() => props.prev !== undefined && props.onStep(props.prev)}
-      >
-        ← {i18n.t("respond.stepPrev")}
-        <kbd aria-hidden="true" class="keyBadge">
-          {i18n.t("respond.shiftEnterHint")}
-        </kbd>
-      </button>
-      {props.children}
-      <button
-        class="stepNavBtn"
-        disabled={props.next === undefined}
-        onClick={() => props.next !== undefined && props.onStep(props.next)}
+    <button
+      class="stepNavBtn"
+      disabled={props.to === undefined}
+      onClick={() => props.to !== undefined && props.onStep(props.to)}
+    >
+      <Show
+        when={props.next}
+        fallback={
+          <>
+            ← {i18n.t("respond.stepPrev")}
+            <kbd aria-hidden="true" class="keyBadge">
+              {i18n.t("respond.shiftEnterHint")}
+            </kbd>
+          </>
+        }
       >
         {i18n.t("respond.stepNext")} →
         <kbd aria-hidden="true" class="keyBadge">
           {i18n.t("respond.enterHint")}
         </kbd>
-      </button>
-    </div>
+      </Show>
+    </button>
   );
 };
 
@@ -748,10 +782,6 @@ const ProblemList: Component<{ problems: string[] }> = (props) => {
 };
 
 const SubmitBar: Component<{
-  /** Each question's state. */
-  progress: readonly QuestionProgress[];
-  /** The question on screen, in the one-per-screen layout. */
-  current: number | undefined;
   left: Left;
   /** At least one question carries a recorded answer (not all-skipped). */
   answered: boolean;
@@ -779,21 +809,6 @@ const SubmitBar: Component<{
           fallback={
             <>
               <div class="submitStatus">
-                <span class="progressDots">
-                  <Index each={props.progress}>
-                    {(p, i) => (
-                      <span
-                        class="progressDot"
-                        classList={{
-                          progressDotOn: p() === "answered",
-                          progressDotSkipped:
-                            p() === "skipped" || p() === "hidden",
-                          progressDotCurrent: i === props.current,
-                        }}
-                      />
-                    )}
-                  </Index>
-                </span>
                 <LeftNote
                   left={props.left}
                   answered={props.answered}

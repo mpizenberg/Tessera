@@ -643,9 +643,17 @@ with a `-bg` pair). See [`src/theme.css`](./src/theme.css) for the full token li
   note.
 
 Both reuse the same question card, the same progress states, and the same
-answer collection; layout is pure presentation over shared state. The submit
-bar has one progress dot per question: filled when answered, outlined when
-skipped or hidden, and ringed for the question on screen in the stepper.
+answer collection; layout is pure presentation over shared state.
+
+One square per question shows how far the form got, each a button to its
+question: faint until seen, outlined once seen and left unanswered, filled
+when answered, crossed when skipped, half filled when started but not
+finished, and a dot when a condition hides it. The stepper rings the question
+on screen and puts the squares above it: between Previous and Next while they
+fit there on one line, 20px or else 16px, and otherwise above the buttons in
+even lines. The widget's own width decides, not the viewport's. The list puts
+the squares at the top. Each square is named for a screen reader and its
+tooltip as "Question 12, skipped" (the `respond.square…` keys in `messages`).
 
 Skip moves on, as Next does: to the next shown question, its prompt scrolled
 to the middle of the screen in the list, and after the last one to the submit
@@ -666,9 +674,11 @@ one the line asks for it.
 A question's choices are native radios and checkboxes, so the browser's keys
 work: a single choice is one Tab stop whose arrow keys move the pick, each
 checkbox is a stop, and Space picks or toggles. A rating is one radio group
-per rated item, and Delete or Backspace clears the item's level. Each group is named by its prompt. After
-Previous, Next or Skip, the focus goes to the new question's prompt, so a
-screen reader reads it. Every control shows a focus ring in `--tessera-accent`,
+per rated item, and Delete or Backspace clears the item's level. Each group is named by its prompt. The
+progress squares are one Tab stop: the arrow keys move between them, Home and
+End go to the first and last, and Enter or Space goes to the question. After
+Previous, Next, Skip or a square, the focus goes to the new question's prompt,
+so a screen reader reads it. Every control shows a focus ring in `--tessera-accent`,
 and the question holding the focus an accent border.
 
 While the focus is in a question, these keys act on it, unless

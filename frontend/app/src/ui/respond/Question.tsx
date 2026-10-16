@@ -99,6 +99,14 @@ const bodyClasses: BodyClasses = {
   skipConfirmActions: css.skipConfirmActions,
   goToBtn: css.goToBtn,
   skipFinishBtn: css.skipFinishBtn,
+  sq: css.sq,
+  sqUnseen: css.sqUnseen,
+  sqPassed: css.sqPassed,
+  sqAnswered: css.sqAnswered,
+  sqSkipped: css.sqSkipped,
+  sqUnfinished: css.sqUnfinished,
+  sqHidden: css.sqHidden,
+  sqLong: css.sqLong,
 };
 
 /**

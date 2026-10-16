@@ -101,6 +101,16 @@ const en = {
     enterHint: "Enter ↵",
     shiftEnterHint: "⇧ Enter ↵",
 
+    // --- Progress squares, one per question ---------------------------------
+    squares: "Questions",
+    /** A square's name and tooltip; {n} is the 1-based question number. */
+    squareUnseen: "Question {n}, not seen yet",
+    squarePassed: "Question {n}, not answered yet",
+    squareAnswered: "Question {n}, answered",
+    squareSkipped: "Question {n}, skipped",
+    squareUnfinished: "Question {n}, not finished",
+    squareHidden: "Question {n}, not asked",
+
     // --- Multi-select body -------------------------------------------------
     /** {min}/{max}/{chosen} are locale-formatted counts. */
     multiSelectCount: "select {min}–{max} · {chosen} chosen",
