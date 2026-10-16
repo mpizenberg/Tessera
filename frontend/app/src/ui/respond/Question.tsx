@@ -1,9 +1,9 @@
 /**
  * The answerable body of the screen: one card per question, wrapped in the two
- * contexts the shared question card reads from.
+ * contexts respond-ui's components read from.
  */
 
-import { For, type Component } from "solid-js";
+import { For, type Component, type ParentComponent } from "solid-js";
 import type { Question } from "cip-179";
 import type { Draft, DraftValue, I18n } from "cardano-tessera-respond-core";
 import {
@@ -18,9 +18,9 @@ import { t, n, d } from "~/i18n";
 import css from "./respond.module.css";
 
 /**
- * The shared question card renders class names through {@link ClassesContext};
- * this maps each one to this screen's CSS module. Keys are checked complete by
- * `BodyClasses`, so the card can't render a class this screen doesn't style.
+ * respond-ui renders class names through {@link ClassesContext}; this maps
+ * each one to this screen's CSS module. Keys are checked complete by
+ * `BodyClasses`, so it can't render a class this screen doesn't style.
  */
 const bodyClasses: BodyClasses = {
   card: css.card,
@@ -90,6 +90,15 @@ const bodyClasses: BodyClasses = {
   customBytes: css.customBytes,
   customBytesOver: css.customBytesOver,
   customHint: css.customHint,
+  leftNote: css.leftNote,
+  leftGroup: css.leftGroup,
+  leftCall: css.leftCall,
+  qLink: css.qLink,
+  skipConfirm: css.skipConfirm,
+  skipConfirmText: css.skipConfirmText,
+  skipConfirmActions: css.skipConfirmActions,
+  goToBtn: css.goToBtn,
+  skipFinishBtn: css.skipFinishBtn,
 };
 
 /**
@@ -101,39 +110,47 @@ const bodyClasses: BodyClasses = {
  */
 const bodiesI18n: I18n = { t, n, d };
 
+/** The contexts respond-ui's components read from. */
+export const RespondContexts: ParentComponent = (props) => (
+  <I18nContext.Provider value={() => bodiesI18n}>
+    <ClassesContext.Provider value={bodyClasses}>
+      {props.children}
+    </ClassesContext.Provider>
+  </I18nContext.Provider>
+);
+
 export const QuestionList: Component<{
   questions: readonly Question[];
   drafts: readonly Draft[];
+  /** Filled with each question's prompt, index-aligned. */
+  prompts: HTMLElement[];
   onChange: (index: number, value: DraftValue) => void;
   onSkip: (index: number, skipped: boolean) => void;
   /** Takes focus past the last question, as a skip or Enter there moves on. */
   focusSubmit: () => void;
 }> = (props) => {
-  const prompts: HTMLElement[] = [];
   const next = (i: number): void => {
-    if (i + 1 < props.questions.length) focusPrompt(prompts[i + 1]);
+    if (i + 1 < props.questions.length) focusPrompt(props.prompts[i + 1]);
     else props.focusSubmit();
   };
   return (
-    <I18nContext.Provider value={() => bodiesI18n}>
-      <ClassesContext.Provider value={bodyClasses}>
-        <div class={css.questionList}>
-          <For each={props.questions}>
-            {(q, i) => (
-              <QuestionCard
-                q={q}
-                index={i()}
-                draft={props.drafts[i()]}
-                onChange={(v) => props.onChange(i(), v)}
-                onSkip={(sk) => props.onSkip(i(), sk)}
-                onNext={() => next(i())}
-                onPrev={() => i() > 0 && focusPrompt(prompts[i() - 1])}
-                promptRef={(el) => (prompts[i()] = el)}
-              />
-            )}
-          </For>
-        </div>
-      </ClassesContext.Provider>
-    </I18nContext.Provider>
+    <RespondContexts>
+      <div class={css.questionList}>
+        <For each={props.questions}>
+          {(q, i) => (
+            <QuestionCard
+              q={q}
+              index={i()}
+              draft={props.drafts[i()]}
+              onChange={(v) => props.onChange(i(), v)}
+              onSkip={(sk) => props.onSkip(i(), sk)}
+              onNext={() => next(i())}
+              onPrev={() => i() > 0 && focusPrompt(props.prompts[i() - 1])}
+              promptRef={(el) => (props.prompts[i()] = el)}
+            />
+          )}
+        </For>
+      </div>
+    </RespondContexts>
   );
 };

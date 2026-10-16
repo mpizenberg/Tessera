@@ -89,7 +89,7 @@ const en = {
     skipped: "Skipped",
     skip: "Skip",
     noPrompt: "(no prompt)",
-    skippedNote: "Skipped — abstaining. Nothing is recorded for this question.",
+    skippedNote: "Skipped. Nothing is recorded for this question.",
     hiddenNote: "Not asked, given your earlier answers.",
 
     // --- Stepper (one-per-screen layout) ------------------------------------
@@ -132,8 +132,23 @@ const en = {
       "Encoded as a text metadatum, in 64-byte chunks when longer, and interpreted by the method at the anchor.",
 
     // --- Submit bar --------------------------------------------------------
-    /** {decided}/{total} are locale-formatted counts. */
-    decidedCount: "{decided} of {total} decided",
+    /** Each is followed by links to its questions, "Q7 · Q12". */
+    leftRequired: "Required:",
+    leftUnfinished: "Not finished:",
+    leftUnanswered: "Not answered yet:",
+    /** In place of a list past five, before a link to its first; {count} is locale-formatted. */
+    leftRequiredMany: "{count} required. First:",
+    leftUnfinishedMany: "{count} not finished. First:",
+    leftUnansweredMany: "{count} not answered yet. First:",
+    leftNone: "All questions answered or skipped.",
+    answerOne: "Answer at least one question to finish.",
+    /** In place of the submit row, before links to the questions; {count} is locale-formatted. */
+    skipConfirmOne: "1 question has no answer:",
+    skipConfirmMany: "{count} questions have no answer:",
+    skipItAndFinish: "Skip it and finish",
+    skipThemAndFinish: "Skip them and finish",
+    /** {n} is the 1-based question number. */
+    goToQuestion: "Go to Q{n}",
     replacesNote: "✓ replaces your previous response",
     encrypting: "Encrypting…",
     encryptAndSubmit: "Encrypt & submit",

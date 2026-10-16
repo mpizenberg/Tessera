@@ -5,17 +5,26 @@
 
 import { Index, Show, type Component } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import type { QuestionProgress } from "cardano-tessera-respond-ui";
+import {
+  LeftNote,
+  SkipConfirm,
+  type Finish,
+  type Left,
+  type QuestionProgress,
+} from "cardano-tessera-respond-ui";
 
 import { SubmissionReceipt } from "~/ui/components/SubmissionReceipt";
-import { t, n } from "~/i18n";
+import { t } from "~/i18n";
+import { RespondContexts } from "./Question";
 import css from "./respond.module.css";
 
 export const SubmitBar: Component<{
   /** Each question's state. */
   progress: readonly QuestionProgress[];
+  left: Left;
   /** At least one question carries a recorded answer (not all-skipped). */
   answered: boolean;
+  finish: Finish;
   replacing: boolean;
   submitting: boolean;
   mismatch: boolean;
@@ -32,82 +41,99 @@ export const SubmitBar: Component<{
   onQueue: () => void;
   submitRef: (el: HTMLButtonElement) => void;
 }> = (props) => {
-  const decided = () =>
-    props.progress.filter((p) => p !== "unanswered" && p !== "unfinished")
-      .length;
-  const total = () => props.progress.length;
-  const ready = () =>
-    decided() >= total() &&
-    total() > 0 &&
-    props.answered &&
-    !props.mismatch &&
-    !props.blocked;
+  const enabled = () => !props.mismatch && !props.blocked && !props.submitting;
+  let button: HTMLButtonElement | undefined;
   return (
     <div class={css.submitBar}>
       <div class={css.submitInner}>
-        <div class={css.submitStatus}>
-          <span class={css.progressDots}>
-            <Index each={props.progress}>
-              {(p) => (
-                <span
-                  class={css.progressDot}
-                  classList={{
-                    [css.progressDotOn]: p() === "answered",
-                    [css.progressDotSkipped]:
-                      p() === "skipped" || p() === "hidden",
-                  }}
-                />
-              )}
-            </Index>
-          </span>
-          <span class={css.decidedCount}>
-            {t("respond.decidedCount", {
-              decided: n(decided()),
-              total: n(total()),
-            })}
-          </span>
-          <Show when={props.replacing}>
-            <span class={css.replacesNote}>{t("respond.replacesNote")}</span>
-          </Show>
-          <Show when={props.mismatch}>
-            <span class={css.mismatchNote}>
-              {t("respond.switchNetwork", { network: props.network })}
-            </span>
-          </Show>
-          <Show when={props.blocked}>
-            {(note) => <span class={css.mismatchNote}>{note()}</span>}
-          </Show>
-          <Show when={props.warning}>
-            {(note) => <span class={css.mismatchNote}>{note()}</span>}
-          </Show>
-        </div>
-        <div class={css.submitActions}>
-          <Show when={!props.queueing}>
-            <button
-              onClick={() => props.onQueue()}
-              disabled={!ready() || props.submitting}
-              class={css.queueBtn}
-            >
-              {t("cart.addToCart")}
-            </button>
-          </Show>
-          <button
-            ref={props.submitRef}
-            onClick={() =>
-              props.queueing ? props.onQueue() : props.onSubmit()
+        <RespondContexts>
+          <Show
+            when={props.finish.asking() === "skip"}
+            fallback={
+              <>
+                <div class={css.submitStatus}>
+                  <span class={css.progressDots}>
+                    <Index each={props.progress}>
+                      {(p) => (
+                        <span
+                          class={css.progressDot}
+                          classList={{
+                            [css.progressDotOn]: p() === "answered",
+                            [css.progressDotSkipped]:
+                              p() === "skipped" || p() === "hidden",
+                          }}
+                        />
+                      )}
+                    </Index>
+                  </span>
+                  <LeftNote
+                    left={props.left}
+                    answered={props.answered}
+                    calling={props.finish.asking() === "answerOne"}
+                    onGoTo={props.finish.goTo}
+                  />
+                  <Show when={props.replacing}>
+                    <span class={css.replacesNote}>
+                      {t("respond.replacesNote")}
+                    </span>
+                  </Show>
+                  <Show when={props.mismatch}>
+                    <span class={css.mismatchNote}>
+                      {t("respond.switchNetwork", { network: props.network })}
+                    </span>
+                  </Show>
+                  <Show when={props.blocked}>
+                    {(note) => <span class={css.mismatchNote}>{note()}</span>}
+                  </Show>
+                  <Show when={props.warning}>
+                    {(note) => <span class={css.mismatchNote}>{note()}</span>}
+                  </Show>
+                </div>
+                <div class={css.submitActions}>
+                  <Show when={!props.queueing}>
+                    <button
+                      onClick={() => props.finish.finish(props.onQueue)}
+                      disabled={!enabled()}
+                      class={css.queueBtn}
+                    >
+                      {t("cart.addToCart")}
+                    </button>
+                  </Show>
+                  <button
+                    ref={(el) => {
+                      button = el;
+                      props.submitRef(el);
+                    }}
+                    onClick={() =>
+                      props.finish.finish(
+                        props.queueing ? props.onQueue : props.onSubmit,
+                      )
+                    }
+                    disabled={!enabled()}
+                    class={css.submitBtn}
+                    classList={{ [css.submitBtnEnabled]: enabled() }}
+                  >
+                    {props.submitting
+                      ? props.busyText
+                      : props.queueing
+                        ? t("cart.addToCart")
+                        : props.idleText}{" "}
+                    <span class={css.submitArrow}>→</span>
+                  </button>
+                </div>
+              </>
             }
-            disabled={!ready() || props.submitting}
-            class={css.submitBtn}
-            classList={{ [css.submitBtnEnabled]: ready() && !props.submitting }}
           >
-            {props.submitting
-              ? props.busyText
-              : props.queueing
-                ? t("cart.addToCart")
-                : props.idleText}{" "}
-            <span class={css.submitArrow}>→</span>
-          </button>
-        </div>
+            <SkipConfirm
+              unanswered={props.left.unanswered}
+              onSkip={() => {
+                props.finish.skipAndFinish();
+                button?.focus();
+              }}
+              onGoTo={props.finish.goTo}
+            />
+          </Show>
+        </RespondContexts>
       </div>
     </div>
   );

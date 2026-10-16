@@ -88,9 +88,18 @@ describe("TesseraRespond (React wrapper)", () => {
     });
     // The widget announces progress as soon as it renders — the wrapper's
     // listeners attach before props sync, so they catch that initial event.
-    expect(changes).toEqual([{ decided: 0, total: 1, valid: false }]);
+    expect(changes).toEqual([
+      {
+        decided: 0,
+        total: 1,
+        unanswered: [],
+        unfinished: [],
+        required: [0],
+        valid: false,
+      },
+    ]);
     click(el, ".optionRow");
-    expect(changes.at(-1)).toEqual({ decided: 1, total: 1, valid: true });
+    expect(changes.at(-1)).toMatchObject({ required: [], valid: true });
     click(el, ".submitBtn");
     const detail = await result;
     expect(detail.sealed).toBe(false);

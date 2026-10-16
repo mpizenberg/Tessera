@@ -439,6 +439,39 @@ describe("createResponseDraft", () => {
     expect(draft.answered()).toBe(true);
   });
 
+  it("sorts what is left by why: required, unfinished, or optional", () => {
+    const ranking: Question = {
+      type: "ranking",
+      prompt: "rank",
+      options: { type: "options", labels: ["a", "b", "c"] },
+      minRanked: 2,
+      maxRanked: 3,
+    };
+    const draft = draftIn({
+      definition: () => ({
+        ...defWith(Role.DRep),
+        questions: [single, optional, ranking],
+      }),
+      surveyRef: () => ref(1),
+      responder: () => both,
+      priorResponses: () => [],
+      preferredRole: () => null,
+    });
+
+    expect(draft.left()).toEqual({
+      unanswered: [1, 2],
+      unfinished: [],
+      required: [0],
+    });
+    draft.setValue(2, { type: "ranking", ranked: [1] });
+    draft.setValue(0, pick(0));
+    expect(draft.left()).toEqual({
+      unanswered: [1],
+      unfinished: [2],
+      required: [],
+    });
+  });
+
   it("records nothing for a hidden question, and keeps its draft", () => {
     const def = defWith(Role.DRep);
     const draft = draftIn({

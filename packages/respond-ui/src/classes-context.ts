@@ -1,6 +1,6 @@
 /**
- * Solid context carrying the class-name map the question card and its body
- * components render with.
+ * Solid context carrying the class-name map respond-ui's components render
+ * with: the question card, its bodies, and the finish line and confirmation.
  *
  * The two consumers style the same markup differently: the widget's shadow DOM
  * uses the literal class names (styled by its adopted stylesheet), while the
@@ -11,7 +11,7 @@
 
 import { createContext, useContext } from "solid-js";
 
-/** Every class name the question card and its body components render. */
+/** Every class name respond-ui's components render. */
 export const BODY_CLASS_NAMES = [
   // question card
   "card",
@@ -90,6 +90,17 @@ export const BODY_CLASS_NAMES = [
   "customBytes",
   "customBytesOver",
   "customHint",
+  // what is left before finishing, beside the submit button
+  "leftNote",
+  "leftGroup",
+  "leftCall",
+  "qLink",
+  // the confirmation that skips the questions left unanswered
+  "skipConfirm",
+  "skipConfirmText",
+  "skipConfirmActions",
+  "goToBtn",
+  "skipFinishBtn",
 ] as const;
 
 export type BodyClassName = (typeof BODY_CLASS_NAMES)[number];

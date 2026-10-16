@@ -63,10 +63,15 @@ import {
 
 import {
   I18nContext,
+  LeftNote,
   QuestionCard,
+  SkipConfirm,
+  createFinish,
   createResponseDraft,
   focusPrompt,
   useI18n,
+  type Finish,
+  type Left,
   type QuestionProgress,
 } from "cardano-tessera-respond-ui";
 import { keyKindForRole, roleColors, roleDescription } from "./roles";
@@ -177,6 +182,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     total,
     decidedCount,
     answered,
+    left,
   } = createResponseDraft({
     definition: () => props.definition,
     surveyRef: () => props.surveyRef,
@@ -224,6 +230,8 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
   };
   const goTo = (i: number): void =>
     layout() === "list" ? focusPrompt(prompts[i]) : stepTo(i);
+  const finish = createFinish({ answers, answered, left, setSkipped }, goTo);
+  createEffect(on(stepIndex, finish.close, { defer: true }));
   const next = (i: number): void => {
     const to = shownFrom(i, 1);
     if (to === undefined) submitButton?.focus();
@@ -257,8 +265,8 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
   const [submitting, setSubmitting] = createSignal(false);
   const [problems, setProblems] = createSignal<string[]>([]);
 
-  // Ready to submit: open, eligible, unblocked, every question decided, and at
-  // least one question actually answered (an all-skipped form is spec-invalid).
+  // Submits without asking: open, eligible, unblocked, every question decided,
+  // and at least one answered (an all-skipped form is spec-invalid).
   const valid = () =>
     open() &&
     role() !== null &&
@@ -269,9 +277,13 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
 
   // Progress, for host-driven submit buttons (fires on every edit).
   createEffect(() => {
+    const { unanswered, unfinished, required } = left();
     dispatch(RESPOND_EVENTS.change, {
       decided: decidedCount(),
       total: total(),
+      unanswered: [...unanswered],
+      unfinished: [...unfinished],
+      required: [...required],
       valid: valid(),
     });
   });
@@ -461,7 +473,9 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
             <SubmitBar
               progress={progress()}
               current={layout() === "list" ? undefined : stepIndex()}
+              left={left()}
               answered={answered()}
+              finish={finish}
               replacing={prior() !== undefined}
               submitting={submitting()}
               blocked={sealedUnsupported()}
@@ -729,8 +743,10 @@ const SubmitBar: Component<{
   progress: readonly QuestionProgress[];
   /** The question on screen, in the one-per-screen layout. */
   current: number | undefined;
+  left: Left;
   /** At least one question carries a recorded answer (not all-skipped). */
   answered: boolean;
+  finish: Finish;
   replacing: boolean;
   submitting: boolean;
   /** Submission is impossible (e.g. a sealed survey on an unsupported chain). */
@@ -740,59 +756,77 @@ const SubmitBar: Component<{
   submitRef: (el: HTMLButtonElement) => void;
 }> = (props) => {
   const i18n = useI18n();
-  const decided = () =>
-    props.progress.filter((p) => p !== "unanswered" && p !== "unfinished")
-      .length;
-  const total = () => props.progress.length;
-  const ready = () =>
-    decided() >= total() && total() > 0 && props.answered && !props.blocked;
+  const enabled = () => !props.blocked && !props.submitting;
   const idleText = () =>
     props.sealed
       ? i18n.t("respond.encryptAndSubmit")
       : i18n.t("respond.signAndSubmit");
+  let button: HTMLButtonElement | undefined;
   return (
     <div class="submitBar">
       <div class="submitInner">
-        <div class="submitStatus">
-          <span class="progressDots">
-            <Index each={props.progress}>
-              {(p, i) => (
-                <span
-                  class="progressDot"
-                  classList={{
-                    progressDotOn: p() === "answered",
-                    progressDotSkipped: p() === "skipped" || p() === "hidden",
-                    progressDotCurrent: i === props.current,
-                  }}
+        <Show
+          when={props.finish.asking() === "skip"}
+          fallback={
+            <>
+              <div class="submitStatus">
+                <span class="progressDots">
+                  <Index each={props.progress}>
+                    {(p, i) => (
+                      <span
+                        class="progressDot"
+                        classList={{
+                          progressDotOn: p() === "answered",
+                          progressDotSkipped:
+                            p() === "skipped" || p() === "hidden",
+                          progressDotCurrent: i === props.current,
+                        }}
+                      />
+                    )}
+                  </Index>
+                </span>
+                <LeftNote
+                  left={props.left}
+                  answered={props.answered}
+                  calling={props.finish.asking() === "answerOne"}
+                  onGoTo={props.finish.goTo}
                 />
-              )}
-            </Index>
-          </span>
-          <span class="decidedCount">
-            {i18n.t("respond.decidedCount", {
-              decided: i18n.n(decided()),
-              total: i18n.n(total()),
-            })}
-          </span>
-          <Show when={props.replacing}>
-            <span class="replacesNote">{i18n.t("respond.replacesNote")}</span>
-          </Show>
-          <Show when={props.blocked}>
-            <span class="mismatchNote">
-              {i18n.t("respond.sealedUnsupportedNote")}
-            </span>
-          </Show>
-        </div>
-        <button
-          ref={props.submitRef}
-          onClick={() => props.onSubmit()}
-          disabled={!ready() || props.submitting}
-          class="submitBtn"
-          classList={{ submitBtnEnabled: ready() && !props.submitting }}
+                <Show when={props.replacing}>
+                  <span class="replacesNote">
+                    {i18n.t("respond.replacesNote")}
+                  </span>
+                </Show>
+                <Show when={props.blocked}>
+                  <span class="mismatchNote">
+                    {i18n.t("respond.sealedUnsupportedNote")}
+                  </span>
+                </Show>
+              </div>
+              <button
+                ref={(el) => {
+                  button = el;
+                  props.submitRef(el);
+                }}
+                onClick={() => props.finish.finish(props.onSubmit)}
+                disabled={!enabled()}
+                class="submitBtn"
+                classList={{ submitBtnEnabled: enabled() }}
+              >
+                {props.submitting ? i18n.t("respond.encrypting") : idleText()}{" "}
+                <span class="submitArrow">→</span>
+              </button>
+            </>
+          }
         >
-          {props.submitting ? i18n.t("respond.encrypting") : idleText()}{" "}
-          <span class="submitArrow">→</span>
-        </button>
+          <SkipConfirm
+            unanswered={props.left.unanswered}
+            onSkip={() => {
+              props.finish.skipAndFinish();
+              button?.focus();
+            }}
+            onGoTo={props.finish.goTo}
+          />
+        </Show>
       </div>
     </div>
   );

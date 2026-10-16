@@ -12,7 +12,11 @@ import type { Role, SealedSubmissionMode, SurveyDefinition } from "cip-179";
 import { useApp } from "~/state";
 import { dedupeResponses, findSurvey, refKey } from "cip-179/domain";
 import type { Responder } from "cardano-tessera-respond-core";
-import { createResponseDraft } from "cardano-tessera-respond-ui";
+import {
+  createFinish,
+  createResponseDraft,
+  focusPrompt,
+} from "cardano-tessera-respond-ui";
 import { walletResponder } from "~/domain/roles";
 import { usePresentation } from "~/enrichment/usePresentation";
 import { Empty } from "~/ui/components/Empty";
@@ -149,6 +153,8 @@ export const Respond: Component = () => {
   const sealedUnsupported = (): boolean => survey()?.sealedUnsupported ?? false;
 
   let submitButton: HTMLButtonElement | undefined;
+  const prompts: HTMLElement[] = [];
+  const finish = createFinish(draft, (i) => focusPrompt(prompts[i]));
 
   /** Why submitting is impossible right now, if it is. */
   const submitBlocked = (): string | undefined => {
@@ -249,6 +255,7 @@ export const Respond: Component = () => {
               <QuestionList
                 questions={(definition() ?? s().record.definition).questions}
                 drafts={draft.drafts}
+                prompts={prompts}
                 onChange={draft.setValue}
                 onSkip={draft.setSkipped}
                 focusSubmit={() => submitButton?.focus()}
@@ -294,7 +301,9 @@ export const Respond: Component = () => {
         <Show when={!app.cartLocked()} fallback={<PublishLocked />}>
           <SubmitBar
             progress={draft.progress()}
+            left={draft.left()}
             answered={draft.answered()}
+            finish={finish}
             replacing={draft.prior() !== undefined}
             submitting={submission.submitting()}
             mismatch={mismatch()}

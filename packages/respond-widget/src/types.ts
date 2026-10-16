@@ -197,9 +197,16 @@ export interface RespondResult {
 export interface RespondChangeDetail {
   decided: number;
   total: number;
+  /** Optional questions not answered yet, by index: finishing skips them. */
+  unanswered: number[];
+  /** Questions started but not an answer yet, by index: finishing waits. */
+  unfinished: number[];
+  /** Required questions not answered yet, by index: finishing waits. */
+  required: number[];
   /**
    * Every question decided (with ≥1 actually answered — an all-skipped form is
-   * spec-invalid), the survey is open, and a role is claimable.
+   * spec-invalid), the survey is open, and a role is claimable: the submit
+   * button submits without asking.
    */
   valid: boolean;
 }

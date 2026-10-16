@@ -652,7 +652,106 @@ describe("built <tessera-respond> artifact", () => {
     const changed = once(el, "tessera:change");
     click(shadow(el), ".optionRow");
     const e = await changed;
-    expect(e.detail).toEqual({ decided: 1, total: 1, valid: true });
+    expect(e.detail).toEqual({
+      decided: 1,
+      total: 1,
+      unanswered: [],
+      unfinished: [],
+      required: [],
+      valid: true,
+    });
+  });
+
+  it("says what is left beside the submit button, each question a link", () => {
+    const el = mount(SAMPLES.public);
+    const root = shadow(el);
+    const left = () => root.querySelector(".leftNote")?.textContent?.trim();
+    expect(left()).toBe("Required: Q1 6 not answered yet. First: Q2");
+
+    click(root, ".optionRow");
+    expect(left()).toBe("6 not answered yet. First: Q2");
+    click(root, ".leftNote .qLink");
+    expect(root.querySelector(".stepCount")?.textContent).toBe(
+      "Question 2 of 7",
+    );
+    expect(root.activeElement).toBe(root.querySelector(".qPrompt"));
+
+    click(root, ".skipBtn");
+    expect(left()).toBe("Not answered yet: Q3 · Q4 · Q5 · Q6 · Q7");
+  });
+
+  it("stops at the first required or unfinished question, sending nothing", () => {
+    const el = mount(SAMPLES.public, { layout: "list", maxTextBytes: 4 });
+    const root = shadow(el);
+    let sent = false;
+    el.addEventListener("tessera:response", () => (sent = true));
+    const text = root.querySelector<HTMLTextAreaElement>(".customInput")!;
+    text.value = "Too long";
+    text.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(root.querySelector(".leftNote")?.textContent?.trim()).toBe(
+      "Required: Q1 Not finished: Q7 Not answered yet: Q2 · Q3 · Q4 · Q5 · Q6",
+    );
+    const prompts = root.querySelectorAll(".qPrompt");
+
+    click(root, ".submitBtn");
+    expect(root.activeElement).toBe(prompts[0]);
+    click(root, ".optionRow");
+    click(root, ".submitBtn");
+    expect(root.activeElement).toBe(prompts[6]);
+    expect(sent).toBe(false);
+  });
+
+  it("asks before skipping the questions left unanswered", async () => {
+    const el = mount(SAMPLES.public, { layout: "list" });
+    const root = shadow(el);
+    const rows = root.querySelectorAll<HTMLElement>(".optionRow");
+    rows[0]!.click();
+    click(root, ".submitBtn");
+    const ask = root.querySelector(".skipConfirmText");
+    expect(ask?.textContent).toBe(
+      "6 questions have no answer: Q2 · Q3 · Q4 · Q5 · Q6 …",
+    );
+    expect(root.activeElement).toBe(ask);
+    expect(root.querySelector(".submitBtn")).toBe(null);
+
+    // Any edit closes it, and so does a step.
+    rows[1]!.click();
+    expect(root.querySelector(".skipConfirm")).toBe(null);
+    click(root, ".submitBtn");
+    click(root, ".goToBtn");
+    expect(root.querySelector(".skipConfirm")).toBe(null);
+    expect(root.activeElement).toBe(root.querySelectorAll(".qPrompt")[1]);
+
+    click(root, ".submitBtn");
+    const responded = once(el, "tessera:response");
+    click(root, ".skipFinishBtn");
+    const payload = decodePayload(
+      ((await responded).detail as RespondResult).payload,
+    );
+    if (payload.type !== "responses") throw new Error("not a response");
+    const answers = payload.responses[0]!.answers;
+    if (answers.type !== "public") throw new Error("not public");
+    expect(answers.answers).toEqual([
+      { type: "singleChoice", questionIndex: 0, optionIndex: 1 },
+    ]);
+    expect(root.querySelectorAll(".skipBtnOn").length).toBe(6);
+  });
+
+  it("asks for one answer when there is nothing to send", () => {
+    const def = oneQuestionDef({ type: "public" });
+    const el = mount({
+      ...def,
+      questions: [{ ...def.questions[0]!, required: false }],
+    });
+    const root = shadow(el);
+    const left = () => root.querySelector(".leftNote")?.textContent;
+    click(root, ".submitBtn");
+    expect(left()).toBe("Answer at least one question to finish.");
+    click(root, ".skipBtn");
+    expect(left()).toBe("Answer at least one question to finish.");
+    click(root, ".skipBtn");
+    click(root, ".optionRow");
+    expect(left()).toBe("All questions answered or skipped.");
   });
 
   it("emits a decodable public payload on submit", async () => {

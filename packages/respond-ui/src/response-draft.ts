@@ -136,6 +136,18 @@ export interface ResponseDraft {
    * refuses it, and a reader would skip the transaction carrying it.
    */
   readonly answered: Accessor<boolean>;
+  /** The questions left before the form is complete, by why. */
+  readonly left: Accessor<Left>;
+}
+
+/** Question indexes left before the form is complete, each list in order. */
+export interface Left {
+  /** Optional, not answered yet: finishing can skip them. */
+  readonly unanswered: readonly number[];
+  /** Started but not an answer yet. */
+  readonly unfinished: readonly number[];
+  /** Required, not answered yet. */
+  readonly required: readonly number[];
 }
 
 /**
@@ -274,6 +286,20 @@ export function createResponseDraft(
       progress().filter((p) => p !== "unanswered" && p !== "unfinished").length,
   );
   const answered = createMemo(() => progress().includes("answered"));
+  const left = createMemo<Left>(() => {
+    const questions = source.definition()?.questions ?? [];
+    const out = {
+      unanswered: [] as number[],
+      unfinished: [] as number[],
+      required: [] as number[],
+    };
+    progress().forEach((p, i) => {
+      if (p === "unfinished") out.unfinished.push(i);
+      else if (p === "unanswered")
+        (questions[i]?.required ? out.required : out.unanswered).push(i);
+    });
+    return out;
+  });
 
   return {
     respondable,
@@ -296,5 +322,6 @@ export function createResponseDraft(
     total,
     decidedCount,
     answered,
+    left,
   };
 }

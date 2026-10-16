@@ -78,8 +78,7 @@ const fr: RespondMessages = {
     skipped: "Ignorée",
     skip: "Ignorer",
     noPrompt: "(aucun énoncé)",
-    skippedNote:
-      "Ignorée — abstention. Rien n'est enregistré pour cette question.",
+    skippedNote: "Ignorée. Rien n'est enregistré pour cette question.",
     hiddenNote: "Non posée, d'après vos réponses précédentes.",
 
     // --- Navigation pas-à-pas (mode une question par écran) -----------------
@@ -116,7 +115,20 @@ const fr: RespondMessages = {
       "Encodé comme un texte metadatum, en morceaux de 64 octets, et interprété par la méthode à l'url.",
 
     // --- Submit bar --------------------------------------------------------
-    decidedCount: "{decided} sur {total} renseignées",
+    // A no-break space keeps each colon on its word's line.
+    leftRequired: "Réponse requise\u00a0:",
+    leftUnfinished: "À compléter\u00a0:",
+    leftUnanswered: "Sans réponse\u00a0:",
+    leftRequiredMany: "{count} obligatoires. Première\u00a0:",
+    leftUnfinishedMany: "{count} à compléter. Première\u00a0:",
+    leftUnansweredMany: "{count} sans réponse. Première\u00a0:",
+    leftNone: "Chaque question a une réponse ou est ignorée.",
+    answerOne: "Répondez à au moins une question pour terminer.",
+    skipConfirmOne: "1 question sans réponse\u00a0:",
+    skipConfirmMany: "{count} questions sans réponse\u00a0:",
+    skipItAndFinish: "L'ignorer et terminer",
+    skipThemAndFinish: "Les ignorer et terminer",
+    goToQuestion: "Aller à Q{n}",
     replacesNote: "✓ remplace votre réponse précédente",
     encrypting: "Chiffrement…",
     encryptAndSubmit: "Chiffrer et envoyer",

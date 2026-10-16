@@ -26,17 +26,11 @@ describe("t — lookup, fallback, interpolation", () => {
 
   it("interpolates {token} params", () => {
     expect(
-      createI18n({ locale: "en" }).t("respond.decidedCount", {
-        decided: 1,
-        total: 3,
-      }),
-    ).toBe("1 of 3 decided");
+      createI18n({ locale: "en" }).t("respond.stepCount", { n: 1, total: 3 }),
+    ).toBe("Question 1 of 3");
     expect(
-      createI18n({ locale: "fr" }).t("respond.decidedCount", {
-        decided: 1,
-        total: 3,
-      }),
-    ).toBe("1 sur 3 renseignées");
+      createI18n({ locale: "fr" }).t("respond.stepCount", { n: 1, total: 3 }),
+    ).toBe("Question 1 sur 3");
   });
 
   it("leaves an unmatched placeholder verbatim", () => {

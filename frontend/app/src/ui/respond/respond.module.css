@@ -432,12 +432,14 @@
   color: var(--ink);
 }
 
-/* Script moves focus to the prompt to mark the question reached, and a click
-   to the card or a rating's levels where Safari gives the clicked control
-   none. None is a control, and the card marks it instead of a ring. */
+/* Script moves focus to the prompt to mark the question reached, to the skip
+   confirmation's text, and a click to the card or a rating's levels where
+   Safari gives the clicked control none. None is a control, and the card
+   marks it instead of a ring. */
 .card:focus,
 .qPrompt:focus,
-.ratingLevels:focus {
+.ratingLevels:focus,
+.skipConfirmText:focus {
   outline: none;
 }
 
@@ -978,9 +980,30 @@
   box-shadow: inset 0 0 0 1.5px var(--accent);
 }
 
-.decidedCount {
+.leftNote {
+  margin: 0;
   font-size: 13.5px;
   font-weight: 700;
+  line-height: 1.5;
+}
+
+.leftGroup {
+  margin-right: 14px;
+}
+
+.leftCall {
+  color: var(--danger);
+}
+
+.qLink {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
 }
 
 .replacesNote {
@@ -1075,4 +1098,52 @@
 .queueBtn:disabled {
   color: var(--faint);
   cursor: not-allowed;
+}
+
+/* --- Skip confirmation (in place of the submit row) ----------------------- */
+
+.skipConfirm {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px 16px;
+  flex-wrap: wrap;
+}
+
+.skipConfirmText {
+  flex: 1 1 16rem;
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.skipConfirmActions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.goToBtn,
+.skipFinishBtn {
+  border-radius: var(--r-md);
+  padding: 13px 18px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.goToBtn {
+  background: #fff;
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+
+.skipFinishBtn {
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent);
 }

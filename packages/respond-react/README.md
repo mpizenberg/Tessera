@@ -66,7 +66,7 @@ new object is read again: a faulty `translations`, `noneLabels` or
 `conditions` document logs its console warnings on every render.
 
 Note the widget announces progress as soon as it renders, so `onChange` fires
-once on mount with the initial `{ decided, total, valid }`.
+once on mount with the initial `RespondChangeDetail`.
 
 ## Working example
 

@@ -225,11 +225,11 @@ written as plain attributes. `cancelled` also works HTML boolean-attribute style
 All three are dispatched on the element with `bubbles: true, composed: true`, so a
 listener anywhere up the light-DOM tree catches them across the shadow boundary.
 
-| Event              | `detail`               | When                                                                                        |
-| :----------------- | :--------------------- | :------------------------------------------------------------------------------------------ |
-| `tessera:response` | `RespondResult`        | The user finalizes a valid answer set. **The widget does not submit** — you do.             |
-| `tessera:change`   | `RespondChangeDetail`  | Any answer edit — `{ decided, total, valid }`, for a host-driven submit button.             |
-| `tessera:invalid`  | `RespondInvalidDetail` | Validation failed on submit — `{ problems, messages }` (structured codes + localized text). |
+| Event              | `detail`               | When                                                                                                                                                     |
+| :----------------- | :--------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tessera:response` | `RespondResult`        | The user finalizes a valid answer set. **The widget does not submit** — you do.                                                                          |
+| `tessera:change`   | `RespondChangeDetail`  | Any answer edit — `{ decided, total, unanswered, unfinished, required, valid }`, for a host-driven submit button. The three lists hold question indexes. |
+| `tessera:invalid`  | `RespondInvalidDetail` | Validation failed on submit — `{ problems, messages }` (structured codes + localized text).                                                              |
 
 ### `RespondResult` — the payload to submit
 
@@ -651,6 +651,15 @@ Skip moves on, as Next does: to the next shown question, its prompt scrolled
 to the middle of the screen in the list, and after the last one to the submit
 button. Taking the skip back stays on the question.
 
+The submit button doesn't wait for every question. Beside it, a line names
+the questions left, each a link to it: required ones, ones started but not
+finished, and ones not answered yet. Pressing it goes to the first required or
+unfinished question, if there is one. With only optional questions left
+unanswered, it asks first, offering to skip them and finish, or to go to the
+first: in CIP-179 a question left out of a response is an abstention, as a
+skip is. A response needs at least one answer, so without one the line asks
+for it.
+
 ## Keyboard and focus
 
 A question's choices are native radios and checkboxes, so the browser's keys
@@ -683,8 +692,6 @@ While the focus is in a question, these keys act on it, unless
 - `keyboardShortcuts: false` (attribute `keyboard-shortcuts="false"`) is for a
   host with keys of its own. Tab, the arrow keys and Space stay: they are the
   controls' own.
-- While the submit button is disabled, Enter or Skip on the last question
-  leaves the focus where it is.
 - **Safari.** Its Tab reaches radios, checkboxes and buttons only with
   Option+Tab, or with its "Press Tab to highlight each item" setting on;
   plain Tab skips them. A click focuses the question, so the keys work after
