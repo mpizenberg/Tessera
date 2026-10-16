@@ -42,10 +42,10 @@ const pick = (optionIndex: number) =>
 function setup(): {
   draft: ResponseDraft;
   finish: Finish;
-  steps: number[];
+  steps: (number | "button")[];
   submits: string[];
 } {
-  const steps: number[] = [];
+  const steps: (number | "button")[] = [];
   const submits: string[] = [];
   return createRoot((dispose) => {
     disposers.push(dispose);
@@ -56,15 +56,33 @@ function setup(): {
       priorResponses: () => [],
       preferredRole: () => null,
     });
-    const finish = createFinish(draft, (i) => steps.push(i));
+    const finish = createFinish(
+      draft,
+      (i) => steps.push(i),
+      () => steps.push("button"),
+    );
     return { draft, finish, steps, submits };
   });
 }
 
 describe("createFinish", () => {
+  it("is ready once every question left was seen, and leads there past the last", () => {
+    const { draft, finish, steps } = setup();
+    draft.markSeen(0);
+    draft.setValue(2, pick(0));
+    expect(finish.ready()).toBe(false);
+    finish.pastLast();
+    expect(steps).toEqual([1]);
+
+    draft.markSeen(1);
+    expect(finish.ready()).toBe(true);
+    finish.pastLast();
+    expect(steps).toEqual([1, "button"]);
+  });
+
   it("goes to the first required question, submitting nothing", () => {
     const { draft, finish, steps, submits } = setup();
-    draft.markSeen(0);
+    for (const i of [0, 1, 2]) draft.markSeen(i);
     finish.finish(() => submits.push("sign"));
     expect(steps).toEqual([1]);
     expect(submits).toEqual([]);

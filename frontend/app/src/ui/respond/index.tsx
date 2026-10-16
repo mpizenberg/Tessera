@@ -155,7 +155,11 @@ export const Respond: Component = () => {
   let submitButton: HTMLButtonElement | undefined;
   const [barHeight, setBarHeight] = createSignal(0);
   const prompts: HTMLElement[] = [];
-  const finish = createFinish(draft, (i) => focusPrompt(prompts[i]));
+  const finish = createFinish(
+    draft,
+    (i) => focusPrompt(prompts[i]),
+    () => submitButton?.focus(),
+  );
 
   /** Why submitting is impossible right now, if it is. */
   const submitBlocked = (): string | undefined => {
@@ -263,7 +267,7 @@ export const Respond: Component = () => {
                 onChange={draft.setValue}
                 onSkip={draft.setSkipped}
                 onSeen={draft.markSeen}
-                focusSubmit={() => submitButton?.focus()}
+                pastLast={finish.pastLast}
               />
 
               <Show when={app.ui.pro}>

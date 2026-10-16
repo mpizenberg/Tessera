@@ -147,11 +147,11 @@ export interface ResponseDraft {
 export interface Left {
   /** Optional, seen, and not answered: finishing can skip them. */
   readonly unanswered: readonly number[];
-  /** Optional, never on screen, and not answered. */
+  /** Never on screen, and not answered, required or not. */
   readonly unseen: readonly number[];
   /** Started but not an answer yet. */
   readonly unfinished: readonly number[];
-  /** Required, not answered yet. */
+  /** Required, seen, and not answered yet. */
   readonly required: readonly number[];
 }
 
@@ -317,9 +317,9 @@ export function createResponseDraft(
     progress().forEach((p, i) => {
       if (p === "unfinished") out.unfinished.push(i);
       else if (p !== "unanswered") return;
+      else if (!drafts[i]?.seen) out.unseen.push(i);
       else if (questions[i]?.required) out.required.push(i);
-      else if (drafts[i]?.seen) out.unanswered.push(i);
-      else out.unseen.push(i);
+      else out.unanswered.push(i);
     });
     return out;
   });

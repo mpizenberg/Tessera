@@ -47,7 +47,11 @@ export const SubmitBar: Component<{
   /** Receives the bar's height as it changes, and 0 once it is gone. */
   onHeight: (px: number) => void;
 }> = (props) => {
-  const enabled = () => !props.mismatch && !props.blocked && !props.submitting;
+  const enabled = () =>
+    props.finish.ready() &&
+    !props.mismatch &&
+    !props.blocked &&
+    !props.submitting;
   let button: HTMLButtonElement | undefined;
   let bar!: HTMLDivElement;
   onMount(() => {

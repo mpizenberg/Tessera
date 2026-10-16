@@ -657,17 +657,18 @@ tooltip as "Question 12, skipped" (the `respond.square…` keys in `messages`).
 
 Skip moves on, as Next does: to the next shown question, its prompt scrolled
 to the middle of the screen in the list, and after the last one to the submit
-button. Taking the skip back stays on the question.
+button, or to the first question not seen yet while the button waits for it.
+Taking the skip back stays on the question.
 
-The submit button doesn't wait for every question. Beside it, a line names
-the questions left, each a link to it: required ones, ones started but not
-finished, ones not seen yet, and ones not answered yet. A question is seen
-once its prompt has been half on screen. Pressing the button goes to the
-first required, unfinished or unseen question, if there is one. With only
-questions seen and left unanswered, it asks first, offering to skip them and
-finish, or to go to the first: in CIP-179 a question left out of a response is
-an abstention, as a skip is. A response needs at least one answer, so without
-one the line asks for it.
+The submit button waits, disabled, until every question has been seen, that
+is, its prompt half on screen. It doesn't wait for every answer. Beside it, a
+line names the questions left, each a link to it: ones not seen yet, required
+ones, ones started but not finished, and ones not answered yet. Pressing the
+button goes to the first required or unfinished question, if there is one.
+With only questions seen and left unanswered, it asks first, offering to skip
+them and finish, or to go to the first: in CIP-179 a question left out of a
+response is an abstention, as a skip is. A response needs at least one answer,
+so without one the line asks for it.
 
 ## Keyboard and focus
 
@@ -684,12 +685,12 @@ and the question holding the focus an accent border.
 While the focus is in a question, these keys act on it, unless
 `keyboardShortcuts` is `false`:
 
-| Key         | Action                                                                                                                                     |
-| :---------- | :----------------------------------------------------------------------------------------------------------------------------------------- |
-| A, B, C…    | Picks, toggles or ranks the option with that letter; a multi-select's None box takes the next one. Typing B A C ranks three in that order. |
-| 1, 2, 3…    | Rates the item holding the focus, or the only item: the level labelled with that digit, or on a scale of words the level at that position. |
-| Enter       | Moves on to the next shown question. After the last one it moves the focus to the submit button, and never submits.                        |
-| Shift+Enter | Goes back to the previous shown question.                                                                                                  |
+| Key         | Action                                                                                                                                                                                  |
+| :---------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A, B, C…    | Picks, toggles or ranks the option with that letter; a multi-select's None box takes the next one. Typing B A C ranks three in that order.                                              |
+| 1, 2, 3…    | Rates the item holding the focus, or the only item: the level labelled with that digit, or on a scale of words the level at that position.                                              |
+| Enter       | Moves on to the next shown question. After the last one it moves the focus to the submit button, or to the first question not seen yet while the button waits for it. It never submits. |
+| Shift+Enter | Goes back to the previous shown question.                                                                                                                                               |
 
 - In a text area, Enter breaks the line: Ctrl+Enter or Cmd+Enter moves on,
   with Shift goes back. On a button, Enter presses it.

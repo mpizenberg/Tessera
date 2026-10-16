@@ -136,11 +136,11 @@ export const QuestionList: Component<{
   onSkip: (index: number, skipped: boolean) => void;
   onSeen: (index: number) => void;
   /** Takes focus past the last question, as a skip or Enter there moves on. */
-  focusSubmit: () => void;
+  pastLast: () => void;
 }> = (props) => {
   const next = (i: number): void => {
     if (i + 1 < props.questions.length) focusPrompt(props.prompts[i + 1]);
-    else props.focusSubmit();
+    else props.pastLast();
   };
   return (
     <RespondContexts>

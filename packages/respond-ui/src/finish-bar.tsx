@@ -37,6 +37,12 @@ export const LeftNote: Component<{
       >
         <Show when={any()} fallback={i18n.t("respond.leftNone")}>
           <LeftGroup
+            ids={props.left.unseen}
+            label="respond.leftUnseen"
+            many="respond.leftUnseenMany"
+            onGoTo={props.onGoTo}
+          />
+          <LeftGroup
             ids={props.left.required}
             label="respond.leftRequired"
             many="respond.leftRequiredMany"
@@ -46,12 +52,6 @@ export const LeftNote: Component<{
             ids={props.left.unfinished}
             label="respond.leftUnfinished"
             many="respond.leftUnfinishedMany"
-            onGoTo={props.onGoTo}
-          />
-          <LeftGroup
-            ids={props.left.unseen}
-            label="respond.leftUnseen"
-            many="respond.leftUnseenMany"
             onGoTo={props.onGoTo}
           />
           <LeftGroup

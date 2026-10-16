@@ -230,11 +230,15 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
   };
   const goTo = (i: number): void =>
     layout() === "list" ? focusPrompt(prompts[i]) : stepTo(i);
-  const finish = createFinish({ answers, answered, left, setSkipped }, goTo);
+  const finish = createFinish(
+    { answers, answered, left, setSkipped },
+    goTo,
+    () => submitButton?.focus(),
+  );
   createEffect(on(stepIndex, finish.close, { defer: true }));
   const next = (i: number): void => {
     const to = shownFrom(i, 1);
-    if (to === undefined) submitButton?.focus();
+    if (to === undefined) finish.pastLast();
     else goTo(to);
   };
   const prev = (i: number): void => {
@@ -795,7 +799,8 @@ const SubmitBar: Component<{
   submitRef: (el: HTMLButtonElement) => void;
 }> = (props) => {
   const i18n = useI18n();
-  const enabled = () => !props.blocked && !props.submitting;
+  const enabled = () =>
+    props.finish.ready() && !props.blocked && !props.submitting;
   const idleText = () =>
     props.sealed
       ? i18n.t("respond.encryptAndSubmit")

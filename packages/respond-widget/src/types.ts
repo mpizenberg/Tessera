@@ -199,11 +199,11 @@ export interface RespondChangeDetail {
   total: number;
   /** Optional questions seen and not answered, by index: finishing skips them. */
   unanswered: number[];
-  /** Optional questions never on screen, by index: finishing waits. */
+  /** Questions never on screen and not answered, by index: the button waits, disabled. */
   unseen: number[];
   /** Questions started but not an answer yet, by index: finishing waits. */
   unfinished: number[];
-  /** Required questions not answered yet, by index: finishing waits. */
+  /** Required questions seen and not answered yet, by index: finishing waits. */
   required: number[];
   /**
    * Every question decided (with ≥1 actually answered — an all-skipped form is

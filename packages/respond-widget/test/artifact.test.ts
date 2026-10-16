@@ -386,6 +386,24 @@ describe("built <tessera-respond> artifact", () => {
     expect(root.activeElement).toBe(root.querySelector(".submitBtn"));
   });
 
+  it("holds the submit button until every question is seen", () => {
+    const root = shadow(mount(SAMPLES.public));
+    const step = () => root.querySelector(".stepCount")?.textContent;
+    const button = () => root.querySelector<HTMLButtonElement>(".submitBtn")!;
+    click(root, ".optionRow");
+    expect(button().disabled).toBe(true);
+
+    // Past the last question, the first one not seen takes the focus.
+    root.querySelectorAll<HTMLElement>("button.sq")[6]!.click();
+    click(root, ".skipBtn");
+    expect(step()).toBe("Question 2 of 7");
+    expect(root.activeElement).toBe(root.querySelector(".qPrompt"));
+
+    for (let q = 3; q <= 6; q++)
+      click(root, ".stepperNav .stepNavBtn:last-child");
+    expect(button().disabled).toBe(false);
+  });
+
   it("moves focus to the next prompt after a skip in the list layout", () => {
     const el = mount(SAMPLES.public, { layout: "list" });
     const root = shadow(el);
@@ -724,7 +742,7 @@ describe("built <tessera-respond> artifact", () => {
     const el = mount(SAMPLES.public);
     const root = shadow(el);
     const left = () => root.querySelector(".leftNote")?.textContent?.trim();
-    expect(left()).toBe("Required: Q1 6 not seen yet. First: Q2");
+    expect(left()).toBe("6 not seen yet. First: Q2 Required: Q1");
 
     click(root, ".optionRow");
     expect(left()).toBe("6 not seen yet. First: Q2");
@@ -765,12 +783,12 @@ describe("built <tessera-respond> artifact", () => {
     const root = shadow(el);
     const rows = root.querySelectorAll<HTMLElement>(".optionRow");
     rows[0]!.click();
-    click(root, ".submitBtn");
-    expect(root.querySelector(".skipConfirm")).toBe(null);
-    expect(root.activeElement).toBe(root.querySelectorAll(".qPrompt")[1]);
+    const button = root.querySelector<HTMLButtonElement>(".submitBtn")!;
+    expect(button.disabled).toBe(true);
 
     onScreen = true;
     scrolled();
+    expect(button.disabled).toBe(false);
     click(root, ".submitBtn");
     const ask = root.querySelector(".skipConfirmText");
     expect(ask?.textContent).toBe(

@@ -443,7 +443,7 @@ describe("createResponseDraft", () => {
     expect(draft.answered()).toBe(true);
   });
 
-  it("sorts what is left by why: required, unfinished, unseen or skippable", () => {
+  it("sorts what is left by why: unseen, required, unfinished or skippable", () => {
     const ranking: Question = {
       type: "ranking",
       prompt: "rank",
@@ -462,6 +462,13 @@ describe("createResponseDraft", () => {
       preferredRole: () => null,
     });
 
+    expect(draft.left()).toEqual({
+      unanswered: [],
+      unseen: [0, 1, 2],
+      unfinished: [],
+      required: [],
+    });
+    draft.markSeen(0);
     expect(draft.left()).toEqual({
       unanswered: [],
       unseen: [1, 2],
