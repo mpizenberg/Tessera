@@ -3,7 +3,7 @@
  * is on its way.
  */
 
-import { Index, Show, type Component } from "solid-js";
+import { Index, Show, onCleanup, onMount, type Component } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import {
   LeftNote,
@@ -40,11 +40,22 @@ export const SubmitBar: Component<{
   onSubmit: () => void;
   onQueue: () => void;
   submitRef: (el: HTMLButtonElement) => void;
+  /** Receives the bar's height as it changes, and 0 once it is gone. */
+  onHeight: (px: number) => void;
 }> = (props) => {
   const enabled = () => !props.mismatch && !props.blocked && !props.submitting;
   let button: HTMLButtonElement | undefined;
+  let bar!: HTMLDivElement;
+  onMount(() => {
+    const sizes = new ResizeObserver(() => props.onHeight(bar.offsetHeight));
+    sizes.observe(bar);
+    onCleanup(() => {
+      sizes.disconnect();
+      props.onHeight(0);
+    });
+  });
   return (
-    <div class={css.submitBar}>
+    <div ref={bar} class={css.submitBar}>
       <div class={css.submitInner}>
         <RespondContexts>
           <Show

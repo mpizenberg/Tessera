@@ -10,10 +10,13 @@
 
 /* --- Screen shell --------------------------------------------------------- */
 
+/* The submit bar is fixed over the bottom of the screen, and its height
+   varies as its line wraps: the form's end scrolls clear of it by the
+   height it reports. */
 .main {
   max-width: 760px;
   margin: 0 auto;
-  padding: 22px 24px 140px;
+  padding: 22px 24px calc(var(--submit-bar-height, 0px) + 64px);
 }
 
 .backLink {

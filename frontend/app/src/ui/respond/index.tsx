@@ -153,6 +153,7 @@ export const Respond: Component = () => {
   const sealedUnsupported = (): boolean => survey()?.sealedUnsupported ?? false;
 
   let submitButton: HTMLButtonElement | undefined;
+  const [barHeight, setBarHeight] = createSignal(0);
   const prompts: HTMLElement[] = [];
   const finish = createFinish(draft, (i) => focusPrompt(prompts[i]));
 
@@ -164,7 +165,10 @@ export const Respond: Component = () => {
   };
 
   return (
-    <main class={css.main}>
+    <main
+      class={css.main}
+      style={{ "--submit-bar-height": `${barHeight()}px` }}
+    >
       <A href={`/survey/${encodeURIComponent(key())}`} class={css.backLink}>
         <span class={css.backArrow}>←</span> {t("respond.backToResults")}
       </A>
@@ -321,6 +325,7 @@ export const Respond: Component = () => {
             onSubmit={() => void submit(false)}
             onQueue={() => void submit(true)}
             submitRef={(el) => (submitButton = el)}
+            onHeight={setBarHeight}
           />
         </Show>
       </Show>
