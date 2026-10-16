@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 while `< 1.0.0`, breaking changes bump the **minor** version.
 
+## [Unreleased]
+
+### Changed
+
+- A rating item whose levels wrap onto a line of their own keeps them at the
+  right edge, lined up with the items whose levels fit beside them.
+
 ## [0.6.0] - 2026-10-16
 
 ### Added

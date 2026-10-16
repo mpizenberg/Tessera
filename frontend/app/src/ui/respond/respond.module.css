@@ -815,10 +815,12 @@
   gap: 4px;
 }
 
+/* An item's levels keep to the right edge, on its line or on one of their
+   own, so they line up with the other items'. */
 .ratingRow {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
   padding: 9px 0;
   border-top: 1px solid var(--hair);
@@ -826,6 +828,7 @@
 }
 
 .ratingOptLabel {
+  margin-right: auto;
   font-size: 14.5px;
   font-weight: 600;
 }
