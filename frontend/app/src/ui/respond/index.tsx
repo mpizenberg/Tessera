@@ -258,6 +258,7 @@ export const Respond: Component = () => {
                 prompts={prompts}
                 onChange={draft.setValue}
                 onSkip={draft.setSkipped}
+                onSeen={draft.markSeen}
                 focusSubmit={() => submitButton?.focus()}
               />
 

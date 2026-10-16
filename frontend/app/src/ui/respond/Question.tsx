@@ -126,6 +126,7 @@ export const QuestionList: Component<{
   prompts: HTMLElement[];
   onChange: (index: number, value: DraftValue) => void;
   onSkip: (index: number, skipped: boolean) => void;
+  onSeen: (index: number) => void;
   /** Takes focus past the last question, as a skip or Enter there moves on. */
   focusSubmit: () => void;
 }> = (props) => {
@@ -147,6 +148,7 @@ export const QuestionList: Component<{
               onNext={() => next(i())}
               onPrev={() => i() > 0 && focusPrompt(props.prompts[i() - 1])}
               promptRef={(el) => (props.prompts[i()] = el)}
+              onSeen={() => props.onSeen(i())}
             />
           )}
         </For>

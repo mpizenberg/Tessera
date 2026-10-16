@@ -114,6 +114,8 @@ export interface ResponseDraft {
   readonly drafts: readonly Draft[];
   readonly setValue: (index: number, value: DraftValue) => void;
   readonly setSkipped: (index: number, skipped: boolean) => void;
+  /** Marks a question seen: its prompt has been on screen. */
+  readonly markSeen: (index: number) => void;
   /** The form was seeded from the stash, not from a prior response or defaults. */
   readonly restored: Accessor<boolean>;
   /** Forget this form's stashed answers and reseed from the prior or defaults. */
@@ -142,8 +144,10 @@ export interface ResponseDraft {
 
 /** Question indexes left before the form is complete, each list in order. */
 export interface Left {
-  /** Optional, not answered yet: finishing can skip them. */
+  /** Optional, seen, and not answered: finishing can skip them. */
   readonly unanswered: readonly number[];
+  /** Optional, never on screen, and not answered. */
+  readonly unseen: readonly number[];
   /** Started but not an answer yet. */
   readonly unfinished: readonly number[];
   /** Required, not answered yet. */
@@ -198,9 +202,9 @@ export function createResponseDraft(
     return p?.answers.type === "public" ? p : undefined;
   });
 
-  // Store mirror of Draft with mutable fields so path setters typecheck.
+  // Store mirror of KeptDraft with mutable fields so path setters typecheck.
   const [drafts, setDrafts] = createStore<
-    { skipped: boolean; value: DraftValue }[]
+    { skipped: boolean; seen: boolean; value: DraftValue }[]
   >([]);
   // True once the user edits; gates auto-(re)seeding so late-arriving data never
   // clobbers in-progress input.
@@ -213,7 +217,12 @@ export function createResponseDraft(
     const ref = source.surveyRef();
     return ref ? refKey(ref) : undefined;
   });
+  const keep = () => {
+    const key = surveyKey();
+    if (key !== undefined) stash().set(key, encodeKeptForm(unwrap(drafts)));
+  };
 
+  let seededKey: string | undefined;
   const seed = () => {
     const def = source.definition();
     const key = surveyKey();
@@ -225,14 +234,25 @@ export function createResponseDraft(
     // replace it.
     setTouched(kept !== undefined);
     setRestored(kept !== undefined);
+    // What the respondent has seen outlasts a reseed of the same survey: a
+    // prompt still on screen is not reported again.
+    const was = key === seededKey ? drafts.map((d) => d.seen) : [];
+    seededKey = key;
     if (!def) setDrafts([]);
     else if (kept) {
-      setDrafts(kept.map((d) => ({ skipped: d.skipped, value: d.value })));
+      setDrafts(
+        kept.map((d, i) => ({
+          skipped: d.skipped,
+          seen: d.seen || was[i] === true,
+          value: d.value,
+        })),
+      );
     } else {
       const ex = prefillFrom();
-      setDrafts(
-        ex ? prefillDrafts(def.questions, ex) : def.questions.map(initDraft),
-      );
+      const fresh = ex
+        ? prefillDrafts(def.questions, ex)
+        : def.questions.map(initDraft);
+      setDrafts(fresh.map((d, i) => ({ ...d, seen: was[i] === true })));
     }
   };
 
@@ -253,8 +273,7 @@ export function createResponseDraft(
   const edit = (index: number, change: Partial<Draft>) => {
     setTouched(true);
     setDrafts(index, change);
-    const key = surveyKey();
-    if (key !== undefined) stash().set(key, encodeKeptForm(unwrap(drafts)));
+    keep();
   };
 
   const hidden = createMemo<readonly boolean[]>(() => {
@@ -290,13 +309,16 @@ export function createResponseDraft(
     const questions = source.definition()?.questions ?? [];
     const out = {
       unanswered: [] as number[],
+      unseen: [] as number[],
       unfinished: [] as number[],
       required: [] as number[],
     };
     progress().forEach((p, i) => {
       if (p === "unfinished") out.unfinished.push(i);
-      else if (p === "unanswered")
-        (questions[i]?.required ? out.required : out.unanswered).push(i);
+      else if (p !== "unanswered") return;
+      else if (questions[i]?.required) out.required.push(i);
+      else if (drafts[i]?.seen) out.unanswered.push(i);
+      else out.unseen.push(i);
     });
     return out;
   });
@@ -310,6 +332,12 @@ export function createResponseDraft(
     drafts,
     setValue: (index, value) => edit(index, { value }),
     setSkipped: (index, skipped) => edit(index, { skipped }),
+    markSeen: (index) => {
+      if (drafts[index]?.seen !== false) return;
+      setDrafts(index, "seen", true);
+      // An untouched form is not kept: a reload seeds it afresh.
+      if (touched()) keep();
+    },
     restored,
     discard: () => {
       const key = surveyKey();

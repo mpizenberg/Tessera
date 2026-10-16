@@ -3,10 +3,10 @@
  * press on the submit button does, and what it asks first. Its line and
  * confirmation are in `finish-bar.tsx`.
  *
- * The button never waits for every question. A required or unfinished one
- * stops it, and the focus goes there. Optional questions left unanswered are
- * skipped once confirmed, which records what skipping each by hand would: in
- * CIP-179 a question left out of a response is an abstention.
+ * The button never waits for every question. A required, unfinished or unseen
+ * one stops it, and the focus goes there. Optional questions seen and left
+ * unanswered are skipped once confirmed, which records what skipping each by
+ * hand would: in CIP-179 a question left out of a response is an abstention.
  */
 
 import { createEffect, createSignal, on, type Accessor } from "solid-js";
@@ -37,8 +37,8 @@ export function createFinish(
   return {
     asking,
     finish: (submit) => {
-      const { unanswered, unfinished, required } = draft.left();
-      const stops = [...required, ...unfinished];
+      const { unanswered, unseen, unfinished, required } = draft.left();
+      const stops = [...required, ...unfinished, ...unseen];
       if (stops.length > 0) {
         close();
         goTo(Math.min(...stops));

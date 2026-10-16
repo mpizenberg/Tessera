@@ -1,6 +1,7 @@
 /**
  * A form kept between visits: drafts as plain JSON, so any store that holds
  * JSON can keep them, and read back only when they still fit the questions.
+ * Each carries whether its question was seen, which no response records.
  */
 
 import type { Question } from "cip-179";
@@ -8,8 +9,13 @@ import { fromJsonSafe, toJsonSafe } from "cip-179/tally";
 
 import { optionCount, type Draft, type DraftValue } from "./draft.js";
 
+/** A question's draft as kept, with whether the respondent has seen it. */
+export interface KeptDraft extends Draft {
+  readonly seen: boolean;
+}
+
 /** The drafts as plain JSON; big integers become tagged strings. */
-export function encodeKeptForm(drafts: readonly Draft[]): unknown {
+export function encodeKeptForm(drafts: readonly KeptDraft[]): unknown {
   return toJsonSafe(drafts);
 }
 
@@ -21,7 +27,7 @@ export function encodeKeptForm(drafts: readonly Draft[]): unknown {
 export function decodeKeptForm(
   raw: unknown,
   questions: readonly Question[],
-): Draft[] | undefined {
+): KeptDraft[] | undefined {
   let form: unknown;
   try {
     form = fromJsonSafe(raw);
@@ -30,13 +36,15 @@ export function decodeKeptForm(
   }
   if (!Array.isArray(form) || form.length !== questions.length)
     return undefined;
-  const drafts: Draft[] = [];
+  const drafts: KeptDraft[] = [];
   for (const [i, q] of questions.entries()) {
     const d: unknown = form[i];
     if (!isFields(d) || typeof d.skipped !== "boolean") return undefined;
+    // Forms kept before `seen` existed read as not seen.
+    if (d.seen !== undefined && typeof d.seen !== "boolean") return undefined;
     const value = decodeValue(q, d.value);
     if (!value) return undefined;
-    drafts.push({ skipped: d.skipped, value });
+    drafts.push({ skipped: d.skipped, seen: d.seen === true, value });
   }
   return drafts;
 }

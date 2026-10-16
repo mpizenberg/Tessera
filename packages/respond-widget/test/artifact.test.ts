@@ -40,13 +40,55 @@ import {
 } from "../dev/samples";
 import type { RespondResult, TesseraRespondElement } from "../src/types";
 
+/**
+ * happy-dom's IntersectionObserver never reports. This one reports what it
+ * observes as on screen while `onScreen` holds: at once, and on `scrolled()`.
+ */
+let onScreen = true;
+const observers = new Set<() => void>();
+class ScreenObserver {
+  readonly #targets = new Set<Element>();
+  readonly #report: () => void;
+  constructor(callback: IntersectionObserverCallback) {
+    this.#report = () => {
+      const entries = [...this.#targets].map(
+        (target) =>
+          ({ target, isIntersecting: true }) as IntersectionObserverEntry,
+      );
+      if (onScreen && entries.length > 0)
+        callback(entries, this as unknown as IntersectionObserver);
+    };
+    observers.add(this.#report);
+  }
+  observe(target: Element): void {
+    this.#targets.add(target);
+    this.#report();
+  }
+  unobserve(target: Element): void {
+    this.#targets.delete(target);
+  }
+  disconnect(): void {
+    this.#targets.clear();
+    observers.delete(this.#report);
+  }
+  takeRecords(): IntersectionObserverEntry[] {
+    return [];
+  }
+}
+const scrolled = () => {
+  for (const report of [...observers]) report();
+};
+
 beforeAll(async () => {
+  globalThis.IntersectionObserver =
+    ScreenObserver as unknown as typeof IntersectionObserver;
   // Importing the artifact registers <tessera-respond> as a side effect.
   await import("../dist/tessera-respond.es.js");
 });
 
 afterEach(() => {
   document.body.innerHTML = "";
+  onScreen = true;
 });
 
 /** A single-question definition so submit tests need exactly one click. */
@@ -656,6 +698,7 @@ describe("built <tessera-respond> artifact", () => {
       decided: 1,
       total: 1,
       unanswered: [],
+      unseen: [],
       unfinished: [],
       required: [],
       valid: true,
@@ -666,10 +709,10 @@ describe("built <tessera-respond> artifact", () => {
     const el = mount(SAMPLES.public);
     const root = shadow(el);
     const left = () => root.querySelector(".leftNote")?.textContent?.trim();
-    expect(left()).toBe("Required: Q1 6 not answered yet. First: Q2");
+    expect(left()).toBe("Required: Q1 6 not seen yet. First: Q2");
 
     click(root, ".optionRow");
-    expect(left()).toBe("6 not answered yet. First: Q2");
+    expect(left()).toBe("6 not seen yet. First: Q2");
     click(root, ".leftNote .qLink");
     expect(root.querySelector(".stepCount")?.textContent).toBe(
       "Question 2 of 7",
@@ -677,7 +720,7 @@ describe("built <tessera-respond> artifact", () => {
     expect(root.activeElement).toBe(root.querySelector(".qPrompt"));
 
     click(root, ".skipBtn");
-    expect(left()).toBe("Not answered yet: Q3 · Q4 · Q5 · Q6 · Q7");
+    expect(left()).toBe("Not seen yet: Q4 · Q5 · Q6 · Q7 Not answered yet: Q3");
   });
 
   it("stops at the first required or unfinished question, sending nothing", () => {
@@ -701,11 +744,18 @@ describe("built <tessera-respond> artifact", () => {
     expect(sent).toBe(false);
   });
 
-  it("asks before skipping the questions left unanswered", async () => {
+  it("asks before skipping the questions seen and left unanswered", async () => {
+    onScreen = false;
     const el = mount(SAMPLES.public, { layout: "list" });
     const root = shadow(el);
     const rows = root.querySelectorAll<HTMLElement>(".optionRow");
     rows[0]!.click();
+    click(root, ".submitBtn");
+    expect(root.querySelector(".skipConfirm")).toBe(null);
+    expect(root.activeElement).toBe(root.querySelectorAll(".qPrompt")[1]);
+
+    onScreen = true;
+    scrolled();
     click(root, ".submitBtn");
     const ask = root.querySelector(".skipConfirmText");
     expect(ask?.textContent).toBe(

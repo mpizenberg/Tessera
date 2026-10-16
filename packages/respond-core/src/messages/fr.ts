@@ -118,9 +118,11 @@ const fr: RespondMessages = {
     // A no-break space keeps each colon on its word's line.
     leftRequired: "Réponse requise\u00a0:",
     leftUnfinished: "À compléter\u00a0:",
+    leftUnseen: "Pas encore vu\u00a0:",
     leftUnanswered: "Sans réponse\u00a0:",
     leftRequiredMany: "{count} obligatoires. Première\u00a0:",
     leftUnfinishedMany: "{count} à compléter. Première\u00a0:",
+    leftUnseenMany: "{count} pas encore vues. Première\u00a0:",
     leftUnansweredMany: "{count} sans réponse. Première\u00a0:",
     leftNone: "Chaque question a une réponse ou est ignorée.",
     answerOne: "Répondez à au moins une question pour terminer.",

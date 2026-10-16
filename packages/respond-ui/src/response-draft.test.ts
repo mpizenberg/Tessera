@@ -170,7 +170,11 @@ describe("createResponseDraft", () => {
     });
 
     expect(draft.prior()).toBeDefined();
-    expect(draft.drafts[0]).toEqual({ skipped: false, value: pick(2) });
+    expect(draft.drafts[0]).toEqual({
+      skipped: false,
+      seen: false,
+      value: pick(2),
+    });
     // Omitted by the prior response, and optional — an abstention, restored.
     expect(draft.drafts[1]?.skipped).toBe(true);
     expect(draft.decidedCount()).toBe(2);
@@ -282,8 +286,8 @@ describe("createResponseDraft", () => {
     const form = stash.forms.get(refKey(ref(1)));
     expect(JSON.parse(JSON.stringify(form))).toEqual(form);
     expect(decodeKeptForm(form, defWith(Role.DRep).questions)).toEqual([
-      { skipped: false, value: pick(2) },
-      { skipped: true, value: draft.drafts[1]?.value },
+      { skipped: false, seen: false, value: pick(2) },
+      { skipped: true, seen: false, value: draft.drafts[1]?.value },
     ]);
   });
 
@@ -346,8 +350,8 @@ describe("createResponseDraft", () => {
     stash.forms.set(
       refKey(ref(1)),
       encodeKeptForm([
-        { skipped: false, value: pick(1) },
-        { skipped: true, value: { type: "numeric", value: null } },
+        { skipped: false, seen: false, value: pick(1) },
+        { skipped: true, seen: false, value: { type: "numeric", value: null } },
       ]),
     );
     expect(draft.drafts[0]?.value).toEqual(pick(null));
@@ -362,8 +366,8 @@ describe("createResponseDraft", () => {
     stash.forms.set(
       refKey(ref(1)),
       encodeKeptForm([
-        { skipped: false, value: pick(0) },
-        { skipped: true, value: { type: "numeric", value: 0n } },
+        { skipped: false, seen: false, value: pick(0) },
+        { skipped: true, seen: false, value: { type: "numeric", value: 0n } },
       ]),
     );
     const draft = draftIn({
@@ -439,7 +443,7 @@ describe("createResponseDraft", () => {
     expect(draft.answered()).toBe(true);
   });
 
-  it("sorts what is left by why: required, unfinished, or optional", () => {
+  it("sorts what is left by why: required, unfinished, unseen or skippable", () => {
     const ranking: Question = {
       type: "ranking",
       prompt: "rank",
@@ -459,14 +463,17 @@ describe("createResponseDraft", () => {
     });
 
     expect(draft.left()).toEqual({
-      unanswered: [1, 2],
+      unanswered: [],
+      unseen: [1, 2],
       unfinished: [],
       required: [0],
     });
     draft.setValue(2, { type: "ranking", ranked: [1] });
     draft.setValue(0, pick(0));
+    draft.markSeen(1);
     expect(draft.left()).toEqual({
       unanswered: [1],
+      unseen: [],
       unfinished: [2],
       required: [],
     });

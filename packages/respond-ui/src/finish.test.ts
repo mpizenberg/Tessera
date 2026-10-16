@@ -63,7 +63,8 @@ function setup(): {
 
 describe("createFinish", () => {
   it("goes to the first required question, submitting nothing", () => {
-    const { finish, steps, submits } = setup();
+    const { draft, finish, steps, submits } = setup();
+    draft.markSeen(0);
     finish.finish(() => submits.push("sign"));
     expect(steps).toEqual([1]);
     expect(submits).toEqual([]);
@@ -80,9 +81,13 @@ describe("createFinish", () => {
     expect(submits).toEqual([]);
   });
 
-  it("asks before skipping the questions left, then submits as pressed", () => {
-    const { draft, finish, submits } = setup();
+  it("asks before skipping the questions seen and left, then submits as pressed", () => {
+    const { draft, finish, steps, submits } = setup();
     draft.setValue(1, pick(0));
+    finish.finish(() => submits.push("queue"));
+    expect(steps).toEqual([0]);
+    draft.markSeen(0);
+    draft.markSeen(2);
     finish.finish(() => submits.push("queue"));
     expect(finish.asking()).toBe("skip");
 

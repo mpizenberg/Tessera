@@ -225,11 +225,11 @@ written as plain attributes. `cancelled` also works HTML boolean-attribute style
 All three are dispatched on the element with `bubbles: true, composed: true`, so a
 listener anywhere up the light-DOM tree catches them across the shadow boundary.
 
-| Event              | `detail`               | When                                                                                                                                                     |
-| :----------------- | :--------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tessera:response` | `RespondResult`        | The user finalizes a valid answer set. **The widget does not submit** — you do.                                                                          |
-| `tessera:change`   | `RespondChangeDetail`  | Any answer edit — `{ decided, total, unanswered, unfinished, required, valid }`, for a host-driven submit button. The three lists hold question indexes. |
-| `tessera:invalid`  | `RespondInvalidDetail` | Validation failed on submit — `{ problems, messages }` (structured codes + localized text).                                                              |
+| Event              | `detail`               | When                                                                                                                                                            |
+| :----------------- | :--------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tessera:response` | `RespondResult`        | The user finalizes a valid answer set. **The widget does not submit** — you do.                                                                                 |
+| `tessera:change`   | `RespondChangeDetail`  | Any answer edit — `{ decided, total, unanswered, unseen, unfinished, required, valid }`, for a host-driven submit button. The four lists hold question indexes. |
+| `tessera:invalid`  | `RespondInvalidDetail` | Validation failed on submit — `{ problems, messages }` (structured codes + localized text).                                                                     |
 
 ### `RespondResult` — the payload to submit
 
@@ -382,11 +382,11 @@ does exactly this against a survey bundle.
 
 Every edit is written to the `stash`, one form per survey under its
 `<txHash>:<index>` key, and a form the user has not touched yet is seeded from
-it first: before a prior response, before defaults. The form belongs to the
-person answering, so it stays through a change of role or wallet, which is
-most often a correction. Without a `stash` the form lives in memory, and a
-reload loses it. A stash is three functions over plain JSON; this one keeps
-forms in `localStorage`:
+it first: before a prior response, before defaults. It keeps which questions
+were seen, too. The form belongs to the person answering, so it stays through
+a change of role or wallet, which is most often a correction. Without a
+`stash` the form lives in memory, and a reload loses it. A stash is three
+functions over plain JSON; this one keeps forms in `localStorage`:
 
 ```ts
 const prefix = "my-app.answers.";
@@ -653,12 +653,13 @@ button. Taking the skip back stays on the question.
 
 The submit button doesn't wait for every question. Beside it, a line names
 the questions left, each a link to it: required ones, ones started but not
-finished, and ones not answered yet. Pressing it goes to the first required or
-unfinished question, if there is one. With only optional questions left
-unanswered, it asks first, offering to skip them and finish, or to go to the
-first: in CIP-179 a question left out of a response is an abstention, as a
-skip is. A response needs at least one answer, so without one the line asks
-for it.
+finished, ones not seen yet, and ones not answered yet. A question is seen
+once its prompt has been half on screen. Pressing the button goes to the
+first required, unfinished or unseen question, if there is one. With only
+questions seen and left unanswered, it asks first, offering to skip them and
+finish, or to go to the first: in CIP-179 a question left out of a response is
+an abstention, as a skip is. A response needs at least one answer, so without
+one the line asks for it.
 
 ## Keyboard and focus
 

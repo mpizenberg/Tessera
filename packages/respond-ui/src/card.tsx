@@ -5,7 +5,13 @@
  * the host knows which question is next and where its submit button is.
  */
 
-import { Show, createUniqueId, type Component } from "solid-js";
+import {
+  Show,
+  createUniqueId,
+  onCleanup,
+  onMount,
+  type Component,
+} from "solid-js";
 
 import type { Question } from "cip-179";
 import type { Draft, DraftValue } from "cardano-tessera-respond-core";
@@ -35,6 +41,8 @@ export const QuestionCard: Component<{
   onPrev: () => void;
   /** Receives the prompt, which takes focus from script only. */
   promptRef?: (el: HTMLElement) => void;
+  /** Called once the prompt is half on screen. */
+  onSeen?: () => void;
 }> = (props) => {
   const i18n = useI18n();
   const cls = useClasses();
@@ -44,6 +52,20 @@ export const QuestionCard: Component<{
     props.q.type === "custom" &&
     (props.hiddenSchemas?.includes(props.q.methodSchema.uri) ?? false);
   const keysOn = () => props.shortcuts !== false;
+  let prompt!: HTMLHeadingElement;
+  onMount(() => {
+    if (typeof IntersectionObserver === "undefined") return props.onSeen?.();
+    const seen = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((e) => e.isIntersecting)) return;
+        seen.disconnect();
+        props.onSeen?.();
+      },
+      { threshold: 0.5 },
+    );
+    seen.observe(prompt);
+    onCleanup(() => seen.disconnect());
+  });
   let bodyKeys: ShortcutHandler | undefined;
   const onKeyDown = (e: KeyboardEvent) => {
     if (!keysOn() || e.repeat) return;
@@ -97,7 +119,10 @@ export const QuestionCard: Component<{
       </div>
       <h3
         id={promptId}
-        ref={(el) => props.promptRef?.(el)}
+        ref={(el) => {
+          prompt = el;
+          props.promptRef?.(el);
+        }}
         tabindex={-1}
         class={cls.qPrompt}
       >

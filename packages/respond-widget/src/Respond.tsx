@@ -176,6 +176,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
     drafts,
     setValue,
     setSkipped,
+    markSeen,
     hidden,
     answers,
     progress,
@@ -277,11 +278,12 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
 
   // Progress, for host-driven submit buttons (fires on every edit).
   createEffect(() => {
-    const { unanswered, unfinished, required } = left();
+    const { unanswered, unseen, unfinished, required } = left();
     dispatch(RESPOND_EVENTS.change, {
       decided: decidedCount(),
       total: total(),
       unanswered: [...unanswered],
+      unseen: [...unseen],
       unfinished: [...unfinished],
       required: [...required],
       valid: valid(),
@@ -425,6 +427,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
                         onNext={() => next(stepIndex())}
                         onPrev={() => prev(stepIndex())}
                         promptRef={(el) => (prompts[stepIndex()] = el)}
+                        onSeen={() => markSeen(stepIndex())}
                       />
                     )}
                   </Show>
@@ -459,6 +462,7 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
                         onNext={() => next(i())}
                         onPrev={() => prev(i())}
                         promptRef={(el) => (prompts[i()] = el)}
+                        onSeen={() => markSeen(i())}
                       />
                     </Show>
                   )}

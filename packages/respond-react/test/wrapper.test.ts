@@ -93,6 +93,7 @@ describe("TesseraRespond (React wrapper)", () => {
         decided: 0,
         total: 1,
         unanswered: [],
+        unseen: [],
         unfinished: [],
         required: [0],
         valid: false,

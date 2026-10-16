@@ -2,7 +2,11 @@ import { describe, expect, test } from "vitest";
 
 import type { Question } from "cip-179";
 
-import { decodeKeptForm, encodeKeptForm, type Draft } from "../src/index.js";
+import {
+  decodeKeptForm,
+  encodeKeptForm,
+  type KeptDraft,
+} from "../src/index.js";
 
 const options = { type: "options", labels: ["a", "b", "c"] } as const;
 const questions: Question[] = [
@@ -52,18 +56,38 @@ const questions: Question[] = [
   },
 ];
 
-const form: Draft[] = [
-  { skipped: false, value: { type: "singleChoice", optionIndex: 2 } },
-  { skipped: false, value: { type: "multiSelect", selected: [0, 2] } },
-  { skipped: true, value: { type: "ranking", ranked: [] } },
-  { skipped: false, value: { type: "numeric", value: 10n ** 30n } },
-  { skipped: false, value: { type: "pointsAllocation", points: [4n, 0n, 5n] } },
-  { skipped: false, value: { type: "rating", ratings: [5n, null, 1n] } },
-  { skipped: false, value: { type: "custom", text: "why not" } },
+const form: KeptDraft[] = [
+  {
+    skipped: false,
+    seen: true,
+    value: { type: "singleChoice", optionIndex: 2 },
+  },
+  {
+    skipped: false,
+    seen: true,
+    value: { type: "multiSelect", selected: [0, 2] },
+  },
+  { skipped: true, seen: true, value: { type: "ranking", ranked: [] } },
+  {
+    skipped: false,
+    seen: true,
+    value: { type: "numeric", value: 10n ** 30n },
+  },
+  {
+    skipped: false,
+    seen: true,
+    value: { type: "pointsAllocation", points: [4n, 0n, 5n] },
+  },
+  {
+    skipped: false,
+    seen: false,
+    value: { type: "rating", ratings: [5n, null, 1n] },
+  },
+  { skipped: false, seen: false, value: { type: "custom", text: "why not" } },
 ];
 
 /** Through the JSON a store would keep, as a reload reads it back. */
-const kept = (drafts: readonly Draft[]): unknown =>
+const kept = (drafts: readonly KeptDraft[]): unknown =>
   JSON.parse(JSON.stringify(encodeKeptForm(drafts)));
 
 describe("a kept form", () => {
@@ -72,7 +96,7 @@ describe("a kept form", () => {
   });
 
   test("comes back with answers not yet chosen unset", () => {
-    const unset = form.map((d, i): Draft =>
+    const unset = form.map((d, i): KeptDraft =>
       i === 1
         ? { ...d, value: { type: "multiSelect", selected: null } }
         : i === 3
@@ -83,7 +107,7 @@ describe("a kept form", () => {
   });
 
   test("reads as nothing when it no longer fits its questions", () => {
-    const misfits: Draft[][] = [
+    const misfits: KeptDraft[][] = [
       form.slice(1),
       form.map((d, i) =>
         i === 0 ? { ...d, value: { type: "custom", text: "2" } } : d,

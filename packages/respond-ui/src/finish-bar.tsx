@@ -24,11 +24,7 @@ export const LeftNote: Component<{
 }> = (props) => {
   const i18n = useI18n();
   const cls = useClasses();
-  const any = () =>
-    props.left.required.length +
-      props.left.unfinished.length +
-      props.left.unanswered.length >
-    0;
+  const any = () => Object.values(props.left).some((ids) => ids.length > 0);
   return (
     <p class={cls.leftNote}>
       <Show
@@ -50,6 +46,12 @@ export const LeftNote: Component<{
             ids={props.left.unfinished}
             label="respond.leftUnfinished"
             many="respond.leftUnfinishedMany"
+            onGoTo={props.onGoTo}
+          />
+          <LeftGroup
+            ids={props.left.unseen}
+            label="respond.leftUnseen"
+            many="respond.leftUnseenMany"
             onGoTo={props.onGoTo}
           />
           <LeftGroup

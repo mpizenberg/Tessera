@@ -197,8 +197,10 @@ export interface RespondResult {
 export interface RespondChangeDetail {
   decided: number;
   total: number;
-  /** Optional questions not answered yet, by index: finishing skips them. */
+  /** Optional questions seen and not answered, by index: finishing skips them. */
   unanswered: number[];
+  /** Optional questions never on screen, by index: finishing waits. */
+  unseen: number[];
   /** Questions started but not an answer yet, by index: finishing waits. */
   unfinished: number[];
   /** Required questions not answered yet, by index: finishing waits. */

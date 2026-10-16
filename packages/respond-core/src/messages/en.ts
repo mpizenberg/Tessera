@@ -135,10 +135,12 @@ const en = {
     /** Each is followed by links to its questions, "Q7 · Q12". */
     leftRequired: "Required:",
     leftUnfinished: "Not finished:",
+    leftUnseen: "Not seen yet:",
     leftUnanswered: "Not answered yet:",
     /** In place of a list past five, before a link to its first; {count} is locale-formatted. */
     leftRequiredMany: "{count} required. First:",
     leftUnfinishedMany: "{count} not finished. First:",
+    leftUnseenMany: "{count} not seen yet. First:",
     leftUnansweredMany: "{count} not answered yet. First:",
     leftNone: "All questions answered or skipped.",
     answerOne: "Answer at least one question to finish.",
