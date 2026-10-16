@@ -33,6 +33,7 @@ import {
   createSignal,
   on,
   type Component,
+  type ParentComponent,
 } from "solid-js";
 
 import {
@@ -408,6 +409,18 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
               when={layout() === "list"}
               fallback={
                 <div class="questionList">
+                  <StepperNav
+                    prev={shownFrom(stepIndex(), -1)}
+                    next={shownFrom(stepIndex(), 1)}
+                    onStep={stepTo}
+                  >
+                    <span class="stepCount">
+                      {i18n().t("respond.stepCount", {
+                        n: i18n().n(stepIndex() + 1),
+                        total: i18n().n(total()),
+                      })}
+                    </span>
+                  </StepperNav>
                   {/* `keyed` remounts the card when the question changes: a
                       QuestionBody picks its widget by question type at creation
                       (see respond-ui's bodies.tsx), so it must not outlive its
@@ -432,8 +445,6 @@ export const RespondRoot: Component<TesseraRespondProps> = (props) => {
                     )}
                   </Show>
                   <StepperNav
-                    index={stepIndex()}
-                    total={total()}
                     prev={shownFrom(stepIndex(), -1)}
                     next={shownFrom(stepIndex(), 1)}
                     hints={shortcuts()}
@@ -681,19 +692,18 @@ const HiddenRow: Component<{ index: number }> = (props) => {
 // Stepper navigation (one-per-screen layout)
 // ----------------------------------------------------------------------------
 
-const StepperNav: Component<{
-  index: number;
-  total: number;
+/** Previous and Next, with what sits between them. */
+const StepperNav: ParentComponent<{
   /** The shown questions either side, if any; hidden ones are stepped over. */
   prev: number | undefined;
   next: number | undefined;
   /** Show the keys that step, beside the buttons. */
-  hints: boolean;
+  hints?: boolean;
   onStep: (i: number) => void;
 }> = (props) => {
   const i18n = useI18n();
   return (
-    <div class="stepperNav" classList={{ keysOn: props.hints }}>
+    <div class="stepperNav" classList={{ keysOn: props.hints === true }}>
       <button
         class="stepNavBtn"
         disabled={props.prev === undefined}
@@ -704,12 +714,7 @@ const StepperNav: Component<{
           {i18n.t("respond.shiftEnterHint")}
         </kbd>
       </button>
-      <span class="stepCount">
-        {i18n.t("respond.stepCount", {
-          n: i18n.n(props.index + 1),
-          total: i18n.n(props.total),
-        })}
-      </span>
+      {props.children}
       <button
         class="stepNavBtn"
         disabled={props.next === undefined}

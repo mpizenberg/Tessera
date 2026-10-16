@@ -637,8 +637,8 @@ with a `-bg` pair). See [`src/theme.css`](./src/theme.css) for the full token li
 
 ## Layout
 
-- **`"one-per-screen"`** (default) — a stepper: one question at a time with
-  prev/next, stepping over hidden questions.
+- **`"one-per-screen"`** (default) — a stepper: one question at a time, with
+  Previous and Next above it and under it, stepping over hidden questions.
 - **`"list"`** — every question rendered at once, a hidden one as a one-line
   note.
 
@@ -688,8 +688,9 @@ While the focus is in a question, these keys act on it, unless
   and as a ranking's pool shrinks; options past the 26th have none. On a
   layout of another script, a letter stands for the Latin letter on its key.
 - With a mouse, each option shows its letter in a badge, and the stepper's
-  Previous and Next show their keys (`respond.shiftEnterHint` and
-  `respond.enterHint` in `messages`). A touch screen shows neither.
+  Previous and Next under the question show their keys
+  (`respond.shiftEnterHint` and `respond.enterHint` in `messages`). A touch
+  screen shows neither.
 - `keyboardShortcuts: false` (attribute `keyboard-shortcuts="false"`) is for a
   host with keys of its own. Tab, the arrow keys and Space stay: they are the
   controls' own.

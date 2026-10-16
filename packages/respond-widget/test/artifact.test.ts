@@ -295,6 +295,25 @@ describe("built <tessera-respond> artifact", () => {
     expect(root.querySelector(".customInput")).not.toBe(null);
   });
 
+  it("steps from a row above the card and one under it, the keys only under", () => {
+    const el = mount(SAMPLES.public);
+    const root = shadow(el);
+    const [above, under] = root.querySelectorAll<HTMLElement>(".stepperNav");
+    expect(above!.nextElementSibling).toBe(root.querySelector(".card"));
+    expect(above!.classList.contains("keysOn")).toBe(false);
+    expect(under!.classList.contains("keysOn")).toBe(true);
+    expect(root.querySelectorAll(".stepCount").length).toBe(1);
+
+    under!.querySelector<HTMLElement>(".stepNavBtn:last-child")!.click();
+    expect(root.querySelector(".stepCount")?.textContent).toBe(
+      "Question 2 of 7",
+    );
+    under!.querySelector<HTMLElement>(".stepNavBtn:first-child")!.click();
+    expect(root.querySelector(".stepCount")?.textContent).toBe(
+      "Question 1 of 7",
+    );
+  });
+
   it("remounts the right body for every question type while stepping", () => {
     // Regression: the stepper card must be keyed by its question — a
     // QuestionBody picks its widget at creation, so an unkeyed card kept
@@ -494,7 +513,7 @@ describe("built <tessera-respond> artifact", () => {
         (s) => s.textContent,
       );
     const badges = () =>
-      [...root.querySelectorAll(".keyBadge")].map((b) => b.textContent);
+      [...root.querySelectorAll(".card .keyBadge")].map((b) => b.textContent);
     expect(root.querySelector(".card")!.classList.contains("keysOn")).toBe(
       true,
     );
@@ -525,14 +544,7 @@ describe("built <tessera-respond> artifact", () => {
 
     // Up to 2 of 4, and the None box takes E.
     keydown(radios[2]!, "Enter");
-    expect(badges().slice(0, 6)).toEqual([
-      "A",
-      "B",
-      "C",
-      "D",
-      "E",
-      "⇧ Enter ↵",
-    ]);
+    expect(badges()).toEqual(["A", "B", "C", "D", "E"]);
     for (const k of ["a", "c", "d"]) keydown(prompt(), k);
     expect(on()).toEqual(["Core protocol", "Education"]);
     keydown(prompt(), "a", { repeat: true }); // held down

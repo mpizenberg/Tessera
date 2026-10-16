@@ -62,6 +62,7 @@
   border: 1px solid var(--tessera-line);
   background: var(--tessera-paper);
   color: var(--tessera-body);
+  white-space: nowrap;
 }
 
 .stepNavBtn:disabled {
@@ -70,6 +71,7 @@
 }
 
 .stepCount {
+  text-align: center;
   font-family: var(--tessera-mono);
   font-size: 11px;
   color: var(--tessera-dim);
