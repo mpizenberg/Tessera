@@ -93,9 +93,9 @@ describe("TesseraRespond (React wrapper)", () => {
         decided: 0,
         total: 1,
         unanswered: [],
-        unseen: [],
+        unseen: [0],
         unfinished: [],
-        required: [0],
+        required: [],
         valid: false,
       },
     ]);
@@ -148,7 +148,15 @@ describe("TesseraRespond (React wrapper)", () => {
   it("stops delivering events after unmount", () => {
     let calls = 0;
     const el = render({ ...REQUIRED, onChange: () => calls++ });
-    const detail: RespondChangeDetail = { decided: 1, total: 1, valid: true };
+    const detail: RespondChangeDetail = {
+      decided: 1,
+      total: 1,
+      unanswered: [],
+      unseen: [],
+      unfinished: [],
+      required: [],
+      valid: true,
+    };
     const base = calls;
     el.dispatchEvent(new CustomEvent("tessera:change", { detail }));
     expect(calls).toBe(base + 1);

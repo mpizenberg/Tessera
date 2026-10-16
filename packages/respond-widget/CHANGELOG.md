@@ -8,6 +8,57 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 while `< 1.0.0`, breaking changes bump the **minor** version.
 
+## [0.6.0] - 2026-10-16
+
+### Added
+
+- One square per question, each a button to its question, its state in fill
+  and stroke: not seen yet, not answered, answered, skipped, not finished, a
+  dot when a condition hides it. The stepper rings the question on screen and
+  puts the squares above the card, between Previous and Next while they fit
+  there on one line, else above the buttons; the widget's own width decides.
+  The list puts them at the top. The squares are one Tab stop: the arrow
+  keys, Home and End move between them, Enter or Space goes to the question.
+  The `messages` prop gains `respond.squares` and the `respond.square…` keys
+  that name each square.
+- The stepper shows Previous, the count and Next above the card too, so they
+  stay put whatever the question's height. The row under the card keeps
+  Previous and Next with their key hints.
+- A line beside the submit button names the questions left, each a link to
+  it: not seen yet, required, not finished, not answered yet. The `messages`
+  prop gains `respond.leftUnseen`, `respond.leftRequired`,
+  `respond.leftUnfinished`, `respond.leftUnanswered`, their `…Many` forms,
+  `respond.leftNone` and `respond.answerOne`.
+- Pressing the submit button with only questions seen and left unanswered
+  asks first, in place of the submit row: "Skip them and finish" marks them
+  skipped and submits, or a link goes to the first. In CIP-179 a question
+  left out is an abstention, as a skip is. The `messages` prop gains
+  `respond.skipConfirmOne`, `respond.skipConfirmMany`,
+  `respond.skipItAndFinish`, `respond.skipThemAndFinish` and
+  `respond.goToQuestion`.
+- The `tessera:change` detail gains `unseen`, `required`, `unfinished` and
+  `unanswered`: the indexes of the questions left in each case, so a host's
+  own button can say the same.
+- The `stash` keeps which questions were seen. A form kept by 0.5 reads as
+  none seen.
+
+### Changed
+
+- The submit button waits, disabled, until every question has been seen,
+  that is, its prompt half on screen, and no longer until every question is
+  answered or skipped. Pressed, it goes to the first required or unfinished
+  question, asks before skipping those left unanswered, or submits.
+- Enter or Skip past the last question goes to the first question not seen
+  yet while the submit button waits for it, else to the button as before.
+- The Skip note reads "Skipped. Nothing is recorded for this question.",
+  without "abstaining".
+
+### Removed
+
+- **Breaking:** the submit bar's progress dots and its "5 of 22 decided"
+  text, with the `respond.decidedCount` key of the `messages` prop; a
+  `messages` object naming it no longer type-checks.
+
 ## [0.5.0] - 2026-10-14
 
 ### Added

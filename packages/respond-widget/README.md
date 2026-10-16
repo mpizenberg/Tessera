@@ -55,7 +55,7 @@ fine there):
 
 ```html
 <script type="module">
-  import "https://esm.sh/cardano-tessera-respond@0.5";
+  import "https://esm.sh/cardano-tessera-respond@0.6";
 </script>
 ```
 
@@ -449,9 +449,10 @@ el.conditions = {
 - A skipped or unanswered question has no option selected, not even the None
   box: `anyOf` is false, `noneOf` true. A hidden question counts the same for
   later conditions, so a chain of conditions hides together.
-- A hidden question records nothing and counts as decided, so the progress
-  total stays the full question count and moves ahead as questions hide. Its
-  answers are kept: changing the earlier answer back brings them back.
+- A hidden question records nothing and counts as decided in
+  `tessera:change`, so `total` stays the full question count and `decided`
+  moves ahead as questions hide. Its square shows a dot. Its answers are
+  kept: changing the earlier answer back brings them back.
 - The list layout keeps a one-line row in a hidden question's place — its
   number and `respond.hiddenNote`, without the prompt — so the numbering has
   no unexplained gap. The stepper steps over it.
@@ -675,12 +676,13 @@ so without one the line asks for it.
 A question's choices are native radios and checkboxes, so the browser's keys
 work: a single choice is one Tab stop whose arrow keys move the pick, each
 checkbox is a stop, and Space picks or toggles. A rating is one radio group
-per rated item, and Delete or Backspace clears the item's level. Each group is named by its prompt. The
-progress squares are one Tab stop: the arrow keys move between them, Home and
-End go to the first and last, and Enter or Space goes to the question. After
-Previous, Next, Skip or a square, the focus goes to the new question's prompt,
-so a screen reader reads it. Every control shows a focus ring in `--tessera-accent`,
-and the question holding the focus an accent border.
+per rated item, and Delete or Backspace clears the item's level. Each group is
+named by its prompt. The progress squares are one Tab stop: the arrow keys
+move between them, Home and End go to the first and last, and Enter or Space
+goes to the question. After Previous, Next, Skip or a square, the focus goes
+to the new question's prompt, so a screen reader reads it. Every control shows
+a focus ring in `--tessera-accent`, and the question holding the focus an
+accent border.
 
 While the focus is in a question, these keys act on it, unless
 `keyboardShortcuts` is `false`:

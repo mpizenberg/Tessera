@@ -9,6 +9,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 while `< 1.0.0`, breaking changes bump the **minor** version.
 
+## [0.6.0] - 2026-10-16
+
+### Added
+
+- `onChange`'s detail gains `unseen`, `required`, `unfinished` and
+  `unanswered`, following the element: the indexes of the questions left in
+  each case.
+- The `messages` prop takes the element's new keys for its progress squares,
+  the line naming the questions left, and the confirmation before skipping
+  them.
+
+### Removed
+
+- **Breaking:** the `messages` prop loses `respond.decidedCount`, following
+  the element, whose submit bar no longer shows "5 of 22 decided".
+
 ## [0.5.0] - 2026-10-14
 
 ### Added
