@@ -152,7 +152,6 @@ const en = {
     leftUnfinishedMany: "{count} not finished. First:",
     leftUnseenMany: "{count} not seen yet. First:",
     leftUnansweredMany: "{count} not answered yet. First:",
-    leftNone: "All questions answered or skipped.",
     answerOne: "Answer at least one question to finish.",
     /** In place of the submit row, before links to the questions; {count} is locale-formatted. */
     skipConfirmOne: "1 question has no answer:",

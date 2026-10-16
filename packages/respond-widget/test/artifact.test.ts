@@ -834,7 +834,7 @@ describe("built <tessera-respond> artifact", () => {
     expect(left()).toBe("Answer at least one question to finish.");
     click(root, ".skipBtn");
     click(root, ".optionRow");
-    expect(left()).toBe("All questions answered or skipped.");
+    expect(root.querySelector(".leftNote")).toBeNull();
   });
 
   it("emits a decodable public payload on submit", async () => {

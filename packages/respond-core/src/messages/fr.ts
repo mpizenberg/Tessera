@@ -133,7 +133,6 @@ const fr: RespondMessages = {
     leftUnfinishedMany: "{count} à compléter. Première\u00a0:",
     leftUnseenMany: "{count} pas encore vues. Première\u00a0:",
     leftUnansweredMany: "{count} sans réponse. Première\u00a0:",
-    leftNone: "Chaque question a une réponse ou est ignorée.",
     answerOne: "Répondez à au moins une question pour terminer.",
     skipConfirmOne: "1 question sans réponse\u00a0:",
     skipConfirmMany: "{count} questions sans réponse\u00a0:",

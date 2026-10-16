@@ -14,7 +14,10 @@ import type { Left } from "./response-draft";
 /** A longer list shows as its count and a link to its first question. */
 const LISTED = 5;
 
-/** The line beside the submit button: what is left, each question a link. */
+/**
+ * The line beside the submit button: what is left, each question a link. It is
+ * gone once nothing is.
+ */
 export const LeftNote: Component<{
   left: Left;
   answered: boolean;
@@ -25,17 +28,18 @@ export const LeftNote: Component<{
   const i18n = useI18n();
   const cls = useClasses();
   const any = () => Object.values(props.left).some((ids) => ids.length > 0);
+  const call = () => props.calling || (!any() && !props.answered);
   return (
-    <p class={cls.leftNote}>
-      <Show
-        when={!props.calling && (any() || props.answered)}
-        fallback={
-          <span role="alert" class={cls.leftCall}>
-            {i18n.t("respond.answerOne")}
-          </span>
-        }
-      >
-        <Show when={any()} fallback={i18n.t("respond.leftNone")}>
+    <Show when={call() || any()}>
+      <p class={cls.leftNote}>
+        <Show
+          when={!call()}
+          fallback={
+            <span role="alert" class={cls.leftCall}>
+              {i18n.t("respond.answerOne")}
+            </span>
+          }
+        >
           <LeftGroup
             ids={props.left.unseen}
             label="respond.leftUnseen"
@@ -61,8 +65,8 @@ export const LeftNote: Component<{
             onGoTo={props.onGoTo}
           />
         </Show>
-      </Show>
-    </p>
+      </p>
+    </Show>
   );
 };
 

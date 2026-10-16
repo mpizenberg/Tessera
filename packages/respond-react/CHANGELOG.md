@@ -9,6 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 while `< 1.0.0`, breaking changes bump the **minor** version.
 
+## [Unreleased]
+
+### Removed
+
+- **Breaking:** the `messages` prop loses `respond.leftNone`, following the
+  element, whose submit bar no longer says "All questions answered or
+  skipped."
+
 ## [0.6.0] - 2026-10-16
 
 ### Added

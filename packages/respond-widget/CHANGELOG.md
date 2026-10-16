@@ -15,6 +15,13 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
 - A rating item whose levels wrap onto a line of their own keeps them at the
   right edge, lined up with the items whose levels fit beside them.
 
+### Removed
+
+- **Breaking:** the line beside the submit button is gone once nothing is
+  left, instead of saying "All questions answered or skipped.", with the
+  `respond.leftNone` key of the `messages` prop; a `messages` object naming
+  it no longer type-checks.
+
 ## [0.6.0] - 2026-10-16
 
 ### Added
