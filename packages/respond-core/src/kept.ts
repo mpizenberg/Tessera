@@ -8,6 +8,7 @@ import type { Question } from "cip-179";
 import { fromJsonSafe, toJsonSafe } from "cip-179/tally";
 
 import { optionCount, type Draft, type DraftValue } from "./draft.js";
+import { isFields } from "./fields.js";
 
 /** A question's draft as kept, with whether the respondent has seen it. */
 export interface KeptDraft extends Draft {
@@ -48,11 +49,6 @@ export function decodeKeptForm(
   }
   return drafts;
 }
-
-type Fields = Record<string, unknown>;
-
-const isFields = (x: unknown): x is Fields =>
-  typeof x === "object" && x !== null && !Array.isArray(x);
 
 const isIndex = (x: unknown, count: number): x is number =>
   Number.isInteger(x) && (x as number) >= 0 && (x as number) < count;

@@ -8,6 +8,7 @@
 import type { Question, SurveyDefinition } from "cip-179";
 
 import { hasNoneBox, optionCount, type Draft } from "./draft.js";
+import { isFields } from "./fields.js";
 
 /**
  * Show a question when the single- or multi-choice question at index
@@ -136,6 +137,3 @@ function selectedOptions(draft: Draft): readonly ConditionOption[] {
     return v.selected?.length === 0 ? ["none"] : (v.selected ?? []);
   return [];
 }
-
-const isFields = (x: unknown): x is Record<string, unknown> =>
-  typeof x === "object" && x !== null && !Array.isArray(x);

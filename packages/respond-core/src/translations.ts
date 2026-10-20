@@ -23,6 +23,7 @@ import {
 } from "cip-179";
 
 import { hasNoneBox, optionCount } from "./draft.js";
+import { isFields } from "./fields.js";
 
 /** Labels keyed by the index of the multi-select whose None box each words. */
 export type NoneLabels = Readonly<Record<number, string>>;
@@ -223,11 +224,6 @@ function lookupChain(locale: string): string[] {
   }
   return chain;
 }
-
-type Fields = Record<string, unknown>;
-
-const isFields = (x: unknown): x is Fields =>
-  typeof x === "object" && x !== null && !Array.isArray(x);
 
 const isText = (x: unknown): boolean =>
   x === undefined || typeof x === "string";
