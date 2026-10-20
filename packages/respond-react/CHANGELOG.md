@@ -9,6 +9,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 while `< 1.0.0`, breaking changes bump the **minor** version.
 
+## [Unreleased]
+
+### Added
+
+- Every type the element exports is exported here too, the new ones included:
+  `Credential`, `Role`, `SurveyDefinition`, `SurveyRef`, `ContentAnchor`,
+  `Metadatum`, `SurveyResponse`, `ValidationProblem`, `RespondMessages` and
+  `DeepPartial`. So are `TesseraRespondElementProps`, and `RESPOND_EVENTS` as a
+  type. `TesseraRespondProps` stays this package's own.
+
 ## [0.7.0] - 2026-10-16
 
 ### Removed

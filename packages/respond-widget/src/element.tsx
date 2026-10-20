@@ -23,11 +23,7 @@ import { Show } from "solid-js";
 
 import { RespondRoot } from "./Respond";
 import { adoptWidgetStyles } from "./styles";
-import type {
-  TesseraRespondElement,
-  TesseraRespondElementProps,
-  TesseraRespondProps,
-} from "./types";
+import type { TesseraRespondElementProps, TesseraRespondProps } from "./types";
 
 export { RESPOND_EVENTS } from "./types";
 export type {
@@ -49,16 +45,20 @@ export type {
   TesseraRespondElementProps,
   TesseraRespondProps,
 } from "./types";
-
-// Solid hosts get the tag in JSX (typed ref included); object props still
-// flow in as DOM properties, so plain HTMLAttributes is the whole surface.
-declare module "solid-js" {
-  namespace JSX {
-    interface IntrinsicElements {
-      "tessera-respond": JSX.HTMLAttributes<TesseraRespondElement>;
-    }
-  }
-}
+export type {
+  ContentAnchor,
+  Credential,
+  Metadatum,
+  Role,
+  SurveyDefinition,
+  SurveyRef,
+  SurveyResponse,
+  ValidationProblem,
+} from "cip-179";
+export type {
+  DeepPartial,
+  RespondMessages,
+} from "cardano-tessera-respond-core";
 
 /**
  * Every public prop, declared up-front with its pre-initialization value —

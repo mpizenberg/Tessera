@@ -9,10 +9,16 @@
  * `i18n.t(...)` API while every call stays reactive to a locale switch.
  */
 
-import { createContext, useContext, type Accessor } from "solid-js";
+import {
+  createContext,
+  useContext,
+  type Accessor,
+  type Context,
+} from "solid-js";
 import type { I18n } from "cardano-tessera-respond-core";
 
-export const I18nContext = createContext<Accessor<I18n>>();
+export const I18nContext: Context<Accessor<I18n> | undefined> =
+  createContext<Accessor<I18n>>();
 
 export function useI18n(): I18n {
   const get = useContext(I18nContext);

@@ -20,21 +20,4 @@ export { RespondRoot } from "./Respond";
 export { adoptWidgetStyles, cssText } from "./styles";
 export { I18nContext, useI18n } from "cardano-tessera-respond-ui";
 export { RESPOND_EVENTS } from "./types";
-export type {
-  ConditionOption,
-  CredentialProof,
-  DisplayCondition,
-  DisplayConditions,
-  DraftStash,
-  NoneLabels,
-  ProofKeyKind,
-  QuestionTranslation,
-  Responder,
-  RespondChangeDetail,
-  RespondInvalidDetail,
-  RespondResult,
-  SurveyTranslation,
-  SurveyTranslations,
-  TesseraRespondElement,
-  TesseraRespondProps,
-} from "./types";
+export type * from "./element";

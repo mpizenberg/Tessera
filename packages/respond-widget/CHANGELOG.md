@@ -10,10 +10,27 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
 
 ## [Unreleased]
 
+### Added
+
+- `Credential` is exported, so a host can name a `responder` entry's type.
+  The declarations used to carry it as an unexported `Credential$1`.
+
 ### Changed
 
 - The current question's square is ringed tight, over its own border, instead
   of 5px out, where the next square covered the ring's edge.
+- The declarations keep their doc comments.
+
+### Removed
+
+- **Breaking:** the types no prop or event names are no longer exported: each
+  question and answer kind with their parts (`Question`, `QuestionBase`,
+  `AnswerItem`, `AnswerBase`, `ResponseAnswers`, `Rating`, `RatingScale`,
+  `PointsAllocation`, `OptionsOrCount`, `NumericConstraints`), the submission
+  modes, `TxId`, `Blake2b256` and `ValidationProblemCode`. Import them from
+  `cip-179`. The types the props and events name stay: `Credential`, `Role`,
+  `SurveyDefinition`, `SurveyRef`, `ContentAnchor`, `Metadatum`,
+  `SurveyResponse`, `ValidationProblem`, `RespondMessages` and `DeepPartial`.
 
 ## [0.7.0] - 2026-10-16
 

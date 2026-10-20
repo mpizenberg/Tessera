@@ -289,6 +289,10 @@ property — and `HTMLElementEventMap` gains the three `tessera:*` events, so
 `RespondResult` on any element (they bubble composed, so ancestors count).
 No hand-rolled element interface or `IntrinsicElements` entry is needed.
 
+The package exports every type its props and events name, `cip-179`'s among
+them (`Credential`, `Role`, `SurveyDefinition`, `Metadatum`, …). The types
+inside those, such as each question kind, come from `cip-179` itself.
+
 The one exception is Solid's JSX: the published types deliberately augment
 nothing framework-specific (a `declare module "solid-js"` block would break
 type-checking for the many hosts that don't have `solid-js` installed). A
@@ -303,8 +307,6 @@ declare module "solid-js" {
   }
 }
 ```
-
-(In-workspace, `/element` ships that augmentation from source.)
 
 ## The responder & eligibility
 

@@ -18,7 +18,7 @@ import respondCss from "./styles/respond.css?inline";
  * The widget's full stylesheet text: tokens on :host, respond-ui's components,
  * then the widget's own, which may override theirs at equal specificity.
  */
-export const cssText = `${themeCss}\n${bodyCss}\n${respondCss}`;
+export const cssText: string = `${themeCss}\n${bodyCss}\n${respondCss}`;
 
 let shared: CSSStyleSheet | null = null;
 

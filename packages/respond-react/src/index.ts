@@ -31,23 +31,7 @@ import type {
   TesseraRespondProps as ElementProps,
 } from "cardano-tessera-respond/artifact";
 
-export type {
-  ConditionOption,
-  CredentialProof,
-  DisplayCondition,
-  DisplayConditions,
-  DraftStash,
-  NoneLabels,
-  ProofKeyKind,
-  QuestionTranslation,
-  Responder,
-  RespondChangeDetail,
-  RespondInvalidDetail,
-  RespondResult,
-  SurveyTranslation,
-  SurveyTranslations,
-  TesseraRespondElement,
-} from "cardano-tessera-respond/artifact";
+export type * from "cardano-tessera-respond/artifact";
 
 export interface TesseraRespondProps extends ElementProps {
   /** `tessera:response` — the user finalized a valid answer set; attach `detail.payload` at label 17 and submit. */

@@ -62,6 +62,15 @@ import { QueuedNote } from "~/ui/components/CartDrawer";
 import { locale } from "~/i18n";
 import css from "./DevWidgetHost.module.css";
 
+// The widget's types augment no framework; a Solid host names the tag itself.
+declare module "solid-js" {
+  namespace JSX {
+    interface IntrinsicElements {
+      "tessera-respond": JSX.HTMLAttributes<TesseraRespondElement>;
+    }
+  }
+}
+
 const DevWidgetHost: Component = () => {
   const app = useApp();
   const params = useParams<{ key: string }>();

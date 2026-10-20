@@ -10,7 +10,7 @@
  * list.
  */
 
-import { createContext, useContext } from "solid-js";
+import { createContext, useContext, type Context } from "solid-js";
 
 /** Every class name respond-ui's components render. */
 export const BODY_CLASS_NAMES = [
@@ -124,7 +124,8 @@ export const IDENTITY_CLASSES: BodyClasses = Object.fromEntries(
   BODY_CLASS_NAMES.map((name) => [name, name]),
 ) as BodyClasses;
 
-export const ClassesContext = createContext<BodyClasses>(IDENTITY_CLASSES);
+export const ClassesContext: Context<BodyClasses> =
+  createContext<BodyClasses>(IDENTITY_CLASSES);
 
 export function useClasses(): BodyClasses {
   return useContext(ClassesContext);
