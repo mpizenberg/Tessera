@@ -16,6 +16,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), "../src");
+/** respond-ui's components' styles, which the widget's sheet carries. */
+const BODY_CSS = join(SRC, "../../respond-ui/src/body.css");
 
 function walk(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
@@ -28,12 +30,13 @@ function stripComments(text: string): string {
   return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/.*$/gm, "");
 }
 
-const files = walk(SRC)
-  .filter((f) => /\.(css|tsx?)$/.test(f))
-  .map((f) => ({
-    path: relative(SRC, f),
-    text: stripComments(readFileSync(f, "utf8")),
-  }));
+const files = [
+  ...walk(SRC).filter((f) => /\.(css|tsx?)$/.test(f)),
+  BODY_CSS,
+].map((f) => ({
+  path: relative(SRC, f),
+  text: stripComments(readFileSync(f, "utf8")),
+}));
 
 const themeCss = files.find((f) => f.path === "theme.css")!;
 

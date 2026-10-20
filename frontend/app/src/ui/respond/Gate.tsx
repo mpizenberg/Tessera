@@ -16,6 +16,7 @@ import {
   viewStatus,
 } from "~/ui/format";
 import { t } from "~/i18n";
+import body from "./body.module.css";
 import css from "./respond.module.css";
 
 /** Renders the form (children) only when open, public, connected, and eligible. */
@@ -75,7 +76,7 @@ const ConnectPrompt: Component = () => (
 );
 
 const Ineligible: Component<{ def: SurveyDefinition }> = (props) => (
-  <div class={css.card}>
+  <div class={body.card}>
     <h3 class={css.ineligibleTitle}>{t("respond.ineligibleTitle")}</h3>
     <p class={css.ineligibleLead}>{t("respond.ineligibleLead")}</p>
     <div class={css.ineligibleList}>

@@ -10,11 +10,15 @@
  * constructed stylesheets are unavailable.
  */
 
+import bodyCss from "cardano-tessera-respond-ui/body.css?inline";
 import themeCss from "./theme.css?inline";
 import respondCss from "./styles/respond.css?inline";
 
-/** The widget's full stylesheet text (tokens on :host, then the component CSS). */
-export const cssText = `${themeCss}\n${respondCss}`;
+/**
+ * The widget's full stylesheet text: tokens on :host, respond-ui's components,
+ * then the widget's own, which may override theirs at equal specificity.
+ */
+export const cssText = `${themeCss}\n${bodyCss}\n${respondCss}`;
 
 let shared: CSSStyleSheet | null = null;
 

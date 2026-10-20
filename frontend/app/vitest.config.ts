@@ -16,7 +16,7 @@ export default defineConfig({
       "cardano-tessera-respond-core": r(
         "../../packages/respond-core/src/index.ts",
       ),
-      "cardano-tessera-respond-ui": r("../../packages/respond-ui/src/index.ts"),
+      "cardano-tessera-respond-ui": r("../../packages/respond-ui/src"),
       "~": r("./src"),
     },
   },

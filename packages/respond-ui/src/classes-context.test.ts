@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { createRoot } from "solid-js";
 
@@ -21,5 +22,16 @@ describe("classes context", () => {
       return c;
     });
     expect(cls).toBe(IDENTITY_CLASSES);
+  });
+
+  it("body.css styles every body class name, and only those", () => {
+    const sheet = readFileSync(
+      new URL("./body.css", import.meta.url),
+      "utf8",
+    ).replace(/\/\*[\s\S]*?\*\//g, "");
+    const styled = new Set(
+      [...sheet.matchAll(/\.([a-zA-Z][\w-]*)/g)].map((m) => m[1]),
+    );
+    expect([...styled].sort()).toEqual([...BODY_CLASS_NAMES].sort());
   });
 });

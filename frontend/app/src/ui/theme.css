@@ -75,6 +75,36 @@
   --r-xs: 7px;
   --r-2xs: 6px;
   --r-3xs: 5px;
+  /* ===== RESPOND-UI (its sheet reads the widget's public token names) ===== */
+  --tessera-mono: var(--mono);
+  --tessera-serif: var(--serif);
+  --tessera-ink: var(--ink);
+  --tessera-body: var(--body);
+  --tessera-muted: var(--muted);
+  --tessera-faint: var(--faint);
+  --tessera-dim: var(--dim);
+  --tessera-paper: #fff;
+  --tessera-line: var(--line);
+  --tessera-line2: var(--line2);
+  --tessera-hair: var(--hair);
+  --tessera-surface3: var(--surface3);
+  --tessera-accent: var(--accent);
+  --tessera-accent-bg: var(--accent-bg);
+  --tessera-accent-line: var(--accent-line);
+  --tessera-on-accent: #fff;
+  --tessera-ok: var(--ok);
+  --tessera-danger: var(--danger);
+  --tessera-danger-bg: var(--danger-bg);
+  --tessera-danger-line-soft: #f0d2d0;
+  --tessera-schema-tag: #7e89a8;
+  --tessera-schema-tag-bg: #1c2536;
+  --tessera-schema-uri: #c4ccda;
+  --tessera-r-md: var(--r-md);
+  --tessera-r-control: var(--r-control);
+  --tessera-r-sm: var(--r-sm);
+  --tessera-r-chip: var(--r-chip);
+  --tessera-r-xs: var(--r-xs);
+  --tessera-r-3xs: var(--r-3xs);
 }
 
 * {

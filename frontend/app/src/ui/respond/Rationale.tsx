@@ -13,6 +13,7 @@ import { useApp } from "~/state";
 import { IPFS_PROVIDERS } from "~/enrichment/providers";
 import { SegmentedToggle } from "~/ui/components/SegmentedToggle";
 import { t } from "~/i18n";
+import body from "./body.module.css";
 import css from "./respond.module.css";
 
 /** How the voter supplies the document: write it here, or paste one already hosted. */
@@ -174,7 +175,7 @@ export function createRationale(kept?: RationaleInputs): Rationale {
  * than restating its fields as props.
  */
 export const RationaleSection: Component<{ r: Rationale }> = (props) => (
-  <div class={css.card}>
+  <div class={body.card}>
     <label class={css.ratToggleLabel}>
       <input
         type="checkbox"
@@ -224,7 +225,7 @@ export const RationaleSection: Component<{ r: Rationale }> = (props) => (
                   class={css.ratMonoInput}
                 />
               </label>
-              <p class={css.ratHint}>{t("respond.ratManualHint")}</p>
+              <p class={body.ratHint}>{t("respond.ratManualHint")}</p>
             </>
           }
         >
@@ -250,7 +251,7 @@ export const RationaleSection: Component<{ r: Rationale }> = (props) => (
               </p>
             }
           >
-            <p class={css.ratHint}>{t("respond.ratWriteHint")}</p>
+            <p class={body.ratHint}>{t("respond.ratWriteHint")}</p>
           </Show>
         </Show>
       </div>

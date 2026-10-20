@@ -1,0 +1,3 @@
+/* respond-ui's components' styles, scoped here: the widget, built from source
+   into this app, reads the same file as text and needs its names literal. */
+@import "cardano-tessera-respond-ui/body.css";

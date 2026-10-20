@@ -43,9 +43,7 @@ export default defineConfig(({ command, mode }) => {
         "cardano-tessera-respond-core": r(
           "../../packages/respond-core/src/index.ts",
         ),
-        "cardano-tessera-respond-ui": r(
-          "../../packages/respond-ui/src/index.ts",
-        ),
+        "cardano-tessera-respond-ui": r("../../packages/respond-ui/src"),
         // The embeddable widget is consumed from source too, so the dev-only
         // reference-host page (`/dev/widget/:key`) drives the very
         // same code the built artifact ships. The `/element` subpath registers

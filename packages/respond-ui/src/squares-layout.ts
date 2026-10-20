@@ -1,8 +1,8 @@
 /**
  * The progress squares' layout, which depends on the question count: a
  * container query on the squares' row picks their size and lines from its
- * width, against breakpoints only the count can give. The squares' look is
- * each host's, through the class map; their box and font size are set here.
+ * width, against breakpoints only the count can give. The squares' look is in
+ * `body.css`; their box and font size are set here.
  *
  * The ladder: 20px squares on one line while they fit, else 16px on one line,
  * else 20px in balanced lines (32 squares on a line of 24 break 16 and 16, not

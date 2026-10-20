@@ -3,11 +3,11 @@
  * with: the question card, its bodies, the finish line and confirmation, and
  * the progress squares.
  *
- * The two consumers style the same markup differently: the widget's shadow DOM
- * uses the literal class names (styled by its adopted stylesheet), while the
- * app looks the same names up in its CSS module. The context defaults to the
- * identity map, so the widget needs no provider; the app provides its module's
- * classes once around the question list.
+ * `body.css` styles them for both consumers: the widget's shadow DOM uses the
+ * literal class names, while the app looks the same names up in a CSS module
+ * that imports it. The context defaults to the identity map, so the widget needs no
+ * provider; the app provides the module's classes once around the question
+ * list.
  */
 
 import { createContext, useContext } from "solid-js";

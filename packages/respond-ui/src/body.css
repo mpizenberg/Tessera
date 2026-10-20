@@ -1,0 +1,782 @@
+/*
+ * The styles of respond-ui's components, for both hosts. The widget reads
+ * this file as text, class names literal; the app through a CSS module that
+ * imports it, which scopes them.
+ *
+ * Colours, fonts and radii are the widget's public --tessera-* tokens; each
+ * host defines them. No `composes`: the widget reads plain CSS.
+ */
+
+/* --- Shared card ---------------------------------------------------------- */
+
+.card {
+  background: var(--tessera-paper);
+  border: 1px solid var(--tessera-line);
+  border-radius: var(--tessera-r-sm);
+  padding: 20px 22px;
+  margin-top: 12px;
+}
+
+/* --- Progress squares, one per question ----------------------------------- */
+
+/* Their box, font size and lines come with the squares, from the count. */
+.sq {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--tessera-line);
+  border-radius: 25%;
+  background: var(--tessera-paper);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--tessera-mono);
+  font-size: inherit;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--tessera-dim);
+  cursor: pointer;
+}
+
+.sqLong {
+  font-size: 0.8em;
+  letter-spacing: -0.06em;
+}
+
+.sqUnseen {
+  background: var(--tessera-hair);
+}
+
+.sqPassed {
+  border: 1.5px solid var(--tessera-muted);
+  color: var(--tessera-muted);
+}
+
+.sqAnswered {
+  background: var(--tessera-accent);
+  border-color: var(--tessera-accent);
+  color: var(--tessera-on-accent);
+}
+
+.sqSkipped {
+  border: 1.5px solid var(--tessera-accent);
+  color: var(--tessera-accent);
+  background: linear-gradient(
+    to top right,
+    transparent calc(50% - 0.8px),
+    var(--tessera-accent-line) calc(50% - 0.8px) calc(50% + 0.8px),
+    transparent calc(50% + 0.8px)
+  );
+}
+
+.sqUnfinished {
+  border: 1.5px solid var(--tessera-accent);
+  color: var(--tessera-ink);
+  background: linear-gradient(
+    to top,
+    var(--tessera-accent-line) 50%,
+    var(--tessera-paper) 50%
+  );
+}
+
+/* Not a button: a faint dot keeps the question's place. */
+.sqHidden {
+  border: none;
+  background: none;
+  cursor: default;
+}
+
+.sqHidden::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--tessera-faint);
+}
+
+/* Over the square's own border, and within the 4px gap to the next square */
+.sq[aria-current="step"]::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border: solid var(--tessera-ink);
+  border-width: 3px;
+  border-radius: 30%;
+  box-shadow: 1px 1px var(--tessera-ink);
+  pointer-events: none;
+}
+
+/* Further out than the current question's ring, so the two differ by more
+   than colour. */
+.sq:focus-visible {
+  outline: 2px solid var(--tessera-accent);
+  outline-offset: 5px;
+}
+
+/* --- Question card -------------------------------------------------------- */
+
+.qHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.qHeadLeft {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.qChip {
+  font-family: var(--tessera-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--tessera-accent);
+  background: var(--tessera-accent-bg);
+  border-radius: var(--tessera-r-chip);
+  padding: 5px 8px;
+}
+
+.qType {
+  font-family: var(--tessera-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tessera-dim);
+}
+
+.qRequired {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--tessera-danger);
+  background: var(--tessera-danger-bg);
+  border-radius: var(--tessera-r-3xs);
+  padding: 2px 6px;
+}
+
+.skipBtn {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  border-radius: var(--tessera-r-chip);
+  padding: 6px 12px;
+  border: 1px solid var(--tessera-line);
+  background: var(--tessera-paper);
+  color: var(--tessera-muted);
+}
+
+.skipBtnOn {
+  border: 1px solid var(--tessera-accent);
+  background: var(--tessera-accent-bg);
+  color: var(--tessera-accent);
+}
+
+.qPrompt {
+  font-family: var(--tessera-serif);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.28;
+  margin: 11px 0 0;
+  color: var(--tessera-ink);
+}
+
+/* Script moves focus to the prompt to mark the question reached, to the skip
+   confirmation's text, and a click to the card or a rating's levels where
+   Safari gives the clicked control none. None is a control, and the card
+   marks it instead of a ring. */
+.card:focus,
+.qPrompt:focus,
+.ratingLevels:focus,
+.skipConfirmText:focus {
+  outline: none;
+}
+
+/* Every control's ring; a choice's input is hidden, so its row carries it. */
+.card :focus-visible:not(.qPrompt, .ratingLevels),
+.card :has(> .choiceInput:focus-visible) {
+  outline: 2px solid var(--tessera-accent);
+  outline-offset: 2px;
+}
+
+/* The question holding keyboard focus, itself or within. */
+.card:focus-visible,
+.card:has(:focus-visible) {
+  border-color: var(--tessera-accent);
+}
+
+.qSkipped {
+  font-size: 12.5px;
+  color: var(--tessera-dim);
+  margin: 12px 0 0;
+  font-style: italic;
+}
+
+.qBody {
+  margin-top: 14px;
+}
+
+/* --- Shortcut keys -------------------------------------------------------- */
+
+/* A key to press, shown only where there are keys: not on a touch screen. */
+.keyBadge {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .keysOn .keyBadge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    margin-left: auto;
+    border: 1px solid var(--tessera-line2);
+    border-radius: var(--tessera-r-3xs);
+    font-family: var(--tessera-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--tessera-dim);
+  }
+}
+
+/* --- Option rows (single choice / multi-select) --------------------------- */
+
+/* Takes the focus, the keys and the checked state; the row around it draws
+   them. Out of the flow, it stays inside its row for a focus scroll. */
+.choiceInput {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  pointer-events: none;
+}
+
+.optionGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.optionRow {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  cursor: pointer;
+  border-radius: var(--tessera-r-control);
+  padding: 11px 13px;
+  border: 1px solid var(--tessera-line);
+  background: var(--tessera-paper);
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--tessera-ink);
+}
+
+.optionRowOn {
+  border: 1px solid var(--tessera-accent);
+  background: var(--tessera-accent-bg);
+}
+
+.radio {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--tessera-line2);
+  background: var(--tessera-paper);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.radioOn {
+  border: none;
+  background: var(--tessera-accent);
+}
+
+.radioDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tessera-on-accent);
+}
+
+.checkbox {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 2px solid var(--tessera-line2);
+  background: var(--tessera-paper);
+  color: var(--tessera-on-accent);
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.checkboxOn {
+  border: none;
+  background: var(--tessera-accent);
+}
+
+/* Two columns when each gets 260px, else one; the 8px is the gap. */
+.multiGrid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(min(100%, max(260px, (100% - 8px) / 2)), 1fr)
+  );
+  gap: 8px;
+}
+
+.multiCount {
+  font-family: var(--tessera-mono);
+  font-size: 11px;
+  color: var(--tessera-dim);
+  margin-top: 10px;
+}
+
+/* --- Ranking -------------------------------------------------------------- */
+
+.rankedList {
+  margin-bottom: 10px;
+}
+
+.rankedRow {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  background: var(--tessera-accent-bg);
+  border: 1px solid var(--tessera-accent-line);
+  border-radius: var(--tessera-r-control);
+  padding: 9px 11px;
+  margin-bottom: 7px;
+}
+
+.rankNum {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--tessera-accent);
+  color: var(--tessera-on-accent);
+  font-size: 12.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.rankLabel {
+  font-size: 14.5px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.rankBtn {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--tessera-r-xs);
+  border: 1px solid var(--tessera-accent-line);
+  background: var(--tessera-paper);
+  color: var(--tessera-accent);
+  font-size: 13px;
+  cursor: pointer;
+  line-height: 1;
+  flex: none;
+}
+
+.rankBtnDanger {
+  border: 1px solid var(--tessera-danger-line-soft);
+  color: var(--tessera-danger);
+}
+
+.rankPoolHint {
+  font-family: var(--tessera-mono);
+  font-size: 10.5px;
+  color: var(--tessera-dim);
+  margin-bottom: 8px;
+}
+
+.rankPool {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.poolBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 1;
+  border-radius: var(--tessera-r-control);
+  padding: 8px 12px;
+  border: 1px solid var(--tessera-line);
+  background: var(--tessera-surface3);
+  color: var(--tessera-body);
+}
+
+.poolBtnDisabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* --- Numeric range -------------------------------------------------------- */
+
+.numHero {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  justify-content: center;
+  margin: 4px 0 14px;
+}
+
+.numValue {
+  font-family: var(--tessera-mono);
+  font-size: 44px;
+  font-weight: 600;
+  color: var(--tessera-accent);
+  letter-spacing: -0.02em;
+}
+
+.rangeFull {
+  width: 100%;
+  accent-color: var(--tessera-accent);
+}
+
+.rangeUnset {
+  accent-color: var(--tessera-dim);
+}
+
+.rangeFullBlock {
+  width: 100%;
+  accent-color: var(--tessera-accent);
+  display: block;
+  cursor: pointer;
+}
+
+.rangeBounds {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--tessera-mono);
+  font-size: 11px;
+  color: var(--tessera-dim);
+  margin-top: 8px;
+}
+
+.numberInput {
+  width: 100%;
+  border: 1px solid var(--tessera-line);
+  border-radius: var(--tessera-r-control);
+  padding: 12px 14px;
+  font-family: var(--tessera-mono);
+  font-size: 15px;
+  color: var(--tessera-ink);
+  box-sizing: border-box;
+}
+
+/* --- Points allocation ---------------------------------------------------- */
+
+.pointsHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.pointsRemainLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tessera-muted);
+}
+
+.pointsRemain {
+  font-family: var(--tessera-mono);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--tessera-accent);
+}
+
+.pointsRemainDone {
+  color: var(--tessera-ok);
+}
+
+.pointsRow {
+  margin-bottom: 13px;
+}
+
+.pointsRowHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 7px;
+}
+
+.pointsOptLabel {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.pointsControls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.stepBtn {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--tessera-r-xs);
+  border: 1px solid var(--tessera-line);
+  background: var(--tessera-paper);
+  color: var(--tessera-accent);
+  font-size: 17px;
+  cursor: pointer;
+  line-height: 1;
+  flex: none;
+}
+
+.pointsInput {
+  min-width: 52px;
+  border: 1px solid var(--tessera-line);
+  border-radius: var(--tessera-r-xs);
+  padding: 5px 4px;
+  font-family: var(--tessera-mono);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--tessera-ink);
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.pointsFooter {
+  font-family: var(--tessera-mono);
+  font-size: 11px;
+  color: var(--tessera-faint);
+}
+
+/* --- Rating --------------------------------------------------------------- */
+
+.ratingList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* An item's levels keep to the right edge, on its line or on one of their
+   own, so they line up with the other items'. */
+.ratingRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--tessera-hair);
+  flex-wrap: wrap;
+}
+
+.ratingOptLabel {
+  margin-right: auto;
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.ratingNumberInput {
+  width: 120px;
+  border: 1px solid var(--tessera-line);
+  border-radius: var(--tessera-r-control);
+  padding: 12px 14px;
+  font-family: var(--tessera-mono);
+  font-size: 15px;
+  color: var(--tessera-ink);
+  box-sizing: border-box;
+}
+
+.ratingLevels {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ratingBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 34px;
+  border-radius: var(--tessera-r-xs);
+  border: 1px solid var(--tessera-line);
+  background: var(--tessera-paper);
+  color: var(--tessera-body);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0 8px;
+}
+
+.ratingBtnOn {
+  border: 1px solid var(--tessera-accent);
+  background: var(--tessera-accent);
+  color: var(--tessera-on-accent);
+}
+
+.ratHint {
+  font-size: 11.5px;
+  color: var(--tessera-dim);
+  line-height: 1.45;
+  margin: 0;
+}
+
+/* --- Custom --------------------------------------------------------------- */
+
+.customSchema {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--tessera-ink);
+  border-radius: var(--tessera-r-control);
+  padding: 11px 13px;
+  margin-bottom: 11px;
+}
+
+.customSchemaTag {
+  font-family: var(--tessera-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--tessera-schema-tag);
+  background: var(--tessera-schema-tag-bg);
+  border-radius: var(--tessera-r-3xs);
+  padding: 3px 7px;
+}
+
+.customSchemaUri {
+  font-family: var(--tessera-mono);
+  font-size: 11.5px;
+  color: var(--tessera-schema-uri);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.customInput {
+  width: 100%;
+  border: 1px solid var(--tessera-line);
+  border-radius: var(--tessera-r-control);
+  padding: 13px 14px;
+  font-family: inherit;
+  font-size: 14.5px;
+  color: var(--tessera-ink);
+  line-height: 1.45;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.customBytes {
+  font-family: var(--tessera-mono);
+  font-size: 11.5px;
+  color: var(--tessera-dim);
+  text-align: right;
+  margin: 6px 0 0;
+}
+
+.customBytesOver {
+  color: var(--tessera-danger);
+}
+
+.customHint {
+  font-size: 11.5px;
+  color: var(--tessera-dim);
+  line-height: 1.45;
+  margin: 9px 0 0;
+}
+
+/* --- What is left (beside the submit button) ----------------------------- */
+
+.leftNote {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.leftGroup {
+  margin-right: 14px;
+}
+
+.leftCall {
+  color: var(--tessera-danger);
+}
+
+.qLink {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--tessera-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+/* --- Skip confirmation (in place of the submit row) ----------------------- */
+
+.skipConfirm {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px 16px;
+  flex-wrap: wrap;
+}
+
+.skipConfirmText {
+  flex: 1 1 16rem;
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.skipConfirmActions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.goToBtn,
+.skipFinishBtn {
+  border-radius: var(--tessera-r-md);
+  padding: 13px 18px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.goToBtn {
+  background: var(--tessera-paper);
+  color: var(--tessera-ink);
+  border: 1px solid var(--tessera-line);
+}
+
+.skipFinishBtn {
+  background: var(--tessera-accent);
+  color: var(--tessera-on-accent);
+  border: 1px solid var(--tessera-accent);
+}

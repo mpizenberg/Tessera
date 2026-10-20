@@ -398,6 +398,9 @@ importers:
         specifier: ^1.9.15
         version: 1.9.15
     devDependencies:
+      '@types/node':
+        specifier: ^25.9.8
+        version: 25.9.8
       typescript:
         specifier: ^7.0.2
         version: 7.0.2

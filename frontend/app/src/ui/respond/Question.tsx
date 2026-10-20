@@ -15,99 +15,14 @@ import {
 } from "cardano-tessera-respond-ui";
 
 import { t, n, d } from "~/i18n";
+import body from "./body.module.css";
 import css from "./respond.module.css";
 
 /**
- * respond-ui renders class names through {@link ClassesContext}; this maps
- * each one to this screen's CSS module. Keys are checked complete by
- * `BodyClasses`, so it can't render a class this screen doesn't style.
+ * respond-ui renders class names through {@link ClassesContext}, styled by its
+ * own sheet; respond-ui's tests check that sheet styles every one.
  */
-const bodyClasses: BodyClasses = {
-  card: css.card,
-  qHead: css.qHead,
-  qHeadLeft: css.qHeadLeft,
-  qChip: css.qChip,
-  qType: css.qType,
-  qRequired: css.qRequired,
-  skipBtn: css.skipBtn,
-  skipBtnOn: css.skipBtnOn,
-  qPrompt: css.qPrompt,
-  qSkipped: css.qSkipped,
-  qBody: css.qBody,
-  keysOn: css.keysOn,
-  keyBadge: css.keyBadge,
-  choiceInput: css.choiceInput,
-  optionGroup: css.optionGroup,
-  optionRow: css.optionRow,
-  optionRowOn: css.optionRowOn,
-  radio: css.radio,
-  radioOn: css.radioOn,
-  radioDot: css.radioDot,
-  multiGrid: css.multiGrid,
-  checkbox: css.checkbox,
-  checkboxOn: css.checkboxOn,
-  multiCount: css.multiCount,
-  rankedList: css.rankedList,
-  rankedRow: css.rankedRow,
-  rankNum: css.rankNum,
-  rankLabel: css.rankLabel,
-  rankBtn: css.rankBtn,
-  rankBtnDanger: css.rankBtnDanger,
-  rankPoolHint: css.rankPoolHint,
-  rankPool: css.rankPool,
-  poolBtn: css.poolBtn,
-  poolBtnDisabled: css.poolBtnDisabled,
-  numHero: css.numHero,
-  numValue: css.numValue,
-  numberInput: css.numberInput,
-  rangeFull: css.rangeFull,
-  rangeUnset: css.rangeUnset,
-  rangeBounds: css.rangeBounds,
-  pointsHeader: css.pointsHeader,
-  pointsRemainLabel: css.pointsRemainLabel,
-  pointsRemain: css.pointsRemain,
-  pointsRemainDone: css.pointsRemainDone,
-  pointsRow: css.pointsRow,
-  pointsRowHead: css.pointsRowHead,
-  pointsOptLabel: css.pointsOptLabel,
-  pointsControls: css.pointsControls,
-  stepBtn: css.stepBtn,
-  pointsInput: css.pointsInput,
-  rangeFullBlock: css.rangeFullBlock,
-  pointsFooter: css.pointsFooter,
-  ratingList: css.ratingList,
-  ratingRow: css.ratingRow,
-  ratingOptLabel: css.ratingOptLabel,
-  ratingNumberInput: css.ratingNumberInput,
-  ratingLevels: css.ratingLevels,
-  ratingBtn: css.ratingBtn,
-  ratingBtnOn: css.ratingBtnOn,
-  ratHint: css.ratHint,
-  customSchema: css.customSchema,
-  customSchemaTag: css.customSchemaTag,
-  customSchemaUri: css.customSchemaUri,
-  customInput: css.customInput,
-  customBytes: css.customBytes,
-  customBytesOver: css.customBytesOver,
-  customHint: css.customHint,
-  leftNote: css.leftNote,
-  leftGroup: css.leftGroup,
-  leftCall: css.leftCall,
-  qLink: css.qLink,
-  skipConfirm: css.skipConfirm,
-  skipConfirmText: css.skipConfirmText,
-  skipConfirmActions: css.skipConfirmActions,
-  goToBtn: css.goToBtn,
-  skipFinishBtn: css.skipFinishBtn,
-  sq: css.sq,
-  sqUnseen: css.sqUnseen,
-  sqPassed: css.sqPassed,
-  sqAnswered: css.sqAnswered,
-  sqSkipped: css.sqSkipped,
-  sqUnfinished: css.sqUnfinished,
-  sqHidden: css.sqHidden,
-  sqLong: css.sqLong,
-};
+const bodyClasses = body as BodyClasses;
 
 /**
  * i18n for the shared question card: the app's own engine wearing
