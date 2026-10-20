@@ -154,13 +154,15 @@
   background: var(--tessera-faint);
 }
 
-/* Out from the padding box, past the square's own border. */
+/* Over the square's own border, and within the 4px gap to the next square */
 .sq[aria-current="step"]::after {
   content: "";
   position: absolute;
-  inset: -5px;
-  border: 1.5px solid var(--tessera-ink);
+  inset: -3px;
+  border: solid var(--tessera-ink);
+  border-width: 3px;
   border-radius: 30%;
+  box-shadow: 1px 1px var(--tessera-ink);
   pointer-events: none;
 }
 

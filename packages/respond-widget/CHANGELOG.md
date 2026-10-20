@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 while `< 1.0.0`, breaking changes bump the **minor** version.
 
+## [Unreleased]
+
+### Changed
+
+- The current question's square is ringed tight, over its own border, instead
+  of 5px out, where the next square covered the ring's edge.
+
 ## [0.7.0] - 2026-10-16
 
 ### Changed
