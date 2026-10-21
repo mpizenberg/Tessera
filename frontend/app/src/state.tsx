@@ -56,11 +56,13 @@ import type {
 import {
   aggregateSurveyList,
   pageSurveyList,
+  surveyListSlice,
   type DataSource,
 } from "cardano-tessera-core";
 import {
   aggregateSurveys,
   bytesToHex,
+  findSurvey,
   refKey,
   type ChainTip,
   type SurveyAggregate,
@@ -109,6 +111,36 @@ export interface SurveyList {
   readonly nextCursor: string | null;
 }
 
+function toSurveyList(payload: SurveyListPayload): SurveyList {
+  return {
+    tip: payload.tip,
+    surveys: aggregateSurveyList(payload),
+    ...(payload.finalState !== undefined && {
+      finalState: payload.finalState,
+    }),
+    ...(payload.settling !== undefined && { settling: payload.settling }),
+    counts: payload.counts ?? {
+      all: 0,
+      linked: 0,
+      active: 0,
+      sealed: 0,
+      public: 0,
+      mine: 0,
+    },
+    nextCursor: payload.nextCursor ?? null,
+    ...(payload.incomplete !== undefined && {
+      incomplete: payload.incomplete,
+    }),
+  };
+}
+
+export interface SurveySnapshot {
+  /** Holds the survey once read; one without it means no such survey. */
+  readonly snap: Accessor<SurveyList | undefined>;
+  readonly loading: Accessor<boolean>;
+  readonly error: Accessor<unknown>;
+}
+
 /** The Explore filter chips — exactly the shared paged-list filters. */
 export type ExploreFilter = SurveyListFilter;
 
@@ -136,6 +168,12 @@ interface AppState {
    * either changes); later pages accumulate in {@link moreSurveys}.
    */
   readonly list: Resource<SurveyList>;
+  /**
+   * The snapshot holding survey `key`: the first Explore page when the
+   * survey is on it, else the survey read by key, so a link opens any survey.
+   * Call it while creating a component; `reload()` refreshes it.
+   */
+  surveySnapshot(key: Accessor<string>): SurveySnapshot;
   /** Pages 2+ for the current filter/search, appended by {@link loadMore}. */
   readonly moreSurveys: Accessor<readonly SurveyAggregate[]>;
   /** The live continuation cursor, advanced by loads; null = all loaded. */
@@ -334,21 +372,33 @@ export const AppProvider: ParentComponent = (props) => {
     pro: false,
   });
 
-  // One page through the seam: server-side when the source implements the
-  // paged contract (the indexer), otherwise page the full one-shot payload in
-  // memory with the same core semantics (direct-Koios mode). The full payload
-  // is cached across filter/search/page changes — one Koios scan per reload,
-  // not one per chip click.
+  // Reads through the seam: server-side when the source implements them (the
+  // indexer), otherwise over the full one-shot payload in memory with the same
+  // core semantics (direct-Koios mode). The full payload is cached across
+  // filter/search/page changes — one Koios scan per reload, not one per chip
+  // click.
   let fullListCache: Promise<SurveyListPayload> | null = null;
-  const fetchPage = (params: SurveyListParams): Promise<SurveyListPayload> => {
-    if (source.surveyListPage) return source.surveyListPage(params);
+  const fullList = (): Promise<SurveyListPayload> => {
     fullListCache ??= source.surveyList();
     // A failed scan must not be cached as "the list" forever.
     fullListCache.catch(() => {
       fullListCache = null;
     });
-    return fullListCache.then((full) => pageSurveyList(full, params));
+    return fullListCache;
   };
+  const fetchPage = (params: SurveyListParams): Promise<SurveyListPayload> =>
+    source.surveyListPage
+      ? source.surveyListPage(params)
+      : fullList().then((full) => pageSurveyList(full, params));
+  const fetchByKey = (key: string): Promise<SurveyListPayload> =>
+    source.surveysByRefs
+      ? source.surveysByRefs([key])
+      : fullList().then((full) =>
+          surveyListSlice(
+            full,
+            full.surveys.filter((s) => refKey(s.ref) === key),
+          ),
+        );
 
   const pageParams = createMemo(
     (): Omit<SurveyListParams, "cursor" | "limit"> => ({
@@ -364,27 +414,7 @@ export const AppProvider: ParentComponent = (props) => {
       // One bounded read regardless of participation volume: responses arrive
       // pre-deduped as per-survey counts, governance-link failures are
       // absorbed source-side, and pagination bounds the survey rows too.
-      const payload = await fetchPage(pageParams());
-      return {
-        tip: payload.tip,
-        surveys: aggregateSurveyList(payload),
-        ...(payload.finalState !== undefined && {
-          finalState: payload.finalState,
-        }),
-        ...(payload.settling !== undefined && { settling: payload.settling }),
-        counts: payload.counts ?? {
-          all: 0,
-          linked: 0,
-          active: 0,
-          sealed: 0,
-          public: 0,
-          mine: 0,
-        },
-        nextCursor: payload.nextCursor ?? null,
-        ...(payload.incomplete !== undefined && {
-          incomplete: payload.incomplete,
-        }),
-      };
+      return toSurveyList(await fetchPage(pageParams()));
     },
   );
 
@@ -436,6 +466,34 @@ export const AppProvider: ParentComponent = (props) => {
     })();
   };
 
+  // Refetchers of the surveys read by key, so `reload()` refreshes them too.
+  const byKeyRefetches = new Set<() => unknown>();
+  const surveySnapshot = (key: Accessor<string>): SurveySnapshot => {
+    const shown = (): SurveyList | undefined => {
+      const l = list.error ? undefined : list();
+      return l && findSurvey(l.surveys, key()) ? l : undefined;
+    };
+    // Read by key only once the page is in and lacks it.
+    const [byKey, { refetch }] = createResource(
+      () =>
+        list.state === "unresolved" || list.state === "pending" || shown()
+          ? false
+          : key(),
+      async (k) => toSurveyList(await fetchByKey(k)),
+    );
+    byKeyRefetches.add(refetch);
+    onCleanup(() => byKeyRefetches.delete(refetch));
+    return {
+      snap: () => shown() ?? (byKey.error ? undefined : byKey()),
+      loading: () =>
+        !shown() &&
+        (list.state === "unresolved" ||
+          list.state === "pending" ||
+          byKey.loading),
+      error: () => (shown() ? undefined : byKey.error),
+    };
+  };
+
   // Health is footer chrome, never load-bearing: absent in direct-Koios mode
   // (the seam method is undefined there) and a failed fetch just hides the
   // footer via `health.error`.
@@ -451,6 +509,7 @@ export const AppProvider: ParentComponent = (props) => {
   const safeRefetch = (): void => {
     fullListCache = null; // direct-Koios mode: a reload means a fresh scan
     void Promise.resolve(refetch()).catch(() => {});
+    for (const r of byKeyRefetches) void Promise.resolve(r()).catch(() => {});
     void Promise.resolve(refetchHealth()).catch(() => {});
   };
 
@@ -782,6 +841,7 @@ export const AppProvider: ParentComponent = (props) => {
     config,
     source,
     list,
+    surveySnapshot,
     moreSurveys,
     nextCursor,
     loadingMore,

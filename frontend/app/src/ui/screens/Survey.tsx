@@ -50,8 +50,9 @@ export const Survey: Component = () => {
   const app = useApp();
   const params = useParams<{ key: string }>();
   const key = () => decodeURIComponent(params.key);
+  const found = app.surveySnapshot(key);
   const indexed = createMemo(() => {
-    const snap = app.list.error ? undefined : app.list();
+    const snap = found.snap();
     return snap ? findSurvey(snap.surveys, key()) : undefined;
   });
   // A just-created survey isn't indexed yet — fall back to its optimistic twin.
@@ -81,9 +82,7 @@ export const Survey: Component = () => {
   // degrades to the raw view, never blocks the page.
   const [artifactRes] = createResource(
     () => {
-      const final = (app.list.error ? undefined : app.list())?.finalState?.[
-        key()
-      ];
+      const final = found.snap()?.finalState?.[key()];
       return final && "artifactHash" in final ? final.artifactHash : undefined;
     },
     async (hash) => (await app.source.artifactByHash?.(hash)) ?? null,
@@ -124,12 +123,10 @@ export const Survey: Component = () => {
 
   // The chain tip drives the summary's "ends" countdown; guarded like the list
   // read so an errored snapshot degrades to "—" rather than throwing.
-  const tip = createMemo<ChainTip | undefined>(
-    () => (app.list.error ? undefined : app.list())?.tip,
-  );
+  const tip = createMemo<ChainTip | undefined>(() => found.snap()?.tip);
 
   const finality = createMemo<FinalityNotice | null>(() => {
-    const snap = app.list.error ? undefined : app.list();
+    const snap = found.snap();
     const s = indexed();
     if (!snap || !s) return null;
     return finalityNotice({
@@ -164,8 +161,8 @@ export const Survey: Component = () => {
         when={survey()}
         fallback={
           <Empty
-            loading={app.list.loading}
-            error={app.list.error}
+            loading={found.loading()}
+            error={found.error()}
             onRetry={() => app.reload()}
             text={emptyText()}
           />

@@ -227,6 +227,38 @@ function afterCursor(
 }
 
 /**
+ * `full` restricted to `surveys`, in their order: their cancellations, links,
+ * counts and overlay entries ride along, so aggregating the slice gives the
+ * same rows a full aggregation would.
+ */
+export function surveyListSlice(
+  full: SurveyListPayload,
+  surveys: readonly SurveyRecord[],
+): SurveyListPayload {
+  const keys = new Set(surveys.map((s) => refKey(s.ref)));
+  return {
+    surveys,
+    cancellations: full.cancellations.filter((c) => keys.has(refKey(c.target))),
+    govLinks: full.govLinks.filter((l) => keys.has(l.surveyKey)),
+    tip: full.tip,
+    responseCounts: Object.fromEntries(
+      [...keys].map((k) => [k, full.responseCounts[k] ?? 0]),
+    ),
+    finalState: Object.fromEntries(
+      Object.entries(full.finalState ?? {}).filter(([k]) => keys.has(k)),
+    ),
+    ...(full.countedByRole && {
+      countedByRole: Object.fromEntries(
+        Object.entries(full.countedByRole).filter(([k]) => keys.has(k)),
+      ),
+    }),
+    ...(full.settling !== undefined && { settling: full.settling }),
+    ...(full.incomplete !== undefined && { incomplete: full.incomplete }),
+    ...(full.fetchedAt !== undefined && { fetchedAt: full.fetchedAt }),
+  };
+}
+
+/**
  * Page a full {@link SurveyListPayload} in memory — the direct-Koios path's
  * implementation of the paged list contract, and the reference the serving
  * tier's SQL must agree with. Returns a payload restricted to the page's
@@ -286,26 +318,12 @@ export function pageSurveyList(
   const limit = params.limit ?? DEFAULT_PAGE_LIMIT;
   const page = matching.slice(0, limit);
   const last = page[page.length - 1];
-  const keys = new Set(page.map((r) => r.a.key));
 
   return {
-    surveys: page.map((r) => r.a.record),
-    cancellations: full.cancellations.filter((c) => keys.has(refKey(c.target))),
-    govLinks: full.govLinks.filter((l) => keys.has(l.surveyKey)),
-    tip: full.tip,
-    responseCounts: Object.fromEntries(
-      page.map((r) => [r.a.key, r.a.responseCount]),
+    ...surveyListSlice(
+      full,
+      page.map((r) => r.a.record),
     ),
-    finalState: Object.fromEntries(
-      Object.entries(full.finalState ?? {}).filter(([k]) => keys.has(k)),
-    ),
-    ...(full.countedByRole && {
-      countedByRole: Object.fromEntries(
-        Object.entries(full.countedByRole).filter(([k]) => keys.has(k)),
-      ),
-    }),
-    ...(full.incomplete !== undefined && { incomplete: full.incomplete }),
-    ...(full.fetchedAt !== undefined && { fetchedAt: full.fetchedAt }),
     ...(staleCursor && { resync: true }),
     counts,
     nextCursor:

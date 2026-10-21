@@ -15,6 +15,7 @@ import {
   parseResponseCursor,
   parseSurveyCursor,
   searchTermsOf,
+  surveyListSlice,
 } from "./page";
 import type { SurveyListPayload } from "cardano-tessera-client";
 
@@ -171,6 +172,23 @@ describe("pageSurveyList ordering and cursors", () => {
       mine: 0,
     });
     expect(page.nextCursor).not.toBeNull();
+  });
+});
+
+describe("surveyListSlice", () => {
+  it("carries a survey off page one with its links and counts", () => {
+    const s0 = survey(0, 400);
+    const s1 = survey(1, 300);
+    const full = payload([s0, s1], [link(s1)]);
+    expect(pageSurveyList(full, { limit: 1 }).surveys).toEqual([s1]);
+    expect(surveyListSlice(full, [s0])).toEqual({
+      surveys: [s0],
+      cancellations: [],
+      govLinks: [],
+      tip: TIP,
+      responseCounts: { [keyOf(s0)]: 0 },
+      finalState: {},
+    });
   });
 });
 

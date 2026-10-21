@@ -75,11 +75,12 @@ const DevWidgetHost: Component = () => {
   const app = useApp();
   const params = useParams<{ key: string }>();
   const key = () => decodeURIComponent(params.key);
+  const found = app.surveySnapshot(key);
 
   // Survey lookup mirrors the built-in Respond/Survey screens: the indexed list
   // first, falling back to the optimistic set so a just-created survey works.
   const indexed = createMemo(() => {
-    const snap = app.list.error ? undefined : app.list();
+    const snap = found.snap();
     return snap ? findSurvey(snap.surveys, key()) : undefined;
   });
   const survey = createMemo(
@@ -107,8 +108,7 @@ const DevWidgetHost: Component = () => {
     return id ? walletResponder(id) : null;
   });
 
-  const tipEpoch = (): number | undefined =>
-    (app.list.error ? undefined : app.list())?.tip.epoch;
+  const tipEpoch = (): number | undefined => found.snap()?.tip.epoch;
 
   const cancelled = (): boolean => Boolean(survey()?.cancelled);
 
@@ -254,8 +254,8 @@ const DevWidgetHost: Component = () => {
         when={survey()}
         fallback={
           <Empty
-            loading={app.list.loading}
-            error={app.list.error}
+            loading={found.loading()}
+            error={found.error()}
             onRetry={() => app.reload()}
             text={{
               loading: "Loading survey…",

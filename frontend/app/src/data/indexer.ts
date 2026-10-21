@@ -55,6 +55,10 @@ export class IndexerDataSource implements DataSource {
     return this.ready(await this.client.surveys(params));
   }
 
+  async surveysByRefs(keys: readonly string[]): Promise<SurveyListPayload> {
+    return this.ready(await this.client.surveysByRefs(keys));
+  }
+
   async surveyBundle(ref: SurveyRef): Promise<SurveyBundlePayload> {
     return this.ready(await this.client.wholeBundle(ref));
   }

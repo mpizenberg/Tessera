@@ -46,6 +46,13 @@ export interface DataSource {
    */
   surveyListPage?(params: SurveyListParams): Promise<SurveyListPayload>;
   /**
+   * The list payload for the surveys named by key, wherever they sort; keys
+   * matching no survey are left out. Optional like {@link surveyListPage}:
+   * the direct Koios path leaves it undefined and the app slices the full
+   * `surveyList()` payload with {@link import("./page").surveyListSlice}.
+   */
+  surveysByRefs?(keys: readonly string[]): Promise<SurveyListPayload>;
+  /**
    * The self-contained per-survey slice (detail/respond pages, verifiers),
    * every response page collected, with proof verdicts when the source
    * computes them ({@link SurveyBundlePayload}). Rejects when the ref matches

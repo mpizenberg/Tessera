@@ -47,11 +47,12 @@ export const Respond: Component = () => {
   const app = useApp();
   const params = useParams<{ key: string }>();
   const key = () => decodeURIComponent(params.key);
+  const found = app.surveySnapshot(key);
 
   // Fall back to the optimistic set so a just-created survey is answerable
   // immediately, before Koios indexes it (mirrors the results page).
   const indexed = createMemo(() => {
-    const snap = app.list.error ? undefined : app.list();
+    const snap = found.snap();
     return snap ? findSurvey(snap.surveys, key()) : undefined;
   });
   const survey = createMemo(
@@ -82,7 +83,7 @@ export const Respond: Component = () => {
   const kept = responseDrafts({
     key,
     endEpoch: () => survey()?.record.definition.endEpoch,
-    tipEpoch: () => (app.list.error ? undefined : app.list()?.tip.epoch),
+    tipEpoch: () => found.snap()?.tip.epoch,
   });
 
   // Role choice, drafts and progress: the spine shared with the widget. The app
@@ -193,8 +194,8 @@ export const Respond: Component = () => {
         when={survey()}
         fallback={
           <Empty
-            loading={app.list.loading}
-            error={app.list.error}
+            loading={found.loading()}
+            error={found.error()}
             onRetry={() => app.reload()}
             text={{
               loading: t("respond.loading"),
