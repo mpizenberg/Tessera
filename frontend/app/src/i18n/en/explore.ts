@@ -20,6 +20,8 @@ const explore = {
   endsWithdrawn: "withdrawn",
   endsClosed: "closed",
   endsInvalid: "invalid",
+  /** {date} the survey was submitted, beside "withdrawn" or "invalid". */
+  submittedOn: "submitted {date}",
 
   // Title row + summary.
   pageTitle: "Surveys & polls",

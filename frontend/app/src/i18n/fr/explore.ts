@@ -21,6 +21,7 @@ const explore: Messages = {
   endsWithdrawn: "retiré",
   endsClosed: "terminé",
   endsInvalid: "invalide",
+  submittedOn: "soumis le {date}",
 
   pageTitle: "Sondages & scrutins",
   summary: "{count} entrées · époque actuelle {epoch}",

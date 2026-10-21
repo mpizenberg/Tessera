@@ -9,7 +9,7 @@ import {
 import { IPFS_GATEWAYS } from "cip-179/content";
 import { roleDescriptionKey } from "cardano-tessera-respond-core";
 import { expectedNetworkId, type Network } from "~/config";
-import { t, n } from "~/i18n";
+import { d, t, n } from "~/i18n";
 
 /** Role naming and browser-claimability are shared with the widget. */
 export { roleLabel, roleBrowserClaimable } from "cardano-tessera-respond-core";
@@ -196,4 +196,32 @@ export function endsText(
     voteDeadlineUnix(a.record.definition.endEpoch, tip, secondsPerEpoch),
     nowUnix,
   );
+}
+
+/** A day in the active locale, e.g. "Oct 14, 2026". */
+function day(unix: number): string {
+  return d(unix, { year: "numeric", month: "short", day: "numeric" });
+}
+
+/**
+ * The date beside a closed survey's lifecycle word: when its end epoch was
+ * over, or, withdrawn or invalid, when it was submitted (the list carries no
+ * withdrawal date). Undefined while open.
+ */
+export function closedDateText(
+  a: SurveyAggregate,
+  tip: ChainTip,
+  secondsPerEpoch: number,
+): string | undefined {
+  const v = viewStatus(a);
+  if (v === "ended")
+    return day(
+      voteDeadlineUnix(a.record.definition.endEpoch, tip, secondsPerEpoch),
+    );
+  if (v === "cancelled" || v === "invalid")
+    // Post-Shelley slots are one second long.
+    return t("explore.submittedOn", {
+      date: day(tip.time - (tip.slot - a.record.slot)),
+    });
+  return undefined;
 }

@@ -154,9 +154,9 @@
   overflow-x: visible;
 }
 
-/* `min-width` toggles 680px↔auto with the narrow signal. */
+/* `min-width` toggles 720px↔auto with the narrow signal. */
 .inner {
-  min-width: 680px;
+  min-width: 720px;
 }
 .innerNarrow {
   min-width: auto;
@@ -181,7 +181,7 @@
    which must agree on the template or the register stops lining up. */
 .gridRow {
   display: grid;
-  grid-template-columns: 52px 24px 26px minmax(190px, 1fr) 122px 100px 52px;
+  grid-template-columns: 52px 24px 26px minmax(190px, 1fr) 122px 136px 52px;
   gap: 14px;
   align-items: center;
 }
@@ -364,6 +364,11 @@
 }
 .endsClosed {
   color: #8a8270;
+}
+.endsDate {
+  font-size: 11.5px;
+  color: #8a8270;
+  margin-top: 2px;
 }
 
 .ref {

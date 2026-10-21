@@ -10,7 +10,13 @@ import { A } from "@solidjs/router";
 import type { ChainTip, SurveyAggregate } from "cip-179/domain";
 
 import { useApp } from "~/state";
-import { endsText, isClosed, shortGovId, viewStatus } from "~/ui/format";
+import {
+  closedDateText,
+  endsText,
+  isClosed,
+  shortGovId,
+  viewStatus,
+} from "~/ui/format";
 import { FormMosaic, RoleChips, VisGlyph } from "~/ui/components/glyphs";
 import { t } from "~/i18n";
 import css from "./explore.module.css";
@@ -59,6 +65,10 @@ function rowView(props: EntryProps) {
       props.tip
         ? endsText(props.a, props.tip, props.secondsPerEpoch, props.nowUnix)
         : "—",
+    closedDate: (): string | undefined =>
+      props.tip
+        ? closedDateText(props.a, props.tip, props.secondsPerEpoch)
+        : undefined,
   };
 }
 
@@ -104,7 +114,8 @@ const GovLine: Component<{ actionId: string; title: string | null }> = (
 );
 
 const GridRow: Component<EntryProps> = (props) => {
-  const { def, status, labelsMissing, closed, ends } = rowView(props);
+  const { def, status, labelsMissing, closed, ends, closedDate } =
+    rowView(props);
   return (
     // A router link, not a div+navigate: a plain click stays client-side (no
     // reload — wallet connection and snapshot survive), while cmd/ctrl/middle
@@ -160,6 +171,9 @@ const GridRow: Component<EntryProps> = (props) => {
         <div class={css.ends} classList={{ [css.endsClosed]: closed() }}>
           {ends()}
         </div>
+        <Show when={closedDate()}>
+          {(date) => <div class={css.endsDate}>{date()}</div>}
+        </Show>
         <Show when={props.pro}>
           <div
             title={t("explore.refTitle")}
@@ -194,7 +208,8 @@ const MetaChip: Component<{ label: string; children: JSX.Element }> = (
 );
 
 const CardRow: Component<EntryProps> = (props) => {
-  const { def, status, labelsMissing, closed, ends } = rowView(props);
+  const { def, status, labelsMissing, closed, ends, closedDate } =
+    rowView(props);
   return (
     <A href={`/survey/${encodeURIComponent(props.a.key)}`} class={css.card}>
       <div class={css.cardHead}>
@@ -254,6 +269,7 @@ const CardRow: Component<EntryProps> = (props) => {
             classList={{ [css.cardEndsClosed]: closed() }}
           >
             {ends()}
+            <Show when={closedDate()}>{(date) => <> · {date()}</>}</Show>
           </span>
         </MetaChip>
         <MetaChip label={t("explore.metaReplies")}>
