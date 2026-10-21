@@ -112,9 +112,6 @@ export interface SurveyList {
 /** The Explore filter chips — exactly the shared paged-list filters. */
 export type ExploreFilter = SurveyListFilter;
 
-/** Page size for the Explore list (first page and each "show more"). */
-const PAGE_SIZE = 50;
-
 export interface UiState {
   filter: ExploreFilter;
   search: string;
@@ -367,7 +364,7 @@ export const AppProvider: ParentComponent = (props) => {
       // One bounded read regardless of participation volume: responses arrive
       // pre-deduped as per-survey counts, governance-link failures are
       // absorbed source-side, and pagination bounds the survey rows too.
-      const payload = await fetchPage({ ...pageParams(), limit: PAGE_SIZE });
+      const payload = await fetchPage(pageParams());
       return {
         tip: payload.tip,
         surveys: aggregateSurveyList(payload),
@@ -410,11 +407,7 @@ export const AppProvider: ParentComponent = (props) => {
     setLoadingMore(true);
     void (async () => {
       try {
-        const payload = await fetchPage({
-          ...pageParams(),
-          limit: PAGE_SIZE,
-          cursor,
-        });
+        const payload = await fetchPage({ ...pageParams(), cursor });
         // Params changed mid-flight: the reset effect owns the state now.
         if (JSON.stringify(pageParams()) !== key) return;
         // Dedupe by survey key: a row whose bucket changed between pages (or
