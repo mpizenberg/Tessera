@@ -55,7 +55,7 @@ fine there):
 
 ```html
 <script type="module">
-  import "https://esm.sh/cardano-tessera-respond@0.7";
+  import "https://esm.sh/cardano-tessera-respond@0.8";
 </script>
 ```
 

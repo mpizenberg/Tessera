@@ -9,7 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 while `< 1.0.0`, breaking changes bump the **minor** version.
 
-## [Unreleased]
+## [0.5.0] - 2026-10-21
+
+Speaks contract `2.1`.
 
 ### Added
 
@@ -23,7 +25,7 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
 
 - `SURVEY_KEY_RE` is re-exported from `cip-179/domain`, where the survey key
   form now lives beside `refKey` and `parseRefKey`; same value, same export.
-  Needs the `cip-179` release that adds it.
+- The `cip-179` peer dependency is `^0.6.1`.
 
 ## [0.4.0] - 2026-09-25
 
