@@ -52,10 +52,13 @@ import type {
   SurveyListFilter,
   SurveyListParams,
   SurveyListPayload,
+  SurveySection,
+  SurveySectionHead,
 } from "cardano-tessera-client";
+import { SURVEY_SECTIONS } from "cardano-tessera-client";
 import {
   aggregateSurveyList,
-  pageSurveyList,
+  pageSurveySections,
   surveyListSlice,
   type DataSource,
 } from "cardano-tessera-core";
@@ -92,7 +95,11 @@ import {
 import { loadAllDocs, putDoc } from "~/enrichment/docStore";
 import type { SurveyDefinition } from "cip-179";
 
-/** What the eager list resource holds — the first page Explore renders from. */
+/**
+ * A list answer as the app holds it: the first page of every Explore section
+ * (the eager list resource), one section's later page, or a survey read by
+ * key.
+ */
 export interface SurveyList {
   readonly tip: ChainTip;
   readonly surveys: readonly SurveyAggregate[];
@@ -107,7 +114,9 @@ export interface SurveyList {
   readonly incomplete?: boolean;
   /** Global per-chip totals over the search-matching set. */
   readonly counts: SurveyListCounts;
-  /** Continuation for the next page, or null when this page is the last. */
+  /** Each section's first page: keys, total, continuation. */
+  readonly sections?: Readonly<Record<SurveySection, SurveySectionHead>>;
+  /** On a section's later page, its continuation, or null on its last. */
   readonly nextCursor: string | null;
 }
 
@@ -127,6 +136,7 @@ function toSurveyList(payload: SurveyListPayload): SurveyList {
       public: 0,
       mine: 0,
     },
+    ...(payload.sections !== undefined && { sections: payload.sections }),
     nextCursor: payload.nextCursor ?? null,
     ...(payload.incomplete !== undefined && {
       incomplete: payload.incomplete,
@@ -139,6 +149,28 @@ export interface SurveySnapshot {
   readonly snap: Accessor<SurveyList | undefined>;
   readonly loading: Accessor<boolean>;
   readonly error: Accessor<unknown>;
+}
+
+/** One Explore section as shown: its page of rows, and how to turn it. */
+export interface ExploreSection {
+  /** The page shown; the previous one stays while the next loads. */
+  readonly rows: Accessor<readonly SurveyAggregate[]>;
+  /** How many rows the pages before the shown one hold: 0 on page one. */
+  readonly offset: Accessor<number>;
+  /** Rows the section holds under the filter and search. */
+  readonly total: Accessor<number>;
+  readonly loading: Accessor<boolean>;
+  readonly hasNext: Accessor<boolean>;
+  /** Show the page after (no-op while loading or on the last). */
+  next(): void;
+  /** Show the page before (no-op on page one). */
+  previous(): void;
+}
+
+/** Where a page past the first starts: its cursor and the rows before it. */
+interface PageStart {
+  readonly cursor: string;
+  readonly offset: number;
 }
 
 /** The Explore filter chips — exactly the shared paged-list filters. */
@@ -164,23 +196,18 @@ interface AppState {
   readonly config: AppConfig;
   readonly source: DataSource;
   /**
-   * The first Explore page for the active filter/search (re-fetched whenever
-   * either changes); later pages accumulate in {@link moreSurveys}.
+   * Every Explore section's first page for the active filter/search, with
+   * the chip counts (re-fetched whenever either changes).
    */
   readonly list: Resource<SurveyList>;
+  /** The Explore sections, each paged on its own from {@link list}. */
+  readonly sections: Readonly<Record<SurveySection, ExploreSection>>;
   /**
-   * The snapshot holding survey `key`: the first Explore page when the
-   * survey is on it, else the survey read by key, so a link opens any survey.
-   * Call it while creating a component; `reload()` refreshes it.
+   * The snapshot holding survey `key`: the Explore page shown when the survey
+   * is on it, else the survey read by key, so a link opens any survey. Call
+   * it while creating a component; `reload()` refreshes it.
    */
   surveySnapshot(key: Accessor<string>): SurveySnapshot;
-  /** Pages 2+ for the current filter/search, appended by {@link loadMore}. */
-  readonly moreSurveys: Accessor<readonly SurveyAggregate[]>;
-  /** The live continuation cursor, advanced by loads; null = all loaded. */
-  readonly nextCursor: Accessor<string | null>;
-  readonly loadingMore: Accessor<boolean>;
-  /** Fetch the next page and append it (no-op while loading or exhausted). */
-  loadMore(): void;
   /**
    * Backend operational health (the Explore footer), or null when the active
    * source has none to report (direct-Koios mode). Refetched by `reload()`.
@@ -386,10 +413,14 @@ export const AppProvider: ParentComponent = (props) => {
     });
     return fullListCache;
   };
-  const fetchPage = (params: SurveyListParams): Promise<SurveyListPayload> =>
+  const fetchSections = (
+    params: SurveyListParams,
+  ): Promise<SurveyListPayload> =>
     source.surveyListPage
-      ? source.surveyListPage(params)
-      : fullList().then((full) => pageSurveyList(full, params));
+      ? source.surveyListPage({ ...params, sections: true })
+      : fullList().then((full) =>
+          pageSurveySections(full, params, config.network),
+        );
   const fetchByKey = (key: string): Promise<SurveyListPayload> =>
     source.surveysByRefs
       ? source.surveysByRefs([key])
@@ -408,71 +439,95 @@ export const AppProvider: ParentComponent = (props) => {
     }),
   );
 
+  const paramsKey = createMemo(() => JSON.stringify(pageParams()));
   const [list, { refetch }] = createResource<SurveyList, string>(
-    () => JSON.stringify(pageParams()),
-    async () => {
-      // One bounded read regardless of participation volume: responses arrive
-      // pre-deduped as per-survey counts, governance-link failures are
-      // absorbed source-side, and pagination bounds the survey rows too.
-      return toSurveyList(await fetchPage(pageParams()));
-    },
+    paramsKey,
+    // One bounded read regardless of participation volume: responses arrive
+    // pre-deduped as per-survey counts, governance-link failures are absorbed
+    // source-side, and each section's page bounds the survey rows too.
+    async () => toSurveyList(await fetchSections(pageParams())),
   );
+  const listed = (): SurveyList | undefined =>
+    list.error ? undefined : list();
 
-  // Pages 2+ accumulate here and reset whenever the first page changes (a
-  // filter/search change or a reload re-keys the resource above).
-  const [moreSurveys, setMoreSurveys] = createSignal<
-    readonly SurveyAggregate[]
-  >([]);
-  const [nextCursor, setNextCursor] = createSignal<string | null>(null);
-  const [loadingMore, setLoadingMore] = createSignal(false);
-  createEffect(() => {
-    const l = list.error ? undefined : list();
-    setMoreSurveys([]);
-    setNextCursor(l?.nextCursor ?? null);
-  });
-  const loadMore = (): void => {
-    const cursor = nextCursor();
-    if (!cursor || loadingMore()) return;
-    const key = JSON.stringify(pageParams());
-    setLoadingMore(true);
-    void (async () => {
-      try {
-        const payload = await fetchPage({ ...pageParams(), cursor });
-        // Params changed mid-flight: the reset effect owns the state now.
-        if (JSON.stringify(pageParams()) !== key) return;
-        // Dedupe by survey key: a row whose bucket changed between pages (or
-        // that an insert pushed across the boundary) would otherwise repeat.
-        const seen = new Set(
-          [
-            ...((list.error ? undefined : list())?.surveys ?? []),
-            ...moreSurveys(),
-          ].map((s) => s.key),
-        );
-        const fresh = aggregateSurveyList(payload).filter(
-          (a) => !seen.has(a.key),
-        );
-        setMoreSurveys((prev) => [...prev, ...fresh]);
-        setNextCursor(payload.nextCursor ?? null);
-        // The cursor outlived its snapshot generation: rows may have been
-        // skipped, not just duplicated. Refresh page one; the reset effect
-        // reconciles the accumulated pages.
-        if (payload.resync) safeRefetch();
-      } catch (err) {
-        // Keep the cursor so the button retries; the first page still shows.
-        console.warn(`load more failed: ${String(err)}`);
-      } finally {
-        setLoadingMore(false);
-      }
-    })();
+  // Each section's pages walked past its first, each with the rows before
+  // it. Keyed by the params they were walked under, so a filter or search
+  // change shows every section's first page again.
+  const [walks, setWalks] = createSignal<{
+    readonly key: string;
+    readonly pages: Partial<Record<SurveySection, readonly PageStart[]>>;
+  }>({ key: "", pages: {} });
+  const walked = () => (walks().key === paramsKey() ? walks().pages : {});
+  const pagesOf = (s: SurveySection): readonly PageStart[] => walked()[s] ?? [];
+  const setPagesOf = (s: SurveySection, pages: readonly PageStart[]): void => {
+    setWalks({ key: paramsKey(), pages: { ...walked(), [s]: pages } });
   };
+
+  // A section's later page is read by its own cursor. A `resync` answer is
+  // still the page from that cursor, which is all a reader paging back and
+  // forth needs.
+  const sectionPages: Accessor<SurveyList | undefined>[] = [];
+  const sectionRefetches: (() => unknown)[] = [];
+  const sectionOf = (name: SurveySection): ExploreSection => {
+    const start = (): PageStart | undefined => {
+      const pages = pagesOf(name);
+      return pages[pages.length - 1];
+    };
+    const [page, { refetch }] = createResource(
+      () => {
+        const cursor = start()?.cursor;
+        return cursor ? JSON.stringify([pageParams(), cursor]) : false;
+      },
+      async () =>
+        toSurveyList(
+          await fetchSections({ ...pageParams(), cursor: start()?.cursor }),
+        ),
+    );
+    const shownPage = (): SurveyList | undefined =>
+      start() && !page.error ? page() : undefined;
+    sectionPages.push(shownPage);
+    sectionRefetches.push(refetch);
+    const head = () => listed()?.sections?.[name];
+    const rows = createMemo<readonly SurveyAggregate[]>((previous) => {
+      if (start())
+        return page.loading ? previous : (shownPage()?.surveys ?? []);
+      const l = listed();
+      const byKey = new Map(l?.surveys.map((a) => [a.key, a]));
+      return (head()?.keys ?? []).flatMap((k) => byKey.get(k) ?? []);
+    }, []);
+    const nextCursor = (): string | null =>
+      start()
+        ? (shownPage()?.nextCursor ?? null)
+        : (head()?.nextCursor ?? null);
+    const offset = (): number => start()?.offset ?? 0;
+    return {
+      rows,
+      offset,
+      total: () => head()?.total ?? 0,
+      loading: () => page.loading,
+      hasNext: () => nextCursor() !== null,
+      next: () => {
+        const cursor = nextCursor();
+        if (!cursor || page.loading) return;
+        setPagesOf(name, [
+          ...pagesOf(name),
+          { cursor, offset: offset() + rows().length },
+        ]);
+      },
+      previous: () => setPagesOf(name, pagesOf(name).slice(0, -1)),
+    };
+  };
+  const sections = Object.fromEntries(
+    SURVEY_SECTIONS.map((name) => [name, sectionOf(name)]),
+  ) as Record<SurveySection, ExploreSection>;
 
   // Refetchers of the surveys read by key, so `reload()` refreshes them too.
   const byKeyRefetches = new Set<() => unknown>();
   const surveySnapshot = (key: Accessor<string>): SurveySnapshot => {
-    const shown = (): SurveyList | undefined => {
-      const l = list.error ? undefined : list();
-      return l && findSurvey(l.surveys, key()) ? l : undefined;
-    };
+    const shown = (): SurveyList | undefined =>
+      [listed(), ...sectionPages.map((p) => p())].find(
+        (l) => l && findSurvey(l.surveys, key()),
+      );
     // Read by key only once the page is in and lacks it.
     const [byKey, { refetch }] = createResource(
       () =>
@@ -509,7 +564,8 @@ export const AppProvider: ParentComponent = (props) => {
   const safeRefetch = (): void => {
     fullListCache = null; // direct-Koios mode: a reload means a fresh scan
     void Promise.resolve(refetch()).catch(() => {});
-    for (const r of byKeyRefetches) void Promise.resolve(r()).catch(() => {});
+    for (const r of [...sectionRefetches, ...byKeyRefetches])
+      void Promise.resolve(r()).catch(() => {});
     void Promise.resolve(refetchHealth()).catch(() => {});
   };
 
@@ -842,10 +898,7 @@ export const AppProvider: ParentComponent = (props) => {
     source,
     list,
     surveySnapshot,
-    moreSurveys,
-    nextCursor,
-    loadingMore,
-    loadMore,
+    sections,
     health,
     reload: safeRefetch,
     ui,

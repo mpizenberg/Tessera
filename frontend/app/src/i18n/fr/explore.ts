@@ -49,9 +49,9 @@ const explore: Messages = {
 
   noMatch: "Aucun sondage correspondant.",
 
-  loadMore: "Afficher plus",
-  loadingMore: "Chargement…",
-  shownOfTotal: "{shown} sur {total}",
+  previousPage: "← Précédents",
+  nextPage: "Suivants →",
+  pageRange: "{from}–{to} sur {total}",
 
   answeredTitle: "Vous avez répondu à ce sondage",
   answeredAria: "répondu",

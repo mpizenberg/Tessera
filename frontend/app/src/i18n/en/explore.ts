@@ -55,10 +55,10 @@ const explore = {
   noMatch: "No surveys match.",
 
   // Pagination.
-  loadMore: "Show more",
-  loadingMore: "Loading…",
-  /** {shown} rows loaded out of {total} matching the active filter. */
-  shownOfTotal: "{shown} of {total}",
+  previousPage: "← Previous",
+  nextPage: "Next →",
+  /** A section page's rows, {from} to {to}, out of the section's {total}. */
+  pageRange: "{from}–{to} of {total}",
 
   // Per-row badges and fallbacks.
   answeredTitle: "You answered this survey",

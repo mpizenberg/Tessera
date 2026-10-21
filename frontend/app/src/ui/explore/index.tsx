@@ -7,14 +7,14 @@ import {
   onCleanup,
   type Accessor,
   type Component,
+  type JSX,
 } from "solid-js";
 import { A } from "@solidjs/router";
 
 import type { ChainTip, SurveyAggregate } from "cip-179/domain";
 
-import { useApp, type ExploreFilter } from "~/state";
+import { useApp, type ExploreFilter, type ExploreSection } from "~/state";
 import { walletOwns } from "~/domain/roles";
-import { isClosed, viewStatus } from "~/ui/format";
 import { HealthFooter } from "~/ui/components/HealthFooter";
 import type { WalletCredential, WalletIdentity } from "~/wallet/types";
 import { t, n, type MsgKey } from "~/i18n";
@@ -56,6 +56,68 @@ const FILTERS: ReadonlyArray<{ value: ExploreFilter; labelKey: MsgKey }> = [
   { value: "mine", labelKey: "explore.filterMine" },
 ];
 
+/**
+ * One register section: its label, its page of rows, and its own pager. A
+ * new page reads from the section's top.
+ */
+const Section: Component<{
+  section: ExploreSection;
+  /** The page's rows, with any optimistic ones on top. */
+  rows: readonly SurveyAggregate[];
+  label: JSX.Element;
+  entry: (a: SurveyAggregate) => JSX.Element;
+  closed?: boolean;
+}> = (props) => {
+  let top: HTMLDivElement | undefined;
+  const turn = (go: () => void): void => {
+    go();
+    if (top && top.getBoundingClientRect().top < 0) {
+      top.scrollIntoView({ block: "start" });
+    }
+  };
+  const offset = () => props.section.offset();
+  return (
+    <Show when={props.rows.length > 0}>
+      <div ref={top}>
+        {props.label}
+        <Show
+          when={props.closed}
+          fallback={<For each={props.rows}>{props.entry}</For>}
+        >
+          <div class={css.closedRows}>
+            <For each={props.rows}>{props.entry}</For>
+          </div>
+        </Show>
+        <Show when={offset() > 0 || props.section.hasNext()}>
+          <div class={css.pager}>
+            <button
+              onClick={() => turn(props.section.previous)}
+              disabled={offset() === 0}
+              class={css.pageBtn}
+            >
+              {t("explore.previousPage")}
+            </button>
+            <span class={css.pageRange}>
+              {t("explore.pageRange", {
+                from: n(offset() + 1),
+                to: n(offset() + props.section.rows().length),
+                total: n(props.section.total()),
+              })}
+            </span>
+            <button
+              onClick={() => turn(props.section.next)}
+              disabled={!props.section.hasNext() || props.section.loading()}
+              class={css.pageBtn}
+            >
+              {t("explore.nextPage")}
+            </button>
+          </div>
+        </Show>
+      </div>
+    </Show>
+  );
+};
+
 export const Explore: Component = () => {
   const app = useApp();
 
@@ -65,13 +127,15 @@ export const Explore: Component = () => {
   // than throwing — the `.error`/`.loading` reads are always safe.
   const snapData = () => (app.list.error ? undefined : app.list());
 
-  // Filtering, search, chip counts, ordering, and pagination all happen at
-  // the source (server-side in indexer mode, the same core semantics in
-  // memory in direct-Koios mode) — this screen renders what arrives: the
-  // first page plus any "show more" pages, with the session's optimistic
-  // surveys on top until the indexer catches up.
-  const all = createMemo(() => {
-    const real = [...(snapData()?.surveys ?? []), ...app.moreSurveys()];
+  // Filtering, search, chip counts, sections, ordering, and pagination all
+  // happen at the source (server-side in indexer mode, the same core
+  // semantics in memory in direct-Koios mode) — this screen renders each
+  // section's page as it arrives, with the session's optimistic surveys on
+  // top of the open section's first page until the indexer catches up.
+  const openRows = createMemo(() => {
+    const open = app.sections.open;
+    const real = open.rows();
+    if (open.offset() > 0) return real;
     const realKeys = new Set(real.map((s) => s.key));
     const opt = app.optimisticSurveys().filter((a) => !realKeys.has(a.key));
     return opt.length ? [...opt, ...real] : real;
@@ -156,23 +220,11 @@ export const Explore: Component = () => {
       },
   );
 
-  // Rows arrive already filtered and searched; optimistic ones ride on top.
-  const visible = all;
-
-  // Four sections: the source streams linked surveys (open and closed mixed,
-  // by slot), then open, then closed; the linked ones split here.
-  const section = (linked: boolean, closed: boolean) =>
-    createMemo(() =>
-      visible().filter(
-        (a) =>
-          a.govLinks.length > 0 === linked &&
-          isClosed(viewStatus(a)) === closed,
-      ),
-    );
-  const govOpenRows = section(true, false);
-  const govClosedRows = section(true, true);
-  const openRows = section(false, false);
-  const closedRows = section(false, true);
+  const shownCount = () =>
+    app.sections.linkedOpen.rows().length +
+    app.sections.linkedClosed.rows().length +
+    openRows().length +
+    app.sections.closed.rows().length;
 
   const rowProps = (a: SurveyAggregate): EntryProps => ({
     a,
@@ -183,6 +235,8 @@ export const Explore: Component = () => {
     flags: flagsOf(a),
     narrow: narrow(),
   });
+
+  const entry = (a: SurveyAggregate) => <Entry {...rowProps(a)} />;
 
   return (
     <main class={css.page}>
@@ -276,78 +330,63 @@ export const Explore: Component = () => {
             </Show>
 
             <Show when={!app.list.loading && !app.list.error}>
-              <Show when={govOpenRows().length > 0}>
-                <SectionLabel
-                  dot={<span class={css.dotGov} />}
-                  color="var(--gov)"
-                  label={t("explore.sectionGov")}
-                  note={t("explore.sectionGovNote")}
-                />
-                <For each={govOpenRows()}>
-                  {(a) => <Entry {...rowProps(a)} />}
-                </For>
-              </Show>
+              <Section
+                section={app.sections.linkedOpen}
+                rows={app.sections.linkedOpen.rows()}
+                entry={entry}
+                label={
+                  <SectionLabel
+                    dot={<span class={css.dotGov} />}
+                    color="var(--gov)"
+                    label={t("explore.sectionGov")}
+                    note={t("explore.sectionGovNote")}
+                  />
+                }
+              />
+              <Section
+                section={app.sections.linkedClosed}
+                rows={app.sections.linkedClosed.rows()}
+                entry={entry}
+                closed
+                label={
+                  <SectionLabel
+                    dot={<span class={css.dotGovClosed} />}
+                    color="var(--gov)"
+                    label={t("explore.sectionGovClosed")}
+                    note={t("explore.sectionClosedNote")}
+                  />
+                }
+              />
+              <Section
+                section={app.sections.open}
+                rows={openRows()}
+                entry={entry}
+                label={
+                  <SectionLabel
+                    dot={<span class={css.dotOpen} />}
+                    color="#5E7B49"
+                    label={t("explore.sectionOpen")}
+                  />
+                }
+              />
+              <Section
+                section={app.sections.closed}
+                rows={app.sections.closed.rows()}
+                entry={entry}
+                closed
+                label={
+                  <SectionLabel
+                    dot={<span class={css.dotClosed} />}
+                    color="#A79C88"
+                    label={t("explore.sectionClosed")}
+                    note={t("explore.sectionClosedNote")}
+                    topBorder
+                  />
+                }
+              />
 
-              <Show when={govClosedRows().length > 0}>
-                <SectionLabel
-                  dot={<span class={css.dotGovClosed} />}
-                  color="var(--gov)"
-                  label={t("explore.sectionGovClosed")}
-                  note={t("explore.sectionClosedNote")}
-                />
-                <div class={css.closedRows}>
-                  <For each={govClosedRows()}>
-                    {(a) => <Entry {...rowProps(a)} />}
-                  </For>
-                </div>
-              </Show>
-
-              <Show when={openRows().length > 0}>
-                <SectionLabel
-                  dot={<span class={css.dotOpen} />}
-                  color="#5E7B49"
-                  label={t("explore.sectionOpen")}
-                />
-                <For each={openRows()}>{(a) => <Entry {...rowProps(a)} />}</For>
-              </Show>
-
-              <Show when={closedRows().length > 0}>
-                <SectionLabel
-                  dot={<span class={css.dotClosed} />}
-                  color="#A79C88"
-                  label={t("explore.sectionClosed")}
-                  note={t("explore.sectionClosedNote")}
-                  topBorder
-                />
-                <div class={css.closedRows}>
-                  <For each={closedRows()}>
-                    {(a) => <Entry {...rowProps(a)} />}
-                  </For>
-                </div>
-              </Show>
-
-              <Show when={visible().length === 0}>
+              <Show when={shownCount() === 0}>
                 <GridNotice text={t("explore.noMatch")} />
-              </Show>
-
-              <Show when={app.nextCursor()}>
-                <div class={css.loadMoreRow}>
-                  <button
-                    onClick={() => app.loadMore()}
-                    disabled={app.loadingMore()}
-                    class={css.loadMore}
-                  >
-                    {app.loadingMore()
-                      ? t("explore.loadingMore")
-                      : t("explore.loadMore")}
-                  </button>
-                  <span class={css.loadMoreCount}>
-                    {t("explore.shownOfTotal", {
-                      shown: n(visible().length),
-                      total: n(counts()[app.ui.filter]),
-                    })}
-                  </span>
-                </div>
               </Show>
             </Show>
           </div>
