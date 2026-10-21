@@ -236,6 +236,20 @@ describe("pageSurveyList filters and search", () => {
       ),
     ).toEqual([keyOf(ended)]);
   });
+
+  it("a term of 8 characters or more matches the survey key too", () => {
+    const hashed: SurveyRecord = {
+      ...survey(4, 600),
+      txHash: "ab".repeat(32),
+      ref: { txId: new Uint8Array(32).fill(0xab), index: 0 },
+    };
+    const withKey = payload([mineOpen, hashed]);
+    const keys = (search: string) =>
+      pageSurveyList(withKey, { limit: 10, search }).surveys.map(keyOf);
+    expect(keys("abababab")).toEqual([keyOf(hashed)]);
+    expect(keys(`${"ab".repeat(32)}:0`)).toEqual([keyOf(hashed)]);
+    expect(keys("abababa")).toEqual([]);
+  });
 });
 
 describe("searchTermsOf", () => {

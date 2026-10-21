@@ -121,11 +121,18 @@ export function parseResponseCursor(s: string): ResponseCursor | null {
 
 /**
  * Cap on the number of AND terms a search string contributes. The backend turns
- * each term into a `LIKE ?` bound parameter, so an uncapped `?q=` of hundreds of
+ * each term into one or two `LIKE ?` bound parameters, so an uncapped `?q=` of hundreds of
  * words would exceed D1's bound-parameter limit and 500 a public endpoint
  * (review finding 42). Eight is far past any real survey search.
  */
 export const MAX_SEARCH_TERMS = 8;
+
+/**
+ * Shortest search term that also matches a survey's `txHash:index` key. A
+ * shorter one would match hashes by chance: a two-character term is in about
+ * a quarter of all keys.
+ */
+export const MIN_KEY_TERM_LENGTH = 8;
 
 /** Normalize a search string into its lowercased AND terms (capped). */
 export function searchTermsOf(search: string | undefined): string[] {
@@ -240,7 +247,13 @@ export function pageSurveyList(
       ownerKey: credentialKey(a.record.definition.owner),
       haystack: surveyHaystack(a.record, a.govLinks),
     }))
-    .filter((r) => terms.every((t) => r.haystack.includes(t)));
+    .filter((r) =>
+      terms.every(
+        (t) =>
+          r.haystack.includes(t) ||
+          (t.length >= MIN_KEY_TERM_LENGTH && r.a.key.includes(t)),
+      ),
+    );
 
   const counts: SurveyListCounts = {
     all: rows.length,

@@ -445,6 +445,15 @@ describe("GET /api/surveys selection: paging, filters, search, refs", () => {
     expect(keysOf(stale)).toEqual([`${TX_B}:1`]);
   });
 
+  it("search: a term of 8 characters or more matches the survey key", async () => {
+    const app = appWith(await seededStore());
+    const keys = async (q: string) =>
+      keysOf(await getBody(app, `?q=${encodeURIComponent(q)}`));
+    expect(await keys("aaaaaaaa")).toEqual([`${TX_A}:0`]);
+    expect(await keys(`${TX_B}:1`)).toEqual([`${TX_B}:1`]);
+    expect(await keys("aaaaaaa")).toEqual([]);
+  });
+
   it("filters: active excludes the closed survey", async () => {
     const app = appWith(await seededStore());
     const body = await getBody(app, "?filter=active");

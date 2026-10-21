@@ -8,10 +8,11 @@
  * The `survey_index` page/count semantics mirror `cardano-tessera-core`'s
  * `pageSurveyList` — the executable spec — exactly: bucket 0 gov-linked /
  * 1 open / 2 closed, ordered (bucket ASC, slot DESC, key ASC),
- * AND-of-substrings search, chip counts over the search-matching set.
+ * AND-of-substrings search (a long term matching the key too), chip counts
+ * over the search-matching set.
  */
 
-import type { ResponseCursor } from "cardano-tessera-core";
+import { MIN_KEY_TERM_LENGTH, type ResponseCursor } from "cardano-tessera-core";
 
 import type { AxisPosition } from "./changes";
 import type {
@@ -36,12 +37,22 @@ const ACTIVE = `(cancelled = 0 AND end_epoch >= ?)`;
 const likeEscape = (term: string): string =>
   term.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 
-/** One `haystack LIKE` clause per AND term. */
+/** One `haystack LIKE` clause per AND term, or the survey key for a long one. */
 function searchSql(terms: readonly string[]): SqlQuery {
   if (terms.length === 0) return { sql: "1", params: [] };
+  const like = (column: string): string => `${column} LIKE ? ESCAPE '\\'`;
   return {
-    sql: terms.map(() => `haystack LIKE ? ESCAPE '\\'`).join(" AND "),
-    params: terms.map((t) => `%${likeEscape(t)}%`),
+    sql: terms
+      .map((t) =>
+        t.length >= MIN_KEY_TERM_LENGTH
+          ? `(${like("haystack")} OR ${like("survey_key")})`
+          : like("haystack"),
+      )
+      .join(" AND "),
+    params: terms.flatMap((t) => {
+      const pattern = `%${likeEscape(t)}%`;
+      return t.length >= MIN_KEY_TERM_LENGTH ? [pattern, pattern] : [pattern];
+    }),
   };
 }
 
