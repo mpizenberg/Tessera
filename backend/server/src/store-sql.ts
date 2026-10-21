@@ -395,11 +395,12 @@ const UNCLAIMED_TX_PROOF_HASHES = `
 /** As stored: booleans are 0/1 integers. */
 export interface DbSurveyRow extends Omit<
   SurveyIndexRow,
-  "sealed" | "cancelled" | "govLinked"
+  "sealed" | "cancelled" | "govLinked" | "talliable"
 > {
   readonly sealed: number;
   readonly cancelled: number;
   readonly govLinked: number;
+  readonly talliable: number;
 }
 
 /** A page row additionally carries its computed section bucket. */
@@ -412,6 +413,7 @@ export const surveyRowFromDb = (r: DbSurveyRow): SurveyIndexRow => ({
   sealed: r.sealed !== 0,
   cancelled: r.cancelled !== 0,
   govLinked: r.govLinked !== 0,
+  talliable: r.talliable !== 0,
 });
 
 /** How a `response` row arrives: its one boolean is an integer. */

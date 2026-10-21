@@ -159,19 +159,20 @@ export const Explore: Component = () => {
   // Rows arrive already filtered and searched; optimistic ones ride on top.
   const visible = all;
 
-  // Linked (governance) surveys get their own section, shown first; the rest
-  // split into open / closed so a linked survey never appears twice.
-  const govRows = createMemo(() =>
-    visible().filter((a) => a.govLinks.length > 0),
-  );
-  const openRows = createMemo(() =>
-    visible().filter(
-      (a) => a.govLinks.length === 0 && !isClosed(viewStatus(a)),
-    ),
-  );
-  const closedRows = createMemo(() =>
-    visible().filter((a) => a.govLinks.length === 0 && isClosed(viewStatus(a))),
-  );
+  // Four sections: the source streams linked surveys (open and closed mixed,
+  // by slot), then open, then closed; the linked ones split here.
+  const section = (linked: boolean, closed: boolean) =>
+    createMemo(() =>
+      visible().filter(
+        (a) =>
+          a.govLinks.length > 0 === linked &&
+          isClosed(viewStatus(a)) === closed,
+      ),
+    );
+  const govOpenRows = section(true, false);
+  const govClosedRows = section(true, true);
+  const openRows = section(false, false);
+  const closedRows = section(false, true);
 
   const rowProps = (a: SurveyAggregate): EntryProps => ({
     a,
@@ -275,14 +276,30 @@ export const Explore: Component = () => {
             </Show>
 
             <Show when={!app.list.loading && !app.list.error}>
-              <Show when={govRows().length > 0}>
+              <Show when={govOpenRows().length > 0}>
                 <SectionLabel
                   dot={<span class={css.dotGov} />}
                   color="var(--gov)"
                   label={t("explore.sectionGov")}
                   note={t("explore.sectionGovNote")}
                 />
-                <For each={govRows()}>{(a) => <Entry {...rowProps(a)} />}</For>
+                <For each={govOpenRows()}>
+                  {(a) => <Entry {...rowProps(a)} />}
+                </For>
+              </Show>
+
+              <Show when={govClosedRows().length > 0}>
+                <SectionLabel
+                  dot={<span class={css.dotGovClosed} />}
+                  color="var(--gov)"
+                  label={t("explore.sectionGovClosed")}
+                  note={t("explore.sectionClosedNote")}
+                />
+                <div class={css.closedRows}>
+                  <For each={govClosedRows()}>
+                    {(a) => <Entry {...rowProps(a)} />}
+                  </For>
+                </div>
               </Show>
 
               <Show when={openRows().length > 0}>

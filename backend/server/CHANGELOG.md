@@ -32,6 +32,9 @@ has read an ended survey's artifact, and the app deploys with the backend.
 
 - `GET /api/surveys`'s `q` also matches the survey key (`txHash:index`) with
   a term of 8 characters or more.
+- `GET /api/surveys` counts a survey whose definition is invalid as closed:
+  `filter=active`, `sealed` and `public` and their counts leave it out, and
+  it sorts with the closed surveys.
 - A survey is finalized once the end of its `end_epoch` is `k` blocks deep
   and can no longer roll back, not 10 minutes after it: about 12 hours after
   the epoch boundary on mainnet and preprod, 3.5 on preview, at most 36 and

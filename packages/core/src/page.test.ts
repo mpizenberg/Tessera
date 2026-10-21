@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Credential, SurveyDefinition } from "cip-179";
+import { Role, type Credential, type SurveyDefinition } from "cip-179";
 
 import {
   bytesToHex,
@@ -37,6 +37,8 @@ interface Opts {
   sealed?: boolean;
   ownerByte?: number;
   title?: string;
+  /** No question: spec-invalid, so untalliable. */
+  invalid?: boolean;
 }
 
 /** One survey per txId byte; slot varies so ordering is observable. */
@@ -46,7 +48,7 @@ function survey(id: number, slot: number, opts: Opts = {}): SurveyRecord {
     owner: owner(opts.ownerByte ?? 1),
     title: opts.title ?? `survey ${id}`,
     description: "",
-    eligibleRoles: [],
+    eligibleRoles: [Role.Stakeholder],
     endEpoch: opts.endEpoch ?? 12,
     submissionMode: opts.sealed
       ? {
@@ -56,8 +58,16 @@ function survey(id: number, slot: number, opts: Opts = {}): SurveyRecord {
           paddingSize: 64,
         }
       : { type: "public" },
-    questions: [],
-  };
+    questions: opts.invalid
+      ? []
+      : [
+          {
+            type: "singleChoice",
+            prompt: "",
+            options: { type: "options", labels: ["a", "b"] },
+          },
+        ],
+  } as unknown as SurveyDefinition;
   return {
     txHash: bytesToHex(Uint8Array.of(id)),
     slot,
@@ -116,27 +126,24 @@ describe("cursor wire form", () => {
 });
 
 describe("pageSurveyList ordering and cursors", () => {
-  // Buckets: s3 linked (0), s1/s2 open (1), s0 ended (2); slots break ties.
+  // Buckets: s3 linked open and s4 linked ended (0, by slot alone), s1/s2
+  // open (1), s0 ended and s5 invalid (2); slots break ties.
   const s0 = survey(0, 400, { endEpoch: 8 });
   const s1 = survey(1, 300);
   const s2 = survey(2, 500);
   const s3 = survey(3, 100);
-  const full = payload([s0, s1, s2, s3], [link(s3)]);
+  const s4 = survey(4, 150, { endEpoch: 8 });
+  const s5 = survey(5, 600, { invalid: true });
+  const full = payload([s0, s1, s2, s3, s4, s5], [link(s3), link(s4)]);
+  const order = [s4, s3, s2, s1, s5, s0].map(keyOf);
 
-  it("orders gov-linked, then open by slot desc, then closed", () => {
+  it("orders linked, then open, then closed", () => {
     const page = pageSurveyList(full, { limit: 10 });
-    expect(page.surveys.map(keyOf)).toEqual([
-      keyOf(s3), // linked
-      keyOf(s2), // open, newest
-      keyOf(s1),
-      keyOf(s0), // closed
-    ]);
+    expect(page.surveys.map(keyOf)).toEqual(order);
     expect(page.nextCursor).toBeNull();
     // The page slices ride along, restricted to page members.
-    expect(page.govLinks).toEqual([link(s3)]);
-    expect(Object.keys(page.responseCounts).sort()).toEqual(
-      [s0, s1, s2, s3].map(keyOf).sort(),
-    );
+    expect(page.govLinks).toEqual([link(s3), link(s4)]);
+    expect(Object.keys(page.responseCounts).sort()).toEqual([...order].sort());
   });
 
   it("walks the whole set page by page without gaps or repeats", () => {
@@ -148,15 +155,16 @@ describe("pageSurveyList ordering and cursors", () => {
       if (!page.nextCursor) break;
       cursor = page.nextCursor;
     }
-    expect(seen).toEqual([keyOf(s3), keyOf(s2), keyOf(s1), keyOf(s0)]);
+    expect(seen).toEqual(order);
   });
 
   it("counts are global (search-scoped), not page-scoped", () => {
     const page = pageSurveyList(full, { limit: 1 });
     expect(page.surveys).toHaveLength(1);
+    // The invalid survey is closed, whatever its end epoch.
     expect(page.counts).toEqual({
-      all: 4,
-      linked: 1,
+      all: 6,
+      linked: 2,
       active: 3,
       sealed: 0,
       public: 3,

@@ -26,13 +26,13 @@ import type {
   SurveyPageQuery,
 } from "./store";
 
+/** "Open" (active) predicate: talliable, not cancelled, deadline not passed (1 param). */
+const ACTIVE = `(talliable = 1 AND cancelled = 0 AND end_epoch >= ?)`;
+
 /** The section bucket, computed against the snapshot tip's epoch (1 param). */
 const BUCKET = `CASE WHEN gov_linked = 1 THEN 0
-                     WHEN cancelled = 1 OR end_epoch < ? THEN 2
-                     ELSE 1 END`;
-
-/** "Open" (active) predicate: not cancelled, deadline not passed (1 param). */
-const ACTIVE = `(cancelled = 0 AND end_epoch >= ?)`;
+                     WHEN ${ACTIVE} THEN 1
+                     ELSE 2 END`;
 
 const likeEscape = (term: string): string =>
   term.replace(/[\\%_]/g, (ch) => `\\${ch}`);
@@ -101,7 +101,7 @@ export function surveyPageSql(q: SurveyPageQuery): SqlQuery {
     sql: `
       WITH rows AS (
         SELECT survey_key, slot, end_epoch, sealed, cancelled, gov_linked,
-               owner, haystack, record, cancellations, gov_links,
+               talliable, owner, haystack, record, cancellations, gov_links,
                response_count, counted_by_role, refuted_count,
                final_state, artifact_hash,
                ${BUCKET} AS bucket
@@ -109,7 +109,8 @@ export function surveyPageSql(q: SurveyPageQuery): SqlQuery {
         WHERE ${search.sql} AND ${filter.sql}
       )
       SELECT survey_key AS surveyKey, slot, end_epoch AS endEpoch, sealed,
-             cancelled, gov_linked AS govLinked, owner, haystack, record,
+             cancelled, gov_linked AS govLinked, talliable, owner, haystack,
+             record,
              cancellations, gov_links AS govLinks,
              response_count AS responseCount,
              counted_by_role AS countedByRole,
@@ -167,8 +168,8 @@ export function surveyCountsSql(
  */
 const SURVEY_INDEX_RECONCILE = `
   INSERT INTO survey_index
-    (survey_key, slot, end_epoch, sealed, cancelled, gov_linked, owner,
-     haystack, record, cancellations, gov_links, response_count,
+    (survey_key, slot, end_epoch, sealed, cancelled, gov_linked, talliable,
+     owner, haystack, record, cancellations, gov_links, response_count,
      counted_by_role, refuted_count, final_state, artifact_hash, changed_at)
   SELECT json_extract(value, '$.surveyKey'),
          json_extract(value, '$.slot'),
@@ -176,6 +177,7 @@ const SURVEY_INDEX_RECONCILE = `
          json_extract(value, '$.sealed'),
          json_extract(value, '$.cancelled'),
          json_extract(value, '$.govLinked'),
+         json_extract(value, '$.talliable'),
          json_extract(value, '$.owner'),
          json_extract(value, '$.haystack'),
          json_extract(value, '$.record'),
@@ -195,6 +197,7 @@ const SURVEY_INDEX_RECONCILE = `
     sealed = excluded.sealed,
     cancelled = excluded.cancelled,
     gov_linked = excluded.gov_linked,
+    talliable = excluded.talliable,
     owner = excluded.owner,
     haystack = excluded.haystack,
     record = excluded.record,
@@ -211,6 +214,7 @@ const SURVEY_INDEX_RECONCILE = `
      OR survey_index.sealed IS NOT excluded.sealed
      OR survey_index.cancelled IS NOT excluded.cancelled
      OR survey_index.gov_linked IS NOT excluded.gov_linked
+     OR survey_index.talliable IS NOT excluded.talliable
      OR survey_index.owner IS NOT excluded.owner
      OR survey_index.haystack IS NOT excluded.haystack
      OR survey_index.record IS NOT excluded.record
@@ -623,7 +627,7 @@ export const respondedSql = (credentials: readonly string[]): SqlQuery => ({
 
 export const SURVEY_ROW_COLUMNS = `survey_key AS surveyKey, slot,
        end_epoch AS endEpoch, sealed, cancelled, gov_linked AS govLinked,
-       owner, haystack, record, cancellations, gov_links AS govLinks,
+       talliable, owner, haystack, record, cancellations, gov_links AS govLinks,
        response_count AS responseCount,
        counted_by_role AS countedByRole, refuted_count AS refutedCount,
        final_state AS finalState, artifact_hash AS artifactHash`;

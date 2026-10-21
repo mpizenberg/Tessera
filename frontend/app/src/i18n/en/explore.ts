@@ -45,8 +45,9 @@ const explore = {
     "Showing the most recent surveys and responses — more exist on-chain than could be loaded, so some lists and tallies may be incomplete.",
 
   // Section labels splitting the register.
-  sectionGov: "On-chain governance",
+  sectionGov: "On-chain governance · open",
   sectionGovNote: "Tied to a governance action — shown first.",
+  sectionGovClosed: "On-chain governance · closed",
   sectionOpen: "Open · accepting responses",
   sectionClosed: "Closed",
   sectionClosedNote: "Ended or withdrawn — read-only.",

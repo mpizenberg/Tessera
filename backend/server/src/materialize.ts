@@ -214,6 +214,7 @@ export function surveyRowsOf(
       sealed: a.sealed,
       cancelled: a.cancelled,
       govLinked: a.govLinks.length > 0,
+      talliable: a.talliable,
       owner: credentialKey(a.record.definition.owner),
       haystack: surveyHaystack(a.record, a.govLinks),
       record: JSON.stringify(toJsonSafe(a.record)),
@@ -265,7 +266,9 @@ export function listCountsOf(
   surveys: readonly SurveyIndexRow[],
   tipEpoch: number,
 ): BankedListCounts {
-  const active = surveys.filter((r) => !r.cancelled && r.endEpoch >= tipEpoch);
+  const active = surveys.filter(
+    (r) => !r.cancelled && r.talliable && r.endEpoch >= tipEpoch,
+  );
   return {
     all: surveys.length,
     linked: surveys.filter((r) => r.govLinked).length,

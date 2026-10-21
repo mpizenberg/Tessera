@@ -286,6 +286,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0034_script_lookup_cache.sql",
       "0035_gov_anchor_misses.sql",
       "0036_weights_at_end_of_epoch.sql",
+      "0037_survey_talliable.sql",
     ]);
   });
 });
@@ -569,6 +570,7 @@ describe("store-node survey_index paging SQL", () => {
     sealed: false,
     cancelled: false,
     govLinked: false,
+    talliable: true,
     owner: "key:11",
     haystack: `title of ${key}`,
     record: `{"k":"${key}"}`,
@@ -583,14 +585,17 @@ describe("store-node survey_index paging SQL", () => {
   });
   const GENERATION = 7;
 
-  // linked (bucket 0), three open (cb/cc slot-tied, so the key tie-break the
-  // cursor rests on has a witness), one closed.
+  // Linked open and linked ended (bucket 0, ab newer), three open (1; cb/cc
+  // slot-tied, so the key tie-break the cursor rests on has a witness), one
+  // ended and one untalliable before its end epoch (2).
   const rows = [
     row("aa:0", 100, { govLinked: true }),
+    row("ab:0", 200, { govLinked: true, endEpoch: 499 }),
     row("bb:0", 300),
     row("cb:0", 500),
     row("cc:0", 500, { sealed: true }),
     row("dd:0", 900, { endEpoch: 499 }),
+    row("de:0", 950, { talliable: false }),
   ];
 
   const page = (q: Partial<SurveyPageQuery>) =>
@@ -610,13 +615,15 @@ describe("store-node survey_index paging SQL", () => {
 
     const all = await page({});
     expect(all.map((r) => r.surveyKey)).toEqual([
+      "ab:0",
       "aa:0",
       "cb:0",
       "cc:0",
       "bb:0",
+      "de:0",
       "dd:0",
     ]);
-    expect(all.map((r) => r.bucket)).toEqual([0, 1, 1, 1, 2]);
+    expect(all.map((r) => r.bucket)).toEqual([0, 0, 1, 1, 1, 2, 2]);
 
     // A cursor on the first of two slot-tied rows resumes at the second.
     const second = await page({
@@ -628,7 +635,7 @@ describe("store-node survey_index paging SQL", () => {
 
   // The route fixture carries no sealed survey, so these two filters have no
   // behavioural witness.
-  it("filters sealed and public against the active set", async () => {
+  it("filters sealed and public against the active set, which no untalliable survey joins", async () => {
     store = openBackendStore(":memory:");
     await store.reconcileSegment(ALL_SLOTS, rows, [], [], [], GENERATION);
 
@@ -640,6 +647,13 @@ describe("store-node survey_index paging SQL", () => {
       "cb:0",
       "bb:0",
     ]);
+    expect(await store.surveyIndexCounts(TIP_EPOCH, [], [])).toMatchObject({
+      all: 7,
+      linked: 2,
+      active: 4,
+      sealed: 1,
+      public: 3,
+    });
   });
 });
 
@@ -685,6 +699,7 @@ describe("store-node response rows", () => {
     sealed: false,
     cancelled: false,
     govLinked: false,
+    talliable: true,
     owner: "key:11",
     haystack: surveyKey,
     record: `{"k":"${surveyKey}"}`,
@@ -913,6 +928,7 @@ describe("store-node segment reconciliation", () => {
     sealed: false,
     cancelled: false,
     govLinked: false,
+    talliable: true,
     owner: "key:11",
     haystack: surveyKey,
     record: `{"k":"${surveyKey}"}`,
@@ -1451,6 +1467,7 @@ describe("store-node change selection", () => {
     sealed: false,
     cancelled: false,
     govLinked: false,
+    talliable: true,
     owner: "key:11",
     haystack: surveyKey,
     record: `{"k":"${surveyKey}"}`,

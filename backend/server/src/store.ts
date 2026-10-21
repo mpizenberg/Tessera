@@ -673,6 +673,8 @@ export interface SurveyIndexRow {
   readonly cancelled: boolean;
   /** Has an epoch-aligned (verified) governance link. */
   readonly govLinked: boolean;
+  /** Spec-valid enough to tally; an untalliable survey is never open. */
+  readonly talliable: boolean;
   /** `credentialKey` of the definition's owner (the `mine` filter's key). */
   readonly owner: string;
   /** Lowercased searchable on-chain text. */

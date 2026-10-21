@@ -246,6 +246,13 @@
   border-radius: 1.5px;
   background: var(--gov);
 }
+.dotGovClosed {
+  width: 6px;
+  height: 6px;
+  border-radius: 1.5px;
+  border: 1.5px solid var(--gov);
+  box-sizing: border-box;
+}
 .dotOpen {
   width: 6px;
   height: 6px;

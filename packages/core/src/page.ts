@@ -8,9 +8,9 @@
  * filters, counts, and cursor format — this module is that single definition,
  * and {@link pageSurveyList} is the executable spec the SQL mirrors.
  *
- * Ordering: pages stream in the register's visual order — governance-linked
- * surveys first, then open, then closed (the {@link surveyListBucket}), newest
- * slot first within a bucket, ref key as the final tiebreak. The keyset cursor
+ * Ordering: governance-linked surveys first, then open, then closed (the
+ * {@link surveyListBucket}), newest slot first within a bucket, ref key as the
+ * final tiebreak. The keyset cursor
  * carries exactly that triple, so pagination is stable under new inserts (new
  * surveys land at the top of page one, never mid-stream).
  *
@@ -176,13 +176,20 @@ export function surveyHaystack(
 }
 
 /**
+ * Open: still accepting responses. An untalliable survey is closed from the
+ * start, since no conformant reader tallies what it would receive.
+ */
+function isOpen(a: SurveyAggregate): boolean {
+  return a.status === "active" && a.talliable;
+}
+
+/**
  * The register section a survey sorts into: 0 governance-linked (open or
- * closed), 1 open standalone, 2 closed standalone — the exact partition the
- * Explore screen renders.
+ * closed), 1 open standalone, 2 closed standalone.
  */
 function surveyListBucket(a: SurveyAggregate): number {
   if (a.govLinks.length > 0) return 0;
-  return a.status === "active" ? 1 : 2;
+  return isOpen(a) ? 1 : 2;
 }
 
 function matchesFilter(
@@ -197,11 +204,11 @@ function matchesFilter(
     case "linked":
       return a.govLinks.length > 0;
     case "active":
-      return a.status === "active";
+      return isOpen(a);
     case "sealed":
-      return a.status === "active" && a.sealed;
+      return isOpen(a) && a.sealed;
     case "public":
-      return a.status === "active" && !a.sealed;
+      return isOpen(a) && !a.sealed;
     case "mine":
       return credentials.has(ownerKey);
   }
@@ -258,9 +265,9 @@ export function pageSurveyList(
   const counts: SurveyListCounts = {
     all: rows.length,
     linked: rows.filter((r) => r.a.govLinks.length > 0).length,
-    active: rows.filter((r) => r.a.status === "active").length,
-    sealed: rows.filter((r) => r.a.status === "active" && r.a.sealed).length,
-    public: rows.filter((r) => r.a.status === "active" && !r.a.sealed).length,
+    active: rows.filter((r) => isOpen(r.a)).length,
+    sealed: rows.filter((r) => isOpen(r.a) && r.a.sealed).length,
+    public: rows.filter((r) => isOpen(r.a) && !r.a.sealed).length,
     mine: rows.filter((r) => credentials.has(r.ownerKey)).length,
   };
 

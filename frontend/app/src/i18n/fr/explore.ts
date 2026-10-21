@@ -40,8 +40,9 @@ const explore: Messages = {
   incomplete:
     "Affichage des sondages et réponses les plus récents — il en existe davantage on-chain que ce qui a pu être chargé, donc certaines listes et certains décomptes peuvent être incomplets.",
 
-  sectionGov: "Gouvernance on-chain",
+  sectionGov: "Gouvernance on-chain · ouverts",
   sectionGovNote: "Liés à une action de gouvernance — affichés en premier.",
+  sectionGovClosed: "Gouvernance on-chain · terminés",
   sectionOpen: "Ouverts · réponses acceptées",
   sectionClosed: "Terminés",
   sectionClosedNote: "Terminés ou retirés — lecture seule.",

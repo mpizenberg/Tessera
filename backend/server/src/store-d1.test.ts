@@ -83,6 +83,7 @@ const survey = (
   sealed: false,
   cancelled: false,
   govLinked: false,
+  talliable: true,
   owner: "key:11",
   haystack: surveyKey,
   record: JSON.stringify({ surveyKey }),
