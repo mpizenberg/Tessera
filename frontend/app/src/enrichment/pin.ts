@@ -16,6 +16,7 @@
  */
 
 import { blake2b256 } from "cip-179/content";
+import { t } from "~/i18n";
 import {
   IPFS_PROVIDERS,
   type ProviderId,
@@ -59,7 +60,7 @@ export async function pinBytes(
 ): Promise<PinResult> {
   const enabled = IPFS_PROVIDERS.filter((p) => tokens[p.id]?.trim());
   if (enabled.length === 0) {
-    throw new Error("No IPFS provider configured — add a token in Settings.");
+    throw new Error(t("pin.noProvider"));
   }
   const settled = await Promise.allSettled(
     enabled.map((p) => pinTo(p.id, tokens[p.id]!.trim(), bytes, name, mime)),
@@ -82,8 +83,9 @@ export async function pinBytes(
   const cid = accepted[0]?.cid;
   if (cid === undefined) {
     throw new Error(
-      "All IPFS pins failed — " +
-        failures.map((f) => `${f.id}: ${f.error}`).join("; "),
+      t("pin.allFailed", {
+        detail: failures.map((f) => `${f.id}: ${f.error}`).join("; "),
+      }),
     );
   }
   // Two CIDs for the same bytes name *different blocks* (CID version, chunker,
@@ -196,7 +198,7 @@ async function pinNmkr(
   mime: string,
 ): Promise<string> {
   const sep = token.indexOf(":");
-  if (sep < 0) throw new Error("token must be userId:apiKey");
+  if (sep < 0) throw new Error(t("pin.nmkrToken"));
   const userId = token.slice(0, sep).trim();
   const apiKey = token.slice(sep + 1).trim();
   const res = await fetch(

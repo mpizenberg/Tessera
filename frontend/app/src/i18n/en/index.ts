@@ -32,6 +32,7 @@ import header from "./header";
 import healthFooter from "./healthFooter";
 import linkSurvey from "./linkSurvey";
 import onchainPreview from "./onchainPreview";
+import pin from "./pin";
 import respond from "./respond";
 import roles from "./roles";
 import settings from "./settings";
@@ -54,6 +55,7 @@ const en = {
   healthFooter,
   linkSurvey,
   onchainPreview,
+  pin,
   respond,
   roles,
   settings,
