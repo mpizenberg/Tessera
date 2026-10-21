@@ -313,6 +313,7 @@ export function createTesseraClient(
     surveys: (params = {}) => {
       const qs = new URLSearchParams();
       if (params.limit !== undefined) qs.set("limit", limitQuery(params.limit));
+      if (params.sections) qs.set("sections", "");
       if (params.cursor) qs.set("cursor", params.cursor);
       if (params.filter && params.filter !== "all")
         qs.set("filter", params.filter);

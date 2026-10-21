@@ -586,9 +586,35 @@ describe("GET /api/surveys selection: paging, filters, search, refs", () => {
     expect(keysOf(body)).toEqual([`${TX_A}:0`]);
   });
 
+  it("sections: every section's first page at once, then one section by its cursor", async () => {
+    const app = appWith(await seededStore());
+    const head = await getBody(app, "?sections");
+    expect(keysOf(head)).toEqual([`${TX_A}:0`, `${TX_B}:1`]);
+    expect(head["sections"]).toEqual({
+      linkedOpen: { keys: [], total: 0, nextCursor: null },
+      linkedClosed: { keys: [], total: 0, nextCursor: null },
+      open: { keys: [`${TX_A}:0`], total: 1, nextCursor: null },
+      closed: { keys: [`${TX_B}:1`], total: 1, nextCursor: null },
+    });
+    expect(head["counts"]).toMatchObject({ all: 2, active: 1 });
+    expect(head["nextCursor"]).toBeUndefined();
+
+    // From the top of the closed section: its rows, no counts.
+    const closed = await getBody(
+      app,
+      `?sections&cursor=${encodeURIComponent("3:99999999999:0:0")}`,
+    );
+    expect(keysOf(closed)).toEqual([`${TX_B}:1`]);
+    expect(closed["counts"]).toBeUndefined();
+    expect(closed["sections"]).toBeUndefined();
+    expect(closed["nextCursor"]).toBeNull();
+  });
+
   it("rejects refs beside a paging param, and malformed or oversized refs", async () => {
     const app = appWith(await seededStore());
     for (const qs of [
+      `?refs=${TX_A}:0&sections`,
+      `?since=0&sections`,
       `?refs=${TX_A}:0&limit=1`,
       `?refs=${TX_A}:0&filter=linked`,
       `?refs=${TX_A}:0&q=alpha`,

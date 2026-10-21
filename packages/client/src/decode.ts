@@ -26,6 +26,8 @@ import type {
   SurveyFinalState,
   SurveyListCounts,
   SurveyListPayload,
+  SurveySection,
+  SurveySectionHead,
   TxResponse,
   TxResponsesPayload,
 } from "./payloads.js";
@@ -136,6 +138,27 @@ const counts = (v: unknown, path: string): SurveyListCounts => {
   };
 };
 
+const sectionHeads = (
+  v: unknown,
+  path: string,
+): Record<SurveySection, SurveySectionHead> => {
+  const o = obj(v, path);
+  const head = (x: unknown, p: string): SurveySectionHead => {
+    const h = obj(x, p);
+    return {
+      keys: list(h.keys, at(p, "keys"), str),
+      total: num(h.total, at(p, "total")),
+      nextCursor: nullable(h.nextCursor, at(p, "nextCursor"), str),
+    };
+  };
+  return {
+    linkedOpen: head(o.linkedOpen, at(path, "linkedOpen")),
+    linkedClosed: head(o.linkedClosed, at(path, "linkedClosed")),
+    open: head(o.open, at(path, "open")),
+    closed: head(o.closed, at(path, "closed")),
+  };
+};
+
 /** The optional fields a paged body may carry, absent when absent. */
 const paging = (
   o: Obj,
@@ -188,10 +211,12 @@ function surveyListBody(
 export function decodeSurveyList(json: unknown): SurveyListPayload {
   const o = obj(json, "");
   const chipCounts = opt(o.counts, "counts", counts);
+  const sections = opt(o.sections, "sections", sectionHeads);
   const changesCursor = opt(o.changesCursor, "changesCursor", str);
   return {
     ...surveyListBody(o),
     ...(chipCounts === undefined ? {} : { counts: chipCounts }),
+    ...(sections === undefined ? {} : { sections }),
     ...(changesCursor === undefined ? {} : { changesCursor }),
     ...paging(o),
   };

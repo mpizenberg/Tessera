@@ -194,12 +194,42 @@ describe("surveys", () => {
     expect(list.nextCursor).toBeNull();
   });
 
+  it("decodes each section's first page, and refuses one without a total", async () => {
+    const head = (
+      keys: string[],
+      total: number,
+      nextCursor: string | null,
+    ) => ({
+      keys,
+      total,
+      nextCursor,
+    });
+    const sections = {
+      linkedOpen: head([KEY], 1, null),
+      linkedClosed: head([], 0, null),
+      open: head([], 0, null),
+      closed: head([], 12, "3:9:aa:0:7"),
+    };
+    const ok = clientOver(() => ({ body: { ...listBody(), sections } }));
+    const list = await ok.client.surveys({ sections: true });
+    expect(list.ready && list.body.sections).toEqual(sections);
+
+    const { total: _, ...noTotal } = sections.closed;
+    const bad = clientOver(() => ({
+      body: { ...listBody(), sections: { ...sections, closed: noTotal } },
+    }));
+    await expect(bad.client.surveys({ sections: true })).rejects.toThrow(
+      /sections\.closed\.total/,
+    );
+  });
+
   it("encodes every query parameter and omits the defaults", async () => {
     const { client, urls } = clientOver((url) =>
       url.includes("/api/surveys") ? { body: listBody() } : undefined,
     );
     await client.surveys({
       limit: 20,
+      sections: true,
       cursor: "1:50:aa:0:7",
       filter: "linked",
       credentials: ["key:11", "script:22"],
@@ -208,6 +238,7 @@ describe("surveys", () => {
     await client.surveys({ filter: "all" });
     const [full, defaults] = urls().filter((u) => u.includes("/api/surveys"));
     expect(new URL(full!).searchParams.get("limit")).toBe("20");
+    expect(new URL(full!).searchParams.has("sections")).toBe(true);
     expect(new URL(full!).searchParams.get("cursor")).toBe("1:50:aa:0:7");
     expect(new URL(full!).searchParams.get("filter")).toBe("linked");
     expect(new URL(full!).searchParams.get("credentials")).toBe(

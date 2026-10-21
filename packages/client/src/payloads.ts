@@ -42,6 +42,9 @@ export { SURVEY_KEY_RE } from "cip-179/domain";
 /** Page size of `GET /api/surveys` when `limit` is not given. */
 export const DEFAULT_PAGE_LIMIT = 50;
 
+/** Rows per section of `GET /api/surveys?sections` when `limit` is not given. */
+export const DEFAULT_SECTION_LIMIT = 10;
+
 /**
  * Largest `limit` the paged list accepts, and the most references one
  * `refs=` selection may name.
@@ -109,10 +112,45 @@ export interface SurveyListCounts {
   readonly mine: number;
 }
 
+/**
+ * The Explore sections, in display order: linked open, linked closed, open,
+ * closed. Open sections list the newest first; closed ones the most recently
+ * closed first, by the end of `end_epoch` for an ended survey and by its
+ * creation for a withdrawn or invalid one.
+ */
+export const SURVEY_SECTIONS = [
+  "linkedOpen",
+  "linkedClosed",
+  "open",
+  "closed",
+] as const;
+
+export type SurveySection = (typeof SURVEY_SECTIONS)[number];
+
+/** One section's first page in a `sections` answer. */
+export interface SurveySectionHead {
+  /** The keys of the section's rows in `surveys`, in the section's order. */
+  readonly keys: readonly string[];
+  /** Rows the section holds under the filter and search. */
+  readonly total: number;
+  /** The section's next page, asked with `sections`; null on its last. */
+  readonly nextCursor: string | null;
+}
+
 /** The paged list selection's parameters (`GET /api/surveys`). */
 export interface SurveyListParams {
-  /** Page size, 1 to {@link MAX_PAGE_LIMIT}; {@link DEFAULT_PAGE_LIMIT} when absent. */
+  /**
+   * Page size, 1 to {@link MAX_PAGE_LIMIT}; {@link DEFAULT_PAGE_LIMIT} when
+   * absent, or with `sections` rows per section, {@link DEFAULT_SECTION_LIMIT}.
+   */
   readonly limit?: number | undefined;
+  /**
+   * Page each of the {@link SURVEY_SECTIONS} on its own: without `cursor`,
+   * the first page of every section in one answer
+   * ({@link SurveyListPayload.sections}); with a section's `nextCursor`, that
+   * section's next page, without `counts`.
+   */
+  readonly sections?: boolean | undefined;
   /** Opaque continuation from the previous page's `nextCursor`. */
   readonly cursor?: string | undefined;
   /** Filter chip; defaults to "all". */
@@ -197,6 +235,8 @@ export interface SurveyListPayload extends SnapshotStamp {
    * a caller-named set of references (no filtered set to total).
    */
   readonly counts?: SurveyListCounts;
+  /** Each section's first page, on a `sections` answer without a cursor. */
+  readonly sections?: Readonly<Record<SurveySection, SurveySectionHead>>;
   /**
    * Continuation for the next page (opaque keyset cursor), `null` when this
    * page is the last. Absent on a full unpaged payload, and on one answering a

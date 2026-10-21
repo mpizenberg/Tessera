@@ -17,7 +17,7 @@ Endpoints section changes in the same commit.
 
 ## [Unreleased]
 
-`2.1`, for the added field. The artifact changes below move fields, which
+`2.1`, for the added fields and selection. The artifact changes below move fields, which
 this changelog's rule makes a major, but no consumer besides Tessera's own app
 has read an ended survey's artifact, and the app deploys with the backend.
 
@@ -27,6 +27,13 @@ has read an ended survey's artifact, and the app deploys with the backend.
   `{ epoch, blocksLeft }`, while the end of the epoch before the tip's is
   short of `k` blocks deep (2160 on mainnet and preprod, 432 on preview), and
   omits it otherwise.
+- `GET /api/surveys?sections`, the list paged by Explore section — linked
+  open, linked closed, open, closed — each on its own, `limit` rows per
+  section (10 by default). Without `cursor` it answers every section's first
+  page with `sections`, each section's keys, total and `nextCursor`; with a
+  section's cursor, that section's next page without counts. Closed sections
+  list the most recently closed first. Refused beside `refs`, `changes` and
+  `since`.
 
 ### Changed
 

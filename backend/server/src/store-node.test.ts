@@ -287,6 +287,7 @@ describe("store-node migration of a pre-runner database", () => {
       "0035_gov_anchor_misses.sql",
       "0036_weights_at_end_of_epoch.sql",
       "0037_survey_talliable.sql",
+      "0038_survey_index_linked.sql",
     ]);
   });
 });
@@ -654,6 +655,62 @@ describe("store-node survey_index paging SQL", () => {
       sealed: 1,
       public: 3,
     });
+  });
+
+  it("pages each section on its own, the closed ones by when they closed", async () => {
+    store = openBackendStore(":memory:");
+    // Epoch e starts at slot e × 1000: ab and dd ended in epoch 499 and
+    // closed at 500000, df at 481000; de (invalid) and dg (withdrawn) closed
+    // when created.
+    await store.reconcileSegment(
+      ALL_SLOTS,
+      [
+        row("aa:0", 100, { govLinked: true }),
+        row("ab:0", 200, { govLinked: true, endEpoch: 499 }),
+        row("bb:0", 300),
+        row("cb:0", 500),
+        row("cc:0", 500),
+        row("dd:0", 900, { endEpoch: 499 }),
+        row("df:0", 100, { endEpoch: 480 }),
+        row("de:0", 490_000, { talliable: false }),
+        row("dg:0", 495_000, { cancelled: true }),
+      ],
+      [],
+      [],
+      [],
+      GENERATION,
+    );
+    const q = {
+      tipEpoch: TIP_EPOCH,
+      filter: "all" as const,
+      credentials: [],
+      searchTerms: [],
+      epochStartSlot: 500_000,
+      epochLength: 1000,
+      limit: 2,
+    };
+
+    const heads = await store.surveySectionHeads(q);
+    expect(
+      heads.map((r) => [r.surveyKey, r.bucket, r.sortKey, r.total]),
+    ).toEqual([
+      ["aa:0", 0, 100, 1],
+      ["ab:0", 1, 500_000, 1],
+      ["cb:0", 2, 500, 3],
+      ["cc:0", 2, 500, 3],
+      ["dd:0", 3, 500_000, 4],
+      ["dg:0", 3, 495_000, 4],
+    ]);
+
+    const next = await store.surveySectionPage(q, {
+      bucket: 3,
+      slot: 495_000,
+      key: "dg:0",
+    });
+    expect(next.map((r) => [r.surveyKey, r.sortKey])).toEqual([
+      ["de:0", 490_000],
+      ["df:0", 481_000],
+    ]);
   });
 });
 

@@ -975,6 +975,19 @@ export interface SurveyPageQuery {
   readonly limit: number;
 }
 
+/** A sections query against the survey index (see core's `pageSurveySections`). */
+export interface SurveySectionQuery extends Omit<SurveyPageQuery, "cursor"> {
+  /** The first slot of the tip's epoch: with `epochLength`, when an epoch ends. */
+  readonly epochStartSlot: number;
+  readonly epochLength: number;
+}
+
+/** A survey row in its section: the section (`bucket`) and its place there. */
+export type SurveySectionRow = SurveyIndexRow & {
+  readonly bucket: number;
+  readonly sortKey: number;
+};
+
 /**
  * The materialized snapshot every serving route reads: survey rows, response
  * rows, and the envelope shared by both.
@@ -1028,6 +1041,18 @@ export interface SnapshotStore {
   surveyIndexPage(
     q: SurveyPageQuery,
   ): Promise<(SurveyIndexRow & { bucket: number })[]>;
+  /**
+   * The first `q.limit` rows of each Explore section, in section order, each
+   * with its section's row count (`total`).
+   */
+  surveySectionHeads(
+    q: SurveySectionQuery,
+  ): Promise<(SurveySectionRow & { readonly total: number })[]>;
+  /** The `q.limit` rows of `cursor`'s section after it. */
+  surveySectionPage(
+    q: SurveySectionQuery,
+    cursor: import("cardano-tessera-core").SurveyCursor,
+  ): Promise<SurveySectionRow[]>;
   /** Global chip counts over the search-matching set. */
   surveyIndexCounts(
     tipEpoch: number,

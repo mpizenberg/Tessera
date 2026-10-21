@@ -6,13 +6,18 @@
  * `store-sql.ts` with the method that issues it.
  *
  * The `survey_index` page/count semantics mirror `cardano-tessera-core`'s
- * `pageSurveyList` — the executable spec — exactly: bucket 0 gov-linked /
- * 1 open / 2 closed, ordered (bucket ASC, slot DESC, key ASC),
- * AND-of-substrings search (a long term matching the key too), chip counts
- * over the search-matching set.
+ * `pageSurveyList` and `pageSurveySections` — the executable spec — exactly:
+ * a walk's bucket 0 gov-linked / 1 open / 2 closed, ordered (bucket ASC,
+ * slot DESC, key ASC); the sections linked open / linked closed / open /
+ * closed, each ordered (sort key DESC, key ASC); AND-of-substrings search (a
+ * long term matching the key too), chip counts over the search-matching set.
  */
 
-import { MIN_KEY_TERM_LENGTH, type ResponseCursor } from "cardano-tessera-core";
+import {
+  MIN_KEY_TERM_LENGTH,
+  type ResponseCursor,
+  type SurveyCursor,
+} from "cardano-tessera-core";
 
 import type { AxisPosition } from "./changes";
 import type {
@@ -24,6 +29,7 @@ import type {
   SqlQuery,
   SurveyIndexRow,
   SurveyPageQuery,
+  SurveySectionQuery,
 } from "./store";
 
 /** "Open" (active) predicate: talliable, not cancelled, deadline not passed (1 param). */
@@ -65,7 +71,9 @@ function mineSql(credentials: readonly string[]): SqlQuery {
   };
 }
 
-function filterSql(q: SurveyPageQuery): SqlQuery {
+function filterSql(
+  q: Pick<SurveyPageQuery, "filter" | "tipEpoch" | "credentials">,
+): SqlQuery {
   switch (q.filter) {
     case "all":
       return { sql: "1", params: [] };
@@ -129,6 +137,96 @@ export function surveyPageSql(q: SurveyPageQuery): SqlQuery {
     ],
   };
 }
+
+/**
+ * Each section's rows, in `SURVEY_SECTIONS` order: linked or not, open or
+ * closed. The literal `gov_linked = 1` lets the linked ones read through the
+ * `survey_index_linked` partial index, the open ones read through
+ * `survey_index_end_epoch` (1 param each).
+ */
+const SECTION_WHERE = [
+  `gov_linked = 1 AND ${ACTIVE}`,
+  `gov_linked = 1 AND NOT ${ACTIVE}`,
+  `gov_linked = 0 AND ${ACTIVE}`,
+  `gov_linked = 0 AND NOT ${ACTIVE}`,
+];
+
+/**
+ * A row's place in its section, larger first: an open survey's creation
+ * slot; a closed one's closing slot — the first slot after `end_epoch` for an
+ * ended survey, its creation for a withdrawn or invalid one.
+ */
+function sectionSortKeySql(q: SurveySectionQuery, section: number): SqlQuery {
+  // `+slot` keeps the planner off `survey_index_slot`: walking it in order
+  // reads closed rows until enough open ones turn up, where
+  // `survey_index_end_epoch` reads only the rows not ended yet.
+  if (section % 2 === 0) return { sql: "+slot", params: [] };
+  return {
+    sql: `CASE WHEN cancelled = 1 OR talliable = 0 THEN slot
+               ELSE ? + (end_epoch + 1 - ?) * ? END`,
+    params: [q.epochStartSlot, q.tipEpoch, q.epochLength],
+  };
+}
+
+/**
+ * One section's rows after `cursor` (or from the top), in its order, `limit`
+ * of them; `total` adds the section's row count, which the window takes
+ * before the limit applies.
+ */
+function sectionSql(
+  q: SurveySectionQuery,
+  section: number,
+  cursor: SurveyCursor | null,
+  total: boolean,
+): SqlQuery {
+  const search = searchSql(q.searchTerms);
+  const filter = filterSql(q);
+  const sortKey = sectionSortKeySql(q, section);
+  const after = cursor
+    ? {
+        sql: `(sortKey < ? OR (sortKey = ? AND surveyKey > ?))`,
+        params: [cursor.slot, cursor.slot, cursor.key],
+      }
+    : { sql: "1", params: [] };
+  return {
+    sql: `
+      SELECT * FROM (
+        SELECT ${SURVEY_ROW_COLUMNS}, ${section} AS bucket,
+               ${sortKey.sql} AS sortKey
+               ${total ? ", COUNT(*) OVER () AS total" : ""}
+        FROM survey_index
+        WHERE ${search.sql} AND ${filter.sql} AND ${SECTION_WHERE[section]}
+      )
+      WHERE ${after.sql}
+      ORDER BY sortKey DESC, surveyKey
+      LIMIT ?`,
+    params: [
+      ...sortKey.params,
+      ...search.params,
+      ...filter.params,
+      q.tipEpoch,
+      ...after.params,
+      q.limit,
+    ],
+  };
+}
+
+/** The first `limit` rows of every section, each with its section's `total`. */
+export function surveySectionHeadsSql(q: SurveySectionQuery): SqlQuery {
+  const arms = [0, 1, 2, 3].map((section) =>
+    sectionSql(q, section, null, true),
+  );
+  return {
+    sql: arms.map((a) => `SELECT * FROM (${a.sql})`).join("\nUNION ALL\n"),
+    params: arms.flatMap((a) => a.params),
+  };
+}
+
+/** The `limit` rows of `cursor`'s section after it. */
+export const surveySectionPageSql = (
+  q: SurveySectionQuery,
+  cursor: SurveyCursor,
+): SqlQuery => sectionSql(q, cursor.bucket, cursor, false);
 
 /** The `mine` chip alone — the one count the banked envelope can't carry. */
 export const ownedCountSql = (credentials: readonly string[]): SqlQuery => {

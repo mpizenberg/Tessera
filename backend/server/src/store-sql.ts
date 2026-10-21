@@ -101,6 +101,8 @@ import {
   surveyCountsSql,
   surveyPageSql,
   surveysByKeysSql,
+  surveySectionHeadsSql,
+  surveySectionPageSql,
   responsesForSurveyPageSql,
   JSON_KEY_SET,
 } from "./sqlBuilders";
@@ -1054,6 +1056,27 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
     ): Promise<(SurveyIndexRow & { bucket: number })[]> {
       const rows = await db.all<DbSurveyIndexRow>(surveyPageSql(q));
       return rows.map(surveyIndexRowFromDb);
+    },
+    async surveySectionHeads(q) {
+      const rows = await db.all<
+        DbSurveyRow & { bucket: number; sortKey: number; total: number }
+      >(surveySectionHeadsSql(q));
+      return rows.map((r) => ({
+        ...surveyRowFromDb(r),
+        bucket: r.bucket,
+        sortKey: r.sortKey,
+        total: r.total,
+      }));
+    },
+    async surveySectionPage(q, cursor) {
+      const rows = await db.all<
+        DbSurveyRow & { bucket: number; sortKey: number }
+      >(surveySectionPageSql(q, cursor));
+      return rows.map((r) => ({
+        ...surveyRowFromDb(r),
+        bucket: r.bucket,
+        sortKey: r.sortKey,
+      }));
     },
     async surveyIndexCounts(
       tipEpoch: number,

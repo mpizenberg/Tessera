@@ -11,6 +11,14 @@ while `< 1.0.0`, breaking changes bump the **minor** version.
 
 ## [Unreleased]
 
+### Added
+
+- `SurveyListParams.sections`: page each Explore section on its own, the
+  backend's `sections` selection. Its first answer carries
+  `SurveyListPayload.sections`, each section's keys, total and `nextCursor`.
+  With `SURVEY_SECTIONS`, `SurveySection`, `SurveySectionHead` and
+  `DEFAULT_SECTION_LIMIT` (10 rows per section).
+
 ### Changed
 
 - `SURVEY_KEY_RE` is re-exported from `cip-179/domain`, where the survey key

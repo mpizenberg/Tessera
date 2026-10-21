@@ -12,6 +12,7 @@ import {
   encodeResponseCursor,
   encodeSurveyCursor,
   pageSurveyList,
+  pageSurveySections,
   parseResponseCursor,
   parseSurveyCursor,
   searchTermsOf,
@@ -72,7 +73,8 @@ function survey(id: number, slot: number, opts: Opts = {}): SurveyRecord {
   return {
     txHash: bytesToHex(Uint8Array.of(id)),
     slot,
-    epochNo: 9,
+    // Before it ends: an end epoch not after inclusion makes it invalid.
+    epochNo: Math.min(9, definition.endEpoch - 1),
     ref: { txId: Uint8Array.of(id), index: 0 },
     definition,
   };
@@ -106,7 +108,7 @@ describe("cursor wire form", () => {
     const c = { bucket: 1, slot: 42, key: `${"ab".repeat(32)}:3` };
     expect(parseSurveyCursor(encodeSurveyCursor(c))).toEqual(c);
     expect(parseSurveyCursor("nope")).toBeNull();
-    expect(parseSurveyCursor("3:1:aa:0")).toBeNull(); // bucket out of range
+    expect(parseSurveyCursor("4:1:aa:0")).toBeNull(); // bucket out of range
     expect(parseSurveyCursor("1:x:aa:0")).toBeNull();
   });
 
@@ -172,6 +174,64 @@ describe("pageSurveyList ordering and cursors", () => {
       mine: 0,
     });
     expect(page.nextCursor).not.toBeNull();
+  });
+});
+
+describe("pageSurveySections", () => {
+  // Preview's calendar: epoch e starts at slot e × 86400, so a survey ended in
+  // epoch 8 closed at slot 777600.
+  const lo1 = survey(1, 300);
+  const lo2 = survey(2, 500);
+  const lc1 = survey(3, 100, { endEpoch: 8 }); // closed at 777600
+  const lc2 = survey(4, 900, { endEpoch: 5 }); // closed at 518400
+  const lc3 = survey(5, 600_000, { invalid: true }); // closed when created
+  const o1 = survey(6, 700);
+  const o2 = survey(7, 800);
+  const c1 = survey(8, 400, { endEpoch: 9 }); // closed at 864000
+  const c2 = survey(9, 950_000, { invalid: true });
+  const full = payload(
+    [lo1, lo2, lc1, lc2, lc3, o1, o2, c1, c2],
+    [lo1, lo2, lc1, lc2, lc3].map(link),
+  );
+  const sections = (params = {}) =>
+    pageSurveySections(full, { sections: true, ...params }, "preview");
+
+  it("pages open sections newest first and closed ones by when they closed", () => {
+    const head = sections({ limit: 2 });
+    expect(head.sections?.linkedOpen).toMatchObject({
+      keys: [lo2, lo1].map(keyOf),
+      total: 2,
+      nextCursor: null,
+    });
+    expect(head.sections?.linkedClosed).toMatchObject({
+      keys: [lc1, lc3].map(keyOf),
+      total: 3,
+    });
+    expect(head.sections?.open.keys).toEqual([o2, o1].map(keyOf));
+    expect(head.sections?.closed.keys).toEqual([c2, c1].map(keyOf));
+    expect(head.surveys.map(keyOf)).toEqual(
+      [lo2, lo1, lc1, lc3, o2, o1, c2, c1].map(keyOf),
+    );
+    expect(head.counts?.all).toBe(9);
+  });
+
+  it("walks one section with its cursor, without counts", () => {
+    let cursor = sections({ limit: 1 }).sections?.linkedClosed.nextCursor;
+    const seen = [keyOf(lc1)];
+    while (cursor) {
+      const page = sections({ limit: 1, cursor });
+      expect(page.counts).toBeUndefined();
+      seen.push(...page.surveys.map(keyOf));
+      cursor = page.nextCursor ?? undefined;
+    }
+    expect(seen).toEqual([lc1, lc3, lc2].map(keyOf));
+  });
+
+  it("applies the filter to every section", () => {
+    const head = sections({ filter: "active" });
+    expect(head.sections?.linkedClosed.total).toBe(0);
+    expect(head.sections?.closed.total).toBe(0);
+    expect(head.sections?.open.total).toBe(2);
   });
 });
 

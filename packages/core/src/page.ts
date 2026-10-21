@@ -6,13 +6,17 @@
  * page queries in SQL (`backend/server`); the direct-Koios path holds the full
  * payload in memory and pages it here. Both must agree on the same ordering,
  * filters, counts, and cursor format — this module is that single definition,
- * and {@link pageSurveyList} is the executable spec the SQL mirrors.
+ * and {@link pageSurveyList} and {@link pageSurveySections} are the
+ * executable spec the SQL mirrors.
  *
- * Ordering: governance-linked surveys first, then open, then closed (the
- * {@link surveyListBucket}), newest slot first within a bucket, ref key as the
- * final tiebreak. The keyset cursor
- * carries exactly that triple, so pagination is stable under new inserts (new
- * surveys land at the top of page one, never mid-stream).
+ * Ordering: a walk lists governance-linked surveys first, then open, then
+ * closed (the {@link surveyListBucket}), newest slot first within a bucket,
+ * ref key as the final tiebreak. Sections page each of the
+ * `SURVEY_SECTIONS` on its own, open ones newest first and closed ones most
+ * recently closed first ({@link sectionSortKey}), the section's index as the
+ * bucket. The keyset cursor carries exactly that triple, so pagination is
+ * stable under new inserts (new surveys land at the top of page one, never
+ * mid-stream).
  *
  * Stability is **per snapshot generation**, not absolute: a row's bucket is
  * time- and data-dependent (open→closed at epoch rollover, standalone→linked
@@ -45,15 +49,21 @@ import {
 
 import {
   DEFAULT_PAGE_LIMIT,
+  DEFAULT_SECTION_LIMIT,
+  SURVEY_SECTIONS,
+  firstSlot,
+  type Network,
   type SurveyListCounts,
   type SurveyListFilter,
   type SurveyListParams,
   type SurveyListPayload,
+  type SurveySection,
+  type SurveySectionHead,
 } from "cardano-tessera-client";
 
 import { aggregateSurveyList } from "./surveyList";
 
-/** The keyset position of a row: section bucket, slot, ref key. */
+/** The keyset position of a row: section bucket, sort slot, ref key. */
 export interface SurveyCursor {
   readonly bucket: number;
   readonly slot: number;
@@ -74,7 +84,7 @@ export function encodeSurveyCursor(c: SurveyCursor): string {
 }
 
 export function parseSurveyCursor(s: string): SurveyCursor | null {
-  const m = /^([0-2]):(\d+):([0-9a-f]+:\d+)(?::(\d+))?$/.exec(s);
+  const m = /^([0-3]):(\d+):([0-9a-f]+:\d+)(?::(\d+))?$/.exec(s);
   if (!m) return null;
   return {
     bucket: Number(m[1]),
@@ -192,6 +202,25 @@ function surveyListBucket(a: SurveyAggregate): number {
   return isOpen(a) ? 1 : 2;
 }
 
+/**
+ * The section a survey pages in, as its index in `SURVEY_SECTIONS`: linked
+ * open, linked closed, open, closed.
+ */
+function surveySection(a: SurveyAggregate): number {
+  return (a.govLinks.length > 0 ? 0 : 2) + (isOpen(a) ? 0 : 1);
+}
+
+/**
+ * A survey's place in its section, larger first: an open survey's creation
+ * slot, a closed one's closing slot — the first slot after `end_epoch` for an
+ * ended survey, its creation for a withdrawn or invalid one, the dates the
+ * register shows.
+ */
+function sectionSortKey(a: SurveyAggregate, network: Network): number {
+  if (isOpen(a) || a.cancelled || !a.talliable) return a.record.slot;
+  return firstSlot(network, a.record.definition.endEpoch + 1);
+}
+
 function matchesFilter(
   a: SurveyAggregate,
   filter: SurveyListFilter,
@@ -258,18 +287,25 @@ export function surveyListSlice(
   };
 }
 
+interface ListRow {
+  readonly a: SurveyAggregate;
+  readonly bucket: number;
+  readonly ownerKey: string;
+}
+
 /**
- * Page a full {@link SurveyListPayload} in memory — the direct-Koios path's
- * implementation of the paged list contract, and the reference the serving
- * tier's SQL must agree with. Returns a payload restricted to the page's
- * surveys (their cancellations, links, counts, overlay entries ride along, so
- * per-page aggregation gives the same rows a full aggregation would), plus
- * global `counts` and the `nextCursor` continuation.
+ * What a list request selects from `full`: the chip counts over the
+ * search-matching set, the rows the filter keeps, and the request's cursor.
  */
-export function pageSurveyList(
+function selectRows(
   full: SurveyListPayload,
   params: SurveyListParams,
-): SurveyListPayload {
+): {
+  counts: SurveyListCounts;
+  matching: ListRow[];
+  cursor: SurveyCursor | null;
+  staleCursor: boolean;
+} {
   const terms = searchTermsOf(params.search);
   const credentials = new Set(params.credentials ?? []);
   const filter = params.filter ?? "all";
@@ -303,13 +339,37 @@ export function pageSurveyList(
     mine: rows.filter((r) => credentials.has(r.ownerKey)).length,
   };
 
-  const matching = rows
-    .filter((r) => matchesFilter(r.a, filter, r.ownerKey, credentials))
+  const matching = rows.filter((r) =>
+    matchesFilter(r.a, filter, r.ownerKey, credentials),
+  );
+  return { counts, matching, cursor, staleCursor };
+}
+
+const byKey = (x: ListRow, y: ListRow): number =>
+  x.a.key < y.a.key ? -1 : x.a.key > y.a.key ? 1 : 0;
+
+/**
+ * Page a full {@link SurveyListPayload} in memory — the direct-Koios path's
+ * implementation of the paged list contract, and the reference the serving
+ * tier's SQL must agree with. Returns a payload restricted to the page's
+ * surveys (their cancellations, links, counts, overlay entries ride along, so
+ * per-page aggregation gives the same rows a full aggregation would), plus
+ * global `counts` and the `nextCursor` continuation.
+ */
+export function pageSurveyList(
+  full: SurveyListPayload,
+  params: SurveyListParams,
+): SurveyListPayload {
+  const {
+    counts,
+    matching: selected,
+    cursor,
+    staleCursor,
+  } = selectRows(full, params);
+  const matching = selected
     .sort(
       (x, y) =>
-        x.bucket - y.bucket ||
-        y.a.record.slot - x.a.record.slot ||
-        (x.a.key < y.a.key ? -1 : x.a.key > y.a.key ? 1 : 0),
+        x.bucket - y.bucket || y.a.record.slot - x.a.record.slot || byKey(x, y),
     )
     .filter(
       (r) => !cursor || afterCursor(r.bucket, r.a.record.slot, r.a.key, cursor),
@@ -335,5 +395,90 @@ export function pageSurveyList(
             generation: full.fetchedAt,
           })
         : null,
+  };
+}
+
+/**
+ * Page each of the `SURVEY_SECTIONS` of a full {@link SurveyListPayload} on
+ * its own — the direct-Koios path's `sections` selection, and the reference
+ * the serving tier's SQL must agree with. Without a cursor: every section's
+ * first page, in section order, with `sections` and global `counts`. With a
+ * section's cursor: that section's next page and `nextCursor`, no counts.
+ * `network` dates an ended survey's close (the end of its `end_epoch`).
+ */
+export function pageSurveySections(
+  full: SurveyListPayload,
+  params: SurveyListParams,
+  network: Network,
+): SurveyListPayload {
+  const { counts, matching, cursor, staleCursor } = selectRows(full, params);
+  const limit = params.limit ?? DEFAULT_SECTION_LIMIT;
+  const sections = SURVEY_SECTIONS.map((_, section) =>
+    matching
+      .filter((r) => surveySection(r.a) === section)
+      .map((r) => ({ ...r, sortKey: sectionSortKey(r.a, network) }))
+      .sort((x, y) => y.sortKey - x.sortKey || byKey(x, y)),
+  );
+  const pageOf = (section: number, rows: (typeof sections)[number]) => {
+    const page = rows.slice(0, limit);
+    const last = page[page.length - 1];
+    return {
+      page,
+      nextCursor:
+        rows.length > limit && last
+          ? encodeSurveyCursor({
+              bucket: section,
+              slot: last.sortKey,
+              key: last.a.key,
+              generation: full.fetchedAt,
+            })
+          : null,
+    };
+  };
+
+  if (cursor) {
+    const { page, nextCursor } = pageOf(
+      cursor.bucket,
+      (sections[cursor.bucket] ?? []).filter(
+        (r) =>
+          r.sortKey < cursor.slot ||
+          (r.sortKey === cursor.slot && r.a.key > cursor.key),
+      ),
+    );
+    return {
+      ...surveyListSlice(
+        full,
+        page.map((r) => r.a.record),
+      ),
+      ...(staleCursor && { resync: true }),
+      nextCursor,
+    };
+  }
+
+  const heads = sections.map((rows, section) => ({
+    ...pageOf(section, rows),
+    total: rows.length,
+  }));
+  return {
+    ...surveyListSlice(
+      full,
+      heads.flatMap((h) => h.page.map((r) => r.a.record)),
+    ),
+    counts,
+    sections: Object.fromEntries(
+      SURVEY_SECTIONS.map(
+        (name, section): [SurveySection, SurveySectionHead] => {
+          const h = heads[section]!;
+          return [
+            name,
+            {
+              keys: h.page.map((r) => r.a.key),
+              total: h.total,
+              nextCursor: h.nextCursor,
+            },
+          ];
+        },
+      ),
+    ) as Record<SurveySection, SurveySectionHead>,
   };
 }

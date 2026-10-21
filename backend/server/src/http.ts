@@ -61,10 +61,14 @@ import { toJsonSafe, type JsonSafe } from "cip-179/tally";
 import {
   API_VERSION,
   DEFAULT_PAGE_LIMIT,
+  DEFAULT_SECTION_LIMIT,
   MAX_CREDENTIALS,
   MAX_PAGE_LIMIT,
   MAX_TX_STATUS_HASHES,
+  SECONDS_PER_EPOCH,
   SURVEY_KEY_RE,
+  SURVEY_SECTIONS,
+  firstSlot,
   isSurveyListFilter,
   type BackendHealth,
   type BackendLiveness,
@@ -103,6 +107,7 @@ import {
   type BackendStore,
   type SnapshotMeta,
   type SurveyIndexRow,
+  type SurveySectionRow,
 } from "./store";
 
 /** How long `/api/tip` reuses one upstream Koios call. */
@@ -202,9 +207,16 @@ function sinceOf(raw: string): ChangesCursor | null {
   return /^\d+$/.test(raw) ? changesCursorAt(Number(raw)) : null;
 }
 
-/** The `limit=` query parameter, or null when malformed (the caller answers 400). */
+/**
+ * The `limit=` query parameter, rows per section with `sections`, or null
+ * when malformed (the caller answers 400).
+ */
 function limitOf(c: Context): number | null {
-  const limit = Number(c.req.query("limit") ?? DEFAULT_PAGE_LIMIT);
+  const fallback =
+    c.req.query("sections") === undefined
+      ? DEFAULT_PAGE_LIMIT
+      : DEFAULT_SECTION_LIMIT;
+  const limit = Number(c.req.query("limit") ?? fallback);
   return Number.isInteger(limit) && limit >= 1 && limit <= MAX_PAGE_LIMIT
     ? limit
     : null;
@@ -453,13 +465,20 @@ export function createApp(
       if (notModified(c, `W/"surveys-${meta.fetchedAt}"`))
         return c.body(null, 304);
       if (
-        carried(c, ["filter", "cursor", "q", "limit", "changes", "since"])
-          .length > 0
+        carried(c, [
+          "filter",
+          "cursor",
+          "q",
+          "limit",
+          "sections",
+          "changes",
+          "since",
+        ]).length > 0
       )
         return c.json(
           {
             error:
-              "refs is exclusive with filter, cursor, q, limit, changes and since",
+              "refs is exclusive with filter, cursor, q, limit, sections, changes and since",
           },
           400,
         );
@@ -488,6 +507,7 @@ export function createApp(
         "filter",
         "cursor",
         "q",
+        "sections",
         "credentials",
         "changes",
         "since",
@@ -559,6 +579,87 @@ export function createApp(
     // no counting query at all without credentials. A search (counts scope to
     // the matching set) or an unbanked envelope aggregates live.
     const banked = searchTerms.length === 0 ? snapshotListCounts(meta) : null;
+    const countsOf = () =>
+      banked === null
+        ? store.surveyIndexCounts(tip.epoch, credentials, searchTerms)
+        : credentials.length === 0
+          ? { ...banked, mine: 0 }
+          : store
+              .ownedSurveyCount(credentials)
+              .then((mine) => ({ ...banked, mine }));
+
+    // Each Explore section paged on its own: every section's first page in
+    // one answer, or one section's next page from its cursor (without counts,
+    // which the first answer already gave).
+    if (c.req.query("sections") !== undefined) {
+      const q = {
+        tipEpoch: tip.epoch,
+        filter,
+        credentials,
+        searchTerms,
+        epochStartSlot: firstSlot(config.app.network, tip.epoch),
+        epochLength: SECONDS_PER_EPOCH[config.app.network],
+        // One extra row a section decides its `nextCursor`.
+        limit: limit + 1,
+      };
+      const pageOf = (rows: readonly SurveySectionRow[]) => {
+        const page = rows.slice(0, limit);
+        const last = page[page.length - 1];
+        return {
+          page,
+          nextCursor:
+            rows.length > limit && last
+              ? encodeSurveyCursor({
+                  bucket: last.bucket,
+                  slot: last.sortKey,
+                  key: last.surveyKey,
+                  generation: meta.fetchedAt,
+                })
+              : null,
+        };
+      };
+      if (cursor) {
+        const { page, nextCursor } = pageOf(
+          await store.surveySectionPage(q, cursor),
+        );
+        const body: JsonSafe<SurveyListPayload> = {
+          ...surveyListBody(page, meta),
+          ...(staleCursor && { resync: true }),
+          nextCursor,
+        };
+        return c.json(body);
+      }
+      const [rows, counts] = await Promise.all([
+        store.surveySectionHeads(q),
+        countsOf(),
+      ]);
+      const heads = SURVEY_SECTIONS.map((_, section) => {
+        const inSection = rows.filter((r) => r.bucket === section);
+        return { ...pageOf(inSection), total: inSection[0]?.total ?? 0 };
+      });
+      const body: JsonSafe<SurveyListPayload> = {
+        ...surveyListBody(
+          heads.flatMap((h) => h.page),
+          meta,
+        ),
+        counts,
+        sections: Object.fromEntries(
+          SURVEY_SECTIONS.map((name, section) => {
+            const h = heads[section]!;
+            return [
+              name,
+              {
+                keys: h.page.map((r) => r.surveyKey),
+                total: h.total,
+                nextCursor: h.nextCursor,
+              },
+            ];
+          }),
+        ) as NonNullable<JsonSafe<SurveyListPayload>["sections"]>,
+      };
+      return c.json(body);
+    }
+
     const [rows, counts] = await Promise.all([
       store.surveyIndexPage({
         tipEpoch: tip.epoch,
@@ -569,13 +670,7 @@ export function createApp(
         // One extra row decides `nextCursor` without a second query.
         limit: limit + 1,
       }),
-      banked === null
-        ? store.surveyIndexCounts(tip.epoch, credentials, searchTerms)
-        : credentials.length === 0
-          ? { ...banked, mine: 0 }
-          : store
-              .ownedSurveyCount(credentials)
-              .then((mine) => ({ ...banked, mine })),
+      countsOf(),
     ]);
     const page = rows.slice(0, limit);
     const last = page[page.length - 1];

@@ -107,6 +107,14 @@ and the answers of `/api/responded` and `/api/responses`.
   the client refreshes page one.
   Every paged answer also carries `changesCursor`, where a mirror that walked
   the whole list at this snapshot continues with the change selection below.
+- `GET /api/surveys?sections` — the same selection paged by Explore section
+  (linked open, linked closed, open, closed), each on its own, with `limit`
+  rows per section, 10 by default. Without `cursor`: every section's first
+  page in one answer, its keys, total and `nextCursor` under `sections`, with
+  the counts. With a section's cursor: that section's next page and
+  `nextCursor`, without counts. Open sections list the newest first, closed
+  ones the most recently closed first: by the end of `end_epoch` for an ended
+  survey, by its creation for a withdrawn or invalid one.
 - `GET /api/surveys?refs=<txHash>:<index>,…` — the same payload for the surveys
   named, for a host mirroring a chosen subset instead of paging Tessera's order.
   No `counts` or `nextCursor` (a named set has neither), the paging parameters
