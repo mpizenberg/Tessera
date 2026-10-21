@@ -7,7 +7,7 @@ compatibility_date = "2026-06-01"
 
 [assets]
 directory = "./dist"
-# The app routes client-side (survey pages, /propose-info-action, …): unknown
+# The app routes client-side (survey pages, /survey/:key/link, …): unknown
 # paths must serve the app shell, not 404.
 not_found_handling = "single-page-application"
 
