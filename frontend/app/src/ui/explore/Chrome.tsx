@@ -1,14 +1,13 @@
 /**
  * Everything the register is built from except the survey rows themselves: the
  * column header, section labels, loading skeletons, the line that stands in
- * when there are no rows, the legend, and the first-visit intro.
+ * when there are no rows, and the legend.
  */
 
 import { For, Show, type Component, type JSX } from "solid-js";
 
 import { FormMosaic, VisGlyph } from "~/ui/components/glyphs";
 import { t } from "~/i18n";
-import { readText, writeText } from "~/storage";
 import css from "./explore.module.css";
 
 export const HeaderRow: Component = () => {
@@ -115,29 +114,5 @@ export const Legend: Component = () => (
       <span class={css.legendCheck}>✓</span>
       <span class={css.legendText}>{t("explore.legendAnswered")}</span>
     </span>
-  </div>
-);
-
-const INTRO_DISMISSED_KEY = "tessera.introDismissed";
-
-export function introIsDismissed(): boolean {
-  return readText(INTRO_DISMISSED_KEY) === "1";
-}
-export function rememberIntroDismissed(): void {
-  writeText(INTRO_DISMISSED_KEY, "1");
-}
-
-/** Dismissible first-visit explainer, shown until a wallet connects. */
-export const IntroHero: Component<{ onDismiss: () => void }> = (props) => (
-  <div class={css.intro}>
-    <button
-      onClick={() => props.onDismiss()}
-      title={t("explore.introDismiss")}
-      class={css.introDismiss}
-    >
-      ×
-    </button>
-    <h2 class={css.introTitle}>{t("explore.introTitle")}</h2>
-    <p class={css.introBody}>{t("explore.introBody")}</p>
   </div>
 );

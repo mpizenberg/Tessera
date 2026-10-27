@@ -21,12 +21,9 @@ import { t, n, type MsgKey } from "~/i18n";
 import {
   GridNotice,
   HeaderRow,
-  IntroHero,
   Legend,
   SectionLabel,
   SkeletonRows,
-  introIsDismissed,
-  rememberIntroDismissed,
 } from "./Chrome";
 import { Entry, type EntryProps, type Flags } from "./Row";
 import css from "./explore.module.css";
@@ -158,14 +155,6 @@ export const Explore: Component = () => {
   };
   onCleanup(() => clearTimeout(searchTimer));
 
-  // First-visit intro: shown until dismissed (remembered) or a wallet connects.
-  const [introDismissed, setIntroDismissed] = createSignal(introIsDismissed());
-  const showIntro = () => !app.wallet() && !introDismissed();
-  const dismissIntro = (): void => {
-    rememberIntroDismissed();
-    setIntroDismissed(true);
-  };
-
   // Tick once a minute so the "time left" readout stays roughly live without a
   // refetch. Pure display — it never feeds a resource, so it can't retrigger I/O.
   const [nowUnix, setNowUnix] = createSignal(Math.floor(Date.now() / 1000));
@@ -240,10 +229,6 @@ export const Explore: Component = () => {
 
   return (
     <main class={css.page}>
-      <Show when={showIntro()}>
-        <IntroHero onDismiss={dismissIntro} />
-      </Show>
-
       {/* title row + summary */}
       <div class={css.titleRow}>
         <h1 class={css.title}>{t("explore.pageTitle")}</h1>

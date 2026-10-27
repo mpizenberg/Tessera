@@ -23,7 +23,7 @@ const explore: Messages = {
   endsInvalid: "invalide",
   submittedOn: "soumis le {date}",
 
-  pageTitle: "Sondages & scrutins",
+  pageTitle: "Sondages",
   summary: "{count} entrées · époque actuelle {epoch}",
   newSurvey: "Nouveau sondage",
 
@@ -76,11 +76,6 @@ const explore: Messages = {
   legendPublic: "public",
   legendSealed: "scellé jusqu'à la révélation",
   legendAnswered: "vous avez répondu",
-
-  introDismiss: "Fermer",
-  introTitle: "Sondages & scrutins on-chain sur Cardano",
-  introBody:
-    "Tessera enregistre les sondages directement dans les métadonnées des transactions Cardano — sans backend, sans compte. Parcourez tout ci-dessous gratuitement ; connectez un portefeuille pour répondre selon votre rôle on-chain (DRep, SPO, CC ou détenteur d'enjeu) ou pour publier le vôtre. Les réponses peuvent être publiques ou scellées — chiffrées par verrou temporel pour une révélation différée.",
 };
 
 export default explore;
