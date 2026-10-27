@@ -46,11 +46,9 @@ const explore = {
 
   // Section labels splitting the register.
   sectionGov: "On-chain governance · open",
-  sectionGovNote: "Tied to a governance action — shown first.",
   sectionGovClosed: "On-chain governance · closed",
   sectionOpen: "Open · accepting responses",
   sectionClosed: "Closed",
-  sectionClosedNote: "Ended or withdrawn — read-only.",
 
   noMatch: "No surveys match.",
 

@@ -336,10 +336,8 @@ export const Explore: Component = () => {
                 entry={entry}
                 label={
                   <SectionLabel
-                    dot={<span class={css.dotGov} />}
                     color="var(--gov)"
                     label={t("explore.sectionGov")}
-                    note={t("explore.sectionGovNote")}
                   />
                 }
               />
@@ -350,10 +348,8 @@ export const Explore: Component = () => {
                 closed
                 label={
                   <SectionLabel
-                    dot={<span class={css.dotGovClosed} />}
                     color="var(--gov)"
                     label={t("explore.sectionGovClosed")}
-                    note={t("explore.sectionClosedNote")}
                   />
                 }
               />
@@ -363,7 +359,6 @@ export const Explore: Component = () => {
                 entry={entry}
                 label={
                   <SectionLabel
-                    dot={<span class={css.dotOpen} />}
                     color="#5E7B49"
                     label={t("explore.sectionOpen")}
                   />
@@ -376,10 +371,8 @@ export const Explore: Component = () => {
                 closed
                 label={
                   <SectionLabel
-                    dot={<span class={css.dotClosed} />}
                     color="#A79C88"
                     label={t("explore.sectionClosed")}
-                    note={t("explore.sectionClosedNote")}
                     topBorder
                   />
                 }

@@ -39,21 +39,15 @@ export const HeaderRow: Component = () => {
 };
 
 export const SectionLabel: Component<{
-  dot: JSX.Element;
   color: string;
   label: string;
-  note?: string;
   topBorder?: boolean;
 }> = (props) => (
   <div class={css.section} classList={{ [css.sectionTop]: props.topBorder }}>
     {/* Per-section accent is a free-form prop, so it rides in on a CSS var. */}
     <span class={css.sectionTag} style={{ "--section-color": props.color }}>
-      {props.dot}
       {props.label}
     </span>
-    <Show when={props.note}>
-      <span class={css.sectionNote}>{props.note}</span>
-    </Show>
   </div>
 );
 
