@@ -568,46 +568,6 @@
   color: var(--danger);
 }
 
-/* ===== intro hero ===== */
-.intro {
-  position: relative;
-  background: var(--surface2);
-  border: 1px solid var(--line);
-  border-radius: var(--r-card);
-  padding: 20px 22px;
-  margin-bottom: 22px;
-}
-
-.introDismiss {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  background: none;
-  border: none;
-  color: var(--faint);
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-  padding: 2px;
-}
-
-.introTitle {
-  font-family: var(--serif);
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  margin: 0 0 6px;
-  color: var(--ink);
-}
-
-.introBody {
-  font-size: 13.5px;
-  line-height: 1.6;
-  color: var(--muted);
-  margin: 0;
-  max-width: 680px;
-}
-
 /* ===== skeleton ===== */
 .skeletonCard {
   padding: 14px 4px;

@@ -1,4 +1,4 @@
-/** Explore screen — the surveys & polls register. */
+/** Explore screen — the surveys register. */
 
 const explore = {
   // Filter chips (the toolbar tabs).
@@ -24,7 +24,7 @@ const explore = {
   submittedOn: "submitted {date}",
 
   // Title row + summary.
-  pageTitle: "Surveys & polls",
+  pageTitle: "Surveys",
   /** {count} entries, {epoch} is the current chain epoch. */
   summary: "{count} entries · current epoch {epoch}",
   newSurvey: "New survey",
@@ -89,12 +89,6 @@ const explore = {
   legendPublic: "public",
   legendSealed: "sealed until reveal",
   legendAnswered: "you answered",
-
-  // First-visit intro hero.
-  introDismiss: "Dismiss",
-  introTitle: "On-chain surveys & polls on Cardano",
-  introBody:
-    "Tessera records surveys directly in Cardano transaction metadata — no backend, no accounts. Browse everything below for free; connect a wallet to respond as your on-chain role (DRep, SPO, CC, or stakeholder) or to publish your own. Responses can be public or sealed — timelock-encrypted for a delayed reveal.",
 };
 
 export type Messages = typeof explore;
