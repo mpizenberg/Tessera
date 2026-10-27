@@ -213,8 +213,10 @@ select {
   .bottom-nav {
     display: flex;
   }
-  /* keep page content clear of the fixed bar (plus the iOS safe area) */
+  /* keep page content clear of the fixed bar; no safe-area term: without
+     viewport-fit=cover the host keeps the viewport out of unsafe areas, and
+     some wallet webviews report a non-zero inset anyway */
   body {
-    padding-bottom: calc(62px + env(safe-area-inset-bottom));
+    padding-bottom: 62px;
   }
 }
