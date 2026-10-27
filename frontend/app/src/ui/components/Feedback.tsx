@@ -6,31 +6,46 @@
  * is the heading, so it is a prop.
  */
 
-import { For, type Component } from "solid-js";
+import { For, onMount, type Component, type ParentComponent } from "solid-js";
 
 import { t } from "~/i18n";
 import css from "./Feedback.module.css";
+
+/**
+ * The box appears in answer to an action (submit, publish, import) whose
+ * button can be a screen away, behind a sticky bar on a phone — so it brings
+ * itself into view, or the failure goes unseen.
+ */
+const Box: ParentComponent = (props) => {
+  let el!: HTMLDivElement;
+  onMount(() => el.scrollIntoView({ block: "center" }));
+  return (
+    <div ref={el} class={css.box}>
+      {props.children}
+    </div>
+  );
+};
 
 /** A bulleted list of blocking problems (e.g. unmet publish/submit rules). */
 export const ProblemList: Component<{ title: string; problems: string[] }> = (
   props,
 ) => (
-  <div class={css.box}>
+  <Box>
     <div class={css.heading}>{props.title}</div>
     <ul class={css.list}>
       <For each={props.problems}>{(p) => <li>{p}</li>}</For>
     </ul>
-  </div>
+  </Box>
 );
 
 /** A single error message (e.g. a failed on-chain submission). */
 export const ErrorBox: Component<{ title?: string; message: string }> = (
   props,
 ) => (
-  <div class={css.box}>
+  <Box>
     <div class={css.heading}>
       {props.title ?? t("feedback.submissionFailed")}
     </div>
     <div class={css.message}>{props.message}</div>
-  </div>
+  </Box>
 );
