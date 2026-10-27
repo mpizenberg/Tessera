@@ -81,7 +81,6 @@ const explore = {
   refLabel: "ref {ref}",
 
   // Card-mode meta chips.
-  metaForm: "Form",
   metaEligible: "Eligible",
   metaEnds: "Ends",
   metaReplies: "Replies",

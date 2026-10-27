@@ -464,12 +464,6 @@
   margin-top: 11px;
 }
 
-.cardFormInline {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
 .cardEnds {
   color: #5a5246;
 }
@@ -505,6 +499,15 @@
   font-size: 12.5px;
   color: #5a5246;
   font-weight: 500;
+}
+
+/* A direct flex item of the meta row, not a chip value: an inline mosaic
+   inside a text span would sit on that span's baseline, below the chips. */
+.cardForm {
+  composes: metaValue;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* ===== legend ===== */

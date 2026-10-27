@@ -252,12 +252,10 @@ const CardRow: Component<EntryProps> = (props) => {
       </For>
 
       <div class={css.cardMeta}>
-        <MetaChip label={t("explore.metaForm")}>
-          <span class={css.cardFormInline}>
-            <FormMosaic count={def().questions.length} size={16} />
-            {def().questions.length}
-          </span>
-        </MetaChip>
+        <span class={css.cardForm}>
+          <FormMosaic count={def().questions.length} size={16} />
+          {def().questions.length}
+        </span>
         <Show when={def().eligibleRoles.length > 0}>
           <MetaChip label={t("explore.metaEligible")}>
             <RoleChips roles={def().eligibleRoles} />
