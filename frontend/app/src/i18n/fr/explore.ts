@@ -69,7 +69,6 @@ const explore: Messages = {
   refEpoch: "époque {epoch}",
   refLabel: "réf {ref}",
 
-  metaForm: "Formulaire",
   metaEligible: "Éligibles",
   metaEnds: "Fin",
   metaReplies: "Réponses",
