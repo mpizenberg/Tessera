@@ -3,7 +3,7 @@
  *
  * The fixed bar's show/hide is owned by the global `.bottom-nav` media query in
  * theme.css; that class stays on the <nav>. These rules add only the visual
- * chrome (background, border, padding) that used to live inline.
+ * chrome (background, border) that used to live inline.
  *
  * Active/idle coloring is a two-state toggle (accent vs dim). Rather than thread
  * the color through each icon as a prop, the link sets `color` (via .active) and
@@ -20,7 +20,6 @@
   background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(10px);
   border-top: 1px solid var(--line);
-  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .item {
