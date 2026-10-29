@@ -10,14 +10,16 @@
   Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=()
   # CSP notes:
   #  - script-src has no 'unsafe-inline': Vite emits an external module script,
-  #    no inline JS. CIP-30 wallet extensions inject via the extension context,
-  #    which is not subject to the page CSP.
+  #    no inline JS. It allows 'unsafe-eval' because some mobile wallet in-app
+  #    browsers (Eternl iOS) inject their CIP-30 provider through eval in the
+  #    page's context, so without it they never appear on window.cardano.
+  #    'wasm-unsafe-eval' is not enough. Desktop extensions are unaffected.
   #  - style-src allows 'unsafe-inline' (component style attrs + Google Fonts
   #    stylesheet) and the Google Fonts CSS origin.
   #  - connect-src / img-src allow any https: because external-content survey
   #    anchors and IPFS CIDs can resolve to arbitrary gateways/hosts (Koios,
   #    drand, ipfs.io, dweb.link, blockfrost, pinata, nmkr, plus user anchors).
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
 
 # Vite fingerprints asset filenames (content hash), so they are immutable.
 /assets/*
