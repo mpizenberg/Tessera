@@ -8,8 +8,8 @@
  * half-built or blank snapshot because one fetch hiccuped.
  *
  * At most one run at a time, enforced by a stored lease. Neither scheduler
- * serializes itself: a Cloudflare cron can start while the previous one is
- * still running, and the Node loop's interval fires regardless. Two runs
+ * serializes itself: a cron can start while the previous run is still going,
+ * and the Node loop's interval fires regardless. Two runs
  * racing would let the slower one write its older scan last, over the newer
  * snapshot.
  */

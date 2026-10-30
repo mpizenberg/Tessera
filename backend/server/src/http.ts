@@ -42,8 +42,8 @@
  * the rows it serves: the refresh materializes the snapshot into `survey_index`
  * and `response` rows, so no request cost scales with the whole corpus.
  *
- * A plain Hono app: the same object runs under `@hono/node-server` locally
- * (`main.ts`) and on a Cloudflare Worker (`worker.ts`).
+ * A plain Hono app, so any runtime with a fetch handler can serve it; the
+ * local process runs it under `@hono/node-server` (`main.ts`).
  */
 
 import { Hono } from "hono";
@@ -284,20 +284,7 @@ function notModified(c: Context, etag: string): boolean {
   return c.req.header("If-None-Match") === etag;
 }
 
-export interface AppOptions {
-  /**
-   * Compress bodies in-process (default). The Worker entry turns this off:
-   * Cloudflare's edge compresses responses itself, and hono/compress relies on
-   * a CompressionStream behaviour workerd doesn't reproduce.
-   */
-  readonly compress?: boolean;
-}
-
-export function createApp(
-  config: ServerConfig,
-  store: BackendStore,
-  options: AppOptions = {},
-): Hono {
+export function createApp(config: ServerConfig, store: BackendStore): Hono {
   const app = new Hono();
   // The read API is public, cookieless data meant for browser consumption from
   // a different origin (the app may be served separately from this serving
@@ -309,8 +296,8 @@ export function createApp(
   app.use("/api/*", cors());
   app.use("/health", cors());
   // Compress bodies when the client accepts it. The snapshot is hex-string-heavy
-  // JSON, which deflates several fold; on Cloudflare the edge does this instead.
-  if (options.compress !== false) app.use(compress());
+  // JSON, which deflates several fold.
+  app.use(compress());
   // Passthroughs to Koios. `tip`/`pparams` carry the operator's Koios identity
   // (`config.app.koiosToken`) — the memos above cap them at one upstream call
   // per window and per epoch respectively, so they can't burn quota even though

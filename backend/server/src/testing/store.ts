@@ -12,7 +12,6 @@
 
 import { DatabaseSync } from "node:sqlite";
 
-import { createClient, type Client } from "@libsql/client";
 import type { GovLinkDoc } from "cip-179/domain";
 
 import type {
@@ -26,7 +25,6 @@ import type {
   WeightRow,
 } from "../store";
 import { govEpochFromDb, validationKey, type DbGovEpochRow } from "../store";
-import { applyLibsqlMigrations, libsqlBackendStore } from "../store-libsql";
 import { nodeBackendStore } from "../store-node";
 import {
   ARTIFACT_COLUMNS,
@@ -45,16 +43,6 @@ export const ALL_SLOTS: SlotRange = {
   fromSlot: 0,
   toSlot: Number.MAX_SAFE_INTEGER,
 };
-
-/** A migrated store on a fresh in-memory libSQL database, and its client. */
-export async function libsqlTestStore(): Promise<{
-  client: Client;
-  store: BackendStore;
-}> {
-  const client = createClient({ url: ":memory:" });
-  await applyLibsqlMigrations(client);
-  return { client, store: libsqlBackendStore(client) };
-}
 
 /** The stored tables tests read back, keyed as their primary keys are. */
 export interface StoredRows {

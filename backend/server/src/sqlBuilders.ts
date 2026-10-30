@@ -738,9 +738,9 @@ export const RESPONSE_ROW_COLUMNS = `${STORED_RESPONSE_COLUMNS}, countable, reco
 
 /**
  * A keyed read: `sql` once per chunk of keys, each chunk bound as one JSON
- * array (`… IN (SELECT value FROM json_each(?))`) — a key list can exceed
- * D1's 100-parameter cap. Keys are sorted first, so concatenated chunk
- * results come back in key order.
+ * array (`… IN (SELECT value FROM json_each(?))`), so a statement's bound size
+ * stays bounded however long the key list. Keys are sorted first, so
+ * concatenated chunk results come back in key order.
  */
 export const byKeysSql = (sql: string, keys: readonly string[]): SqlQuery[] =>
   jsonChunks([...keys].sort(compareText), SNAPSHOT_KEYS_PER_CHUNK).map(

@@ -97,11 +97,10 @@ export type FinalizeSource = Pick<
 >;
 
 /**
- * Per-pass cap on sealed decryptions across all surveys — the decrypt share of
- * the CPU one cron invocation gets (`wrangler.toml`). One `decryptWithBeacon`
- * measures ~20 ms on workerd, so this is ~3 s there and ~9 s on a core three
- * times slower: under a third of the ceiling, leaving the rest of the pass its
- * parsing, proof checks and hashing. No survey is too big for it — outcomes are
+ * Per-pass cap on sealed decryptions across all surveys. One
+ * `decryptWithBeacon` measures ~20 ms, so this is ~3 s of CPU, and ~9 s on a
+ * core three times slower, leaving the rest of the run its parsing, proof
+ * checks and hashing. No survey is too big for it — outcomes are
  * persisted per response as they are decrypted, so spending the cap mid-survey
  * just resumes next pass.
  */

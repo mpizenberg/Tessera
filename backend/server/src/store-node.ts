@@ -1,14 +1,10 @@
 /**
  * The `node:sqlite` {@link SqlDriver} for the local Node process — both dev and
- * self-hosting without Cloudflare. Kept in its own module so the Cloudflare
- * Worker bundle (which uses `store-d1.ts`) never imports `node:sqlite` —
- * Workers' nodejs_compat does not provide it.
+ * self-hosting.
  *
  * The schema is NOT defined here: every runtime shares the `migrations/*.sql`
- * files as the single source of truth. D1 applies them via `wrangler d1
- * migrations apply`; this driver applies them itself at open, tracking applied
- * files in a `schema_migration` table (the node twin of wrangler's
- * `d1_migrations`), as the libSQL driver's migration does.
+ * files (`migrations.ts`). This driver applies them itself at open; a libSQL
+ * database is migrated by the deploy instead.
  */
 
 import { DatabaseSync, type StatementSync } from "node:sqlite";
@@ -60,10 +56,7 @@ const LEGACY_PROBES: readonly (readonly [migration: string, probe: string])[] =
   ];
 
 /**
- * Bring `db` to the latest schema (`migrations.ts`) — the node:sqlite
- * equivalent of `wrangler d1 migrations apply`. Exported for the D1 driver's
- * tests, which run the same files against the in-memory database their fake
- * D1 wraps.
+ * Bring `db` to the latest schema (`migrations.ts`).
  */
 export function applyMigrations(db: DatabaseSync): void {
   db.exec(CREATE_MIGRATION_TABLE);

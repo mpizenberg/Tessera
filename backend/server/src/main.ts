@@ -1,9 +1,7 @@
 /**
  * Local entry point: wire config → store → refresh loop → Hono app → Node HTTP
- * server. The Cloudflare entry point (`worker.ts`) reuses {@link createApp}
- * with a D1 store and a Cron-triggered refresh instead of this process +
- * interval. The `.env` overlay lives here (not in config.ts) because it is a
- * Node-process concern — Workers get their env injected per invocation.
+ * server. The `.env` overlay lives here (not in config.ts) because it is a
+ * local-process concern.
  */
 
 import { readFileSync } from "node:fs";

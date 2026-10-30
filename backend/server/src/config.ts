@@ -4,12 +4,9 @@
  * cadence, db path). Everything has a default, so the backend runs with an
  * empty env.
  *
- * The env is a parameter rather than `process.env` because Cloudflare Workers
- * receive their env per invocation (there is no process): the Node entry
- * passes `process.env` (after its `.env` overlay), the Worker entry passes its
- * `env` binding. `port`/`dbPath`/`refreshSeconds` are Node-only — the Worker
- * gets its port from the platform, its storage from a D1 binding, and its
- * cadence from the cron trigger.
+ * The env is a parameter rather than `process.env`, so the Node entry can
+ * pass `process.env` after its `.env` overlay and tests their own record.
+ * `port`/`dbPath`/`refreshSeconds` configure the long-lived Node process only.
  */
 
 import { SECONDS_PER_EPOCH, parseNetwork } from "cardano-tessera-client";

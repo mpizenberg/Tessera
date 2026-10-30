@@ -1,4 +1,4 @@
-# Tessera Data & Tally Architecture — PoC Phase (Koios + Cloudflare)
+# Tessera Data & Tally Architecture — PoC Phase (Koios)
 
 > **Status:** decided design for the current proof-of-concept phase, and a
 > running one — the serving tier, the per-page routes, the per-epoch weight
@@ -28,8 +28,8 @@
   window rather than rebuilding (§5.4), why governance links settle by epoch
   (§5.2), and why finalization and the proof cache carry frontiers of their own
   (§6.2); it is the standard those sections are held to.
-- **Reproducible.** Anyone can re-run the whole setup with their own Cloudflare
-  account _or_ self-host it without a Cloudflare account at all.
+- **Reproducible.** Anyone can re-run the whole setup with their own hosting
+  accounts _or_ self-host it without any account at all.
 - **Tally-ready.** Produce per-role, stake-weighted survey results from Koios,
   with results published as immutable, independently re-verifiable artifacts.
 - **Forward-compatible.** The Koios path is the first implementation of a seam;
@@ -71,7 +71,7 @@ it is no longer what the app does by default.
 ```
                         ┌─────────────────────────────────────────────┐
   Browser (SolidJS) ────┤ Tier 1 — SERVING (light)                    │
-   IndexerDataSource    │  CF Worker  *or*  Node/Bun container         │
+   IndexerDataSource    │  serverless functions  *or*  Node process    │
    (HTTP, same-origin)  │   • read path (label-17 snapshot, tip, …)   │
         ▲               │   • tally-input snapshotting (Koios)         │
         │ artifact +    │   • serves snapshot + tally artifacts        │
@@ -87,10 +87,10 @@ it is no longer what the app does by default.
 ```
 
 - **Tier 1 (this spec)** is the existing read path moved server-side, plus a
-  Koios-backed tally-input snapshotting system. It is light enough to run on a
-  stateless edge runtime (Cloudflare Workers) **or** as a plain process.
+  Koios-backed tally-input snapshotting system. It is light enough to run as
+  stateless serverless functions **or** as a plain process.
 - **Tier 2 (deferred)** is the node-following indexer from `RESEARCH.md`. It
-  **cannot** be a Worker (no node, no LocalStateQuery, no long-running
+  **cannot** be a serverless function (no node, no LocalStateQuery, no long-running
   chainsync). It replaces Koios as the `TallyInputSource` when it lands.
 - The tiers are decoupled by a **content-addressed tally artifact** (`TALLY-SPEC.md` §5): the
   unit of result publication and the seam across the Koios→node swap.
@@ -116,29 +116,30 @@ it is no longer what the app does by default.
 
 ## 3. Reproducibility & deployment model
 
-The two constraints — "anyone can re-run on their own Cloudflare account" **and**
-"self-hostable without much effort" — are reconciled by **layering**: a portable
-core, a thin swappable runtime/storage adapter, and a portable HTTP contract.
+The two constraints — "anyone can re-run it on their own hosting accounts"
+**and** "self-hostable without much effort" — are reconciled by **layering**: a
+portable core, a thin swappable runtime/storage adapter, and a portable HTTP
+contract.
 
-| Layer                                                                                                   | Portable? | Notes                                                                                                                                                                                                                                                    |
-| ------------------------------------------------------------------------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Core** (TS): chain-follow/decode + pure `cip-179` domain/tally (audit, tally) + tally-input gathering | yes       | No Cloudflare APIs. Runs in Worker, Node/Bun, or a CLI.                                                                                                                                                                                                  |
-| **Storage**: repository interface over **SQL (SQLite dialect)**                                         | yes       | One `BackendStore` (`store-sql.ts`) over a four-method `SqlDriver`; a runtime supplies only the driver. D1 _is_ SQLite. Self-host → libsql/better-sqlite3 (or Postgres). KV/Cache used **only** as an optional edge cache, never as the source of truth. |
-| **Runtime adapter**                                                                                     | thin      | CF: `wrangler.toml` + fetch handler + `[triggers] crons` + D1 binding. Self-host: tiny HTTP server + `node-cron`/loop + SQLite file. Both call **Core**.                                                                                                 |
-| **HTTP `/api` contract**                                                                                | yes       | What `IndexerDataSource` speaks. Identical whether served by a Worker or a process.                                                                                                                                                                      |
+| Layer                                                                                                   | Portable? | Notes                                                                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Core** (TS): chain-follow/decode + pure `cip-179` domain/tally (audit, tally) + tally-input gathering | yes       | No platform APIs. Runs in a serverless function, Node/Bun, or a CLI.                                                                                                                           |
+| **Storage**: repository interface over **SQL (SQLite dialect)**                                         | yes       | One `BackendStore` (`store-sql.ts`) over a four-method `SqlDriver`; a runtime supplies only the driver: node:sqlite for a local file, libSQL for Turso. KV/Cache is never the source of truth. |
+| **Runtime adapter**                                                                                     | thin      | Hosted: a serving function and a cron-triggered refresh function on Turso. Self-host: tiny HTTP server + loop + SQLite file. Both call **Core**.                                               |
+| **HTTP `/api` contract**                                                                                | yes       | What `IndexerDataSource` speaks. Identical whether served by a function or a process.                                                                                                          |
 
 **Consequences**
 
-- Cloudflare is _one_ managed deploy target for Tier 1, not a requirement: the
+- A hosting platform is _one_ deploy target for Tier 1, not a requirement: the
   same server already runs as a plain process against a `node:sqlite` file
-  (`pnpm start`), with no Cloudflare account. Packaging that process as a
+  (`pnpm start`), with no hosting account. Packaging that process as a
   container/compose stack is the intended baseline artifact and is **not built
   yet**.
-- Substrate is **SQL/SQLite**, the most portable Cloudflare primitive (vs KV,
-  which is the least). Avoid Durable Objects in the core path; if used later for
-  live push, treat as a CF-only enhancement.
+- Substrate is **SQL/SQLite**: a local file and a hosted Turso database speak
+  the same dialect, so the schema, the queries and the migrations have one
+  definition.
 - **Token handling:** the Koios token becomes a server secret
-  (`wrangler secret put` / env var). Because server-side `fetch` is not
+  (a deployment secret / env var). Because server-side `fetch` is not
   CORS-bound, Tier 1 may even use Koios's **anonymous tier with no token** — so
   there is, by default, _no shared secret to leak_. A token remains optional for
   rate headroom.
@@ -155,18 +156,14 @@ core, a thin swappable runtime/storage adapter, and a portable HTTP contract.
   preview and preprod both report CIP-30 network id 0, so wallet selection
   cannot tell them apart, while their Koios hosts, storage, explorers and
   transaction-builder chain parameters are all different.
-- **The refresh's wall clock is placement, not code.** A D1 database lives in
-  one region, chosen at creation; a Cron Trigger's isolate runs wherever the
-  platform has capacity, with no placement promise, and every store round trip
-  crosses that distance. A steady-state refresh is ~30 round trips (28 serial),
-  which is 1.5 s from a nearby colo and 7–15 s from another continent, on the
-  same code — the level moves when a deploy or the platform re-places the
-  isolate. Wall is not billed and nothing user-facing waits on it, so the
-  refresh batches what its data dependencies allow (each pass reads in one trip
-  what it can) and stops there; a Durable Object with a location hint would pin
-  the run next to the database but rests on a best-effort hint and adds a
-  second execution model for an unbilled number (§10). The scaling bench prints
-  round trips beside statements so the count is watched, not the wall.
+- **The refresh's wall clock is round trips times distance.** Every store
+  round trip crosses the network between the refresh and the database, and a
+  steady-state refresh is ~30 round trips (28 serial). Wall is not billed and
+  nothing user-facing waits on it, so the refresh batches what its data
+  dependencies allow (each pass reads in one trip what it can) and stops there;
+  placing the functions in the database's region keeps the distance short. The
+  scaling bench prints round trips beside statements so the count is watched,
+  not the wall.
 
 ---
 
@@ -247,7 +244,7 @@ float profile to pin and the artifact hash is stable across implementations.
 
 Tier 1 reproduces the browser's read path server-side and stores it. The Koios
 reader itself is shared code (`packages/koios`), so the same paging, batching and
-graceful degradation runs in the Worker/process behind the token secret as in the
+graceful degradation runs in the backend behind the token secret as in the
 direct browser path — the difference is that the backend walks the index in
 resumable slot segments and keeps what it derived (§5.4), while the browser
 re-scans from the floor on every load.
@@ -256,8 +253,8 @@ re-scans from the floor on every load.
   label-17 index into the SQL store — the stored rows are the durable truth for
   settled history, and each run re-derives only what can still move (§5.4).
   One run at a time, enforced by a lease row (`migrations/0008_refresh_lease.sql`):
-  neither scheduler serializes itself — Cloudflare may start a cron while the
-  previous one is still running, and the loop's interval fires regardless — and
+  neither scheduler serializes itself — a cron may start while the
+  previous run is still going, and the loop's interval fires regardless — and
   two concurrent runs would let the slower one write its older scan last. The
   lease is held for a bounded TTL so a run killed mid-flight, which never
   releases, blocks its successors only until it expires.
@@ -317,7 +314,7 @@ refresh materialized, and a request costs what the survey it asked for costs:
 - **`GET /api/surveys?refs=<txHash>:<index>,…`** — the same payload for a set the
   caller names, for a host that mirrors a chosen subset and reads the surveys it
   holds rather than a page of Tessera's order. The rows come back through the
-  keyed read (one primary-key seek per ref, chunked past D1's parameter cap), so
+  keyed read (one primary-key seek per ref, in bounded chunks), so
   a request costs its refs and nothing else; `counts` and `nextCursor` are absent
   because a named set has neither, and the paging parameters are refused rather
   than ignored. A ref matching no stored row is simply absent from the answer.
@@ -783,10 +780,10 @@ registered, provenance}`, plus per-`(epoch, role)` totals. This table is shared
   but a survey defined before the floor is not in it to begin with and never
   becomes a finalization candidate. Tier 2's full index removes the floor.
 
-The `migrations/` files are the single schema source for both backends — D1
-applies them via `wrangler d1 migrations apply`, the local node:sqlite database
-via `store-node.ts`'s runner, which tracks applied files in a `schema_migration`
-table. Three tables carry the tally state (`migrations/0003_tally.sql`), each
+The `migrations/` files are the single schema source for both drivers — the
+deploy applies them to a Turso database (`pnpm migrate`), the local node:sqlite
+database applies them at open, and both track applied files in a
+`schema_migration` table. Three tables carry the tally state (`migrations/0003_tally.sql`), each
 enforcing one rule:
 
 - **`weight_snapshot`**, keyed `(epoch, role, credential)` — shared by every
@@ -889,7 +886,7 @@ outside the hash, so the verdict ignores them.
   and one of the two places §0's invariant does not hold. Deliberate for now: the
   banked chip counts already cover the no-`q` case, which is the common one, and an
   index (FTS5 or equivalent) is a design of its own. Trigger: search traffic heavy
-  enough to show up in `d1 insights`.
+  enough to show up in the database's rows-read usage.
 - **The banked chip counts' recompute** — the other place. `counts` is banked, but
   the bank is rebuilt by one aggregate over the whole `survey_index` on every run
   that changed rows or crossed an epoch, which under any activity is every run;
@@ -926,7 +923,7 @@ down. They are recorded because each is the obvious next idea, and re-deriving
 the reason costs more than reading it.
 
 - **A slower cron on preview** (`*/10` rather than `*/3`) — roughly 70% off that
-  deployment's entire upstream and D1 bill, for no code. Rejected by the operator:
+  deployment's entire upstream and database bill, for no code. Rejected by the operator:
   preview exists for rapid prototyping and needs the three-minute feedback loop.
   The cadence is `*/3` on every network.
 - **ETag by content digest instead of `fetchedAt`** — would let an unchanged
@@ -942,31 +939,18 @@ the reason costs more than reading it.
 - **Dropping the `response_credential` index** to cut write amplification — it
   serves `/api/responded`, and an ignored-conflict insert bills nothing, so the
   amplification only ever taxes genuinely new data.
-- **Replacing the refresh lease with a Durable Object, or simply not releasing
-  it** — the lease is three rows a run and is the whole overlap-correctness
-  mechanism; leaving it held would stretch the effective cadence to its TTL. A
-  platform dependency for pennies.
-- **Workers Analytics Engine for `refresh_run` / `upstream_tally`** —
-  `/api/health` would then need the Analytics SQL API (a token, eventual
-  consistency, a new dependency) to serve numbers D1 already gives it for about
-  two writes a run.
+- **Not releasing the refresh lease** — the lease is three rows a run and is
+  the whole overlap-correctness mechanism; leaving it held would stretch the
+  effective cadence to its TTL.
 - **Shrinking `OPERATIONAL_RETENTION_SECONDS`** to lighten the health scan — that
   scan is bounded by its 24 h predicate on the primary key, not by table size.
   Retention moves storage only; it is not a read lever.
-- **D1 read replicas** — a latency feature. Rows bill the same either way.
-- **Running the refresh in a Durable Object with a location hint** so the cron's
-  work sits next to the D1 primary — it would take a 7–15 s run back to ~1.5 s
-  from any colo, but the hint is best-effort, it adds a second execution model
-  (a DO class, a wrangler migration, cron → stub → run) to protect a number
-  nobody is billed for, and its whole value rests on the platform keeping cron
-  placement loose and DO placement sticky. Round trips were cut instead (§3),
-  which holds from any colo. Revisit only if wall threatens the cron's own limit.
 - **Committing a sealed survey's revealed answers in its artifact** — shipped
   with the first sealed artifacts (ruleset 3), on the reasoning that a verifier
   cannot rejoin answers from a ciphertext. It can: the definition pins the drand
   round, the beacon is public and BLS-verifiable, and the verifier decrypted
   every in-window response regardless, so the committed copy bought one
-  diagnostic line while making a sealed artifact — one D1 row — grow with every
+  diagnostic line while making a sealed artifact — one row — grow with every
   answer instead of with every responder. Removed in ruleset 13 (TALLY-SPEC.md
   §5); the app decrypts in the browser for a finalized sealed survey's one-vote
   view, detail and CSV, through the reveal its pre-artifact view already had.

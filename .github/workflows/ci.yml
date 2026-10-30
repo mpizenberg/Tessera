@@ -43,7 +43,6 @@ jobs:
       # artifact and its rolled-up d.ts, which the widget's type-checked tests
       # import from dist/.
       - run: pnpm -r test
-      - run: pnpm test:operator-scripts
       - run: pnpm -r type-check
       - run: pnpm format:check
       # The app build reads deployment values from .env.deploy; the committed
@@ -54,13 +53,3 @@ jobs:
       # `pnpm -r build` builds the app for preview only.
       - run: pnpm --filter tessera-app exec vite build --mode preprod
       - run: pnpm --filter tessera-app exec vite build --mode mainnet
-
-      # Bundle the backend Worker without deploying (no credentials needed).
-      # `pnpm -r build` never touches the backend — it has no build script —
-      # so this is the only pre-deploy check of its worker.ts bundle and of its
-      # wrangler configuration. That configuration holds operator database ids
-      # and is git-ignored, so CI deploys the committed template exactly as a
-      # fresh checkout would.
-      - run: cp backend/server/wrangler.toml.example backend/server/wrangler.toml
-      - run: pnpm --filter cardano-tessera-backend exec wrangler deploy --env preview --dry-run
-      - run: pnpm --filter cardano-tessera-backend exec wrangler deploy --env preprod --dry-run

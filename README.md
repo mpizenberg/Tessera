@@ -55,7 +55,7 @@ document, hash, and URL to your own tooling.
 | `packages/amaru-store-reader` | The verifier's inputs read from an Amaru node's own stores, a Rust crate outside the pnpm workspace; the recipe is in its README.                                                                                                                       |
 | `packages/amaru`              | The verifier's inputs from what `amaru-store-reader` printed, instead of Koios.                                                                                                                                                                         |
 | `examples/`                   | Minimal React and Svelte host apps for the widget, built in CI so framework compatibility regressions fail a build.                                                                                                                                     |
-| `backend/server`              | Tier-1 serving backend: cached chain reads, response validation, weight snapshots, artifact finalization. Node or CF+D1.                                                                                                                                |
+| `backend/server`              | Tier-1 serving backend: cached chain reads, response validation, weight snapshots, artifact finalization. Node or Turso.                                                                                                                                |
 | `backend/deps`                | Indexer submodules (Adder / Yaci Store / Oura) for a future Tier-2; design notes in `backend/*.md`.                                                                                                                                                     |
 
 ## Quick start
@@ -102,9 +102,9 @@ switch: the app is built for a network and refuses a backend whose `/health`
 reports a different one. Frontend build configuration is public — it ships in
 the bundle — but deployment-specific, so it comes from build-time environment
 variables (the Vercel projects' variables, or the git-ignored
-`frontend/app/.env.deploy` for a local build) rather than committed code; the backend's Cloudflare bindings likewise live in a git-ignored
-`wrangler.toml`. Both have a committed `.example` to copy. The variables and
-their rules are in each half's README.
+`frontend/app/.env.deploy` for a local build, from the committed `.example`)
+rather than committed code. The variables and their rules are in each half's
+README.
 
 IPFS reads race a built-in list of public gateways (no config); IPFS _pinning_
 (for authoring external content / rationales) uses per-provider API tokens
@@ -132,12 +132,10 @@ From the repository root:
 Formatting is Prettier over the whole repo: `pnpm format` / `pnpm format:check`
 at the root.
 
-Each half has one deployment per network. The backend deploys to Cloudflare
-as a Worker + D1 + Cron (`pnpm --filter cardano-tessera-backend deploy:preview`
-/ `deploy:preprod` / `deploy:mainnet`, after the one-time `wrangler.toml` and
-D1 setup in `backend/server/OPERATIONS.md`). The app deploys to Vercel from
+Each half has one deployment per network. The app deploys to Vercel from
 GitHub Actions on each merge to `main` that affects it (see the app's
-[README](frontend/app/README.md)). The `backend/deps` submodules are not needed
+[README](frontend/app/README.md)). The backend's store runs on a Turso
+database (see its [README](backend/server/README.md)). The `backend/deps` submodules are not needed
 for any of this; to fetch them anyway:
 `git submodule update --init --recursive`.
 

@@ -8,9 +8,9 @@
  *
  * {@link BackendStore} has one implementation (`store-sql.ts`) over one SQLite
  * schema (`migrations/*.sql`); what a runtime supplies is a {@link SqlDriver} —
- * `store-node.ts` (node:sqlite, local process), `store-libsql.ts` (Turso) or
- * `store-d1.ts` (Cloudflare D1, Worker). That is the "thin swappable storage adapter" of §3. Every method is
- * async because D1 is; the node driver wraps its synchronous calls.
+ * `store-node.ts` (node:sqlite, local process) or `store-libsql.ts` (Turso).
+ * That is the "thin swappable storage adapter" of §3. Every method is async
+ * because libSQL is; the node driver wraps its synchronous calls.
  */
 
 import type {

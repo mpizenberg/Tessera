@@ -22,7 +22,6 @@ allowBuilds:
   esbuild: true
   msgpackr-extract: false
   sharp: false
-  workerd: false
 
 # Exceptions to the global `minimumReleaseAge` supply-chain delay, instead of
 # relaxing it for every dependency: `@mattpiz/tlock-js` is the maintainer's own
