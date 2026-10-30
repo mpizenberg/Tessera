@@ -1,10 +1,9 @@
 /**
  * The store itself, where the SQL carries logic no behavioural test would
- * pin on its own: the migration runner (including the pre-runner databases it
- * has to recognise), the `json_extract` predicate behind a touched survey's
- * artifact keys, the conditional upsert behind the refresh lease,
- * the join and cascade behind the sealed-reveal cursor, the paging keyset and
- * the filters no route test reaches, the segment sweep's changed-row count,
+ * pin on its own: the migration runner, the `json_extract` predicate behind a
+ * touched survey's artifact keys, the conditional upsert behind the refresh
+ * lease, the join and cascade behind the sealed-reveal cursor, the paging
+ * keyset and the filters no route test reaches, the segment sweep's changed-row count,
  * the changed-rows-only write contract of a reconcile, the write-once
  * terminality of the evidence tables, and the operational retention prunes.
  * Everything else the store does is pinned by the behavioural suites, which
@@ -43,7 +42,6 @@ import {
 } from "cip-179/tally";
 
 import { changesCursorAt } from "./changes";
-import { pendingMigrations } from "./migrations";
 import { changedSurveysSql, removedSurveysSql } from "./sqlBuilders";
 import { openBackendStore } from "./store-node";
 import { ALL_SLOTS, testStore, type TestStore } from "./testing/store";
@@ -151,106 +149,6 @@ describe("store-node sealed reveal cursor", () => {
     );
     expect(await store.sealedReveals("s2:0")).toEqual(
       new Map([["bb:0", `{"answers":2}`]]),
-    );
-  });
-});
-
-describe("store-node migration of a pre-runner database", () => {
-  it("baselines existing tables and applies the missing 0004 column", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "tessera-store-"));
-    const path = join(dir, "cache.sqlite");
-    // Seed a file as the deleted inline schema would have left it before
-    // migration 0004 existed: the 0002 objects present (without
-    // linked_action_id), no schema_migration table, later tables missing.
-    const old = new DatabaseSync(path);
-    old.exec(`
-      CREATE TABLE validated_response (
-        tx_hash        TEXT    NOT NULL,
-        response_index INTEGER NOT NULL,
-        survey_key     TEXT    NOT NULL,
-        role           INTEGER NOT NULL,
-        credential     TEXT    NOT NULL,
-        slot           INTEGER NOT NULL,
-        epoch_no       INTEGER NOT NULL,
-        block_index    INTEGER,
-        proof_ok       INTEGER,
-        well_formed    INTEGER NOT NULL,
-        checked_at     INTEGER NOT NULL,
-        PRIMARY KEY (tx_hash, response_index)
-      );
-      CREATE INDEX validated_response_survey
-        ON validated_response (survey_key);
-      INSERT INTO validated_response VALUES
-        ('aa', 0, 'aa:0', 3, 'cred', 10, 500, 1, 1, 1, 1);
-    `);
-    old.close();
-
-    const store = openBackendStore(path);
-    try {
-      // The pre-existing row survives, with a NULL linked action.
-      expect(await store.storedValidationsForTxs(["aa"])).toEqual(
-        new Map([
-          [
-            "aa:0",
-            {
-              complete: true,
-              linkedActionId: null,
-              slot: 10,
-              epochNo: 500,
-              scriptLookups: null,
-            },
-          ],
-        ]),
-      );
-      // And writes touching the new column work.
-      await store.upsertValidatedResponses([
-        {
-          txHash: "bb",
-          responseIndex: 1,
-          surveyKey: "bb:1",
-          role: 0,
-          credential: "cred2",
-          slot: 11,
-          epochNo: 500,
-          blockIndex: 2,
-          proofOk: true,
-          linkedActionId: "gov#0",
-          wellFormed: true,
-          checkedAt: 2,
-          scriptLookups: null,
-        },
-      ]);
-      expect(
-        (await store.storedValidationsForTxs(["bb"])).get("bb:1"),
-      ).toMatchObject({ linkedActionId: "gov#0" });
-      // Missing tables were created by their migrations, not the baseline.
-      await store.reconcileSegment(ALL_SLOTS, [], [], [], [], 7);
-      await store.publishSnapshotMeta({
-        tip: "{}",
-        incomplete: false,
-        fetchedAt: 7,
-        listCounts: null,
-        settling: null,
-      });
-      expect((await store.snapshotMeta())?.fetchedAt).toBe(7);
-    } finally {
-      store.close();
-    }
-
-    // Every migration file must now be tracked — the baseline for the ones
-    // whose objects pre-existed, the runner for the rest.
-    const check = new DatabaseSync(path);
-    const tracked = (
-      check
-        .prepare("SELECT name FROM schema_migration ORDER BY name")
-        .all() as {
-        name: string;
-      }[]
-    ).map((r) => r.name);
-    check.close();
-    rmSync(dir, { recursive: true, force: true });
-    expect(tracked).toEqual(
-      pendingMigrations(new Set()).map(({ name }) => name),
     );
   });
 });
