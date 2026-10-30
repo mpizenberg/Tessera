@@ -2,5 +2,7 @@ node_modules/
 *.sqlite
 *.sqlite-*
 .env
+# Exactly `.vercel`: `vercel link` appends it unless this line is present.
+.vercel
 *.tsbuildinfo
 .DS_Store

@@ -4,8 +4,8 @@
  * cadence, db path). Everything has a default, so the backend runs with an
  * empty env.
  *
- * The env is a parameter rather than `process.env`, so the Node entry can
- * pass `process.env` after its `.env` overlay and tests their own record.
+ * The env is a parameter rather than `process.env`, so tests can pass their
+ * own record.
  * `port`/`dbPath`/`refreshSeconds` configure the long-lived Node process only.
  */
 
@@ -54,10 +54,9 @@ export interface ServerConfig {
    */
   readonly passthroughKoiosToken: string | undefined;
   /**
-   * Git commit of the running code, stamped by the deploy scripts
-   * (`--var GIT_COMMIT:$(git rev-parse HEAD)`) and reported by `/api/health`,
-   * so a deployment names the code that produced its responses. `undefined`
-   * for local runs and builds deployed outside those scripts.
+   * Git commit of the running code, baked into the functions by
+   * `vercel-output.ts` and reported by `/api/health`, so a deployment names the
+   * code that produced its responses. `undefined` for local runs.
    */
   readonly commit: string | undefined;
 }

@@ -5,15 +5,16 @@
   "type": "module",
   "private": true,
   "engines": {
-    "node": ">=22.5"
+    "node": ">=22.9"
   },
   "scripts": {
-    "dev": "tsx watch src/main.ts",
-    "dev:preview": "NETWORK=preview tsx watch src/main.ts",
-    "dev:preprod": "NETWORK=preprod tsx watch src/main.ts",
-    "dev:mainnet": "NETWORK=mainnet tsx watch src/main.ts",
-    "start": "tsx src/main.ts",
-    "migrate": "tsx src/migrate.ts",
+    "dev": "tsx watch --env-file-if-exists=.env src/main.ts",
+    "dev:preview": "NETWORK=preview tsx watch --env-file-if-exists=.env src/main.ts",
+    "dev:preprod": "NETWORK=preprod tsx watch --env-file-if-exists=.env src/main.ts",
+    "dev:mainnet": "NETWORK=mainnet tsx watch --env-file-if-exists=.env src/main.ts",
+    "start": "tsx --env-file-if-exists=.env src/main.ts",
+    "migrate": "tsx --env-file-if-exists=.env src/migrate.ts",
+    "build:vercel": "tsx src/vercel-output.ts",
     "type-check": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests"
   },
@@ -31,6 +32,7 @@
   "devDependencies": {
     "@types/node": "^25.9.8",
     "cardano-tessera-verifier": "workspace:*",
+    "esbuild": "^0.28.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.0.1"

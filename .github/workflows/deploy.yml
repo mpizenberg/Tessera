@@ -3,6 +3,10 @@ name: Deploy
 # A merge to main deploys the Vercel projects it affects. A manual run deploys
 # them all, for what pnpm cannot attribute to a package: a lockfile-only
 # update, this workflow, or a changed Vercel environment variable.
+#
+# Backends go first: each migrates its database, then deploys. The apps follow
+# unless a backend failed, so an app never reaches users ahead of the backend
+# it reads.
 on:
   push:
     branches: [main]
@@ -25,6 +29,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       app: ${{ steps.affected.outputs.app }}
+      backend: ${{ steps.affected.outputs.backend }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -36,16 +41,54 @@ jobs:
         run: |
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
             echo app=true >> "$GITHUB_OUTPUT"
+            echo backend=true >> "$GITHUB_OUTPUT"
             exit 0
           fi
           names=$(pnpm ls -r --depth -1 --json --filter "...[$BEFORE]" | jq -r '.[].name')
           echo "$names"
-          if grep -qx tessera-app <<< "$names"; then app=true; else app=false; fi
-          echo "app=$app" >> "$GITHUB_OUTPUT"
+          for pkg in app:tessera-app backend:cardano-tessera-backend; do
+            if grep -qx "${pkg#*:}" <<< "$names"; then v=true; else v=false; fi
+            echo "${pkg%%:*}=$v" >> "$GITHUB_OUTPUT"
+          done
+
+  backend:
+    needs: affected
+    if: needs.affected.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    strategy:
+      fail-fast: false
+      matrix:
+        # Preprod and mainnet still run on Cloudflare.
+        network: [preview]
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      NETWORK: ${{ matrix.network }}
+    defaults:
+      run:
+        working-directory: backend/server
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: npm install --global "$VERCEL_CLI"
+      - run: vercel link --yes --project "tessera-backend-$NETWORK" --team "${{ vars.VERCEL_TEAM }}"
+      - run: pnpm build:vercel
+      - run: pnpm migrate
+        env:
+          TURSO_DATABASE_URL: ${{ vars[format('TURSO_DATABASE_URL_{0}', matrix.network)] }}
+          TURSO_AUTH_TOKEN: ${{ secrets[format('TURSO_AUTH_TOKEN_{0}', matrix.network)] }}
+      - run: vercel deploy --prebuilt --prod
 
   app:
-    needs: affected
-    if: needs.affected.outputs.app == 'true'
+    needs: [affected, backend]
+    if: ${{ !cancelled() && needs.affected.outputs.app == 'true' && needs.backend.result != 'failure' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
