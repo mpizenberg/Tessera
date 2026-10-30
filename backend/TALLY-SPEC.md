@@ -272,12 +272,9 @@ Shape (the typed definition is `TallyArtifact` in `cip-179/tally`'s
 - **Immutable** once `end_epoch` is finalized; a later ruleset may re-emit a
   survey's artifact, under a new hash when the result or the tally's shape
   changes. A hash names one document: re-emitting a survey whose hash is
-  unchanged keeps the stored artifact. **Stored in the D1/SQLite
-  `tally_artifact` table** (deliberate deviation from the original R2 sketch:
-  artifacts are small JSON documents, the store already exists on both
-  runtimes, and one storage system beats two at PoC scale — R2 remains an easy
-  later move since rows are keyed by the same content hash). Served verbatim by
-  the two artifact routes (`ARCHITECTURE.md` §5.1).
+  unchanged keeps the stored artifact. **Stored in the database
+  `tally_artifact` table**. Served verbatim by the two artifact routes
+  (`ARCHITECTURE.md` §5.1).
 - The **frontend can pin the identical bytes to IPFS** (reusing
   `enrichment/pin.ts`) for durability / censorship-resistance; same bytes → same
   hash → same id.
