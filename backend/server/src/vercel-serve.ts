@@ -1,7 +1,4 @@
-/**
- * Vercel function serving the HTTP API from Turso. Each instance reads its
- * config once; `vercel-output.ts` bakes `NETWORK` and `GIT_COMMIT` into it.
- */
+/** Vercel function serving the HTTP API from Turso. */
 
 import { getRequestListener } from "@hono/node-server";
 

@@ -531,10 +531,9 @@ export interface RefreshRunRow {
   readonly payloadBytes: number;
   /**
    * Validated rows still awaiting an enrichment retry when the run recorded
-   * itself — what `/api/health` serves without re-counting the table. Null
-   * only on a row that predates the column; health then counts live.
+   * itself — what `/api/health` serves without re-counting the table.
    */
-  readonly validationBacklog: number | null;
+  readonly validationBacklog: number;
 }
 
 /** What a run reports about itself; the store banks the backlog. */
@@ -632,12 +631,9 @@ export interface HealthStore {
    */
   pruneUpstreamTally(beforeUnix: number): Promise<void>;
   /**
-   * Validated-response rows still awaiting an enrichment retry (`blockIndex`
-   * or `proofOk` null) — a persistently nonzero backlog means something is
-   * wedged upstream.
+   * Driver calls since the store opened; a run reads its own as a
+   * difference.
    */
-  incompleteValidationCount(): Promise<number>;
-  /** Driver calls since the store opened; a run reads its own as a difference. */
   roundTrips(): number;
 }
 

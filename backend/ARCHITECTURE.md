@@ -90,8 +90,8 @@ it is no longer what the app does by default.
   Koios-backed tally-input snapshotting system. It is light enough to run as
   stateless serverless functions **or** as a plain process.
 - **Tier 2 (deferred)** is the node-following indexer from `RESEARCH.md`. It
-  **cannot** be a serverless function (no node, no LocalStateQuery, no long-running
-  chainsync). It replaces Koios as the `TallyInputSource` when it lands.
+  **cannot** be a serverless function (no node, no LocalStateQuery, no
+  long-running chainsync). It replaces Koios as the `TallyInputSource` when it lands.
 - The tiers are decoupled by a **content-addressed tally artifact** (`TALLY-SPEC.md` §5): the
   unit of result publication and the seam across the Koios→node swap.
 - **Two Koios identities.** The critical path (snapshot refresh, response
@@ -159,8 +159,9 @@ contract.
 - **The refresh's wall clock is round trips times distance.** Every store
   round trip crosses the network between the refresh and the database, and a
   steady-state refresh is ~30 round trips (28 serial). Nothing user-facing
-  waits on it, so the refresh batches what its data dependencies allow (each pass reads in one trip what it can) and stops there;
-  placing the functions in the database's region keeps the distance short. The
+  waits on it, so the refresh batches what its data dependencies allow (each
+  pass reads in one trip what it can) and stops there; placing the functions
+  in the database's region keeps the distance short. The
   scaling bench prints round trips beside statements so the count is watched,
   not the wall.
 
@@ -784,8 +785,8 @@ registered, provenance}`, plus per-`(epoch, role)` totals. This table is shared
 The `migrations/` files are the single schema source for both drivers — the
 deploy applies them to a Turso database (`pnpm migrate`), the local node:sqlite
 database applies them at open, and both track applied files in a
-`schema_migration` table. Three tables carry the tally state (`migrations/0003_tally.sql`), each
-enforcing one rule:
+`schema_migration` table. Three tables carry the tally state
+(`migrations/0003_tally.sql`), each enforcing one rule:
 
 - **`weight_snapshot`**, keyed `(epoch, role, credential)` — shared by every
   survey ending at that epoch. A row is written only once **fetched**, so "row
@@ -924,8 +925,9 @@ down. They are recorded because each is the obvious next idea, and re-deriving
 the reason costs more than reading it.
 
 - **A slower cron on preview** (`*/10` rather than `*/3`) — roughly 70% off that
-  deployment's entire upstream and database bill, for no code. Rejected by the operator:
-  preview exists for rapid prototyping and needs the three-minute feedback loop.
+  deployment's entire upstream and database bill, for no code. Rejected by the
+  operator: preview exists for rapid prototyping and needs the three-minute
+  feedback loop.
   The cadence is `*/3` on every network.
 - **ETag by content digest instead of `fetchedAt`** — would let an unchanged
   corpus answer 304 across refresh generations, but the body legitimately carries

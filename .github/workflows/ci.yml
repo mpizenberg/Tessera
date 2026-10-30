@@ -50,7 +50,4 @@ jobs:
       # template fails the build here.
       - run: cp frontend/app/.env.deploy.example frontend/app/.env.deploy
       - run: pnpm -r build
-      # `pnpm -r build` builds the app for preview only.
-      - run: pnpm --filter tessera-app exec vite build --mode preprod
-      - run: pnpm --filter tessera-app exec vite build --mode mainnet
       - run: NETWORK=preview pnpm --filter cardano-tessera-backend build:vercel

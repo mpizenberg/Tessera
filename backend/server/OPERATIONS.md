@@ -99,11 +99,12 @@ response separates them — run the check twice, a cron or more apart, and compa
 A stuck walk is upstream, not local: `lastRefresh.error` names the failure when
 the run died outright, and when runs report `ok` while standing still the cause
 is a listing page or metadata batch that keeps coming back short. Read the run
-lines in the deployment's logs to see which. Each run logs one `segment scanned:` line with its record counts. `(catching up)`
-alone is a healthy walk with more history to cover; `(incomplete)` is the marker
-that matters — it means a listed transaction never yielded its record, so the run
-banks no cursor and the next one re-walks the same segment. That is the state
-that never finishes on its own.
+lines in the deployment's logs to see which. Each run logs one `segment
+scanned:` line with its record counts. `(catching up)` alone is a healthy walk
+with more history to cover; `(incomplete)` is the marker that matters — it
+means a listed transaction never yielded its record, so the run banks no cursor
+and the next one re-walks the same segment. That is the state that never
+finishes on its own.
 
 ### Between an epoch's end and its artifacts
 
@@ -198,9 +199,9 @@ the deployment has accumulated.
 
 Vercel rolls a project back by promoting an earlier deployment (`vercel
 rollback`, or Instant Rollback in the dashboard). That does not reverse
-migrations, and not every migration can be
-rolled back around: one that dropped or narrowed something the older code reads
-makes every version below it unservable. Check what the release migrated before
+migrations, and not every migration can be rolled back around: one that
+dropped or narrowed something the older code reads makes every version below it
+unservable. Check what the release migrated before
 choosing a target version. Where such a migration has landed, the ways back are
 forward to a fixed version, or a point-in-time restore of the database — which
 rewinds the migration ledger along with every write since that point. Turso

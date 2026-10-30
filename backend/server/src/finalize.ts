@@ -903,10 +903,10 @@ const WEIGHT_CHUNK = 50;
  * Per-pass cap on weight fetches across all epochs and roles: at the chunk
  * above, ~10 DRep GETs or ~10 stakeholder read pairs (two or three requests
  * each) per 500 responders, so a pass adds seconds to the run, not minutes,
- * and a backlog spends the Koios quota over several runs. A survey whose electorate
- * exceeds it is not too big to finalize — the rows persisted per chunk are the
- * resume cursor, so it takes as many passes as its responder count needs, and
- * a busy run postpones instead of failing.
+ * and a backlog spends the Koios quota over several runs. A survey whose
+ * electorate exceeds it is not too big to finalize — the rows persisted per
+ * chunk are the resume cursor, so it takes as many passes as its responder
+ * count needs, and a busy run postpones instead of failing.
  */
 const MAX_WEIGHT_FETCHES_PER_PASS = 500;
 
