@@ -125,7 +125,7 @@ contract.
 | ------------------------------------------------------------------------------------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Core** (TS): chain-follow/decode + pure `cip-179` domain/tally (audit, tally) + tally-input gathering | yes       | No platform APIs. Runs in a serverless function, Node/Bun, or a CLI.                                                                                                                           |
 | **Storage**: repository interface over **SQL (SQLite dialect)**                                         | yes       | One `BackendStore` (`store-sql.ts`) over a four-method `SqlDriver`; a runtime supplies only the driver: node:sqlite for a local file, libSQL for Turso. KV/Cache is never the source of truth. |
-| **Runtime adapter**                                                                                     | thin      | Hosted: a serving function and a cron-triggered refresh function on Turso. Self-host: tiny HTTP server + loop + SQLite file. Both call **Core**.                                               |
+| **Runtime adapter**                                                                                     | thin      | Hosted: a Vercel serving function and a cron-triggered refresh function on Turso. Self-host: tiny HTTP server + loop + SQLite file. Both call **Core**.                                        |
 | **HTTP `/api` contract**                                                                                | yes       | What `IndexerDataSource` speaks. Identical whether served by a function or a process.                                                                                                          |
 
 **Consequences**
@@ -158,9 +158,8 @@ contract.
   transaction-builder chain parameters are all different.
 - **The refresh's wall clock is round trips times distance.** Every store
   round trip crosses the network between the refresh and the database, and a
-  steady-state refresh is ~30 round trips (28 serial). Wall is not billed and
-  nothing user-facing waits on it, so the refresh batches what its data
-  dependencies allow (each pass reads in one trip what it can) and stops there;
+  steady-state refresh is ~30 round trips (28 serial). Nothing user-facing
+  waits on it, so the refresh batches what its data dependencies allow (each pass reads in one trip what it can) and stops there;
   placing the functions in the database's region keeps the distance short. The
   scaling bench prints round trips beside statements so the count is watched,
   not the wall.

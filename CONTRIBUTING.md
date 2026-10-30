@@ -10,7 +10,7 @@ CI runs these on every PR, in this order: `pnpm -r test`,
 come before type-check because the widget's test script builds the rolled-up
 `d.ts` its typed tests need. CI then runs `pnpm -r build`, which needs a
 `frontend/app/.env.deploy` to exist (copy `.env.deploy.example`), builds the
-app for preprod and mainnet too. Match the existing code style; Prettier is
+app for preprod and mainnet too, and bundles the backend's Vercel functions. Match the existing code style; Prettier is
 the source of truth for formatting (`pnpm format`).
 
 ## Versions and changelogs

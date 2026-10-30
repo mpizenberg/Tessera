@@ -3,6 +3,45 @@
 This runbook checks and maintains one Tessera backend per Cardano network. The
 preprod deployment is the interoperability target.
 
+## Set up a network
+
+Each network is one Turso database and one Vercel project, named after it
+(`<net>` is `preview`, `preprod` or `mainnet`).
+
+1. **Turso:** create the database `tessera-cache-<net>` in `aws-eu-west-1`,
+   next to the functions' `dub1` region, and turn on its delete protection.
+   Create a read-write token for it. It starts empty: the first refreshes
+   rebuild it from the chain.
+2. **Vercel:** create the project `tessera-backend-<net>` without a Git
+   repository, with Deployment Protection off. Set these Production variables:
+   `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `CRON_SECRET` (a long random
+   string), `KOIOS_TOKEN`, and optionally `KOIOS_PASSTHROUGH_TOKEN`,
+   `KOIOS_DAILY_LIMIT` and `SINCE`. Leave `NETWORK` and `GIT_COMMIT` out: the
+   build bakes both in.
+3. **GitHub:** in the `production` environment, set the variable
+   `TURSO_DATABASE_URL_<NET>` and the secret `TURSO_AUTH_TOKEN_<NET>` (upper
+   case), which the deploy workflow migrates with, and add `<net>` to the
+   backend job's matrix in `.github/workflows/deploy.yml`.
+
+A merge to `main` that touches the backend then builds, migrates and deploys
+it; a manual run of the workflow deploys every project. By hand, from
+`backend/server`:
+
+```sh
+vercel link --project tessera-backend-<net>
+NETWORK=<net> pnpm build:vercel
+TURSO_DATABASE_URL=… TURSO_AUTH_TOKEN=… pnpm migrate
+vercel deploy --prebuilt --prod
+```
+
+After the first deploy, the project's Cron Jobs settings must list
+`/cron/refresh` every three minutes, and the refresh route must refuse a caller
+without the secret:
+
+```sh
+curl -s -o /dev/null -w "%{http_code}\n" "$BACKEND_URL/cron/refresh"   # 401
+```
+
 ## Verify the deployment
 
 Set the backend's origin, without a trailing path:
@@ -92,7 +131,9 @@ migrations decide which. Additive ones go first: the new code needs what they
 create and the running one never sees them. A migration that drops or narrows
 anything the running code still reads goes after the deploy that stops reading
 it — applied first, it breaks every serving read for as long as the deploy
-takes.
+takes. The deploy workflow always migrates first, so a narrowing migration
+ships in a release of its own, after the one that stops reading what it
+removes.
 
 A release carrying both has no safe order, so pick the cheaper casualty.
 Deploying first costs `/api/health` and the cron refresh until the migrations
@@ -155,12 +196,17 @@ the deployment has accumulated.
 
 ## Roll back
 
-A rollback to an earlier deployment does not reverse migrations, and not every migration can be
+Vercel rolls a project back by promoting an earlier deployment (`vercel
+rollback`, or Instant Rollback in the dashboard). That does not reverse
+migrations, and not every migration can be
 rolled back around: one that dropped or narrowed something the older code reads
 makes every version below it unservable. Check what the release migrated before
 choosing a target version. Where such a migration has landed, the ways back are
 forward to a fixed version, or a point-in-time restore of the database — which
-rewinds the migration ledger along with every write since that point.
+rewinds the migration ledger along with every write since that point. Turso
+restores into a new database (`turso db create <new> --from-db <db> --timestamp
+<time>`); point the project's `TURSO_DATABASE_URL` and the GitHub variable at
+it, mint a token for it, and redeploy.
 
 After either rollback, repeat both health checks and wait for one successful
 refresh before restoring client traffic.

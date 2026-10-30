@@ -2,9 +2,8 @@
  * The libSQL {@link SqlDriver}, for a Turso database. A batch is one round
  * trip; a write batch is one transaction.
  *
- * The caller creates the client, so a deployment can pick the entry point that
- * suits it (`@libsql/client/web` reaches only remote databases and carries no
- * native code) and tests can use `@libsql/client` on `:memory:`.
+ * The store takes a client, so tests can hand it `@libsql/client` on
+ * `:memory:`; deployments build theirs with {@link tursoClient}.
  *
  * Opening a store never migrates, unlike the node driver: the deploy migrates
  * once with {@link applyLibsqlMigrations}, and the functions serving the store
@@ -12,6 +11,7 @@
  */
 
 import type { Client, InArgs, InStatement } from "@libsql/client";
+import { createClient } from "@libsql/client/web";
 
 import {
   APPLIED_MIGRATIONS,
@@ -51,6 +51,18 @@ function libsqlDriver(client: Client): SqlDriver {
 
 export function libsqlBackendStore(client: Client): BackendStore {
   return sqlBackendStore(libsqlDriver(client));
+}
+
+/**
+ * The client for the database at `TURSO_DATABASE_URL`, authenticated by
+ * `TURSO_AUTH_TOKEN`. The `/web` entry reaches only remote databases and, unlike
+ * the default one, loads no native binary, so it bundles into a function.
+ */
+export function tursoClient(env: Record<string, string | undefined>): Client {
+  const url = env["TURSO_DATABASE_URL"];
+  if (!url) throw new Error("TURSO_DATABASE_URL is not set");
+  const authToken = env["TURSO_AUTH_TOKEN"];
+  return createClient(authToken ? { url, authToken } : { url });
 }
 
 /**

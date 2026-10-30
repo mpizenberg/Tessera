@@ -40,7 +40,8 @@ Serves on http://localhost:8787 against **preview** Koios, **tokenless** —
 server-side `fetch` isn't CORS-bound, so the anonymous tier works and there is no
 shared secret to leak. Copy `.env.example` to `.env` to select `mainnet`,
 `preprod`, or `preview` and override the token, port, refresh interval, or db
-path. Unknown network names fail startup rather than falling back to Preview.
+path; a variable set in the environment wins over the file. Unknown network
+names fail startup rather than falling back to Preview.
 
 `dev:preview`, `dev:preprod`, and `dev:mainnet` pin `NETWORK` for the run,
 ignoring whatever `.env` selects; every other `.env` value still applies. Each
@@ -206,16 +207,32 @@ power-user/offline path), which then needs a Koios token pasted in the app's
 Settings. Pair the two on the same network — the app checks `/health` and
 refuses a backend serving a different one.
 
-## Turso database
+## Deploy on Vercel
+
+The hosted backend is two Vercel functions over a Turso database:
+`src/vercel-serve.ts` answers every route, and `src/vercel-refresh.ts` runs one
+refresh per call on `/cron/refresh`, which a Vercel Cron calls every three
+minutes with `Bearer $CRON_SECRET`. Both read the same variables as the local
+process, plus `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` and `CRON_SECRET`.
+
+```sh
+NETWORK=preview pnpm --filter cardano-tessera-backend build:vercel
+```
+
+bundles both into `.vercel/output` (Vercel's Build Output API), with the
+network and the git commit baked into their environment, ready for
+`vercel deploy --prebuilt`. The deploy workflow does that on each merge to
+`main`; `OPERATIONS.md` has the setup and the manual steps.
 
 A Turso database is migrated by the deploy, never by the code that serves it:
 
 ```sh
-TURSO_DATABASE_URL=libsql://… TURSO_AUTH_TOKEN=… pnpm --filter cardano-tessera-backend migrate
+pnpm --filter cardano-tessera-backend migrate
 ```
 
-It applies the same `migrations/*.sql` files the local process applies at open,
-and prints the ones it applied.
+reads `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` from the environment or
+`.env`, applies the same `migrations/*.sql` files the local process applies at
+open, and prints the ones it applied.
 
 ## Per-run work
 
@@ -239,6 +256,7 @@ several runs.
 
 ## Requirements
 
-Node ≥ 22.5. The local process uses the built-in `node:sqlite` and no native
-code. The Turso driver's tests and `pnpm migrate` load `@libsql/client`, which
-ships a prebuilt native binary per platform.
+Node ≥ 22.9. The local process uses the built-in `node:sqlite` and no native
+code. The functions and `pnpm migrate` reach Turso through `@libsql/client/web`,
+which has none either; only the libSQL driver's test loads the default entry,
+which ships a prebuilt native binary per platform.

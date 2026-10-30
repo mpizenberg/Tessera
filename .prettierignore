@@ -1,6 +1,7 @@
 dist
 node_modules
 coverage
+.vercel
 pnpm-lock.yaml
 frontend/app/src/tlock/vendor/tlock.js
 frontend/cip-179.md
