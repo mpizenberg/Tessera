@@ -1,9 +1,9 @@
 /**
  * The one {@link BackendStore} implementation: SQLite-dialect SQL over a
- * {@link SqlDriver}. Node and Cloudflare differ only in the driver they supply
- * (`store-node.ts`, `store-d1.ts`), so the schema, the queries and the
- * latest-wins / insert-or-ignore semantics have a single definition and cannot
- * drift between deployments.
+ * {@link SqlDriver}. Runtimes differ only in the driver they supply
+ * (`store-node.ts`, `store-libsql.ts`, `store-d1.ts`), so the schema, the
+ * queries and the latest-wins / insert-or-ignore semantics have a single
+ * definition and cannot drift between deployments.
  *
  * Every fixed statement lives here, with the method that issues it; SQL whose
  * shape varies with the request — search terms, credential lists, key chunks,

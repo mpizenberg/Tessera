@@ -13,6 +13,7 @@
     "dev:preprod": "NETWORK=preprod tsx watch src/main.ts",
     "dev:mainnet": "NETWORK=mainnet tsx watch src/main.ts",
     "start": "tsx src/main.ts",
+    "migrate": "tsx src/migrate.ts",
     "dev:cf": "wrangler dev --env preview --test-scheduled",
     "migrate:preview": "wrangler d1 migrations apply DB --env preview --remote",
     "migrate:preprod": "wrangler d1 migrations apply DB --env preprod --remote",
@@ -26,6 +27,7 @@
   "dependencies": {
     "@evolution-sdk/evolution": "^0.5.16",
     "@hono/node-server": "^2.1.1",
+    "@libsql/client": "^0.18.0",
     "@mattpiz/tlock-js": "0.10.0",
     "cardano-tessera-client": "workspace:*",
     "cardano-tessera-core": "workspace:*",
