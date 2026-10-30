@@ -101,8 +101,8 @@ app's **Settings**; it is stored in the browser and never built into the bundle.
 switch: the app is built for a network and refuses a backend whose `/health`
 reports a different one. Frontend build configuration is public — it ships in
 the bundle — but deployment-specific, so it comes from build-time environment
-variables (the git-ignored `frontend/app/.env.deploy`) rather than committed
-code; the backend's Cloudflare bindings likewise live in a git-ignored
+variables (the Vercel projects' variables, or the git-ignored
+`frontend/app/.env.deploy` for a local build) rather than committed code; the backend's Cloudflare bindings likewise live in a git-ignored
 `wrangler.toml`. Both have a committed `.example` to copy. The variables and
 their rules are in each half's README.
 
@@ -132,15 +132,13 @@ From the repository root:
 Formatting is Prettier over the whole repo: `pnpm format` / `pnpm format:check`
 at the root.
 
-Both halves deploy to Cloudflare with `wrangler`, one deployment per network:
-the backend as a Worker + D1 + Cron
-(`pnpm --filter cardano-tessera-backend deploy:preview` / `deploy:preprod` /
-`deploy:mainnet`, after the one-time `wrangler.toml` and D1 setup in
-`backend/server/OPERATIONS.md`), the app as static Workers assets
-(`pnpm --filter tessera-app deploy:preview` / `deploy:preprod` /
-`deploy:mainnet` — each bakes the values from `frontend/app/.env.deploy` and
-uploads `dist/`; see `frontend/app/wrangler.toml`). The `backend/deps` submodules
-are not needed for any of this; to fetch them anyway:
+Each half has one deployment per network. The backend deploys to Cloudflare
+as a Worker + D1 + Cron (`pnpm --filter cardano-tessera-backend deploy:preview`
+/ `deploy:preprod` / `deploy:mainnet`, after the one-time `wrangler.toml` and
+D1 setup in `backend/server/OPERATIONS.md`). The app deploys to Vercel from
+GitHub Actions on each merge to `main` that affects it (see the app's
+[README](frontend/app/README.md)). The `backend/deps` submodules are not needed
+for any of this; to fetch them anyway:
 `git submodule update --init --recursive`.
 
 ## Contributing

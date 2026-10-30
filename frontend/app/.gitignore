@@ -1,10 +1,9 @@
 node_modules/
 dist/
+# Exactly `.vercel`: `vercel link` appends it unless this line is present.
+.vercel
 *.tsbuildinfo
 .DS_Store
-
-# Wrangler local state
-.wrangler/
 
 # Per-deployment build values (template: .env.deploy.example)
 .env.deploy
