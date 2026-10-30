@@ -583,12 +583,15 @@ describe("the other routes", () => {
       last24h: {
         runs: 1,
         failures: 0,
+        maxRunMs: 4,
+        refreshMs: 4,
+        refreshCpuMs: 1,
         upstreamRequests: 3,
         koiosCalls: 2,
         passthroughCalls: 0,
       },
       validationBacklog: 0,
-      quotas: { subrequestsPerInvocation: 1000, koiosCallsPerDay: null },
+      quotas: { refreshSecondsPerRun: 300, koiosCallsPerDay: null },
     };
     const { client, urls } = clientOver(
       (url) => (url.endsWith("/api/health") ? { body: health } : undefined),

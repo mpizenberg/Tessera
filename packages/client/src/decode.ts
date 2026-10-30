@@ -280,6 +280,8 @@ export function decodeHealth(json: unknown): BackendHealth {
     return {
       startedAt: num(r.startedAt, at(p, "startedAt")),
       durationMs: num(r.durationMs, at(p, "durationMs")),
+      cpuMs: num(r.cpuMs, at(p, "cpuMs")),
+      dbRoundTrips: num(r.dbRoundTrips, at(p, "dbRoundTrips")),
       upstreamRequests: num(r.upstreamRequests, at(p, "upstreamRequests")),
       koiosCalls: num(r.koiosCalls, at(p, "koiosCalls")),
       ok: bool(r.ok, at(p, "ok")),
@@ -310,15 +312,18 @@ export function decodeHealth(json: unknown): BackendHealth {
     last24h: {
       runs: num(day.runs, "last24h.runs"),
       failures: num(day.failures, "last24h.failures"),
+      maxRunMs: num(day.maxRunMs, "last24h.maxRunMs"),
+      refreshMs: num(day.refreshMs, "last24h.refreshMs"),
+      refreshCpuMs: num(day.refreshCpuMs, "last24h.refreshCpuMs"),
       upstreamRequests: num(day.upstreamRequests, "last24h.upstreamRequests"),
       koiosCalls: num(day.koiosCalls, "last24h.koiosCalls"),
       passthroughCalls: num(day.passthroughCalls, "last24h.passthroughCalls"),
     },
     validationBacklog: num(o.validationBacklog, "validationBacklog"),
     quotas: {
-      subrequestsPerInvocation: nullable(
-        quotas.subrequestsPerInvocation,
-        "quotas.subrequestsPerInvocation",
+      refreshSecondsPerRun: nullable(
+        quotas.refreshSecondsPerRun,
+        "quotas.refreshSecondsPerRun",
         num,
       ),
       koiosCallsPerDay: nullable(

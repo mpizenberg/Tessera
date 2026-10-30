@@ -25,7 +25,7 @@ import type { Settling } from "./network.js";
  * and refuses a mismatch; it may warn on a minor it does not know. Every
  * change is a line in the backend's `CHANGELOG.md`.
  */
-export const API_VERSION = "2.1";
+export const API_VERSION = "2.2";
 
 /** The major of a `major.minor` contract version — the part a consumer must match. */
 export const apiMajor = (version: string): string =>
@@ -382,11 +382,20 @@ export interface BackendHealth {
   /** The most recent refresh run's stats, or null before the first run. */
   readonly lastRefresh: {
     readonly startedAt: number;
+    /** Wall time, which {@link BackendHealth.quotas} `refreshSecondsPerRun` bounds. */
     readonly durationMs: number;
     /**
-     * Every upstream request the run issued, whatever the host — what the
-     * platform's per-invocation cap in {@link BackendHealth.quotas} bounds.
+     * CPU time the backend spent during the run. A backend process that also
+     * serves counts the requests it served meanwhile.
      */
+    readonly cpuMs: number;
+    /**
+     * Calls to the database during the run, each one round trip when the
+     * database is remote. With the upstream requests, they set the run's wall
+     * time.
+     */
+    readonly dbRoundTrips: number;
+    /** Every upstream request the run issued, whatever the host. */
     readonly upstreamRequests: number;
     /** The Koios share of {@link upstreamRequests}; the rest is anchor fetches. */
     readonly koiosCalls: number;
@@ -431,6 +440,12 @@ export interface BackendHealth {
   readonly last24h: {
     readonly runs: number;
     readonly failures: number;
+    /** The slowest refresh run's wall time; 0 without runs. */
+    readonly maxRunMs: number;
+    /** Wall time across all refresh runs. */
+    readonly refreshMs: number;
+    /** CPU time across all refresh runs. */
+    readonly refreshCpuMs: number;
     /** Every upstream request, all services: refresh and serving alike. */
     readonly upstreamRequests: number;
     /** The operator's Koios identity — the one `koiosCallsPerDay` bounds. */
@@ -446,21 +461,19 @@ export interface BackendHealth {
   /** Validated responses still awaiting an enrichment retry. */
   readonly validationBacklog: number;
   /**
-   * The external quotas the counts above are compared against, as the operator
-   * declared them. Neither is enforced by the backend — the platform and the
-   * service enforce their own — so each is a readout denominator, null when
-   * the operator did not state it (or it does not apply: a self-hosted process
-   * has no subrequest cap). What the backend does bound itself by is fixed
-   * per-pass work ceilings that postpone rather than fail, so a busy run never
-   * needs a number here to read as healthy.
+   * The limits the figures above are read against, null where none applies or
+   * the operator did not state one. The backend enforces neither: the platform
+   * and the service enforce their own. What the backend does bound itself by
+   * is fixed per-pass work ceilings that postpone rather than fail, so a busy
+   * run never needs a number here to read as healthy.
    */
   readonly quotas: {
     /**
-     * Outbound requests one platform invocation may make — the Cloudflare
-     * Worker's subrequest cap — the number `lastRefresh.upstreamRequests`
-     * counts against.
+     * The platform's time limit on one refresh run, which
+     * `last24h.maxRunMs` is read against; null for a backend process, whose
+     * runs have none.
      */
-    readonly subrequestsPerInvocation: number | null;
+    readonly refreshSecondsPerRun: number | null;
     /** Daily Koios quota of the operator's identity. */
     readonly koiosCallsPerDay: number | null;
   };

@@ -176,16 +176,16 @@ upstream requests but are not Koios calls. A browser using Tessera's direct
 Koios mode supplies its own token and consumes neither backend identity.
 
 `KOIOS_DAILY_LIMIT` states the tier's daily quota, which Koios does not expose
-through the API, and `WORKER_SUBREQUEST_CAP` a platform's outbound-request cap
-per invocation, if it has one. Both are plain variables rather than secrets,
-and nothing in the backend enforces either: they are the denominators
-`/api/health` reports under `quotas` and the health footer divides
-`koiosCalls` and the last run's `upstreamRequests` by, so a wrong value
+through the API. It is a plain variable rather than a secret, and nothing in
+the backend enforces it: it is the denominator `/api/health` reports under
+`quotas` and the health footer divides `koiosCalls` by, so a wrong value
 misleads a reader instead of throttling a request. Koios enforces the real
 quota with 429s, which surface as a failed refresh. What the backend does
-enforce on itself is fixed per-pass work ceilings — transactions enriched by validation, credentials weighted by
-finalization, ciphertexts decrypted by reveal — each resumable from what the
-pass persisted, so a burst never reaches the platform cap: it postpones. The
+enforce on itself is fixed per-pass work ceilings — transactions enriched by
+validation, credentials weighted by finalization, ciphertexts decrypted by
+reveal — each resumable from what the pass persisted, so a burst postpones
+work instead of running a refresh into its time limit, which `/api/health`
+reports as `quotas.refreshSecondsPerRun` beside the slowest run of the day. The
 Koios quota belongs to the identity, not the deployment, so deployments sharing
 one token share one budget while each footer shows only its own share.
 Budget before assuming a tier fits: the three-minute cron alone spends roughly

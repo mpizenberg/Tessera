@@ -424,7 +424,7 @@ export function createApp(config: ServerConfig, store: BackendStore): Hono {
       },
       validationBacklog,
       quotas: {
-        subrequestsPerInvocation: config.workerSubrequestCap ?? null,
+        refreshSecondsPerRun: config.refreshMaxSeconds ?? null,
         koiosCallsPerDay: config.koiosDailyLimit ?? null,
       },
     };

@@ -4,12 +4,13 @@
  * compute the per-role weighted tally, and write the immutable
  * content-addressed artifact.
  *
- * Runs after every snapshot refresh (Node loop + Worker cron alike) and is
+ * Runs after every snapshot refresh (Node loop and cron alike) and is
  * idempotent by construction:
  *  - weights aggregate **per epoch, not per survey** — the credential union of
  *    all surveys ending at E is fetched once, and `weight_snapshot` rows are
  *    written only when known, so the table is the resume cursor if a run is
- *    cut short (Worker subrequest cap) or a total is temporarily unavailable;
+ *    cut short (the platform's time limit) or a total is temporarily
+ *    unavailable;
  *  - sealed reveal has the same cursor in `sealed_reveal`: each ciphertext's
  *    outcome is written as it is decrypted, so a pass that runs out of decrypt
  *    budget mid-survey resumes rather than starting the survey over;
@@ -899,10 +900,10 @@ async function countedRows(
 const WEIGHT_CHUNK = 50;
 
 /**
- * Per-pass cap on weight fetches across all epochs and roles — the request
- * share of one cron invocation this pass may spend on them: at the chunk
+ * Per-pass cap on weight fetches across all epochs and roles: at the chunk
  * above, ~10 DRep GETs or ~10 stakeholder read pairs (two or three requests
- * each), against a Worker subrequest cap of 1,000. A survey whose electorate
+ * each) per 500 responders, so a pass adds seconds to the run, not minutes,
+ * and a backlog spends the Koios quota over several runs. A survey whose electorate
  * exceeds it is not too big to finalize — the rows persisted per chunk are the
  * resume cursor, so it takes as many passes as its responder count needs, and
  * a busy run postpones instead of failing.

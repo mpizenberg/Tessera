@@ -152,6 +152,7 @@ export const ARTIFACT_COLUMNS = `survey_key AS surveyKey, end_epoch AS endEpoch,
        artifact_hash AS artifactHash, artifact, created_at AS createdAt`;
 
 const REFRESH_RUN_COLUMNS = `started_at AS startedAt, duration_ms AS durationMs,
+       cpu_ms AS cpuMs, db_round_trips AS dbRoundTrips,
        upstream_requests AS upstreamRequests, koios_calls AS koiosCalls,
        ok, error, gov_links_ok AS govLinksOk, incomplete, surveys, responses,
        payload_bytes AS payloadBytes, validation_backlog AS validationBacklog`;
@@ -469,7 +470,25 @@ const REFRESH_LEASE_ACQUIRE = `
 const REFRESH_LEASE_RELEASE =
   "DELETE FROM refresh_lease WHERE id = 1 AND holder = ?";
 
-export function sqlBackendStore(db: SqlDriver): BackendStore {
+export function sqlBackendStore(driver: SqlDriver): BackendStore {
+  // An empty batch reaches no database.
+  let roundTrips = 0;
+  const db: SqlDriver = {
+    all<T>(q: SqlQuery): Promise<T[]> {
+      roundTrips += 1;
+      return driver.all<T>(q);
+    },
+    batchAll<T>(qs: readonly SqlQuery[]): Promise<T[][]> {
+      if (qs.length > 0) roundTrips += 1;
+      return driver.batchAll<T>(qs);
+    },
+    batchWrite(qs: readonly SqlQuery[]): Promise<number[]> {
+      if (qs.length > 0) roundTrips += 1;
+      return driver.batchWrite(qs);
+    },
+    close: () => driver.close(),
+  };
+
   /** The first row, or null — every "at most one row" read. */
   const first = async <T>(q: SqlQuery): Promise<T | null> =>
     (await db.all<T>(q))[0] ?? null;
@@ -1339,13 +1358,15 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       await db.batchWrite([
         query(
           `INSERT OR REPLACE INTO refresh_run
-             (started_at, duration_ms, upstream_requests, koios_calls, ok,
-              error, gov_links_ok, incomplete, surveys, responses,
-              payload_bytes, validation_backlog)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+             (started_at, duration_ms, cpu_ms, db_round_trips,
+              upstream_requests, koios_calls, ok, error, gov_links_ok,
+              incomplete, surveys, responses, payload_bytes, validation_backlog)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                    (SELECT COUNT(*) FROM validated_response WHERE ${INCOMPLETE}))`,
           row.startedAt,
           row.durationMs,
+          row.cpuMs,
+          row.dbRoundTrips,
           row.upstreamRequests,
           row.koiosCalls,
           bit(row.ok),
@@ -1380,12 +1401,23 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
     async refreshTotalsSince(sinceUnix: number): Promise<RefreshTotals> {
       const row = await first<RefreshTotals>(
         query(
-          `SELECT COUNT(*) AS runs, COALESCE(SUM(ok = 0), 0) AS failures
+          `SELECT COUNT(*) AS runs, COALESCE(SUM(ok = 0), 0) AS failures,
+                  COALESCE(MAX(duration_ms), 0) AS maxRunMs,
+                  COALESCE(SUM(duration_ms), 0) AS refreshMs,
+                  COALESCE(SUM(cpu_ms), 0) AS refreshCpuMs
            FROM refresh_run WHERE started_at >= ?`,
           sinceUnix,
         ),
       );
-      return row ?? { runs: 0, failures: 0 };
+      return (
+        row ?? {
+          runs: 0,
+          failures: 0,
+          maxRunMs: 0,
+          refreshMs: 0,
+          refreshCpuMs: 0,
+        }
+      );
     },
     async addUpstreamCalls(
       nowSec: number,
@@ -1432,6 +1464,7 @@ export function sqlBackendStore(db: SqlDriver): BackendStore {
       );
       return row?.n ?? 0;
     },
+    roundTrips: () => roundTrips,
 
     async acquireRefreshLease(
       nowSec: number,

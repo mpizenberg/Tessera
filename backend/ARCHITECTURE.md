@@ -462,13 +462,12 @@ resolution under one wall-clock budget and publishes what resolved.
 
 ### 5.3 Upstream metering: one counter per budget
 
-Three meters run on this backend, each bounding a different set of requests:
+Upstream services meter this backend's requests, each against its own limit:
 
-| Budget                | Metered by                 | Window         | Counts                       |
-| --------------------- | -------------------------- | -------------- | ---------------------------- |
-| Koios tier quota      | Koios, per token identity  | 24 h           | Koios requests on that token |
-| Worker subrequest cap | Cloudflare, per invocation | one invocation | every outbound fetch         |
-| Other service limits  | each upstream service      | 24 h           | requests to that service     |
+| Budget               | Metered by                | Window | Counts                       |
+| -------------------- | ------------------------- | ------ | ---------------------------- |
+| Koios tier quota     | Koios, per token identity | 24 h   | Koios requests on that token |
+| Other service limits | each upstream service     | 24 h   | requests to that service     |
 
 So requests are counted by the budget they spend (`meter.ts`): `koios` for the
 operator identity, `koios-passthrough` for the segregated identity behind
@@ -477,9 +476,12 @@ operator identity, `koios-passthrough` for the segregated identity behind
 covering all three cannot be compared against any of these limits without being
 wrong in one direction or the other.
 
-Per-run totals live on `refresh_run`, because a per-_invocation_ cap needs a
-per-invocation number and the Koios/anchor split is what says which half spent
-it. The rolling 24 h totals (`upstream_tally`) are drained by the serving tier as
+Per-run totals live on `refresh_run`, beside what the run cost its host: wall
+time, CPU time and database round trips. A run's own limit is time, not
+requests: the platform stops a refresh function at its time limit (300 s on
+Vercel), so `/api/health` reports the slowest run of the last 24 h against it,
+and the run's requests, CPU time and round trips say what spent it. The rolling
+24 h totals (`upstream_tally`) are drained by the serving tier as
 well as by refresh runs: `/api/tip` and `/api/pparams` spend the operator's Koios
 quota outside any run, so a total summed from run rows alone would report that
 identity as quieter than it is.
@@ -581,7 +583,7 @@ applied to storage rather than to queries.
 - **`validated_response`** (`migrations/0002`) — the `TALLY-SPEC.md` §3 rules 1–3
   verdicts per `(tx_hash, response_index)`, filled incrementally as responses
   land. A completed verdict is re-judged only when what it was decided against
-  has moved, so the steady state adds no subrequests; a failed enrichment leaves
+  has moved, so the steady state adds no requests; a failed enrichment leaves
   NULLs the next refresh retries. A native script its transaction does not
   carry, not found by hash, keeps the verdict pending while its lookups go on
   (see `script_lookup_cache`), then parks it as unproven
@@ -599,7 +601,7 @@ applied to storage rather than to queries.
   as a response's credential.
 - **`tx_metadata_cache`** (`migrations/0005`) — fetch-once label-17 metadata per
   tx hash. Metadata is immutable, so each fulfilled batch is banked as it
-  completes and a refresh cut short by the subrequest cap keeps what it fetched.
+  completes and a refresh cut short by its time limit keeps what it fetched.
   Only metadata carrying label 17 is banked: every hash asked about came from
   the label index, so a missing row, or one without the label, is an instance
   that has not caught up, and banking it would hide the transaction for good.
@@ -754,11 +756,11 @@ registered, provenance}`, plus per-`(epoch, role)` totals. This table is shared
   BLS-verified `fetchBeacon` per survey), runs reveal→validate→dedup, and emits a
   `sealed=true` artifact. A transient reveal failure postpones (never aborts)
   the pass; a non-quicknet sealed survey is untalliable (no artifact, ever).
-- **Reveal is bounded by Worker CPU, not by subrequests.** One
-  `decryptWithBeacon` measures ~20 ms on workerd, against the 30 s a cron under
-  an hour apart gets on the paid plan (`limits.cpu_ms` cannot raise that; the
-  free plan's 10 ms cannot fit a single decrypt). A pass therefore spends at most
-  `MAX_SEALED_DECRYPTS_PER_PASS` decryptions across all surveys — and `sealed_reveal`
+- **Reveal is bounded by CPU, not by requests.** One `decryptWithBeacon`
+  measures ~20 ms, and the refresh shares its time limit with the scan,
+  validation and anchors. A pass therefore spends at most
+  `MAX_SEALED_DECRYPTS_PER_PASS` decryptions across all surveys, a few seconds
+  of CPU — and `sealed_reveal`
   is the cursor that makes that a pacing limit rather than a size limit: each
   ciphertext's outcome (the decrypted response, or NULL for one that didn't
   decrypt or decode) is written as it is produced, so a survey larger than the
@@ -768,9 +770,9 @@ registered, provenance}`, plus per-`(epoch, role)` totals. This table is shared
   beacon the artifact commits is the one from the emitting pass, which is why
   that pass calls reveal even when it has nothing left to decrypt.
 - **Execution.** At PoC scale (stakeholders bulk; DReps small-N single-GET) this
-  fits a single Worker invocation. The `(epoch, role, credential)` table **is**
+  fits a single refresh run. The `(epoch, role, credential)` table **is**
   the resume cursor if it ever doesn't: rows are written only once known, so a
-  run cut short (Worker subrequest cap) just resumes next cron — fill missing
+  run cut short (its time limit) just resumes next cron — fill missing
   weights idempotently, emit artifacts when complete (INSERT-OR-IGNORE), no
   separate job orchestration.
 - **Known caveat (PoC):** the configured `SINCE` floor is where a walk from

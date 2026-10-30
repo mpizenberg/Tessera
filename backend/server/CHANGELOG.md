@@ -17,6 +17,25 @@ Endpoints section changes in the same commit.
 
 ## [Unreleased]
 
+`2.2`. Removing `quotas.subrequestsPerInvocation` is a major by this
+changelog's rule, but only Tessera's own app reads `/api/health`, and a major
+would make every host on the previous client refuse the whole backend.
+
+### Added
+
+- `GET /api/health` reports what refresh runs cost: `lastRefresh.cpuMs` and
+  `lastRefresh.dbRoundTrips`; `last24h.maxRunMs`, the slowest run, with
+  `last24h.refreshMs` and `last24h.refreshCpuMs` across all runs; and
+  `quotas.refreshSecondsPerRun`, the platform's time limit on one run, null
+  for a backend process.
+
+### Removed
+
+- `quotas.subrequestsPerInvocation` from `GET /api/health`. It was Cloudflare's
+  per-invocation request cap; a run's limit is now its time.
+
+## [2.1] - 2026-09-21
+
 `2.1`, for the added fields and selection. The artifact changes below move fields, which
 this changelog's rule makes a major, but no consumer besides Tessera's own app
 has read an ended survey's artifact, and the app deploys with the backend.

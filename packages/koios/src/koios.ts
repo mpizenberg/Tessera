@@ -198,8 +198,8 @@ interface ScriptInfoRow {
  * requested hashes.
  *
  * Metadata is what lets the snapshot scan *converge* across runs instead of
- * re-paying every `/tx_metadata` batch per refresh: a run cut short (Worker
- * subrequest cap, timeout) banks the batches it did fetch, and the next run
+ * re-paying every `/tx_metadata` batch per refresh: a run cut short (its time
+ * limit) banks the batches it did fetch, and the next run
  * fetches only the remainder. Snapshot membership still comes from the fresh
  * label-index scan, so a rolled-back tx simply stops being requested — a stale
  * entry is inert, never served. Only metadata carrying label 17 is ever put:
@@ -304,8 +304,7 @@ export class KoiosDataSource implements DataSource {
    * store-backed one so scans resume across crons; the browser passes none
    * (each page load is a fresh context anyway).
    * `onRequest` fires once per Koios HTTP request issued through this source —
-   * the serving tier meters it against the Koios daily quota and the Worker's
-   * per-invocation subrequest budget.
+   * the serving tier meters it against the Koios daily quota.
    */
   constructor(
     private readonly config: AppConfig,
@@ -686,7 +685,7 @@ export class KoiosDataSource implements DataSource {
     // Resolve batches independently: a transient failure on one batch should
     // drop only that page, not blank the entire snapshot (see file header).
     // Each fulfilled batch is banked into the cache *before* it resolves — a
-    // run that dies mid-scan (subrequest budget, timeout) keeps the progress it
+    // run that dies mid-scan (its time limit) keeps the progress it
     // made, so repeated over-budget runs still converge instead of re-fetching
     // the same batches forever.
     //
@@ -799,7 +798,7 @@ export class KoiosDataSource implements DataSource {
     // cost, and for cancellations an adversarial one: anyone can post
     // cancellation txs against open surveys for ~one tx fee each, buying
     // ⌈N/25⌉ extra Koios requests per scan for the rest of the deployment's
-    // life (against the Worker's subrequest cap, and per visitor in direct
+    // life (against the operator's Koios quota, and per visitor in direct
     // mode). Open-only keeps that cost transient — it evaporates when the
     // targeted surveys close — and it tracks where each proof matters: an
     // unproven owner matters while a survey can still attract responses (the UI

@@ -43,6 +43,7 @@ import {
 } from "cip-179/tally";
 
 import { changesCursorAt } from "./changes";
+import { pendingMigrations } from "./migrations";
 import { changedSurveysSql, removedSurveysSql } from "./sqlBuilders";
 import { openBackendStore } from "./store-node";
 import { ALL_SLOTS, testStore, type TestStore } from "./testing/store";
@@ -248,46 +249,9 @@ describe("store-node migration of a pre-runner database", () => {
     ).map((r) => r.name);
     check.close();
     rmSync(dir, { recursive: true, force: true });
-    expect(tracked).toEqual([
-      "0001_snapshot_cache.sql",
-      "0002_validated_responses.sql",
-      "0003_tally.sql",
-      "0004_validated_response_linked_action.sql",
-      "0005_tx_metadata_cache.sql",
-      "0006_refresh_run.sql",
-      "0007_survey_index.sql",
-      "0008_refresh_lease.sql",
-      "0009_snapshot_chunks.sql",
-      "0010_response_rows.sql",
-      "0011_sealed_reveal.sql",
-      "0012_refresh_run_gov_links.sql",
-      "0013_gov_links.sql",
-      "0014_upstream_metering.sql",
-      "0015_tx_proof_cache.sql",
-      "0016_snapshot_digest_and_backlog.sql",
-      "0017_list_counts.sql",
-      "0018_scan_state.sql",
-      "0019_cancellation_rows.sql",
-      "0020_gov_settlement_floor.sql",
-      "0021_finalization_floor.sql",
-      "0022_validation_backlog_index.sql",
-      "0023_response_identity.sql",
-      "0024_scan_state_network.sql",
-      "0025_final_state.sql",
-      "0026_counted_by_role.sql",
-      "0027_change_selection.sql",
-      "0028_backfill_change_stamps.sql",
-      "0029_exact_tx_metadata.sql",
-      "0030_bigint_points.sql",
-      "0031_totals_out_of_hash.sql",
-      "0032_finality_gate.sql",
-      "0033_script_lookups.sql",
-      "0034_script_lookup_cache.sql",
-      "0035_gov_anchor_misses.sql",
-      "0036_weights_at_end_of_epoch.sql",
-      "0037_survey_talliable.sql",
-      "0038_survey_index_linked.sql",
-    ]);
+    expect(tracked).toEqual(
+      pendingMigrations(new Set()).map(({ name }) => name),
+    );
   });
 });
 
@@ -1427,6 +1391,8 @@ describe("store-node refresh_run health metrics", () => {
   const run = (startedAt: number, over: Partial<RefreshRunRow> = {}) => ({
     startedAt,
     durationMs: 1200,
+    cpuMs: 400,
+    dbRoundTrips: 30,
     upstreamRequests: 9,
     koiosCalls: 7,
     ok: true,

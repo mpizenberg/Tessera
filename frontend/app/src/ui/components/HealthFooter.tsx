@@ -1,7 +1,7 @@
 /**
  * Thin operational-health footer for the Explore screen (indexer mode only):
- * snapshot age, the last refresh's upstream usage against its budget, 24 h
- * volume per upstream identity, and anything alarming (failed refresh,
+ * snapshot age, the slowest refresh run against the platform's time limit,
+ * 24 h volume per upstream identity, and anything alarming (failed refresh,
  * validation backlog). Display-only chrome — it renders nothing in direct-Koios
  * mode (no backend to report on) and never adds an error of its own: whatever
  * fails inside it, the footer collapses and the screen it decorates stands.
@@ -31,7 +31,7 @@ import css from "./HealthFooter.module.css";
  */
 const STALE_AFTER_SECONDS = 900;
 
-/** Warn when the last refresh used this fraction of its request budget. */
+/** Warn when the slowest refresh used this fraction of its time limit. */
 const WARN_RATIO = 0.8;
 
 /** Re-derive the live snapshot age at this cadence. */
@@ -91,14 +91,12 @@ const Readouts: Component = () => {
     return snap.ageSeconds + Math.max(0, fetchedAgo);
   };
 
-  // Against the *upstream* count, not the Koios one: the platform's cap is on
-  // outbound requests per invocation, which every one of them spends. No cap
-  // declared (a self-hosted process has none) → no ratio, no tone.
-  const refreshRatio = (): number | undefined => {
+  // No limit (a backend process has none) → no ratio, no tone.
+  const runRatio = (): number | undefined => {
     const h = health();
-    const cap = h?.quotas.subrequestsPerInvocation;
-    if (!h?.lastRefresh || cap === null || cap === undefined) return undefined;
-    return h.lastRefresh.upstreamRequests / cap;
+    const limit = h?.quotas.refreshSecondsPerRun;
+    if (!h || limit === null || limit === undefined) return undefined;
+    return h.last24h.maxRunMs / (limit * 1000);
   };
   const usageTone = (ratio: number): "warn" | "danger" | undefined =>
     ratio >= 1 ? "danger" : ratio >= WARN_RATIO ? "warn" : undefined;
@@ -121,29 +119,26 @@ const Readouts: Component = () => {
             </Item>
           </Show>
 
-          <Show when={h().lastRefresh}>
-            {(run) => (
-              <>
-                <Item
-                  tone={usageTone(refreshRatio() ?? 0)}
-                  title={t("healthFooter.refreshRequestsTitle")}
-                >
-                  {h().quotas.subrequestsPerInvocation !== null
-                    ? t("healthFooter.refreshRequestsWithCap", {
-                        calls: n(run().upstreamRequests),
-                        limit: n(h().quotas.subrequestsPerInvocation ?? 0),
-                      })
-                    : t("healthFooter.refreshRequests", {
-                        calls: n(run().upstreamRequests),
-                      })}
-                </Item>
-                <Show when={!run().ok}>
-                  <Item tone="danger" title={run().error ?? undefined}>
-                    {t("healthFooter.lastFailed")}
-                  </Item>
-                </Show>
-              </>
-            )}
+          <Show when={h().last24h.runs > 0}>
+            <Item
+              tone={usageTone(runRatio() ?? 0)}
+              title={t("healthFooter.slowestRunTitle")}
+            >
+              {h().quotas.refreshSecondsPerRun !== null
+                ? t("healthFooter.slowestRunWithLimit", {
+                    run: n(Math.ceil(h().last24h.maxRunMs / 1000)),
+                    limit: n(h().quotas.refreshSecondsPerRun ?? 0),
+                  })
+                : t("healthFooter.slowestRun", {
+                    run: n(Math.ceil(h().last24h.maxRunMs / 1000)),
+                  })}
+            </Item>
+          </Show>
+
+          <Show when={h().lastRefresh?.ok === false}>
+            <Item tone="danger" title={h().lastRefresh?.error ?? undefined}>
+              {t("healthFooter.lastFailed")}
+            </Item>
           </Show>
 
           <Item title={t("healthFooter.koiosDailyTitle")}>

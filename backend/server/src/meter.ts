@@ -11,8 +11,8 @@
  * A meter's lifetime is whatever produces a coherent batch of writes. The
  * refresh builds one per run and drains it once at the end; the serving tier
  * keeps one for the app and drains it after each request, where the write still
- * lands inside the request's lifetime — a Worker may cancel work started after
- * a response is returned.
+ * lands inside the request's lifetime — a function may be frozen once its
+ * response is returned.
  */
 
 import {

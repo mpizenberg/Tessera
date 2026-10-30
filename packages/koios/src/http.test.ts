@@ -51,7 +51,7 @@ describe("koiosFetchJson — retry policy (finding 39)", () => {
     const out = await koiosFetchJson<{ ok: number }>("http://k/x", {}, opts());
     expect(out).toEqual({ ok: 1 });
     expect(mock).toHaveBeenCalledTimes(2);
-    // A retry is a real subrequest, so it counts against the budget too.
+    // A retry is a real request, so it counts against the quota too.
     expect(onRequest).toHaveBeenCalledTimes(2);
     expect(sleep).toHaveBeenCalledTimes(1);
     expect(sleep).toHaveBeenCalledWith(RETRY_BACKOFF_MS);
