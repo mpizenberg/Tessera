@@ -1251,15 +1251,8 @@ describe("GET /api/health", () => {
     expect(body["apiVersion"]).toBe(API_VERSION);
     expect(body["commit"]).toBe("f2b86aa");
     expect(body["snapshot"]).toMatchObject({ fetchedAt: FETCHED_AT });
-    expect(body["lastRefresh"]).toMatchObject({
-      startedAt: NOW - 20,
-      cpuMs: 300,
-      dbRoundTrips: 40,
-      upstreamRequests: 15,
-      koiosCalls: 12,
-      ok: true,
-      govLinksOk: true,
-    });
+    // The run as recorded, and nothing the store keeps beside it.
+    expect(body["lastRefresh"]).toEqual(runRow);
     expect(body["last24h"]).toEqual({
       runs: 3,
       failures: 1,
