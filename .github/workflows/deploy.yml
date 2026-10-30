@@ -95,7 +95,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        network: [preview, preprod, mainnet]
+        # Preprod and mainnet still run on Cloudflare.
+        network: [preview]
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       TESSERA_NETWORK: ${{ matrix.network }}

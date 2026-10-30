@@ -130,9 +130,9 @@ so cross-package edits are live in the dev server with no build step.
 
 ## Deploy
 
-Vercel, one project per network: `tessera-preview`, `tessera-preprod`,
-`tessera-mainnet`. GitHub Actions deploys them (`.github/workflows/deploy.yml`):
-a merge to `main` that affects the app deploys all three, and a manual run of
+Vercel, one project per network, `tessera-<net>`. GitHub Actions deploys the
+networks listed in the app job's matrix (`.github/workflows/deploy.yml`): a
+merge to `main` that affects the app deploys each of them, and a manual run of
 the workflow deploys them regardless. Each job links its project from
 `frontend/app`, pulls the project's environment variables, then runs
 `vercel build` and `vercel deploy --prebuilt`. `vercel.json` holds the build

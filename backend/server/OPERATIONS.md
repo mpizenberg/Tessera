@@ -5,8 +5,8 @@ preprod deployment is the interoperability target.
 
 ## Set up a network
 
-Each network is one Turso database and one Vercel project, named after it
-(`<net>` is `preview`, `preprod` or `mainnet`).
+Each network is one Turso database and two Vercel projects, backend and app,
+named after it (`<net>` is `preview`, `preprod` or `mainnet`).
 
 1. **Turso:** create the database `tessera-cache-<net>` in `aws-eu-west-1`,
    next to the functions' `dub1` region, and turn on its delete protection.
@@ -17,11 +17,12 @@ Each network is one Turso database and one Vercel project, named after it
    `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `CRON_SECRET` (a long random
    string), `KOIOS_TOKEN`, and optionally `KOIOS_PASSTHROUGH_TOKEN`,
    `KOIOS_DAILY_LIMIT` and `SINCE`. Leave `NETWORK` and `GIT_COMMIT` out: the
-   build bakes both in.
+   build bakes both in. Create the app's project `tessera-<net>` the same way,
+   with the variables listed in `frontend/app/README.md`.
 3. **GitHub:** in the `production` environment, set the variable
    `TURSO_DATABASE_URL_<NET>` and the secret `TURSO_AUTH_TOKEN_<NET>` (upper
    case), which the deploy workflow migrates with, and add `<net>` to the
-   backend job's matrix in `.github/workflows/deploy.yml`.
+   backend and app jobs' matrices in `.github/workflows/deploy.yml`.
 
 A merge to `main` that touches the backend then builds, migrates and deploys
 it; a manual run of the workflow deploys every project. By hand, from
