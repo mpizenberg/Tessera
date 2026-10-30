@@ -350,8 +350,8 @@ const UNFINALIZED_CLOSED_SURVEYS = `
 /**
  * The proof-cache prune's drop set. `live` is bounded by the horizon and
  * deliberately unordered: with an `ORDER BY` the planner (which has no
- * statistics: nothing runs `ANALYZE`) walks the whole primary key instead of seeking
- * `survey_index_end_epoch`. Each banked hash is then probed against the three
+ * statistics: nothing runs `ANALYZE`) walks the whole primary key instead of
+ * seeking `survey_index_end_epoch`. Each banked hash is then probed against the three
  * tables that could claim it — a survey key is "<txHash>:<index>", so a
  * definition is a prefix seek. Binds: (minEndEpoch, minEndEpoch).
  */
@@ -1455,14 +1455,6 @@ export function sqlBackendStore(driver: SqlDriver): BackendStore {
           tallyBucket(beforeUnix),
         ),
       );
-    },
-    async incompleteValidationCount(): Promise<number> {
-      const row = await first<{ n: number }>(
-        query(
-          `SELECT COUNT(*) AS n FROM validated_response WHERE ${INCOMPLETE}`,
-        ),
-      );
-      return row?.n ?? 0;
     },
     roundTrips: () => roundTrips,
 

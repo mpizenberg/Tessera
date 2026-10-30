@@ -55,8 +55,9 @@ export function libsqlBackendStore(client: Client): BackendStore {
 
 /**
  * The client for the database at `TURSO_DATABASE_URL`, authenticated by
- * `TURSO_AUTH_TOKEN`. The `/web` entry reaches only remote databases and, unlike
- * the default one, loads no native binary, so it bundles into a function.
+ * `TURSO_AUTH_TOKEN`. The `/web` entry reaches only remote databases and,
+ * unlike the default one, loads no native binary, so it bundles into a
+ * function.
  */
 export function tursoClient(env: Record<string, string | undefined>): Client {
   const url = env["TURSO_DATABASE_URL"];

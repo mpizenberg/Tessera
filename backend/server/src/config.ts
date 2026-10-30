@@ -5,8 +5,8 @@
  * empty env.
  *
  * The env is a parameter rather than `process.env`, so tests can pass their
- * own record.
- * `port`/`dbPath`/`refreshSeconds` configure the long-lived Node process only.
+ * own record. `port`/`dbPath`/`refreshSeconds` configure the long-lived Node
+ * process only.
  */
 
 import { SECONDS_PER_EPOCH, parseNetwork } from "cardano-tessera-client";

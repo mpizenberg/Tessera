@@ -387,16 +387,12 @@ export function createApp(config: ServerConfig, store: BackendStore): Hono {
         store.upstreamTotalsSince(now - 86_400),
         store.scanState().then((bank) => bank.walker),
       ]);
+      // Only a refresh validates, so before the first run there is no backlog.
       if (!lastRun) {
-        const validationBacklog = await store.incompleteValidationCount();
-        return { lastRefresh: null, runs, calls, validationBacklog, scan };
+        return { lastRefresh: null, runs, calls, validationBacklog: 0, scan };
       }
-      // Banked by the refresh; the live count only backs up runs that predate
-      // the column (or whose own count failed). Served at the top level, so it
-      // leaves the run row.
-      const { validationBacklog: banked, ...lastRefresh } = lastRun;
-      const validationBacklog =
-        banked ?? (await store.incompleteValidationCount());
+      // Served at the top level, so it leaves the run row.
+      const { validationBacklog, ...lastRefresh } = lastRun;
       return { lastRefresh, runs, calls, validationBacklog, scan };
     },
   );

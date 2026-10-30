@@ -9,9 +9,8 @@
  *
  * At most one run at a time, enforced by a stored lease. Neither scheduler
  * serializes itself: a cron can start while the previous run is still going,
- * and the Node loop's interval fires regardless. Two runs
- * racing would let the slower one write its older scan last, over the newer
- * snapshot.
+ * and the Node loop's interval fires regardless. Two runs racing would let the
+ * slower one write its older scan last, over the newer snapshot.
  */
 
 import type { ChainTip } from "cip-179/domain";
@@ -551,8 +550,8 @@ export async function refreshSnapshot(
     // the query set for good.
     if (nextGovFloor !== govFloor) await store.putSettlementFloor(nextGovFloor);
 
-    // Response validation (TALLY-SPEC §3) rides the same refresh (Node loop and
-    // cron alike): incremental, so already-validated responses cost
+    // Response validation (TALLY-SPEC §3) rides the same refresh (Node loop
+    // and cron alike): incremental, so already-validated responses cost
     // nothing. Best-effort — the rows above are already stored either way.
     const finalFloor = rewound ? 0 : bank.finalizationFloor;
     await validateNewResponses(

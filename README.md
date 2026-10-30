@@ -136,8 +136,8 @@ Each half has one deployment per network. The app deploys to Vercel from
 GitHub Actions on each merge to `main` that affects it (see the app's
 [README](frontend/app/README.md)). The backend deploys the same way, as two
 Vercel functions over a Turso database (see its
-[README](backend/server/README.md)). The `backend/deps` submodules are not needed
-for any of this; to fetch them anyway:
+[README](backend/server/README.md)). The `backend/deps` submodules are not
+needed for any of this; to fetch them anyway:
 `git submodule update --init --recursive`.
 
 ## Contributing

@@ -738,8 +738,8 @@ export const RESPONSE_ROW_COLUMNS = `${STORED_RESPONSE_COLUMNS}, countable, reco
 
 /**
  * A keyed read: `sql` once per chunk of keys, each chunk bound as one JSON
- * array (`… IN (SELECT value FROM json_each(?))`), so a statement's bound size
- * stays bounded however long the key list. Keys are sorted first, so
+ * array (`… IN (SELECT value FROM json_each(?))`), so a statement's bound
+ * size stays bounded however long the key list. Keys are sorted first, so
  * concatenated chunk results come back in key order.
  */
 export const byKeysSql = (sql: string, keys: readonly string[]): SqlQuery[] =>

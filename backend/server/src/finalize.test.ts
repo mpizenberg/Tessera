@@ -1678,7 +1678,7 @@ describe("finalizeClosedSurveys", () => {
     expect(reveal.mock.calls[0]![0]).toHaveLength(150);
     expect(store.artifacts.has(SURVEY_KEY)).toBe(true);
     // The budget is gone, so the second survey's ciphertext waits for the next
-    // pass rather than pushing this one past its CPU ceiling.
+    // pass.
     expect(store.artifacts.has(SURVEY_KEY2)).toBe(false);
   });
 

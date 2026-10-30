@@ -11,7 +11,7 @@
  * run on this same SQL via `testing/store.ts`.
  *
  * libSQL shares both the dialect and `store-sql.ts`, so what passes here holds
- * there; `store-libsql.test.ts` covers only its migration runner.
+ * there.
  */
 
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";

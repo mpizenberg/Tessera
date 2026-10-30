@@ -64,8 +64,8 @@ interface Statement {
 
 interface Meter {
   readonly statements: Statement[];
-  /** Driver calls — one round trip each, however many statements it carries. */
-  trips: number;
+  /** The store's own round-trip count, the one `/api/health` reports. */
+  readonly trips: number;
   reset(): void;
 }
 
@@ -126,40 +126,37 @@ function meteredStore(): { store: BackendStore; meter: Meter } {
       plan: explain(q),
     });
   };
-  const meter: Meter = {
-    statements,
-    trips: 0,
-    reset: () => {
-      statements.length = 0;
-      meter.trips = 0;
-    },
-  };
-  // An empty batch is short-circuited by the libSQL driver too: no trip.
-  const trip = (n: number): void => {
-    if (n > 0) meter.trips += 1;
-  };
   const driver: SqlDriver = {
     async all<T>(q: SqlQuery): Promise<T[]> {
-      trip(1);
       const rows = await inner.all<T>(q);
       record(q, rows);
       return rows;
     },
     async batchAll<T>(queries: readonly SqlQuery[]): Promise<T[][]> {
-      trip(queries.length);
       const batches = await inner.batchAll<T>(queries);
       queries.forEach((q, i) => record(q, batches[i]!));
       return batches;
     },
     async batchWrite(queries: readonly SqlQuery[]): Promise<number[]> {
-      trip(queries.length);
       for (const q of queries)
         statements.push({ sql: q.sql, rows: 0, bytes: 0, plan: explain(q) });
       return inner.batchWrite(queries);
     },
     close: () => inner.close(),
   };
-  return { store: sqlBackendStore(driver), meter };
+  const store = sqlBackendStore(driver);
+  let tripsAtReset = 0;
+  const meter: Meter = {
+    statements,
+    get trips() {
+      return store.roundTrips() - tripsAtReset;
+    },
+    reset: () => {
+      statements.length = 0;
+      tripsAtReset = store.roundTrips();
+    },
+  };
+  return { store, meter };
 }
 
 // --- the corpus -------------------------------------------------------------

@@ -1306,17 +1306,6 @@ describe("GET /api/health", () => {
     expect(during["scan"]).toEqual({ cursorSlot: 4_000, caughtUp: false });
   });
 
-  it("falls back to a live backlog count when the run predates banking", async () => {
-    const store = await seededStore();
-    await store.putRefreshRun(runRow);
-    store.db.exec("UPDATE refresh_run SET validation_backlog = NULL");
-    await store.upsertValidatedResponses([incomplete("ab".repeat(32))]);
-
-    const res = await appWith(store).request("/api/health");
-    const body = (await res.json()) as Record<string, unknown>;
-    expect(body["validationBacklog"]).toBe(1);
-  });
-
   it("memoizes the aggregates until a new run lands", async () => {
     const store = await seededStore();
     await store.putRefreshRun(runRow);
@@ -1350,6 +1339,7 @@ describe("GET /api/health", () => {
     expect(body["commit"]).toBeNull();
     expect(body["snapshot"]).toBeNull();
     expect(body["lastRefresh"]).toBeNull();
+    expect(body["validationBacklog"]).toBe(0);
     expect(body["last24h"]).toEqual({
       runs: 0,
       failures: 0,
