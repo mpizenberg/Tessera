@@ -22,40 +22,6 @@ import { sqlBackendStore } from "./store-sql";
 type SqlValue = string | number | bigint | null | Uint8Array;
 
 /**
- * Databases created before the migration runner existed were built from an
- * inline schema (deleted when the runner landed) with no record of what had
- * been applied. When `schema_migration` is empty, infer that record by
- * probing for each early migration's objects, so the runner doesn't re-run
- * CREATE TABLEs against tables that already exist — while a genuinely missing
- * piece (e.g. 0004's column, which the inline schema never ALTERed into old
- * files) stays unmarked and gets applied. Frozen list: migrations after the
- * runner are recorded when applied and must never be added here.
- */
-const LEGACY_PROBES: readonly (readonly [migration: string, probe: string])[] =
-  [
-    [
-      "0001_snapshot_cache.sql",
-      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'snapshot_cache'",
-    ],
-    [
-      "0002_validated_responses.sql",
-      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'validated_response'",
-    ],
-    [
-      "0003_tally.sql",
-      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tally_artifact'",
-    ],
-    [
-      "0004_validated_response_linked_action.sql",
-      "SELECT 1 FROM pragma_table_info('validated_response') WHERE name = 'linked_action_id'",
-    ],
-    [
-      "0005_tx_metadata_cache.sql",
-      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tx_metadata_cache'",
-    ],
-  ];
-
-/**
  * Bring `db` to the latest schema (`migrations.ts`).
  */
 export function applyMigrations(db: DatabaseSync): void {
@@ -66,14 +32,6 @@ export function applyMigrations(db: DatabaseSync): void {
     ),
   );
   const record = db.prepare(RECORD_MIGRATION);
-  if (applied.size === 0) {
-    for (const [migration, probe] of LEGACY_PROBES) {
-      if (db.prepare(probe).get() !== undefined) {
-        record.run(migration, Date.now());
-        applied.add(migration);
-      }
-    }
-  }
   for (const { name, sql } of pendingMigrations(applied)) {
     db.exec("BEGIN");
     try {
