@@ -15,8 +15,6 @@
     "build": "pnpm -r build",
     "build:libs": "pnpm --filter cip-179 build",
     "backend:dev": "pnpm --filter cardano-tessera-backend dev",
-    "metrics:collect": "node scripts/collect-cloudflare-metrics.mjs",
-    "test:operator-scripts": "node --test scripts/*.test.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

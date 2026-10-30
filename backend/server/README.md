@@ -1,10 +1,10 @@
 # cardano-tessera-backend
 
 Tier-1 serving backend for Tessera: runs the CIP-179 Koios read path once per
-interval, caches it in SQLite, and serves it over HTTP. One Hono app, two
-runtimes: a local Node process (`src/main.ts`, node:sqlite + setInterval) and a
-Cloudflare Worker (`src/worker.ts`, D1 + Cron trigger). See
-`backend/ARCHITECTURE.md`.
+interval, caches it in SQLite, and serves it over HTTP. One Hono app over one
+store, with two SQLite drivers: node:sqlite for the local Node process
+(`src/main.ts`, with a `setInterval` refresh), and libSQL for a Turso database.
+See `backend/ARCHITECTURE.md`.
 
 Each refresh cycle does three things, in order:
 
@@ -49,12 +49,6 @@ switching between them never mixes two chains' records into one file — but the
 share `PORT`, so run one at a time or override it. A store also banks the
 network it was walked for and refuses a run configured for another, so a
 mismatch fails at the head of the first refresh instead of overwriting rows.
-
-**`wrangler dev` reads `.env` too**, and its values override the `[vars]` of the
-`--env` you pass — `wrangler dev --env preprod` with `NETWORK=preview` in `.env`
-runs preview code against the preprod database. With `--remote`, that database
-is the live one. Leave `NETWORK` out of `.env` when using `wrangler dev`, or
-expect the store's guard to refuse the run.
 
 ## Endpoints
 
@@ -212,50 +206,36 @@ power-user/offline path), which then needs a Koios token pasted in the app's
 Settings. Pair the two on the same network — the app checks `/health` and
 refuses a backend serving a different one.
 
-## Run on Cloudflare
+## Turso database
 
-The Worker entry reuses the same app with a D1 store; the cron trigger
-(`*/3 * * * *`, wrangler.toml.example) replaces the refresh loop. Locally, against
-Miniflare's bundled D1 (no Cloudflare account needed):
+A Turso database is migrated by the deploy, never by the code that serves it:
 
 ```sh
-pnpm --filter cardano-tessera-backend exec wrangler d1 migrations apply DB --env preview --local
-pnpm --filter cardano-tessera-backend dev:cf        # wrangler dev --env preview --test-scheduled
-curl "http://localhost:8787/__scheduled"     # trigger one refresh by hand
+TURSO_DATABASE_URL=libsql://… TURSO_AUTH_TOKEN=… pnpm --filter cardano-tessera-backend migrate
 ```
 
-Preview, preprod, and mainnet are separate named Wrangler environments with
-separate Worker names, D1 databases, and `NETWORK` vars, migrated with
-`pnpm --filter cardano-tessera-backend migrate:<network>` and deployed with
-`deploy:<network>`. Every Wrangler command
-here needs a `wrangler.toml`, which is git-ignored because it carries the D1
-database ids of one Cloudflare account: copy `wrangler.toml.example` and fill in
-the ids of the networks you deploy. See [OPERATIONS.md](OPERATIONS.md) for the
-reproducible preprod creation, migration, secrets, deployment, measurement,
-health gate, and rollback commands.
+It applies the same `migrations/*.sql` files the local process applies at open,
+and prints the ones it applied.
 
-Subrequests are logged on every cron run (`wrangler tail`) and counted in the
-health footer — every upstream request, not just the Koios ones, since a
-governance-anchor fetch costs a subrequest too. **The per-run floor is flat:
-it is set by the settlement window, not by how much history the deployment has
-accumulated**, and validation, weight snapshotting and artifact emission add
-batched calls only when there is new work — and each of those caps the work it
-takes on per pass (transactions enriched, credentials weighted, ciphertexts
-decrypted), postponing the rest to the next cron, so a burst of activity slows
-the pipeline down instead of failing a run on the platform's subrequest cap.
-Validation and finalization are resumable: what a pass persisted (verdict rows,
-weight rows, reveal outcomes) is not redone, and the next cron picks up where
-it left off. `OPERATIONS.md` carries the measured breakdown and the daily-quota
-arithmetic.
+## Per-run work
 
-CPU is the tighter limit once sealed surveys are in play: a cron under an hour
-apart gets 30 s on the paid plan and 10 ms on the free one, while a single
-timelock decrypt costs ~20 ms on workerd. Sealed reveal therefore needs the paid
-plan; `finalize.ts` derives its per-pass decrypt budget from that 30 s, and
-`wrangler.toml.example` pins the same ceiling with `limits.cpu_ms`. That budget paces
-reveal rather than capping survey size: each ciphertext's outcome is persisted as
-it is decrypted, so a survey with more sealed responses than one pass affords
-finishes across several crons.
+Every upstream request of a refresh is counted in the health footer, not just
+the Koios ones, since a governance-anchor fetch costs a request too. **The
+per-run floor is flat: it is set by the settlement window, not by how much
+history the deployment has accumulated**, and validation, weight snapshotting
+and artifact emission add batched calls only when there is new work — and each
+of those caps the work it takes on per pass (transactions enriched,
+credentials weighted, ciphertexts decrypted), postponing the rest to the next
+run, so a burst of activity slows the pipeline down instead of failing a run.
+Validation and finalization are resumable: what a pass persisted (verdict
+rows, weight rows, reveal outcomes) is not redone, and the next run picks up
+where it left off. `OPERATIONS.md` carries the daily-quota arithmetic.
+
+A timelock decrypt costs ~20 ms of CPU, which makes sealed reveal the heaviest
+pass. Its per-pass decrypt cap (`finalize.ts`) paces reveal rather than capping
+survey size: each ciphertext's outcome is persisted as it is decrypted, so a
+survey with more sealed responses than one pass affords finishes across
+several runs.
 
 ## Requirements
 

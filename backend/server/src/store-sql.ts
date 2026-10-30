@@ -1,7 +1,7 @@
 /**
  * The one {@link BackendStore} implementation: SQLite-dialect SQL over a
  * {@link SqlDriver}. Runtimes differ only in the driver they supply
- * (`store-node.ts`, `store-libsql.ts`, `store-d1.ts`), so the schema, the
+ * (`store-node.ts`, `store-libsql.ts`), so the schema, the
  * queries and the latest-wins / insert-or-ignore semantics have a single
  * definition and cannot drift between deployments.
  *
@@ -349,7 +349,7 @@ const UNFINALIZED_CLOSED_SURVEYS = `
 /**
  * The proof-cache prune's drop set. `live` is bounded by the horizon and
  * deliberately unordered: with an `ORDER BY` the planner (which has no
- * statistics on D1) walks the whole primary key instead of seeking
+ * statistics: nothing runs `ANALYZE`) walks the whole primary key instead of seeking
  * `survey_index_end_epoch`. Each banked hash is then probed against the three
  * tables that could claim it — a survey key is "<txHash>:<index>", so a
  * definition is a prefix seek. Binds: (minEndEpoch, minEndEpoch).

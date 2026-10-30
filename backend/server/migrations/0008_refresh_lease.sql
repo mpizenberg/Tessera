@@ -1,7 +1,7 @@
 -- Single-writer guard for the refresh (see src/refresh.ts).
 --
--- Neither runtime serializes its own scheduler: Cloudflare may start a cron
--- while the previous one is still running (a separate isolate), and the Node
+-- Neither runtime serializes its own scheduler: a cron may start while the
+-- previous run is still going, and the Node
 -- loop's setInterval fires on schedule whether or not the previous refresh has
 -- settled. One row, held for a bounded TTL so that a run killed mid-flight —
 -- which never gets to release it — cannot block refreshes forever.

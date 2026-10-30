@@ -49,7 +49,7 @@ import { ALL_SLOTS, testStore, type TestStore } from "./testing/store";
 import { type ValidatedResponseRow } from "./store";
 
 function appWith(store: TestStore) {
-  return createApp(loadConfig({}), store, { compress: false });
+  return createApp(loadConfig({}), store);
 }
 
 /** Materialize the fixture snapshot into the store, as the refresh does. */
@@ -208,9 +208,7 @@ const FETCHED_AT = 1_750_000_100;
 
 describe("GET /health", () => {
   it("reports the exact configured preprod identity", async () => {
-    const app = createApp(loadConfig({ NETWORK: "preprod" }), testStore(), {
-      compress: false,
-    });
+    const app = createApp(loadConfig({ NETWORK: "preprod" }), testStore());
     const res = await app.request("/health");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
@@ -1097,8 +1095,8 @@ describe("GET /api/responded", () => {
     );
   });
 
-  // Both routes bind these into an `IN (…)`, which D1 caps at 100 parameters:
-  // an oversized list is rejected rather than turned into a 500 downstream.
+  // Both routes bind these into an `IN (…)`: an oversized list is rejected
+  // rather than turned into an unbounded query.
   it("rejects an abusively long credential list", async () => {
     const app = appWith(await seededStore());
     const many = Array.from({ length: 21 }, (_, i) => `key:${i}`).join(",");
@@ -1240,7 +1238,6 @@ describe("GET /api/health", () => {
         GIT_COMMIT: "f2b86aa",
       }),
       store,
-      { compress: false },
     );
 
     const res = await app.request("/api/health");
@@ -1388,8 +1385,8 @@ describe("serving-path metering", () => {
     const res = await appWith(store).request(`/api/tx_status?hashes=${hash}`);
     expect(res.status).toBe(200);
 
-    // Written by the time the response resolves: a Worker would cancel a write
-    // started after the request ended.
+    // Written by the time the response resolves: a serverless runtime may
+    // freeze a write started after the request ended.
     expect(await store.upstreamTotalsSince(0)).toEqual({
       koios: 0,
       "koios-passthrough": 1,
@@ -1474,9 +1471,6 @@ describe("GET /api/tx_status (finding 15)", () => {
     const app = createApp(
       loadConfig({ KOIOS_TOKEN: "super-secret" }),
       testStore(),
-      {
-        compress: false,
-      },
     );
     await app.request(`/api/tx_status?hashes=${H("cd")}`);
     expect(authHeaders).toEqual([null]);

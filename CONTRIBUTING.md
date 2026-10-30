@@ -6,13 +6,12 @@ investing in a PR.
 ## Keeping the build green
 
 CI runs these on every PR, in this order: `pnpm -r test`,
-`pnpm test:operator-scripts`, `pnpm -r type-check`, `pnpm format:check`. Tests
+`pnpm -r type-check`, `pnpm format:check`. Tests
 come before type-check because the widget's test script builds the rolled-up
 `d.ts` its typed tests need. CI then runs `pnpm -r build`, which needs a
 `frontend/app/.env.deploy` to exist (copy `.env.deploy.example`), builds the
-app for preprod and mainnet too, and bundles the backend Worker with
-`wrangler deploy --dry-run`, without credentials and without the network. Match the existing code style; Prettier is the source
-of truth for formatting (`pnpm format`).
+app for preprod and mainnet too. Match the existing code style; Prettier is
+the source of truth for formatting (`pnpm format`).
 
 ## Versions and changelogs
 

@@ -3,16 +3,15 @@
  * corpus size, on the SQL the deployments run.
  *
  * ARCHITECTURE.md §0 forbids a per-refresh cost that grows with the archive.
- * D1 bills rows *read* — every row a statement steps over, index entries
+ * Turso bills rows *read* — every row a statement steps over, index entries
  * included — which no local counter exposes, so this bench measures the two
  * things it can and that together bound it: what each statement *returns*
  * (rows and bytes into the process), and each statement's query plan, in
  * which a `SCAN` of a corpus table is exactly a read proportional to that
  * table. A refresh whose plans are all keyed and whose returned rows do not
  * move with the archive has no per-archive term. It also counts driver round
- * trips: on the Worker each one crosses whatever distance separates the cron
- * isolate from the D1 region, so trips, not statements, are the wall-clock
- * term (ARCHITECTURE.md §3).
+ * trips: each one crosses the network between the function and the database,
+ * so trips, not statements, are the wall-clock term (ARCHITECTURE.md §3).
  *
  * No chain, no Koios: the passes take their I/O as parameters and the corpus
  * is generated in-process, written through the store's own reconcile path.
@@ -135,7 +134,7 @@ function meteredStore(): { store: BackendStore; meter: Meter } {
       meter.trips = 0;
     },
   };
-  // An empty batch is short-circuited by the D1 driver too: no trip.
+  // An empty batch is short-circuited by the libSQL driver too: no trip.
   const trip = (n: number): void => {
     if (n > 0) meter.trips += 1;
   };

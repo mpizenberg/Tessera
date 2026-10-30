@@ -1,7 +1,7 @@
 {
   "name": "cardano-tessera-backend",
   "version": "0.1.0",
-  "description": "Tessera Tier-1 serving backend: the Koios read-path snapshot, cached in SQLite and served over HTTP. Runs as a local Node process now; the same Hono app + a D1 adapter target Cloudflare Workers later.",
+  "description": "Tessera Tier-1 serving backend: the Koios read-path snapshot, cached in SQLite and served over HTTP.",
   "type": "module",
   "private": true,
   "engines": {
@@ -14,13 +14,6 @@
     "dev:mainnet": "NETWORK=mainnet tsx watch src/main.ts",
     "start": "tsx src/main.ts",
     "migrate": "tsx src/migrate.ts",
-    "dev:cf": "wrangler dev --env preview --test-scheduled",
-    "migrate:preview": "wrangler d1 migrations apply DB --env preview --remote",
-    "migrate:preprod": "wrangler d1 migrations apply DB --env preprod --remote",
-    "migrate:mainnet": "wrangler d1 migrations apply DB --env mainnet --remote",
-    "deploy:preview": "wrangler deploy --env preview --var GIT_COMMIT:$(git rev-parse HEAD)",
-    "deploy:preprod": "wrangler deploy --env preprod --var GIT_COMMIT:$(git rev-parse HEAD)",
-    "deploy:mainnet": "wrangler deploy --env mainnet --var GIT_COMMIT:$(git rev-parse HEAD)",
     "type-check": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests"
   },
@@ -40,7 +33,6 @@
     "cardano-tessera-verifier": "workspace:*",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.1",
-    "wrangler": "^4.138.0"
+    "vitest": "^5.0.1"
   }
 }
