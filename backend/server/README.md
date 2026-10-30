@@ -259,4 +259,6 @@ finishes across several crons.
 
 ## Requirements
 
-Node ≥ 22.5 (uses the built-in `node:sqlite`, no native dependency).
+Node ≥ 22.5. The local process uses the built-in `node:sqlite` and no native
+code. The Turso driver's tests and `pnpm migrate` load `@libsql/client`, which
+ships a prebuilt native binary per platform.

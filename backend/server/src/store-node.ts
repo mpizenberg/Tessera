@@ -4,22 +4,23 @@
  * Worker bundle (which uses `store-d1.ts`) never imports `node:sqlite` —
  * Workers' nodejs_compat does not provide it.
  *
- * The schema is NOT defined here: both runtimes share the `migrations/*.sql`
+ * The schema is NOT defined here: every runtime shares the `migrations/*.sql`
  * files as the single source of truth. D1 applies them via `wrangler d1
  * migrations apply`; this driver applies them itself at open, tracking applied
  * files in a `schema_migration` table (the node twin of wrangler's
- * `d1_migrations`).
+ * `d1_migrations`), as the libSQL driver's migration does.
  */
 
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
-import { fileURLToPath } from "node:url";
 
+import {
+  APPLIED_MIGRATIONS,
+  CREATE_MIGRATION_TABLE,
+  RECORD_MIGRATION,
+  pendingMigrations,
+} from "./migrations";
 import type { BackendStore, SqlDriver, SqlQuery } from "./store";
 import { sqlBackendStore } from "./store-sql";
-
-const MIGRATIONS_DIR = fileURLToPath(new URL("../migrations", import.meta.url));
 
 /** What node:sqlite accepts as a bound parameter (its SupportedValueType). */
 type SqlValue = string | number | bigint | null | Uint8Array;
@@ -59,29 +60,19 @@ const LEGACY_PROBES: readonly (readonly [migration: string, probe: string])[] =
   ];
 
 /**
- * Bring `db` to the latest schema: apply the `migrations/*.sql` files (in
- * name order, each in its own transaction) that `schema_migration` doesn't
- * list yet — the node:sqlite equivalent of `wrangler d1 migrations apply`.
- * Exported for the D1 driver's tests, which run the same files against the
- * in-memory database their fake D1 wraps.
+ * Bring `db` to the latest schema (`migrations.ts`) — the node:sqlite
+ * equivalent of `wrangler d1 migrations apply`. Exported for the D1 driver's
+ * tests, which run the same files against the in-memory database their fake
+ * D1 wraps.
  */
 export function applyMigrations(db: DatabaseSync): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS schema_migration (
-      name       TEXT PRIMARY KEY,
-      applied_at INTEGER NOT NULL
-    );
-  `);
+  db.exec(CREATE_MIGRATION_TABLE);
   const applied = new Set(
-    (
-      db.prepare("SELECT name FROM schema_migration").all() as {
-        name: string;
-      }[]
-    ).map((r) => r.name),
+    (db.prepare(APPLIED_MIGRATIONS).all() as { name: string }[]).map(
+      (r) => r.name,
+    ),
   );
-  const record = db.prepare(
-    "INSERT INTO schema_migration (name, applied_at) VALUES (?, ?)",
-  );
+  const record = db.prepare(RECORD_MIGRATION);
   if (applied.size === 0) {
     for (const [migration, probe] of LEGACY_PROBES) {
       if (db.prepare(probe).get() !== undefined) {
@@ -90,15 +81,11 @@ export function applyMigrations(db: DatabaseSync): void {
       }
     }
   }
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith(".sql"))
-    .sort();
-  for (const file of files) {
-    if (applied.has(file)) continue;
+  for (const { name, sql } of pendingMigrations(applied)) {
     db.exec("BEGIN");
     try {
-      db.exec(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
-      record.run(file, Date.now());
+      db.exec(sql);
+      record.run(name, Date.now());
       db.exec("COMMIT");
     } catch (err) {
       db.exec("ROLLBACK");
