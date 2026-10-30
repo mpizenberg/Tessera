@@ -1,0 +1,75 @@
+name: Deploy
+
+# A merge to main deploys the Vercel projects it affects. A manual run deploys
+# them all, for what pnpm cannot attribute to a package: a lockfile-only
+# update, this workflow, or a changed Vercel environment variable.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Deploys run one at a time in merge order; a newer one never cancels an upload.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  VERCEL_CLI: vercel@64.7.0
+
+jobs:
+  affected:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      app: ${{ steps.affected.outputs.app }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - id: affected
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            echo app=true >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          names=$(pnpm ls -r --depth -1 --json --filter "...[$BEFORE]" | jq -r '.[].name')
+          echo "$names"
+          if grep -qx tessera-app <<< "$names"; then app=true; else app=false; fi
+          echo "app=$app" >> "$GITHUB_OUTPUT"
+
+  app:
+    needs: affected
+    if: needs.affected.outputs.app == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    strategy:
+      fail-fast: false
+      matrix:
+        network: [preview, preprod, mainnet]
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      TESSERA_NETWORK: ${{ matrix.network }}
+    defaults:
+      run:
+        working-directory: frontend/app
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: npm install --global "$VERCEL_CLI"
+      - run: vercel link --yes --project "tessera-$TESSERA_NETWORK" --team "${{ vars.VERCEL_TEAM }}"
+      - run: vercel pull --yes --environment production
+      - run: vercel build --prod
+      - run: vercel deploy --prebuilt --prod

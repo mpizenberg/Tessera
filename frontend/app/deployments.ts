@@ -8,8 +8,8 @@ import { NETWORKS, type Network } from "../../packages/client/src/network.ts";
 
 /**
  * One deployed Tessera app. Everything here is public configuration baked
- * into the bundle, but the values are deployment-specific (whose Cloudflare
- * account, which URLs), so they come from build-time environment variables —
+ * into the bundle, but the values are deployment-specific (which URLs), so
+ * they come from build-time environment variables —
  * `TESSERA_BACKEND_URL_<NETWORK>` and `TESSERA_APP_URL_<NETWORK>` — loaded
  * from the git-ignored `.env.deploy` (template: `.env.deploy.example`), with
  * variables already set in the environment taking precedence. Vite injects
@@ -36,7 +36,7 @@ export interface Deployment {
   readonly appUrls: Partial<Record<Network, string>>;
   /**
    * The repo state this artifact was built from — `git rev-parse HEAD`, the
-   * derivation the Worker's deploy stamps into `GIT_COMMIT`, so an app build
+   * derivation the backend's deploy stamps into `GIT_COMMIT`, so an app build
    * and a backend deploy compare as strings. `-dirty` when the tree carried
    * uncommitted changes, `unknown` when git cannot answer.
    */
@@ -45,8 +45,8 @@ export interface Deployment {
 
 /**
  * The deployment a Vite invocation bakes in. The mode is the network — one
- * name per deployment, shared with the wrangler environment
- * (`vite build --mode X && wrangler deploy --env X`).
+ * name per deployment, shared with the hosting project (`tessera-X` is built
+ * with `vite build --mode X`).
  *
  * A dev server (`command === "serve"`) takes the mode's network but swaps
  * the backend for a local one: `TESSERA_BACKEND_URL` if present (empty ⇒

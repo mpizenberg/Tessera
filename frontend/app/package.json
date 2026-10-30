@@ -14,9 +14,6 @@
     "dev:preprod": "vite --mode preprod",
     "build": "vite build --mode preview",
     "preview": "vite preview --mode preview",
-    "deploy:preview": "vite build --mode preview && wrangler deploy --env preview",
-    "deploy:preprod": "vite build --mode preprod && wrangler deploy --env preprod",
-    "deploy:mainnet": "vite build --mode mainnet && wrangler deploy --env mainnet",
     "type-check": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -40,7 +37,6 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.1",
     "vite-plugin-solid": "^2.11.14",
-    "vitest": "^5.0.1",
-    "wrangler": "^4.138.0"
+    "vitest": "^5.0.1"
   }
 }

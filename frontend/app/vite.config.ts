@@ -8,7 +8,7 @@ const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 /**
  * Name the build in the served HTML, so which artifact a browser was handed
  * reads out of `curl <app> | grep tessera-build` — the app's answer to the
- * Worker's `/api/health` commit, and legible when the app itself is too broken
+ * backend's `/api/health` commit, and legible when the app itself is too broken
  * to render its Settings screen.
  */
 const stampBuild = (commit: string): Plugin => ({

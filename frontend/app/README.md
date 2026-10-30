@@ -130,17 +130,17 @@ so cross-package edits are live in the dev server with no build step.
 
 ## Deploy
 
-Static assets on Cloudflare Workers, one deployment per network (see
-`wrangler.toml`):
+Vercel, one project per network: `tessera-preview`, `tessera-preprod`,
+`tessera-mainnet`. GitHub Actions deploys them (`.github/workflows/deploy.yml`):
+a merge to `main` that affects the app deploys all three, and a manual run of
+the workflow deploys them regardless. Each job links its project from
+`frontend/app`, pulls the project's environment variables, then runs
+`vercel build` and `vercel deploy --prebuilt`. `vercel.json` holds the build
+command (`vite build --mode $TESSERA_NETWORK`, the network set by the job),
+the fallback of unknown paths to `index.html`, and the response headers.
 
-```sh
-pnpm --filter tessera-app deploy:preview   # vite build --mode preview && wrangler deploy --env preview
-pnpm --filter tessera-app deploy:preprod   # likewise for preprod
-pnpm --filter tessera-app deploy:mainnet   # likewise for mainnet
-```
-
-The network name is simultaneously the Vite build mode and the wrangler
-environment, and each build bakes in two `.env.deploy` variables:
+Each build bakes in two variables, set on the Vercel projects as Production
+environment variables, or in `.env.deploy` for a local build:
 
 - `TESSERA_BACKEND_URL_<NETWORK>` — the Tier-1 backend that network's app
   reads from; empty ⇒ direct Koios (token in Settings). Overridable per
@@ -150,8 +150,15 @@ environment, and each build bakes in two `.env.deploy` variables:
 
 Variables already set in the environment win over `.env.deploy`, and no other
 env file is read. A build fails when its own network's two are missing — empty
-is a valid, explicit value — so a forgotten `.env.deploy` cannot silently ship
-a misconfigured app.
+is a valid, explicit value — so a forgotten variable cannot silently ship a
+misconfigured app. A changed variable reaches users at the next deploy: run
+the workflow manually.
+
+One-time setup: create the three projects without connecting a Git repository
+(the workflow deploys, not Vercel), turn Deployment Protection off, and set the
+variables above. The workflow runs in the `production` GitHub environment,
+restricted to `main`, which holds the `VERCEL_TOKEN` secret and the
+`VERCEL_TEAM` variable (the team slug).
 
 A build reads the payload shapes it was built against, so a backend release
 that renames or drops a field wants the app redeployed in the same window. Each
@@ -163,6 +170,26 @@ CIP-30 identifies both preprod and Preview as network id `0`; the app cannot
 distinguish those wallet-selected testnets through the standard wallet API, so
 users must select the exact one. Backend identity, Koios, storage, explorer
 links, and Evolution chain parameters remain distinct.
+
+## Security headers
+
+`vercel.json` sets the headers on every response. Notes on the
+Content-Security-Policy:
+
+- `script-src` has no `'unsafe-inline'`: Vite emits an external module script,
+  no inline JS. It allows `'unsafe-eval'` because some mobile wallet in-app
+  browsers (Eternl iOS) inject their CIP-30 provider through eval in the page's
+  context, so without it they never appear on `window.cardano`.
+  `'wasm-unsafe-eval'` is not enough. Desktop extensions are unaffected.
+- `style-src` allows `'unsafe-inline'` (component style attributes and the
+  Google Fonts stylesheet) and the Google Fonts CSS origin.
+- `connect-src` and `img-src` allow any `https:`, because external-content
+  survey anchors and IPFS CIDs can resolve to arbitrary gateways and hosts
+  (Koios, drand, ipfs.io, dweb.link, blockfrost, pinata, nmkr, plus user
+  anchors).
+
+Vite fingerprints asset filenames with a content hash, so `/assets/*` is served
+as immutable.
 
 [cip179]: https://github.com/cardano-foundation/CIPs/tree/master/CIP-0179
 [drand]: https://drand.love/
