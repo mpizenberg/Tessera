@@ -1594,8 +1594,8 @@ describe("finalizeClosedSurveys", () => {
     expect(reveal).not.toHaveBeenCalled();
   });
 
-  // Finding 28 — one timelock decrypt costs ~20 ms of Worker CPU, so a big
-  // sealed survey outlives any single invocation; `sealed_reveal` is the cursor
+  // Finding 28 — one timelock decrypt costs ~20 ms of CPU, so a big sealed
+  // survey outlives any single run; `sealed_reveal` is the cursor
   // that lets it finish anyway.
   it("resumes a sealed reveal across passes, re-decrypting nothing", async () => {
     const store = testStore();

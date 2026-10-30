@@ -1185,6 +1185,8 @@ describe("GET /api/health", () => {
   const runRow = {
     startedAt: NOW - 20,
     durationMs: 900,
+    cpuMs: 300,
+    dbRoundTrips: 40,
     upstreamRequests: 15,
     koiosCalls: 12,
     ok: true,
@@ -1220,6 +1222,7 @@ describe("GET /api/health", () => {
     await store.putRefreshRun({
       ...runRow,
       startedAt: NOW - 100,
+      durationMs: 2_500,
       ok: false,
       error: "Koios GET /tip → 502",
     });
@@ -1233,7 +1236,7 @@ describe("GET /api/health", () => {
     });
     const app = createApp(
       loadConfig({
-        WORKER_SUBREQUEST_CAP: "1000",
+        REFRESH_MAX_SECONDS: "300",
         KOIOS_DAILY_LIMIT: "5000",
         GIT_COMMIT: "f2b86aa",
       }),
@@ -1250,6 +1253,8 @@ describe("GET /api/health", () => {
     expect(body["snapshot"]).toMatchObject({ fetchedAt: FETCHED_AT });
     expect(body["lastRefresh"]).toMatchObject({
       startedAt: NOW - 20,
+      cpuMs: 300,
+      dbRoundTrips: 40,
       upstreamRequests: 15,
       koiosCalls: 12,
       ok: true,
@@ -1258,6 +1263,9 @@ describe("GET /api/health", () => {
     expect(body["last24h"]).toEqual({
       runs: 3,
       failures: 1,
+      maxRunMs: 2_500,
+      refreshMs: 4_300,
+      refreshCpuMs: 900,
       upstreamRequests: 42,
       koiosCalls: 30,
       passthroughCalls: 7,
@@ -1275,7 +1283,7 @@ describe("GET /api/health", () => {
       )["validationBacklog"],
     ).toBe(3);
     expect(body["quotas"]).toEqual({
-      subrequestsPerInvocation: 1000,
+      refreshSecondsPerRun: 300,
       koiosCallsPerDay: 5000,
     });
   });
@@ -1352,13 +1360,16 @@ describe("GET /api/health", () => {
     expect(body["last24h"]).toEqual({
       runs: 0,
       failures: 0,
+      maxRunMs: 0,
+      refreshMs: 0,
+      refreshCpuMs: 0,
       upstreamRequests: 0,
       koiosCalls: 0,
       passthroughCalls: 0,
     });
     // Neither quota declared: no denominators, nothing invented.
     expect(body["quotas"]).toEqual({
-      subrequestsPerInvocation: null,
+      refreshSecondsPerRun: null,
       koiosCallsPerDay: null,
     });
   });

@@ -340,7 +340,7 @@ export interface TallyStore {
  *
  * Metadata is the scan's resume state: membership in a snapshot is decided by
  * each run's fresh label-index scan, never by the cache, and a refresh cut
- * short (Worker subrequest cap) keeps the batches it fetched, so repeated
+ * short (the platform's time limit) keeps the batches it fetched, so repeated
  * over-budget runs converge instead of re-fetching forever.
  *
  * Proof CBOR is the credential-proof evidence behind every owner-proof and
@@ -491,15 +491,23 @@ export interface RefreshRunRow {
   readonly startedAt: number;
   readonly durationMs: number;
   /**
-   * Every upstream HTTP request the run issued, whatever the host — the number
-   * the Worker's per-invocation subrequest cap actually bounds.
+   * CPU time the process spent during the run. A process that also serves
+   * counts its requests too; a refresh function has nothing else to count.
    */
+  readonly cpuMs: number;
+  /**
+   * Driver calls the store made during the run, each one round trip on a
+   * remote database: with the upstream requests, what sets its wall time.
+   * Counted on the store, so in a process that also serves it includes
+   * the requests served meanwhile.
+   */
+  readonly dbRoundTrips: number;
+  /** Every upstream HTTP request the run issued, whatever the host. */
   readonly upstreamRequests: number;
   /**
-   * The Koios share of {@link upstreamRequests}. No budget is per-run for
-   * Koios (its quota is daily, tracked in `upstream_tally`), but when a run
-   * trips the subrequest cap this is what says whether paging or anchor
-   * fetches spent it.
+   * The Koios share of {@link upstreamRequests}. Koios meters a daily quota,
+   * tracked in `upstream_tally`; per run, this says whether paging or anchor
+   * fetches spent the run's requests.
    */
   readonly koiosCalls: number;
   readonly ok: boolean;
@@ -535,10 +543,14 @@ export type RefreshRunInput = Omit<RefreshRunRow, "validationBacklog">;
 /** Keep operational history — refresh runs and tally buckets — this long. */
 export const OPERATIONAL_RETENTION_SECONDS = 7 * 86_400;
 
-/** Outcomes over a window of refresh runs. */
+/** Outcomes and cost over a window of refresh runs. */
 export interface RefreshTotals {
   readonly runs: number;
   readonly failures: number;
+  /** The slowest run's wall time, 0 without runs. */
+  readonly maxRunMs: number;
+  readonly refreshMs: number;
+  readonly refreshCpuMs: number;
 }
 
 /**
@@ -588,7 +600,7 @@ export const upstreamTotalsFrom = (
   return totals;
 };
 
-/** Every kind together — what a per-invocation subrequest cap actually bounds. */
+/** Every kind together. */
 export const sumUpstream = (totals: UpstreamTotals): number =>
   UPSTREAM_KINDS.reduce((n, kind) => n + totals[kind], 0);
 
@@ -625,6 +637,8 @@ export interface HealthStore {
    * wedged upstream.
    */
   incompleteValidationCount(): Promise<number>;
+  /** Driver calls since the store opened; a run reads its own as a difference. */
+  roundTrips(): number;
 }
 
 /**

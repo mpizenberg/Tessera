@@ -34,7 +34,7 @@ export const MAX_INFLIGHT_BATCHES = 6;
  * failures (e.g. the word128 errors on some preview epochs, noted in
  * `tallyInputs.ts`) as a plain 500 that an immediate retry cannot fix — the
  * endpoints that hit it already degrade to null-means-retry-*next-refresh*, so
- * retrying here would only burn a second subrequest against the Worker budget.
+ * retrying here would only spend a second request of the Koios quota.
  */
 const RETRIABLE_STATUS = new Set([429, 502, 503, 504]);
 
@@ -44,7 +44,7 @@ const TIMEOUT_ERROR_NAME = "TimeoutError";
 export interface KoiosFetchOptions {
   /** Path (not the full URL) used in the error message — keeps `Koios GET /tip → 502`. */
   label: string;
-  /** Fires once per actual HTTP attempt (a retry counts as its own subrequest). */
+  /** Fires once per actual HTTP attempt (a retry counts as its own request). */
   onRequest?: (() => void) | undefined;
   /** Backoff sleep; injectable so tests run instant. Defaults to a real timer. */
   sleep?: ((ms: number) => Promise<void>) | undefined;

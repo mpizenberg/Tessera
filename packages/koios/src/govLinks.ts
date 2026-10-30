@@ -36,7 +36,7 @@ import { mapSettled } from "./http";
 /**
  * Anchors fetched at once. Unlike the Koios batches this is fan-out across
  * unrelated third-party hosts, so the cap is about our own egress and the
- * subrequest budget rather than one endpoint's rate limiter — and a single
+ * run's time rather than one endpoint's rate limiter — and a single
  * `ipfs://` attempt can itself fan out to several gateways.
  */
 const ANCHOR_CONCURRENCY = 6;

@@ -57,11 +57,10 @@ const givenUp = (m: Misses | undefined): boolean =>
   m !== undefined && m.misses > MAX_MISSES;
 
 /**
- * Anchors one refresh may attempt, out of the Worker's per-invocation
- * subrequest budget that the scan, validation and finalization also draw on:
- * an `ipfs://` anchor races up to five gateways, so this is at most 100
- * requests of the 1,000. Anchors left over wait for a later refresh, and the
- * settlement of their epoch waits for them.
+ * Anchors one refresh may attempt: an `ipfs://` anchor races up to five
+ * gateways, so this is at most 100 requests, a few seconds of the run's time
+ * beside the scan, validation and finalization. Anchors left over wait for a
+ * later refresh, and the settlement of their epoch waits for them.
  */
 export const ANCHOR_ATTEMPTS_PER_REFRESH = 20;
 

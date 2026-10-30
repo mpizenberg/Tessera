@@ -27,14 +27,11 @@ export interface ServerConfig {
    */
   readonly dbPath: string;
   /**
-   * The platform's cap on outbound requests per invocation (Cloudflare's
-   * per-Worker subrequest cap: 50 free, 1,000 paid), if the operator states
-   * it — the health endpoint's per-refresh headroom denominator. `undefined`
-   * = none declared: a self-hosted Node process has no such cap, and the
-   * health payload then reports the run's count without a number to compare
-   * against. Nothing here enforces it; the platform does.
+   * The refresh function's time limit, seconds, baked into the functions by
+   * `vercel-output.ts` from the `maxDuration` it sets. `undefined` for local
+   * runs, which have no limit.
    */
-  readonly workerSubrequestCap: number | undefined;
+  readonly refreshMaxSeconds: number | undefined;
   /**
    * Koios daily request quota for the configured token tier, if the operator
    * knows it (Koios tiers are account-side, not discoverable via the API).
@@ -82,7 +79,7 @@ export function loadConfig(
     port: Number(env["PORT"] ?? 8787),
     refreshSeconds: Number(env["REFRESH_SECONDS"] ?? 180),
     dbPath: env["DB_PATH"] ?? `./tessera-cache-${network}.sqlite`,
-    workerSubrequestCap: declared("WORKER_SUBREQUEST_CAP"),
+    refreshMaxSeconds: declared("REFRESH_MAX_SECONDS"),
     koiosDailyLimit: declared("KOIOS_DAILY_LIMIT"),
     passthroughKoiosToken: env["KOIOS_PASSTHROUGH_TOKEN"] || undefined,
     commit: env["GIT_COMMIT"] || undefined,

@@ -63,9 +63,8 @@ export interface AnchorFetchOptions {
   /** Delay between successive gateway attempts; defaults to {@link GATEWAY_STAGGER_MS}. */
   readonly staggerMs?: number | undefined;
   /**
-   * Fires once per actual HTTP request. A caller on a metered runtime (the
-   * Cloudflare Worker's per-invocation subrequest cap) counts them: one
-   * `ipfs://` anchor can cost as many requests as gateways that get to fire.
+   * Fires once per actual HTTP request, for a caller that meters its requests:
+   * one `ipfs://` anchor can cost as many requests as gateways that get to fire.
    */
   readonly onRequest?: (() => void) | undefined;
 }

@@ -5,12 +5,12 @@ const healthFooter = {
   updated: "data {age} old",
   updatedStale: "data {age} old — refresh may be stuck",
   updatedTitle: "How old the served on-chain snapshot is",
-  // Everything the last refresh sent upstream, against the platform's
-  // per-invocation cap when the operator declared one.
-  refreshRequests: "requests {calls}",
-  refreshRequestsWithCap: "requests {calls}/{limit}",
-  refreshRequestsTitle:
-    "Upstream requests made by the last refresh — Koios reads and governance-anchor fetches — against the platform's per-invocation cap",
+  // The slowest refresh run of the day, against the platform's time limit on
+  // one run when it has one.
+  slowestRun: "slowest run {run} s / 24 h",
+  slowestRunWithLimit: "slowest run {run}/{limit} s / 24 h",
+  slowestRunTitle:
+    "Wall time of the slowest refresh run in the last 24 hours, against the platform's time limit on one run",
   // Rolling 24 h volumes, one per upstream identity. Every service meters us
   // over a day of its own; only Koios has a quota the operator can tell us.
   koiosDaily: "Koios {calls} / 24 h",

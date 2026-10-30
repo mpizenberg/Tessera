@@ -73,9 +73,11 @@ and the answers of `/api/responded` and `/api/responses`.
   both before trusting a backend: another network is a configuration error,
   another major is a contract it does not speak.
 - `GET /api/health` — operational metrics behind the app's health footer: the
-  snapshot's age, the last refresh, 24 h upstream-request and run totals, the
-  validation backlog, the scan cursor, and the declared quotas the counts are
-  read against; `apiVersion` beside the deployed `commit`.
+  snapshot's age, the last refresh with its wall time, CPU time and database
+  round trips, 24 h run and upstream-request totals with the slowest run, the
+  validation backlog, the scan cursor, and the limits these are read against
+  (the refresh's time limit, the declared Koios quota); `apiVersion` beside the
+  deployed `commit`.
 - `GET /api/surveys` — the Explore-list payload, **keyset-paginated**
   (`filter`/`q`/`cursor`/`limit`, with `limit` 1–200 and 50 by default): survey
   records + tip + gov links + raw cancellations + server-deduped
@@ -236,8 +238,8 @@ open, and prints the ones it applied.
 
 ## Per-run work
 
-Every upstream request of a refresh is counted in the health footer, not just
-the Koios ones, since a governance-anchor fetch costs a request too. **The
+Every upstream request of a refresh is counted in `/api/health`, not just the
+Koios ones, since a governance-anchor fetch costs a request too. **The
 per-run floor is flat: it is set by the settlement window, not by how much
 history the deployment has accumulated**, and validation, weight snapshotting
 and artifact emission add batched calls only when there is new work — and each

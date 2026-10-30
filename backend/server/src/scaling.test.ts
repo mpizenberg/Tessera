@@ -434,6 +434,8 @@ async function steadyRun(
   await store.putRefreshRun({
     startedAt: TIP.time + 1,
     durationMs: 1,
+    cpuMs: 0,
+    dbRoundTrips: 0,
     upstreamRequests: 0,
     koiosCalls: 0,
     ok: true,

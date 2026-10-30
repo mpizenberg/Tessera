@@ -65,8 +65,9 @@ export const SETTLEMENT_MARGIN_SLOTS = 259_200;
 /**
  * Listing pages one run may spend on its segment. Steady state expects ≤ 1;
  * the rest is catch-up throughput after downtime or a generation rewind,
- * bounded so the run stays inside the Worker's subrequest budget alongside
- * metadata batches, anchors, validation and finalization.
+ * bounded so the run, with its metadata batches, anchors, validation and
+ * finalization, stays well inside the refresh function's time limit and
+ * spends the Koios quota gradually.
  */
 const SEGMENT_PAGE_BUDGET = 8;
 
@@ -299,6 +300,8 @@ export async function refreshSnapshot(
   let govLinksReliable = true;
   const startedAt = Math.floor(Date.now() / 1000);
   const startedMs = Date.now();
+  const startedCpu = process.cpuUsage();
+  const startedTrips = store.roundTrips();
 
   const lease = await store.acquireRefreshLease(
     startedAt,
@@ -321,11 +324,14 @@ export async function refreshSnapshot(
       | { ok: false; error: string },
   ): Promise<void> => {
     const calls = meter.counted();
+    const cpu = process.cpuUsage(startedCpu);
     return (
       Promise.all([
         store.putRefreshRun({
           startedAt,
           durationMs: Date.now() - startedMs,
+          cpuMs: Math.round((cpu.user + cpu.system) / 1000),
+          dbRoundTrips: store.roundTrips() - startedTrips,
           upstreamRequests: sumUpstream(calls),
           koiosCalls: calls.koios,
           govLinksOk: govLinksReliable,
@@ -545,8 +551,8 @@ export async function refreshSnapshot(
     // the query set for good.
     if (nextGovFloor !== govFloor) await store.putSettlementFloor(nextGovFloor);
 
-    // Response validation (TALLY-SPEC §3) rides the same refresh (Node loop +
-    // Worker cron alike): incremental, so already-validated responses cost
+    // Response validation (TALLY-SPEC §3) rides the same refresh (Node loop and
+    // cron alike): incremental, so already-validated responses cost
     // nothing. Best-effort — the rows above are already stored either way.
     const finalFloor = rewound ? 0 : bank.finalizationFloor;
     await validateNewResponses(

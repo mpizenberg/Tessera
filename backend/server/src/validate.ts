@@ -9,7 +9,7 @@
  *  - rule 3's same-slot ordering input costs one `/tx_info` read per tx.
  *
  * Both fetches happen only for (txHash, responseIndex) keys never completed
- * before, so the steady state is zero extra subrequests per refresh; a failed
+ * before, so the steady state is zero extra requests per refresh; a failed
  * enrichment leaves NULLs in the row and is retried next refresh, and so does
  * a response the per-pass fetch cap deferred. Best-effort by design: a
  * validation hiccup must never sink the snapshot refresh.
@@ -42,13 +42,12 @@ import type {
 import { validationKey } from "./store";
 
 /**
- * Per-pass cap on transactions enriched — the request share of one cron
- * invocation this pass may spend: `/tx_cbor` batches 25 and `/tx_info` 50, so
- * this is at most ~15 requests against a Worker subrequest cap of 1,000. A
- * burst of new responses is not too big to validate: the rows past the cap
+ * Per-pass cap on transactions enriched: `/tx_cbor` batches 25 and `/tx_info`
+ * 50, so this is at most ~15 Koios requests, a small share of the run's time.
+ * A burst of new responses is not too big to validate: the rows past the cap
  * are written enrichment-pending, which puts their surveys on the retry list,
  * and the backlog drains at this rate over the following passes instead of
- * one run failing on the cap.
+ * one run outgrowing its time limit.
  */
 const MAX_VALIDATION_TXS_PER_PASS = 250;
 
@@ -184,7 +183,7 @@ export async function validateNewResponses(
     // (nonexistent survey, or one older than the scan floor) can never be
     // validated or tallied, so it must not contribute to the `/tx_cbor` +
     // `/tx_info` fetch set below. Filtering it *after* building `txHashes`
-    // would tax every future refresh with its Koios subrequests forever — a
+    // would tax every future refresh with its Koios requests forever — a
     // cheap griefing vector, since one tx fee buys a permanent per-refresh
     // cost (finding 4). If its survey later enters the snapshot, the response
     // is still uncompleted and re-enters here, so nothing is lost by dropping.

@@ -9,6 +9,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 while `< 1.0.0`, breaking changes bump the **minor** version.
 
+## [Unreleased]
+
+Speaks contract `2.2`.
+
+### Added
+
+- `BackendHealth` carries the refresh cost: `lastRefresh.cpuMs`,
+  `lastRefresh.dbRoundTrips`, `last24h.maxRunMs`, `last24h.refreshMs`,
+  `last24h.refreshCpuMs`, and `quotas.refreshSecondsPerRun`.
+
+### Removed
+
+- **Breaking:** `BackendHealth.quotas.subrequestsPerInvocation`. `health()` of
+  an earlier client throws against a `2.2` backend, which no longer sends it.
+
 ## [0.5.0] - 2026-10-21
 
 Speaks contract `2.1`.

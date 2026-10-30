@@ -1,10 +1,9 @@
 -- Split the one call counter into the two budgets it was standing in for.
 --
--- `koios_calls` counted every upstream request a run made, which is really the
--- Worker's per-invocation subrequest budget — a budget that does not care which
--- host a request went to. Governance-anchor fetches spend it; they do not spend
--- the Koios daily quota. So the run row now carries both: `upstream_requests`
--- for the subrequest cap, `koios_calls` narrowed to Koios itself.
+-- `koios_calls` counted every upstream request a run made, whatever the host.
+-- Governance-anchor fetches are among them; they do not spend the Koios daily
+-- quota. So the run row now carries both: `upstream_requests` for every
+-- request, `koios_calls` narrowed to Koios itself.
 --
 -- Rows written before anchor fetches existed spent every upstream request on
 -- Koios, so copying the old count across is exact, not an approximation.
